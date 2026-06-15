@@ -1,9 +1,9 @@
-import { View } from '@/application/types';
-
-import PublishedPageItem from '@/components/app/publish-manage/PublishedPageItem';
 import { Divider } from '@mui/material';
-
 import React from 'react';
+
+import { View } from '@/application/types';
+import PublishedPageItem from '@/components/app/publish-manage/PublishedPageItem';
+
 
 function PublishedPages ({
   publishViews,

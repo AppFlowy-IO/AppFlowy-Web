@@ -1,3 +1,5 @@
+import { EditorData, EditorNode } from '@appflowyinc/editor';
+
 import {
   createBlock, executeOperations, getBlockIndex,
   getBlocks,
@@ -11,7 +13,6 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { EditorData, EditorNode } from '@appflowyinc/editor';
 
 export function insertDataToDoc(doc: YDoc, insertData: EditorData) {
   const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;

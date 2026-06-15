@@ -1,9 +1,10 @@
-import { ReactComponent as Clear } from '@/assets/icons/delete.svg';
-import { ReactComponent as SelectCheck } from '@/assets/icons/tick.svg';
-import { Popover } from '@/components/_shared/popover';
 import { IconButton, PopoverPosition, TextField, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as Clear } from '@/assets/icons/delete.svg';
+import { ReactComponent as SelectCheck } from '@/assets/icons/tick.svg';
+import { Popover } from '@/components/_shared/popover';
 
 function FormulaPopover({
   open,

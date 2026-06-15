@@ -1,9 +1,12 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { SubscriptionPlan, View } from '@/application/types';
+
 import { activePlanArgType, hostnameArgType, isOwnerArgType } from '../../../../.storybook/argTypes';
 import { withHostnameMocking, withContainer } from '../../../../.storybook/decorators';
+
 import HomePageSetting from './HomePageSetting';
+
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 const mockView: View = {
   view_id: 'test-view-id',

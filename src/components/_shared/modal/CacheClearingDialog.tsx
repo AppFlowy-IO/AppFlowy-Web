@@ -1,8 +1,9 @@
-import IndexedDBCleaner from '@/components/_shared/modal/IndexedDBCleaner';
-import NormalModal from '@/components/_shared/modal/NormalModal';
 import { DialogContent, DialogContentText, List, ListItem, ListItemText } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import IndexedDBCleaner from '@/components/_shared/modal/IndexedDBCleaner';
+import NormalModal from '@/components/_shared/modal/NormalModal';
 
 const CacheClearingDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const { t } = useTranslation();

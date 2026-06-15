@@ -1,13 +1,16 @@
-import { AppContext, useAppOutline, useAppViewId } from '@/components/app/app.hooks';
-import MobileFavorite from '@/components/app/favorite/MobileFavorite';
-import MobileRecent from '@/components/app/recent/MobileRecent';
-import MobileWorkspaces from '@/components/app/workspaces/MobileWorkspaces';
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import SwipeableViews from 'react-swipeable-views';
+
 import MobileMore from '@/components/_shared/mobile-topbar/MobileMore';
 import { AFScroller } from '@/components/_shared/scroller';
 import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
-import React, { useContext } from 'react';
-import { useTranslation } from 'react-i18next';
-import SwipeableViews from 'react-swipeable-views';
+import { useAppOutline, useAppViewId, useToView } from '@/components/app/app.hooks';
+import MobileFavorite from '@/components/app/favorite/MobileFavorite';
+import MobileRecent from '@/components/app/recent/MobileRecent';
+import MobileWorkspaces from '@/components/app/workspaces/MobileWorkspaces';
+
+
 import MobileOutline from 'src/components/_shared/mobile-outline/MobileOutline';
 
 enum ViewTabsKey {
@@ -19,15 +22,15 @@ enum ViewTabsKey {
 function MobileFolder({ onClose }: { onClose: () => void }) {
   const outline = useAppOutline();
   const viewId = useAppViewId();
-  const navigateToView = useContext(AppContext)?.toView;
+  const navigateToView = useToView();
   const [selectedTab, setSelectedTab] = React.useState<ViewTabsKey>(ViewTabsKey.Space);
   const { t } = useTranslation();
 
   return (
     <AFScroller overflowXHidden className={'flex w-full flex-1 flex-col gap-2'}>
       <div className={'sticky top-0 z-[10] w-full bg-background-primary p-2 pb-0'}>
-        <div className={'mb-2 flex items-center justify-between'}>
-          <div className={'flex-1 p-2'}>
+        <div className={'mb-2 flex items-start justify-between gap-2'}>
+          <div className={'flex-1'}>
             <MobileWorkspaces onClose={onClose} />
           </div>
           <MobileMore onClose={onClose} />

@@ -1,30 +1,71 @@
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { Skeleton } from '@mui/material';
-import React, { lazy, Suspense, useCallback } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { BaseRange, Editor, Element as SlateElement, NodeEntry, Range, Text } from 'slate';
-import { Editable, RenderElementProps, useSlate } from 'slate-react';
+import { Editable, ReactEditor, RenderElementProps, useSlate } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
 import { BlockPopoverProvider } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { useDecorate } from '@/components/editor/components/blocks/code/useDecorate';
+import { useFindReplaceDecorations } from '@/components/editor/components/find-replace/FindReplaceContext';
 import { Leaf } from '@/components/editor/components/leaf';
 import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { PanelProvider } from '@/components/editor/components/panels/PanelsContext';
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
+import { getScrollParent } from '@/components/global-comment/utils';
 import { cn } from '@/lib/utils';
 
 import { Element } from './components/element';
 
 const EditorOverlay = lazy(() => import('@/components/editor/EditorOverlay'));
 
+/**
+ * Custom scrollSelectionIntoView that prevents scroll-to-top jumps.
+ *
+ * The default slate-react implementation delegates to scroll-into-view-if-needed
+ * without specifying `block`, which defaults to centering behavior. When the
+ * bounding rect is transiently invalid during re-renders (e.g. code-block syntax
+ * highlighting changes the leaf DOM structure), the library receives a zero-rect
+ * and centers on {0,0} — jumping the page to the top.
+ *
+ * This replacement guards against that zero-rect case and uses native
+ * scrollIntoView with `block/inline: 'nearest'` for minimal, correct scrolling
+ * on both axes (vertical page scroll + horizontal code-block scroll).
+ */
+function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Range) {
+  if (
+    !domRange.getBoundingClientRect ||
+    !_editor.selection ||
+    !Range.isCollapsed(_editor.selection)
+  ) {
+    return;
+  }
+
+  // Guard against invalid/zero bounding rects that can occur during re-renders
+  const rangeRect = domRange.getBoundingClientRect();
+
+  if (rangeRect.height === 0 && rangeRect.width === 0 && rangeRect.top === 0 && rangeRect.left === 0) {
+    return;
+  }
+
+  const leafEl = domRange.startContainer.parentElement;
+
+  if (!leafEl) return;
+
+  leafEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
 const EditorEditable = () => {
-  const { readOnly, decorateState, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { decorateState } = useEditorLocalState();
+  const { getMatchDecorations } = useFindReplaceDecorations();
   const editor = useSlate();
 
   const codeDecorate = useDecorate(editor);
@@ -35,22 +76,27 @@ const EditorEditable = () => {
         class_name: string;
       })[] = [];
 
-      if (!decorateState) return [];
+      if (decorateState) {
+        Object.values(decorateState).forEach((state) => {
+          const intersection = Range.intersection(state.range, Editor.range(editor, path));
 
-      Object.values(decorateState).forEach((state) => {
-        const intersection = Range.intersection(state.range, Editor.range(editor, path));
+          if (intersection) {
+            highlightRanges.push({
+              ...intersection,
+              class_name: state.class_name,
+            });
+          }
+        });
+      }
 
-        if (intersection) {
-          highlightRanges.push({
-            ...intersection,
-            class_name: state.class_name,
-          });
-        }
-      });
+      // Find & replace match highlights (already scoped to this text node's path).
+      for (const match of getMatchDecorations(path)) {
+        highlightRanges.push(match as Range & { class_name: string });
+      }
 
       return highlightRanges;
     },
-    [editor, decorateState]
+    [editor, decorateState, getMatchDecorations]
   );
   const renderElement = useCallback((props: RenderElementProps) => {
     return (
@@ -110,16 +156,35 @@ const EditorEditable = () => {
   const handleCloseLinkPopover = useCallback(() => {
     setLinkOpen(undefined);
   }, []);
+  const leafContextValue = useMemo(
+    () => ({
+      linkOpen,
+      openLinkPopover: handleOpenLinkPopover,
+      closeLinkPopover: handleCloseLinkPopover,
+    }),
+    [linkOpen, handleOpenLinkPopover, handleCloseLinkPopover]
+  );
+
+  useEffect(() => {
+    try {
+      const editorDom = ReactEditor.toDOMNode(editor, editor);
+      const scrollContainer = getScrollParent(editorDom);
+
+      if (!scrollContainer) return;
+
+      return autoScrollForElements({
+        element: scrollContainer,
+      });
+    } catch (e) {
+      console.error('Error initializing auto-scroll:', e);
+    }
+  }, [editor]);
 
   return (
     <PanelProvider editor={editor}>
       <BlockPopoverProvider editor={editor}>
         <LeafContext.Provider
-          value={{
-            linkOpen,
-            openLinkPopover: handleOpenLinkPopover,
-            closeLinkPopover: handleCloseLinkPopover,
-          }}
+          value={leafContextValue}
         >
           <ErrorBoundary fallbackRender={ElementFallbackRender}>
             <Editable
@@ -142,10 +207,11 @@ const EditorEditable = () => {
               spellCheck={false}
               autoCorrect={'off'}
               autoComplete={'off'}
-              onCompositionStart={onCompositionStart}
-              onKeyDown={onKeyDown}
+              scrollSelectionIntoView={scrollSelectionIntoView}
+              onCompositionStart={readOnly ? undefined : onCompositionStart}
+              onKeyDown={readOnly ? undefined : onKeyDown}
               onMouseDown={handleMouseDown}
-              onClick={handleClick}
+              onClick={readOnly ? undefined : handleClick}
             />
           </ErrorBoundary>
 

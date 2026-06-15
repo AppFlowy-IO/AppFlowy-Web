@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+# Print version banner
+echo "════════════════════════════════════════════════════════════════════"
+echo "  AppFlowy Web v${APP_VERSION:-dev}"
+echo "════════════════════════════════════════════════════════════════════"
+echo ""
+
 # Backward compatibility: Map old environment variable names to new ones
 if [ -n "${AF_BASE_URL}" ] && [ -z "${APPFLOWY_BASE_URL}" ]; then
   echo "⚠️  WARNING: AF_BASE_URL is deprecated. Please use APPFLOWY_BASE_URL instead."

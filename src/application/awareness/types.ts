@@ -13,6 +13,7 @@ export interface AwarenessSelection {
 
 export interface AwarenessUser {
   uid: number;
+  uuid?: string;
   name: string;
   timestamp: number;
   device_id: string;
@@ -25,6 +26,7 @@ export interface AwarenessMetadata {
   cursor_color: string;
   selection_color: string;
   user_avatar: string;
+  user_uuid?: string;
 }
 
 export interface AwarenessState {
@@ -40,6 +42,7 @@ export interface AwarenessState {
 
 export interface Cursor {
   uid: number;
+  uuid?: string;
   deviceId: string;
   name: string;
   cursorColor: string;

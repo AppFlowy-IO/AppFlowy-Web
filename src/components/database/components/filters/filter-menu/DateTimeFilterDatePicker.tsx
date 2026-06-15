@@ -66,10 +66,11 @@ function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
 
       updateFilter({
         filterId: filter.id,
+        fieldId: filter.fieldId,
         content,
       });
     },
-    [filter.id, isRange, updateFilter]
+    [filter.id, filter.fieldId, isRange, updateFilter]
   );
 
   const text = useMemo(() => {
@@ -101,7 +102,7 @@ function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={'outline'} size={'sm'} className={'w-full justify-start'}>
+        <Button variant={'outline'} size={'sm'} className={'w-full justify-start'} data-testid="date-filter-date-picker">
           {text}
         </Button>
       </PopoverTrigger>

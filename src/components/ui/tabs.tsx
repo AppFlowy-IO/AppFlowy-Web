@@ -21,9 +21,13 @@ function TabsList({ className, ...props }: React.ComponentProps<typeof TabsPrimi
   );
 }
 
-function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
+const TabsTrigger = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
+>(({ className, ...props }, ref) => {
   return (
     <TabsPrimitive.Trigger
+      ref={ref}
       data-slot='tabs-trigger'
       className={cn(
         // Base Styles
@@ -63,7 +67,7 @@ function TabsTrigger({ className, ...props }: React.ComponentProps<typeof TabsPr
       {...props}
     />
   );
-}
+});
 
 const TabLabel = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => {
   return (

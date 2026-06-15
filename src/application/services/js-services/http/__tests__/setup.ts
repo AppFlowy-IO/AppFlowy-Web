@@ -89,8 +89,11 @@ jest.mock('@/utils/runtime-config', () => ({
 }));
 
 jest.mock('@/utils/file-storage-url', () => ({
-    getFileStorageUrl: jest.fn((url: string) => url),
-    getFileUploadUrl: jest.fn((url: string) => url),
+    getAppFlowyFileUrl: jest.fn((workspaceId: string, viewId: string, fileId: string) => `mock://${workspaceId}/${viewId}/${fileId}`),
+    getAppFlowyFileUploadUrl: jest.fn((workspaceId: string, viewId: string) => `mock://${workspaceId}/${viewId}/upload`),
+    resolveFileUrl: jest.fn((urlOrId: string) => urlOrId),
+    isFileURL: jest.fn(() => true),
+    isAppFlowyFileStorageUrl: jest.fn(() => true),
 }));
 
 // Mock the session/token module (not @/application/session!)
@@ -188,7 +191,7 @@ export class AuthHelper {
                 refreshToken,
                 user,
             };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
             // If signup fails (user exists), try to sign in
             if (error.response?.status === 422 || error.response?.status === 400) {

@@ -1,3 +1,5 @@
+import { useSearchParams } from 'react-router-dom';
+
 import { usePublishContext } from '@/application/publish';
 import { UIVariant } from '@/application/types';
 import { OutlineDrawer } from '@/components/_shared/outline';
@@ -16,7 +18,10 @@ function SideBar ({
 }: SideBarProps) {
   const outline = usePublishContext()?.outline;
 
-  const viewId = usePublishContext()?.viewMeta?.view_id;
+  const baseViewId = usePublishContext()?.viewMeta?.view_id;
+  // Use the active database tab (?v= param) for sidebar highlight
+  const [searchParams] = useSearchParams();
+  const viewId = searchParams.get('v') || baseViewId;
   const navigateToView = usePublishContext()?.toView;
 
   return (

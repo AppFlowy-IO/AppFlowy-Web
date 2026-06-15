@@ -1,11 +1,13 @@
-import { TemplateSummary } from '@/application/template.type';
-import { NormalModal } from '@/components/_shared/modal';
-import { useLoadCategories } from '@/components/as-template/hooks';
-import CategoryTemplates from '@/components/as-template/related-template/CategoryTemplates';
 import { Button, CircularProgress } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { TemplateSummary } from '@/application/template.type';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { NormalModal } from '@/components/_shared/modal';
+import { useLoadCategories } from '@/components/as-template/hooks';
+import CategoryTemplates from '@/components/as-template/related-template/CategoryTemplates';
+
 
 function AddRelatedTemplates ({
   selectedTemplateIds,

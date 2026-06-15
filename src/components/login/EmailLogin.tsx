@@ -1,16 +1,16 @@
-import { useContext, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import isEmail from 'validator/lib/isEmail';
 
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { AuthService } from '@/application/services/domains';
+import { LOGIN_ACTION } from '@/components/login/const';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { LOGIN_ACTION } from '@/components/login/const';
 
 function EmailLogin({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
@@ -18,7 +18,6 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [, setSearch] = useSearchParams();
-  const service = useContext(AFConfigContext)?.service;
   const handleSubmitEmail = async (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (loading) return;
     const isValidEmail = isEmail(email);
@@ -32,29 +31,27 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
     setError('');
     setLoading(true);
 
-    void (async () => {
-      try {
-        await service?.signInMagicLink({
-          email,
-          redirectTo,
-        });
-        // eslint-disable-next-line
-      } catch (e: any) {
-        if (e.code === 429 || e.response?.status === 429) {
-          toast.error(t('tooManyRequests'));
-        } else {
-          toast.error(e.message);
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
+    try {
+      await AuthService.signInMagicLink({
+        email,
+        redirectTo,
+      });
 
-    setSearch((prev) => {
-      prev.set('email', email);
-      prev.set('action', LOGIN_ACTION.CHECK_EMAIL);
-      return prev;
-    });
+      setSearch((prev) => {
+        prev.set('email', email);
+        prev.set('action', LOGIN_ACTION.CHECK_EMAIL);
+        return prev;
+      });
+      // eslint-disable-next-line
+    } catch (e: any) {
+      if (e.code === 429 || e.response?.status === 429) {
+        toast.error(t('tooManyRequests'));
+      } else {
+        toast.error(e.message);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmitPassword = async (e: React.MouseEvent<HTMLButtonElement>) => {

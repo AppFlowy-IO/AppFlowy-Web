@@ -1,12 +1,13 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import {
   parseSelectOptionTypeOptions,
   SelectOptionFilter,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs';
 import { YDatabaseField } from '@/application/types';
-import { useMemo } from 'react';
 
-import { useTranslation } from 'react-i18next';
 
 function SelectFilterContentOverview({ filter, field }: { filter: SelectOptionFilter; field: YDatabaseField }) {
   const typeOption = parseSelectOptionTypeOptions(field);

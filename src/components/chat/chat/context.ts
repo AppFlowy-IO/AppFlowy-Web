@@ -1,5 +1,6 @@
-import { ChatProps } from '@/components/chat/types';
 import { createContext, useContext } from 'react';
+
+import { ChatProps } from '@/components/chat/types';
 
 export const ChatContext = createContext<ChatProps | undefined>(undefined);
 

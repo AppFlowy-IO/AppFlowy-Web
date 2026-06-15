@@ -1,11 +1,11 @@
-import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { dropTargetForExternal } from '@atlaskit/pragmatic-drag-and-drop/external/adapter';
+import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useReadOnly } from '@/application/database-yjs';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import { useBoardSelection } from '@/components/database/board/BoardProvider';
 import { CardPrimitive } from '@/components/database/components/board/card/CardPrimitive';
 import NewCard from '@/components/database/components/board/card/NewCard';
 import { CardType } from '@/components/database/components/board/column/CardList';
@@ -34,7 +34,7 @@ export const Card = memo(
     const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
     const [state, setState] = useState<State>(idleState);
     const readOnly = useReadOnly();
-    const { editingCardId } = useBoardContext();
+    const { editingCardId } = useBoardSelection();
 
     const editing = useMemo(() => {
       return editingCardId === `${columnId}/${rowId}`;

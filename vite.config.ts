@@ -1,47 +1,122 @@
 import react from '@vitejs/plugin-react';
+import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig } from 'vite';
-import { viteExternalsPlugin } from 'vite-plugin-externals';
-import { createHtmlPlugin } from 'vite-plugin-html';
+import { defineConfig, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
 import { stripTestIdPlugin } from './vite-plugin-strip-testid';
 
 const resourcesPath = path.resolve(__dirname, '../resources');
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV ? process.env.NODE_ENV === 'development' : true;
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.COVERAGE === 'true';
+
+// Namespace redirect plugin for dev mode - mirrors deploy/server.ts behavior
+function namespaceRedirectPlugin() {
+  const baseURL = process.env.APPFLOWY_BASE_URL || 'http://localhost:8000';
+
+  return {
+    name: 'namespace-redirect',
+    apply: 'serve' as const,
+    configureServer(server: { middlewares: { use: (fn: (req: { url?: string; method?: string }, res: { statusCode: number; setHeader: (name: string, value: string) => void; end: () => void }, next: () => void) => void) => void } }) {
+      const ignoredPrefixes = ['/app', '/login', '/import', '/after-payment', '/as-template', '/accept-invitation', '/404'];
+
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url || req.method !== 'GET') {
+          return next();
+        }
+
+        const url = new URL(req.url, 'http://localhost');
+        const pathname = url.pathname;
+
+        // Skip ignored prefixes and root
+        if (pathname === '/' || ignoredPrefixes.some((prefix) => pathname.startsWith(prefix))) {
+          return next();
+        }
+
+        const parts = pathname.split('/').filter(Boolean);
+
+        // Skip if not a single-segment path (namespace only) or if it's a static asset/dev file
+        const isStaticAsset = /\.(js|css|html|map|json|png|jpg|jpeg|gif|svg|woff2?|ttf)$/i.test(pathname);
+        if (parts.length !== 1 || isStaticAsset || pathname.includes('@') || pathname.includes('node_modules') || pathname.startsWith('/src/')) {
+          return next();
+        }
+
+        try {
+          // Fetch publish info for this namespace (same API as deploy/server.ts)
+          const apiUrl = `${baseURL}/api/workspace/published/${parts[0]}`;
+          const response = await fetch(apiUrl);
+
+          if (!response.ok) {
+            return next();
+          }
+
+          const data = await response.json();
+          const publishInfo = data?.data?.info;
+
+          if (publishInfo?.namespace && publishInfo?.publish_name) {
+            const redirectUrl = `/${encodeURIComponent(publishInfo.namespace)}/${encodeURIComponent(publishInfo.publish_name)}`;
+            res.statusCode = 302;
+            res.setHeader('Location', redirectUrl);
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.end();
+            return;
+          }
+        } catch {
+          // Silently fail and let the request continue
+        }
+
+        next();
+      });
+    },
+  };
+}
+
+// Runs the /api/link-preview serverless function in dev. Vite does not execute
+// the Vercel functions under `api/`, so without this the link-preview unfurler
+// only works in production and every pasted URL degrades to its raw text
+// locally (no favicon / title / image). The handler uses Node's IncomingMessage
+// / ServerResponse, which is exactly what the connect dev-server middleware
+// passes, so we can invoke it directly.
+function linkPreviewApiPlugin() {
+  return {
+    name: 'link-preview-api',
+    apply: 'serve' as const,
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api/link-preview')) {
+          return next();
+        }
+
+        server
+          .ssrLoadModule('/api/link-preview.ts')
+          .then((mod) =>
+            (mod.default as (req: IncomingMessage, res: ServerResponse) => Promise<void>)(
+              req as IncomingMessage,
+              res as ServerResponse
+            )
+          )
+          .catch((error: unknown) => {
+            server.config.logger.error(`[link-preview] ${error instanceof Error ? error.message : String(error)}`);
+            res.statusCode = 502;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: 'Failed to fetch link preview' }));
+          });
+      });
+    },
+  };
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    isDev ? namespaceRedirectPlugin() : undefined,
+    isDev ? linkPreviewApiPlugin() : undefined,
     // Strip data-testid attributes in production builds
     isProd ? stripTestIdPlugin() : undefined,
-    createHtmlPlugin({
-      inject: {
-        data: {
-          injectCdn: isProd,
-          cdnLinks: isProd
-            ? `
-              <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
-              <link rel="preconnect" href="//cdn.jsdelivr.net">
-              
-              <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-              <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-            `
-            : '',
-        },
-      },
-    }),
-    isProd
-      ? viteExternalsPlugin({
-          react: 'React',
-          'react-dom': 'ReactDOM',
-        })
-      : undefined,
     svgr({
       svgrOptions: {
         prettier: false,
@@ -81,22 +156,21 @@ export default defineConfig({
     // Enable istanbul for code coverage (active if isTest is true)
     isTest
       ? istanbul({
-          cypress: true,
-          requireEnv: false,
-          include: ['src/**/*'],
-          exclude: ['**/__tests__/**/*', 'cypress/**/*', 'node_modules/**/*'],
-        })
+        requireEnv: false,
+        include: ['src/**/*'],
+        exclude: ['**/__tests__/**/*', 'node_modules/**/*'],
+      })
       : undefined,
     process.env.ANALYZE_MODE
       ? visualizer({
-          emitFile: true,
-        })
+        emitFile: true,
+      })
       : undefined,
     process.env.ANALYZE_MODE
       ? totalBundleSize({
-          fileNameRegex: /\.(js|css)$/,
-          calculateGzip: false,
-        })
+        fileNameRegex: /\.(js|css)$/,
+        calculateGzip: false,
+      })
       : undefined,
   ],
   // prevent vite from obscuring rust errors
@@ -108,6 +182,20 @@ export default defineConfig({
     watch: {
       ignored: ['node_modules'],
     },
+    proxy: {
+      // Proxy S3/MinIO presigned URL uploads to avoid CORS issues in local dev.
+      // Set APPFLOWY_S3_PRESIGNED_URL_ENDPOINT=http://localhost:3000/s3 on the API server.
+      '/s3': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/s3/, ''),
+      },
+      '/gotrue': {
+        target: 'http://localhost:9999',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/gotrue/, ''),
+      },
+    },
     cors: false,
     sourcemapIgnoreList: false,
   },
@@ -118,7 +206,8 @@ export default defineConfig({
     sourcemap: true,
     minifyIdentifiers: false, // Disable identifier minification in development
     minifySyntax: false, // Disable syntax minification in development
-    drop: !isDev ? ['console', 'debugger'] : [],
+    drop: !isDev ? ['debugger'] : [],
+    pure: !isDev ? ['console.log', 'console.debug'] : [],
   },
   build: {
     target: `esnext`,
@@ -139,7 +228,7 @@ export default defineConfig({
               id.includes('/y-indexeddb@') ||
               id.includes('/dexie') ||
               id.includes('/redux') ||
-              id.includes('/react-custom-scrollbars') ||
+              id.includes('/react-custom-scrollbars-2') ||
               id.includes('/dayjs') ||
               id.includes('/smooth-scroll-into-view-if-needed') ||
               id.includes('/react-virtualized-auto-sizer') ||
@@ -152,14 +241,14 @@ export default defineConfig({
             }
           },
         },
-        }
+      }
       : {},
   },
   resolve: {
     alias: [
+      { find: '@protobufjs/inquire', replacement: path.resolve(__dirname, 'src/shims/protobufjs-inquire.cjs') },
       { find: 'src/', replacement: `${__dirname}/src/` },
       { find: '@/', replacement: `${__dirname}/src/` },
-      { find: 'cypress/support', replacement: `${__dirname}/cypress/support` },
     ],
   },
 
@@ -169,12 +258,18 @@ export default defineConfig({
       'react-dom',
       'react-katex',
       '@appflowyinc/editor',
-      '@appflowyinc/ai-chat',
       'react-colorful',
       'i18next',
       'i18next-browser-languagedetector',
       'i18next-resources-to-backend',
       'react-i18next'
     ],
+  },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler',
+      },
+    },
   },
 });

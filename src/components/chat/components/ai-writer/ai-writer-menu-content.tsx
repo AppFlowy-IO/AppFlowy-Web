@@ -1,16 +1,18 @@
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ImproveWritingIcon } from '@/assets/icons/ai_improve_writing.svg';
+
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
-import { ReactComponent as FixSpellingIcon } from '@/assets/icons/tick.svg';
+import { ReactComponent as ImproveWritingIcon } from '@/assets/icons/ai_improve_writing.svg';
+import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
 import { ReactComponent as ExplainIcon } from '@/assets/icons/help.svg';
 import { ReactComponent as MakeLongerIcon } from '@/assets/icons/long_text.svg';
 import { ReactComponent as MakeShorterIcon } from '@/assets/icons/short_text.svg';
-import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as FixSpellingIcon } from '@/assets/icons/tick.svg';
 import { AIAssistantType } from '@/components/chat/types';
 import { useWriterContext } from '@/components/chat/writer/context';
-import { useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
+
 
 export function AiWriterMenuContent({
   input,

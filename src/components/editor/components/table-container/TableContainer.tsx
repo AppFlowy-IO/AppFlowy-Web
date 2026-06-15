@@ -1,7 +1,8 @@
-import ControlActions from '@/components/editor/components/toolbar/block-controls/ControlActions';
-import { getScrollParent } from '@/components/global-comment/utils';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
+
+import ControlActions from '@/components/editor/components/toolbar/block-controls/ControlActions';
+import { getScrollParent } from '@/components/global-comment/utils';
 
 function TableContainer ({ blockId, readSummary, children, paddingLeft = 0 }: {
   blockId: string;

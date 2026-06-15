@@ -1,7 +1,8 @@
-import { ChatRequest } from '@/components/chat/request/chat-request';
-import { User } from './request';
 import { PromptDatabaseConfiguration } from '@/components/chat/provider/prompt-modal-provider';
+import { ChatRequest } from '@/components/chat/request/chat-request';
+
 import { RawPromptData, PromptDatabaseField } from './prompt';
+import { User } from './request';
 
 export * from './ai-model';
 export * from './checkbox';

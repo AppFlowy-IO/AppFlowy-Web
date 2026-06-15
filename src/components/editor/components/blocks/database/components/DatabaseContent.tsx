@@ -2,54 +2,76 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { useTranslation } from 'react-i18next';
 
 import { DatabaseContextState } from '@/application/database-yjs';
+import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 
+const EMBEDDED_DATABASE_FIXED_HEIGHT = 600;
+
 interface DatabaseContentProps {
+  /**
+   * The base/primary view ID for the embedded database.
+   * This is the first view that was embedded and remains constant.
+   */
+  baseViewId: string;
+  /**
+   * The currently selected/active view tab ID.
+   * Changes when user switches between different view tabs.
+   */
   selectedViewId: string | null;
   hasDatabase: boolean;
   notFound: boolean;
+  deletionStatus?: 'none' | 'inTrash' | 'deleted' | null;
   paddingStart: number;
   paddingEnd: number;
   width: number;
   doc: YDoc | null;
   workspaceId: string;
-  viewId: string;
-  createRowDoc?: (rowId: string) => Promise<YDoc>;
+  createRow?: (rowId: string) => Promise<YDoc>;
   loadView?: LoadView;
   navigateToView?: (viewId: string, rowId?: string) => Promise<void>;
   onOpenRowPage: (rowId: string) => Promise<void>;
   loadViewMeta: LoadViewMeta;
-  iidName: string;
+  databaseName: string;
   visibleViewIds: string[];
   onChangeView: (viewId: string) => void;
+  onViewAdded?: (viewId: string) => void;
+  onViewIdsChanged?: (viewIds: string[]) => void;
   context: DatabaseContextState;
+  fixedHeight?: number;
+  onRendered?: () => void;
 }
 
 export const DatabaseContent = ({
+  baseViewId,
   selectedViewId,
   hasDatabase,
   notFound,
+  deletionStatus,
   paddingStart,
   paddingEnd,
   width,
   doc,
   workspaceId,
-  viewId,
-  createRowDoc,
+  createRow,
   loadView,
   navigateToView,
   onOpenRowPage,
   loadViewMeta,
-  iidName,
+  databaseName,
   visibleViewIds,
   onChangeView,
+  onViewAdded,
+  onViewIdsChanged,
   context,
+  fixedHeight = EMBEDDED_DATABASE_FIXED_HEIGHT,
+  onRendered,
 }: DatabaseContentProps) => {
   const { t } = useTranslation();
-  const isPublishVarient = context?.variant === UIVariant.Publish;
+  const isPublishVariant = context?.variant === UIVariant.Publish;
+  const initialRowMap = isPublishVariant ? getPublishedDatabaseRenderRowMap(doc) : undefined;
 
-  if (selectedViewId && doc && hasDatabase && !notFound) {
+  if (selectedViewId && doc && hasDatabase && !notFound && deletionStatus === 'none') {
     return (
       <div
         className={'relative'}
@@ -62,30 +84,50 @@ export const DatabaseContent = ({
           {...context}
           workspaceId={workspaceId}
           doc={doc}
-          iidIndex={viewId}
-          viewId={selectedViewId}
-          createRowDoc={createRowDoc}
+          initialRowMap={initialRowMap}
+          databasePageId={baseViewId}
+          activeViewId={selectedViewId}
+          createRow={createRow}
           loadView={loadView}
           navigateToView={navigateToView}
           onOpenRowPage={onOpenRowPage}
           loadViewMeta={loadViewMeta}
-          iidName={iidName}
+          databaseName={databaseName}
           visibleViewIds={visibleViewIds}
           onChangeView={onChangeView}
+          onViewAdded={onViewAdded}
+          onViewIdsChanged={onViewIdsChanged}
           showActions={true}
           paddingStart={paddingStart}
           paddingEnd={paddingEnd}
           isDocumentBlock={true}
+          embeddedHeight={fixedHeight}
+          onRendered={onRendered}
         />
       </div>
     );
   }
 
+  const getNotFoundMessage = () => {
+    if (isPublishVariant) return t('publish.hasNotBeenPublished');
+
+    switch (deletionStatus) {
+      case 'inTrash':
+        return t('document.inlineDatabase.viewInTrash', 'This referenced database is in Trash');
+      case 'deleted':
+        return t('document.inlineDatabase.viewDeleted', 'This referenced database was permanently deleted');
+      default:
+        return t('error.generalError');
+    }
+  };
+
+  const showError = notFound || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
+
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4">
-      {notFound ? (
+      {showError ? (
         <div className="text-base font-medium">
-          {isPublishVarient ? t('publish.hasNotBeenPublished') : 'Something went wrong'}
+          {getNotFoundMessage()}
         </div>
       ) : (
         <CircularProgress size={20} />

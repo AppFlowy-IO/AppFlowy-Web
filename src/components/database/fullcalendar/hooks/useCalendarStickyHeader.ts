@@ -62,11 +62,12 @@ export function useCalendarStickyHeader(calendarApi: CalendarApi | null, toolbar
 
     // Initial check
     handleScroll();
+    const scrollListenerOptions: AddEventListenerOptions = { passive: true };
 
-    scrollElement.addEventListener('scroll', handleScroll);
+    scrollElement.addEventListener('scroll', handleScroll, scrollListenerOptions);
     
     return () => {
-      scrollElement.removeEventListener('scroll', handleScroll);
+      scrollElement.removeEventListener('scroll', handleScroll, scrollListenerOptions);
     };
   }, [getScrollElement, updateToolbarOffset]);
 
@@ -90,11 +91,17 @@ export function useCalendarStickyHeader(calendarApi: CalendarApi | null, toolbar
       updateToolbarOffset();
     };
 
-    scrollElement.addEventListener('resize', handleResize);
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(handleResize)
+        : undefined;
+
+    resizeObserver?.observe(scrollElement);
+
     window.addEventListener('resize', handleResize);
 
     return () => {
-      scrollElement.removeEventListener('resize', handleResize);
+      resizeObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
     };
   }, [getScrollElement, updateToolbarOffset]);

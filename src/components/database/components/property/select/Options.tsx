@@ -1,10 +1,11 @@
+import React, { useCallback, useRef } from 'react';
+
 import { SelectOption } from '@/application/database-yjs';
 import Option from '@/components/database/components/property/select/Option';
 import {
   OptionDragContext,
   useOptionDragContextValue,
 } from '@/components/database/components/property/select/useOptionDragContext';
-import React, { useCallback, useRef } from 'react';
 
 function Options ({
   fieldId,

@@ -1,52 +1,43 @@
-import React, { memo, Suspense, useEffect, useRef, useState } from 'react';
+import React, { memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Awareness } from 'y-protocols/awareness';
 
 import { AIChatProvider } from '@/components/ai-chat/AIChatProvider';
 import { AppOverlayProvider } from '@/components/app/app-overlay/AppOverlayProvider';
-import { AppContext, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { useCurrentUser } from '@/components/main/app.hooks';
-
-import { useAllContextData } from '../hooks/useAllContextData';
 
 const ViewModal = React.lazy(() => import('@/components/app/ViewModal'));
 
 interface AppContextConsumerProps {
   children: React.ReactNode;
-  requestAccessOpened: boolean;
+  requestAccessError: RequestAccessError | null;
   openModalViewId?: string;
   setOpenModalViewId: (id: string | undefined) => void;
-  awarenessMap: Record<string, Awareness>;
 }
 
-// Component that consumes all internal contexts and provides the unified AppContext
-// This maintains the original AppContext API while using the new layered architecture internally
+// Thin UI shell — context providers are handled by AppBusinessLayer
 export const AppContextConsumer: React.FC<AppContextConsumerProps> = memo(
-  ({ children, requestAccessOpened, openModalViewId, setOpenModalViewId, awarenessMap }) => {
-    // Merge all layer data into the complete AppContextType
-    const allContextData = useAllContextData(awarenessMap);
+  ({ children, requestAccessError, openModalViewId, setOpenModalViewId }) => {
+    const closeModal = useCallback(() => setOpenModalViewId(undefined), [setOpenModalViewId]);
 
     return (
-      <AppContext.Provider value={allContextData}>
-        <AIChatProvider>
-          <AppOverlayProvider>
-            {requestAccessOpened ? <RequestAccess /> : children}
-            {
-              <Suspense>
-                <ViewModal
-                  open={!!openModalViewId}
-                  viewId={openModalViewId}
-                  onClose={() => {
-                    setOpenModalViewId(undefined);
-                  }}
-                />
-              </Suspense>
-            }
-            {<OpenClient />}
-          </AppOverlayProvider>
-        </AIChatProvider>
-      </AppContext.Provider>
+      <AIChatProvider>
+        <AppOverlayProvider>
+          {requestAccessError ? <RequestAccess error={requestAccessError} /> : children}
+          {
+            <Suspense>
+              <ViewModal
+                open={!!openModalViewId}
+                viewId={openModalViewId}
+                onClose={closeModal}
+              />
+            </Suspense>
+          }
+          {<OpenClient />}
+        </AppOverlayProvider>
+      </AIChatProvider>
     );
   }
 );
@@ -60,7 +51,7 @@ function OpenClient() {
   const currentUser = useCurrentUser();
 
   const [isTabVisible, setIsTabVisible] = useState(true);
-  const prevOpenClientRef = useRef(openClient);
+  const hasOpenedRef = useRef(false);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -77,18 +68,20 @@ function OpenClient() {
   }, []);
 
   useEffect(() => {
-    if (isTabVisible && openClient && currentUser) {
-      if (!prevOpenClientRef.current) {
-        window.open(
-          `appflowy-flutter://open-page?workspace_id=${currentWorkspaceId}&view_id=${viewId}&email=${currentUser.email}${
-            rowId ? `&row_id=${rowId}` : ''
-          }`,
-          '_self'
-        );
-      }
+    if (!openClient) {
+      hasOpenedRef.current = false;
+      return;
     }
 
-    prevOpenClientRef.current = openClient;
+    if (isTabVisible && currentUser && !hasOpenedRef.current) {
+      window.open(
+        `appflowy-flutter://open-page?workspace_id=${currentWorkspaceId}&view_id=${viewId}&email=${currentUser.email}${
+          rowId ? `&row_id=${rowId}` : ''
+        }`,
+        '_self'
+      );
+      hasOpenedRef.current = true;
+    }
   }, [currentWorkspaceId, viewId, currentUser, openClient, rowId, isTabVisible]);
 
   return <></>;

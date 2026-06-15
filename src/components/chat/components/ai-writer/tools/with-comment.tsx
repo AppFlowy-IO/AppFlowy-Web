@@ -1,10 +1,13 @@
-import { RenderEditor } from '../render-editor';
-import { WritingInput } from '../writing-input';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { ApplyingState, useWriterContext } from '@/components/chat/writer/context';
 import { EditorProvider } from '@appflowyinc/editor';
 import { ReactNode, useCallback, useMemo } from 'react';
+
+import { ApplyingState, useWriterContext } from '@/components/chat/writer/context';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+
+import { RenderEditor } from '../render-editor';
+import { WritingInput } from '../writing-input';
+
 
 export function withComment(WrappedComponent: React.ComponentType<{
   noBorder?: boolean;

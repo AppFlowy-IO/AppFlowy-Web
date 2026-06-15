@@ -1,5 +1,5 @@
-import { BaseRange, NodeEntry, Text, Path } from 'slate';
 import Prism, { Grammar } from 'prismjs';
+import { BaseRange, NodeEntry, Text, Path } from 'slate';
 
 const push_string = (
   token: string | Prism.Token,

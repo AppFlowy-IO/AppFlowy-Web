@@ -1,5 +1,6 @@
-import { getUserTimezoneInfo, TimezoneInfo } from '@/utils/timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { getUserTimezoneInfo, TimezoneInfo } from '@/utils/timezone';
 
 interface UseUserTimezoneOptions {
   onTimezoneChange?: (timezone: string) => void;

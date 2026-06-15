@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { useDeletePropertyDispatch } from '@/application/database-yjs/dispatch';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useTranslation } from 'react-i18next';
 
 export function DeletePropertyConfirm ({ open, onClose, fieldId }: {
   open: boolean;

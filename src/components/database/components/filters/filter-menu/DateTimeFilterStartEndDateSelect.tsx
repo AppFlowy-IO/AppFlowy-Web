@@ -1,3 +1,7 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -5,9 +9,6 @@ import {
   DropdownMenuGroup, DropdownMenuItem, DropdownMenuItemTick,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 
 function DateTimeFilterStartEndDateSelect ({
   onSelect,

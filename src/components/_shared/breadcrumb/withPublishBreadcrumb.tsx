@@ -1,8 +1,9 @@
+import React from 'react';
+
 import { usePublishContext } from '@/application/publish';
 import { UIVariant } from '@/application/types';
 import { BreadcrumbProps } from '@/components/_shared/breadcrumb/Breadcrumb';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
-import React from 'react';
 
 export function withPublishBreadcrumb (Component: React.ComponentType<BreadcrumbProps>) {
   return function PublishBreadcrumbComponent () {

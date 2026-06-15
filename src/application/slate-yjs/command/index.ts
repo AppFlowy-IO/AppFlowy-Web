@@ -21,11 +21,29 @@ import {
   handleMergeBlockForwardWithTxn,
   handleNonParagraphBlockBackspaceAndEnterWithTxn,
   handleRangeBreak,
+  isInsideSimpleTableCell,
   preventIndentNode,
   preventLiftNode,
   removeRangeWithTxn,
 } from '@/application/slate-yjs/utils/editor';
-import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
+import {
+  addColumnToTable,
+  addRowAndColumnToTable,
+  addRowToTable,
+  clearColumnContent,
+  clearRowContent,
+  createSimpleTable,
+  deleteColumn,
+  deleteRow,
+  duplicateColumn,
+  duplicateRow,
+  insertColumnAtIndex,
+  insertRowAtIndex,
+  reorderColumn,
+  reorderRow,
+  updateTableData,
+} from '@/application/slate-yjs/utils/simple-table-operations';
+import { ensureValidSelection, findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
   deepCopyBlock,
@@ -50,6 +68,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { EditorInlineAttributes } from '@/slate-editor';
+import { Log } from '@/utils/log';
 import { renderDate } from '@/utils/time';
 
 export const CustomEditor = {
@@ -114,7 +133,7 @@ export const CustomEditor = {
     const entry = findSlateEntryByBlockId(editor, blockId);
 
     if (!entry) {
-      console.error('Block not found');
+      Log.error('Block not found');
       return;
     }
 
@@ -149,7 +168,7 @@ export const CustomEditor = {
   },
 
   deleteBlockBackward(editor: YjsEditor, at?: BaseRange) {
-    console.trace('deleteBlockBackward', editor.selection, at);
+    Log.trace('deleteBlockBackward', editor.selection, at);
 
     const sharedRoot = getSharedRoot(editor);
     const newAt = getSelectionOrThrow(editor, at);
@@ -162,7 +181,7 @@ export const CustomEditor = {
       const blockEntry = getBlockEntry(editor, point);
 
       if (!blockEntry) {
-        console.warn('Block not found', point);
+        Log.warn('Block not found', point);
         return;
       }
 
@@ -170,6 +189,18 @@ export const CustomEditor = {
       const block = getBlock(node.blockId as string, sharedRoot);
       const blockType = block.get(YjsEditorKey.block_type);
       const parent = getParent(node.blockId as string, sharedRoot);
+
+      // Inside a table cell: convert non-paragraph to paragraph, but never lift or merge across cells
+      if (isInsideSimpleTableCell(editor, node.blockId as string)) {
+        if (blockType !== BlockType.Paragraph) {
+          handleNonParagraphBlockBackspaceAndEnterWithTxn(editor, sharedRoot, block, point);
+        } else {
+          // For paragraph blocks, delegate to merge handler which has its own cross-cell guard
+          handleMergeBlockBackwardWithTxn(editor, node, point);
+        }
+
+        return;
+      }
 
       if (
         blockType !== BlockType.Paragraph &&
@@ -208,7 +239,7 @@ export const CustomEditor = {
       const blockEntry = getBlockEntry(editor, point);
 
       if (!blockEntry) {
-        console.warn('Block not found', point);
+        Log.warn('Block not found', point);
         return;
       }
 
@@ -327,7 +358,7 @@ export const CustomEditor = {
       const endResult = blockResults.find((r) => r.isEnd);
 
       if (!startResult?.newId || !endResult?.newId) {
-        console.warn('Failed to get new block IDs after tab operation');
+        Log.warn('Failed to get new block IDs after tab operation');
         return;
       }
 
@@ -335,7 +366,7 @@ export const CustomEditor = {
       const newEndBlockEntry = findSlateEntryByBlockId(editor, endResult.newId);
 
       if (!newStartBlockEntry || !newEndBlockEntry) {
-        console.warn('Failed to find new block entries after tab operation');
+        Log.warn('Failed to find new block entries after tab operation');
         // Try to restore selection using original selection
         const fallbackSelection = findNearestValidSelection(editor, originalSelection);
 
@@ -380,23 +411,23 @@ export const CustomEditor = {
         };
       }
     } catch (error) {
-      console.warn('Error constructing new selection paths:', error);
+      Log.warn('Error constructing new selection paths:', error);
       newSelection = null;
     }
 
     // Try to apply the new selection, with multiple fallback strategies
     if (newSelection && isValidSelection(editor, newSelection)) {
-      console.debug('✅ Using calculated selection:', newSelection);
+      Log.debug('✅ Using calculated selection:', newSelection);
       Transforms.select(editor, newSelection);
     } else {
-      console.warn('⚠️ Calculated selection invalid, trying fallback strategies');
+      Log.warn('⚠️ Calculated selection invalid, trying fallback strategies');
 
       // Strategy 1: Try to find nearest valid selection from our calculated selection
       if (newSelection) {
         const nearestFromCalculated = findNearestValidSelection(editor, newSelection);
 
         if (nearestFromCalculated) {
-          console.debug('✅ Using nearest from calculated:', nearestFromCalculated);
+          Log.debug('✅ Using nearest from calculated:', nearestFromCalculated);
           Transforms.select(editor, nearestFromCalculated);
           return;
         }
@@ -406,7 +437,7 @@ export const CustomEditor = {
       const nearestFromOriginal = findNearestValidSelection(editor, originalSelection);
 
       if (nearestFromOriginal) {
-        console.debug('✅ Using nearest from original:', nearestFromOriginal);
+        Log.debug('✅ Using nearest from original:', nearestFromOriginal);
         Transforms.select(editor, nearestFromOriginal);
         return;
       }
@@ -417,12 +448,12 @@ export const CustomEditor = {
           const startOfBlock = Editor.start(editor, newStartBlockPath);
 
           if (isValidSelection(editor, { anchor: startOfBlock, focus: startOfBlock })) {
-            console.debug('✅ Using start of block:', startOfBlock);
+            Log.debug('✅ Using start of block:', startOfBlock);
             Transforms.select(editor, startOfBlock);
             return;
           }
         } catch (error) {
-          console.warn('Failed to select start of block:', error);
+          Log.warn('Failed to select start of block:', error);
         }
       }
 
@@ -430,15 +461,39 @@ export const CustomEditor = {
       const documentSelection = findNearestValidSelection(editor, null);
 
       if (documentSelection) {
-        console.debug('✅ Using document fallback:', documentSelection);
+        Log.debug('✅ Using document fallback:', documentSelection);
         Transforms.select(editor, documentSelection);
       } else {
-        console.warn('❌ Could not establish any valid selection after tab operation');
+        Log.warn('❌ Could not establish any valid selection after tab operation');
       }
     }
   },
 
   toggleToggleList(editor: YjsEditor, blockId: string) {
+    ensureValidSelection(editor);
+
+    // The published view renders with a static Slate editor that has no Yjs
+    // shared root. Toggle the collapsed state directly on the Slate node so the
+    // block can still be expanded/collapsed in read-only mode.
+    if (!editor.sharedRoot) {
+      const entry = findSlateEntryByBlockId(editor, blockId);
+
+      if (!entry) {
+        Log.warn('Toggle list block not found', blockId);
+        return;
+      }
+
+      const [node, path] = entry;
+      const data = (node.data || {}) as ToggleListBlockData;
+
+      Transforms.setNodes(
+        editor,
+        { data: { ...data, collapsed: !data.collapsed } } as Partial<Element>,
+        { at: path }
+      );
+      return;
+    }
+
     const sharedRoot = getSharedRoot(editor);
     const data = dataStringTOJson(getBlock(blockId, sharedRoot).get(YjsEditorKey.block_data)) as ToggleListBlockData;
     const { selection } = editor;
@@ -455,7 +510,7 @@ export const CustomEditor = {
       const blockEntry = getBlockEntry(editor, point);
 
       if (!blockEntry) {
-        console.warn('Block not found', point);
+        Log.warn('Block not found', point);
         return;
       }
 
@@ -605,19 +660,29 @@ export const CustomEditor = {
     const isExpanded = Range.isExpanded(selection);
 
     if (isExpanded) {
-      const texts = getSelectionTexts(editor);
+      try {
+        const texts = getSelectionTexts(editor);
 
-      return texts.some((node) => {
-        const { text, ...attributes } = node;
+        return texts.some((node) => {
+          const { text, ...attributes } = node;
 
-        if (!text) return true;
-        return Boolean((attributes as Record<string, boolean | string>)[key]);
-      });
+          if (!text) return true;
+          return Boolean((attributes as Record<string, boolean | string>)[key]);
+        });
+      } catch (error) {
+        Log.warn('Error checking mark in expanded selection:', error);
+        return false;
+      }
     }
 
-    const marks = Editor.marks(editor) as Record<string, string | boolean> | null;
+    try {
+      const marks = Editor.marks(editor) as Record<string, string | boolean> | null;
 
-    return marks ? !!marks[key] : false;
+      return marks ? !!marks[key] : false;
+    } catch (error) {
+      Log.warn('Error checking mark at collapsed selection:', error);
+      return false;
+    }
   },
 
   getAllMarks(editor: ReactEditor) {
@@ -630,19 +695,29 @@ export const CustomEditor = {
     const isExpanded = Range.isExpanded(selection);
 
     if (isExpanded) {
-      const texts = getSelectionTexts(editor);
+      try {
+        const texts = getSelectionTexts(editor);
 
-      return texts.map((node) => {
-        const { text, ...attributes } = node;
+        return texts.map((node) => {
+          const { text, ...attributes } = node;
 
-        if (!text) return {};
-        return attributes as EditorInlineAttributes;
-      });
+          if (!text) return {};
+          return attributes as EditorInlineAttributes;
+        });
+      } catch (error) {
+        Log.warn('Error getting all marks:', error);
+        return [];
+      }
     }
 
-    const marks = Editor.marks(editor) as EditorInlineAttributes;
+    try {
+      const marks = Editor.marks(editor) as EditorInlineAttributes;
 
-    return [marks];
+      return [marks];
+    } catch (error) {
+      Log.warn('Error getting marks at collapsed selection:', error);
+      return [];
+    }
   },
 
   isMarkActive(editor: ReactEditor, key: string) {
@@ -677,7 +752,7 @@ export const CustomEditor = {
     const parent = getBlock(blockId, sharedRoot);
 
     if (!parent) {
-      console.warn('Parent block not found');
+      Log.warn('Parent block not found');
       return;
     }
 
@@ -692,7 +767,7 @@ export const CustomEditor = {
     );
 
     if (!newBlockId) {
-      console.warn('Failed to add block');
+      Log.warn('Failed to add block');
       return;
     }
 
@@ -711,7 +786,7 @@ export const CustomEditor = {
         return newBlockId;
       }
     } catch (e) {
-      console.error(e);
+      Log.error(e);
     }
   },
 
@@ -735,6 +810,19 @@ export const CustomEditor = {
       return;
     }
 
+    // Skip focus and selection for database blocks (Grid, Board, Calendar, Chart)
+    // as they open in a modal and don't need cursor positioning
+    const isDatabaseBlock = [
+      BlockType.GridBlock,
+      BlockType.BoardBlock,
+      BlockType.CalendarBlock,
+      BlockType.ChartBlock,
+    ].includes(type);
+
+    if (isDatabaseBlock) {
+      return newBlockId;
+    }
+
     try {
       const entry = findSlateEntryByBlockId(editor, newBlockId);
 
@@ -750,7 +838,7 @@ export const CustomEditor = {
         return newBlockId;
       }
     } catch (e) {
-      console.error(e);
+      Log.error(e);
     }
   },
 
@@ -767,7 +855,7 @@ export const CustomEditor = {
     const parent = getParent(blockId, sharedRoot);
 
     if (!parent) {
-      console.warn('Parent block not found');
+      Log.warn('Parent block not found');
       return;
     }
 
@@ -844,7 +932,7 @@ export const CustomEditor = {
     const prevIndex = getBlockIndex(prevId || blockId, sharedRoot);
 
     if (!parent) {
-      console.warn('Parent block not found');
+      Log.warn('Parent block not found');
       return;
     }
 
@@ -857,7 +945,7 @@ export const CustomEditor = {
           newBlockId = deepCopyBlock(sharedRoot, block);
 
           if (!newBlockId) {
-            console.warn('Copied block not found');
+            Log.warn('Copied block not found');
             return;
           }
 
@@ -901,5 +989,69 @@ export const CustomEditor = {
         });
       }
     });
+  },
+
+  // ========================================================================
+  // SimpleTable Operations
+  // ========================================================================
+
+  addTableRow(editor: YjsEditor, tableBlockId: string) {
+    addRowToTable(editor, tableBlockId);
+  },
+
+  addTableColumn(editor: YjsEditor, tableBlockId: string) {
+    addColumnToTable(editor, tableBlockId);
+  },
+
+  addTableRowAndColumn(editor: YjsEditor, tableBlockId: string) {
+    addRowAndColumnToTable(editor, tableBlockId);
+  },
+
+  insertTableRow(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    insertRowAtIndex(editor, tableBlockId, rowIndex);
+  },
+
+  insertTableColumn(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    insertColumnAtIndex(editor, tableBlockId, colIndex);
+  },
+
+  deleteTableRow(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    deleteRow(editor, tableBlockId, rowIndex);
+  },
+
+  deleteTableColumn(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    deleteColumn(editor, tableBlockId, colIndex);
+  },
+
+  duplicateTableRow(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    duplicateRow(editor, tableBlockId, rowIndex);
+  },
+
+  duplicateTableColumn(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    duplicateColumn(editor, tableBlockId, colIndex);
+  },
+
+  clearTableRowContent(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    clearRowContent(editor, tableBlockId, rowIndex);
+  },
+
+  clearTableColumnContent(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    clearColumnContent(editor, tableBlockId, colIndex);
+  },
+
+  reorderTableRow(editor: YjsEditor, tableBlockId: string, fromIndex: number, toIndex: number) {
+    reorderRow(editor, tableBlockId, fromIndex, toIndex);
+  },
+
+  reorderTableColumn(editor: YjsEditor, tableBlockId: string, fromIndex: number, toIndex: number) {
+    reorderColumn(editor, tableBlockId, fromIndex, toIndex);
+  },
+
+  updateTableData(editor: YjsEditor, tableBlockId: string, updates: Record<string, unknown>) {
+    updateTableData(editor, tableBlockId, updates);
+  },
+
+  createSimpleTable(editor: YjsEditor, parentBlockId: string, rows: number, cols: number, insertIndex?: number) {
+    return createSimpleTable(editor, parentBlockId, rows, cols, insertIndex);
   },
 };

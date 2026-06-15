@@ -1,6 +1,7 @@
-import { TextFilter, TextFilterCondition } from '@/application/database-yjs';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { TextFilter, TextFilterCondition } from '@/application/database-yjs';
 
 function TextFilterContentOverview({ filter }: { filter: TextFilter }) {
   const { t } = useTranslation();

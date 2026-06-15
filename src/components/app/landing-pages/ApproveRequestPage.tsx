@@ -12,38 +12,38 @@ import {
 } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
+import { AccessService, BillingService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
+import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
 import { NormalModal } from '@/components/_shared/modal';
-import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { isOfficialHost } from '@/utils/subscription';
-
-const GuestLimitExceededCode = 1070;
-const REPEAT_REQUEST_CODE = 1122;
+import { hasProAccessFromPlans, isAppFlowyHosted } from '@/utils/subscription';
 
 function ApproveRequestPage() {
   const [searchParams] = useSearchParams();
 
   const [requestInfo, setRequestInfo] = useState<GetRequestAccessInfoResponse | null>(null);
   const [currentPlans, setCurrentPlans] = useState<SubscriptionPlan[]>([]);
-  const isPro = useMemo(() => currentPlans.includes(SubscriptionPlan.Pro), [currentPlans]);
+  const isPro = useMemo(() => hasProAccessFromPlans(currentPlans), [currentPlans]);
   const requestId = searchParams.get('request_id');
-  const service = useService();
   const { t } = useTranslation();
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [alreadyProModalOpen, setAlreadyProModalOpen] = useState(false);
   const [hasSend, setHasSend] = useState(false);
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<LandingPageError>();
   const [notInvitee, setNotInvitee] = useState(false);
 
   const loadRequestInfo = useCallback(async () => {
-    if (!service || !requestId) return;
+    if (!requestId) return;
     try {
-      const requestInfo = await service.getRequestAccessInfo(requestId);
+      setError(undefined);
+      const requestInfo = await AccessService.getRequestAccessInfo(requestId);
 
+      setIsError(false);
       setRequestInfo(requestInfo);
 
       if (requestInfo.status === RequestAccessInfoStatus.Accepted) {
@@ -51,10 +51,15 @@ function ApproveRequestPage() {
         return;
       }
 
-      const plans = await service.getActiveSubscription(requestInfo.workspace.id);
+      if (!isAppFlowyHosted()) {
+        setCurrentPlans([]);
+        return;
+      }
+
+      const plans = await BillingService.getActiveSubscription(requestInfo.workspace.id);
 
       setCurrentPlans(plans);
-      if (plans.length === 0 && isOfficialHost()) {
+      if (plans.length === 0) {
         setUpgradeModalOpen(true);
       }
       // eslint-disable-next-line
@@ -65,43 +70,52 @@ function ApproveRequestPage() {
       }
 
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setError(e);
         setIsError(true);
         return;
       }
 
+      setError(e);
       setIsError(true);
     }
-  }, [requestId, service]);
+  }, [requestId]);
 
   const handleApprove = useCallback(async () => {
-    if (!service || !requestId) return;
+    if (!requestId) return;
     try {
-      await service.approveRequestAccess(requestId);
+      setError(undefined);
+      await AccessService.approveRequestAccess(requestId);
+      setIsError(false);
       toast.success(t('approveAccess.approveSuccess'));
 
       void loadRequestInfo();
       setHasSend(true);
       // eslint-disable-next-line
     } catch (e: any) {
-      if (e.code === GuestLimitExceededCode) {
-        if (isOfficialHost()) {
+      if (e.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || e.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) {
+        if (isAppFlowyHosted()) {
           setUpgradeModalOpen(true);
+        } else {
+          toast.error(e.message);
+          setError(e);
+          setIsError(true);
         }
 
         return;
       }
 
-      if (e.code === REPEAT_REQUEST_CODE) {
+      if (e.code === ERROR_CODE.ACCESS_REQUEST_ALREADY_APPROVED) {
         toast.error(t('approveAccess.repeatApproveError'));
         return;
       }
 
+      setError(e);
       setIsError(true);
     }
-  }, [requestId, service, t, loadRequestInfo]);
+  }, [requestId, t, loadRequestInfo]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !requestInfo) return;
+    if (!requestInfo) return;
     const workspaceId = requestInfo.workspace.id;
 
     if (!workspaceId) return;
@@ -112,7 +126,7 @@ function ApproveRequestPage() {
     }
 
     // This should not be called on self-hosted instances, but adding check as safety
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       // Self-hosted instances have Pro features enabled by default
       return;
     }
@@ -120,14 +134,14 @@ function ApproveRequestPage() {
     const plan = SubscriptionPlan.Pro;
 
     try {
-      const link = await service.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
+      const link = await BillingService.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
 
       window.open(link, '_blank');
       // eslint-disable-next-line
     } catch (e: any) {
       toast.error(e.message);
     }
-  }, [requestInfo, service, isPro]);
+  }, [requestInfo, isPro]);
 
   useEffect(() => {
     void loadRequestInfo();
@@ -150,7 +164,7 @@ function ApproveRequestPage() {
   }, [handleApprove]);
 
   if (isError) {
-    return <ErrorPage onRetry={handleApprove} />;
+    return <ErrorPage onRetry={handleApprove} error={error} />;
   }
 
   if (notInvitee) {

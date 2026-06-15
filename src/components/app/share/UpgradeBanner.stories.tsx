@@ -1,9 +1,12 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { SubscriptionPlan } from '@/application/types';
+
 import { hostnameAndSubscriptionArgTypes } from '../../../../.storybook/argTypes';
 import { withHostnameAndContexts } from '../../../../.storybook/decorators';
+
 import { UpgradeBanner } from './UpgradeBanner';
+
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 const meta = {
   title: 'Share/UpgradeBanner',

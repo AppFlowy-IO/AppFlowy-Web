@@ -8,14 +8,16 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as DownloadIcon } from '@/assets/icons/download.svg';
 import { ReactComponent as PreviewIcon } from '@/assets/icons/full_screen.svg';
+import { GalleryPreview } from '@/components/_shared/gallery-preview';
+import { notify } from '@/components/_shared/notify';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import Align from '@/components/editor/components/toolbar/selection-toolbar/actions/Align';
 import { ImageBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { GalleryPreview } from '@/components/_shared/gallery-preview';
-import { notify } from '@/components/_shared/notify';
-import { copyTextToClipboard } from '@/utils/copy';
+import { convertBlobToPng, fetchImageBlob } from '@/utils/image';
+import { Log } from '@/utils/log';
 
 function ImageToolbar({ node }: { node: ImageBlockNode }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -27,9 +29,69 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
     setOpenPreview(true);
   };
 
-  const onCopy = async () => {
-    await copyTextToClipboard(node.data.url || '');
-    notify.success(t('document.plugins.image.copiedToPasteBoard'));
+  const onCopyImage = async () => {
+    let blob = await fetchImageBlob(node.data.url || '');
+
+    if (blob) {
+      try {
+        // Browser clipboard API often only supports PNG for images
+        if (blob.type !== 'image/png') {
+          try {
+            blob = await convertBlobToPng(blob);
+          } catch (conversionError) {
+            Log.warn('Failed to convert image to PNG, trying original format', conversionError);
+          }
+        }
+
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            [blob.type]: blob,
+          }),
+        ]);
+        notify.success(t('document.plugins.image.copiedToPasteBoard'));
+      } catch (error) {
+        Log.error("Failed to write to clipboard:", error);
+        notify.error('Failed to write image to clipboard');
+      }
+    } else {
+      Log.error("Failed to fetch image blob for copying");
+      notify.error('Failed to download the image');
+    }
+  };
+
+  const onDownloadImage = async () => {
+    const url = node.data.url;
+
+    if (!url) {
+      notify.error('No image URL available');
+      return;
+    }
+
+    try {
+      const blob = await fetchImageBlob(url);
+
+      if (blob) {
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = blobUrl;
+        // Extract filename from URL or use a default name
+        const urlPath = new URL(url, window.location.origin).pathname;
+        const filename = urlPath.split('/').pop() || 'image';
+
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        notify.success('Image downloaded successfully');
+      } else {
+        notify.error('Failed to download image');
+      }
+    } catch (error) {
+      Log.error('Failed to download image:', error);
+      notify.error('Failed to download image');
+    }
   };
 
   const onDelete = () => {
@@ -45,8 +107,12 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
           </ActionButton>
         )}
 
-        <ActionButton onClick={onCopy} tooltip={t('button.copyLinkOriginal')}>
+        <ActionButton onClick={onCopyImage} tooltip={t('button.copy')} data-testid="copy-image-button">
           <CopyIcon />
+        </ActionButton>
+
+        <ActionButton onClick={onDownloadImage} tooltip={t('button.download')} data-testid="download-image-button">
+          <DownloadIcon />
         </ActionButton>
 
         {!readOnly && (

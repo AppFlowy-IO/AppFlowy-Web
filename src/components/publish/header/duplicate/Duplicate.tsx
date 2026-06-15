@@ -1,12 +1,13 @@
-import { getPlatform } from '@/utils/platform';
-import { useCallback, useMemo } from 'react';
 import { Button, IconButton, Tooltip } from '@mui/material';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { LoginModal } from '@/components/login';
 import { useSearchParams } from 'react-router-dom';
-import { useDuplicate } from '@/components/publish/header/duplicate/useDuplicate';
-import DuplicateModal from '@/components/publish/header/duplicate/DuplicateModal';
+
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { LoginModal } from '@/components/login';
+import DuplicateModal from '@/components/publish/header/duplicate/DuplicateModal';
+import { useDuplicate } from '@/components/publish/header/duplicate/useDuplicate';
+import { getPlatform } from '@/utils/platform';
 
 export function Duplicate() {
   const { t } = useTranslation();

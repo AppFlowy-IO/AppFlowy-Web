@@ -44,6 +44,7 @@ export function getBlockCssProperty(node: Element) {
     case BlockType.GridBlock:
     case BlockType.BoardBlock:
     case BlockType.CalendarBlock:
+    case BlockType.ChartBlock:
       return 'my-1.5';
     case BlockType.TableBlock:
       return 'my-3';

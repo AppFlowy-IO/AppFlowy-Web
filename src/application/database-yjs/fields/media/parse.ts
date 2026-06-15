@@ -1,7 +1,8 @@
+import * as Y from 'yjs';
+
 import { getTypeOptions } from '@/application/database-yjs';
 import { FileMediaCellData } from '@/application/database-yjs/cell.type';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
-import * as Y from 'yjs';
 
 export function parseToFilesMediaCellData (newItems: FileMediaCellData) {
   const newData = new Y.Array<string>();

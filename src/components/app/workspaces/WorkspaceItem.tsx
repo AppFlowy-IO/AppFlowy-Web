@@ -1,12 +1,24 @@
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { CircularProgress } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Role, Workspace } from '@/application/types';
 import MoreActions from '@/components/app/workspaces/MoreActions';
+import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { DropdownMenuItem, DropdownMenuItemTick } from '@/components/ui/dropdown-menu';
+import { DropdownMenuItem, DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+type WorkspaceDragState =
+  | { type: 'idle' }
+  | { type: 'dragging' }
+  | { type: 'over'; closestEdge: Edge | null };
+
+const idleState: WorkspaceDragState = { type: 'idle' };
 
 export function WorkspaceItem({
   workspace,
@@ -17,6 +29,10 @@ export function WorkspaceItem({
   onUpdate,
   onDelete,
   onLeave,
+  useDropdownItem = true,
+  workspaceCount,
+  canReorder,
+  dragInstanceId,
 }: {
   showActions?: boolean;
   workspace: Workspace;
@@ -26,10 +42,92 @@ export function WorkspaceItem({
   onUpdate?: (workspace: Workspace) => void;
   onDelete?: (workspace: Workspace) => void;
   onLeave?: (workspace: Workspace) => void;
+  useDropdownItem?: boolean;
+  workspaceCount?: number;
+  canReorder?: boolean;
+  dragInstanceId?: symbol;
 }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
+  const [dragState, setDragState] = useState<WorkspaceDragState>(idleState);
+  const rowRef = useRef<HTMLDivElement | HTMLButtonElement>(null);
+  const suppressClickRef = useRef(false);
+  const suppressClickTimeoutRef = useRef<number>();
   const isGuest = workspace.role === Role.Guest;
+
+  useEffect(() => {
+    return () => {
+      if (suppressClickTimeoutRef.current !== undefined) {
+        window.clearTimeout(suppressClickTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const element = rowRef.current;
+
+    if (!canReorder || !dragInstanceId || !element) return;
+
+    const data = {
+      type: 'workspace',
+      instanceId: dragInstanceId,
+      id: workspace.id,
+    };
+
+    return combine(
+      draggable({
+        element,
+        getInitialData: () => data,
+        onDragStart() {
+          suppressClickRef.current = true;
+          if (suppressClickTimeoutRef.current !== undefined) {
+            window.clearTimeout(suppressClickTimeoutRef.current);
+            suppressClickTimeoutRef.current = undefined;
+          }
+
+          setDragState({ type: 'dragging' });
+        },
+        onDrop() {
+          suppressClickTimeoutRef.current = window.setTimeout(() => {
+            suppressClickRef.current = false;
+            suppressClickTimeoutRef.current = undefined;
+          }, 0);
+
+          setDragState(idleState);
+        },
+      }),
+      dropTargetForElements({
+        element,
+        canDrop: ({ source }) =>
+          source.data.type === 'workspace' &&
+          source.data.instanceId === dragInstanceId &&
+          source.data.id !== workspace.id,
+        getIsSticky: () => true,
+        getData({ input }) {
+          return attachClosestEdge(data, {
+            element,
+            input,
+            allowedEdges: ['top', 'bottom'],
+          });
+        },
+        onDrag({ self }) {
+          const closestEdge = extractClosestEdge(self.data);
+
+          setDragState((current) => {
+            if (current.type === 'over' && current.closestEdge === closestEdge) return current;
+            return { type: 'over', closestEdge };
+          });
+        },
+        onDragLeave() {
+          setDragState(idleState);
+        },
+        onDrop() {
+          setDragState(idleState);
+        },
+      })
+    );
+  }, [canReorder, dragInstanceId, workspace.id]);
+
   const renderActions = useMemo(() => {
     if (changeLoading === workspace.id) return <CircularProgress size={16} />;
 
@@ -63,24 +161,43 @@ export function WorkspaceItem({
             onUpdate={() => onUpdate?.(workspace)}
             onDelete={() => onDelete?.(workspace)}
             onLeave={() => onLeave?.(workspace)}
+            workspaceCount={workspaceCount}
           />
         </div>
       </div>
     );
-  }, [changeLoading, currentWorkspaceId, hovered, onDelete, onLeave, onUpdate, showActions, workspace]);
+  }, [changeLoading, currentWorkspaceId, hovered, onDelete, onLeave, onUpdate, showActions, workspace, workspaceCount]);
 
-  return (
-    <DropdownMenuItem
-      key={workspace.id}
-      data-testid='workspace-item'
-      className={'relative'}
-      onSelect={async () => {
-        if (workspace.id === currentWorkspaceId) return;
-        void onChange(workspace.id);
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+  const consumeSuppressedClick = useCallback(() => {
+    if (!suppressClickRef.current) return false;
+
+    suppressClickRef.current = false;
+    if (suppressClickTimeoutRef.current !== undefined) {
+      window.clearTimeout(suppressClickTimeoutRef.current);
+      suppressClickTimeoutRef.current = undefined;
+    }
+
+    return true;
+  }, []);
+
+  // Shared activation handler for both Radix `onSelect` (Event) and native
+  // button `onClick` (MouseEvent). preventDefault on the Radix event keeps the
+  // dropdown open after a drag; on the button it's harmless.
+  const handleActivate = useCallback(
+    (event?: { preventDefault(): void }) => {
+      if (consumeSuppressedClick()) {
+        event?.preventDefault();
+        return;
+      }
+
+      if (workspace.id === currentWorkspaceId) return;
+      void onChange(workspace.id);
+    },
+    [consumeSuppressedClick, currentWorkspaceId, onChange, workspace.id]
+  );
+
+  const content = (
+    <>
       <Avatar shape={'square'} size={'xs'}>
         <AvatarFallback name={workspace.name}>
           {workspace.icon ? <span className='text-lg'>{workspace.icon}</span> : workspace.name}
@@ -112,6 +229,39 @@ export function WorkspaceItem({
         )}
       </div>
       {renderActions}
-    </DropdownMenuItem>
+      {dragState.type === 'over' ? <DropRowIndicator edge={dragState.closestEdge} /> : null}
+    </>
+  );
+
+  if (useDropdownItem) {
+    return (
+      <DropdownMenuItem
+        ref={rowRef as React.RefObject<HTMLDivElement>}
+        data-testid='workspace-item'
+        className={cn('relative', dragState.type === 'dragging' && 'opacity-40')}
+        onSelect={handleActivate}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {content}
+      </DropdownMenuItem>
+    );
+  }
+
+  return (
+    <button
+      ref={rowRef as React.RefObject<HTMLButtonElement>}
+      type='button'
+      data-testid='workspace-item'
+      className={dropdownMenuItemVariants({
+        variant: 'default',
+        className: cn('relative w-full text-left', dragState.type === 'dragging' && 'opacity-40'),
+      })}
+      onClick={() => handleActivate()}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {content}
+    </button>
   );
 }

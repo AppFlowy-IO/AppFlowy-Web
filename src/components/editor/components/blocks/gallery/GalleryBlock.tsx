@@ -1,27 +1,34 @@
 import React, { forwardRef, memo, Suspense, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useReadOnly } from 'slate-react';
+import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
 
-import { GalleryLayout } from '@/application/types';
+import { YjsEditor } from '@/application/slate-yjs';
+import { BlockType, GalleryLayout } from '@/application/types';
 import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import { notify } from '@/components/_shared/notify';
+import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import Carousel from '@/components/editor/components/blocks/gallery/Carousel';
 import GalleryToolbar from '@/components/editor/components/blocks/gallery/GalleryToolbar';
 import ImageGallery from '@/components/editor/components/blocks/gallery/ImageGallery';
 import { EditorElementProps, GalleryBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { copyTextToClipboard } from '@/utils/copy';
-import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
+import { resolveFileUrl } from '@/utils/file-storage-url';
 
 const GalleryBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<GalleryBlockNode>>(({ node, children, ...attributes }, ref) => {
     const { t } = useTranslation();
     const { workspaceId, viewId } = useEditorContext();
-    const { images, layout } = useMemo(() => node.data || {}, [node.data]);
+    const { images = [], layout = GalleryLayout.Carousel } = useMemo(() => node.data || {}, [node.data]);
     const [openPreview, setOpenPreview] = React.useState(false);
     const previewIndexRef = React.useRef(0);
     const [hovered, setHovered] = useState(false);
+    const editor = useSlateStatic() as YjsEditor;
+    const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
+    const emptyRef = React.useRef<HTMLDivElement>(null);
+    const { openPopover } = usePopoverContext();
 
     const className = useMemo(() => {
       const classList = ['gallery-block', 'relative', 'w-full', 'cursor-default', attributes.className || ''];
@@ -32,12 +39,9 @@ const GalleryBlock = memo(
     const photos = useMemo(() => {
       return images
         .map((image) => {
-          let imageUrl = image.url;
+          const imageUrl = resolveFileUrl(image.url, workspaceId, viewId);
 
           if (!imageUrl) return null;
-          if (!isFileURL(image.url)) {
-            imageUrl = getFileUrl(workspaceId, viewId, image.url);
-          }
 
           const url = new URL(imageUrl);
 
@@ -50,10 +54,10 @@ const GalleryBlock = memo(
           };
         })
         .filter(Boolean) as {
-          src: string;
-          thumb: string;
-          responsive: string;
-        }[];
+        src: string;
+        thumb: string;
+        responsive: string;
+      }[];
     }, [images, workspaceId, viewId]);
 
     const handleOpenPreview = useCallback(() => {
@@ -84,7 +88,11 @@ const GalleryBlock = memo(
     const handlePreviewIndex = useCallback((index: number) => {
       previewIndexRef.current = index;
     }, []);
-    const readOnly = useReadOnly();
+    const handleOpenUploadPopover = useCallback(() => {
+      if (readOnly || !emptyRef.current) return;
+
+      openPopover(node.blockId, BlockType.GalleryBlock, emptyRef.current);
+    }, [node.blockId, openPopover, readOnly]);
 
     return (
       <div
@@ -96,6 +104,11 @@ const GalleryBlock = memo(
           setHovered(true);
         }}
         onMouseLeave={() => setHovered(false)}
+        onClick={() => {
+          if (!photos.length) {
+            handleOpenUploadPopover();
+          }
+        }}
       >
         <div ref={ref} className={'absolute left-0 top-0 h-full w-full caret-transparent'}>
           {children}
@@ -117,7 +130,7 @@ const GalleryBlock = memo(
               />
             )
           ) : (
-            <div className={'flex w-full select-none items-center gap-4 text-text-secondary'}>
+            <div ref={emptyRef} className={'flex w-full select-none items-center gap-4 text-text-secondary'}>
               <GalleryIcon />
               {t('document.plugins.image.addAnImageMobile')}
             </div>

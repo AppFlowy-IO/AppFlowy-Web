@@ -1,18 +1,20 @@
-import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
-
-import { useChatContext } from '@/components/chat/chat/context';
-import AddMessageTo from '../chat-messages/add-message-to';
-import Regenerations from '../chat-messages/regenerations';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { useChatContext } from '@/components/chat/chat/context';
 import { convertToAppFlowyFragment } from '@/components/chat/lib/copy';
 import { convertToPageData } from '@/components/chat/lib/utils';
-import { cn } from '@/lib/utils';
 import { useEditorContext } from '@/components/chat/provider/editor-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+import AddMessageTo from '../chat-messages/add-message-to';
+import Regenerations from '../chat-messages/regenerations';
+
 
 export function MessageActions({ id, isHovered }: { id: number; isHovered: boolean }) {
   const { getMessage, messageIds } = useChatMessagesContext();

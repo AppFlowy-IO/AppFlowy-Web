@@ -1,7 +1,8 @@
-import { UIVariant, View } from '@/application/types';
-import { DirectoryStructure } from '@/components/_shared/skeleton/DirectoryStructure';
-import OutlineItem from '@/components/_shared/outline/OutlineItem';
 import { memo } from 'react';
+
+import { UIVariant, View } from '@/application/types';
+import OutlineItem from '@/components/_shared/outline/OutlineItem';
+import { DirectoryStructure } from '@/components/_shared/skeleton/DirectoryStructure';
 
 export function Outline ({ outline, width, selectedViewId, navigateToView, variant }: {
   width: number;

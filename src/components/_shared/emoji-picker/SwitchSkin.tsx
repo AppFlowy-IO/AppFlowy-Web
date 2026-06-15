@@ -1,8 +1,9 @@
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import React from 'react';
-import { useTranslation } from 'react-i18next';
 
 const skinTones = [
   {

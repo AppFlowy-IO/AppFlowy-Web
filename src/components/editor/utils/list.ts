@@ -1,6 +1,7 @@
-import { BlockType } from '@/application/types';
 import { Element, NodeEntry, Path } from 'slate';
 import { ReactEditor } from 'slate-react';
+
+import { BlockType } from '@/application/types';
 
 const romanMap: [number, string][] = [
   [1000, 'M'],

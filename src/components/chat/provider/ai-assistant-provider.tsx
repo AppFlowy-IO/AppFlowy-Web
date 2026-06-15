@@ -1,9 +1,11 @@
-import { ConfirmDiscard } from '@/components/chat/components/ai-writer/confirm-discard';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { ModelSelectorContext } from '@/components/chat/contexts/model-selector-context';
-import { toast } from 'sonner';
+import { EditorData } from '@appflowyinc/editor';
+import { findLast } from 'lodash-es';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-// Using main AppFlowy i18n system - no separate chat context needed
+import { toast } from 'sonner';
+
+import { ConfirmDiscard } from '@/components/chat/components/ai-writer/confirm-discard';
+import { ModelSelectorContext } from '@/components/chat/contexts/model-selector-context';
 import { WriterRequest } from '@/components/chat/request';
 import {
   AIAssistantType,
@@ -15,11 +17,12 @@ import {
   ResponseFormat,
 } from '@/components/chat/types';
 import { ApplyingState, WriterContext } from '@/components/chat/writer/context';
-import { EditorData } from '@appflowyinc/editor';
-import { findLast } from 'lodash-es';
-import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
 import { usePromptModal } from './prompt-modal-provider';
 import { ViewLoaderProvider } from './view-loader-provider';
+
+const WRITER_MODEL_STORAGE_KEY = 'writer_selected_model';
 
 export const AIAssistantProvider = ({
   isGlobalDocument,
@@ -30,6 +33,7 @@ export const AIAssistantProvider = ({
   onInsertBelow,
   onExit,
   scrollContainer,
+  enabled = true,
 }: {
   viewId: string;
   children: ReactNode;
@@ -39,6 +43,7 @@ export const AIAssistantProvider = ({
   onExit?: () => void;
   isGlobalDocument?: boolean;
   scrollContainer?: HTMLElement;
+  enabled?: boolean;
 }) => {
   const { t } = useTranslation();
   const completionHistoryRef = useRef<CompletionResult[]>([]);
@@ -64,9 +69,28 @@ export const AIAssistantProvider = ({
   const isApplying = applyingState === ApplyingState.applying;
   const cancelRef = useRef<(() => void) | undefined>();
   const initialScrollTopRef = useRef<number | null>(null);
-  const [selectedModelName, setSelectedModelName] = useState<string>('Auto');
+  const [selectedModelName, setSelectedModelName] = useState<string>(
+    () => localStorage.getItem(WRITER_MODEL_STORAGE_KEY) || 'Auto'
+  );
 
-  const { currentPromptId, updateCurrentPromptId } = usePromptModal();
+  const { currentPromptId, updateCurrentPromptId, prompts } = usePromptModal();
+
+  useEffect(() => {
+    if (enabled) return;
+
+    cancelRef.current?.();
+    cancelRef.current = undefined;
+    completionHistoryRef.current = [];
+    lastAssistantTypeRef.current = undefined;
+    setAssistantType(undefined);
+    setFetching(false);
+    setApplyingState(ApplyingState.idle);
+    setPlaceholderContent('');
+    setComment('');
+    setEditorData(undefined);
+    setError(null);
+    setOpenDiscard(false);
+  }, [enabled]);
 
   useEffect(() => {
     if (!assistantType) {
@@ -123,6 +147,10 @@ export const AIAssistantProvider = ({
 
   const fetchRequest = useCallback(
     async (assistantType: AIAssistantType, content: string) => {
+      if (!enabled) {
+        return () => undefined;
+      }
+
       // Do not change assistant type if there is already an AI response
       if (
         !completionHistoryRef.current.some((item) => {
@@ -137,6 +165,10 @@ export const AIAssistantProvider = ({
       setError(null);
       try {
         setApplyingState(ApplyingState.analyzing);
+        // Find the selected prompt to get its content for custom_prompt
+        const selectedPrompt = currentPromptId
+          ? prompts.find((p) => p.id === currentPromptId)
+          : undefined;
         const { cancel, streamPromise } = await request.fetchAIAssistant(
           {
             inputText: content,
@@ -145,6 +177,7 @@ export const AIAssistantProvider = ({
             ragIds,
             completionHistory: completionHistoryRef.current,
             promptId: currentPromptId || undefined,
+            customPrompt: selectedPrompt?.content,
             modelName: selectedModelName,
           },
           handleMessageChange
@@ -172,12 +205,14 @@ export const AIAssistantProvider = ({
     [
       currentPromptId,
       handleMessageChange,
+      prompts,
       ragIds,
       request,
       responseFormat,
       responseMode,
       selectedModelName,
       updateCurrentPromptId,
+      enabled,
     ]
   );
 
@@ -189,12 +224,14 @@ export const AIAssistantProvider = ({
   );
 
   const askAIAnything = useCallback((content: string) => {
+    if (!enabled) return;
+
     completionHistoryRef.current.push({
       role: CompletionRole.Human,
       content,
     });
     setAssistantType(AIAssistantType.AskAIAnything);
-  }, []);
+  }, [enabled]);
 
   const askAIAnythingWithRequest = useCallback(
     (content: string) => {
@@ -298,6 +335,8 @@ export const AIAssistantProvider = ({
   }, [editorData, onReplace, exit]);
 
   const rewrite = useCallback(() => {
+    if (!enabled) return;
+
     if (!assistantType) {
       toast.error(t('chat.writer.errors.noAssistantType'));
       return;
@@ -340,6 +379,7 @@ export const AIAssistantProvider = ({
     fixSpelling,
     makeLonger,
     makeShorter,
+    enabled,
   ]);
 
   useEffect(() => {
@@ -354,75 +394,128 @@ export const AIAssistantProvider = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [exit, stop]);
+  }, [stop]);
 
   const hasAIAnswer = useCallback(() => {
     return completionHistoryRef.current.some((item) => item.role === CompletionRole.AI);
   }, []);
+  const modelRequestInstance = useMemo(
+    () => ({
+      getModelList: () => request.getModelList(),
+      getCurrentModel: async () => {
+        return localStorage.getItem(WRITER_MODEL_STORAGE_KEY) || 'Auto';
+      },
+      setCurrentModel: async (modelName: string) => {
+        localStorage.setItem(WRITER_MODEL_STORAGE_KEY, modelName);
+      },
+    }),
+    [request]
+  );
+  const modelSelectorValue = useMemo(
+    () => ({
+      selectedModelName,
+      setSelectedModelName,
+      requestInstance: modelRequestInstance,
+    }),
+    [selectedModelName, setSelectedModelName, modelRequestInstance]
+  );
+  const writerContextValue = useMemo(
+    () => ({
+      viewId,
+      fetchViews: request.fetchViews,
+      placeholderContent,
+      comment,
+      improveWriting,
+      assistantType,
+      isFetching,
+      isApplying,
+      askAIAnything,
+      continueWriting,
+      explain,
+      fixSpelling,
+      makeLonger,
+      makeShorter,
+      askAIAnythingWithRequest,
+      setOpenDiscard,
+      applyingState,
+      setRagIds,
+      exit,
+      setEditorData,
+      keep,
+      accept,
+      rewrite,
+      stop,
+      responseMode,
+      setResponseMode,
+      responseFormat,
+      setResponseFormat,
+      isGlobalDocument,
+      error,
+      scrollContainer,
+      hasAIAnswer,
+      selectedModelName,
+      setSelectedModelName,
+    }),
+    [
+      viewId,
+      request.fetchViews,
+      placeholderContent,
+      comment,
+      improveWriting,
+      assistantType,
+      isFetching,
+      isApplying,
+      askAIAnything,
+      continueWriting,
+      explain,
+      fixSpelling,
+      makeLonger,
+      makeShorter,
+      askAIAnythingWithRequest,
+      setOpenDiscard,
+      applyingState,
+      setRagIds,
+      exit,
+      setEditorData,
+      keep,
+      accept,
+      rewrite,
+      stop,
+      responseMode,
+      setResponseMode,
+      responseFormat,
+      setResponseFormat,
+      isGlobalDocument,
+      error,
+      scrollContainer,
+      hasAIAnswer,
+      selectedModelName,
+      setSelectedModelName,
+    ]
+  );
+
+  const getView = useCallback(
+    (viewId: string) => request.getView(viewId),
+    [request]
+  );
+  const fetchViews = useCallback(
+    () => request.fetchViews(),
+    [request]
+  );
+  const handleCloseDiscard = useCallback(() => {
+    setOpenDiscard(false);
+  }, []);
 
   return (
-    <ModelSelectorContext.Provider
-      value={{
-        selectedModelName,
-        setSelectedModelName,
-        requestInstance: {
-          getModelList: () => request.getModelList(),
-          getCurrentModel: async () => {
-            // For writer context, get from localStorage
-            return localStorage.getItem('writer_selected_model') || '';
-          },
-          setCurrentModel: async (modelName: string) => {
-            // For writer context, save to localStorage
-            localStorage.setItem('writer_selected_model', modelName);
-          },
-        },
-      }}
-    >
-      <WriterContext.Provider
-        value={{
-          viewId,
-          fetchViews: request.fetchViews,
-          placeholderContent,
-          comment,
-          improveWriting,
-          assistantType,
-          isFetching,
-          isApplying,
-          askAIAnything,
-          continueWriting,
-          explain,
-          fixSpelling,
-          makeLonger,
-          makeShorter,
-          askAIAnythingWithRequest,
-          setOpenDiscard,
-          applyingState,
-          setRagIds,
-          exit,
-          setEditorData,
-          keep,
-          accept,
-          rewrite,
-          stop,
-          responseMode,
-          setResponseMode,
-          responseFormat,
-          setResponseFormat,
-          isGlobalDocument,
-          error,
-          scrollContainer,
-          hasAIAnswer,
-          selectedModelName,
-          setSelectedModelName,
-        }}
-      >
+    <ModelSelectorContext.Provider value={modelSelectorValue}>
+      <WriterContext.Provider value={writerContextValue}>
         <TooltipProvider>
           <ViewLoaderProvider
-            getView={(viewId: string) => request.getView(viewId)}
-            fetchViews={() => request.fetchViews()}
+            getView={getView}
+            fetchViews={fetchViews}
           >
             {children}
-            <ConfirmDiscard open={openDiscard} onClose={() => setOpenDiscard(false)} />
+            <ConfirmDiscard open={openDiscard} onClose={handleCloseDiscard} />
           </ViewLoaderProvider>
         </TooltipProvider>
       </WriterContext.Provider>

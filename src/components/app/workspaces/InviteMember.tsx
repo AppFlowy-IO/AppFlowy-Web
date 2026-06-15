@@ -1,17 +1,43 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
-import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
-import { useAppHandlers } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { ERROR_CODE } from '@/application/constants';
+import { Workspace, WorkspaceMember } from '@/application/types';
+import { WorkspaceService } from '@/application/services/domains';
+import { NormalModal } from '@/components/_shared/modal';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+
+    if (typeof message === 'string') return message;
+  }
+
+  return 'Request failed';
+}
+
+function isAPIErrorCode(error: unknown, code: number): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
+}
+
+function parseInviteEmails(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((email) => email.trim())
+        .filter(Boolean)
+    )
+  );
+}
 
 function InviteMember({
   workspace,
@@ -22,68 +48,32 @@ function InviteMember({
   open?: boolean;
   openOnChange?: (open: boolean) => void;
 }) {
-  const { getSubscriptions } = useAppHandlers();
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const currentWorkspaceId = workspace.id;
-  const [, setSearch] = useSearchParams();
 
   const currentUser = useCurrentUser();
-  const [memberCount, setMemberCount] = React.useState<number>(0);
   const memberListRef = useRef<WorkspaceMember[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isOwner = workspace.owner?.uid.toString() === currentUser?.uid.toString();
 
   const loadMembers = useCallback(async () => {
     try {
-      if (!service || !currentWorkspaceId) return;
-      memberListRef.current = await service.getWorkspaceMembers(currentWorkspaceId);
-      setMemberCount(memberListRef.current.length);
+      if (!currentWorkspaceId) return;
+      memberListRef.current = await WorkspaceService.getMembers(currentWorkspaceId);
     } catch (e) {
       console.error(e);
     }
-  }, [currentWorkspaceId, service]);
-
-  const [activeSubscriptionPlan, setActiveSubscriptionPaln] = React.useState<SubscriptionPlan | null>(null);
-
-  const loadSubscription = useCallback(async () => {
-    try {
-      const subscriptions = await getSubscriptions?.();
-
-      if (!subscriptions || subscriptions.length === 0) {
-        setActiveSubscriptionPaln(SubscriptionPlan.Free);
-
-        return;
-      }
-
-      const subscription = subscriptions[0];
-
-      setActiveSubscriptionPaln(subscription?.plan || SubscriptionPlan.Free);
-    } catch (e) {
-      setActiveSubscriptionPaln(SubscriptionPlan.Free);
-      console.error(e);
-    }
-  }, [getSubscriptions]);
-
-  const isExceed = useMemo(() => {
-    if (activeSubscriptionPlan === null) return false;
-    if (activeSubscriptionPlan === SubscriptionPlan.Free) {
-      return memberCount >= 2;
-    }
-
-    if (activeSubscriptionPlan === SubscriptionPlan.Pro) {
-      return memberCount >= 10;
-    }
-
-    return false;
-  }, [activeSubscriptionPlan, memberCount]);
+  }, [currentWorkspaceId]);
 
   const handleOk = async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     try {
       setLoading(true);
-      const emails = value.split(',').map((e) => e.trim());
+      const emails = parseInviteEmails(value);
+
+      if (emails.length === 0) return;
 
       const hadInvited = emails.filter((e) => memberListRef.current.find((m) => m.email === e));
 
@@ -92,13 +82,20 @@ function InviteMember({
         return;
       }
 
-      await service.inviteMembers(currentWorkspaceId, emails);
+      await WorkspaceService.inviteMembers(currentWorkspaceId, emails);
 
       openOnChange?.(false);
       toast.success(t('inviteMember.inviteSuccess'));
       // eslint-disable-next-line
     } catch (e: any) {
-      toast.error(e.message);
+      const message = getErrorMessage(e);
+
+      if (isAPIErrorCode(e, ERROR_CODE.MAILER_ERROR)) {
+        openOnChange?.(false);
+        toast.warning(message);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -109,65 +106,52 @@ function InviteMember({
       setValue('');
     } else {
       void loadMembers();
-      void loadSubscription();
-    }
-  }, [open, loadMembers, loadSubscription]);
+      // Focus input after MUI Dialog animation completes
+      const timer = setTimeout(() => inputRef.current?.focus(), 100);
 
-  const handleUpgrade = useCallback(async () => {
-    setSearch((prev) => {
-      prev.set('action', 'change_plan');
-      return prev;
-    });
-  }, [setSearch]);
+      return () => clearTimeout(timer);
+    }
+  }, [open, loadMembers]);
 
   if (!isOwner) return null;
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={openOnChange}>
-        <DialogContent className={'w-[500px]'}>
-          <DialogHeader>
-            <DialogTitle>{t('inviteMember.requestInviteMembers')}</DialogTitle>
-          </DialogHeader>
-          <div
-            style={{
-              display: isExceed ? 'flex' : 'none',
+    <NormalModal
+      open={!!open}
+      onClose={() => openOnChange?.(false)}
+      title={<div style={{ textAlign: 'left' }}>{t('inviteMember.requestInviteMembers')}</div>}
+      classes={MODAL_CLASSES}
+      disableAutoFocus
+      disableEnforceFocus
+      PaperProps={MODAL_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+    >
+      <div className='grid gap-4'>
+        <div className='grid gap-3'>
+          <Label htmlFor='emails'>{t('inviteMember.emails')}</Label>
+          <Input
+            id='emails'
+            name='emails'
+            ref={inputRef}
+            onChange={(e) => setValue(e.target.value)}
+            value={value}
+            placeholder={t('inviteMember.addEmail')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                void handleOk();
+              }
             }}
-            className={'mb-4 flex w-full flex-wrap items-center gap-1 overflow-hidden text-text-secondary'}
-          >
-            <TipIcon className={'h-4 w-4 text-function-warning'} />
-            {t('inviteMember.inviteFailedMemberLimit')}
-            <span onClick={handleUpgrade} className={'cursor-pointer text-text-action hover:underline'}>
-              {t('inviteMember.upgrade')}
-            </span>
-          </div>
-          <div className='grid gap-4'>
-            <div className='grid gap-3'>
-              <Label htmlFor='emails'>{t('inviteMember.emails')}</Label>
-              <Input
-                id='emails'
-                name='emails'
-                disabled={isExceed}
-                onChange={(e) => setValue(e.target.value)}
-                value={value}
-                placeholder={t('inviteMember.addEmail')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    void handleOk();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button loading={loading} onClick={handleOk} disabled={!value}>
-              {loading && <Progress />}
-              {t('inviteMember.requestInvites')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          />
+        </div>
+      </div>
+      <div className='mt-4 flex w-full justify-end gap-3'>
+        <Button loading={loading} onClick={() => void handleOk()} disabled={!value}>
+          {loading && <Progress />}
+          {t('inviteMember.requestInvites')}
+        </Button>
+      </div>
+    </NormalModal>
   );
 }
 

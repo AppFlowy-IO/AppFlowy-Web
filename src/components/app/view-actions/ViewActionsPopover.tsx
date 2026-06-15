@@ -1,9 +1,10 @@
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import React, { useCallback, useMemo } from 'react';
-import AddPageActions from '@/components/app/view-actions/AddPageActions';
-import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
-import MorePageActions from '@/components/app/view-actions/MorePageActions';
+
 import { View } from '@/application/types';
+import AddPageActions from '@/components/app/view-actions/AddPageActions';
+import MorePageActions from '@/components/app/view-actions/MorePageActions';
+import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 function ViewActionsPopover ({
   popoverType,
@@ -11,6 +12,7 @@ function ViewActionsPopover ({
   children,
   open,
   onOpenChange,
+  onImportClick,
 }: {
   view?: View;
   popoverType?: {
@@ -18,6 +20,10 @@ function ViewActionsPopover ({
     type: 'more' | 'add';
   },
   children: React.ReactNode;
+  // Forwarded to AddPageActions. The dialog itself must live in a persistent
+  // ancestor (e.g. Outline) since this popover is unmounted as soon as the
+  // dropdown closes.
+  onImportClick?: (view: View) => void;
 } & React.ComponentProps<typeof DropdownMenu>) {
 
   const onClose = useCallback(() => {
@@ -30,6 +36,7 @@ function ViewActionsPopover ({
     if (popoverType.type === 'add') {
       return <AddPageActions
         view={view}
+        onImportClick={onImportClick}
       />;
     }
 
@@ -44,7 +51,7 @@ function ViewActionsPopover ({
         onClose={onClose}
       />;
     }
-  }, [onClose, popoverType, view]);
+  }, [onClose, popoverType, view, onImportClick]);
 
   return (
     <DropdownMenu

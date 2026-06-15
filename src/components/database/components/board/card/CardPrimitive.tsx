@@ -1,7 +1,8 @@
-import { forwardRef, useCallback, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   FieldVisibility,
+  isAIFieldType,
   RowMeta,
   useDatabaseContext,
   useFieldsSelector,
@@ -9,12 +10,15 @@ import {
   useRowMetaSelector,
 } from '@/application/database-yjs';
 import { RowCoverType } from '@/application/types';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import ImageRender from '@/components/_shared/image-render/ImageRender';
+import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
 import CardToolbar from '@/components/database/components/board/card/CardToolbar';
 import CardField from '@/components/database/components/field/CardField';
-import ImageRender from '@/components/_shared/image-render/ImageRender';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
+import { coverOffsetToObjectPosition } from '@/utils/cover';
+import { Log } from '@/utils/log';
 
 export interface CardProps {
   groupFieldId: string;
@@ -27,21 +31,26 @@ export interface CardProps {
 export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
   ({ groupFieldId, rowId, className, columnId }, ref) => {
     const fields = useFieldsSelector();
+    const aiEnabled = useAIEnabled();
     const meta = useRowMetaSelector(rowId);
-    const { selectedCardIds } = useBoardContext();
+    const { selectedCardIds, editingCardId } = useBoardSelection();
+    const { setEditingCardId, setSelectedCardIds } = useBoardActions();
+
     const selected = useMemo(() => {
       return selectedCardIds.includes(`${columnId}/${rowId}`);
     }, [selectedCardIds, columnId, rowId]);
     const cover = meta?.cover;
     const showFields = useMemo(
       () =>
-        fields.filter((field) => field.fieldId !== groupFieldId && field.visibility !== FieldVisibility.AlwaysHidden),
-      [fields, groupFieldId]
+        fields.filter((field) =>
+          field.fieldId !== groupFieldId &&
+          field.visibility !== FieldVisibility.AlwaysHidden &&
+          (aiEnabled || !isAIFieldType(field.fieldType))
+        ),
+      [aiEnabled, fields, groupFieldId]
     );
     const readOnly = useReadOnly();
     const [hovered, setHovered] = useState(false);
-
-    const { editingCardId, setEditingCardId, setSelectedCardIds } = useBoardContext();
 
     const dataCardId = `${columnId}/${rowId}`;
     const editing = useMemo(() => {
@@ -61,7 +70,13 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
       [dataCardId, setEditingCardId, setSelectedCardIds]
     );
 
-    const navigateToRow = useDatabaseContext().navigateToRow;
+    const { navigateToRow, bindRowSync } = useDatabaseContext();
+
+    useEffect(() => {
+      if (bindRowSync && rowId) {
+        bindRowSync(rowId);
+      }
+    }, [bindRowSync, rowId]);
 
     const renderCoverImage = useCallback((cover: RowMeta['cover']) => {
       if (!cover) return null;
@@ -92,9 +107,19 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
 
       if (!url) return null;
 
+      const objectPosition = coverOffsetToObjectPosition(cover.offset);
+
       return (
         <>
-          <ImageRender draggable={false} src={url} alt={''} className={'h-full w-full object-cover'} />
+          <ImageRender
+            draggable={false}
+            src={url}
+            alt={''}
+            className={'h-full w-full object-cover'}
+            style={{
+              objectPosition,
+            }}
+          />
         </>
       );
     }, []);
@@ -109,7 +134,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
           if (editing) return;
           const target = e.target as HTMLElement;
 
-          console.debug('custom-icon', target);
+          Log.debug('custom-icon', target);
           if (target.closest('.custom-icon')) {
             e.stopPropagation();
             return;

@@ -1,5 +1,6 @@
-import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
+
+import { cn } from '@/lib/utils';
 
 function RelationRowItem ({ rowId, content }: {
   rowId: string,
@@ -13,7 +14,7 @@ function RelationRowItem ({ rowId, content }: {
       style={{
         scrollMarginTop: '80px',
       }}
-      className={cn('text-sm w-full text-text-primary', !content && 'text-text-secondary')}
+      className={cn('flex-1 truncate text-sm text-text-primary', !content && 'text-text-secondary')}
     >
       {content || t('menuAppHeader.defaultNewPageName')}
     </div>

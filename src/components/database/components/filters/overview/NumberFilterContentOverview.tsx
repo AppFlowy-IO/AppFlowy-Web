@@ -1,6 +1,7 @@
-import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs';
 
 function NumberFilterContentOverview ({ filter }: { filter: NumberFilter }) {
   const { t } = useTranslation();

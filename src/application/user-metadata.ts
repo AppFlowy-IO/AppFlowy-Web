@@ -1,5 +1,7 @@
 import { toZonedTime } from 'date-fns-tz';
 
+import { Log } from '@/utils/log';
+
 import { DateFormat, TimeFormat, User } from './types';
 import { UserTimezone } from './user-timezone.types';
 
@@ -198,7 +200,7 @@ export function getUserIconUrl(
   workspaceMemberAvatar?: string | null
 ): string {
   if (!user) {
-    console.debug('[UserMetadata] getUserIconUrl invoked without user');
+    Log.debug('[UserMetadata] getUserIconUrl invoked without user');
     return '';
   }
 
@@ -206,7 +208,7 @@ export function getUserIconUrl(
   const trimmedWorkspaceAvatar = workspaceMemberAvatar?.trim();
 
   if (trimmedWorkspaceAvatar && trimmedWorkspaceAvatar.length > 0) {
-    console.debug('[UserMetadata] resolved icon url from workspace member profile', {
+    Log.debug('[UserMetadata] resolved icon url from workspace member profile', {
       workspaceMemberAvatar: trimmedWorkspaceAvatar,
     });
     return trimmedWorkspaceAvatar;
@@ -220,7 +222,7 @@ export function getUserIconUrl(
   const fallbackAvatar = user.avatar?.trim() ?? '';
   const resolved = iconUrl?.length ? iconUrl : fallbackAvatar;
 
-  console.debug('[UserMetadata] resolved icon url from user profile', {
+  Log.debug('[UserMetadata] resolved icon url from user profile', {
     metadataIconUrl: iconUrl,
     fallbackAvatar,
     resolved,

@@ -3,8 +3,8 @@ import { useSnackbar } from 'notistack';
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { clearData, db } from '@/application/db';
-import { getService } from '@/application/services';
-import { AFServiceConfig } from '@/application/services/services.type';
+import { UserService } from '@/application/services/domains';
+import { initAPIService } from '@/application/services/js-services/http/core';
 import { EventType, on } from '@/application/session';
 import { getTokenParsed, isTokenValid } from '@/application/session/token';
 import { User } from '@/application/types';
@@ -16,10 +16,11 @@ import { AFConfigContext, defaultConfig } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
+
+initAPIService(defaultConfig);
 
 function AppConfig({ children }: { children: React.ReactNode }) {
-  const [appConfig] = useState<AFServiceConfig>(defaultConfig);
-  const service = useMemo(() => getService(appConfig), [appConfig]);
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(isTokenValid());
 
   const userId = useMemo(() => {
@@ -36,15 +37,15 @@ function AppConfig({ children }: { children: React.ReactNode }) {
 
   const updateCurrentUser = useCallback(
     async (user: User) => {
-      if (!service || !userId) return;
+      if (!userId) return;
 
       try {
         await db.users.put(user, user.uuid);
       } catch (e) {
-        console.error(e);
+        Log.error(e);
       }
     },
-    [service, userId]
+    [userId]
   );
 
   const openLoginModal = useCallback((redirectTo?: string) => {
@@ -64,14 +65,13 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     }
 
     void (async () => {
-      if (!service) return;
       try {
-        await service.getCurrentUser();
+        await UserService.getCurrent();
       } catch (e) {
-        console.error(e);
+        Log.error(e);
       }
     })();
-  }, [isAuthenticated, service]);
+  }, [isAuthenticated]);
 
   // Authentication state synchronization effects
   // Note: These are intentionally separate effects with different lifecycles:
@@ -98,7 +98,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const hasToken = isTokenValid();
 
-    console.debug('[AppConfig] sync check', {
+    Log.debug('[AppConfig] sync check', {
       hasToken,
       isAuthenticated,
       willSync: hasToken && !isAuthenticated,
@@ -106,12 +106,12 @@ function AppConfig({ children }: { children: React.ReactNode }) {
 
     // If token exists but state says not authenticated, sync the state
     if (hasToken && !isAuthenticated) {
-      console.debug('[AppConfig] syncing authentication state - token exists but state is false');
+      Log.debug('[AppConfig] syncing authentication state - token exists but state is false');
       setIsAuthenticated(true);
     }
     // If no token but state says authenticated, invalidate the session
     else if (!hasToken && isAuthenticated) {
-      console.debug('[AppConfig] token removed but state still authenticated - invalidating');
+      Log.debug('[AppConfig] token removed but state still authenticated - invalidating');
       setIsAuthenticated(false);
     }
   }, [isAuthenticated]);
@@ -121,13 +121,13 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => {
       const hasToken = isTokenValid();
 
-      console.debug('[AppConfig] mount sync check', {
+      Log.debug('[AppConfig] mount sync check', {
         hasToken,
         isAuthenticated,
       });
 
       if (hasToken && !isAuthenticated) {
-        console.debug('[AppConfig] mount sync - forcing authentication state to true');
+        Log.debug('[AppConfig] mount sync - forcing authentication state to true');
         setIsAuthenticated(true);
       }
     }, 100); // Small delay to allow all initialization to complete
@@ -149,11 +149,11 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   // Handle initial timezone setup - only when timezone is not set
   const handleTimezoneSetup = useCallback(
     async (detectedTimezone: string) => {
-      if (!isAuthenticated || !service || hasCheckedTimezone) return;
+      if (!isAuthenticated || hasCheckedTimezone) return;
 
       try {
         // Get current user profile to check if timezone is already set
-        const user = await service.getCurrentUser();
+        const user = await UserService.getCurrent();
         const currentMetadata = user.metadata || {};
 
         // Check if user has timezone metadata
@@ -168,19 +168,19 @@ function AppConfig({ children }: { children: React.ReactNode }) {
             [MetadataKey.Timezone]: timezoneData,
           };
 
-          await service.updateUserProfile(metadata);
-          console.debug('Initial timezone set in user profile:', timezoneData);
+          await UserService.updateProfile(metadata);
+          Log.debug('Initial timezone set in user profile:', timezoneData);
         } else {
-          console.debug('User timezone already set, skipping update:', existingTimezone);
+          Log.debug('User timezone already set, skipping update:', existingTimezone);
         }
 
         setHasCheckedTimezone(true);
       } catch (e) {
-        console.error('Failed to check/update timezone:', e);
+        Log.error('Failed to check/update timezone:', e);
         // Still mark as checked to avoid repeated attempts
         setHasCheckedTimezone(true);
       }
-    }, [isAuthenticated, service, hasCheckedTimezone]);
+    }, [isAuthenticated, hasCheckedTimezone]);
 
   // Detect timezone once on mount
   useUserTimezone({
@@ -234,27 +234,28 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     return () => {
       window.removeEventListener('keydown', handleClearData);
     };
-  });
+  }, []);
+  const closeLoginModal = useCallback(() => setLoginOpen(false), []);
+
+  const configContextValue = useMemo(
+    () => ({
+      isAuthenticated,
+      currentUser,
+      updateCurrentUser,
+      openLoginModal,
+    }),
+    [isAuthenticated, currentUser, updateCurrentUser, openLoginModal]
+  );
 
   return (
-    <AFConfigContext.Provider
-      value={{
-        service,
-        isAuthenticated,
-        currentUser,
-        updateCurrentUser,
-        openLoginModal,
-      }}
-    >
+    <AFConfigContext.Provider value={configContextValue}>
       {children}
       {loginOpen && (
         <Suspense>
           <LoginModal
             redirectTo={loginCompletedRedirectTo}
             open={loginOpen}
-            onClose={() => {
-              setLoginOpen(false);
-            }}
+            onClose={closeLoginModal}
           />
         </Suspense>
       )}

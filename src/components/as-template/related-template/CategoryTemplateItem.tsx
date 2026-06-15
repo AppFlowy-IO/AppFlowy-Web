@@ -1,8 +1,9 @@
-import { TemplateSummary } from '@/application/template.type';
-import { RichTooltip } from '@/components/_shared/popover';
 import { Checkbox } from '@mui/material';
 import { debounce } from 'lodash-es';
 import React, { useMemo } from 'react';
+
+import { TemplateSummary } from '@/application/template.type';
+import { RichTooltip } from '@/components/_shared/popover';
 
 function CategoryTemplateItem ({
   onChange,

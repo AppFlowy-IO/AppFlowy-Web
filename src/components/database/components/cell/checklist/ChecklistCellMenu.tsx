@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+
 import {
   ChecklistCellData,
 } from '@/application/database-yjs';
@@ -13,7 +15,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { useMemo, useState } from 'react';
 
 function ChecklistCellMenu ({ cell, data, rowId, fieldId, open, onOpenChange }: {
   open?: boolean;

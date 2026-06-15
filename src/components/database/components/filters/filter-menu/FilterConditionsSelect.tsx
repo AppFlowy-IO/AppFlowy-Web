@@ -1,5 +1,8 @@
+import { useMemo } from 'react';
+
 import { Filter } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -8,8 +11,6 @@ import {
   DropdownMenuItem, DropdownMenuItemTick,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useMemo } from 'react';
-import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 
 function FilterConditionsSelect ({
   conditions,
@@ -38,6 +39,7 @@ function FilterConditionsSelect ({
           variant={'ghost'}
           size={'sm'}
           className={'min-w-fit w-fit'}
+          data-testid="filter-condition-trigger"
         >
           {selectedCondition?.text ?? ''}
           <ArrowDownSvg className={'w-5 h-5'} />
@@ -48,6 +50,7 @@ function FilterConditionsSelect ({
           {conditions.map((condition) => (
             <DropdownMenuItem
               key={condition.value}
+              data-testid={`filter-condition-${condition.value}`}
               onSelect={() => {
                 if (onSelect) {
                   onSelect(condition.value);
@@ -55,6 +58,7 @@ function FilterConditionsSelect ({
                 } else {
                   updateFilter({
                     filterId: filter.id,
+                    fieldId: filter.fieldId,
                     condition: condition.value,
                   });
                 }

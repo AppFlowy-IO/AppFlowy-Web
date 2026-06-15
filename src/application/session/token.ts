@@ -1,4 +1,5 @@
 import { emit, EventType } from '@/application/session/event';
+import { purgeAllOutbox } from '@/application/sync-outbox';
 
 // Decode JWT to extract user info (simple base64 decode, no verification)
 function decodeJWT(token: string): { sub: string; email: string } | null {
@@ -42,7 +43,23 @@ export function saveGoTrueAuth(tokenData: string) {
 
 export function invalidToken() {
   localStorage.removeItem('token');
+  // Kick off the outbox purge FIRST. `purgeAllOutbox()` sets its internal
+  // `isPurging` gate synchronously, so any enqueue landing in the same tick
+  // (e.g. a re-render triggered by the SESSION_INVALID emit below) is dropped
+  // before it can add rows behind the purge.
+  const purge = purgeAllOutbox();
+
+  // Emit SESSION_INVALID immediately so auth-sensitive screens unmount on the
+  // next render instead of continuing to issue requests while IDB drains.
+  // Interceptor paths (`http/core.ts`, `user-api.ts`) do not redirect and
+  // same-tab `localStorage.removeItem('token')` does not fire `AppConfig`'s
+  // storage listener, so this event is the only signal that flips
+  // `isAuthenticated` to false in-tab.
+  //
+  // The "next session must not observe pre-purge state" invariant is preserved
+  // by `startDrainAll()` awaiting the module-level pending-purge promise.
   emit(EventType.SESSION_INVALID);
+  void purge;
 }
 
 export function isTokenValid() {

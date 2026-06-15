@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useTranslation } from 'react-i18next';
 
 export function DeleteFileConfirm ({ open, onOpenChange, onDelete, file }: {
   open: boolean;

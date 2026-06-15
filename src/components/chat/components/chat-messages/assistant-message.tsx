@@ -1,19 +1,24 @@
-import { AnswerMd } from '../chat-messages/answer-md';
-import { MessageActions } from '../chat-messages/message-actions';
-import MessageSources from '../chat-messages/message-sources';
-import { MessageSuggestions } from '../chat-messages/message-suggestions';
-import LoadingDots from '@/components/chat/components/ui/loading-dots';
+import { EditorProvider } from '@appflowyinc/editor';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as Error } from '@/assets/icons/error.svg';
+import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
+import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
 import { useSuggestionsContext } from '@/components/chat/provider/suggestions-provider';
 import { ChatInputMode } from '@/components/chat/types';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
-import { EditorProvider } from '@appflowyinc/editor';
-import { ReactComponent as Error } from '@/assets/icons/error.svg';
+
+import { AnswerMd } from '../chat-messages/answer-md';
+import { MessageActions } from '../chat-messages/message-actions';
+import MessageSources from '../chat-messages/message-sources';
+import { MessageSuggestions } from '../chat-messages/message-suggestions';
+
 import MessageCheckbox from './message-checkbox';
+
+const MAX_PROGRESS_STEPS = 5;
 
 export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boolean }) {
   const isInitialLoad = useRef(true);
@@ -32,8 +37,20 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
   const [error, setError] = useState<boolean>(false);
   const [content, setContent] = useState<string>('');
   const [done, setDone] = useState<boolean>(false);
+  const [progressSteps, setProgressSteps] = useState<{ id: number; text: string }[]>([]);
+  const stepIdRef = useRef(0);
 
   const { t } = useTranslation();
+
+  const handleProgress = useCallback((step: string) => {
+    const id = ++stepIdRef.current;
+
+    setProgressSteps((prev) => {
+      const next = [...prev, { id, text: step }];
+
+      return next.length > MAX_PROGRESS_STEPS ? next.slice(-MAX_PROGRESS_STEPS) : next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!questionId || !isInitialLoad.current || loading) return;
@@ -57,7 +74,8 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
 
             setDone(done || false);
             setContent(text);
-          }
+          },
+          handleProgress
         );
         // eslint-disable-next-line
       } catch (e: any) {
@@ -66,7 +84,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
         setLoading(false);
       }
     })();
-  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading]);
+  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading, handleProgress]);
 
   const suggestions = useMemo(() => {
     if (!questionId) return null;
@@ -89,9 +107,22 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
           </div>
         </div>
       ) : loading ? (
-        <div className={`flex items-center gap-2 overflow-hidden pl-0.5`}>
-          <span className={'text-sm text-foreground opacity-60'}>{t('chat.generating')}</span>
-          <LoadingDots />
+        <div className={'flex flex-col gap-1 overflow-hidden pl-0.5'}>
+          {progressSteps.length > 0 ? (
+            <>
+              {progressSteps.map((step, i) => (
+                <div key={step.id} className={`flex items-center gap-2 ${i === progressSteps.length - 1 ? 'opacity-100' : 'opacity-50'}`}>
+                  <span className={'text-sm text-foreground'}>{step.text}</span>
+                </div>
+              ))}
+              <LoadingDots />
+            </>
+          ) : (
+            <div className={'flex items-center gap-2'}>
+              <span className={'text-sm text-foreground opacity-60'}>{t('chat.generating')}</span>
+              <LoadingDots />
+            </div>
+          )}
         </div>
       ) : (
         content && (

@@ -1,11 +1,12 @@
+import { isNaN } from 'lodash-es';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { currencyFormaterMap, FieldType, parseNumberTypeOptions, useFieldSelector } from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { YjsDatabaseKey } from '@/application/types';
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
-import { isNaN } from 'lodash-es';
-import { useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 export interface ICalculationCell {
   value: string;

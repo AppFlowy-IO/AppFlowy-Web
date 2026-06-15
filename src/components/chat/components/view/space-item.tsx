@@ -1,12 +1,13 @@
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTranslation } from 'react-i18next';
-import { getIcon, renderColor, stringToColor } from '@/components/chat/lib/utils';
-import { cn } from '@/lib/utils';
-import { View } from '@/components/chat/types';
-import { ReactComponent as ChevronRight } from '@/assets/icons/toggle_list.svg';
-import { ReactNode, useEffect, useMemo, useState } from 'react';
 import DOMPurify from 'dompurify';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ChevronRight } from '@/assets/icons/toggle_list.svg';
+import { getIcon, renderColor, stringToColor } from '@/components/chat/lib/utils';
+import { View } from '@/components/chat/types';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 function SpaceItem({
   view,

@@ -1,12 +1,13 @@
+import React, { forwardRef, memo, useCallback, useMemo, useRef } from 'react';
+import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { AlignType, BlockType } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import VideoEmpty from '@/components/editor/components/blocks/video/VideoEmpty';
 import { EditorElementProps, VideoBlockNode } from '@/components/editor/editor.type';
-import React, { forwardRef, memo, useCallback, useMemo, useRef } from 'react';
-import { Element } from 'slate';
-import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import VideoRender from './VideoRender';
 
@@ -21,6 +22,10 @@ export const VideoBlock = memo(forwardRef<HTMLDivElement, EditorElementProps<Vid
   const { url, align } = data || {};
   const editor = useSlateStatic() as YjsEditor;
   const [error, setError] = React.useState<string | undefined>(undefined);
+
+  React.useEffect(() => {
+    setError(undefined);
+  }, [url]);
 
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 

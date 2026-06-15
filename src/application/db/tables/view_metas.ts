@@ -1,4 +1,5 @@
 import { Table } from 'dexie';
+
 import { ViewInfo } from '@/application/types';
 
 export type ViewMeta = {

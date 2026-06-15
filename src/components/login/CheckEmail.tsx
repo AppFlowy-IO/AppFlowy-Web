@@ -1,16 +1,20 @@
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { AuthService } from '@/application/services/domains';
+import { Log } from '@/utils/log';
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { useContext, useState } from 'react';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
-import { useTranslation } from 'react-i18next';
 
-function CheckEmail ({ email, redirectTo }: {
+
+function CheckEmail ({ email, redirectTo, otpType }: {
   email: string;
   redirectTo: string;
+  otpType?: 'signup';
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -18,7 +22,6 @@ function CheckEmail ({ email, redirectTo }: {
   const [error, setError] = useState<string>('');
   const [isEnter, setEnter] = useState<boolean>(false);
   const [code, setCode] = useState<string>('');
-  const service = useContext(AFConfigContext)?.service;
   const handleSubmit = async () => {
     if (loading) return;
     if (!code) {
@@ -27,19 +30,20 @@ function CheckEmail ({ email, redirectTo }: {
     }
 
     setLoading(true);
-    console.log('[CheckEmail] Starting OTP verification', { email, code: code.substring(0, 3) + '***' });
+    Log.info('[Auth] CheckEmail: starting OTP verification', { email });
 
     try {
-      console.log('[CheckEmail] Calling service.signInOTP');
-      await service?.signInOTP({
+      Log.info('[Auth] CheckEmail: calling signInOTP');
+      await AuthService.signInOTP({
         email,
         redirectTo,
         code,
+        ...(otpType ? { type: otpType } : {}),
       });
-      console.log('[CheckEmail] signInOTP completed successfully');
+      Log.info('[Auth] CheckEmail: signInOTP completed successfully');
       // eslint-disable-next-line
     } catch (e: any) {
-      console.error('[CheckEmail] signInOTP failed:', e);
+      Log.error('[Auth] CheckEmail: signInOTP failed', e);
       if (e.code === 403) {
         setError(t('invalidOTPCode'));
       } else {

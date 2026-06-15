@@ -1,5 +1,6 @@
-import { MentionablePerson } from '@/application/types';
 import { Table } from 'dexie';
+
+import { MentionablePerson } from '@/application/types';
 
 export interface WorkspaceMemberProfile extends MentionablePerson {
   workspace_id: string;

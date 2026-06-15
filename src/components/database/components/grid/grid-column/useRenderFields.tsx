@@ -1,8 +1,10 @@
-import { FieldType, useReadOnly } from '@/application/database-yjs';
+import { useMemo } from 'react';
+
+import { FieldType, isAIFieldType, useReadOnly } from '@/application/database-yjs';
 import { FieldVisibility } from '@/application/database-yjs/database.type';
 import { useFieldsSelector } from '@/application/database-yjs/selector';
 import { FieldId } from '@/application/types';
-import { useMemo } from 'react';
+import { useAIEnabled } from '@/components/app/app.hooks';
 
 export enum GridColumnType {
   Field,
@@ -21,13 +23,16 @@ export type RenderColumn = {
 
 export function useRenderFields () {
   const fields = useFieldsSelector();
+  const aiEnabled = useAIEnabled();
 
   const readOnly = useReadOnly();
   const renderColumns = useMemo(() => {
-    const data: RenderColumn[] = fields.map((column) => ({
-      ...column,
-      type: GridColumnType.Field,
-    }));
+    const data: RenderColumn[] = fields
+      .filter((column) => aiEnabled || !isAIFieldType(column.fieldType))
+      .map((column) => ({
+        ...column,
+        type: GridColumnType.Field,
+      }));
 
     if (!readOnly) {
       data.push({
@@ -38,7 +43,7 @@ export function useRenderFields () {
     }
 
     return data;
-  }, [fields, readOnly]);
+  }, [aiEnabled, fields, readOnly]);
 
   return {
     fields: renderColumns,

@@ -1,4 +1,5 @@
 import { Element, Node, Text } from 'slate';
+
 import { TextCount } from '@/application/types';
 
 export function getTextCount(nodes: Node[]): TextCount {

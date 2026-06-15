@@ -1,3 +1,6 @@
+import { EditorData } from '@appflowyinc/editor';
+import { AxiosInstance } from 'axios';
+
 import {
   createInitialInstance,
   getAccessToken,
@@ -8,6 +11,7 @@ import { convertToPageData } from '@/components/chat/lib/utils';
 import { findView } from '@/components/chat/lib/views';
 import {
   ChatMessage,
+  ChatSettings,
   GetChatMessagesPayload,
   RepeatedChatMessage,
   ResponseFormat,
@@ -17,20 +21,9 @@ import {
   ChatMessageMetadata, StreamType,
 } from '@/components/chat/types';
 import { ModelList } from '@/components/chat/types/ai-model';
-import { EditorData } from '@appflowyinc/editor';
-import { AxiosInstance } from 'axios';
+import { extractNextJsonObject } from './stream-json-parser';
 
-export interface ChatSettings {
-  name: string;
-  rag_ids: string[];
-  metadata: Record<string, unknown>;
-}
-
-export interface UpdateChatSettingsParams {
-  name?: string;
-  metadata?: Record<string, unknown>;
-  rag_ids?: string[];
-}
+export type UpdateChatSettingsParams = Partial<ChatSettings>;
 
 /**
  * ChatRequest class for handling chat-related API requests
@@ -240,7 +233,7 @@ export class ChatRequest {
     question_id: number;
     format: ResponseFormat;
     model_name?: string;
-  }, onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void) {
+  }, onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void, onProgress?: (step: string) => void) {
     const baseUrl = this.axiosInstance.defaults.baseURL;
     const url = `${baseUrl}/api/chat/${this.workspaceId}/${this.chatId}/answer/stream`;
 
@@ -260,6 +253,7 @@ export class ChatRequest {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
         'ai-model': payload.model_name || 'Auto',
+        'x-platform': 'web-app',
       },
       body: JSON.stringify({
         ...payload,
@@ -300,39 +294,31 @@ export class ChatRequest {
           buffer += decoder.decode(chunk, { stream: true });
 
           while(buffer.length > 0) {
-            const openBraceIndex = buffer.indexOf('{');
+            const extracted = extractNextJsonObject(buffer);
 
-            if(openBraceIndex === -1) break;
-
-            let closeBraceIndex = -1;
-            let depth = 0;
-
-            for(let i = openBraceIndex; i < buffer.length; i++) {
-              if(buffer[i] === '{') depth++;
-              if(buffer[i] === '}') depth--;
-              if(depth === 0) {
-                closeBraceIndex = i;
-                break;
-              }
-            }
-
-            if(closeBraceIndex === -1) break;
-
-            const jsonStr = buffer.slice(openBraceIndex, closeBraceIndex + 1);
+            if(!extracted) break;
 
             try {
-              const data = JSON.parse(jsonStr);
+              const data = JSON.parse(extracted.jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
-                if(key === StreamType.META_DATA) {
-                  if(Array.isArray(value)) {
+                if (key === StreamType.META_DATA) {
+                  if (Array.isArray(value)) {
                     metadata.push(...value);
                   }
 
                   return;
                 }
 
-                text += value;
+                if (key === StreamType.PROGRESS) {
+                  onProgress?.(value as string);
+                  return;
+                }
+
+                // Only append known content types to the answer text
+                if (key === StreamType.TEXT || key === StreamType.IMAGE) {
+                  text += value;
+                }
               });
 
               onMessage(text, [], false);
@@ -340,7 +326,7 @@ export class ChatRequest {
               console.error('Failed to parse JSON:', e);
             }
 
-            buffer = buffer.slice(closeBraceIndex + 1);
+            buffer = buffer.slice(extracted.nextIndex);
           }
         }
 
@@ -383,7 +369,7 @@ export class ChatRequest {
   }
 
   async getCurrentView() {
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=1&root_view_id=${this.chatId}`;
+    const url = `/api/workspace/${this.workspaceId}/view/${this.chatId}?depth=1`;
 
     const res = await this.axiosInstance.get<{
       code: number;
@@ -405,7 +391,7 @@ export class ChatRequest {
       return oldView;
     }
 
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=1&root_view_id=${viewId}`;
+    const url = `/api/workspace/${this.workspaceId}/view/${viewId}?depth=1`;
 
     const res = await this.axiosInstance.get<{
       code: number;
@@ -425,7 +411,7 @@ export class ChatRequest {
       return this.folder;
     }
 
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=10`;
+    const url = `/api/workspace/${this.workspaceId}/view/${this.workspaceId}?depth=10`;
 
     const res = await this.axiosInstance.get<{
       code: number;

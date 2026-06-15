@@ -7,6 +7,7 @@ import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import { Cell } from '@/components/database/components/cell';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { Log } from '@/utils/log';
 
 
 interface NoDateRowProps {
@@ -32,7 +33,7 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
 
     if (!element || readOnly) return;
 
-    console.debug('🎯 Creating optimized Draggable for rowId:', rowId);
+    Log.debug('🎯 Creating optimized Draggable for rowId:', rowId);
 
     // Create individual Draggable for this row with performance optimizations
     const draggable = new Draggable(element, {
@@ -45,10 +46,10 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
       },
     });
 
-    console.debug('✅ Optimized Draggable created for rowId:', rowId);
+    Log.debug('✅ Optimized Draggable created for rowId:', rowId);
 
     return () => {
-      console.debug('🎯 Destroying optimized Draggable for rowId:', rowId);
+      Log.debug('🎯 Destroying optimized Draggable for rowId:', rowId);
       draggable.destroy();
     };
   }, [rowId, cell?.data, isWeekView, readOnly]);
@@ -56,13 +57,14 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
   return (
     <div
       ref={dragRef}
+      data-testid="no-date-row"
       data-row-id={rowId}
       className={cn(
         'hover:scale-1 group flex h-[36px] w-full items-center gap-2 px-2 py-1 hover:bg-transparent hover:shadow-none',
         'fc-event fc-nodate-event cursor-grab' // Required for FullCalendar dragging
       )}
       onMouseDown={() => {
-        console.debug('🎯 Mouse down on rowId:', rowId);
+        Log.debug('🎯 Mouse down on rowId:', rowId);
         onDragStart?.(rowId);
       }}
       style={{

@@ -1,11 +1,16 @@
-import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { FieldType, useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { useAddSort } from '@/application/database-yjs/dispatch';
+import { ReactComponent as SortIcon } from '@/assets/icons/sort.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useState } from 'react';
-import { ReactComponent as SortIcon } from '@/assets/icons/sort.svg';
-import { useTranslation } from 'react-i18next';
+
+import { useConditionsContext } from './context';
+import { useRollupSortableIds } from '../sorts/utils';
+
 
 function SortsButton ({ toggleExpanded, expanded }: {
   toggleExpanded?: () => void;
@@ -16,6 +21,31 @@ function SortsButton ({ toggleExpanded, expanded }: {
   const [open, setOpen] = useState(false);
   const readOnly = useReadOnly();
   const addSort = useAddSort();
+  const conditionsContext = useConditionsContext();
+  const setExpanded = conditionsContext?.setExpanded;
+  const prevSortsLengthRef = useRef(sorts.length);
+
+  // Auto-expand conditions panel when first sort is added (e.g. synced from desktop)
+  useEffect(() => {
+    const prevLength = prevSortsLengthRef.current;
+    const currentLength = sorts.length;
+
+    if (prevLength === 0 && currentLength > 0) {
+      setExpanded?.(true);
+    }
+
+    prevSortsLengthRef.current = currentLength;
+  }, [sorts.length, setExpanded]);
+
+  const rollupSortableIds = useRollupSortableIds();
+  const propertyFilter = useCallback(
+    (property: { id: string; type: FieldType }) => {
+      if (property.type !== FieldType.Rollup) return true;
+      return rollupSortableIds.has(property.id);
+    },
+    [rollupSortableIds]
+  );
+  const excludedTypes = useMemo(() => [FieldType.Person], []);
 
   return (
     <PropertiesMenu
@@ -25,10 +55,11 @@ function SortsButton ({ toggleExpanded, expanded }: {
       onSelect={fieldId => {
         addSort(fieldId);
         if (!expanded) {
-
           toggleExpanded?.();
         }
       }}
+      excludedTypes={excludedTypes}
+      propertyFilter={propertyFilter}
       asChild
     >
       <div>

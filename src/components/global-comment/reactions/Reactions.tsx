@@ -1,8 +1,9 @@
+import { memo, useCallback, useMemo } from 'react';
+
 import { GlobalComment, Reaction as ReactionType } from '@/application/comment.type';
 import ReactAction from '@/components/global-comment/actions/ReactAction';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 import Reaction from '@/components/global-comment/reactions/Reaction';
-import { memo, useCallback, useMemo } from 'react';
 
 export function Reactions({ comment }: { comment: GlobalComment }) {
   const { reactions, toggleReaction } = useGlobalCommentContext();

@@ -13,11 +13,12 @@ import {
   SubscriptionPlan,
 } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
+import { AccessService, BillingService } from '@/application/services/domains';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -33,7 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { isOfficialHost } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 import { EmailTag, InviteInput } from './InviteInput';
 import { PersonSuggestionItem } from './PersonSuggestionItem';
@@ -49,7 +50,6 @@ interface InviteGuestProps {
   onInviteSuccess: () => Promise<void>;
   viewId: string;
   hasFullAccess: boolean;
-  activeSubscriptionPlan: SubscriptionPlan | null;
 }
 
 export function InviteGuest({
@@ -70,7 +70,6 @@ export function InviteGuest({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const hoveredIndexRef = useRef<number>(-1);
   const searchValueRef = useRef<string>('');
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [inviteLoading, setInviteLoading] = useState(false);
   const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>(AccessLevel.ReadOnly);
@@ -311,6 +310,8 @@ export function InviteGuest({
   const getAccessLevelText = useCallback(
     (accessLevel: AccessLevel) => {
       switch (accessLevel) {
+        case AccessLevel.FullAccess:
+          return t('shareAction.fullAccess');
         case AccessLevel.ReadAndWrite:
           return t('shareAction.canEdit');
         case AccessLevel.ReadOnly:
@@ -379,13 +380,27 @@ export function InviteGuest({
             </div>
             {selectedAccessLevel === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
           </div>
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+            onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
+          >
+            <div className='flex items-center gap-2'>
+              <CrownIcon className='h-4 w-4' />
+              <div className='flex flex-col'>
+                <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+              </div>
+            </div>
+            {selectedAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
+          </div>
         </PopoverContent>
       </Popover>
     );
   }, [emailTags.length, accessLevelPopoverOpen, getAccessLevelText, selectedAccessLevel, t, handleAccessLevelSelect]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     const workspaceId = currentWorkspaceId;
 
     if (!workspaceId) return;
@@ -394,7 +409,7 @@ export function InviteGuest({
       return;
     }
 
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       // Self-hosted instances have Pro features enabled by default
       return;
     }
@@ -403,7 +418,7 @@ export function InviteGuest({
 
     try {
       setUpgradeLoading(true);
-      const link = await service.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
+      const link = await BillingService.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
 
       window.open(link, '_blank');
       setUpgradeModalOpen(false);
@@ -414,15 +429,15 @@ export function InviteGuest({
     } finally {
       setUpgradeLoading(false);
     }
-  }, [currentWorkspaceId, service, isOwner]);
+  }, [currentWorkspaceId, isOwner]);
 
   const handleSendInvites = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     if (emailTags.length === 0) return;
 
     try {
       setInviteLoading(true);
-      await service.sharePageTo(
+      await AccessService.sharePageTo(
         currentWorkspaceId,
         viewId,
         emailTags.map((tag) => tag.email),
@@ -431,8 +446,16 @@ export function InviteGuest({
       notify.success(t('shareAction.inviteSuccess'));
       // eslint-disable-next-line
     } catch (error: any) {
-      if (error.code === ERROR_CODE.NOT_HAS_PERMISSION_TO_INVITE_GUEST) {
-        setUpgradeModalOpen(true);
+      if (
+        error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
+        error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
+      ) {
+        if (isAppFlowyHosted()) {
+          setUpgradeModalOpen(true);
+        } else {
+          notify.error(error.message);
+        }
+
         return;
       }
 
@@ -447,7 +470,7 @@ export function InviteGuest({
 
     // Notify parent component to refresh the people list
     await onInviteSuccess();
-  }, [service, currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, selectedAccessLevel]);
+  }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, selectedAccessLevel]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -522,8 +545,9 @@ export function InviteGuest({
           <div className='max-h-[200px] space-y-1 overflow-y-auto'>
             {allSuggestions.map((suggestion, index) => (
               <PersonSuggestionItem
-                key={`${suggestion.type}-${typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
-                  }`}
+                key={`${suggestion.type}-${
+                  typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
+                }`}
                 suggestion={suggestion}
                 isHovered={index === hoveredIndex}
                 onMouseEnter={() => setHoveredIndex(index)}
@@ -606,7 +630,7 @@ export function InviteGuest({
           onMouseDown={(e) => e.preventDefault()}
           onClick={handleSendInvites}
           loading={inviteLoading}
-          disabled={emailTags.length === 0 || isLoading}
+          disabled={canNotInvite || emailTags.length === 0 || isLoading}
         >
           {inviteLoading && <Progress />}
           {t('shareAction.invite')}

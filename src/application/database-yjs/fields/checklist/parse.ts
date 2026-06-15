@@ -1,5 +1,4 @@
-import { generateUUID } from '@/application/database-yjs';
-import { SelectOption, SelectOptionColor } from '../select-option';
+import { generateOptionId, SelectOption, SelectOptionColor } from '../select-option';
 
 export interface ChecklistCellData {
   selectedOptionIds?: string[];
@@ -26,11 +25,75 @@ export function parseChecklistData(data: string): ChecklistCellData | null {
   }
 }
 
+function parseChecklistTextToStruct(text: string): { options: SelectOption[]; selectedOptionIds: string[] } | null {
+  const options: SelectOption[] = [];
+  const selected: string[] = [];
+
+  const lines = text.split('\n');
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) return;
+
+    const match = trimmed.match(/^-?\s*(\[[xX ]\])?\s*(.*)$/);
+
+    if (!match) return;
+    const marker = match[1];
+    const name = match[2]?.trim();
+
+    if (!name) return;
+    const isChecked = marker?.toLowerCase() === '[x]';
+
+    const option: SelectOption = {
+      id: generateOptionId(),
+      name,
+      color: SelectOptionColor.OptionColor1,
+    };
+
+    options.push(option);
+    if (isChecked) selected.push(option.id);
+  });
+
+  if (!options.length) return null;
+
+  return { options, selectedOptionIds: selected };
+}
+
+export function parseChecklistFlexible(data: string): ChecklistCellData | null {
+  const parsed = parseChecklistData(data);
+
+  if (parsed) {
+    return parsed;
+  }
+
+  const fromText = parseChecklistTextToStruct(data);
+
+  if (fromText) {
+    const { options, selectedOptionIds } = fromText;
+    const percentage = options.length === 0 ? 0 : selectedOptionIds.length / options.length;
+
+    return { options, selectedOptionIds, percentage };
+  }
+
+  return null;
+}
+
+export function stringifyChecklist(options: SelectOption[], selected: string[]): string {
+  return options
+    .map((option) => {
+      const checkbox = selected.includes(option.id) ? '[x]' : '[ ]';
+
+      return `${checkbox} ${option.name}`;
+    })
+    .join('\n');
+}
+
 export function addTask(data: string, taskName: string): string {
   const parsedData = parseChecklistData(data);
 
   const task: SelectOption = {
-    id: generateUUID(),
+    id: generateOptionId(),
     name: taskName,
     color: SelectOptionColor.OptionColor1,
   };

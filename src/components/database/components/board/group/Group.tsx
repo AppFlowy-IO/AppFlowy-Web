@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext, useReadOnly, useRowsByGroup } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
 import Columns from '@/components/database/components/board/group/Columns';
@@ -25,6 +26,7 @@ export const Group = ({ groupId }: GroupProps) => {
   const { t } = useTranslation();
   const context = useDatabaseContext();
   const { paddingStart, paddingEnd, navigateToRow } = context;
+
   const readOnly = useReadOnly();
   const getCards = useCallback(
     (columnId: string) => {
@@ -33,7 +35,7 @@ export const Group = ({ groupId }: GroupProps) => {
     [groupResult]
   );
   const onNewCard = useNewRowDispatch();
-  const { setEditingCardId, setSelectedCardIds } = useBoardContext();
+  const { setEditingCardId, setSelectedCardIds } = useBoardActions();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);
@@ -80,6 +82,8 @@ export const Group = ({ groupId }: GroupProps) => {
 
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
+  const handleMouseEnter = useCallback(() => setIsHover(true), []);
+  const handleMouseLeave = useCallback(() => setIsHover(false), []);
   const [verticalScrollContainer, setVerticalScrollContainer] = useState<HTMLElement | null>(null);
   const getVerticalScrollContainer = useCallback((el: HTMLDivElement) => {
     return (el.closest('.appflowy-scroll-container') || getScrollParent(el)) as HTMLElement;
@@ -88,6 +92,91 @@ export const Group = ({ groupId }: GroupProps) => {
   const innerRef = useRef<HTMLDivElement | null>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
+  const handleRefCallback = useCallback((el: HTMLDivElement | null) => {
+    ref.current = el;
+    if (!el) return;
+    const container = getVerticalScrollContainer(el);
+
+    if (!container) return;
+    setVerticalScrollContainer(container);
+    setElement(el);
+  }, [getVerticalScrollContainer, ref]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollLeft = e.currentTarget.scrollLeft;
+
+    const bottomScrollbar = bottomScrollbarRef.current;
+
+    setTotalSize(e.currentTarget.scrollWidth);
+    stickyHeaderRef.current?.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+
+    if (!bottomScrollbar) return;
+
+    bottomScrollbar.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, []);
+
+  const handleScrollLeft = useCallback((scrollLeft: number) => {
+    ref.current?.scrollTo({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, [ref]);
+
+  const handleCloseDeleteConfirm = useCallback(() => {
+    setDeleteConfirm(false);
+  }, []);
+
+  const handleDeleted = useCallback(() => {
+    setSelectedCardIds([]);
+  }, [setSelectedCardIds]);
+
+  // Auto-scroll for card dragging (registered once at Group level)
+  useEffect(() => {
+    if (!verticalScrollContainer || readOnly) return;
+
+    const cleanup = autoScrollForElements({
+      element: verticalScrollContainer,
+      canScroll: ({ source }) => source.data.instanceId === contextValue.instanceId && source.data.type === 'card',
+    });
+
+    return cleanup;
+  }, [verticalScrollContainer, readOnly, contextValue.instanceId]);
+
+  // Compute initial sticky-header visibility before first paint to prevent
+  // either a flash of duplicate headers (not scrolled) or a missing header
+  // (already scrolled past threshold, e.g. scroll restoration).
+  useLayoutEffect(() => {
+    const stickyHeader = stickyHeaderRef.current;
+
+    if (!stickyHeader) return;
+
+    const inner = innerRef.current;
+    const columnsEl = ref.current;
+
+    if (inner && columnsEl) {
+      const scrollMarginTop = inner.getBoundingClientRect().top ?? 0;
+      const bottom = columnsEl.getBoundingClientRect().bottom ?? 0;
+
+      if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
+        stickyHeader.style.opacity = '1';
+        stickyHeader.style.pointerEvents = 'auto';
+        return;
+      }
+    }
+
+    stickyHeader.style.opacity = '0';
+    stickyHeader.style.pointerEvents = 'none';
+    // fieldId gates whether the full JSX (including the portal sticky header) renders.
+    // Re-run when it transitions from null to ensure we set opacity before first paint.
+  }, [ref, fieldId]);
+
+  // Sticky header scroll listener
   useEffect(() => {
     const inner = innerRef.current;
     const columnsEl = ref.current;
@@ -112,9 +201,11 @@ export const Group = ({ groupId }: GroupProps) => {
     };
 
     onScroll();
-    verticalScrollContainer.addEventListener('scroll', onScroll);
+    const scrollListenerOptions: AddEventListenerOptions = { passive: true };
+
+    verticalScrollContainer.addEventListener('scroll', onScroll, scrollListenerOptions);
     return () => {
-      verticalScrollContainer.removeEventListener('scroll', onScroll);
+      verticalScrollContainer.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
   }, [ref, verticalScrollContainer]);
 
@@ -129,49 +220,23 @@ export const Group = ({ groupId }: GroupProps) => {
 
   if (!fieldId) return null;
   if (readOnly && columns.length === 0) return null;
+
   return (
     <BoardDragContext.Provider value={contextValue}>
       <div
-        onMouseEnter={() => {
-          setIsHover(true);
-        }}
+        onMouseEnter={handleMouseEnter}
         tabIndex={0}
-        onMouseLeave={() => setIsHover(false)}
-        ref={(el) => {
-          ref.current = el;
-          if (!el) return;
-          const container = getVerticalScrollContainer(el);
-
-          if (!container) return;
-          setVerticalScrollContainer(container);
-          setElement(el);
-        }}
-        className={'appflowy-custom-scroller h-full overflow-x-auto px-24 focus:outline-none max-sm:!px-6'}
+        onMouseLeave={handleMouseLeave}
+        ref={handleRefCallback}
+        className={'appflowy-custom-scroller h-full min-h-0 overflow-x-auto px-24 focus:outline-none max-sm:!px-6'}
         style={{
           paddingLeft: paddingStart,
           paddingRight: paddingEnd,
           scrollBehavior: 'auto',
         }}
-        onScroll={(e) => {
-          const scrollLeft = e.currentTarget.scrollLeft;
-
-          const bottomScrollbar = bottomScrollbarRef.current;
-
-          setTotalSize(e.currentTarget.scrollWidth);
-          stickyHeaderRef.current?.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-
-          if (!bottomScrollbar) return;
-
-          bottomScrollbar.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-        }}
+        onScroll={handleScroll}
       >
-        <div className='flex h-full w-fit min-w-full flex-col'>
+        <div className='flex h-full min-h-0 w-fit min-w-full flex-col'>
           <Columns
             groupId={groupId}
             fieldId={fieldId}
@@ -189,22 +254,12 @@ export const Group = ({ groupId }: GroupProps) => {
             groupResult={groupResult}
             columns={columns}
             fieldId={fieldId}
-            onScrollLeft={(scrollLeft) => {
-              ref.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
+            onScrollLeft={handleScrollLeft}
           />
         </DatabaseStickyTopOverlay>
         <DatabaseStickyBottomOverlay scrollElement={verticalScrollContainer}>
           <DatabaseStickyHorizontalScrollbar
-            onScrollLeft={(scrollLeft) => {
-              ref.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
+            onScrollLeft={handleScrollLeft}
             ref={bottomScrollbarRef}
             totalSize={totalSize}
             visible={isHover}
@@ -214,13 +269,9 @@ export const Group = ({ groupId }: GroupProps) => {
       {deleteConfirm && (
         <DeleteRowConfirm
           open={deleteConfirm}
-          onClose={() => {
-            setDeleteConfirm(false);
-          }}
+          onClose={handleCloseDeleteConfirm}
           rowIds={deleteRowIdsRef.current || []}
-          onDeleted={() => {
-            setSelectedCardIds([]);
-          }}
+          onDeleted={handleDeleted}
         />
       )}
     </BoardDragContext.Provider>

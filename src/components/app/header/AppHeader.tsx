@@ -1,14 +1,15 @@
 import { IconButton } from '@mui/material';
-import { lazy, memo, Suspense, useContext, useMemo } from 'react';
+import { lazy, memo, Suspense, useMemo } from 'react';
 
 import { UIVariant } from '@/application/types';
 import { ReactComponent as DoubleArrowRight } from '@/assets/icons/double_arrow_right.svg';
-import { AppContext, useAppHandlers, useBreadcrumb } from '@/components/app/app.hooks';
-import Recent from '@/components/app/recent/Recent';
 import { Breadcrumb } from '@/components/_shared/breadcrumb';
 import { useOutlinePopover } from '@/components/_shared/outline/outline.hooks';
 import OutlinePopover from '@/components/_shared/outline/OutlinePopover';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
+import { useAppRendered, useToView, useBreadcrumb } from '@/components/app/app.hooks';
+import LockedBadge from '@/components/app/header/LockedBadge';
+import Recent from '@/components/app/recent/Recent';
 
 const RightMenu = lazy(() => import('@/components/app/header/RightMenu'));
 
@@ -35,8 +36,8 @@ export function AppHeader({ onOpenDrawer, openDrawer, onCloseDrawer }: AppHeader
 
   const displayMenuButton = !openDrawer && window.innerWidth >= 480;
 
-  const toView = useAppHandlers().toView;
-  const rendered = useContext(AppContext)?.rendered;
+  const toView = useToView();
+  const rendered = useAppRendered();
 
   const recent = useMemo(() => <Recent />, []);
 
@@ -85,6 +86,7 @@ export function AppHeader({ onOpenDrawer, openDrawer, onCloseDrawer }: AppHeader
             <Breadcrumb toView={toView} variant={UIVariant.App} crumbs={crumbs} />
           )}
         </div>
+        <LockedBadge />
         {rendered && (
           <Suspense fallback={null}>
             <RightMenu />

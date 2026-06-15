@@ -1,12 +1,13 @@
+import { Divider, IconButton, Tooltip } from '@mui/material';
+import React, { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { QuickNote, QuickNote as QuickNoteType } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import AddNote from '@/components/quick-note/AddNote';
 import DeleteNoteModal from '@/components/quick-note/DeleteNoteModal';
 import { getSummary, getTitle, getUpdateTime } from '@/components/quick-note/utils';
-import { Divider, IconButton, Tooltip } from '@mui/material';
-import React, { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function NoteList({
   list,

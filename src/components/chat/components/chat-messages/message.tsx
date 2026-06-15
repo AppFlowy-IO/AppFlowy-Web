@@ -1,14 +1,17 @@
-import { AIAnswer } from '../chat-messages/ai-answer';
-import { AssistantMessage } from '../chat-messages/assistant-message';
-import HumanQuestion from '../chat-messages/human-question';
+import { motion } from 'framer-motion';
+import { useCallback, useMemo } from 'react';
+
 import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
-import { cn } from '@/lib/utils';
 import { useMessageAnimation } from '@/components/chat/provider/message-animation-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useSelectionModeContext } from '@/components/chat/provider/selection-mode-provider';
 import { AuthorType, User } from '@/components/chat/types';
-import { motion } from 'framer-motion';
-import { useCallback, useMemo } from 'react';
+import { cn } from '@/lib/utils';
+
+import { AIAnswer } from '../chat-messages/ai-answer';
+import { AssistantMessage } from '../chat-messages/assistant-message';
+import HumanQuestion from '../chat-messages/human-question';
+
 
 export const Message = ({
   id,

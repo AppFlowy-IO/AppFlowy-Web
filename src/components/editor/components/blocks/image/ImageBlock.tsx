@@ -12,8 +12,9 @@ import { notify } from '@/components/_shared/notify';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { EditorElementProps, ImageBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { FileHandler } from '@/utils/file';
 import { constructFileUrl } from '@/components/editor/utils/file-url';
+import { FileHandler } from '@/utils/file';
+
 import ImageEmpty from './ImageEmpty';
 import ImageRender from './ImageRender';
 
@@ -109,7 +110,6 @@ export const ImageBlock = memo(
       [uploadFile]
     );
 
-
     const handleRetry = useCallback(
       async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -132,6 +132,7 @@ export const ImageBlock = memo(
             url,
             image_type: ImageType.External,
             retry_local_url: '',
+            pending_upload_id: '',
           } as ImageBlockData);
         } catch (e) {
           // do noting
@@ -157,8 +158,9 @@ export const ImageBlock = memo(
       >
         <div
           contentEditable={false}
-          className={`embed-block relative ${alignCss} ${url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
-            }`}
+          className={`embed-block relative ${alignCss} ${
+            url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
+          }`}
         >
           {url || needRetry ? (
             <ImageRender

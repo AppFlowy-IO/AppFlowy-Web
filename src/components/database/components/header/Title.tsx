@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RowMetaKey, useDatabaseContext, useReadOnly } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { RowCoverType, ViewIconType } from '@/application/types';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import AddIconCover from '@/components/view-meta/AddIconCover';
-import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
@@ -122,6 +122,7 @@ export function Title({
               autoFocus
               placeholder={'Untitled'}
               value={value}
+              data-testid='row-title-input'
               onChange={(e) => {
                 if (readOnly) return;
 

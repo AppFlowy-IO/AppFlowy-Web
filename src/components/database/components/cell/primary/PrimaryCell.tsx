@@ -1,12 +1,14 @@
 import { useMemo, useRef } from 'react';
 
-import { RowMetaKey, useDatabaseContext, useRowMetaSelector } from '@/application/database-yjs';
-import { CellProps, TextCell as CellType } from '@/application/database-yjs/cell.type';
+import CircularProgress from '@mui/material/CircularProgress';
+
+import { RowMetaKey, useDatabaseContext, useIsRowLoaded, useRowMetaSelector } from '@/application/database-yjs';
+import { Cell as CellType, CellProps } from '@/application/database-yjs/cell.type';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
-import { TextCell } from '@/components/database/components/cell/text';
-import { Button } from '@/components/ui/button';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
+import { Cell as DatabaseCell } from '@/components/database/components/cell';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
 import { getPlatform } from '@/utils/platform';
@@ -16,6 +18,7 @@ export function PrimaryCell(props: CellProps<CellType>) {
   const ref = useRef<HTMLDivElement>(null);
   const meta = useRowMetaSelector(rowId);
   const navigateToRow = useDatabaseContext().navigateToRow;
+  const isRowLoaded = useIsRowLoaded(rowId);
 
   const hasDocument = meta?.isEmptyDocument === false;
   const icon = meta?.icon;
@@ -69,7 +72,15 @@ export function PrimaryCell(props: CellProps<CellType>) {
       </CustomIconPopover>
 
       <div className={'flex flex-1 items-center overflow-x-hidden'}>
-        <TextCell {...props} />
+        {isRowLoaded ? (
+          <DatabaseCell {...props} />
+        ) : (
+          <CircularProgress
+            size={14}
+            className={'text-icon-secondary'}
+            data-testid={`primary-cell-loading-${rowId}`}
+          />
+        )}
       </div>
     </div>
   );

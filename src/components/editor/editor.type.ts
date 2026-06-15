@@ -1,4 +1,9 @@
+import { HTMLAttributes } from 'react';
+import { Element } from 'slate';
+
 import {
+  AIMeetingBlockData,
+  AIMeetingSpeakerBlockData,
   BlockType,
   CalloutBlockData,
   CodeBlockData,
@@ -6,6 +11,7 @@ import {
   ImageBlockData,
   MathEquationBlockData,
   NumberedListBlockData,
+  PDFBlockData,
   TodoListBlockData,
   ToggleListBlockData,
   YjsEditorKey,
@@ -22,9 +28,9 @@ import {
   SimpleTableData,
   VideoBlockData,
   ColumnNodeData,
+  AudioBlockData,
+  GoogleDriveBlockData,
 } from '@/application/types';
-import { HTMLAttributes } from 'react';
-import { Element } from 'slate';
 
 export interface BlockNode extends Element {
   blockId: BlockId;
@@ -126,6 +132,18 @@ export interface VideoBlockNode extends BlockNode {
   data: VideoBlockData;
 }
 
+export interface AudioBlockNode extends BlockNode {
+  type: BlockType.AudioBlock;
+  blockId: string;
+  data: AudioBlockData;
+}
+
+export interface GoogleDriveBlockNode extends BlockNode {
+  type: BlockType.GoogleDriveBlock;
+  blockId: string;
+  data: GoogleDriveBlockData;
+}
+
 export interface GalleryBlockNode extends BlockNode {
   type: BlockType.GalleryBlock;
   blockId: string;
@@ -167,7 +185,7 @@ export interface TableCellNode extends BlockNode {
 }
 
 export interface DatabaseNode extends BlockNode {
-  type: BlockType.GridBlock | BlockType.BoardBlock | BlockType.CalendarBlock;
+  type: BlockType.GridBlock | BlockType.BoardBlock | BlockType.CalendarBlock | BlockType.ChartBlock;
   blockId: string;
   data: DatabaseNodeData;
 }
@@ -187,6 +205,33 @@ export interface ColumnNode extends BlockNode {
   type: BlockType.ColumnBlock;
   blockId: string;
   data: ColumnNodeData;
+}
+
+export interface AIMeetingNode extends BlockNode {
+  type: BlockType.AIMeetingBlock;
+  data: AIMeetingBlockData;
+}
+
+export interface AIMeetingSummaryNode extends BlockNode {
+  type: BlockType.AIMeetingSummaryBlock;
+}
+
+export interface AIMeetingNotesNode extends BlockNode {
+  type: BlockType.AIMeetingNotesBlock;
+}
+
+export interface AIMeetingTranscriptionNode extends BlockNode {
+  type: BlockType.AIMeetingTranscriptionBlock;
+}
+
+export interface AIMeetingSpeakerNode extends BlockNode {
+  type: BlockType.AIMeetingSpeakerBlock;
+  data: AIMeetingSpeakerBlockData;
+}
+
+export interface PDFNode extends BlockNode {
+  type: BlockType.PDFBlock;
+  data: PDFBlockData;
 }
 
 export interface EditorElementProps<T = Element> extends HTMLAttributes<HTMLDivElement> {

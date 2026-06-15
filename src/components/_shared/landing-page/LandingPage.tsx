@@ -1,12 +1,12 @@
-import { HTMLAttributes, ReactNode, useCallback, useContext, useEffect, useMemo } from 'react';
+import { HTMLAttributes, ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Workspace } from '@/application/types';
 import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
-import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
+import LandingFooter from '@/components/_shared/landing-page/LandingFooter';
+import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import LandingFooter from '@/components/_shared/landing-page/LandingFooter';
 import { openAppFlowySchema } from '@/utils/url';
 
 export default function LandingPage({
@@ -16,6 +16,7 @@ export default function LandingPage({
   description,
   primaryAction,
   secondaryAction,
+  fitParent,
 }: {
   Logo?: React.FC<HTMLAttributes<SVGElement | HTMLElement>>;
   title?: ReactNode;
@@ -29,13 +30,17 @@ export default function LandingPage({
     onClick: () => void;
     label: ReactNode;
   } & React.ComponentProps<typeof Button>;
+  // When embedded inside the app shell (content area, modal, drawer, mobile),
+  // fill the parent instead of the viewport. Viewport sizing (h-screen w-screen)
+  // overflows past the sidebar and de-centers the card horizontally.
+  fitParent?: boolean;
 }) {
   const { t } = useTranslation();
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const url = useMemo(() => {
     return window.location.href;
   }, []);
-  const currentUser = useCurrentUser();
+  const currentUser = useCurrentUserOptional();
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -57,7 +62,7 @@ export default function LandingPage({
   }, [currentUser?.email, workspace]);
 
   return (
-    <div className='flex h-screen w-screen flex-col bg-background-primary'>
+    <div className={`flex flex-col bg-background-primary ${fitParent ? 'h-full w-full' : 'h-screen w-screen'}`}>
       <div className='absolute left-0 top-0 flex h-[60px] w-full items-center justify-between gap-[10px] p-4'>
         <span
           onClick={() => {

@@ -1,16 +1,17 @@
-import { Button } from '@/components/ui/button';
-import { ReactComponent as TextIcon } from '@/assets/icons/menu.svg';
-import { ReactComponent as TextWithIcon } from '@/assets/icons/text_image.svg';
-import { ReactComponent as ImageIcon } from '@/assets/icons/image.svg';
-import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
+import { ReactComponent as ImageIcon } from '@/assets/icons/image.svg';
+import { ReactComponent as TextIcon } from '@/assets/icons/menu.svg';
 import { ReactComponent as NumberedListIcon } from '@/assets/icons/numbered_list.svg';
+import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 import { ReactComponent as TableIcon } from '@/assets/icons/table.svg';
+import { ReactComponent as TextWithIcon } from '@/assets/icons/text_image.svg';
+import { OutputContent, OutputLayout } from '@/components/chat/types';
+import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTranslation } from 'react-i18next';
-import { OutputContent, OutputLayout } from '@/components/chat/types';
-import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 
 export function FormatGroup({

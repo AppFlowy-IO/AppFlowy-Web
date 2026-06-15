@@ -1,17 +1,21 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Editor } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
+import { CollabService } from '@/application/services/domains';
 import { getUserIconUrl } from '@/application/user-metadata';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
+
 import { AwarenessMetadata, AwarenessState } from './types';
 import { convertSlateSelectionToAwareness, generateUserColors } from './utils';
 
 // User information parameters for awareness synchronization
 export interface UserAwarenessParams {
   uid: number;
+  user_uuid?: string;
   device_id: string;
   user_name: string;
   cursor_color: string;
@@ -33,6 +37,7 @@ export function useDispatchUserAwareness(awareness?: Awareness) {
         cursor_color: userParams.cursor_color,
         selection_color: userParams.selection_color,
         user_avatar: userParams.user_avatar || '',
+        user_uuid: userParams.user_uuid,
       };
 
       const awarenessState: AwarenessState = {
@@ -48,7 +53,7 @@ export function useDispatchUserAwareness(awareness?: Awareness) {
       awareness.setLocalState(awarenessState);
 
       // Log successful user awareness dispatch
-      console.debug('📡 User awareness dispatched:', awarenessState);
+      Log.debug('📡 User awareness dispatched:', awarenessState);
     },
     [awareness]
   );
@@ -83,6 +88,7 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
         cursor_color: userParams.cursor_color,
         selection_color: userParams.selection_color,
         user_avatar: userParams.user_avatar || '',
+        user_uuid: userParams.user_uuid,
       };
 
       const awarenessState: AwarenessState = {
@@ -99,7 +105,7 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
       awareness.setLocalState(awarenessState);
 
       // Log successful cursor awareness sync
-      console.debug('🎯 Cursor awareness synced:', awarenessState);
+      Log.debug('🎯 Cursor awareness synced:', awarenessState);
     } catch (error) {
       // Log conversion errors for debugging
       console.warn('⚠️ Cursor awareness sync failed:', error);
@@ -109,6 +115,12 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
   const debounceSyncCursor = useMemo(() => {
     return debounce(syncCursor, 100);
   }, [syncCursor]);
+
+  useEffect(() => {
+    return () => {
+      debounceSyncCursor.cancel();
+    };
+  }, [debounceSyncCursor]);
 
   const dispatchCursor = useCallback(
     (userParams: UserAwarenessParams, editor?: Editor) => {
@@ -132,7 +144,6 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
  * Removes user from awareness when leaving or disconnecting
  */
 export function useDispatchClearAwareness(awareness?: Awareness) {
-  const service = useService();
   const currentUser = useCurrentUser();
   const clearAwareness = useCallback(() => {
     if (!awareness) return;
@@ -143,13 +154,13 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
       timestamp: dayjs().unix(),
       user: {
         uid: Number(currentUser?.uid),
-        device_id: service?.getDeviceId() || '',
+        device_id: CollabService.getDeviceId(),
       },
     });
 
     // Log awareness clear
-    console.debug('🚫 Awareness cleared for current user');
-  }, [awareness, service, currentUser]);
+    Log.debug('🚫 Awareness cleared for current user');
+  }, [awareness, currentUser]);
 
   const clearCursor = useCallback((workspaceAvatar?: string | null) => {
     if (!awareness) return;
@@ -160,18 +171,19 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
       timestamp: dayjs().unix(),
       user: {
         uid: Number(currentUser?.uid),
-        device_id: service?.getDeviceId() || '',
+        device_id: CollabService.getDeviceId(),
       },
       metadata: JSON.stringify({
         user_name: currentUser?.name || '',
         cursor_color: generateUserColors(currentUser?.name || '').cursor_color,
         selection_color: generateUserColors(currentUser?.name || '').selection_color,
         user_avatar: userAvatar,
+        user_uuid: currentUser?.uuid,
       }),
     });
 
-    console.debug('🚫 Cursor awareness cleared for current user');
-  }, [awareness, service, currentUser]);
+    Log.debug('🚫 Cursor awareness cleared for current user');
+  }, [awareness, currentUser]);
 
   return { clearAwareness, clearCursor };
 }

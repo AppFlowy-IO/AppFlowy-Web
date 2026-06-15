@@ -1,8 +1,10 @@
-import { withTestingYDoc, withTestingYjsEditor } from './withTestingYjsEditor';
-import { yDocToSlateContent } from '../utils/convert';
-import { createEditor, Editor } from 'slate';
 import { expect } from '@jest/globals';
+import { createEditor, Editor } from 'slate';
 import * as Y from 'yjs';
+
+import { yDocToSlateContent } from '../utils/convert';
+
+import { withTestingYDoc, withTestingYjsEditor } from './withTestingYjsEditor';
 
 function normalizedSlateDoc(doc: Y.Doc) {
   const editor = createEditor();

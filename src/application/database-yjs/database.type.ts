@@ -18,10 +18,18 @@ export enum FieldType {
   LastEditedTime = 8,
   CreatedTime = 9,
   Relation = 10,
-  AISummaries = 11,
-  AITranslations = 12,
-  FileMedia = 14,
+  Summary = 11,
+  Translate = 12,
+  Time = 13,
+  Media = 14,
   Person = 15,
+  Rollup = 16,
+}
+
+export const AI_FIELD_TYPES = [FieldType.Summary, FieldType.Translate] as const;
+
+export function isAIFieldType(fieldType: FieldType | undefined): boolean {
+  return fieldType !== undefined && AI_FIELD_TYPES.includes(fieldType as (typeof AI_FIELD_TYPES)[number]);
 }
 
 export enum CalculationType {
@@ -33,6 +41,25 @@ export enum CalculationType {
   Count = 5,
   CountEmpty = 6,
   CountNonEmpty = 7,
+  DateEarliest = 8,
+  DateLatest = 9,
+  DateRange = 10,
+  NumberRange = 11,
+  NumberMode = 12,
+  CountChecked = 13,
+  CountUnchecked = 14,
+  PercentEmpty = 15,
+  PercentNotEmpty = 16,
+  CountUnique = 17,
+  CountValue = 18,
+  PercentChecked = 19,
+  PercentUnchecked = 20,
+}
+
+export enum RollupDisplayMode {
+  Calculated = 0,
+  OriginalList = 1,
+  UniqueList = 2,
 }
 
 export enum SortCondition {
@@ -41,9 +68,9 @@ export enum SortCondition {
 }
 
 export enum FilterType {
-  Data = 0,
-  And = 1,
-  Or = 2,
+  And = 0,
+  Or = 1,
+  Data = 2,
 }
 
 export interface Filter {
@@ -52,6 +79,10 @@ export interface Filter {
   condition: number;
   id: string;
   content: string;
+  /** Per-row operator: null for the first row ("Where"), And/Or for subsequent rows */
+  operator?: FilterType.And | FilterType.Or | null;
+  /** The actual field column type (RichText, Number, etc.) */
+  fieldType?: FieldType;
 }
 
 export enum CalendarLayout {
@@ -82,6 +113,7 @@ export interface RowMeta {
   cover: {
     data: string,
     cover_type: RowCoverType,
+    offset?: number,
   } | null;
   icon: string;
   isEmptyDocument: boolean;
@@ -97,6 +129,20 @@ export enum AITranslateLanguage {
   Portuguese,
   Standard_Arabic,
   Simplified_Chinese
+}
+
+export enum RowCommentKey {
+  Id = 'id',
+  ParentCommentId = 'parent_comment_id',
+  Content = 'content',
+  AuthorId = 'author_id',
+  CreatedAt = 'created_at',
+  UpdatedAt = 'updated_at',
+  IsResolved = 'is_resolved',
+  ResolvedBy = 'resolved_by',
+  ResolvedAt = 'resolved_at',
+  Reactions = 'reactions',
+  Attachments = 'attachments',
 }
 
 export enum DateGroupCondition {

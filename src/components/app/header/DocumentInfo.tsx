@@ -1,9 +1,10 @@
-import { ViewLayout } from '@/application/types';
-import { useAppView, useAppWordCount } from '@/components/app/app.hooks';
-import { getCharacters, getWords } from '@/utils/word';
 import dayjs from 'dayjs';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ViewLayout } from '@/application/types';
+import { useAppView, useAppWordCount } from '@/components/app/app.hooks';
+import { getCharacters, getWords } from '@/utils/word';
 
 function DocumentInfo({ viewId }: { viewId: string }) {
   const view = useAppView(viewId);

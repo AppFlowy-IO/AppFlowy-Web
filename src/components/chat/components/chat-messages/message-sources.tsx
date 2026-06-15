@@ -1,12 +1,13 @@
-import { useChatContext } from '@/components/chat/chat/context';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTranslation } from 'react-i18next';
-import { ChatMessageMetadata, View } from '@/components/chat/types';
 import { ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
+import { useChatContext } from '@/components/chat/chat/context';
 import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
+import { ChatMessageMetadata, View } from '@/components/chat/types';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
   const { getView } = useViewLoader();

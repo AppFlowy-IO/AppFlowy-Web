@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import LoadingDots from '@/components/_shared/LoadingDots';
+import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import { Log } from '@/utils/log';
 
 /**
  * Component that handles redirecting from /app to /app/:workspaceId
@@ -12,32 +13,36 @@ import RecordNotFound from '@/components/error/RecordNotFound';
  * If no workspace exists after loading, shows error instead of infinite loading
  */
 export function AppWorkspaceRedirect() {
-  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const authContext = useContext(AuthInternalContext);
+  const userWorkspaceInfo = authContext?.userWorkspaceInfo;
   const navigate = useNavigate();
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
     if (!userWorkspaceInfo) {
-      console.debug('[AppWorkspaceRedirect] Waiting for workspace info to load...');
+      Log.debug('[AppWorkspaceRedirect] Waiting for workspace info to load...');
       return;
     }
 
     const workspaceId = userWorkspaceInfo.selectedWorkspace?.id;
 
     if (!workspaceId) {
-      console.warn('[AppWorkspaceRedirect] No selected workspace found in user info', userWorkspaceInfo);
-      // User has loaded but has no workspace - show error instead of infinite loading
+      Log.warn('[AppWorkspaceRedirect] No selected workspace found in user info', userWorkspaceInfo);
       setHasError(true);
       return;
     }
 
-    console.debug('[AppWorkspaceRedirect] Redirecting to workspace', { workspaceId });
+    Log.debug('[AppWorkspaceRedirect] Redirecting to workspace', { workspaceId });
     navigate(`/app/${workspaceId}`, { replace: true });
   }, [userWorkspaceInfo, navigate]);
 
-  // Show error if workspace info loaded but no workspace exists
-  if (hasError) {
-    return <RecordNotFound noContent />;
+  if (hasError || authContext?.workspaceInfoError) {
+    return (
+      <RecordNotFound
+        noContent
+        onRetry={authContext?.retryLoadWorkspaceInfo}
+      />
+    );
   }
 
   // Show loading while waiting for workspace info

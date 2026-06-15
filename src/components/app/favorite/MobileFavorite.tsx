@@ -1,8 +1,9 @@
-import MobileOutlineWithCover from '@/components/_shared/mobile-outline/MobileOutlineWithCover';
-import { useAppFavorites, useAppHandlers } from '@/components/app/app.hooks';
 import orderBy from 'lodash-es/orderBy';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import MobileOutlineWithCover from '@/components/_shared/mobile-outline/MobileOutlineWithCover';
+import { useAppFavorites, useToView } from '@/components/app/app.hooks';
 
 function MobileFavorite ({
   onClose,
@@ -18,7 +19,7 @@ function MobileFavorite ({
     void loadFavoriteViews?.();
   }, [loadFavoriteViews]);
 
-  const navigateToView = useAppHandlers().toView;
+  const navigateToView = useToView();
   const { t } = useTranslation();
   const sortedViews = useMemo(() => {
     return orderBy(favoriteViews, ['favorited_at'], ['desc']);

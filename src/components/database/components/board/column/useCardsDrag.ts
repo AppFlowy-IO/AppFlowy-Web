@@ -1,10 +1,9 @@
+import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { Row, useReadOnly } from '@/application/database-yjs';
 import { useBoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { ColumnDragContextProps } from '@/components/database/components/board/drag-and-drop/column-context';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export enum StateType {
   IDLE = 'idle',
@@ -23,41 +22,45 @@ type State = { type: StateType.IDLE } | { type: StateType.IS_CARD_OVER };
 const idle: State = { type: StateType.IDLE };
 const isCardOver: State = { type: StateType.IS_CARD_OVER };
 
-export function useCardsDrag(columnId: string, rows: Row[], scrollerContainer: HTMLDivElement | null) {
+export function useCardsDrag(columnId: string, rows: Row[]) {
   const { instanceId, registerColumn } = useBoardDragContext();
   const columnInnerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<State>(idle);
   const stableItems = useRef(rows);
   const readOnly = useReadOnly();
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     stableItems.current = rows;
   }, [rows]);
 
   useEffect(() => {
-    if (!columnInnerRef.current || !scrollerContainer || readOnly) {
+    if (!columnInnerRef.current || readOnly) {
       return;
     }
 
-    return combine(
-      dropTargetForElements({
-        element: columnInnerRef.current,
-        getData: () => ({ columnId }),
-        canDrop: ({ source }) => {
-          return source.data.instanceId === instanceId && source.data.type === 'card';
-        },
-        getIsSticky: () => true,
-        onDragEnter: () => setState(isCardOver),
-        onDragLeave: () => setState(idle),
-        onDragStart: () => setState(isCardOver),
-        onDrop: () => setState(idle),
-      }),
-      autoScrollForElements({
-        element: scrollerContainer,
-        canScroll: ({ source }) => source.data.instanceId === instanceId && source.data.type === 'card',
-      })
-    );
-  }, [readOnly, columnId, instanceId, registerColumn, scrollerContainer]);
+    cleanupRef.current?.();
+
+    const teardown = dropTargetForElements({
+      element: columnInnerRef.current,
+      getData: () => ({ columnId }),
+      canDrop: ({ source }) => {
+        return source.data.instanceId === instanceId && source.data.type === 'card';
+      },
+      getIsSticky: () => true,
+      onDragEnter: () => setState(isCardOver),
+      onDragLeave: () => setState(idle),
+      onDragStart: () => setState(isCardOver),
+      onDrop: () => setState(idle),
+    });
+
+    cleanupRef.current = teardown;
+
+    return () => {
+      teardown();
+      cleanupRef.current = null;
+    };
+  }, [readOnly, columnId, instanceId, registerColumn]);
 
   const getCardIndex = useCallback((rowId: string) => {
     return stableItems.current.findIndex((item) => item.id === rowId);

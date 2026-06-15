@@ -1,13 +1,16 @@
-import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
-import { useReorderColumnDispatch } from '@/application/database-yjs/dispatch';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
-import { Edge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import type { CleanupFn } from '@atlaskit/pragmatic-drag-and-drop/types';
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
+import { Edge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+
+import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
+import { useReorderColumnDispatch } from '@/application/database-yjs/dispatch';
+import { Log } from '@/utils/log';
+
+import type { CleanupFn } from '@atlaskit/pragmatic-drag-and-drop/types';
 
 export interface ReorderPayload {
   startIndex: number;
@@ -53,7 +56,7 @@ export function getRegistry() {
   }
 
   function getElement(id: string): HTMLElement | null {
-    console.debug(`getElement: ${id}`);
+    Log.debug(`getElement: ${id}`);
 
     return registry.get(id) ?? null;
   }
@@ -140,7 +143,7 @@ export function usePropertyDragContextValue(
 
           const indexOfTarget = data.findIndex((item) => item.id === targetData.id);
 
-          console.debug(`onDrop:`, {
+          Log.debug(`onDrop:`, {
             indexOfTarget,
             sourceData,
           });

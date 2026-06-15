@@ -1,13 +1,14 @@
-import { ReactComponent as ShuffleIcon } from '@/assets/icons/shuffle.svg';
-import { Button } from '@/components/ui/button';
-import { SearchInput } from '@/components/ui/search-input';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import IconsVirtualizer from '@/components/_shared/icon-picker/IconsVirtualizer';
-import { IconColors, randomColor } from '@/utils/color';
-import { ICON_CATEGORY, loadIcons, randomIcon } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import React, { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ShuffleIcon } from '@/assets/icons/shuffle.svg';
+import IconsVirtualizer from '@/components/_shared/icon-picker/IconsVirtualizer';
+import { Button } from '@/components/ui/button';
+import { SearchInput } from '@/components/ui/search-input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconColors, randomColor } from '@/utils/color';
+import { ICON_CATEGORY, loadIcons, randomIcon } from '@/utils/emoji';
 
 const ICONS_PER_ROW = 9;
 

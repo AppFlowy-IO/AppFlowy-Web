@@ -1,11 +1,12 @@
-import { getCellData } from '@/application/database-yjs/const';
+import { getCell } from '@/application/database-yjs/const';
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
   CheckboxFilterCondition,
   parseSelectOptionTypeOptions,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields';
-import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
+import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
 import { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
@@ -78,14 +79,24 @@ export function groupByCheckbox(
   });
 
   rows.forEach((row) => {
-    // Skip if the row is not in the database
+    // If row document isn't loaded yet, default to 'No' group
+    // The card component will trigger loading via ensureRow
     if (!rowMetas[row.id]) {
+      const defaultGroupName = 'No';
+
+      if (result.has(defaultGroupName)) {
+        const group = result.get(defaultGroupName) ?? [];
+
+        group.push(row);
+        result.set(defaultGroupName, group);
+      }
+
       return;
     }
 
-    const cellData = getCellData(row.id, fieldId, rowMetas);
-
-    const checked = getChecked(cellData as string);
+    const cell = getCell(row.id, fieldId, rowMetas);
+    const cellData = cell?.get(YjsDatabaseKey.data);
+    const checked = parseCheckboxValue(cellData as string);
     const groupName = checked ? 'Yes' : 'No';
 
     if (!result.has(groupName)) {
@@ -115,6 +126,19 @@ export function groupBySelectOption(
     return result;
   }
 
+  const filterCondition = filter
+    ? (Number(filter?.get(YjsDatabaseKey.condition)) as SelectOptionFilterCondition)
+    : undefined;
+  const filterContent = filter?.get(YjsDatabaseKey.content) ?? '';
+
+  const shouldIncludeEmptyGroup = filter
+    ? selectOptionFilterCheck(field, '', filterContent, filterCondition as SelectOptionFilterCondition)
+    : true;
+
+  if (shouldIncludeEmptyGroup) {
+    result.set(fieldId, []);
+  }
+
   typeOption.options.forEach((option) => {
     const groupName = option?.id;
 
@@ -123,10 +147,7 @@ export function groupBySelectOption(
     }
 
     if (filter) {
-      const condition = Number(filter?.get(YjsDatabaseKey.condition)) as SelectOptionFilterCondition;
-      const content = filter?.get(YjsDatabaseKey.content);
-
-      if (!selectOptionFilterCheck(groupName, content, condition)) {
+      if (!selectOptionFilterCheck(field, groupName, filterContent, filterCondition as SelectOptionFilterCondition)) {
         result.delete(groupName);
         return;
       }
@@ -136,17 +157,41 @@ export function groupBySelectOption(
   });
 
   rows.forEach((row) => {
-    // Skip if the row is not in the database
+    // If row document isn't loaded yet, put in "No Status" group (fieldId)
+    // The card component will trigger loading via ensureRow
     if (!rowMetas[row.id]) {
+      if (result.has(fieldId)) {
+        const group = result.get(fieldId) ?? [];
+
+        group.push(row);
+        result.set(fieldId, group);
+      }
+
       return;
     }
 
-    const cellData = getCellData(row.id, fieldId, rowMetas) || '';
+    const cell = getCell(row.id, fieldId, rowMetas);
+    const cellData = cell?.get(YjsDatabaseKey.data);
+    const sourceType = Number(
+      cell?.get(YjsDatabaseKey.source_field_type) ?? cell?.get(YjsDatabaseKey.field_type)
+    ) as FieldType;
 
-    const selectedIds = (cellData as string)?.split(',') ?? [];
+    let selectedIds: string[] = [];
 
-    if (typeof cellData !== 'string') {
-      return;
+    if (sourceType === FieldType.Checklist && typeof cellData === 'string') {
+      const checklist = parseChecklistFlexible(cellData);
+
+      selectedIds =
+        checklist?.selectedOptionIds
+          ?.map((idOrName) => typeOption.options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
+          .filter((id): id is string => Boolean(id)) ?? [];
+    } else if (typeof cellData === 'string') {
+      selectedIds =
+        cellData
+          .split(',')
+          .map((v) => v.trim())
+          .map((idOrName) => typeOption.options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
+          .filter((id): id is string => Boolean(id)) ?? [];
     }
 
     if (selectedIds.length === 0) {

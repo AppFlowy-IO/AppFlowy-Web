@@ -1,11 +1,13 @@
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { SelectOption } from '@/application/database-yjs';
 import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+
 
 function AddAnOption ({ options, onAdd }: {
   options: SelectOption[];

@@ -1,3 +1,7 @@
+# Test results
+test-results/
+playwright/.features-gen/
+
 # Logs
 logs
 *.log
@@ -34,6 +38,7 @@ coverage
 
 cypress/snapshots/**/__diff_output__/
 .claude
+.gemini*
 cypress/screenshots
 cypress/videos
 cypress/downloads
@@ -41,3 +46,4 @@ cypress/downloads
 
 *storybook.log
 storybook-static
+docs/

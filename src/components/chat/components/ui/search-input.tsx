@@ -1,8 +1,10 @@
-import { Input } from '@/components/ui/input';
-import { useTranslation } from 'react-i18next';
-import { cn } from '@/lib/utils';
 import { SearchIcon } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
+
 
 interface SearchInputProps {
   value: string;

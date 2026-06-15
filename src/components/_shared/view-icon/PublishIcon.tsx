@@ -1,7 +1,8 @@
-import { UIVariant, View } from '@/application/types';
-import { ReactComponent as PublishSvg } from '@/assets/icons/earth.svg';
 import { Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+
+import { UIVariant, View } from '@/application/types';
+import { ReactComponent as PublishSvg } from '@/assets/icons/earth.svg';
 
 function PublishIcon({ variant, view }: { variant?: UIVariant; view: View }) {
   const { extra, is_published } = view;

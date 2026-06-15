@@ -1,10 +1,11 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { useFieldSelector } from '@/application/database-yjs';
 import { useUpdateFileMediaTypeOption } from '@/application/database-yjs/dispatch';
 import { parseFileMediaTypeOptions } from '@/application/database-yjs/fields/media/parse';
 import { DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function FileMediaPropertyMenuContent({ fieldId }: { fieldId: string }) {
   const { field, clock } = useFieldSelector(fieldId);

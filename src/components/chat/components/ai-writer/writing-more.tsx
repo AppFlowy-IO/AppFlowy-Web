@@ -1,13 +1,18 @@
-import { AiWriterMenuContent } from '../ai-writer/ai-writer-menu-content';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { motion } from 'framer-motion';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ChevronDown } from '@/assets/icons/triangle_down.svg';
+import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
 import { AIAssistantType } from '@/components/chat/types';
 import { useWriterContext } from '@/components/chat/writer/context';
-import { ReactComponent as ChevronDown } from '@/assets/icons/triangle_down.svg';
-import { useCallback, useState } from 'react';
-import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
-import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
+import { AiWriterMenuContent } from '../ai-writer/ai-writer-menu-content';
+
+
+
 
 export function WritingMore({ input }: {
   input: string

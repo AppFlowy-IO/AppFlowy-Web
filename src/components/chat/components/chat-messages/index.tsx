@@ -1,17 +1,19 @@
+import { motion } from 'framer-motion';
+import { ArrowDown } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import InfiniteScroll from 'react-infinite-scroll-component';
+
 import { useChatContext } from '@/components/chat/chat/context';
-import { EmptyMessages } from '../chat-messages/empty-messages';
-import { Message } from '../chat-messages/message';
-import { useChatMessages } from '../chat-messages/use-chat-messages';
-import { Button } from '@/components/ui/button';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { useUserLoader } from '@/components/chat/hooks/use-user-loader';
 import { ANIMATION_PRESETS } from '@/components/chat/lib/animations';
 import { User } from '@/components/chat/types';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import InfiniteScroll from 'react-infinite-scroll-component';
-import { ArrowDown } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+
+import { EmptyMessages } from '../chat-messages/empty-messages';
+import { Message } from '../chat-messages/message';
+import { useChatMessages } from '../chat-messages/use-chat-messages';
 
 const LoadingIndicator = () => (
   <div className="flex items-center justify-center w-full h-[48px]">
@@ -72,8 +74,9 @@ export function ChatMessages({ currentUser }: {
     const container = scrollContainerRef.current;
 
     if(!container) return;
+    const scrollListenerOptions: AddEventListenerOptions = { passive: true };
 
-    container.addEventListener('scroll', checkScrollPosition);
+    container.addEventListener('scroll', checkScrollPosition, scrollListenerOptions);
     return () => container.removeEventListener('scroll', checkScrollPosition);
   }, [checkScrollPosition]);
 

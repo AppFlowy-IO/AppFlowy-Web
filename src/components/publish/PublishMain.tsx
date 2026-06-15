@@ -1,22 +1,25 @@
-import { usePublishContext } from '@/application/publish';
-import { YDoc } from '@/application/types';
-import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
-import { GlobalCommentProvider } from '@/components/global-comment';
-import CollabView from '@/components/publish/CollabView';
 import { Suspense } from 'react';
 
-function PublishMain ({ doc, isTemplate }: {
-  doc?: YDoc;
+import { usePublishContext } from '@/application/publish';
+import type { PublishedPageSnapshot } from '@/application/publish-snapshot/types';
+import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
+import { GlobalCommentProvider } from '@/components/global-comment';
+import { shouldDisableFixedGlobalCommentInput } from '@/components/publish/comment';
+import { PublishSnapshotView } from '@/components/publish-render/PublishSnapshotView';
+
+function PublishMain ({ snapshot, isTemplate }: {
+  snapshot?: PublishedPageSnapshot;
   isTemplate: boolean;
 }) {
   const commentEnabled = usePublishContext()?.commentEnabled;
+  const content = snapshot ? <PublishSnapshotView snapshot={snapshot} /> : <ComponentLoading />;
 
   return (
     <>
-      <CollabView doc={doc} />
-      {doc && !isTemplate && commentEnabled && (
+      {content}
+      {snapshot && !isTemplate && commentEnabled && (
         <Suspense fallback={<ComponentLoading />}>
-          <GlobalCommentProvider />
+          <GlobalCommentProvider disableFixedAddComment={shouldDisableFixedGlobalCommentInput(snapshot)} />
         </Suspense>
       )}
     </>

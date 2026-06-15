@@ -1,9 +1,10 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
+import React, { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import EmojiItem from '@/components/_shared/emoji-picker/EmojiItem';
 import { Emoji } from '@/components/_shared/emoji-picker/EmojiPicker.hooks';
 
-import React, { useCallback } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { useTranslation } from 'react-i18next';
 
 function EmojisVirtualizer ({
   onSelected,

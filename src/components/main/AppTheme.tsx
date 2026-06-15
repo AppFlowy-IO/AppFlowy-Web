@@ -280,15 +280,17 @@ function AppTheme({ children }: { children: React.ReactNode }) {
       }),
     [isDark]
   );
+  const themeModeValue = useMemo(
+    () => ({
+      isDark,
+      setDark: setIsDark,
+    }),
+    [isDark, setIsDark]
+  );
 
   return (
     <I18nextProvider i18n={i18nInstance}>
-      <ThemeModeContext.Provider
-        value={{
-          isDark,
-          setDark: setIsDark,
-        }}
-      >
+      <ThemeModeContext.Provider value={themeModeValue}>
         <ThemeProvider theme={theme}>{children}</ThemeProvider>
       </ThemeModeContext.Provider>
     </I18nextProvider>

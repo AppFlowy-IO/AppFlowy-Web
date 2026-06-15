@@ -1,73 +1,57 @@
-import { BlockType } from '@/application/types';
-import { EditorElementProps, SimpleTableNode, SimpleTableRowNode } from '@/components/editor/editor.type';
-import { renderColor } from '@/utils/color';
-import { forwardRef, useMemo } from 'react';
-import { Editor, Element, NodeEntry } from 'slate';
+import { Children, forwardRef, useMemo } from 'react';
 import { ReactEditor, useSlate } from 'slate-react';
 
-const SimpleTableRow =
-  forwardRef<HTMLTableRowElement, EditorElementProps<SimpleTableRowNode>>(({
-      node,
-      children,
-      ...attributes
-    }, ref) => {
-      const { blockId } = node;
-      const editor = useSlate();
-      const path = ReactEditor.findPath(editor, node);
+import { BlockType } from '@/application/types';
+import { EditorElementProps, SimpleTableRowNode } from '@/components/editor/editor.type';
+import { renderColor } from '@/utils/color';
 
-      const parent = useMemo(() => {
-        const match = Editor.above(editor, {
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableBlock;
-          },
-          at: path,
-        });
+import { useSimpleTableContext } from './SimpleTableContext';
+import { getSlateNodeType, isSimpleTableRowNode } from './simple-table.utils';
 
-        if (!match) return null;
+const SimpleTableRow = forwardRef<HTMLTableRowElement, EditorElementProps<SimpleTableRowNode>>(
+  ({ node, children, ...attributes }, ref) => {
+    const { blockId } = node;
+    const context = useSimpleTableContext();
+    const editor = useSlate();
+    const path = ReactEditor.findPath(editor, node);
+    const renderedCells = useMemo(
+      () =>
+        Children.toArray(children).filter(
+          (_, index) => getSlateNodeType(node.children[index]) === BlockType.SimpleTableCellBlock
+        ),
+      [children, node.children]
+    );
+    const tableRows = useMemo(
+      () => context?.tableNode.children.filter(isSimpleTableRowNode) ?? [],
+      [context?.tableNode.children]
+    );
+    const tableRowIndex = tableRows.findIndex((row) => row.blockId === blockId);
 
-        return match as NodeEntry<Element>;
-      }, [editor, path]);
+    // Prefer the semantic table row index; pasted tables may have a hidden
+    // Slate text child before the first row while the view is updating.
+    const index = tableRowIndex >= 0 ? tableRowIndex : path[path.length - 1];
 
-      const index = useMemo(() => {
-        if (!parent) return 0;
+    const tableData = context?.tableNode?.data;
+    const align = tableData?.row_aligns?.[index];
+    const bgColor = tableData?.row_colors?.[index];
 
-        const [parentElement] = parent;
-
-        return (parentElement.children as Element[]).findIndex((n) => n.blockId === node.blockId);
-      }, [node, parent]);
-
-      const { align, bgColor } = useMemo(() => {
-        if (!parent) return {
-          align: undefined,
-          bgColor: undefined,
-        };
-
-        const [parentElement] = parent;
-
-        return {
-          align: (parentElement as SimpleTableNode).data.row_aligns?.[index],
-          bgColor: (parentElement as SimpleTableNode).data.row_colors?.[index],
-        };
-      }, [index, parent]);
-
-      return (
-        <tr
-          data-row-index={index}
-          data-block-type={node.type}
-          ref={ref}
-          {...attributes}
-          data-table-row={blockId}
-
-          data-table-row-horizontal-align={align?.toLowerCase()}
-          style={{
-            ...attributes.style,
-            backgroundColor: bgColor ? renderColor(bgColor) : undefined,
-          }}
-        >
-          {children}
-        </tr>
-      );
-    },
-  );
+    return (
+      <tr
+        data-row-index={index}
+        data-block-type={node.type}
+        ref={ref}
+        {...attributes}
+        data-table-row={blockId}
+        data-table-row-horizontal-align={align?.toLowerCase()}
+        style={{
+          ...attributes.style,
+          backgroundColor: bgColor ? renderColor(bgColor) : undefined,
+        }}
+      >
+        {renderedCells}
+      </tr>
+    );
+  }
+);
 
 export default SimpleTableRow;

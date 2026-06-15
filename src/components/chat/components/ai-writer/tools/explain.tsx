@@ -1,7 +1,11 @@
-import { ExplainToolbar } from './explain-toolbar';
-import { WritingInput } from '../writing-input';
-import { ApplyingState, useWriterContext } from '@/components/chat/writer/context';
 import { useCallback } from 'react';
+
+import { ApplyingState, useWriterContext } from '@/components/chat/writer/context';
+
+import { WritingInput } from '../writing-input';
+
+import { ExplainToolbar } from './explain-toolbar';
+
 
 export function Explain() {
   const { askAIAnythingWithRequest, applyingState } = useWriterContext();

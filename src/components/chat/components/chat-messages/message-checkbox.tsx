@@ -1,9 +1,10 @@
+import { CheckSquare, Square } from 'lucide-react';
+import { useMemo } from 'react';
+
 import { useChatContext } from '@/components/chat/chat/context';
-import { Button } from '@/components/ui/button';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useSelectionModeContext } from '@/components/chat/provider/selection-mode-provider';
-import { useMemo } from 'react';
-import { CheckSquare, Square } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 function MessageCheckbox({ id }: {
   id: number

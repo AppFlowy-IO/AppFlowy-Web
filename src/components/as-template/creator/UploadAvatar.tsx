@@ -1,18 +1,18 @@
-import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
-import { useService } from '@/components/main/app.hooks';
-import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
+import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
+import { TemplateService } from '@/application/services/domains';
 
 function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
   const { t } = useTranslation();
 
   const [file, setFile] = React.useState<File | null>(null);
   const [uploadStatus, setUploadStatus] = React.useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-  const service = useService();
   const [hovered, setHovered] = React.useState(false);
 
   const uploadStatusText = useMemo(() => {
@@ -30,7 +30,7 @@ function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
       setUploadStatus('loading');
 
       try {
-        const url = await service?.uploadTemplateAvatar(file);
+        const url = await TemplateService.uploadAvatar(file);
 
         if (!url) throw new Error('Failed to upload file');
         onChange(url);
@@ -40,7 +40,7 @@ function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
         setUploadStatus('error');
       }
     },
-    [service, onChange]
+    [onChange]
   );
 
   return (

@@ -1,6 +1,7 @@
+import { useEffect, useState } from 'react';
+
 import TabbarSkeleton from '@/components/_shared/skeleton/TabbarSkeleton';
 import TitleSkeleton from '@/components/_shared/skeleton/TitleSkeleton';
-import { useEffect, useState } from 'react';
 
 function GridSkeleton({ includeTitle = true, includeTabs = true }: { includeTitle?: boolean; includeTabs?: boolean }) {
   const [rows, setRows] = useState(3);

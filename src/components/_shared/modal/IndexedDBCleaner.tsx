@@ -1,10 +1,10 @@
-import { notify } from '@/components/_shared/notify';
 
 import DeleteIcon from '@mui/icons-material/Delete';
 import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
-
 import { Box, Button, Checkbox, List, ListItemButton, ListItemIcon, ListItemText, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
+
+import { notify } from '@/components/_shared/notify';
 
 const MAX_DELETE = 50;
 const IndexedDBCleaner = () => {

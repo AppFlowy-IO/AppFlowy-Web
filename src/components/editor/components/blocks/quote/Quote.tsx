@@ -1,5 +1,6 @@
-import { EditorElementProps, QuoteNode } from '@/components/editor/editor.type';
 import { forwardRef, memo, useMemo } from 'react';
+
+import { EditorElementProps, QuoteNode } from '@/components/editor/editor.type';
 
 export const Quote = memo(
   forwardRef<HTMLDivElement, EditorElementProps<QuoteNode>>(({ node: _, children, ...attributes }, ref) => {

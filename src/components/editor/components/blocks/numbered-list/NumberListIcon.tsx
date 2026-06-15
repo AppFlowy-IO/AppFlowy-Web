@@ -1,8 +1,10 @@
+import { useMemo } from 'react';
+import { Element, Path } from 'slate';
+import { ReactEditor, useSlate } from 'slate-react';
+
 import { NumberedListNode } from '@/components/editor/editor.type';
 import { getListLevel, letterize, romanize } from '@/components/editor/utils/list';
-import { useMemo } from 'react';
-import { ReactEditor, useSlate } from 'slate-react';
-import { Element, Path } from 'slate';
+
 
 enum Letter {
   Number = 'number',

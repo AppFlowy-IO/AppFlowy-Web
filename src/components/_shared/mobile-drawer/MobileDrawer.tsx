@@ -1,7 +1,7 @@
-import React, { ReactElement, useCallback } from 'react';
-import SwipeableDrawer from '@mui/material/SwipeableDrawer';
-
 import { styled } from '@mui/material/styles';
+import SwipeableDrawer from '@mui/material/SwipeableDrawer';
+import React, { ReactElement, useCallback } from 'react';
+
 
 const BasePuller = styled('div')(({ theme }) => ({
   backgroundColor: theme.palette.mode === 'light' ? '#dadada' : '#666',
@@ -77,6 +77,7 @@ export function MobileDrawer ({
   swipeAreaHeight,
   maxHeight,
   showPuller = true,
+  topOffset = 0,
 }: {
   children: React.ReactNode;
   triggerNode: ReactElement;
@@ -88,6 +89,7 @@ export function MobileDrawer ({
   swipeAreaHeight?: number | undefined;
   maxHeight?: number | undefined;
   showPuller?: boolean;
+  topOffset?: number;
 }) {
 
   const toggleDrawer = useCallback((open: boolean) => {
@@ -118,6 +120,22 @@ export function MobileDrawer ({
     </>
   );
 
+  const paperStyle: React.CSSProperties = {
+    width: swipeAreaWidth,
+    height: swipeAreaHeight,
+    maxHeight: maxHeight,
+  };
+
+  if (topOffset && (anchor === 'left' || anchor === 'right')) {
+    paperStyle.top = topOffset;
+
+    if (!swipeAreaHeight) {
+      paperStyle.height = `calc(100% - ${topOffset}px)`;
+    } else if (typeof swipeAreaHeight === 'number') {
+      paperStyle.height = Math.max(0, swipeAreaHeight - topOffset);
+    }
+  }
+
   return (
     <>
       {React.cloneElement(triggerNode, { ...triggerNode.props, onClick: toggleDrawer(true) })}
@@ -132,11 +150,7 @@ export function MobileDrawer ({
           },
         }}
         PaperProps={{
-          style: {
-            width: swipeAreaWidth,
-            height: swipeAreaHeight,
-            maxHeight: maxHeight,
-          },
+          style: paperStyle,
         }}
       >
         {drawerContent}

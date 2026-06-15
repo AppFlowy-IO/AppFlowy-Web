@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { baseInputStyles, inputVariants } from '@/components/ui/search-input';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { Log } from '@/utils/log';
 
 function DateTimeInput({
   date,
@@ -101,7 +102,7 @@ function DateTimeInput({
 
       onDateChange?.(newDate);
     } catch (error) {
-      console.debug(error);
+      Log.debug(error);
     }
   };
 
@@ -153,7 +154,7 @@ function DateTimeInput({
 
       onDateChange?.(updatedDate);
     } catch (error) {
-      console.debug(error);
+      Log.debug(error);
     }
   };
 

@@ -1,5 +1,14 @@
 import { ReactEditor } from 'slate-react';
 
+// A DOMRect is "degenerate" when every value is 0. Chrome returns such a rect for a
+// collapsed range positioned at an empty text node or directly next to a
+// contentEditable=false element (e.g. a checklist/toggle start icon, or a block
+// placeholder). Treating it as a valid position anchors popovers at the viewport's
+// top-left corner instead of at the caret.
+function isDegenerateRect (rect: DOMRect | undefined | null): boolean {
+  return !rect || (rect.top === 0 && rect.left === 0 && rect.width === 0 && rect.height === 0);
+}
+
 export function getRangeRect () {
   const domSelection = window.getSelection();
   const rangeCount = domSelection?.rangeCount;
@@ -8,7 +17,25 @@ export function getRangeRect () {
 
   const domRange = rangeCount > 0 ? domSelection.getRangeAt(0) : undefined;
 
-  return domRange?.getBoundingClientRect();
+  if (!domRange) return null;
+
+  const rect = domRange.getBoundingClientRect();
+
+  if (!isDegenerateRect(rect)) return rect;
+
+  // Fall back to the nearest ancestor element that has a real layout box so the caret
+  // position can still be resolved (e.g. inside an empty checklist/to-do item).
+  const startNode = domRange.startContainer;
+  let el: Element | null = startNode.nodeType === Node.ELEMENT_NODE ? (startNode as Element) : startNode.parentElement;
+
+  while (el) {
+    const elRect = el.getBoundingClientRect();
+
+    if (!isDegenerateRect(elRect)) return elRect;
+    el = el.parentElement;
+  }
+
+  return rect;
 }
 
 export function getSelectionPosition (editor: ReactEditor) {

@@ -1,28 +1,59 @@
-import { Button, CircularProgress, Divider, Typography } from '@mui/material';
+import { Button, CircularProgress, Divider, Tooltip, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ViewLayout } from '@/application/types';
+import { AccessLevel, ViewLayout } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { notify } from '@/components/_shared/notify';
 import { Switch } from '@/components/_shared/switch';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { usePublishing } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 
-function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: () => void; opened: boolean }) {
+function PublishPanel({
+  viewId,
+  opened,
+  onClose,
+  onOpenPublishManage,
+  currentUserAccessLevel,
+  shareDetailsLoading,
+}: {
+  viewId: string;
+  onClose: () => void;
+  opened: boolean;
+  onOpenPublishManage?: () => void;
+  currentUserAccessLevel?: AccessLevel;
+  shareDetailsLoading?: boolean;
+}) {
   const { t } = useTranslation();
-  const { publish, unpublish } = useAppHandlers();
-  const { url, loadPublishInfo, view, publishInfo, loading, isOwner, isPublisher, updatePublishConfig } =
-    useLoadPublishInfo(viewId);
+  const { publish, unpublish } = usePublishing();
+  const {
+    url,
+    loadPublishInfo,
+    view,
+    publishInfo,
+    publishInfoViewId,
+    loading,
+    isOwner,
+    isPublisher,
+    updatePublishConfig,
+  } = useLoadPublishInfo(viewId);
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
+  // Track publish/unpublish actions locally so the panel updates immediately,
+  // even when the view object (e.g. server fallback) has a stale is_published flag.
+  const [publishedOverride, setPublishedOverride] = React.useState<boolean | undefined>(undefined);
   const [visibleViewId, setVisibleViewId] = React.useState<string[] | undefined>(undefined);
   const [commentEnabled, setCommentEnabled] = React.useState<boolean | undefined>(undefined);
   const [duplicateEnabled, setDuplicateEnabled] = React.useState<boolean | undefined>(undefined);
+
+  // Reset session-local overrides when the target view changes
+  useEffect(() => {
+    setPublishedOverride(undefined);
+  }, [viewId]);
 
   useEffect(() => {
     if (opened) {
@@ -31,11 +62,11 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
   }, [loadPublishInfo, opened]);
 
   useEffect(() => {
-    if (opened && publishInfo) {
+    if (opened && publishInfo && publishInfoViewId === viewId) {
       setCommentEnabled(publishInfo.commentEnabled);
       setDuplicateEnabled(publishInfo.duplicateEnabled);
     }
-  }, [opened, publishInfo]);
+  }, [opened, publishInfo, publishInfoViewId, viewId]);
 
   const handlePublish = useCallback(
     async (publishName?: string) => {
@@ -46,6 +77,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
 
       try {
         await publish(view, newPublishName, visibleViewId);
+        setPublishedOverride(true);
         await loadPublishInfo();
         notify.success(t('publish.publishSuccessfully'));
         // eslint-disable-next-line
@@ -69,6 +101,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
 
     try {
       await unpublish(viewId);
+      setPublishedOverride(false);
       await loadPublishInfo();
       notify.success(t('publish.unpublishSuccessfully'));
       // eslint-disable-next-line
@@ -79,19 +112,22 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
     }
   }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
 
+  const scopedPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
+
   const renderPublished = useCallback(() => {
-    if (!publishInfo || !view) return null;
+    if (!scopedPublishInfo || !view) return null;
     return (
       <div className={'flex flex-col gap-5'}>
         <PublishLinkPreview
           viewId={viewId}
-          publishInfo={publishInfo}
+          publishInfo={scopedPublishInfo}
           url={url}
           updatePublishConfig={updatePublishConfig}
           onUnPublish={handleUnpublish}
           isOwner={isOwner}
           isPublisher={isPublisher}
           onClose={onClose}
+          onOpenPublishManage={onOpenPublishManage}
         />
         <div className={'flex w-full items-center justify-end gap-4'}>
           <Button
@@ -127,6 +163,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
                 void updatePublishConfig({ comments_enabled: e.target.checked, view_id: viewId });
               }}
               size={'small'}
+              inputProps={{ 'data-testid': 'publish-comments-switch' } as React.InputHTMLAttributes<HTMLInputElement>}
             />
           </div>
           <div className={'flex  items-center justify-between gap-4 p-1.5 text-sm'}>
@@ -144,7 +181,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
       </div>
     );
   }, [
-    publishInfo,
+    scopedPublishInfo,
     view,
     url,
     handleUnpublish,
@@ -157,12 +194,19 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
     duplicateEnabled,
     updatePublishConfig,
     viewId,
+    onOpenPublishManage,
   ]);
 
   const layout = view?.layout;
   const isDatabase =
     layout !== undefined ? [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar].includes(layout) : false;
-  const hasPublished = view?.is_published;
+  // Use the publish API (scopedPublishInfo) as the authoritative source.
+  // view.is_published from the outline can be stale after unpublish.
+  const serverPublishedState = Boolean(scopedPublishInfo);
+  // Reconcile local override with fetched/server state:
+  // - local override is authoritative for immediate UI feedback
+  // - fallback to server-derived state when no local override exists
+  const hasPublished = publishedOverride ?? serverPublishedState;
 
   useEffect(() => {
     if (!hasPublished && isDatabase && view) {
@@ -177,6 +221,24 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
   const renderUnpublished = useCallback(() => {
     if (!view) return null;
     const list = [view, ...view.children];
+    const isReadOnlyUser = currentUserAccessLevel === AccessLevel.ReadOnly;
+    const publishDisabled = isReadOnlyUser || shareDetailsLoading || publishLoading;
+    const publishButton = (
+      <Button
+        onClick={() => {
+          if (isReadOnlyUser) return;
+          void handlePublish();
+        }}
+        variant={'contained'}
+        className={'w-full'}
+        data-testid={'publish-confirm-button'}
+        color={'primary'}
+        disabled={publishDisabled}
+        startIcon={publishLoading ? <CircularProgress color={'inherit'} size={16} /> : undefined}
+      >
+        {t('shareAction.publish')}
+      </Button>
+    );
 
     return (
       <div className={'flex w-full flex-col gap-4'}>
@@ -231,21 +293,15 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
             </div>
           </div>
         )}
-        <Button
-          onClick={() => {
-            void handlePublish();
-          }}
-          variant={'contained'}
-          className={'w-full'}
-          data-testid={'publish-confirm-button'}
-          color={'primary'}
-          startIcon={publishLoading ? <CircularProgress color={'inherit'} size={16} /> : undefined}
+        <Tooltip
+          disableHoverListener={!isReadOnlyUser}
+          title={isReadOnlyUser ? t('shareAction.readOnlyPublishTooltip') : ''}
         >
-          {t('shareAction.publish')}
-        </Button>
+          <span className={'w-full'}>{publishButton}</span>
+        </Tooltip>
       </div>
     );
-  }, [handlePublish, isDatabase, publishLoading, t, view, visibleViewId]);
+  }, [currentUserAccessLevel, handlePublish, isDatabase, publishLoading, shareDetailsLoading, t, view, visibleViewId]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch px-3 py-4'>
@@ -269,7 +325,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
           }}
           className={'overflow-hidden'}
         >
-          {view?.is_published ? renderPublished() : renderUnpublished()}
+          {hasPublished ? renderPublished() : renderUnpublished()}
         </div>
       </div>
     </div>

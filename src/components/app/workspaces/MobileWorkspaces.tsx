@@ -1,13 +1,14 @@
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-import { useAppHandlers, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
-import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
-import { useCurrentUser } from '@/components/main/app.hooks';
-import { MobileDrawer } from '@/components/_shared/mobile-drawer';
-import { notify } from '@/components/_shared/notify';
 import { Divider, IconButton } from '@mui/material';
 import React, { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { MobileDrawer } from '@/components/_shared/mobile-drawer';
+import { notify } from '@/components/_shared/notify';
+import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
+import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
+import { useCurrentUser } from '@/components/main/app.hooks';
 
 function MobileWorkspaces({ onClose }: { onClose: () => void }) {
   const [open, setOpen] = React.useState(false);
@@ -16,7 +17,7 @@ function MobileWorkspaces({ onClose }: { onClose: () => void }) {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const [changeLoading, setChangeLoading] = React.useState<string | null>(null);
-  const { onChangeWorkspace: handleSelectedWorkspace } = useAppHandlers();
+  const { onChangeWorkspace: handleSelectedWorkspace } = useAppOperations();
   const selectedWorkspace = useMemo(() => {
     return userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId);
   }, [currentWorkspaceId, userWorkspaceInfo]);
@@ -103,6 +104,8 @@ function MobileWorkspaces({ onClose }: { onClose: () => void }) {
               onChange={handleChange}
               changeLoading={changeLoading || undefined}
               showActions={false}
+              useDropdownItem={false}
+              autoScrollContainerRef={ref}
             />
           )}
         </div>

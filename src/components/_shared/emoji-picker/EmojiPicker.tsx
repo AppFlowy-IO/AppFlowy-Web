@@ -1,9 +1,9 @@
+import emptyImageSrc from '@/assets/images/empty.png';
 import { Progress } from '@/components/ui/progress';
 
 import { useLoadEmojiData } from './EmojiPicker.hooks';
-import EmojiPickerHeader from './EmojiPickerHeader';
 import EmojiPickerCategories from './EmojiPickerCategories';
-import emptyImageSrc from '@/assets/images/empty.png';
+import EmojiPickerHeader from './EmojiPickerHeader';
 
 interface Props {
   onEmojiSelect: (emoji: string) => void;

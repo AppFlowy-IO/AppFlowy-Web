@@ -157,6 +157,7 @@
     "removeAccess": "移除访问权限",
     "canViewDescription": "无法进行更改",
     "canEditDescription": "可以进行任何更改",
+    "fullAccessDescription": "可以编辑并与他人共享",
     "turnIntoMember": "转为成员",
     "notInvitedToPage": "未邀请到页面",
     "keepTypingEmail": "继续输入邮箱以邀请",
@@ -1243,6 +1244,72 @@
   },
   "document": {
     "menuName": "文档",
+    "aiMeeting": {
+      "titleDefault": "会议",
+      "tab": {
+        "summary": "摘要",
+        "notes": "笔记",
+        "transcript": "转录"
+      },
+      "readOnlyHint": "该内容在 Web 上为只读，请在桌面端编辑。",
+      "speakerUnknown": "未知发言者",
+      "speakerFallback": "发言者 {{id}}",
+      "reference": {
+        "sourcesTooltip": "查看来源",
+        "deletedTooltip": "来源已删除",
+        "deleted": "来源已删除"
+      },
+      "copy": {
+        "summary": "复制摘要",
+        "notes": "复制笔记",
+        "transcript": "复制转录",
+        "summarySuccess": "摘要已复制到剪贴板",
+        "notesSuccess": "笔记已复制到剪贴板",
+        "transcriptSuccess": "转录已复制到剪贴板",
+        "noContent": "没有可复制的内容"
+      },
+      "regenerate": {
+        "regenerate": "重新生成",
+        "generating": "生成中",
+        "summaryTemplate": "摘要模板",
+        "summaryDetail": "摘要详略",
+        "summaryLanguage": "摘要语言",
+        "noSource": "没有可用于重新生成摘要的转录或笔记内容",
+        "success": "摘要已重新生成",
+        "failed": "重新生成摘要失败",
+        "template": {
+          "auto": "自动",
+          "meetingMinutes": "会议纪要",
+          "actionFocused": "行动导向",
+          "executive": "管理层摘要"
+        },
+        "detail": {
+          "concise": "简洁",
+          "balanced": "均衡",
+          "detailed": "详细"
+        },
+        "language": {
+          "english": "英语",
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
+          "spanish": "西班牙语",
+          "french": "法语",
+          "german": "德语",
+          "japanese": "日语",
+          "korean": "韩语",
+          "portuguese": "葡萄牙语",
+          "russian": "俄语",
+          "thai": "泰语",
+          "vietnamese": "越南语",
+          "danish": "丹麦语",
+          "finnish": "芬兰语",
+          "norwegian": "挪威语",
+          "dutch": "荷兰语",
+          "italian": "意大利语",
+          "swedish": "瑞典语"
+        }
+      }
+    },
     "date": {
       "timeHintTextInTwelveHour": "下午 01:00",
       "timeHintTextInTwentyFourHour": "13:00"
@@ -1351,7 +1418,14 @@
         "copiedToPasteBoard": "图片链接已复制到剪贴板"
       },
       "urlPreview": {
-        "copiedToPasteBoard": "链接已复制到剪贴板"
+        "copiedToPasteBoard": "链接已复制到剪贴板",
+        "pasteAs": {
+          "title": "粘贴为",
+          "mention": "提及",
+          "url": "URL",
+          "bookmark": "书签",
+          "embed": "嵌入"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "添加标题以创建目录。"
@@ -1897,6 +1971,12 @@
     "deleteTemplate": "删除模板",
     "removeRelatedTemplate": "移除相关模板",
     "label": "模板"
+  },
+  "landingPage": {
+    "inviteCode": {
+      "memberLimitTitle": "工作区成员数量已达上限",
+      "memberLimitDescription": "{{workspaceName}} 已达到免费计划的成员数量上限。请联系工作区所有者升级计划或移除成员，然后再尝试加入。"
+    }
   },
   "time": {
     "justNow": "刚刚",

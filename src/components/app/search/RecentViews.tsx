@@ -1,6 +1,7 @@
+import { useTranslation } from 'react-i18next';
+
 import { View } from '@/application/types';
 import ViewList from '@/components/app/search/ViewList';
-import { useTranslation } from 'react-i18next';
 
 function RecentViews ({
   onClose,

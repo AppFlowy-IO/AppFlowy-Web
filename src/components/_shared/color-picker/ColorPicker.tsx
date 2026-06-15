@@ -1,11 +1,11 @@
+import TitleOutlined from '@mui/icons-material/TitleOutlined';
+import Typography from '@mui/material/Typography';
+import { useCallback, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import KeyboardNavigation from '@/components/_shared/keyboard_navigation/KeyboardNavigation';
 import { ColorEnum, renderColor } from '@/utils/color';
-import Typography from '@mui/material/Typography';
-import { useCallback, useMemo, useRef } from 'react';
-
-import TitleOutlined from '@mui/icons-material/TitleOutlined';
-import { useTranslation } from 'react-i18next';
 
 export interface ColorPickerProps {
   onChange?: (format: EditorMarkFormat.FontColor | EditorMarkFormat.BgColor, color: string) => void;

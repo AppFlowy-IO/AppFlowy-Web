@@ -1,11 +1,14 @@
+import { ReactNode, useState } from 'react';
+
+import { SearchInput } from '@/components/chat/components/ui/search-input';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { Separator } from '@/components/ui/separator';
-import { ReactNode, useState } from 'react';
+
+
 import { SpaceList } from './space-list';
 
 export function PromptDatabaseViews({

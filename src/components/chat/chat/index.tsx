@@ -1,6 +1,7 @@
-import Main from './main';
-import { TooltipProvider } from '@/components/ui/tooltip';
 import { ChatProps } from '@/components/chat/types';
+import { TooltipProvider } from '@/components/ui/tooltip';
+
+import Main from './main';
 
 export * from '@/components/chat/provider/prompt-modal-provider';
 export * from '@/components/chat/provider/view-loader-provider';

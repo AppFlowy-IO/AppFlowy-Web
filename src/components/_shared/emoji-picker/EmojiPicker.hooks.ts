@@ -1,8 +1,9 @@
-import { notify } from '@/components/_shared/notify';
-import { loadEmojiData } from '@/utils/emoji';
 import { EmojiMartData } from '@emoji-mart/data';
 import chunk from 'lodash-es/chunk';
 import { useCallback, useEffect, useState } from 'react';
+
+import { notify } from '@/components/_shared/notify';
+import { loadEmojiData } from '@/utils/emoji';
 
 export interface EmojiCategory {
   id: string;

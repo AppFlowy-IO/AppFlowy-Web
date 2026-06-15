@@ -7,7 +7,7 @@ import FileIcon from '@/components/database/components/cell/file-media/FileIcon'
 import FileMediaMore from '@/components/database/components/cell/file-media/FileMediaMore';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
+import { resolveFileUrl } from '@/utils/file-storage-url';
 import { openUrl } from '@/utils/url';
 
 function FileMediaItem({
@@ -26,7 +26,7 @@ function FileMediaItem({
   onDelete: () => void;
 }) {
   const readOnly = useReadOnly();
-  const { workspaceId, viewId } = useDatabaseContext();
+  const { workspaceId, databasePageId } = useDatabaseContext();
 
   const isImage = file.file_type === FileMediaType.Image;
   const mouseDownStartTimeRef = useRef<number | null>(null);
@@ -48,14 +48,8 @@ function FileMediaItem({
   }, [file.file_type]);
 
   const fileUrl = useMemo(() => {
-    if (file.url && isFileURL(file.url)) {
-      return file.url;
-    }
-
-    const fileId = file.url;
-
-    return getFileUrl(workspaceId, viewId, fileId);
-  }, [file.url, workspaceId, viewId]);
+    return resolveFileUrl(file.url, workspaceId, databasePageId);
+  }, [file.url, workspaceId, databasePageId]);
 
   const authenticatedFileUrl = useAuthenticatedImage(fileUrl);
 
@@ -67,15 +61,11 @@ function FileMediaItem({
         e.stopPropagation();
         // Open the file in a new tab
         if (file.file_type !== FileMediaType.Image) {
-          if (file.url && isFileURL(file.url)) {
-            void openUrl(file.url, '_blank');
-            return;
+          const newUrl = resolveFileUrl(file.url, workspaceId, databasePageId);
+
+          if (newUrl) {
+            void openUrl(newUrl, '_blank');
           }
-
-          const fileId = file.url;
-          const newUrl = getFileUrl(workspaceId, viewId, fileId);
-
-          void openUrl(newUrl, '_blank');
         }
       }}
       onMouseEnter={() => setHover(true)}

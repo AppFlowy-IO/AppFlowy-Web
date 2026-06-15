@@ -3,26 +3,133 @@
  *
  * This file contains reusable decorator functions to avoid duplication across story files.
  * Import and use these decorators in your stories.
+ *
+ * Context hierarchy provided by the decorators:
+ *   AFConfigContext           (root — login state, currentUser)
+ *   └─ AuthInternalContext    (workspace-level auth)
+ *       └─ AppNavigationContext
+ *       └─ AppOutlineContext
+ *       └─ AppOperationsContext
+ *       └─ AppSyncContext
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
-import { AppContext } from '@/components/app/app.hooks';
+import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
+import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
+import { AppOutlineContext } from '@/components/app/contexts/AppOutlineContext';
+import { AppSyncContext } from '@/components/app/contexts/AppSyncContext';
+import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { AFConfigContext } from '@/components/main/app.hooks';
-import { mockAFConfigValue, mockAFConfigValueMinimal, mockAppContextValue } from './mocks';
+import {
+  mockAFConfigValue,
+  mockAFConfigValueMinimal,
+  mockAuthInternalValue,
+  mockNavigationValue,
+  mockOutlineValue,
+  mockOperationsValue,
+  mockSyncValue,
+} from './mocks';
 
 /**
  * Hostname mocking utilities
  */
 declare global {
   interface Window {
-    __STORYBOOK_MOCK_HOSTNAME__?: string;
+    __APP_CONFIG__?: {
+      APPFLOWY_BASE_URL?: string;
+      APPFLOWY_GOTRUE_BASE_URL?: string;
+      APPFLOWY_WS_BASE_URL?: string;
+    };
   }
 }
 
-export const mockHostname = (hostname: string) => {
-  window.__STORYBOOK_MOCK_HOSTNAME__ = hostname;
+type CleanupFn = () => void;
+
+const normalizeHostnameToBaseUrl = (hostname: string): string => {
+  const trimmed = hostname.trim();
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
 };
+
+export const mockHostname = (hostname: string): CleanupFn => {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const previousConfig = window.__APP_CONFIG__ ? { ...window.__APP_CONFIG__ } : undefined;
+  const formattedHostname = hostname?.trim();
+
+  if (!formattedHostname) {
+    delete window.__APP_CONFIG__;
+    return () => {
+      if (previousConfig) {
+        window.__APP_CONFIG__ = previousConfig;
+      }
+    };
+  }
+
+  const baseUrl = normalizeHostnameToBaseUrl(formattedHostname);
+
+  window.__APP_CONFIG__ = {
+    ...(window.__APP_CONFIG__ ?? {}),
+    APPFLOWY_BASE_URL: baseUrl,
+  };
+
+  return () => {
+    if (previousConfig) {
+      window.__APP_CONFIG__ = previousConfig;
+    } else {
+      delete window.__APP_CONFIG__;
+    }
+  };
+};
+
+export const useHostnameMock = (hostname: string) => {
+  const cleanupRef = useRef<CleanupFn | null>(null);
+  const appliedHostnameRef = useRef<string>();
+
+  if (appliedHostnameRef.current !== hostname) {
+    cleanupRef.current?.();
+    cleanupRef.current = mockHostname(hostname);
+    appliedHostnameRef.current = hostname;
+  }
+
+  useEffect(() => {
+    return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+      appliedHostnameRef.current = undefined;
+    };
+  }, []);
+};
+
+/**
+ * Internal helper that wraps children in all split app context providers.
+ * Provides: AuthInternalContext, AppNavigationContext, AppOutlineContext,
+ *           AppOperationsContext, AppSyncContext.
+ */
+const AppContextProviders = ({ children }: { children: React.ReactNode }) => (
+  <AuthInternalContext.Provider value={mockAuthInternalValue}>
+    <AppNavigationContext.Provider value={mockNavigationValue}>
+      <AppOutlineContext.Provider value={mockOutlineValue}>
+        <AppOperationsContext.Provider value={mockOperationsValue}>
+          <AppSyncContext.Provider value={mockSyncValue}>
+            {children}
+          </AppSyncContext.Provider>
+        </AppOperationsContext.Provider>
+      </AppOutlineContext.Provider>
+    </AppNavigationContext.Provider>
+  </AuthInternalContext.Provider>
+);
 
 /**
  * Decorator that provides AFConfigContext with mock values
@@ -35,8 +142,8 @@ export const withAFConfig = (Story: React.ComponentType) => (
 );
 
 /**
- * Decorator that provides AFConfigContext with minimal mock values (no service)
- * Use this for components that need auth but not service functionality
+ * Decorator that provides AFConfigContext with minimal mock values
+ * Use this for components that need auth context
  */
 export const withAFConfigMinimal = (Story: React.ComponentType) => (
   <AFConfigContext.Provider value={mockAFConfigValueMinimal}>
@@ -45,36 +152,38 @@ export const withAFConfigMinimal = (Story: React.ComponentType) => (
 );
 
 /**
- * Decorator that provides AppContext with mock values
- * Use this for components that need workspace and app state
+ * Decorator that provides all split app contexts with mock values.
+ * Use this for components that need workspace and app state.
+ *
+ * Provides: AuthInternalContext, AppNavigationContext, AppOutlineContext,
+ *           AppOperationsContext, AppSyncContext.
  */
 export const withAppContext = (Story: React.ComponentType) => (
-  <AppContext.Provider value={mockAppContextValue}>
+  <AppContextProviders>
     <Story />
-  </AppContext.Provider>
+  </AppContextProviders>
 );
 
 /**
- * Decorator that provides both AFConfig and AppContext
- * Use this for components that need both contexts
+ * Decorator that provides both AFConfig and all split app contexts.
+ * Use this for components that need both authentication and app state.
  */
 export const withContexts = (Story: React.ComponentType) => (
   <AFConfigContext.Provider value={mockAFConfigValue}>
-    <AppContext.Provider value={mockAppContextValue}>
+    <AppContextProviders>
       <Story />
-    </AppContext.Provider>
+    </AppContextProviders>
   </AFConfigContext.Provider>
 );
 
 /**
- * Decorator that provides both AFConfig (minimal) and AppContext
- * Use this for components that need both contexts but not service
+ * Decorator that provides both AFConfig (minimal) and all split app contexts.
  */
 export const withContextsMinimal = (Story: React.ComponentType) => (
   <AFConfigContext.Provider value={mockAFConfigValueMinimal}>
-    <AppContext.Provider value={mockAppContextValue}>
+    <AppContextProviders>
       <Story />
-    </AppContext.Provider>
+    </AppContextProviders>
   </AFConfigContext.Provider>
 );
 
@@ -89,17 +198,7 @@ export const withHostnameMocking = () => {
   return (Story: React.ComponentType, context: { args: { hostname?: string } }) => {
     const hostname = context.args.hostname || 'beta.appflowy.cloud';
 
-    // Set mock hostname synchronously before render
-    mockHostname(hostname);
-
-    useEffect(() => {
-      // Update if hostname changes
-      mockHostname(hostname);
-      // Cleanup
-      return () => {
-        delete (window as any).__STORYBOOK_MOCK_HOSTNAME__;
-      };
-    }, [hostname]);
+    useHostnameMock(hostname);
 
     return <Story />;
   };
@@ -111,7 +210,7 @@ export const withHostnameMocking = () => {
  *
  * @param options.padding - Add padding around the story (default: '20px')
  * @param options.maxWidth - Maximum width of the story container
- * @param options.minimalAFConfig - Use minimal AFConfig (no service)
+ * @param options.minimalAFConfig - Use minimal AFConfig
  */
 export const withHostnameAndContexts = (options?: {
   padding?: string;
@@ -123,25 +222,17 @@ export const withHostnameAndContexts = (options?: {
   return (Story: React.ComponentType, context: { args: { hostname?: string } }) => {
     const hostname = context.args.hostname || 'beta.appflowy.cloud';
 
-    // Set mock hostname synchronously before render
-    mockHostname(hostname);
-
-    useEffect(() => {
-      mockHostname(hostname);
-      return () => {
-        delete (window as any).__STORYBOOK_MOCK_HOSTNAME__;
-      };
-    }, [hostname]);
+    useHostnameMock(hostname);
 
     const afConfigValue = minimalAFConfig ? mockAFConfigValueMinimal : mockAFConfigValue;
 
     return (
       <AFConfigContext.Provider value={afConfigValue}>
-        <AppContext.Provider value={mockAppContextValue}>
+        <AppContextProviders>
           <div style={{ padding, ...(maxWidth && { maxWidth }) }}>
             <Story />
           </div>
-        </AppContext.Provider>
+        </AppContextProviders>
       </AFConfigContext.Provider>
     );
   };

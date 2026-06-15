@@ -1,9 +1,9 @@
-import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
-import { useEditorContext } from '@/components/chat/provider/editor-provider';
 import { Editor, useEditor } from '@appflowyinc/editor';
 import { useEffect } from 'react';
-
 import { ErrorBoundary } from 'react-error-boundary';
+
+import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
+import { useEditorContext } from '@/components/chat/provider/editor-provider';
 
 export function AnswerMd({ mdContent, id }: { mdContent: string; id: number }) {
   const editor = useEditor();

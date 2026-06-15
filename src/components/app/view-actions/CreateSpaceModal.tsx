@@ -1,12 +1,13 @@
-import { SpacePermission } from '@/application/types';
-import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
-import { useAppHandlers } from '@/components/app/app.hooks';
-import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
-import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
 import { OutlinedInput } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { SpacePermission } from '@/application/types';
+import { NormalModal } from '@/components/_shared/modal';
+import { notify } from '@/components/_shared/notify';
+import { useAppOperations } from '@/components/app/app.hooks';
+import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
+import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
 
 function CreateSpaceModal({
   open,
@@ -23,7 +24,7 @@ function CreateSpaceModal({
   const [spacePermission, setSpacePermission] = React.useState<SpacePermission>(SpacePermission.Public);
   const [loading, setLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
-  const { createSpace } = useAppHandlers();
+  const { createSpace } = useAppOperations();
   const handleOk = async () => {
     if (!createSpace) return;
     setLoading(true);

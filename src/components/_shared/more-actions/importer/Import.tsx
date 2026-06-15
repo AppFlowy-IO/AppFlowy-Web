@@ -1,10 +1,11 @@
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as CheckedIcon } from '@/assets/icons/check_circle.svg';
-import { LoginModal } from '@/components/login';
 import { NormalModal } from '@/components/_shared/modal';
 import ImporterModal from '@/components/_shared/more-actions/importer/ImporterModal';
 import { useImport } from '@/components/_shared/more-actions/importer/useImport.hook';
-import React from 'react';
-import { useTranslation } from 'react-i18next';
+import { LoginModal } from '@/components/login';
 
 function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; onSuccessfulImport?: () => void }) {
   const { open, handleImportClose, handleLoginClose, loginOpen, url, source } = useImport();

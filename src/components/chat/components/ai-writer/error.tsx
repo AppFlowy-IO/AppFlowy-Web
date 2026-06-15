@@ -1,7 +1,8 @@
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import { useWriterContext } from '@/components/chat/writer/context';
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 
 export function Error() {
   const { t } = useTranslation();

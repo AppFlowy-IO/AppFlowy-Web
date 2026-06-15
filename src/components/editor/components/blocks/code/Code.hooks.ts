@@ -1,10 +1,11 @@
+import Prism from 'prismjs';
+import { useCallback, useEffect } from 'react';
+import { ReactEditor, useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { CodeNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { useCallback, useEffect } from 'react';
-import { ReactEditor, useSlateStatic } from 'slate-react';
-import Prism from 'prismjs';
 
 Prism.languages.delphi = Prism.languages.pascal;
 

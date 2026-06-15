@@ -13,7 +13,7 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ColorEnum, renderColor } from '@/utils/color';
-import { isOfficialHost } from '@/utils/subscription';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 const origins: Origins = {
   anchorOrigin: {
@@ -38,8 +38,8 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   const selectedColor = originalColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
 
   const [activeSubscriptionPlan, setActiveSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
-  // Pro features are enabled by default on self-hosted instances
-  const isPro = activeSubscriptionPlan === SubscriptionPlan.Pro || !isOfficialHost();
+  const isHosted = useMemo(() => isAppFlowyHosted(), []);
+  const isPro = !isHosted || activeSubscriptionPlan === SubscriptionPlan.Pro;
 
   const loadSubscription = useCallback(async () => {
     try {
@@ -50,9 +50,7 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
         return;
       }
 
-      const subscription = subscriptions[0];
-
-      setActiveSubscriptionPlan(subscription?.plan || SubscriptionPlan.Free);
+      setActiveSubscriptionPlan(getProAccessPlanFromSubscriptions(subscriptions));
     } catch (e) {
       setActiveSubscriptionPlan(SubscriptionPlan.Free);
       console.error(e);
@@ -60,8 +58,13 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   }, [getSubscriptions]);
 
   useEffect(() => {
+    if (!isHosted) {
+      setActiveSubscriptionPlan(null);
+      return;
+    }
+
     void loadSubscription();
-  }, [loadSubscription]);
+  }, [isHosted, loadSubscription]);
 
   const builtinColors = useMemo(() => {
     const proPalette = [

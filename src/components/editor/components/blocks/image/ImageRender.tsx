@@ -1,13 +1,16 @@
+import { debounce } from 'lodash-es';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import ImageResizer from '@/components/editor/components/blocks/image/ImageResizer';
 import ImageToolbar from '@/components/editor/components/blocks/image/ImageToolbar';
 import Img from '@/components/editor/components/blocks/image/Img';
 import { ImageBlockNode } from '@/components/editor/editor.type';
-import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useReadOnly, useSlateStatic } from 'slate-react';
-import { Element } from 'slate';
+import { Log } from '@/utils/log';
+
 
 const MIN_WIDTH = 100;
 
@@ -28,11 +31,13 @@ function ImageRender({
 
   const { width: imageWidth } = useMemo(() => node.data || {}, [node.data]);
   const url = node.data.url || localUrl;
+
+  Log.debug('[ImageRender] url', { url, localUrl, node: node.data });
   const [initialWidth, setInitialWidth] = useState<number | null>(null);
   const [newWidth, setNewWidth] = useState<number | null>(imageWidth ?? null);
 
   useEffect(() => {
-    if(rendered && initialWidth === null && imgRef.current) {
+    if (rendered && initialWidth === null && imgRef.current) {
       setInitialWidth(imgRef.current.offsetWidth);
     }
   }, [initialWidth, rendered]);
@@ -53,7 +58,7 @@ function ImageRender({
     [debounceSubmitWidth],
   );
 
-  if(!url) return null;
+  if (!url) return null;
 
   return (
     <div
@@ -66,6 +71,9 @@ function ImageRender({
         width={rendered ? (newWidth ?? '100%') : 0}
         imgRef={imgRef}
         url={url}
+        // `ImageBlockData` has no caption field today, so let `Img` derive
+        // an alt from the URL filename. This avoids screen readers reading
+        // the raw blob URL or skipping the image entirely.
         onLoad={() => {
           setRendered(true);
         }}

@@ -1,9 +1,12 @@
-import { CollabOrigin } from '@/application/types';
-import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
-import { generateId, insertBlock, withTestingYDoc, withTestingYjsEditor } from './withTestingYjsEditor';
-import { createEditor } from 'slate';
 import { expect } from '@jest/globals';
+import { createEditor } from 'slate';
 import * as Y from 'yjs';
+
+import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
+import { CollabOrigin } from '@/application/types';
+
+import { generateId, insertBlock, withTestingYDoc, withTestingYjsEditor } from './withTestingYjsEditor';
+
 
 export async function runApplyRemoteEventsTest() {
   const pageId = generateId();

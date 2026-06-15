@@ -1,23 +1,23 @@
-import { Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
-import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
-import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import CancelSubscribe from '@/components/billing/CancelSubscribe';
-import { useService } from '@/components/main/app.hooks';
-import { isOfficialHost } from '@/utils/subscription';
 import { Button } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
+import { Subscription, SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { NormalModal } from '@/components/_shared/modal';
+import { notify } from '@/components/_shared/notify';
+import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
+import { BillingService } from '@/application/services/domains';
+import { useGetSubscriptions, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import CancelSubscribe from '@/components/billing/CancelSubscribe';
+import { isAppFlowyHosted } from '@/utils/subscription';
+
 function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
   const { t } = useTranslation();
   const [activeSubscription, setActiveSubscription] = React.useState<Subscription | null>(null);
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [cancelOpen, setCancelOpen] = React.useState(false);
-  const { getSubscriptions } = useAppHandlers();
+  const getSubscriptions = useGetSubscriptions();
 
   const [search, setSearch] = useSearchParams();
   const action = search.get('action');
@@ -50,9 +50,24 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
         return;
       }
 
-      const subscription = subscriptions[0];
+      const proSubscription = subscriptions.find(
+        (item) => item.plan === SubscriptionPlan.Pro || item.plan === SubscriptionPlan.Team
+      );
 
-      setActiveSubscription(subscription);
+      if (proSubscription) {
+        setActiveSubscription({
+          ...proSubscription,
+          plan: SubscriptionPlan.Pro,
+        });
+        return;
+      }
+
+      setActiveSubscription({
+        plan: SubscriptionPlan.Free,
+        currency: '',
+        recurring_interval: SubscriptionInterval.Month,
+        price_cents: 0,
+      });
     } catch (e) {
       console.error(e);
     }
@@ -68,9 +83,9 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const [interval, setInterval] = React.useState<SubscriptionInterval>(SubscriptionInterval.Year);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
 
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       // Self-hosted instances have Pro features enabled by default
       return;
     }
@@ -78,14 +93,14 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     const plan = SubscriptionPlan.Pro;
 
     try {
-      const link = await service.getSubscriptionLink(currentWorkspaceId, plan, interval);
+      const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, interval);
 
       window.open(link, '_current');
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, service, interval]);
+  }, [currentWorkspaceId, interval]);
 
   useEffect(() => {
     if (open) {
@@ -133,7 +148,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     ];
 
     // Filter out Pro plan if not on official host (self-hosted instances don't need subscription)
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       return allPlans.filter((plan) => plan.key !== SubscriptionPlan.Pro);
     }
 

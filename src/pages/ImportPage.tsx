@@ -1,9 +1,10 @@
-import Import from '@/components/_shared/more-actions/importer/Import';
 
-import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
 import Typography from '@mui/material/Typography';
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
+
+import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
+import Import from '@/components/_shared/more-actions/importer/Import';
 
 function ImportPage() {
   const [search] = useSearchParams();

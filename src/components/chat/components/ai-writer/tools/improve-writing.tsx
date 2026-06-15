@@ -1,12 +1,14 @@
-import { CommentWithAskAnything } from './with-comment';
 
-import { useTranslation } from 'react-i18next';
-import { useWriterContext } from '@/components/chat/writer/context';
 import { useMemo } from 'react';
-import { ReactComponent as TryAgainIcon } from '@/assets/icons/undo.svg';
+import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as XIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as InsertBelowIcon } from '@/assets/icons/insert.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
-import { ReactComponent as XIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as TryAgainIcon } from '@/assets/icons/undo.svg';
+import { useWriterContext } from '@/components/chat/writer/context';
+
+import { CommentWithAskAnything } from './with-comment';
 
 export function ImproveWriting({
   title,

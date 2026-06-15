@@ -1,8 +1,9 @@
-import { getAvatar, useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 import { Avatar } from '@mui/material';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
+
+import { getAvatar, useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 
 function ReplyComment({ commentId }: { commentId?: string | null }) {
   const { getComment, setHighLightCommentId } = useGlobalCommentContext();

@@ -1,0 +1,80 @@
+.ai-meeting-block {
+  &[data-ai-meeting-active="summary"] {
+    .block-element[data-block-type="ai_meeting_notes"],
+    .block-element[data-block-type="ai_meeting_transcription"] {
+      display: none !important;
+    }
+  }
+
+  &[data-ai-meeting-active="notes"] {
+    .block-element[data-block-type="ai_meeting_summary"],
+    .block-element[data-block-type="ai_meeting_transcription"] {
+      display: none !important;
+    }
+  }
+
+  &[data-ai-meeting-active="transcript"] {
+    .block-element[data-block-type="ai_meeting_summary"],
+    .block-element[data-block-type="ai_meeting_notes"] {
+      display: none !important;
+    }
+  }
+
+  .block-element[data-block-type="ai_meeting_summary"],
+  .block-element[data-block-type="ai_meeting_notes"],
+  .block-element[data-block-type="ai_meeting_transcription"] {
+    margin-left: 0 !important;
+  }
+
+  // Reset margin for all child blocks inside transcript, notes, and summary sections
+  .block-element[data-block-type="ai_meeting_transcription"] > .flex.w-full.flex-col > .block-element,
+  .block-element[data-block-type="ai_meeting_summary"] > .flex.w-full.flex-col > .block-element,
+  .block-element[data-block-type="ai_meeting_notes"] > .flex.w-full.flex-col > .block-element {
+    margin-left: 0 !important;
+  }
+
+  .ai-meeting-speaker {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 0;
+  }
+
+  .ai-meeting-speaker__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .ai-meeting-speaker__avatar {
+    height: 24px;
+    width: 24px;
+    font-weight: 600;
+    border-radius: 9999px;
+  }
+
+  .ai-meeting-speaker__name {
+    font-weight: 500;
+    color: var(--text-primary);
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ai-meeting-speaker__timestamp {
+    color: var(--text-tertiary);
+    font-size: 14px;
+  }
+
+  .ai-meeting-speaker__content {
+    padding-left: 0;
+  }
+
+  .ai-meeting-speaker__content .block-element,
+  .ai-meeting-speaker .block-element {
+    margin-left: 0 !important;
+  }
+}

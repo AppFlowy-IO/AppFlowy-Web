@@ -1,8 +1,9 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
+import { GridColumnType } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { getPlatform } from '@/utils/platform';
@@ -11,32 +12,140 @@ const MIN_HEIGHT = 36;
 
 export const PADDING_INLINE = getPlatform().isMobile ? 21 : 96;
 
+const logDebug = (..._args: Parameters<typeof console.debug>) => {
+  if (import.meta.env.DEV) {
+    // console.debug(..._args);
+  }
+};
+
 export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[]; data: RenderRow[] }) {
-  const { isDocumentBlock } = useDatabaseContext();
+  const { isDocumentBlock, paddingStart, paddingEnd } = useDatabaseContext();
   const parentRef = useRef<HTMLDivElement | null>(null);
-
-  const parentOffsetRef = useRef(0);
-
-  const updateParentOffset = useCallback(() => {
-    if (parentRef.current) {
-      parentOffsetRef.current = parentRef.current.getBoundingClientRect()?.top ?? 0;
-    }
-  }, []);
-
-  useLayoutEffect(() => {
-    updateParentOffset();
-  }, [updateParentOffset]);
+  const parentOffsetRef = useRef<number | null>(null);
+  const [parentOffset, setParentOffset] = useState(0);
+  const rafIdRef = useRef<number>();
+  const isInitialMountRef = useRef(true);
+  const [isReady, setIsReady] = useState(false);
 
   const getScrollElement = useCallback(() => {
     if (!parentRef.current) return null;
+    // Embedded databases have their own bounded scroll viewport (parentRef itself).
+    // Using the outer page scroll container would let @tanstack/react-virtual call
+    // scrollTo(0) on the document, jumping the user away on view switches.
+    if (isDocumentBlock) return parentRef.current;
     return parentRef.current.closest('.appflowy-scroll-container') || getScrollParent(parentRef.current);
-  }, [parentRef]);
+  }, [parentRef, isDocumentBlock]);
+
+  const measureParentOffset = useCallback(() => {
+    const scrollElement = getScrollElement();
+
+    if (!parentRef.current || !scrollElement) return null;
+
+    const parentRect = parentRef.current.getBoundingClientRect();
+    const scrollRect = scrollElement.getBoundingClientRect();
+
+    // Position of parent within the scroll container's content coordinates
+    // using scrollTop to normalize viewport changes.
+    return scrollElement.scrollTop + (parentRect.top - scrollRect.top);
+  }, [getScrollElement]);
+
+  const updateParentOffset = useCallback(() => {
+    if (rafIdRef.current !== undefined) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+
+    // For embedded databases, measure offset more carefully
+    const first = measureParentOffset();
+
+    if (first === null) {
+      logDebug('[GridVirtualizer] skip parent offset update; missing refs', {
+        hasParent: !!parentRef.current,
+        hasScrollElement: !!getScrollElement(),
+      });
+      return;
+    }
+
+    // Use multiple RAFs during initial mount to ensure layout is stable
+    // This helps prevent scroll jumps during view transitions
+    const rafCount = isInitialMountRef.current ? 3 : 1;
+    let currentRaf = 0;
+
+    const performUpdate = () => {
+      currentRaf++;
+
+      if (currentRaf < rafCount) {
+        rafIdRef.current = requestAnimationFrame(performUpdate);
+        return;
+      }
+
+      const measured = measureParentOffset();
+      const nextOffset = measured ?? first;
+
+      // If this is the first measurement, always accept it without threshold check
+      // This prevents rejecting valid initial offsets (e.g., 955px) that would fail
+      // the delta check if we started from 0.
+      if (parentOffsetRef.current === null) {
+        parentOffsetRef.current = nextOffset;
+        setParentOffset(nextOffset);
+        setIsReady(true);
+        logDebug('[GridVirtualizer] initial parent offset set', {
+          nextOffset,
+          isInitialMount: isInitialMountRef.current,
+        });
+        isInitialMountRef.current = false;
+        return;
+      }
+
+      const delta = Math.abs(nextOffset - parentOffsetRef.current);
+
+      // Only update if change is significant (>10px for initial, >5px after)
+      // Increased threshold for embedded databases to prevent flashing
+      const threshold = isInitialMountRef.current ? 10 : 5;
+
+      if (delta < threshold) {
+        logDebug('[GridVirtualizer] parent offset stable', {
+          current: parentOffsetRef.current,
+          measured: nextOffset,
+          delta,
+          threshold,
+          isInitialMount: isInitialMountRef.current,
+        });
+        isInitialMountRef.current = false;
+        setIsReady(true);
+        return;
+      }
+
+      parentOffsetRef.current = nextOffset;
+      setParentOffset(nextOffset);
+      setIsReady(true);
+      logDebug('[GridVirtualizer] parent offset updated', {
+        nextOffset,
+        previous: parentOffset,
+        delta,
+        isInitialMount: isInitialMountRef.current,
+      });
+      isInitialMountRef.current = false;
+    };
+
+    rafIdRef.current = requestAnimationFrame(performUpdate);
+  }, [measureParentOffset, getScrollElement, parentOffset]);
+
+  useLayoutEffect(() => {
+    // IMPORTANT: We don't reset isInitialMountRef here
+    //
+    // The Grid component now stays mounted during view switches (it's just hidden),
+    // so isInitialMountRef stays false after the first mount. This prevents the
+    // parentOffsetRef from being reset to null, which would cause scroll jumps.
+    //
+    // We watch data.length to detect when the view has changed and needs remeasurement.
+    updateParentOffset();
+  }, [updateParentOffset, data.length]); // Watch data.length for view changes
 
   const virtualizer = useVirtualizer({
     count: data.length,
     estimateSize: () => MIN_HEIGHT,
     overscan: 10,
-    scrollMargin: parentOffsetRef.current,
+    scrollMargin: parentOffset,
     getScrollElement,
     getItemKey: (index) => data[index].rowId || data[index].type,
     paddingStart: 0,
@@ -47,19 +156,93 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
   useLayoutEffect(() => {
     const scrollElement = getScrollElement();
 
-    if (!scrollElement || !isDocumentBlock) return;
+    if (!scrollElement || !isDocumentBlock) {
+      logDebug('[GridVirtualizer] skip observing resize', {
+        hasScrollElement: !!scrollElement,
+        isDocumentBlock,
+      });
+      return;
+    }
 
-    scrollElement.addEventListener('resize', updateParentOffset);
+    logDebug('[GridVirtualizer] observing scroll element for resize', {
+      tagName: scrollElement.tagName,
+      className: scrollElement.className,
+    });
+
+    const observer = new ResizeObserver((entries) => {
+      updateParentOffset();
+      logDebug('[GridVirtualizer] resize observed; recalculating offset', {
+        entries: entries.map((entry) => ({
+          target: entry.target instanceof HTMLElement ? entry.target.tagName : 'unknown',
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        })),
+      });
+    });
+
+    observer.observe(scrollElement);
+    updateParentOffset();
 
     return () => {
-      scrollElement.removeEventListener('resize', updateParentOffset);
+      observer.disconnect();
+      logDebug('[GridVirtualizer] resize observer disconnected');
+      if (rafIdRef.current !== undefined) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
     };
   }, [getScrollElement, updateParentOffset, isDocumentBlock]);
 
-  const getColumn = useCallback((index: number) => columns[index], [columns]);
-  const getColumnWidth = useCallback((index: number) => getColumn(index).width, [getColumn]);
+  const [containerWidth, setContainerWidth] = useState(0);
 
-  const { paddingStart, paddingEnd } = useDatabaseContext();
+  useLayoutEffect(() => {
+    const el = parentRef.current;
+
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    observer.observe(el);
+    setContainerWidth(el.clientWidth);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const effectivePaddingStart = paddingStart || PADDING_INLINE;
+  const effectivePaddingEnd = paddingEnd || PADDING_INLINE;
+
+  const lastColumn = columns[columns.length - 1];
+  const isLastColumnNewProperty = lastColumn?.type === GridColumnType.NewProperty;
+
+  const { shouldFill, fillWidth } = useMemo(() => {
+    if (!isLastColumnNewProperty || containerWidth <= 0) {
+      return { shouldFill: false, fillWidth: lastColumn?.width || 150 };
+    }
+
+    const sumOfOtherWidths = columns.reduce((sum, c, i) => i < columns.length - 1 ? sum + c.width : sum, 0);
+    const remainingWidth = containerWidth - effectivePaddingStart - sumOfOtherWidths - effectivePaddingEnd;
+
+    if (remainingWidth > lastColumn.width) {
+      return { shouldFill: true, fillWidth: remainingWidth };
+    }
+
+    return { shouldFill: false, fillWidth: lastColumn.width };
+  }, [isLastColumnNewProperty, containerWidth, columns, effectivePaddingStart, effectivePaddingEnd, lastColumn]);
+
+  const getColumn = useCallback((index: number) => columns[index], [columns]);
+  const lastIndex = columns.length - 1;
+  const getColumnWidth = useCallback((index: number) => {
+    if (shouldFill && index === lastIndex) {
+      return fillWidth;
+    }
+
+    return getColumn(index).width;
+  }, [getColumn, shouldFill, fillWidth, lastIndex]);
 
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
@@ -67,8 +250,8 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     getScrollElement: () => parentRef.current,
     estimateSize: getColumnWidth,
     overscan: 5,
-    paddingStart: paddingStart || PADDING_INLINE,
-    paddingEnd: paddingEnd || PADDING_INLINE,
+    paddingStart: effectivePaddingStart,
+    paddingEnd: effectivePaddingEnd,
     getItemKey: (index) => columns[index].fieldId || columns[index].type,
   });
 
@@ -76,6 +259,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     parentRef,
     virtualizer,
     columnVirtualizer,
-    scrollMarginTop: parentOffsetRef.current,
+    scrollMarginTop: parentOffset,
+    isReady,
   };
 }

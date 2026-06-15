@@ -1,6 +1,7 @@
-import { ApplyingState, useWriterContext } from '@/components/chat/writer/context';
 import throttle from 'lodash-es/throttle';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+import { ApplyingState, useWriterContext } from '@/components/chat/writer/context';
 
 const SCROLL_CONFIG = {
   // Offset to ensure the bottom is visible

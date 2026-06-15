@@ -1,9 +1,15 @@
-import { debounce } from 'lodash-es';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { Types } from '@/application/types';
+import { deleteCollabDB } from '@/application/db';
+import {
+  deleteOutboxByObjectId,
+  enqueueOutboxUpdate,
+  waitForDrain,
+} from '@/application/sync-outbox';
+import { Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
+import { Log } from '@/utils/log';
 
 /**
  * SyncContext is the context object passed to the sync protocol handlers.
@@ -11,14 +17,47 @@ import { collab, messages } from '@/proto/messages';
  * and an emit function to send messages back to the server.
  */
 export interface SyncContext {
-  doc: Y.Doc;
+  doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
   lastMessageId?: collab.IRid;
+  userMappings?: Y.PermanentUserData;
   /**
    * Emit function to send messages back to the server.
    */
   emit: (reply: messages.IMessage) => void;
+  /**
+   * Wait until all locally-queued updates for this doc have drained to the
+   * WebSocket. Backed by the persistent sync_outbox — the returned promise
+   * resolves `true` once there are no pending records, or `false` on timeout
+   * (e.g. the WebSocket is closed). Callers that need hard delivery guarantees
+   * should combine this with a full-state HTTP send; Yjs handshake recovery
+   * will still reconcile any records left in the outbox.
+   */
+  flush?: () => Promise<boolean>;
+  /**
+   * Drop queued local updates without sending them.
+   * Used by version reset flows where pending updates are stale and must be discarded.
+   */
+  discardPendingUpdates?: () => Promise<void>;
+  /**
+   * Called after a local Yjs update is observed. The WebSocket path still owns
+   * immediate delivery; this hook lets the app schedule a debounced HTTP full
+   * sync when the WebSocket is reconnecting.
+   */
+  onLocalUpdate?: (objectId: string) => void;
+  /**
+   * Called after this context participates in a WebSocket state-vector sync
+   * exchange. A completed manifest-style exchange reconciles the full Yjs
+   * state, so HTTP fallback dirty markers for the object can be cleared when
+   * the socket is open.
+   */
+  onManifestSync?: (objectId: string) => void;
+  /**
+   * Cleanup function to remove update/awareness observers and cancel debounced sends.
+   * Set by initSync, called during deferred sync context cleanup.
+   */
+  _cleanup?: () => void;
 }
 
 interface AwarenessEvent {
@@ -39,6 +78,12 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
 
+  Log.debug('[sync] responding to sync request from server', {
+    objectId: doc.guid,
+    collabType: ctx.collabType,
+    version: doc.version,
+    bytes: update.byteLength,
+  });
   // send the update containing new data back to the server
   emit({
     collabMessage: {
@@ -47,21 +92,34 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       update: {
         flags: UpdateFlags.Lib0v1,
         payload: update,
+        version: doc.version
       },
     },
   });
+  ctx.onManifestSync?.(doc.guid);
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
   if (message.canRead === false) {
     //FIXME: we should not only destroy the doc, but also remove it from the persistent storage.
+    // Access revoked: drop any queued outbox rows so we do not replay local
+    // edits against a doc the user no longer has permission on. The discard
+    // runs async — to prevent the destroy handler's subsequent unregister
+    // from firing a flush that races with the delete, synchronously null
+    // out ctx.flush first. The drain also gates on `suppressedObjects`
+    // (set synchronously by discardPendingUpdates), so any new drain
+    // iteration aborts before sending.
+    void ctx.discardPendingUpdates?.();
+    ctx.flush = undefined;
+    ctx.discardPendingUpdates = undefined;
+    void deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
     ctx.doc.destroy();
   }
 };
 
 const handleAwarenessUpdate = (ctx: SyncContext, message: collab.IAwarenessUpdate): void => {
   if (!ctx.awareness) {
-    console.debug(`No awareness instance found in SyncContext for objectId ${ctx.doc.guid}`);
+    Log.debug(`No awareness instance found in SyncContext for objectId ${ctx.doc.guid}`);
   } else {
     awarenessProtocol.applyAwarenessUpdate(ctx.awareness, message.payload!, 'remote');
   }
@@ -69,6 +127,8 @@ const handleAwarenessUpdate = (ctx: SyncContext, message: collab.IAwarenessUpdat
 
 const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
   const { doc, emit } = ctx;
+
+  Log.debug('[Version] handleUpdate: localDocVersion=%s, incomingMsgVersion=%s, docId=%s', doc.version, message.version, doc.guid);
 
   switch (message.flags) {
     case UpdateFlags.Lib0v1:
@@ -81,12 +141,12 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
       throw new Error(`Unknown update flags: ${message.flags} at ${message.messageId?.timestamp}`);
   }
 
-  console.debug(`applied update to doc ${doc.guid}`);
+  Log.debug(`applied update to doc ${doc.guid}`);
   ctx.lastMessageId = message.messageId || ctx.lastMessageId;
 
   // check if there are any missing update data
   if (doc.store.pendingStructs || doc.store.pendingDs) {
-    console.debug(`Doc ${doc.guid} has missing dependencies. Sending sync request...`);
+    Log.debug(`Doc ${doc.guid} has missing dependencies. Sending sync request...`);
     emit({
       collabMessage: {
         objectId: doc.guid,
@@ -94,6 +154,7 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
         syncRequest: {
           stateVector: Y.encodeStateVector(doc),
           lastMessageId: ctx.lastMessageId || { timestamp: 0, counter: 0 },
+          version: doc.version,
         },
       },
     });
@@ -117,37 +178,49 @@ export const initSync = (ctx: SyncContext) => {
     throw new Error('SyncContext must have a Y.Doc instance.');
   }
 
-  console.debug(`Initializing sync for objectId ${doc.guid} with collabType ${collabType}`);
+  Log.debug(`Initializing sync for objectId ${doc.guid} with collabType ${collabType}`);
 
-  let onAwarenessChange;
-  const updates: Uint8Array[] = [];
-  const debounced = debounce(() => {
-    const mergedUpdates = Y.mergeUpdates(updates);
+  if (collabType === Types.DatabaseRow) {
+    Log.debug('[Database] row sync start', { rowId: doc.guid });
+  }
 
-    updates.length = 0; // Clear the updates array without GC overhead
-    emit({
-      collabMessage: {
-        objectId: doc.guid,
-        collabType,
-        update: {
-          flags: UpdateFlags.Lib0v1,
-          payload: mergedUpdates,
-        },
-      },
-    });
-  }, 250);
+  let onAwarenessChange: ((event: AwarenessEvent, origin: string) => void) | undefined;
+
+  // Persist every local update synchronously to the sync_outbox, then let the
+  // background drain loop push it over the WebSocket. Survives refresh, tab
+  // crash, and modal-unmount races because IndexedDB is the source of truth.
+  ctx.flush = () => waitForDrain([doc.guid]);
+
+  ctx.discardPendingUpdates = () => deleteOutboxByObjectId(doc.guid);
+
   const onUpdate = (update: Uint8Array, origin: string) => {
     if (origin === 'remote') {
       return; // Ignore remote updates
     }
 
-    updates.push(update);
-    debounced();
+    enqueueOutboxUpdate({
+      objectId: doc.guid,
+      collabType,
+      version: doc.version ?? null,
+      payload: update,
+    });
+    ctx.onLocalUpdate?.(doc.guid);
+  };
+
+  const onDestroy = () => {
+    // when switching versions, we destroy previous instance of the document
+    // at this point all stashed updates are no longer valid. Fire-and-forget
+    // is acceptable here: the unregister path that sets `skipFlushOnDestroy`
+    // will also trigger its own discard, and callers that need to observe
+    // completion go through the await path in useCollab{Message,Version}Revert.
+    void ctx.discardPendingUpdates?.();
   };
 
   doc.on('update', onUpdate);
+  doc.on('destroy', onDestroy);
 
   // emit initial sync request to the server
+  Log.debug('[Version] initSync sending initial syncRequest: objectId=%s, version=%s', ctx.doc.guid, ctx.doc.version);
   emit({
     collabMessage: {
       objectId: ctx.doc.guid,
@@ -155,6 +228,7 @@ export const initSync = (ctx: SyncContext) => {
       syncRequest: {
         stateVector: Y.encodeStateVector(ctx.doc),
         lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
+        version: ctx.doc.version,
       },
     },
   });
@@ -191,9 +265,33 @@ export const initSync = (ctx: SyncContext) => {
     });
   }
 
-  // return cleanup function to remove listeners
-  return { onUpdate, onAwarenessChange };
+  // Build a single cleanup function that tears down all observers.
+  // Note: we deliberately do NOT delete outbox records here — cleanup only
+  // detaches listeners. Outbox deletion is caller-driven via
+  // discardPendingUpdates() (version reset/revert paths only).
+  const cleanup = () => {
+    doc.off('update', onUpdate);
+    doc.off('destroy', onDestroy);
+    if (awareness && onAwarenessChange) {
+      awareness.off('change', onAwarenessChange);
+    }
+
+    ctx.flush = undefined;
+    ctx.discardPendingUpdates = undefined;
+  };
+
+  ctx._cleanup = cleanup;
+
+  return { cleanup };
 };
+
+/**
+ * Returns the version carried by a collab message, regardless of which field holds it.
+ * Mirrors a Rust trait default method — callers get a single, uniform way to read
+ * the version without knowing whether the message is an update, sync-request, etc.
+ */
+export const getCollabMessageVersion = (message: collab.ICollabMessage): string | null | undefined =>
+  message.update?.version ?? message.syncRequest?.version;
 
 /**
  * Handles incoming collab messages by dispatching them to the appropriate handler.

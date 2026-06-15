@@ -1,6 +1,7 @@
+import { Alert } from '@mui/material';
+
 import { ReactComponent as WarningIcon } from '@/assets/icons/close.svg';
 import emptyImageSrc from '@/assets/images/empty.png';
-import { Alert } from '@mui/material';
 
 function SomethingError({ error }: { error: Error }) {
   return (

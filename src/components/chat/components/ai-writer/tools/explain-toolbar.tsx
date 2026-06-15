@@ -1,12 +1,14 @@
-import { RenderEditor } from '../render-editor';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { useTranslation } from 'react-i18next';
-import { useWriterContext } from '@/components/chat/writer/context';
 import { EditorProvider } from '@appflowyinc/editor';
 import { XIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as InsertBelowIcon } from '@/assets/icons/insert.svg';
 import { ReactComponent as TryAgainIcon } from '@/assets/icons/undo.svg';
+import { useWriterContext } from '@/components/chat/writer/context';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+
+import { RenderEditor } from '../render-editor';
 
 export function ExplainToolbar() {
   const { t } = useTranslation();

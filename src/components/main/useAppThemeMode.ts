@@ -1,5 +1,6 @@
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { useEffect, useState, createContext, useCallback } from 'react';
+
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export const ThemeModeContext = createContext<
   | {

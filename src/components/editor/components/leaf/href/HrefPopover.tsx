@@ -1,17 +1,18 @@
-import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
-import { Popover } from '@/components/_shared/popover';
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { processUrl } from '@/utils/url';
 import { Button, Divider, OutlinedInput, PopoverPosition } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { Popover } from '@/components/_shared/popover';
+import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { processUrl } from '@/utils/url';
 
 const defaultOrigin: PopoverOrigin = {
   vertical: 'top',

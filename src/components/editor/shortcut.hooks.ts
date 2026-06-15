@@ -224,17 +224,22 @@ export function useShortcuts(editor: ReactEditor) {
          * Special case for select all in code block: Only select all text in code block
          */
         case createHotkey(HOT_KEY_NAME.SELECT_ALL)(e):
+          event.preventDefault();
+
           if (node && node[0].type === BlockType.CodeBlock) {
-            event.preventDefault();
             editor.select(node[1]);
+            break;
           }
 
+          editor.select(Editor.range(editor, []));
           break;
         /**
          * Indent block: Tab
          * Default behavior: Indent block
          */
         case createHotkey(HOT_KEY_NAME.INDENT_BLOCK)(e):
+          // Skip if already handled (e.g., by table cell navigation)
+          if (e.defaultPrevented) break;
           event.preventDefault();
 
           if (SOFT_BREAK_TYPES.includes(node[0]?.type as BlockType)) {
@@ -249,6 +254,8 @@ export function useShortcuts(editor: ReactEditor) {
          * Default behavior: Outdent block
          */
         case createHotkey(HOT_KEY_NAME.OUTDENT_BLOCK)(e):
+          // Skip if already handled (e.g., by table cell navigation)
+          if (e.defaultPrevented) break;
           event.preventDefault();
 
           if (SOFT_BREAK_TYPES.includes(node[0]?.type as BlockType)) {

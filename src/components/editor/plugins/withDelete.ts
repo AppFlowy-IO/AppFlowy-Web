@@ -1,6 +1,6 @@
 import { EditorFragmentDeletionOptions, Range, TextUnit } from 'slate';
-import { ReactEditor } from 'slate-react';
 import { TextDeleteOptions } from 'slate/dist/interfaces/transforms/text';
+import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';

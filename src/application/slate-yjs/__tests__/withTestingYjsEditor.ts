@@ -1,3 +1,9 @@
+import { Editor } from 'slate';
+import { v4 as uuidv4 } from 'uuid';
+import * as Y from 'yjs';
+
+import { withYjs } from '@/application/slate-yjs';
+import { YDelta } from '@/application/slate-yjs/utils/convert';
 import {
   CollabOrigin,
   YBlocks,
@@ -7,11 +13,6 @@ import {
   YSharedRoot,
   YTextMap,
 } from '@/application/types';
-import { withYjs } from '@/application/slate-yjs';
-import { YDelta } from '@/application/slate-yjs/utils/convert';
-import { Editor } from 'slate';
-import * as Y from 'yjs';
-import { v4 as uuidv4 } from 'uuid';
 
 export function generateId () {
   return uuidv4();

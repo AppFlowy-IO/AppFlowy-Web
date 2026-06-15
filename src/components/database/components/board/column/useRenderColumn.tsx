@@ -7,8 +7,8 @@ import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
-import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { Tag } from '@/components/_shared/tag';
+import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
 export function useRenderColumn(id: string, fieldId: string) {
   const { field, clock } = useFieldSelector(fieldId);

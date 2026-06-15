@@ -1,8 +1,9 @@
+import { useMemo } from 'react';
+
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconColors, renderColor } from '@/utils/color';
-import { useMemo } from 'react';
 
 function IconItem({
   icon,

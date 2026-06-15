@@ -1,10 +1,11 @@
-import { TemplateCreatorFormValues } from '@/application/template.type';
-import AccountLinks from '@/components/as-template/creator/AccountLinks';
-import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
 import { FormControl, FormLabel, TextField } from '@mui/material';
 import { forwardRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+
+import { TemplateCreatorFormValues } from '@/application/template.type';
+import AccountLinks from '@/components/as-template/creator/AccountLinks';
+import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
 
 const CreatorForm = forwardRef<
   HTMLInputElement,

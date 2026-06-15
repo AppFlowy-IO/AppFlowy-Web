@@ -1,3 +1,10 @@
+import { ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as CloseCircle } from '@/assets/icons/close_circle.svg';
+import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
+import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import {
@@ -7,15 +14,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
-import { ChevronDown } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { PromptDatabaseViews } from './prompt-database-views';
-import { ReactComponent as CloseCircle } from '@/assets/icons/close_circle.svg';
+
+
 import { InvalidDatabaseDialog } from './invalid-database-dialog';
-import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
+import { PromptDatabaseViews } from './prompt-database-views';
+
 
 export function PromptDatabaseModal({
   isOpen,

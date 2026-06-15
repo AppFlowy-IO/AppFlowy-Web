@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+
 import { ErrorModal } from './ErrorModal';
 
 export const ErrorHandlerPage = ({ error }: { error: Error }) => {

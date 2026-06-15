@@ -1,10 +1,11 @@
-import { BulletedListNode } from '@/components/editor/editor.type';
-import { getListLevel } from '@/components/editor/utils/list';
 import { useMemo } from 'react';
 import { ReactEditor, useSlate } from 'slate-react';
+
 import { ReactComponent as DiscIcon } from '@/assets/icons/bulleted_1.svg';
 import { ReactComponent as CircleIcon } from '@/assets/icons/bulleted_2.svg';
 import { ReactComponent as SquareIcon } from '@/assets/icons/bulleted_3.svg';
+import { BulletedListNode } from '@/components/editor/editor.type';
+import { getListLevel } from '@/components/editor/utils/list';
 
 enum Letter {
   Disc,

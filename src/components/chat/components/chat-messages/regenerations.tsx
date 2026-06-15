@@ -1,17 +1,19 @@
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as RegenerateCircleIcon } from '@/assets/icons/ai_regenerate.svg';
 import { ReactComponent as RegenerateIcon } from '@/assets/icons/regenerate.svg';
 import { ReactComponent as ChevronIcon } from '@/assets/icons/triangle_down.svg';
 import { ReactComponent as TryAgainIcon } from '@/assets/icons/undo.svg';
 import { FormatGroup } from '@/components/chat/components/ui/format-group';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTranslation } from 'react-i18next';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
 import { OutputContent, OutputLayout } from '@/components/chat/types';
-import { useCallback, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
 
 export function Regenerations({ id, sideOffset }: { id: number; sideOffset: number }) {
   const { t } = useTranslation();

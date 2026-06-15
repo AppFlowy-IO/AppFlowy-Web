@@ -1,10 +1,12 @@
-import { RowId, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { v4 as uuidv4, v5 as uuidv5, parse as uuidParse } from 'uuid';
+
 import { RowMetaKey } from '@/application/database-yjs/database.type';
-import { v5 as uuidv5, parse as uuidParse } from 'uuid';
+import { RowId, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 export const DEFAULT_ROW_HEIGHT = 36;
 export const MIN_COLUMN_WIDTH = 150;
 export const PADDING_END = 220;
+export const DEFAULT_FIELD_WRAP = false;
 
 export const getCell = (rowId: string, fieldId: string, rowMetas: Record<RowId, YDoc>) => {
   const rowMeta = rowMetas[rowId];
@@ -30,4 +32,4 @@ export const metaIdFromRowId = (rowId: string) => {
   return (key: RowMetaKey) => uuidv5(key, namespace).toString();
 };
 
-export const generateUUID = () => uuidv5(Date.now().toString(), uuidv5.URL);
+export const generateUUID = () => uuidv4();

@@ -1,12 +1,12 @@
+import { IconButton } from '@mui/material';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { QuickNote } from '@/application/types';
 import { ReactComponent as LeftIcon } from '@/assets/icons/alt_arrow_left.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as OpenIcon } from '@/assets/icons/full_screen.svg';
 import { ReactComponent as CollapseIcon } from '@/assets/icons/shrink.svg';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-
-import { IconButton } from '@mui/material';
-import { useTranslation } from 'react-i18next';
-import { QuickNote } from '@/application/types';
 import { getTitle } from '@/components/quick-note/utils';
 
 function NoteHeader({

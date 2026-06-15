@@ -7,6 +7,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { BlockType } from '@/application/types';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import AIAssistant from '@/components/editor/components/toolbar/selection-toolbar/actions/AIAssistant';
 import Align from '@/components/editor/components/toolbar/selection-toolbar/actions/Align';
 import Bold from '@/components/editor/components/toolbar/selection-toolbar/actions/Bold';
@@ -22,7 +23,7 @@ import StrikeThrough from '@/components/editor/components/toolbar/selection-tool
 import TextColor from '@/components/editor/components/toolbar/selection-toolbar/actions/TextColor';
 import Underline from '@/components/editor/components/toolbar/selection-toolbar/actions/Underline';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 
 import BgColor from './actions/BgColor';
 import Paragraph from './actions/Paragraph';
@@ -31,7 +32,8 @@ function ToolbarActions() {
   const editor = useSlate() as YjsEditor;
   const selection = editor.selection;
   const { forceShow, visible: toolbarVisible } = useSelectionToolbarContext();
-  const { removeDecorate } = useEditorContext();
+  const { removeDecorate } = useEditorLocalState();
+  const aiEnabled = useAIEnabled();
 
   const refocusTimeout = useRef<NodeJS.Timeout | null>(null);
   const disableFocusRef = useRef<boolean>(false);
@@ -120,7 +122,7 @@ function ToolbarActions() {
 
   return (
     <div className={'flex w-fit flex-grow items-center gap-1'}>
-      {!isCodeBlock && <AIAssistant />}
+      {aiEnabled && !isCodeBlock && <AIAssistant />}
       {!isAcrossBlock && !isCodeBlock && (
         <>
           <Paragraph />

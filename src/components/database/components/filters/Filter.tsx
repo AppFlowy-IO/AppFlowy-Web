@@ -1,10 +1,13 @@
+import { useCallback } from 'react';
+
 import { useFilterSelector, useReadOnly } from '@/application/database-yjs';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import { FieldDisplay } from '@/components/database/components/field';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useCallback } from 'react';
+
 import { useConditionsContext } from '../conditions/context';
+
 import { FilterMenu } from './filter-menu';
 import { FilterContentOverview } from './overview';
 

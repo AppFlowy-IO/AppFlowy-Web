@@ -33,6 +33,10 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Calendar,
         label: t('calendar.menuName'),
       },
+      {
+        value: DatabaseViewLayout.Chart,
+        label: t('chart.menuName'),
+      },
     ],
     [t]
   );

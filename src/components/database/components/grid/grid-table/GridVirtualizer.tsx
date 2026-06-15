@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRowType } from '@/components/database/components/grid/grid-row';
+import GridLoadMoreRow from '@/components/database/components/grid/grid-row/GridLoadMoreRow';
 import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
@@ -13,15 +14,34 @@ import DatabaseStickyBottomOverlay from '@/components/database/components/sticky
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { cn } from '@/lib/utils';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
+
+const GRID_LOADING_DOT_COLORS = ['#00b5ff', '#e3006d', '#f7931e'] as const;
+
+const gridLoadingDots = (
+  <div className={'flex h-full items-center gap-1.5'}>
+    {GRID_LOADING_DOT_COLORS.map((color, index) => (
+      <span
+        key={color}
+        className={'h-1.5 w-1.5 animate-bounce rounded-full'}
+        style={{
+          animationDelay: `${index * 120}ms`,
+          animationDuration: '900ms',
+          backgroundColor: color,
+        }}
+      />
+    ))}
+  </div>
+);
 
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, resizeRows, onResizeRowEnd } = useGridContext();
   const { handleResizeStart, isResizing } = useColumnResize(columns);
   const { isDocumentBlock, paddingEnd } = useDatabaseContext();
 
-  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop } = useGridVirtualizer({
+  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady } = useGridVirtualizer({
     data,
     columns,
   });
@@ -33,10 +53,13 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const contextValue = useGridDnd(columns, virtualizer, columnVirtualizer);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
+  const handleMouseEnter = useCallback(() => setIsHover(true), []);
+  const handleMouseLeave = useCallback(() => setIsHover(false), []);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
   const rowsHeightRef = useRef<Map<string, number>>(new Map());
   const [isScrolling, setIsScrolling] = useState(false);
   const { setShowStickyHeader } = useGridContext();
+  const stickyHeaderVisibleRef = useRef<boolean | null>(null);
 
   const onResizeRow = useCallback(
     (id: string, maxCellHeight: number) => {
@@ -88,71 +111,95 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     let timeout: NodeJS.Timeout;
 
     const onScroll = () => {
-      const scrollMarginTop = gridElement.getBoundingClientRect().top ?? 0;
-      const bottom = gridElement.getBoundingClientRect().bottom ?? 0;
+      const gridRect = gridElement.getBoundingClientRect();
+      const gridTop = gridRect.top ?? 0;
+      const bottom = gridRect.bottom ?? 0;
       const stickyHeader = stickyHeaderRef.current;
 
       if (!stickyHeader) return;
 
-      if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
-        stickyHeader.style.opacity = '1';
-        stickyHeader.style.pointerEvents = 'auto';
-        setShowStickyHeader(true);
-      } else {
-        stickyHeader.style.opacity = '0';
-        stickyHeader.style.pointerEvents = 'none';
-        setShowStickyHeader(false);
+      const shouldShowStickyHeader = gridTop <= 48 && bottom - PADDING_END >= 48;
+
+      if (stickyHeaderVisibleRef.current !== shouldShowStickyHeader) {
+        stickyHeaderVisibleRef.current = shouldShowStickyHeader;
+        stickyHeader.style.opacity = shouldShowStickyHeader ? '1' : '0';
+        stickyHeader.style.pointerEvents = shouldShowStickyHeader ? 'auto' : 'none';
+        setShowStickyHeader(shouldShowStickyHeader);
       }
 
-      setIsScrolling(true);
+      if (!isScrollingRef.current) {
+        isScrollingRef.current = true;
+        setIsScrolling(true);
+      }
 
       clearTimeout(timeout);
       timeout = setTimeout(() => {
+        isScrollingRef.current = false;
         setIsScrolling(false);
       }, 1000);
     };
 
     onScroll();
-    scrollElement.addEventListener('scroll', onScroll);
+    const scrollListenerOptions: AddEventListenerOptions = { passive: true };
+
+    scrollElement.addEventListener('scroll', onScroll, scrollListenerOptions);
     return () => {
-      scrollElement.removeEventListener('scroll', onScroll);
+      clearTimeout(timeout);
+      scrollElement.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
   }, [parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollLeft = e.currentTarget.scrollLeft;
+
+    stickyHeaderRef.current?.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+
+    bottomScrollbarRef.current?.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, []);
+
+  const handleScrollLeft = useCallback((scrollLeft: number) => {
+    parentRef.current?.scrollTo({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, [parentRef]);
 
   return (
     <GridDragContext.Provider value={contextValue}>
       <div
-        onMouseEnter={() => setIsHover(true)}
-        onMouseLeave={() => setIsHover(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         ref={parentRef}
-        className={'appflowy-custom-scroller'}
+        className={cn(
+          'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar',
+          isDocumentBlock && 'min-h-0 flex-1'
+        )}
         style={{
           overflowY: 'auto',
+          overflowX: 'auto',
           scrollBehavior: 'auto',
         }}
-        onScroll={(e) => {
-          const scrollLeft = e.currentTarget.scrollLeft;
-
-          stickyHeaderRef.current?.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-
-          bottomScrollbarRef.current?.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-        }}
+        onScroll={handleScroll}
       >
         <div
           style={{
             height: virtualizer.getTotalSize(),
             position: 'relative',
+            opacity: isReady ? 1 : 0, // Hide content until parent offset is stable to prevent scroll jumps
           }}
         >
           {rowItems.map((row) => {
             const rowData = data[row.index];
             const rowId = rowData.rowId;
+            const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
+            const isFullWidthControlRow =
+              rowData.type === RenderRowType.NewRow || rowData.type === RenderRowType.LoadMoreRow;
 
             return (
               <div
@@ -166,9 +213,21 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   left: 0,
                   transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
                   display: 'flex',
+                  right: isPlaceholderRow ? 0 : undefined,
+                  pointerEvents: isPlaceholderRow ? 'none' : undefined,
+                  zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
                 }}
               >
-                {rowData.type === RenderRowType.NewRow ? (
+                {isPlaceholderRow ? (
+                  <div
+                    data-testid={'grid-loading-indicator'}
+                    className={'flex h-9 w-full items-center justify-center'}
+                    aria-label={'Loading rows'}
+                    role={'status'}
+                  >
+                    {gridLoadingDots}
+                  </div>
+                ) : isFullWidthControlRow ? (
                   <div
                     style={{
                       paddingLeft: columnItems[0]?.start,
@@ -176,7 +235,11 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                       width: totalSize - (paddingEnd ?? 0),
                     }}
                   >
-                    <GridNewRow />
+                    {rowData.type === RenderRowType.LoadMoreRow ? (
+                      <GridLoadMoreRow remainingCount={rowData.remainingRowCount ?? 0} />
+                    ) : (
+                      <GridNewRow />
+                    )}
                   </div>
                 ) : (
                   <GridVirtualRow
@@ -192,36 +255,28 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
             );
           })}
         </div>
-        <DatabaseStickyTopOverlay>
-          <GridStickyHeader
-            // eslint-disable-next-line
-            // @ts-ignore
-            row={{
-              index: 0,
-            }}
-            ref={stickyHeaderRef}
-            columns={columns}
-            data={data}
-            totalSize={totalSize}
-            columnItems={columnItems}
-            onScrollLeft={(scrollLeft) => {
-              parentRef.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
-            onResizeColumnStart={handleResizeStart}
-          />
-        </DatabaseStickyTopOverlay>
+        {!isDocumentBlock && (
+          <DatabaseStickyTopOverlay>
+            <GridStickyHeader
+              // eslint-disable-next-line
+              // @ts-ignore
+              row={{
+                index: 0,
+              }}
+              ref={stickyHeaderRef}
+              columns={columns}
+              data={data}
+              totalSize={totalSize}
+              columnItems={columnItems}
+              onScrollLeft={handleScrollLeft}
+              onResizeColumnStart={handleResizeStart}
+            />
+          </DatabaseStickyTopOverlay>
+        )}
 
         <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
           <DatabaseStickyHorizontalScrollbar
-            onScrollLeft={(scrollLeft) => {
-              parentRef.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
+            onScrollLeft={handleScrollLeft}
             ref={bottomScrollbarRef}
             totalSize={totalSize}
             visible={Boolean(isHover && totalSize)}

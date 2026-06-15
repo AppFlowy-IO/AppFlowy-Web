@@ -35,7 +35,7 @@ function DropdownMenuContent({ className, sideOffset = 4, container, forceMount,
         avoidCollisions
         className={cn(
           // Base colors and appearance
-          'bg-background-primary text-text-primary',
+          'border border-border-primary bg-surface-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
 
           // Size constraints and overflow behavior
@@ -43,10 +43,11 @@ function DropdownMenuContent({ className, sideOffset = 4, container, forceMount,
           'origin-(--radix-dropdown-menu-content-transform-origin)',
           'overflow-y-auto overflow-x-hidden',
 
-          // Animation states for opening/closing
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+          // Enter animation only — no exit animation to avoid blocking
+          // react-remove-scroll unmount (modal menus use RemoveScroll)
+          'data-[state=open]:animate-in',
+          'data-[state=open]:fade-in-0',
+          'data-[state=open]:zoom-in-95',
 
           // Position-based animations
           'data-[side=bottom]:slide-in-from-top-2',
@@ -69,7 +70,7 @@ const DropdownMenuGroup = ({ ...props }: React.ComponentProps<typeof DropdownMen
 const dropdownMenuItemVariants = cva(
   cn(
     'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none',
-    'relative flex cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1.5 min-h-[32px]',
+    'relative flex cursor-pointer items-center gap-2 rounded-300 px-2 py-1.5 min-h-[32px]',
     'text-sm text-text-primary outline-hidden select-none',
 
     // Disabled state
@@ -240,14 +241,15 @@ const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<t
         data-slot='dropdown-menu-sub-content'
         className={cn(
           // Base colors and appearance
-          'bg-background-primary text-text-primary',
+          'bg-surface-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
           'origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden',
 
-          // Animation states for opening/closing
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+          // Enter animation only — no exit animation to avoid blocking
+          // react-remove-scroll unmount (modal menus use RemoveScroll)
+          'data-[state=open]:animate-in',
+          'data-[state=open]:fade-in-0',
+          'data-[state=open]:zoom-in-95',
 
           // Position-based animations
           'data-[side=bottom]:slide-in-from-top-2',

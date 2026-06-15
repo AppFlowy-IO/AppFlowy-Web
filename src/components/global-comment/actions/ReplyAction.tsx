@@ -1,10 +1,11 @@
-import { GlobalComment } from '@/application/comment.type';
-import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
-import { ReactComponent as ReplyOutlined } from '@/assets/icons/back_arrow.svg';
 import { Tooltip } from '@mui/material';
+import IconButton from '@mui/material/IconButton';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import IconButton from '@mui/material/IconButton';
+
+import { GlobalComment } from '@/application/comment.type';
+import { ReactComponent as ReplyOutlined } from '@/assets/icons/back_arrow.svg';
+import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 
 function ReplyAction({ comment }: { comment: GlobalComment }) {
   const { t } = useTranslation();

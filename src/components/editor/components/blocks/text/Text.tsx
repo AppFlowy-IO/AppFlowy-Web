@@ -1,9 +1,11 @@
-import Placeholder from '@/components/editor/components/blocks/text/Placeholder';
+import { forwardRef, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useSlateStatic } from 'slate-react';
-import { useStartIcon } from './StartIcon.hooks';
+
+import Placeholder from '@/components/editor/components/blocks/text/Placeholder';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
-import { forwardRef, useMemo } from 'react';
+
+import { useStartIcon } from './StartIcon.hooks';
 
 export const Text = forwardRef<HTMLSpanElement, EditorElementProps<TextNode>>(
   ({ node, children, className: classNameProp, ...attributes }, ref) => {

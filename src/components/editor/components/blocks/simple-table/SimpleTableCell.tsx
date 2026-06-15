@@ -1,101 +1,71 @@
-import { BlockType } from '@/application/types';
-import { EditorElementProps, SimpleTableCellBlockNode, SimpleTableNode } from '@/components/editor/editor.type';
+import { Children, forwardRef, useCallback, useMemo } from 'react';
+
+import { BlockType, YjsEditorKey } from '@/application/types';
+import { DEFAULT_COLUMN_WIDTH, MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
+import { EditorElementProps, SimpleTableCellBlockNode } from '@/components/editor/editor.type';
 import { renderColor } from '@/utils/color';
-import { forwardRef, useMemo } from 'react';
-import { Editor, Element, NodeEntry } from 'slate';
-import { ReactEditor, useSlate } from 'slate-react';
-import { MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
 
-const SimpleTableCell =
-  forwardRef<HTMLTableCellElement, EditorElementProps<SimpleTableCellBlockNode>>(({
-      node,
-      children,
-      ...attributes
-    }, ref) => {
-      const { blockId } = node;
-      const editor = useSlate();
-      const path = ReactEditor.findPath(editor, node);
+import { SimpleTableColumnResizer } from './SimpleTableColumnResizer';
+import { useSimpleTableContext } from './SimpleTableContext';
+import { getSlateNodeType } from './simple-table.utils';
 
-      const table = useMemo(() => {
-        const match = Editor.above(editor, {
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableBlock;
-          },
-          at: path,
-        });
+const SimpleTableCell = forwardRef<HTMLTableCellElement, EditorElementProps<SimpleTableCellBlockNode>>(
+  ({ node, children, ...attributes }, ref) => {
+    const { blockId } = node;
+    const context = useSimpleTableContext();
+    const readOnly = context?.readOnly ?? true;
+    const cellPosition = context?.cellPositionById.get(blockId);
+    const rowIndex = cellPosition?.row ?? 0;
+    const colIndex = cellPosition?.col ?? 0;
 
-        if (!match) return null;
+    // Read styling from context (always up-to-date)
+    const tableData = context?.tableNode?.data;
 
-        return match as NodeEntry<Element>;
-      }, [editor, path]);
+    const renderedChildren = useMemo(
+      () =>
+        Children.toArray(children).filter((_, index) => {
+          const child = node.children[index];
+          const childType = getSlateNodeType(child);
 
-      const row = useMemo(() => {
-        const match = Editor.above(editor, {
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableRowBlock;
-          },
-          at: path,
-        });
+          return childType !== YjsEditorKey.text && childType !== BlockType.SimpleTableRowBlock;
+        }),
+      [children, node.children]
+    );
 
-        if (!match) return null;
+    const horizontalAlign = tableData?.column_aligns?.[colIndex];
+    const bgColor = tableData?.column_colors?.[colIndex];
+    const width = tableData?.column_widths?.[colIndex] || DEFAULT_COLUMN_WIDTH;
 
-        return match as NodeEntry<Element>;
-      }, [editor, path]);
+    // Report hover state to parent context
+    const handleMouseEnter = useCallback(() => {
+      context?.setHoveringCell({ row: rowIndex, col: colIndex });
+    }, [context, rowIndex, colIndex]);
 
-      const colIndex = useMemo(() => {
-        if (!row) return 0;
-
-        const [parentElement] = row;
-
-        return (parentElement.children as Element[]).findIndex((n) => n.blockId === node.blockId);
-      }, [node, row]);
-
-      const { horizontalAlign, bgColor, width } = useMemo(() => {
-        if (!table || !row) return {
-          bgColor: undefined,
-          horizontalAlign: undefined,
-          width: undefined,
-        };
-
-        const [parentElement] = table;
-
-        const horizontalAlign = (parentElement as SimpleTableNode).data.column_aligns?.[colIndex];
-        const bgColor = (parentElement as SimpleTableNode).data.column_colors?.[colIndex];
-
-        const width = (parentElement as SimpleTableNode).data.column_widths?.[colIndex] || MIN_WIDTH;
-
-        return {
-          horizontalAlign,
-          bgColor,
-          width,
-        };
-      }, [colIndex, row, table]);
-
-      return (
-        <td
-          data-block-type={node.type}
-          data-block-cell={blockId}
-          data-cell-index={colIndex}
-          ref={ref}
-          {...attributes}
-          rowSpan={1}
-          colSpan={1}
-          data-table-cell-horizontal-align={horizontalAlign?.toLowerCase()}
-          style={{
-            ...attributes.style,
-            backgroundColor: bgColor ? renderColor(bgColor) : undefined,
-            minWidth: width ? `${width}px` : undefined,
-            width: width ? `${width}px` : undefined,
-          }}
-        >
-          <div
-            className={'cell-children'}
-          >
-            {children}
-          </div>
-        </td>
-      );
-    },
-  );
+    return (
+      <td
+        data-block-type={node.type}
+        data-block-cell={blockId}
+        data-cell-index={colIndex}
+        data-row-index={rowIndex}
+        ref={ref}
+        {...attributes}
+        rowSpan={1}
+        colSpan={1}
+        data-table-cell-horizontal-align={horizontalAlign?.toLowerCase()}
+        onMouseEnter={handleMouseEnter}
+        style={{
+          ...attributes.style,
+          backgroundColor: bgColor ? renderColor(bgColor) : undefined,
+          minWidth: width ? `${width}px` : undefined,
+          width: width ? `${width}px` : undefined,
+          position: 'relative',
+        }}
+      >
+        <div className={'cell-children'}>{renderedChildren}</div>
+        {!readOnly && <SimpleTableColumnResizer colIndex={colIndex} initialWidth={width || MIN_WIDTH} />}
+      </td>
+    );
+  }
+);
 
 export default SimpleTableCell;

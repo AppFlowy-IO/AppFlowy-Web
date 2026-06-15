@@ -1,8 +1,3 @@
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { getNodeAtPath } from '@/application/slate-yjs/utils/editor';
-import { calculateOffsetRelativeToParent } from '@/application/slate-yjs/utils/positions';
-import { getBlock, getText } from '@/application/slate-yjs/utils/yjs';
-import { YjsEditorKey, YSharedRoot } from '@/application/types';
 import {
   Descendant,
   Editor,
@@ -15,6 +10,13 @@ import {
   Text,
 } from 'slate';
 import * as Y from 'yjs';
+
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { getNodeAtPath } from '@/application/slate-yjs/utils/editor';
+import { calculateOffsetRelativeToParent } from '@/application/slate-yjs/utils/positions';
+import { getBlock, getText } from '@/application/slate-yjs/utils/yjs';
+import { YjsEditorKey, YSharedRoot } from '@/application/types';
+import { Log } from '@/utils/log';
 
 // transform slate op to yjs op and apply it to ydoc
 export function applyToYjs(ydoc: Y.Doc, editor: Editor, op: Operation, slateContent: Descendant[]) {
@@ -101,7 +103,7 @@ function insertText(
     yText.insert(relativeOffset, text, attributes);
   }
 
-  console.debug('insertText', attributes, yText.toDelta());
+  Log.debug('insertText', attributes, yText.toDelta());
 }
 
 function applyInsertText(ydoc: Y.Doc, editor: Editor, op: InsertTextOperation, slateContent: Descendant[]) {
@@ -157,7 +159,7 @@ function applyRemoveText(ydoc: Y.Doc, editor: Editor, op: RemoveTextOperation, s
 
   yText.delete(relativeOffset, text.length);
 
-  console.debug('applyRemoveText', op, yText.toDelta());
+  Log.debug('applyRemoveText', op, yText.toDelta());
 }
 
 function applySetNode(ydoc: Y.Doc, editor: Editor, op: SetNodeOperation, slateContent: Descendant[]) {
@@ -170,7 +172,7 @@ function applySetNode(ydoc: Y.Doc, editor: Editor, op: SetNodeOperation, slateCo
   const isData = Object.keys(newProperties).some((prop: string) => prop === 'data');
   const sharedRoot = ydoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
-  console.debug('applySetNode isLeaf', isLeaf, op);
+  Log.debug('applySetNode isLeaf', isLeaf, op);
   if (isLeaf) {
     const node = getNodeAtPath(slateContent, path.slice(0, -1)) as Element;
     const textId = node.textId;

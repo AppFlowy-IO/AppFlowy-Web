@@ -1,9 +1,10 @@
-import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
-import { openUrl } from '@/utils/url';
 import { Button, CircularProgress, InputBase } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { NormalModal } from '@/components/_shared/modal';
+import { notify } from '@/components/_shared/notify';
+import { openUrl } from '@/utils/url';
 
 export function PublishNameSetting({
   defaultName,

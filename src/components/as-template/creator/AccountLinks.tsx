@@ -1,7 +1,8 @@
-import { TemplateCreator } from '@/application/template.type';
-import { accountLinkIcon } from '@/components/as-template/icons';
 import { TextField } from '@mui/material';
 import { useState } from 'react';
+
+import { TemplateCreator } from '@/application/template.type';
+import { accountLinkIcon } from '@/components/as-template/icons';
 
 const accountLinkTypes = ['youtube', 'twitter', 'instagram', 'facebook', 'linkedin', 'tiktok', 'website'] as const;
 

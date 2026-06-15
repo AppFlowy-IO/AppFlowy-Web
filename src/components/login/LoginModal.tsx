@@ -1,6 +1,8 @@
 import { Dialog, IconButton } from '@mui/material';
-import { Login } from './Login';
+
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+
+import { Login } from './Login';
 
 export function LoginModal({ redirectTo, open, onClose }: { redirectTo: string; open: boolean; onClose: () => void }) {
   return (

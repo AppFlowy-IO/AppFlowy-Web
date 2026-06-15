@@ -1,26 +1,35 @@
-import { Chat, ChatRequest } from '@/components/chat';
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';
 import React, { useEffect, useMemo } from 'react';
 
 import { getUserIconUrl } from '@/application/user-metadata';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { Chat, ChatRequest } from '@/components/chat';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import { getPlatform } from '@/utils/platform';
 import { downloadPage } from '@/utils/url';
 
 
 export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: () => void }) {
-  const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
   const currentUserAvatar = useMemo(() => getUserIconUrl(currentUser, workspaceAvatar), [currentUser, workspaceAvatar]);
+  const chatUser = useMemo(() => {
+    if (!currentUser) return undefined;
+    return {
+      uuid: currentUser.uuid,
+      name: currentUser.name || '',
+      email: currentUser.email || '',
+      avatar: currentUserAvatar,
+    };
+  }, [currentUser, currentUserAvatar]);
   const isMobile = getPlatform().isMobile;
   const [openMobilePrompt, setOpenMobilePrompt] = React.useState(isMobile);
 
-  const { refreshOutline, updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppHandlers();
+  const { updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppOperations();
 
   const {
     selectionMode,
@@ -33,8 +42,8 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
   } = useAIChatContext();
 
   const requestInstance = useMemo(() => {
-    if (!service || !workspaceId) return;
-    const axiosInstance = service.getAxiosInstance();
+    if (!workspaceId) return;
+    const axiosInstance = getAxiosInstance();
 
     if (!axiosInstance) return;
 
@@ -48,7 +57,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
           name,
           icon: view.icon || undefined,
         });
-        void refreshOutline?.();
+        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
       } catch (error) {
         return Promise.reject(error);
       }
@@ -62,7 +71,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
       try {
         const res = await createViewWithContent.apply(request, [parentViewId, name, data]);
 
-        await refreshOutline?.();
+        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         onOpenView(res.view_id);
 
         return res;
@@ -72,7 +81,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
     };
 
     return request;
-  }, [onOpenView, service, workspaceId, chatId, updatePage, refreshOutline]);
+  }, [onOpenView, workspaceId, chatId, updatePage]);
 
   useEffect(() => {
     if (onRendered) {
@@ -95,16 +104,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
           workspaceId={workspaceId}
           requestInstance={requestInstance}
           chatId={chatId}
-          currentUser={
-            currentUser
-              ? {
-                  uuid: currentUser.uuid,
-                  name: currentUser.name || '',
-                  email: currentUser.email || '',
-                  avatar: currentUserAvatar,
-                }
-              : undefined
-          }
+          currentUser={chatUser}
           selectionMode={selectionMode}
           onOpenSelectionMode={handleOpenSelectionMode}
           onCloseSelectionMode={handleCloseSelectionMode}

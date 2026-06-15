@@ -1,10 +1,11 @@
-import { FileMediaType } from '@/application/database-yjs/cell.type';
 import { useMemo } from 'react';
-import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
-import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
-import { ReactComponent as VideoSvg } from '@/assets/icons/video.svg';
+
+import { FileMediaType } from '@/application/database-yjs/cell.type';
 import { ReactComponent as AudioSvg } from '@/assets/icons/audio.svg';
 import { ReactComponent as ArchiveSvg } from '@/assets/icons/file.svg';
+import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
+import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
+import { ReactComponent as VideoSvg } from '@/assets/icons/video.svg';
 
 function FileIcon ({ fileType }: {
   fileType: FileMediaType

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -7,7 +9,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useTranslation } from 'react-i18next';
 
 export function InvalidDatabaseDialog({
   isOpen,

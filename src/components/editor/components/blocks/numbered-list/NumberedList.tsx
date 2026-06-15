@@ -1,5 +1,6 @@
-import { EditorElementProps, NumberedListNode } from '@/components/editor/editor.type';
 import { forwardRef, memo } from 'react';
+
+import { EditorElementProps, NumberedListNode } from '@/components/editor/editor.type';
 
 export const NumberedList = memo(
   forwardRef<HTMLDivElement, EditorElementProps<NumberedListNode>>(

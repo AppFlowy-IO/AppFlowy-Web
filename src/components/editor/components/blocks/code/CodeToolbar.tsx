@@ -1,11 +1,12 @@
-import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
-import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
-import { CodeNode } from '@/components/editor/editor.type';
-import { notify } from '@/components/_shared/notify';
-import { copyTextToClipboard } from '@/utils/copy';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
+
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { notify } from '@/components/_shared/notify';
+import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
+import { CodeNode } from '@/components/editor/editor.type';
+import { copyTextToClipboard } from '@/utils/copy';
 
 function CodeToolbar({ node }: { node: CodeNode }) {
   const { t } = useTranslation();

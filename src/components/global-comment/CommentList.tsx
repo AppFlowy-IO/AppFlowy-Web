@@ -1,7 +1,8 @@
+import React, { memo } from 'react';
+
 import { CommentWrap } from '@/components/global-comment/comment';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 
-import React, { memo } from 'react';
 
 function CommentList() {
   const { comments, highLightCommentId } = useGlobalCommentContext();

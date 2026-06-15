@@ -1,8 +1,9 @@
+import { useTranslation } from 'react-i18next';
+
 import { FieldType } from '@/application/database-yjs';
 import { useNewPropertyDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useGridContext } from '@/components/database/grid/useGridContext';
-import { useTranslation } from 'react-i18next';
 
 function GridNewProperty () {
   const { t } = useTranslation();

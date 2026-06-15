@@ -1,16 +1,3 @@
-import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { Mention, MentionType, View, ViewLayout } from '@/application/types';
-import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
-import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
-import { PanelType } from '@/components/editor/components/panels/PanelsContext';
-import { useEditorContext } from '@/components/editor/EditorContext';
-import { flattenViews } from '@/components/_shared/outline/utils';
-import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { Button, Divider } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import dayjs from 'dayjs';
@@ -19,6 +6,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { Mention, MentionType, View, ViewLayout } from '@/application/types';
+import { isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
+import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
+import { PanelType } from '@/components/editor/components/panels/PanelsContext';
+import { useEditorContext } from '@/components/editor/EditorContext';
 
 enum MentionTag {
   Reminder = 'reminder',
@@ -102,11 +103,29 @@ export function MentionPanel() {
     void (async () => {
       try {
         const views = await loadViews();
+
+        // Collect mentionable views in a single tree walk, skipping:
+        // 1. Spaces (not pages)
+        // 2. Child views of databases (e.g. "View of Trip" Grid/Board under "Trip")
+        // 3. Embedded database views under documents (database blocks inside a doc)
+        const mentionable: View[] = [];
+        const collectMentionable = (items: View[], parentIsDatabase: boolean) => {
+          for (const view of items) {
+            const isDb = isDatabaseLayout(view.layout);
+            const skip = view.extra?.is_space || parentIsDatabase || isEmbeddedView(view);
+
+            if (!skip) {
+              mentionable.push(view);
+            }
+
+            collectMentionable(view.children || [], parentIsDatabase || isDb);
+          }
+        };
+
+        collectMentionable(views || [], false);
+
         const result = sortBy(
-          uniqBy(
-            flattenViews(views || []).filter((view) => !view.extra?.is_space),
-            'view_id'
-          ),
+          uniqBy(mentionable, 'view_id'),
           'last_edited_time'
         ).reverse();
 
@@ -195,10 +214,10 @@ export function MentionPanel() {
     async (type = MentionType.PageRef) => {
       if (!addPage || !viewId) return;
       try {
-        const newViewId = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
+        const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
 
-        handleSelectedPage(newViewId, type);
-        openPageModal?.(newViewId);
+        handleSelectedPage(response.view_id, type);
+        openPageModal?.(response.view_id);
       } catch (e) {
         console.error(e);
       }

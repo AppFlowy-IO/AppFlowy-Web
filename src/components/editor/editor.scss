@@ -18,6 +18,15 @@
 
 }
 
+.block-element--dragging {
+  @apply opacity-50;
+  cursor: grabbing;
+}
+
+.block-element.block-drop-target {
+  @apply bg-fill-list-hover;
+}
+
 .block-element[data-block-type="table/cell"] {
   .block-element .text-placeholder {
     @apply hidden;
@@ -67,9 +76,7 @@
   }
 
   &.block-element[data-block-type="grid"], &.block-element[data-block-type="board"], &.block-element[data-block-type="calendar"] {
-    .database-tabs, .grid-row-filed-cell, .column {
-      @apply bg-fill-theme-select;
-    }
+    @apply bg-fill-theme-select;
   }
 
   &.block-element[data-block-type="simple_table"] {
@@ -127,6 +134,89 @@
   .block-element {
     margin-left: 0 !important;
     height: 100%;
+  }
+}
+
+.block-element[data-block-type="table/cell"],
+td[data-block-type="simple_table_cell"] {
+  .href-link {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .block-element[data-block-type="link_preview"],
+  .link-preview-block,
+  .link-preview-card,
+  .link-preview-not-found,
+  .link-preview-content {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .block-element[data-block-type="link_preview"],
+  .link-preview-block,
+  .link-preview-card {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .link-preview-block {
+    container-type: inline-size;
+  }
+
+  .link-preview-card {
+    overflow: hidden;
+  }
+
+  .link-preview-card-bookmark {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .link-preview-card-bookmark .link-preview-image,
+  .link-preview-card-bookmark .link-preview-empty-thumb {
+    width: min(96px, 40%);
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .link-preview-title,
+  .link-preview-description,
+  .link-preview-url {
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    white-space: normal !important;
+    word-break: break-word;
+  }
+
+  .link-preview-url {
+    white-space: normal;
+  }
+
+  .link-preview-card-embed .link-preview-embed-image {
+    max-height: 220px;
+  }
+
+  @container (max-width: 260px) {
+    .link-preview-card-bookmark {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .link-preview-card-bookmark .link-preview-image,
+    .link-preview-card-bookmark .link-preview-empty-thumb {
+      aspect-ratio: 1.91 / 1;
+      flex: none;
+      height: auto;
+      max-height: 160px;
+      width: 100%;
+    }
+
+    .link-preview-card-bookmark .link-preview-content {
+      flex: none;
+      justify-content: flex-start;
+    }
   }
 }
 
@@ -524,6 +614,17 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
       @apply text-[1rem] font-semibold;
     }
   }
+}
+
+// Find & replace search match highlighting. Applied as a Slate leaf class via
+// the editor decorate function (see FindReplaceContext).
+.search-match-highlight {
+  border-radius: 2px;
+  background-color: rgba(250, 204, 21, 0.4);
+}
+
+.search-match-highlight-current {
+  background-color: rgba(249, 115, 22, 0.7);
 }
 
 #appflowy-ai-writer {

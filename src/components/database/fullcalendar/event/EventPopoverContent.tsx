@@ -3,7 +3,7 @@ import { uniqBy } from 'lodash-es';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
+import { FieldType, isAIFieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { useReadOnly } from '@/application/database-yjs/context';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
@@ -13,9 +13,11 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
 import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
 import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 import { useEventContext } from '../CalendarContent';
 
@@ -40,33 +42,34 @@ function EventPopoverContent({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const fields = useFieldsSelector();
+  const aiEnabled = useAIEnabled();
   const filteredFields = useMemo(() => {
     return uniqBy(
-      fields.filter((column) => column.fieldId !== primaryFieldId),
+      fields.filter((column) => column.fieldId !== primaryFieldId && (aiEnabled || !isAIFieldType(column.fieldType))),
       'fieldId'
     );
-  }, [fields, primaryFieldId]);
+  }, [aiEnabled, fields, primaryFieldId]);
 
   // Handle delete action
   const handleDelete = useCallback(() => {
-    console.debug('[EventPopoverContent] Delete button clicked for row:', rowId);
+    Log.debug('[EventPopoverContent] Delete button clicked for row:', rowId);
     setShowDeleteConfirm(true);
   }, [rowId]);
 
   // Handle delete confirmation
   const handleDeleteConfirm = useCallback(() => {
-    console.debug('[EventPopoverContent] Delete confirmed for row:', rowId);
+    Log.debug('[EventPopoverContent] Delete confirmed for row:', rowId);
     // Close the current popover after deletion
     onCloseEvent();
   }, [onCloseEvent, rowId]);
 
   // Handle duplicate action
   const handleDuplicate = useCallback(async () => {
-    console.debug('[EventPopoverContent] Duplicate button clicked for row:', rowId);
+    Log.debug('[EventPopoverContent] Duplicate button clicked for row:', rowId);
     try {
       const newRowId = await duplicateRowDispatch(rowId);
 
-      console.debug('[EventPopoverContent] Row duplicated successfully. New row ID:', newRowId);
+      Log.debug('[EventPopoverContent] Row duplicated successfully. New row ID:', newRowId);
 
       // Mark the new event as new to trigger auto-open popover
       markEventAsNew(newRowId);
@@ -74,7 +77,7 @@ function EventPopoverContent({
       // Close current popover
       setOpenEventRowId(null);
 
-      console.debug('[EventPopoverContent] New row marked as new and will auto-open popover');
+      Log.debug('[EventPopoverContent] New row marked as new and will auto-open popover');
     } catch (error) {
       console.error('[EventPopoverContent] Failed to duplicate row:', error);
     }
@@ -110,7 +113,7 @@ function EventPopoverContent({
         {!readOnly && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant='ghost' size='icon' className='hover:text-text-error' onClick={handleDelete}>
+              <Button data-testid='calendar-event-delete' variant='ghost' size='icon' className='hover:text-text-error' onClick={handleDelete}>
                 <DeleteIcon className='h-5 w-5' />
               </Button>
             </TooltipTrigger>

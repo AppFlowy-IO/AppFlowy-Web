@@ -1,12 +1,13 @@
+import { Avatar, Divider, Tooltip } from '@mui/material';
+import React, { memo, useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
+
 import { GlobalComment } from '@/application/comment.type';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_1.svg';
 import { useCommentRender } from '@/components/global-comment/GlobalComment.hooks';
 import { Reactions } from '@/components/global-comment/reactions';
-import { Avatar, Divider, Tooltip } from '@mui/material';
-import React, { memo, useCallback, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 interface CommentProps {
   comment: GlobalComment;

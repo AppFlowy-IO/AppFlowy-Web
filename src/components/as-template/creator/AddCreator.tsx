@@ -1,17 +1,18 @@
-import { TemplateCreatorFormValues } from '@/application/template.type';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
-import CreatorForm from '@/components/as-template/creator/CreatorForm';
-import { useService } from '@/components/main/app.hooks';
-import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
 import MenuItem from '@mui/material/MenuItem';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { TemplateCreatorFormValues } from '@/application/template.type';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { NormalModal } from '@/components/_shared/modal';
+import { notify } from '@/components/_shared/notify';
+import CreatorForm from '@/components/as-template/creator/CreatorForm';
+import { TemplateService } from '@/application/services/domains';
+import { Log } from '@/utils/log';
+
 function AddCreator({ searchText, onCreated }: { searchText: string; onCreated: () => void }) {
   const { t } = useTranslation();
   const submitRef = React.useRef<HTMLInputElement>(null);
-  const service = useService();
 
   const defaultValues = useMemo(
     () => ({
@@ -29,16 +30,16 @@ function AddCreator({ searchText, onCreated }: { searchText: string; onCreated: 
 
   const onSubmit = useCallback(
     async (data: TemplateCreatorFormValues) => {
-      console.debug('data', data);
+      Log.debug('data', data);
       try {
-        await service?.createTemplateCreator(data);
+        await TemplateService.createCreator(data);
         onCreated();
         handleClose();
       } catch (error) {
         notify.error('Failed to create creator');
       }
     },
-    [onCreated, service, handleClose]
+    [onCreated, handleClose]
   );
 
   return (

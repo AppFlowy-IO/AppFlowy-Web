@@ -38,6 +38,9 @@ export function ModelSelector({ className, disabled }: ModelSelectorProps) {
   const setSelectedModelName = context.setSelectedModelName;
   const contextSelectedModel = context.selectedModelName;
 
+  // Track whether user has explicitly selected a model (prevents async init from overwriting)
+  const userHasSelected = useRef(false);
+
   // Initialize: Load cached model or sync with context
   useEffect(() => {
     // Sync with context's selected model
@@ -50,7 +53,7 @@ export function ModelSelector({ className, disabled }: ModelSelectorProps) {
       // For contexts without chatId, ensure Auto is used as default if nothing is set
       if (!contextSelectedModel && selectedModel !== 'Auto') {
         setSelectedModel('Auto');
-        setSelectedModelName?.('Auto');
+        setSelectedModelName?.('Auto', false);
       }
 
       setIsInitialized(true);
@@ -62,16 +65,17 @@ export function ModelSelector({ className, disabled }: ModelSelectorProps) {
 
     if (cachedModel) {
       setSelectedModel(cachedModel);
-      setSelectedModelName?.(cachedModel);
+      setSelectedModelName?.(cachedModel, false);
     }
 
     // Step 2: Fetch current model in background to get the truth
+    let cancelled = false;
     const loadCurrentModel = async () => {
       if (!requestInstance.getCurrentModel) {
         // No model persistence available, use Auto as default
         if (!cachedModel) {
           setSelectedModel('Auto');
-          setSelectedModelName?.('Auto');
+          setSelectedModelName?.('Auto', false);
         }
 
         return;
@@ -80,31 +84,39 @@ export function ModelSelector({ className, disabled }: ModelSelectorProps) {
       try {
         const currentModel = await requestInstance.getCurrentModel();
 
+        // Skip if cancelled or user has already selected a model
+        if (cancelled || userHasSelected.current) return;
+
         if (currentModel) {
           // Saved model found, use it
           setSelectedModel(currentModel);
-          setSelectedModelName?.(currentModel);
+          setSelectedModelName?.(currentModel, false);
           if (chatId) {
             ModelCache.set(chatId, currentModel);
           }
         } else if (!cachedModel) {
           // No saved model and no cache, use Auto as default
           setSelectedModel('Auto');
-          setSelectedModelName?.('Auto');
+          setSelectedModelName?.('Auto', false);
         }
         // If no model saved but we have cache, keep using cache
       } catch (error) {
+        if (cancelled || userHasSelected.current) return;
         console.warn('Failed to load current model', error);
         // Keep cached model if available, otherwise use Auto as default
         if (!cachedModel) {
           setSelectedModel('Auto');
-          setSelectedModelName?.('Auto');
+          setSelectedModelName?.('Auto', false);
         }
       }
     };
 
     void loadCurrentModel();
     setIsInitialized(true);
+
+    return () => {
+      cancelled = true;
+    };
   }, [chatId, requestInstance, isInitialized, setSelectedModelName, contextSelectedModel, selectedModel]);
 
   const loadModels = useCallback(async () => {
@@ -149,13 +161,17 @@ export function ModelSelector({ className, disabled }: ModelSelectorProps) {
 
   const handleSelect = useCallback(
     async (modelName: string) => {
+      // Mark as user-initiated to prevent async init from overwriting
+      userHasSelected.current = true;
+
       // Update UI immediately
       setSelectedModel(modelName);
       setOpen(false);
 
       // Update context if available (works for both chat and writer contexts)
+      // Pass explicit=true to mark this as a user-initiated selection
       if (setSelectedModelName) {
-        setSelectedModelName(modelName);
+        setSelectedModelName(modelName, true);
       }
 
       // Persist model selection using unified interface

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useFieldSelector } from '@/application/database-yjs';
+import { FieldType, isAIFieldType, useFieldSelector } from '@/application/database-yjs';
 import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { FieldTypeIcon } from '@/components/database/components/field';
 import FieldLabel from '@/components/database/components/field/FieldLabel';
 import {
@@ -22,26 +23,45 @@ const properties = [
   FieldType.SingleSelect,
   FieldType.MultiSelect,
   FieldType.DateTime,
-  FieldType.FileMedia,
+  FieldType.Media,
   FieldType.URL,
   FieldType.Checkbox,
   FieldType.Checklist,
   FieldType.LastEditedTime,
   FieldType.CreatedTime,
   FieldType.Relation,
-  FieldType.AISummaries,
-  FieldType.AITranslations,
+  FieldType.Rollup,
+  FieldType.Summary,
+  FieldType.Translate,
   FieldType.Person,
+  FieldType.Time,
 ];
 
-export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; disabled?: boolean }) {
+// Field types that are not yet supported on web
+const unsupportedFieldTypes: FieldType[] = [];
+
+export function PropertySelectTrigger({
+  fieldId,
+  disabled,
+  onRequestRelation,
+}: {
+  fieldId: string;
+  disabled?: boolean;
+  onRequestRelation?: () => void;
+}) {
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
   const { t } = useTranslation();
   const switchType = useSwitchPropertyType();
+  const aiEnabled = useAIEnabled();
+  const selectableProperties = useMemo(
+    () => (aiEnabled ? properties : properties.filter((property) => !isAIFieldType(property))),
+    [aiEnabled]
+  );
 
   const handleSelect = (property: FieldType) => {
     if (disabled) return;
+    if (!aiEnabled && isAIFieldType(property)) return;
     switchType(fieldId, property);
   };
 
@@ -60,10 +80,12 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
       [FieldType.LastEditedTime]: t('tooltip.updatedAtField'),
       [FieldType.CreatedTime]: t('tooltip.createdAtField'),
       [FieldType.Relation]: t('tooltip.relationField'),
-      [FieldType.AISummaries]: t('tooltip.AISummaryField'),
-      [FieldType.AITranslations]: t('tooltip.AITranslateField'),
-      [FieldType.FileMedia]: t('tooltip.mediaField'),
+      [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
+      [FieldType.Summary]: t('tooltip.AISummaryField'),
+      [FieldType.Translate]: t('tooltip.AITranslateField'),
+      [FieldType.Media]: t('tooltip.mediaField'),
       [FieldType.Person]: t('tooltip.personField'),
+      [FieldType.Time]: t('tooltip.timeField'), // Added FieldType.Time tooltip
     };
   }, [t]);
 
@@ -77,29 +99,49 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
           <FieldLabel type={type} />
         </DropdownMenuSubTrigger>
         <DropdownMenuPortal>
-          <DropdownMenuSubContent>
-            {properties.map((property) => (
-              <Tooltip key={property}>
-                <TooltipTrigger asChild>
-                  <DropdownMenuItem
-                    data-testid={`property-type-option-${property}`}
-                    onSelect={(e) => {
-                      handleSelect(property);
-                      if ([FieldType.AITranslations, FieldType.Relation].includes(property)) {
-                        e.preventDefault();
-                        setOpen(false);
-                      }
-                    }}
-                  >
-                    <FieldTypeIcon type={property} />
-                    <FieldLabel type={property} />
-                  </DropdownMenuItem>
-                </TooltipTrigger>
-                <TooltipContent side={'left'} className='whitespace-pre-wrap break-words'>
-                  {propertyTooltip[property]}
-                </TooltipContent>
-              </Tooltip>
-            ))}
+          <DropdownMenuSubContent className="appflowy-scroller max-h-[450px] overflow-y-auto">
+            {selectableProperties.map((property) => {
+              const isUnsupported = unsupportedFieldTypes.includes(property);
+
+              return (
+                <Tooltip key={property}>
+                  <TooltipTrigger asChild>
+                    {isUnsupported ? (
+                      <div>
+                        <DropdownMenuItem disabled>
+                          <FieldTypeIcon type={property} />
+                          <FieldLabel type={property} />
+                        </DropdownMenuItem>
+                      </div>
+                    ) : (
+                      <DropdownMenuItem
+                        data-testid={`property-type-option-${property}`}
+                        onSelect={(e) => {
+                          if (property === FieldType.Relation) {
+                            e.preventDefault();
+                            setOpen(false);
+                            onRequestRelation?.();
+                            return;
+                          }
+
+                          handleSelect(property);
+                          if ([FieldType.Translate].includes(property)) {
+                            e.preventDefault();
+                            setOpen(false);
+                          }
+                        }}
+                      >
+                        <FieldTypeIcon type={property} />
+                        <FieldLabel type={property} />
+                      </DropdownMenuItem>
+                    )}
+                  </TooltipTrigger>
+                  <TooltipContent side={'left'} className='whitespace-pre-wrap break-words'>
+                    {isUnsupported ? t('common.desktopOnly') : propertyTooltip[property]}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
           </DropdownMenuSubContent>
         </DropdownMenuPortal>
       </DropdownMenuSub>

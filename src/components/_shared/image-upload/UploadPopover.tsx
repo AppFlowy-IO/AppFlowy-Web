@@ -1,7 +1,8 @@
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import React, { SyntheticEvent, useCallback, useEffect, useRef, useState } from 'react';
 import SwipeableViews from 'react-swipeable-views';
+
+import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export enum TAB_KEY {
   Colors = 'colors',

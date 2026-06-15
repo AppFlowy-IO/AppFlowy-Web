@@ -5,9 +5,11 @@ import { ViewIcon, ViewIconType, ViewLayout } from '@/application/types';
 import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
 import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
+import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 import { cn } from '@/lib/utils';
+import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
 import { renderColor } from '@/utils/color';
 import { getIcon, isFlagEmoji } from '@/utils/emoji';
 
@@ -24,6 +26,7 @@ function PageIcon({
   iconSize?: number;
 }) {
   const [iconContent, setIconContent] = React.useState<string | undefined>(undefined);
+  const [imgSrc, setImgSrc] = React.useState<string | undefined>(undefined);
 
   const emoji = useMemo(() => {
     if (view.icon && view.icon.ty === ViewIconType.Emoji && view.icon.value) {
@@ -33,17 +36,36 @@ function PageIcon({
     return null;
   }, [view]);
 
-  const img = useMemo(() => {
+  useEffect(() => {
+    let currentBlobUrl: string | undefined;
+
     if (view.icon && view.icon.ty === ViewIconType.URL && view.icon.value) {
+      void getImageUrl(view.icon.value).then((url) => {
+        currentBlobUrl = url;
+        setImgSrc(url);
+      });
+    } else {
+      setImgSrc(undefined);
+    }
+
+    return () => {
+      if (currentBlobUrl) {
+        revokeBlobUrl(currentBlobUrl);
+      }
+    };
+  }, [view.icon]);
+
+  const img = useMemo(() => {
+    if (imgSrc) {
       return (
-        <span className={cn('h-full w-full p-[2px]', className)}>
-          <img className={'h-full w-full'} src={view.icon.value} alt='icon' />
+        <span className={cn('flex h-full w-full items-center justify-center p-[2px]', className)}>
+          <img data-testid='page-icon-image' className={'max-h-full max-w-full object-contain'} src={imgSrc} alt='icon' />
         </span>
       );
     }
 
     return null;
-  }, [className, view.icon]);
+  }, [className, imgSrc]);
 
   const isFlag = useMemo(() => {
     return emoji ? isFlagEmoji(emoji) : false;
@@ -116,6 +138,8 @@ function PageIcon({
       return <BoardSvg className={className} />;
     case ViewLayout.Calendar:
       return <CalendarSvg className={className} />;
+    case ViewLayout.Chart:
+      return <ChartSvg className={className} />;
     case ViewLayout.Document:
       return <DocumentSvg className={className} />;
     default:

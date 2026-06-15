@@ -1,7 +1,8 @@
-import { useTranslation } from 'react-i18next';
-import { cn } from '@/lib/utils';
-import { AiPrompt } from '@/components/chat/types/prompt';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { AiPrompt } from '@/components/chat/types/prompt';
+import { cn } from '@/lib/utils';
 
 export function PromptCard({
   prompt,

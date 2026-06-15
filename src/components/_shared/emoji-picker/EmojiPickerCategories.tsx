@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
+
 import { PER_ROW_EMOJI_COUNT } from '@/components/_shared/emoji-picker/const';
 import EmojisVirtualizer from '@/components/_shared/emoji-picker/EmojisVirtualizer';
-import { useMemo } from 'react';
+
 import { EmojiCategory, getRowsWithCategories } from './EmojiPicker.hooks';
 
 function EmojiPickerCategories ({

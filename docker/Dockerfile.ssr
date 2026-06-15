@@ -2,6 +2,7 @@
 # Build stage - Build the React application
 FROM node:20.12.0-alpine AS builder
 
+ARG VERSION=dev
 ENV NODE_ENV=production
 
 WORKDIR /app
@@ -37,14 +38,18 @@ RUN bun install cheerio pino pino-pretty
 COPY --from=builder /app/dist /usr/share/nginx/html/
 COPY --from=builder /app/dist /app/dist
 
-# Copy only necessary files for SSR
-COPY deploy/server.ts /app/server.ts
+# Copy all SSR server files (server.ts imports config.ts, logger.ts, routes.ts, etc.)
+COPY deploy/ /app/
 COPY docker/nginx-ssr.conf /etc/nginx/nginx.conf 
 COPY docker/supervisord-ssr.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/entrypoint-ssr.sh /docker-entrypoint.sh
 
 # Make entrypoint executable
 RUN chmod +x /docker-entrypoint.sh
+
+# Set version as environment variable (from build arg)
+ARG VERSION
+ENV APP_VERSION=${VERSION}
 
 # Expose port 80
 EXPOSE 80

@@ -1,14 +1,32 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { invalidToken, isTokenValid } from '@/application/session/token';
+import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
 import { UserWorkspaceInfo } from '@/application/types';
-import { AFConfigContext, useService } from '@/components/main/app.hooks';
+import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
+import { AFConfigContext } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 import { AuthInternalContext, AuthInternalContextType } from '../contexts/AuthInternalContext';
 
 interface AppAuthLayerProps {
   children: React.ReactNode;
+}
+
+const RETRY_WORKSPACE_INFO_DELAY_MS = 5000;
+
+type LoadWorkspaceInfoOptions = { force?: boolean };
+
+function isRetryableWorkspaceInfoError(error: Error): boolean {
+  const appError = determineErrorType(error);
+
+  return (
+    appError.type === ErrorType.NetworkError ||
+    appError.type === ErrorType.ServerError ||
+    appError.type === ErrorType.Timeout ||
+    appError.type === ErrorType.Unknown
+  );
 }
 
 /**
@@ -38,11 +56,15 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const context = useContext(AFConfigContext);
   const isAuthenticated = context?.isAuthenticated;
   const location = useLocation();
-  const service = useService();
   const navigate = useNavigate();
   const params = useParams();
 
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
+  const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
+  const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
+  const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
+  const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
+  const workspaceInfoRequestIdRef = useRef(0);
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(
@@ -57,36 +79,63 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   }, [navigate]);
 
   // Load user workspace information
-  const loadUserWorkspaceInfo = useCallback(async () => {
-    if (!service) return;
-    try {
-      const res = await service?.getUserWorkspaceInfo();
-
-      setUserWorkspaceInfo(res);
-      return res;
-    } catch (e) {
-      console.error(e);
+  const loadUserWorkspaceInfo = useCallback(async (options?: LoadWorkspaceInfoOptions) => {
+    if (!options?.force && workspaceInfoPromiseRef.current) {
+      return workspaceInfoPromiseRef.current;
     }
-  }, [service]);
+
+    const requestId = workspaceInfoRequestIdRef.current + 1;
+
+    workspaceInfoRequestIdRef.current = requestId;
+    setWorkspaceInfoError(undefined);
+
+    const promise = Promise.resolve()
+      .then(() => UserService.getWorkspaceInfo())
+      .then((res) => {
+        if (workspaceInfoRequestIdRef.current === requestId) {
+          setUserWorkspaceInfo(res);
+        }
+
+        return res;
+      })
+      .catch((e) => {
+        Log.error('[AppAuthLayer] Failed to load workspace info:', e);
+
+        if (workspaceInfoRequestIdRef.current === requestId) {
+          setWorkspaceInfoError(e instanceof Error ? e : new Error(String(e)));
+        }
+
+        return undefined;
+      })
+      .finally(() => {
+        if (workspaceInfoPromiseRef.current === promise && workspaceInfoRequestIdRef.current === requestId) {
+          workspaceInfoPromiseRef.current = null;
+        }
+      });
+
+    workspaceInfoPromiseRef.current = promise;
+    return promise;
+  }, []);
 
   // Handle workspace change
   const onChangeWorkspace = useCallback(
     async (workspaceId: string) => {
-      if (!service) return;
       if (userWorkspaceInfo && !userWorkspaceInfo.workspaces.some((w) => w.id === workspaceId)) {
         window.location.href = `/app/${workspaceId}`;
         return;
       }
 
-      await service?.openWorkspace(workspaceId);
+      await WorkspaceService.open(workspaceId);
 
-      await loadUserWorkspaceInfo();
+      await loadUserWorkspaceInfo({ force: true });
 
+      // Clean up old global key for backward compatibility
+      // New per-workspace-per-user keys don't need to be removed on workspace change
       localStorage.removeItem('last_view_id');
 
       navigate(`/app/${workspaceId}`);
     },
-    [loadUserWorkspaceInfo, navigate, service, userWorkspaceInfo]
+    [loadUserWorkspaceInfo, navigate, userWorkspaceInfo]
   );
 
   // If the user is not authenticated, log out the user
@@ -108,7 +157,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       // First check - token and auth state
       const hasToken = isTokenValid();
 
-      console.debug('[AppAuthLayer] auth check (initial)', {
+      Log.debug('[AppAuthLayer] auth check (initial)', {
         path: location.pathname,
         isAuthenticated,
         hasToken,
@@ -118,13 +167,13 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       // If token exists, trust it and wait for state to sync
       // This prevents logout during OAuth callback → /app navigation
       if (hasToken) {
-        console.debug('[AppAuthLayer] token exists, skipping logout check (waiting for state sync)');
+        Log.debug('[AppAuthLayer] token exists, skipping logout check (waiting for state sync)');
         return;
       }
 
       // If no token but we're not sure context is ready, don't logout yet
       if (!context) {
-        console.debug('[AppAuthLayer] context not ready, skipping logout check');
+        Log.debug('[AppAuthLayer] context not ready, skipping logout check');
         return;
       }
 
@@ -134,7 +183,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
         const hasTokenSecondCheck = isTokenValid();
         const isAuthenticatedSecondCheck = context?.isAuthenticated;
 
-        console.debug('[AppAuthLayer] auth check (second)', {
+        Log.debug('[AppAuthLayer] auth check (second)', {
           path: location.pathname,
           isAuthenticated: isAuthenticatedSecondCheck,
           hasToken: hasTokenSecondCheck,
@@ -154,7 +203,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
           });
           logout();
         } else if (hasTokenSecondCheck && !isAuthenticatedSecondCheck) {
-          console.debug('[AppAuthLayer] token exists but state not synced - will sync via AppConfig effect');
+          Log.debug('[AppAuthLayer] token exists but state not synced - will sync via AppConfig effect');
         }
       }, 100); // Additional 100ms delay for second check
     }, 50); // Initial delay to allow context to initialize
@@ -167,27 +216,103 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     };
   }, [isAuthenticated, location.pathname, logout, context]);
 
-  // Load user workspace info on mount
+  // Load user workspace info and server info on mount
   useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
 
-    void loadUserWorkspaceInfo().catch((e) => {
-      console.error('[AppAuthLayer] Failed to load workspace info:', e);
+    void loadUserWorkspaceInfo();
+
+    void AuthService.getServerInfo().then((info) => {
+      setEnablePageHistory(info.enable_page_history);
+      setAIEnabled(info.ai_enabled ?? true);
+    }).catch((e) => {
+      console.error('[AppAuthLayer] Failed to load server info:', e);
+      setEnablePageHistory(true);
+      setAIEnabled(true);
     });
   }, [loadUserWorkspaceInfo, isAuthenticated]);
+
+  // If the app boots while the server is down, the first workspace-info request
+  // can fail before the workspace layers mount. Keep retrying transient failures
+  // so returning services can recover without a manual page refresh.
+  useEffect(() => {
+    if (!isAuthenticated || userWorkspaceInfo || !workspaceInfoError) return;
+    if (!isRetryableWorkspaceInfoError(workspaceInfoError)) return;
+
+    let cancelled = false;
+
+    const retry = () => {
+      if (cancelled) return;
+      void loadUserWorkspaceInfo();
+    };
+
+    const retryTimeoutId = window.setTimeout(retry, RETRY_WORKSPACE_INFO_DELAY_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        retry();
+      }
+    };
+
+    window.addEventListener('online', retry);
+    window.addEventListener('focus', retry);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retryTimeoutId);
+      window.removeEventListener('online', retry);
+      window.removeEventListener('focus', retry);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, userWorkspaceInfo, workspaceInfoError, loadUserWorkspaceInfo]);
+
+  const retryLoadWorkspaceInfo = useCallback(() => loadUserWorkspaceInfo({ force: true }), [loadUserWorkspaceInfo]);
+
+  // Auto-switch workspace when the URL points to a different workspace than
+  // the currently selected one (e.g. guest opening a shared direct link).
+  // Directly call WorkspaceService.open — the server is the authority on
+  // access. If the user has permission the switch succeeds; if not it fails
+  // and we stay on the current workspace.
+  const attemptedWorkspaceOpenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const urlWorkspaceId = params.workspaceId;
+
+    if (!isAuthenticated || !urlWorkspaceId || !userWorkspaceInfo) return;
+
+    const selectedId = userWorkspaceInfo.selectedWorkspace.id;
+
+    // Already on the correct workspace
+    if (urlWorkspaceId === selectedId) return;
+
+    // Don't retry a workspace we've already attempted to open for this URL —
+    // guards against loops if the server returns success but doesn't update
+    // the selected workspace (e.g. stale permission cache).
+    if (attemptedWorkspaceOpenRef.current === urlWorkspaceId) return;
+    attemptedWorkspaceOpenRef.current = urlWorkspaceId;
+
+    Log.debug('[AppAuthLayer] auto-switching to URL workspace', { urlWorkspaceId, selectedId });
+    void WorkspaceService.open(urlWorkspaceId)
+      .then(() => loadUserWorkspaceInfo({ force: true }))
+      .catch((e) => Log.warn('[AppAuthLayer] failed to open URL workspace', e));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, params.workspaceId, userWorkspaceInfo?.selectedWorkspace.id, loadUserWorkspaceInfo]);
 
   // Context value for authentication layer
   const authContextValue: AuthInternalContextType = useMemo(
     () => ({
-      service,
       userWorkspaceInfo,
       currentWorkspaceId,
       isAuthenticated: !!isAuthenticated,
+      enablePageHistory,
+      aiEnabled,
       onChangeWorkspace,
+      workspaceInfoError,
+      retryLoadWorkspaceInfo,
     }),
-    [service, userWorkspaceInfo, currentWorkspaceId, isAuthenticated, onChangeWorkspace]
+    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, aiEnabled, onChangeWorkspace, workspaceInfoError, retryLoadWorkspaceInfo]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;

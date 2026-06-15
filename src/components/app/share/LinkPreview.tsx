@@ -1,10 +1,11 @@
-import { notify } from '@/components/_shared/notify';
-import { copyTextToClipboard } from '@/utils/copy';
 import { Button, OutlinedInput, Tooltip } from '@mui/material';
 import React from 'react';
-import { ReactComponent as CopyIcon } from '@/assets/icons/link.svg';
-import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/link.svg';
+import { notify } from '@/components/_shared/notify';
+import { copyTextToClipboard } from '@/utils/copy';
 
 function LinkPreview({ url }: { url: string }) {
   const [clickCopy, setClickCopy] = React.useState(false);

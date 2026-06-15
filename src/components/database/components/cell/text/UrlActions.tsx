@@ -1,11 +1,13 @@
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+
+import { ReactComponent as CopySvg } from '@/assets/icons/copy.svg';
+import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl } from '@/utils/url';
-import { Button } from '@/components/ui/button';
-import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
-import { ReactComponent as CopySvg } from '@/assets/icons/copy.svg';
-import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
+
 
 function UrlActions ({ url }: {
   url: string

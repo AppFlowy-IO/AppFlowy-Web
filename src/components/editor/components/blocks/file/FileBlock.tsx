@@ -14,8 +14,8 @@ import { usePopoverContext } from '@/components/editor/components/block-popover/
 import FileToolbar from '@/components/editor/components/blocks/file/FileToolbar';
 import { EditorElementProps, FileNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { FileHandler } from '@/utils/file';
 import { constructFileUrl } from '@/components/editor/utils/file-url';
+import { FileHandler } from '@/utils/file';
 import { openUrl } from '@/utils/url';
 
 export const FileBlock = memo(
@@ -130,6 +130,7 @@ export const FileBlock = memo(
             uploaded_at: Date.now(),
             url_type: FieldURLType.Upload,
             retry_local_url: '',
+            pending_upload_id: '',
           } as FileBlockData);
         } catch (e) {
           // do nothing
@@ -190,7 +191,7 @@ export const FileBlock = memo(
             />
           )}
         </div>
-        <div ref={ref} className={`absolute h-full w-full caret-transparent`}>
+        <div ref={ref} className={`absolute h-full w-full text-transparent caret-transparent`}>
           {children}
         </div>
       </div>

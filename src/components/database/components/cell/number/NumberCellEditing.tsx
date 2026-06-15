@@ -1,9 +1,10 @@
+import React, { forwardRef, memo, useCallback, useState } from 'react';
+
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { FieldId } from '@/application/types';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import React, { forwardRef, memo, useCallback, useState } from 'react';
 
 function NumberCellEditing ({
   defaultValue,

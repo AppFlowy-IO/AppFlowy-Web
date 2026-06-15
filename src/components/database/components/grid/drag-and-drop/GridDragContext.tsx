@@ -1,7 +1,9 @@
-import { RenderColumn } from '@/components/database/components/grid/grid-column';
-import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { createContext, useContext } from 'react';
+
+import { RenderColumn } from '@/components/database/components/grid/grid-column';
+import { RenderRow } from '@/components/database/components/grid/grid-row';
+import { Log } from '@/utils/log';
 
 type RowEntry = { rowId: string; element: HTMLElement };
 type ColumnEntry = { fieldId: string; element: HTMLElement };
@@ -48,7 +50,7 @@ export function getRowRegistry() {
   }
 
   function getElement(rowId: string): HTMLElement | null {
-    console.debug(`getElement: ${rowId}`);
+    Log.debug(`getElement: ${rowId}`);
 
     return registry.get(rowId) ?? null;
   }
@@ -70,7 +72,7 @@ export function getColumnRegistry() {
   }
 
   function getElement(fieldId: string): HTMLElement | null {
-    console.debug(`getElement: ${fieldId}`);
+    Log.debug(`getElement: ${fieldId}`);
 
     return registry.get(fieldId) ?? null;
   }

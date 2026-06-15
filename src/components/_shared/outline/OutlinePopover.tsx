@@ -1,7 +1,8 @@
-import AppFlowyPower from '@/components/_shared/appflowy-power/AppFlowyPower';
-import { RichTooltip } from '@/components/_shared/popover';
 import { PopperPlacementType } from '@mui/material';
 import React, { ReactElement, useMemo } from 'react';
+
+import AppFlowyPower from '@/components/_shared/appflowy-power/AppFlowyPower';
+import { RichTooltip } from '@/components/_shared/popover';
 
 export function OutlinePopover({
   children,

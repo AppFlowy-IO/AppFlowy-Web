@@ -1,7 +1,8 @@
-import { EditorElementProps, DividerNode as DividerBlock } from '@/components/editor/editor.type';
 import { forwardRef, memo, useMemo } from 'react';
-import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
+
+import { EditorElementProps, DividerNode as DividerBlock } from '@/components/editor/editor.type';
 
 export const DividerNode = memo(
   forwardRef<HTMLDivElement, EditorElementProps<DividerBlock>>(

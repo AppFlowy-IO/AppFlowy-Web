@@ -1,10 +1,12 @@
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { FileMediaCell as CellType } from '@/application/database-yjs/cell.type';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import FileMediaUpload from '@/components/database/components/cell/file-media/FileMediaUpload';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+
 
 function AddFileOrMedia ({
   cell,

@@ -16,7 +16,7 @@ export function DatabaseActions() {
 
   const layout = useDatabaseViewLayout() as DatabaseViewLayout;
   const conditionsContext = useConditionsContext();
-  const { isDocumentBlock, navigateToView, iidIndex } = useDatabaseContext();
+  const { isDocumentBlock, navigateToView, databasePageId } = useDatabaseContext();
 
   const showSorts = [DatabaseViewLayout.Grid].includes(layout);
 
@@ -42,8 +42,8 @@ export function DatabaseActions() {
               variant={'ghost'}
               size={'icon'}
               onClick={() => {
-                if (!iidIndex) return;
-                void navigateToView?.(iidIndex);
+                if (!databasePageId) return;
+                void navigateToView?.(databasePageId);
               }}
             >
               <ExpandMoreIcon className={'h-5 w-5'} />

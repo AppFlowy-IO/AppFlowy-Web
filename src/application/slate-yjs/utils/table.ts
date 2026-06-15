@@ -1,5 +1,6 @@
-import { TableCellNode } from '@/components/editor/editor.type';
 import { isUndefined } from 'lodash-es';
+
+import { TableCellNode } from '@/components/editor/editor.type';
 
 export function sortTableCells (cells: TableCellNode[]): TableCellNode[] {
   return cells.sort((a, b) => {

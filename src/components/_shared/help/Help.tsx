@@ -1,3 +1,10 @@
+import { Button, Divider, Portal, Tooltip } from '@mui/material';
+import Box from '@mui/material/Box';
+import { PopoverProps } from '@mui/material/Popover';
+import * as React from 'react';
+import { useContext } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as BugIcon } from '@/assets/icons/bug.svg';
 import { ReactComponent as FeedbackIcon } from '@/assets/icons/feedback.svg';
 import { ReactComponent as SupportIcon } from '@/assets/icons/help.svg';
@@ -5,16 +12,10 @@ import { ReactComponent as DocumentationIcon } from '@/assets/icons/help_&_docum
 import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
 import { ReactComponent as WhatsNewIcon } from '@/assets/icons/star.svg';
 import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
-import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
+import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { copyTextToClipboard } from '@/utils/copy';
-import { Button, Divider, Portal, Tooltip } from '@mui/material';
-import Box from '@mui/material/Box';
-import { PopoverProps } from '@mui/material/Popover';
-import * as React from 'react';
-import { useContext } from 'react';
-import { useTranslation } from 'react-i18next';
 
 const popoverProps: Partial<PopoverProps> = {
   anchorOrigin: {

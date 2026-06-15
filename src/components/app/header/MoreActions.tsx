@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { APP_EVENTS } from '@/application/constants';
 import { Role, ViewLayout } from '@/application/types';
 import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
-import { useAppOutline, useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { AIService } from '@/application/services/domains';
+import { useAIEnabled, useAppOutline, useAppView, useCurrentWorkspaceId, useEventEmitter, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -22,20 +24,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import MoreActionsContent from './MoreActionsContent';
 
+const DocumentHistoryModal = lazy(() => import('@/components/document/history/DocumentHistoryModal'));
+
 function MoreActions({
   viewId,
   onDeleted,
   menuContentProps,
+  enableVersionHistory = true,
 }: {
   viewId: string;
   onDeleted?: () => void;
-  menuContentProps?: React.ComponentProps<typeof DropdownMenuContent>;
-} & React.ComponentProps<typeof DropdownMenu>) {
+  menuContentProps?: ComponentProps<typeof DropdownMenuContent>;
+  enableVersionHistory?: boolean;
+} & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
-  const service = useService();
+  const aiEnabled = useAIEnabled();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
   const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const outline = useAppOutline();
 
   const view = useAppView(viewId);
@@ -46,18 +53,19 @@ function MoreActions({
   }, [setOpen]);
 
   const handleFetchChatMessages = useCallback(async () => {
-    if (!workspaceId || !service) {
+    // Only fetch chat messages for AI Chat views
+    if (!aiEnabled || !workspaceId || view?.layout !== ViewLayout.AIChat) {
       return;
     }
 
     try {
-      const messages = await service.getChatMessages(workspaceId, viewId);
+      const messages = await AIService.getChatMessages(workspaceId, viewId);
 
       setHasMessages(messages.messages.length > 0);
     } catch {
       // do nothing
     }
-  }, [workspaceId, service, viewId]);
+  }, [aiEnabled, workspaceId, viewId, view?.layout]);
 
   useEffect(() => {
     void handleFetchChatMessages();
@@ -68,7 +76,7 @@ function MoreActions({
   const role = userWorkspaceInfo?.selectedWorkspace.role;
 
   const ChatOptions = useMemo(() => {
-    return view?.layout === ViewLayout.AIChat ? (
+    return aiEnabled && view?.layout === ViewLayout.AIChat ? (
       <>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -90,42 +98,95 @@ function MoreActions({
         <DropdownMenuSeparator />
       </>
     ) : null;
-  }, [view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
+  }, [aiEnabled, view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
+
+  const handleOpenHistory = useCallback(() => {
+    handleClose();
+    setHistoryOpen(true);
+  }, [handleClose]);
+
+  useEffect(() => {
+    setHistoryOpen(false);
+  }, [viewId]);
+
+  const pageHistoryEnabled = usePageHistoryEnabled();
+  const showHistory = enableVersionHistory && pageHistoryEnabled && view?.layout === ViewLayout.Document;
+
+  const eventEmitter = useEventEmitter();
+  const isDocument = view?.layout === ViewLayout.Document;
+  const handleFindAndReplace = useCallback(() => {
+    handleClose();
+    eventEmitter?.emit(APP_EVENTS.FIND_AND_REPLACE, { viewId });
+  }, [eventEmitter, viewId, handleClose]);
+
+  useEffect(() => {
+    if (!showHistory && historyOpen) {
+      setHistoryOpen(false);
+    }
+  }, [showHistory, historyOpen]);
 
   const shareWithMeView = useMemo(() => {
     return findViewInShareWithMe(outline || [], viewId);
   }, [outline, viewId]);
 
-  if (view?.layout === ViewLayout.AIChat && selectionMode) {
+  if (aiEnabled && view?.layout === ViewLayout.AIChat && selectionMode) {
     return null;
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button data-testid='page-more-actions' size={'icon'} variant={'ghost'} className={'text-icon-secondary'}>
-          <MoreIcon />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent {...menuContentProps}>
-        <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button data-testid='page-more-actions' size={'icon'} variant={'ghost'} className={'text-icon-secondary'}>
+            <MoreIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent {...menuContentProps}>
+          <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
 
-        {role === Role.Guest || shareWithMeView ? null : (
-          <>
-            <MoreActionsContent
-              itemClicked={() => {
-                handleClose();
-              }}
-              onDeleted={onDeleted}
-              viewId={viewId}
-            />
-            <DropdownMenuSeparator />
-          </>
-        )}
+          {role === Role.Guest || shareWithMeView ? (
+            // Guests and shared-with-me viewers don't get the editing actions
+            // in MoreActionsContent, but Find still works in read-only mode
+            // (the panel disables Replace itself), so surface it here.
+            isDocument && (
+              <>
+                <DropdownMenuItem
+                  data-testid={'more-page-find-and-replace'}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleFindAndReplace();
+                  }}
+                >
+                  <SearchIcon />
+                  {t('shareAction.findAndReplace')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )
+          ) : (
+            <>
+              <MoreActionsContent
+                itemClicked={() => {
+                  handleClose();
+                }}
+                onDeleted={onDeleted}
+                viewId={viewId}
+                onOpenHistory={showHistory ? handleOpenHistory : undefined}
+                onFindAndReplace={isDocument ? handleFindAndReplace : undefined}
+              />
+              <DropdownMenuSeparator />
+            </>
+          )}
 
-        <DocumentInfo viewId={viewId} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DocumentInfo viewId={viewId} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {showHistory && historyOpen && (
+        <Suspense fallback={null}>
+          <DocumentHistoryModal open={historyOpen} onOpenChange={setHistoryOpen} viewId={viewId} view={view} />
+        </Suspense>
+      )}
+    </>
   );
 }
 

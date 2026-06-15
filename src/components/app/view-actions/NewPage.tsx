@@ -4,13 +4,14 @@ import { useTranslation } from 'react-i18next';
 
 import { ViewLayout } from '@/application/types';
 import { ReactComponent as Add } from '@/assets/icons/add_new_page.svg';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
+import { NormalModal } from '@/components/_shared/modal';
+import { notify } from '@/components/_shared/notify';
+import { useAppOperations, useOpenPageModal, useAppOutline } from '@/components/app/app.hooks';
 import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
 import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
-import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
 import { cn } from '@/lib/utils';
+import { Log } from '@/utils/log';
 
 function NewPage() {
   const { t } = useTranslation();
@@ -35,7 +36,8 @@ function NewPage() {
     setOpen(false);
   }, []);
 
-  const { addPage, openPageModal } = useAppHandlers();
+  const { addPage } = useAppOperations();
+  const openPageModal = useOpenPageModal();
 
   const [createSpaceOpen, setCreateSpaceOpen] = React.useState(false);
 
@@ -44,11 +46,17 @@ function NewPage() {
       if (!addPage || !openPageModal) return;
       setLoading(true);
       try {
-        const viewId = await addPage(parentId, {
+        // Append after the last child so the new page appears at the bottom.
+        const parentSpace = outline?.find((v) => v.view_id === parentId);
+        const lastChild = parentSpace?.children?.[parentSpace.children.length - 1];
+
+        Log.debug('[handleAddPage]', { parentId, layout: ViewLayout.Document, prev_view_id: lastChild?.view_id });
+        const response = await addPage(parentId, {
           layout: ViewLayout.Document,
+          prev_view_id: lastChild?.view_id,
         });
 
-        openPageModal(viewId);
+        openPageModal(response.view_id);
         onClose();
         // eslint-disable-next-line
       } catch (e: any) {
@@ -57,7 +65,7 @@ function NewPage() {
         setLoading(false);
       }
     },
-    [addPage, openPageModal, onClose]
+    [addPage, openPageModal, onClose, outline]
   );
 
   return (

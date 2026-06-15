@@ -1,11 +1,13 @@
+import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as ChevronRight } from '@/assets/icons/toggle_list.svg';
+import PageIcon from '@/components/chat/components/view/page-icon';
+import { View } from '@/components/chat/types';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import PageIcon from '@/components/chat/components/view/page-icon';
-import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { View } from '@/components/chat/types';
-import { useMemo, useState } from 'react';
+
 
 export function ViewItem({
   view,

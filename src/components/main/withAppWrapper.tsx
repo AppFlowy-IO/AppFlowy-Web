@@ -1,12 +1,16 @@
-import CustomSnackbar from '@/components/_shared/notify/CustomSnackbar';
-import { ErrorBoundary } from 'react-error-boundary';
-import { ErrorHandlerPage } from 'src/components/error/ErrorHandlerPage';
-import AppTheme from '@/components/main/AppTheme';
-import AppConfig from '@/components/main/AppConfig';
-import { Suspense } from 'react';
-import { SnackbarProvider } from 'notistack';
-
 import { styled } from '@mui/material/styles';
+import { SnackbarProvider } from 'notistack';
+import { Suspense } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+
+import CustomSnackbar from '@/components/_shared/notify/CustomSnackbar';
+import AppConfig from '@/components/main/AppConfig';
+import AppTheme from '@/components/main/AppTheme';
+
+import { ErrorHandlerPage } from 'src/components/error/ErrorHandlerPage';
+
+
+
 import { InfoSnackbar } from '../_shared/notify';
 
 const StyledSnackbarProvider = styled(SnackbarProvider)`

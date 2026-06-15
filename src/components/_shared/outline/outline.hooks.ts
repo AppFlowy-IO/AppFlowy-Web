@@ -1,6 +1,7 @@
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo } from 'react';
+
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export interface OutlineProps {
   onOpenDrawer: () => void;

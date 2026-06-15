@@ -1,5 +1,6 @@
-import { EditorElementProps, PageNode } from '@/components/editor/editor.type';
 import { forwardRef, memo, useMemo } from 'react';
+
+import { EditorElementProps, PageNode } from '@/components/editor/editor.type';
 
 export const Page = memo(
   forwardRef<HTMLDivElement, EditorElementProps<PageNode>>(({ node: _, children, ...attributes }, ref) => {

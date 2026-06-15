@@ -1,14 +1,15 @@
+import { Button, Collapse, OutlinedInput, Skeleton } from '@mui/material';
+import { debounce } from 'lodash-es';
+import React, { useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
+
 import { TemplateCategory, TemplateSummary } from '@/application/template.type';
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useLoadCategoryTemplates } from '@/components/as-template/hooks';
 import { CategoryIcon } from '@/components/as-template/icons';
 import CategoryTemplateItem from '@/components/as-template/related-template/CategoryTemplateItem';
-import { Button, Collapse, OutlinedInput, Skeleton } from '@mui/material';
-import { debounce } from 'lodash-es';
-import React, { useEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 
 function CategoryTemplates({
   category,

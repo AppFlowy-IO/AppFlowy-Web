@@ -1,5 +1,6 @@
-import { EditorElementProps, ParagraphNode } from '@/components/editor/editor.type';
 import { forwardRef, memo } from 'react';
+
+import { EditorElementProps, ParagraphNode } from '@/components/editor/editor.type';
 
 export const Paragraph = memo(
   forwardRef<HTMLDivElement, EditorElementProps<ParagraphNode>>(({ node: _, children, ...attributes }, ref) => {

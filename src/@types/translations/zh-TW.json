@@ -967,7 +967,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "連結已複製到剪貼簿",
-        "convertToLink": "轉換為嵌入鏈接"
+        "convertToLink": "轉換為嵌入鏈接",
+        "pasteAs": {
+          "title": "貼上為",
+          "mention": "提及",
+          "url": "URL",
+          "bookmark": "書籤",
+          "embed": "嵌入"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "新增標題以建立目錄。",

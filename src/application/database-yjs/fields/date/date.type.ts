@@ -17,6 +17,27 @@ export enum DateFilterCondition {
   DateEndsBetween = 13,
   DateEndIsEmpty = 14,
   DateEndIsNotEmpty = 15,
+  DateStartsToday = 16,
+  DateStartsYesterday = 17,
+  DateStartsTomorrow = 18,
+  DateStartsThisWeek = 19,
+  DateStartsLastWeek = 20,
+  DateStartsNextWeek = 21,
+  DateEndsToday = 22,
+  DateEndsYesterday = 23,
+  DateEndsTomorrow = 24,
+  DateEndsThisWeek = 25,
+  DateEndsLastWeek = 26,
+  DateEndsNextWeek = 27,
+}
+
+export enum DateFilterRelativeCondition {
+  Today = 'today',
+  Yesterday = 'yesterday',
+  Tomorrow = 'tomorrow',
+  ThisWeek = 'thisWeek',
+  LastWeek = 'lastWeek',
+  NextWeek = 'nextWeek',
 }
 
 export interface DateFilter extends Filter {

@@ -1,11 +1,12 @@
-import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { BlockType } from '@/application/types';
-import { EditorElementProps, ToggleListNode } from '@/components/editor/editor.type';
 import { forwardRef, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { BlockType } from '@/application/types';
+import { EditorElementProps, ToggleListNode } from '@/components/editor/editor.type';
 
 export const ToggleList = memo(
   forwardRef<HTMLDivElement, EditorElementProps<ToggleListNode>>(({ node, children, ...attributes }, ref) => {
@@ -37,7 +38,7 @@ export const ToggleList = memo(
       <>
         <div {...attributes} ref={ref} className={className} id={level ? `heading-${blockId}` : undefined}>
           {children}
-          {!readOnly && !collapsed && node.children.slice(1).length === 0 && (
+          {!readOnly && !collapsed && node.children.length <= 1 && (
             <div
               onMouseDown={(e) => {
                 e.preventDefault();

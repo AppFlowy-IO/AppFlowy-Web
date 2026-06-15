@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
 
 import CustomIconPopover from 'src/components/_shared/cutsom-icon/CustomIconPopover';
 
@@ -49,7 +50,7 @@ function PropertyProfile({
           updateIcon('');
         }}
         onSelectIcon={(icon) => {
-          console.debug(icon);
+          Log.debug(icon);
           updateIcon(icon.value);
         }}
       >

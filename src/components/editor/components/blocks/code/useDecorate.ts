@@ -1,10 +1,12 @@
-import { BlockType } from '@/application/types';
-import { useEditorContext } from '@/components/editor/EditorContext';
-import { decorateCode } from './utils';
-import { CodeNode } from '@/components/editor/editor.type';
 import { useMemo } from 'react';
 import { BaseRange, Editor, NodeEntry, Element } from 'slate';
 import { ReactEditor } from 'slate-react';
+
+import { BlockType } from '@/application/types';
+import { CodeNode } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
+
+import { decorateCode } from './utils';
 
 export function useDecorate(editor: ReactEditor) {
   const grammars = useEditorContext().codeGrammars;

@@ -1,12 +1,13 @@
-import { View, ViewLayout } from '@/application/types';
-import MobileRecentViewCover from '@/components/app/recent/MobileRecentViewCover';
-import { ThemeModeContext } from '@/components/main/useAppThemeMode';
-import { ViewIcon } from '@/components/_shared/view-icon';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { Divider } from '@mui/material';
 import dayjs from 'dayjs';
 import { useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { View, ViewLayout } from '@/application/types';
+import { ViewIcon } from '@/components/_shared/view-icon';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import MobileRecentViewCover from '@/components/app/recent/MobileRecentViewCover';
+import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 
 function MobileOutlineWithCover({
   view,

@@ -1,5 +1,6 @@
-import { FieldDisplay } from '@/components/database/components/field';
 import React from 'react';
+
+import { FieldDisplay } from '@/components/database/components/field';
 
 function PropertyWrapper ({ fieldId, children }: { fieldId: string; children: React.ReactNode }) {
   return (

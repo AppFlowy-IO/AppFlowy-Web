@@ -1,10 +1,12 @@
-import { CoverType, ViewMetaCover } from '@/application/types';
-import { EmbedLink, TAB_KEY, TabOption, Unsplash, UploadImage, UploadPopover } from '@/components/_shared/image-upload';
-import { useAppHandlers, useAppViewId, useOpenModalViewId } from '@/components/app/app.hooks';
-import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
-import { GradientEnum } from '@/utils/color';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { CoverType, ViewMetaCover } from '@/application/types';
+import { EmbedLink, TAB_KEY, TabOption, Unsplash, UploadImage, UploadPopover } from '@/components/_shared/image-upload';
+import { useAppOperations, useAppViewId, useOpenModalViewId } from '@/components/app/app.hooks';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
+import { GradientEnum } from '@/utils/color';
+
 import Colors from './CoverColors';
 
 function CoverPopover({
@@ -21,7 +23,7 @@ function CoverPopover({
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const { uploadFile, getSubscriptions } = useAppHandlers();
+  const { uploadFile, getSubscriptions } = useAppOperations();
   const appViewId = useAppViewId();
   const modalViewId = useOpenModalViewId();
   const viewId = modalViewId || appViewId;
@@ -40,6 +42,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: isGradient ? CoverType.GradientColor : CoverType.NormalColor,
             value,
+            offset: 0,
           });
         },
       },
@@ -55,6 +58,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: CoverType.CustomImage,
             value,
+            offset: 0,
           });
           onOpenChange(false);
         },
@@ -67,6 +71,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: CoverType.CustomImage,
             value,
+            offset: 0,
           });
           onOpenChange(false);
         },
@@ -79,6 +84,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: CoverType.UpsplashImage,
             value,
+            offset: 0,
           });
         },
       },

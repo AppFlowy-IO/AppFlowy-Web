@@ -1,13 +1,20 @@
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { ReactEditor, useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
 import { calculateOptimalOrigins, Origins, Popover } from '@/components/_shared/popover';
+import AudioBlockPopoverContent from '@/components/editor/components/block-popover/AudioBlockPopoverContent';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import FileBlockPopoverContent from '@/components/editor/components/block-popover/FileBlockPopoverContent';
+import GalleryBlockPopoverContent from '@/components/editor/components/block-popover/GalleryBlockPopoverContent';
+import GoogleDriveBlockPopoverContent from '@/components/editor/components/block-popover/GoogleDriveBlockPopoverContent';
 import ImageBlockPopoverContent from '@/components/editor/components/block-popover/ImageBlockPopoverContent';
-import { useEditorContext } from '@/components/editor/EditorContext';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ReactEditor, useSlateStatic } from 'slate-react';
+import LinkPreviewPopoverContent from '@/components/editor/components/block-popover/LinkPreviewPopoverContent';
+import PDFBlockPopoverContent from '@/components/editor/components/block-popover/PDFBlockPopoverContent';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
+
 import MathEquationPopoverContent from './MathEquationPopoverContent';
 import VideoBlockPopoverContent from './VideoBlockPopoverContent';
 
@@ -24,7 +31,7 @@ const defaultOrigins: Origins = {
 
 function BlockPopover() {
   const { open, anchorEl, close, type, blockId } = usePopoverContext();
-  const { setSelectedBlockIds } = useEditorContext();
+  const { setSelectedBlockIds } = useEditorLocalState();
   const editor = useSlateStatic() as YjsEditor;
   const [origins, setOrigins] = React.useState<Origins>(defaultOrigins);
 
@@ -34,7 +41,7 @@ function BlockPopover() {
 
     const entry = findSlateEntryByBlockId(editor, blockId);
 
-    if(!entry) return;
+    if (!entry) return;
 
     const [, path] = entry;
 
@@ -48,12 +55,22 @@ function BlockPopover() {
     switch (type) {
       case BlockType.FileBlock:
         return <FileBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.PDFBlock:
+        return <PDFBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.ImageBlock:
         return <ImageBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.EquationBlock:
         return <MathEquationPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.VideoBlock:
         return <VideoBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.LinkPreview:
+        return <LinkPreviewPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.GalleryBlock:
+        return <GalleryBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.AudioBlock:
+        return <AudioBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.GoogleDriveBlock:
+        return <GoogleDriveBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       default:
         return null;
     }
@@ -83,8 +100,16 @@ function BlockPopover() {
           top: panelPosition.bottom,
           left: panelPosition.left,
         },
-        type === BlockType.ImageBlock || type === BlockType.VideoBlock ? 400 : 560,
-        type === BlockType.ImageBlock || type === BlockType.VideoBlock ? 366 : 200,
+        400,
+        [
+          BlockType.ImageBlock,
+          BlockType.VideoBlock,
+          BlockType.GalleryBlock,
+          BlockType.AudioBlock,
+          BlockType.GoogleDriveBlock,
+        ].includes(type as BlockType)
+          ? 366
+          : 200,
         defaultOrigins,
         16
       );

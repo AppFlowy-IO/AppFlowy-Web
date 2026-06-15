@@ -369,6 +369,7 @@ function BgColor({
         <ActionButton
           active={!!singleColor}
           tooltip={t('editor.backgroundColor')}
+          data-testid="bg-color-button"
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();

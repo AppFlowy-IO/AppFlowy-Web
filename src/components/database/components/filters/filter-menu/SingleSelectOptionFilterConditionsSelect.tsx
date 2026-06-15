@@ -1,11 +1,12 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import {
   SelectOptionFilter,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function SingleSelectFilterConditionsSelect ({ filter }: { filter: SelectOptionFilter }) {
   const { t } = useTranslation();

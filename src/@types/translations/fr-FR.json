@@ -1861,7 +1861,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Le lien a été copié dans le presse-papier",
-        "convertToLink": "Convertir en lien intégré"
+        "convertToLink": "Convertir en lien intégré",
+        "pasteAs": {
+          "title": "Coller comme",
+          "mention": "Mention",
+          "url": "URL",
+          "bookmark": "Favori",
+          "embed": "Intégrer"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Ajoutez des titres pour créer une table des matières.",

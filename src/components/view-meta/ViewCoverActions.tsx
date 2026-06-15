@@ -1,11 +1,12 @@
-import { ViewMetaCover } from '@/application/types';
-import { cn } from '@/lib/utils';
 import React, { forwardRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ViewMetaCover } from '@/application/types';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import CoverPopover from '@/components/view-meta/CoverPopover';
+import { cn } from '@/lib/utils';
 
 function ViewCoverActions(
   {

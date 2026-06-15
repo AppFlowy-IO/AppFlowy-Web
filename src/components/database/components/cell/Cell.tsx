@@ -1,4 +1,5 @@
 import { FC, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.type';
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -11,8 +12,11 @@ import { RowCreateModifiedTime } from '@/components/database/components/cell/cre
 import { DateTimeCell } from '@/components/database/components/cell/date';
 import { NumberCell } from '@/components/database/components/cell/number';
 import { RelationCell } from '@/components/database/components/cell/relation';
+import { RollupCell } from '@/components/database/components/cell/rollup';
 import { SelectOptionCell } from '@/components/database/components/cell/select-option';
 import { TextCell } from '@/components/database/components/cell/text';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { FileMediaCell } from 'src/components/database/components/cell/file-media';
 
@@ -20,8 +24,10 @@ import { PersonCell } from './person';
 
 export function Cell(props: CellProps<CellType>) {
   const { rowId, fieldId, style, wrap, isHovering } = props;
+  const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const disableRelationRollupEdit = isFieldEditingDisabled(fieldType);
 
   const Component = useMemo(() => {
     switch (fieldType) {
@@ -41,13 +47,15 @@ export function Cell(props: CellProps<CellType>) {
         return ChecklistCell;
       case FieldType.Relation:
         return RelationCell;
-      case FieldType.FileMedia:
+      case FieldType.Media:
         return FileMediaCell;
-      case FieldType.AISummaries:
-      case FieldType.AITranslations:
+      case FieldType.Summary:
+      case FieldType.Translate:
         return AITextCell;
       case FieldType.Person:
         return PersonCell;
+      case FieldType.Rollup:
+        return RollupCell;
       default:
         return TextCell;
     }
@@ -68,7 +76,29 @@ export function Cell(props: CellProps<CellType>) {
     );
   }
 
-  return <Component {...props} />;
+  const cellProps = disableRelationRollupEdit
+    ? {
+      ...props,
+      readOnly: true,
+      editing: false,
+      setEditing: undefined,
+    }
+    : props;
+
+  const content = <Component {...cellProps} />;
+
+  if (disableRelationRollupEdit) {
+    return (
+      <Tooltip delayDuration={500} disableHoverableContent>
+        <TooltipTrigger asChild>
+          <div className="w-full min-h-[20px] h-full flex-1 self-stretch">{content}</div>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t('common.editNotSupported')}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return content;
 }
 
 export default Cell;

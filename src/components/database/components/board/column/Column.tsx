@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 
 import { Row, useReadOnly } from '@/application/database-yjs';
 import CardList, { CardType, RenderCard } from '@/components/database/components/board/column/CardList';
@@ -15,6 +15,32 @@ export interface ColumnProps {
   fieldId: string;
   addCardBefore: (id: string) => void;
   groupId: string;
+}
+
+function areRowsEqual(prevRows: Row[], nextRows: Row[]) {
+  if (prevRows === nextRows) return true;
+  if (prevRows.length !== nextRows.length) return false;
+
+  for (let index = 0; index < prevRows.length; index += 1) {
+    const prevRow = prevRows[index];
+    const nextRow = nextRows[index];
+
+    if (prevRow.id !== nextRow.id || prevRow.height !== nextRow.height) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areColumnPropsEqual(prev: ColumnProps, next: ColumnProps) {
+  return (
+    prev.id === next.id &&
+    prev.fieldId === next.fieldId &&
+    prev.groupId === next.groupId &&
+    prev.addCardBefore === next.addCardBefore &&
+    areRowsEqual(prev.rows, next.rows)
+  );
 }
 
 export const Column = memo(
@@ -38,8 +64,7 @@ export const Column = memo(
     }, [rows, readOnly]);
 
     const { columnRef, headerRef, state, isDragging } = useColumnHeaderDrag(id);
-    const [scrollerContainer, setScrollerContainer] = React.useState<HTMLDivElement | null>(null);
-    const { contextValue, columnInnerRef } = useCardsDrag(id, rows, scrollerContainer);
+    const { contextValue, columnInnerRef } = useCardsDrag(id, rows);
 
     const getCards = useCallback(
       (_columnId: string): Row[] => {
@@ -50,14 +75,14 @@ export const Column = memo(
 
     return (
       <ColumnDragContext.Provider value={contextValue}>
-        <div data-column-id={id} className={'relative h-full w-[256px]'} ref={columnInnerRef}>
+        <div data-column-id={id} className={'relative flex h-full min-h-0 w-[256px]'} ref={columnInnerRef}>
           <div
             style={{
               opacity: isDragging ? 0.4 : 1,
               pointerEvents: isDragging ? 'none' : undefined,
             }}
             ref={columnRef}
-            className={'flex w-[256px] min-w-[256px] flex-col items-center pt-2'}
+            className={'flex h-full min-h-0 w-[256px] min-w-[256px] flex-col items-center pt-2'}
           >
             <ColumnHeaderPrimitive
               rowCount={rows.length}
@@ -76,8 +101,6 @@ export const Column = memo(
               columnId={id}
               data={data}
               fieldId={fieldId}
-              setScrollElement={setScrollerContainer}
-            
             />
           </div>
           {state.type === StateType.IS_COLUMN_OVER && state.closestEdge && (
@@ -87,5 +110,5 @@ export const Column = memo(
       </ColumnDragContext.Provider>
     );
   },
-  (prev, next) => JSON.stringify(prev) === JSON.stringify(next)
+  areColumnPropsEqual
 );

@@ -1,6 +1,6 @@
 import { AiWriterMenuContent } from '@/components/chat/components/ai-writer/ai-writer-menu-content';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { AIAssistantType } from '@/components/chat/types';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 interface AIWriterMenuProps {
   children?: React.ReactNode;

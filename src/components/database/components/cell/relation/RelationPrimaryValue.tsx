@@ -1,7 +1,9 @@
-import { FieldId, YDatabaseCell, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { useEffect, useState } from 'react';
+
 import { FieldType } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { useEffect, useState } from 'react';
+import { FieldId, YDatabaseCell, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+
 
 export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; fieldId?: FieldId }) {
   const [text, setText] = useState<string | null>(null);

@@ -1,14 +1,16 @@
-import ViewList from '../add-messages-to-page-wrapper/view-list';
-import { Button } from '@/components/ui/button';
-import LoadingDots from '@/components/chat/components/ui/loading-dots';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import SpaceItem from '@/components/chat/components/view/space-item';
-import { useTranslation } from 'react-i18next';
-import { searchViews } from '@/components/chat/lib/views';
-import { View } from '@/components/chat/types';
-import { useEffect, useMemo, useState } from 'react';
 import { PlusIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import LoadingDots from '@/components/chat/components/ui/loading-dots';
+import SpaceItem from '@/components/chat/components/view/space-item';
+import { searchViews } from '@/components/chat/lib/views';
 import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
+import { View } from '@/components/chat/types';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+
+import ViewList from '../add-messages-to-page-wrapper/view-list';
 
 export function SpaceList({
   searchValue,

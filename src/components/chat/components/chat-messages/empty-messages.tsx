@@ -1,18 +1,45 @@
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { User } from '@/components/chat/types';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
-import { useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+
 
 export function EmptyMessages({ currentUser }: {
   currentUser?: User;
 }) {
   const { t } = useTranslation();
-  const {
-    submitQuestion,
-  } = useMessagesHandlerContext();
+  const { chatSettings, submitQuestion, updateChatSettings } = useMessagesHandlerContext();
+  const initialPromptSubmittedRef = useRef(false);
+
+  useEffect(() => {
+    const metadata = chatSettings?.metadata;
+    const initialPrompt = typeof metadata?.initial_prompt === 'string' ? metadata.initial_prompt.trim() : '';
+    const consumed = metadata?.initial_prompt_consumed === true;
+
+    if (!initialPrompt || consumed || initialPromptSubmittedRef.current) {
+      return;
+    }
+
+    initialPromptSubmittedRef.current = true;
+    void (async () => {
+      try {
+        await submitQuestion(initialPrompt);
+        await updateChatSettings({
+          metadata: {
+            ...metadata,
+            initial_prompt_consumed: true,
+          },
+        });
+      } catch (e) {
+        initialPromptSubmittedRef.current = false;
+        console.error(e);
+      }
+    })();
+  }, [chatSettings, submitQuestion, updateChatSettings]);
 
   const handleClick = useCallback(async(content: string) => {
     try {
@@ -65,4 +92,3 @@ export function EmptyMessages({ currentUser }: {
     </div>
   );
 }
-

@@ -1,17 +1,32 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { RenderRow, useRenderRows } from '@/components/database/components/grid/grid-row';
+import { Row, useDatabaseContext } from '@/application/database-yjs';
+import {
+  EMBEDDED_GRID_INITIAL_ROW_LIMIT,
+  EMBEDDED_GRID_LOAD_MORE_INCREMENT,
+  RenderRow,
+  useRenderRows,
+} from '@/components/database/components/grid/grid-row';
 import { GridContext } from '@/components/database/grid/useGridContext';
 
-export const GridProvider = ({ children }: { children: React.ReactNode }) => {
+export const GridProvider = ({ children, rowOrders }: { children: React.ReactNode; rowOrders?: Row[] }) => {
   const [hoverRowId, setHoverRowId] = useState<string | undefined>();
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
-  const { rows: initialRows } = useRenderRows();
+  const { isDocumentBlock, activeViewId } = useDatabaseContext();
+  const [visibleRowLimit, setVisibleRowLimit] = useState(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
+  const embeddedVisibleRowLimit = isDocumentBlock ? visibleRowLimit : undefined;
+  const { rows: initialRows, remainingRowCount, lastVisibleRowId } = useRenderRows(rowOrders, {
+    visibleRowLimit: embeddedVisibleRowLimit,
+  });
   const [rows, setRows] = useState<RenderRow[]>(initialRows);
   const [resizeRows, setResizeRows] = useState<Map<string, number>>(new Map());
 
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
+  }, [activeViewId, isDocumentBlock]);
 
   useEffect(() => {
     setRows(initialRows);
@@ -56,33 +71,64 @@ export const GridProvider = ({ children }: { children: React.ReactNode }) => {
 
   const onResizeRowEnd = useCallback((id: string) => {
     setResizeRows((prev) => {
-      prev.delete(id);
-      return prev;
+      const newMap = new Map(prev);
+
+      newMap.delete(id);
+      return newMap;
     });
   }, []);
 
+  const loadMoreRows = useCallback(() => {
+    setVisibleRowLimit((prev) => prev + EMBEDDED_GRID_LOAD_MORE_INCREMENT);
+  }, []);
+
+  const revealCreatedRow = useCallback(() => {
+    if (!isDocumentBlock) return;
+
+    setVisibleRowLimit((prev) => prev + 1);
+  }, [isDocumentBlock]);
+
   const [showStickyHeader, setShowStickyHeader] = useState(false);
+  const contextValue = useMemo(
+    () => ({
+      hoverRowId,
+      setHoverRowId: handleHoverRowStart,
+      rows,
+      setRows,
+      activePropertyId,
+      setActivePropertyId,
+      activeCell,
+      setActiveCell,
+      resizeRows,
+      setResizeRow: onResizeRow,
+      onResizeRowEnd,
+      remainingRowCount,
+      lastVisibleRowId,
+      loadMoreRows,
+      revealCreatedRow,
+      showStickyHeader,
+      setShowStickyHeader,
+    }),
+    [
+      hoverRowId,
+      handleHoverRowStart,
+      rows,
+      activePropertyId,
+      activeCell,
+      resizeRows,
+      onResizeRow,
+      onResizeRowEnd,
+      remainingRowCount,
+      lastVisibleRowId,
+      loadMoreRows,
+      revealCreatedRow,
+      showStickyHeader,
+    ]
+  );
 
   return (
-    <GridContext.Provider
-      value={{
-        hoverRowId,
-        setHoverRowId: handleHoverRowStart,
-        rows,
-        setRows,
-        activePropertyId,
-        setActivePropertyId,
-
-        activeCell,
-        setActiveCell,
-        resizeRows,
-        setResizeRow: onResizeRow,
-        onResizeRowEnd,
-        showStickyHeader,
-        setShowStickyHeader,
-      }}
-    >
-      <div ref={ref} className={'flex-1'}>
+    <GridContext.Provider value={contextValue}>
+      <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
         {children}
       </div>
     </GridContext.Provider>

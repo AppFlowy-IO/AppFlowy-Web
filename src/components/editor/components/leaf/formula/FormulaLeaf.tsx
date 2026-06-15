@@ -1,12 +1,13 @@
+import { PopoverPosition } from '@mui/material';
+import React, { Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import { Text, Element } from 'slate';
+import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
+
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { KatexMath } from '@/components/_shared/katex-math';
 import FormulaPopover from '@/components/editor/components/leaf/formula/FormulaPopover';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
-import { PopoverPosition } from '@mui/material';
-import React, { Suspense, useCallback, useMemo, useRef, useState } from 'react';
-import { Text, Element } from 'slate';
-import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 function FormulaLeaf({ formula, text, children }: {
   formula: string;

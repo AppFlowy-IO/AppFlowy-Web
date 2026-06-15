@@ -1,7 +1,7 @@
 import React, { lazy } from 'react';
 import { toast } from 'sonner';
 
-import { InfoProps } from '@/components/_shared/notify/InfoSnackbar';
+import type { InfoProps } from '@/components/_shared/notify/InfoSnackbar';
 
 export const InfoSnackbar = lazy(() => import('./InfoSnackbar'));
 
@@ -33,4 +33,4 @@ export const notify = {
   },
 };
 
-export * from './InfoSnackbar';
+export type { InfoProps, InfoSnackbarProps } from './InfoSnackbar';

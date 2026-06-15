@@ -1,3 +1,16 @@
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
+import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash';
+import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import {
+  getReorderDestinationIndex,
+} from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
+import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
+import { Virtualizer } from '@tanstack/react-virtual';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
 import { useReorderColumnDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import {
@@ -8,18 +21,6 @@ import {
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { useGridContext } from '@/components/database/grid/useGridContext';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
-import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash';
-import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import {
-  getReorderDestinationIndex,
-} from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
-import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { Virtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
 
 export function useGridDnd (columns: RenderColumn[], virtualizer: Virtualizer<Element, Element>, columnVirtualizer: Virtualizer<HTMLDivElement, Element>) {
   const rowContextValue = useGridDndRow(virtualizer);
@@ -48,6 +49,7 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
     currentIndex: number;
   } | null>(null);
   const stableData = useRef<RenderRow[]>(data);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     stableData.current = data;
@@ -123,12 +125,18 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
 
     if (!scrollContainer || readOnly) return;
 
+    // Clean up previous registration to prevent duplicate autoScroll warnings
+    if (cleanupRef.current) {
+      cleanupRef.current();
+      cleanupRef.current = null;
+    }
+
     // eslint-disable-next-line
     function canRespond ({ source }: Record<string, any>) {
       return source.data && source.data.instanceId === instanceId;
     }
 
-    return combine(
+    const cleanup = combine(
       monitorForElements({
         canMonitor: canRespond,
         // eslint-disable-next-line
@@ -164,6 +172,10 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
         element: scrollContainer,
       }),
     );
+
+    cleanupRef.current = cleanup;
+
+    return cleanup;
   }, [readOnly, instanceId, data, reorderRow, virtualizer.scrollElement]);
 
   useEffect(() => {
@@ -185,6 +197,7 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
   const viewId = useDatabaseViewId();
   const reorderColumnDispatch = useReorderColumnDispatch();
   const stableData = useRef<RenderColumn[]>(data);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   const [registry] = useState(getColumnRegistry);
   const [instanceId] = useState(() => Symbol(`grid-column-dnd-${viewId}`));
@@ -262,12 +275,18 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
 
     if (!scrollContainer) return;
 
+    // Clean up previous registration to prevent duplicate autoScroll warnings
+    if (cleanupRef.current) {
+      cleanupRef.current();
+      cleanupRef.current = null;
+    }
+
     // eslint-disable-next-line
     function canRespond ({ source }: Record<string, any>) {
       return source.data && source.data.instanceId === instanceId;
     }
 
-    return combine(
+    const cleanup = combine(
       monitorForElements({
         canMonitor: canRespond,
         // eslint-disable-next-line
@@ -303,6 +322,10 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
         element: scrollContainer,
       }),
     );
+
+    cleanupRef.current = cleanup;
+
+    return cleanup;
   }, [instanceId, data, reorderColumn, virtualizer.scrollElement]);
 
   useEffect(() => {

@@ -1,11 +1,12 @@
+import React, { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { TextFilter, TextFilterCondition, useReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import TextFilterConditionsSelect
   from '@/components/database/components/filters/filter-menu/TextFilterConditionsSelect';
 import { Input } from '@/components/ui/input';
-import React, { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function TextFilterMenu ({ filter }: { filter: TextFilter }) {
   const { t } = useTranslation();
@@ -16,6 +17,7 @@ function TextFilterMenu ({ filter }: { filter: TextFilter }) {
     setValue(e.target.value);
     updateFilter({
       filterId: filter.id,
+      fieldId: filter.fieldId,
       content: e.target.value,
     });
   };

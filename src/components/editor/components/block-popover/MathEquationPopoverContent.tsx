@@ -1,14 +1,15 @@
-import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { MathEquationBlockData } from '@/application/types';
-import { MathEquationNode } from '@/components/editor/editor.type';
 import { Button, TextField } from '@mui/material';
 import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NodeEntry } from 'slate';
 import { useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
+import { MathEquationBlockData } from '@/application/types';
+import { MathEquationNode } from '@/components/editor/editor.type';
 
 function MathEquationPopoverContent({
   blockId,
@@ -56,7 +57,7 @@ function MathEquationPopoverContent({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   return (
-    <div className={'flex flex-col p-4 gap-3 w-[560px] max-w-[964px]'}>
+    <div className={'flex flex-col p-4 gap-3 w-[400px]'}>
       <TextField
         inputRef={(input: HTMLTextAreaElement) => {
           if (!input) return;

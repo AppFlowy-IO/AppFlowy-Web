@@ -1,12 +1,13 @@
+import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ShuffleIcon } from '@/assets/icons/shuffle.svg';
 import SwitchSkin from '@/components/_shared/emoji-picker/SwitchSkin';
 import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/search-input';
 import { TooltipContent, TooltipTrigger, Tooltip } from '@/components/ui/tooltip';
-import { useEffect, useRef } from 'react';
-
 import { randomEmoji } from '@/utils/emoji';
-import { ReactComponent as ShuffleIcon } from '@/assets/icons/shuffle.svg';
-import { useTranslation } from 'react-i18next';
+
 
 interface Props {
   onEmojiSelect: (emoji: string) => void;

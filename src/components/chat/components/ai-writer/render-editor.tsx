@@ -1,9 +1,9 @@
-import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 
 import { Editor, EditorData, useEditor } from '@appflowyinc/editor';
-
 import { useEffect } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
+
+import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 
 export function RenderEditor({ content, onDataChange }: { content: string; onDataChange?: (data: EditorData) => void }) {
   const editor = useEditor();

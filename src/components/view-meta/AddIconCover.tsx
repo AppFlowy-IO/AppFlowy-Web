@@ -1,9 +1,10 @@
-import { ViewIconType } from '@/application/types';
-import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+
+import { ViewIconType } from '@/application/types';
 import { ReactComponent as AddIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as AddCover } from '@/assets/icons/image.svg';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 
 function AddIconCover ({
   hasIcon,
@@ -60,6 +61,7 @@ function AddIconCover ({
           }}
           onUploadFile={onUploadFile}
         ><Button
+          data-testid='add-icon-button'
           color={'inherit'}
           size={'small'}
           startIcon={<AddIcon />}

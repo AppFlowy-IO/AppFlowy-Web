@@ -2,6 +2,9 @@ import { debounce } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
+
 /**
  * Title Update Flow & Echo Prevention Mechanism:
  * 
@@ -59,6 +62,15 @@ const setCursorPosition = (element: HTMLDivElement, position: number) => {
   selection?.addRange(range);
 };
 
+const selectContentEditableText = (element: HTMLDivElement) => {
+  const range = document.createRange();
+  const selection = window.getSelection();
+
+  range.selectNodeContents(element);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+};
+
 function TitleEditable({
   viewId,
   name,
@@ -79,8 +91,7 @@ function TitleEditable({
   // Component state and refs
   const [isFocused, setIsFocused] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  const cursorPositionRef = useRef<number>(0);
-  
+
   // Timing and cache refs
   const lastInputTimeRef = useRef<number>(0);
   const lastUpdateSentTimeRef = useRef<number>(0);
@@ -91,19 +102,6 @@ function TitleEditable({
   const blurTimerRef = useRef<NodeJS.Timeout>();
   const cleanupTimerRef = useRef<NodeJS.Timeout>();
 
-  // State checking functions
-  const isTyping = useCallback(() => {
-    return Date.now() - lastInputTimeRef.current < 500; // 500ms typing window
-  }, []);
-
-  const isRecentlyUpdated = useCallback(() => {
-    return Date.now() - lastUpdateSentTimeRef.current < 2000; // 2s protection window
-  }, []);
-
-  const isPotentialEcho = useCallback((value: string) => {
-    return sentValuesRef.current.has(value);
-  }, []);
-
   // Cache management
   const cleanOldSentValues = useCallback(() => {
     const now = Date.now();
@@ -112,7 +110,7 @@ function TitleEditable({
     for (const [value, timestamp] of sentValuesRef.current.entries()) {
       if (now - timestamp > maxAge) {
         sentValuesRef.current.delete(value);
-        console.debug('🧹 Cleaned old sent value:', value);
+        Log.debug('🧹 Cleaned old sent value:', value);
       }
     }
   }, []);
@@ -127,7 +125,7 @@ function TitleEditable({
 
   // Update functions - send changes to server and cache for echo detection
   const sendUpdate = useCallback((value: string, isImmediate = false) => {
-    console.debug(isImmediate ? '⚡ Immediate update:' : '⏰ Debounced update:', value);
+    Log.debug(isImmediate ? '⚡ Immediate update:' : '⏰ Debounced update:', value);
     
     const now = Date.now();
 
@@ -148,60 +146,52 @@ function TitleEditable({
 
   // Handle remote updates with echo prevention
   useEffect(() => {
-    console.debug('🌐 Remote name changed:', {
-      name,
-      isFocused,
-      isCurrentlyTyping: isTyping(),
-      isRecentlyUpdated: isRecentlyUpdated(),
-      isPotentialEcho: isPotentialEcho(name),
-    });
-
-    // Step 1: Ignore if user is actively interacting
-    if (isTyping() || isRecentlyUpdated()) {
-      console.debug('✋ User activity detected, ignoring remote update');
-      return;
-    }
-
-    // Step 2: Detect and ignore echo updates (values we recently sent)
-    if (isPotentialEcho(name)) {
-      console.debug('🔄 Echo detected, ignoring remote update');
-      return;
-    }
-
-    // Step 3: Handle genuine remote updates
-    console.debug('✨ Genuine remote update detected');
-    
-    // Clean old cache entries (keep recent ones to prevent immediate re-acceptance)
     const now = Date.now();
+    const isTyping = now - lastInputTimeRef.current < 500;
+    const isRecentlyUpdated = now - lastUpdateSentTimeRef.current < 2000;
 
+    // Skip if the user is actively editing — preserves in-progress typing.
+    // Without this guard, a remote echo would clobber characters mid-keystroke.
+    if (isTyping || isRecentlyUpdated) {
+      return;
+    }
+
+    if (sentValuesRef.current.has(name)) {
+      return;
+    }
+
+    // If the title was auto-focused on mount but the user hasn't typed yet,
+    // allow remote updates to flow through. This handles the case where the
+    // initial `name` prop changes shortly after mount (e.g. database title
+    // resolving from the child view's "Grid" to the container's real name)
+    // — without this, a no-op blur would persist the stale initial value.
+    const hasUserTyped = lastInputTimeRef.current > 0;
+
+    if (isFocused && hasUserTyped) {
+      return;
+    }
+
+    // Genuine remote update — clean old cache entries
     for (const [value, timestamp] of sentValuesRef.current.entries()) {
-      if (now - timestamp > 5000) { // Keep values from last 5 seconds
+      if (now - timestamp > 5000) {
         sentValuesRef.current.delete(value);
       }
     }
 
-    // Step 4: Update UI if content differs
+    // Apply remote update to UI
     if (contentRef.current) {
       const currentContent = contentRef.current.textContent || '';
 
       if (currentContent !== name) {
-        console.debug('✅ Applying remote update to UI');
         contentRef.current.textContent = name;
 
-        // Preserve cursor position for focused input
-        if (isFocused && document.activeElement === contentRef.current) {
-          const cursorPos = Math.min(cursorPositionRef.current, name.length);
-
-          // Use microtask to ensure DOM update completes first
-          queueMicrotask(() => {
-            if (contentRef.current) {
-              setCursorPosition(contentRef.current, cursorPos);
-            }
-          });
+        // Restore cursor to end if the input is currently focused.
+        if (isFocused && contentRef.current === document.activeElement) {
+          setCursorPosition(contentRef.current, name.length);
         }
       }
     }
-  }, [name, isTyping, isRecentlyUpdated, isPotentialEcho, isFocused]);
+  }, [name, isFocused]);
 
   // Initialize component
   useEffect(() => {
@@ -235,7 +225,7 @@ function TitleEditable({
 
   // Event handlers with useCallback optimization
   const handleFocus = useCallback(() => {
-    console.debug('🎯 Input focused');
+    Log.debug('🎯 Input focused');
     
     if (blurTimerRef.current) {
       clearTimeout(blurTimerRef.current);
@@ -247,14 +237,21 @@ function TitleEditable({
   }, [onFocus]);
 
   const handleBlur = useCallback(() => {
-    console.debug('👋 Input blurred');
+    Log.debug('👋 Input blurred');
     const currentText = contentRef.current?.textContent || '';
-    
-    sendUpdateImmediately(currentText);
+    const hasUserTyped = lastInputTimeRef.current > 0;
+
+    // Only persist on blur if the user actually edited the field. Auto-focus
+    // without typing must not overwrite the stored name with whatever stale
+    // text was rendered at mount time.
+    if (hasUserTyped) {
+      sendUpdateImmediately(currentText);
+    }
+
     setIsFocused(false);
-    
+
     blurTimerRef.current = setTimeout(() => {
-      console.debug('🧹 Cleaning input state after blur');
+      Log.debug('🧹 Cleaning input state after blur');
       lastInputTimeRef.current = 0;
       if (inputTimerRef.current) {
         clearTimeout(inputTimerRef.current);
@@ -266,8 +263,7 @@ function TitleEditable({
     if (!contentRef.current) return;
     
     lastInputTimeRef.current = Date.now();
-    cursorPositionRef.current = getCursorOffset();
-    
+
     // Clean up browser auto-inserted <br> tags
     if (contentRef.current.innerHTML === '<br>') {
       contentRef.current.innerHTML = '';
@@ -282,7 +278,7 @@ function TitleEditable({
     }
     
     inputTimerRef.current = setTimeout(() => {
-      console.debug('⏸️ User stopped typing');
+      Log.debug('⏸️ User stopped typing');
     }, 500);
   }, [debouncedUpdate]);
 
@@ -290,8 +286,14 @@ function TitleEditable({
     if (!contentRef.current) return;
     
     lastInputTimeRef.current = Date.now();
-    cursorPositionRef.current = getCursorOffset();
-    
+
+    if (createHotkey(HOT_KEY_NAME.SELECT_ALL)(e.nativeEvent)) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectContentEditableText(contentRef.current);
+      return;
+    }
+
     if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault();
       

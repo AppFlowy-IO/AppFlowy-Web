@@ -1,13 +1,15 @@
-import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
-import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Transforms, Text, Editor } from 'slate';
 import { useSlate } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
+import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
+import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+
 
 function Formula() {
   const { t } = useTranslation();

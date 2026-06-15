@@ -1,8 +1,9 @@
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
-import { useAddNode } from '@/components/quick-note/QuickNote.hooks';
-import { QuickNote } from '@/application/types';
 import { Button, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
+
+import { QuickNote } from '@/application/types';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { useAddNode } from '@/components/quick-note/QuickNote.hooks';
 
 function AddNote ({
   onEnterNote,

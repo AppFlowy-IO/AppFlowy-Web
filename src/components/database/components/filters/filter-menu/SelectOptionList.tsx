@@ -1,9 +1,10 @@
+import { useCallback, useMemo } from 'react';
+
 import { parseSelectOptionTypeOptions, SelectOption, useFieldSelector } from '@/application/database-yjs';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { useCallback, useMemo } from 'react';
 
 export function SelectOptionList({
   fieldId,
@@ -52,5 +53,5 @@ export function SelectOptionList({
     return Boolean(option && option.id);
   });
 
-  return <div className={'flex flex-col'}>{normalizedOptions.map(renderOption)}</div>;
+  return <div className={'appflowy-scroller flex max-h-[300px] flex-col overflow-y-auto'}>{normalizedOptions.map(renderOption)}</div>;
 }

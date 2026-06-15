@@ -1,25 +1,25 @@
 import { TemplateIcon } from '@/application/template.type';
-import { ReactComponent as Youtube } from '@/assets/icons/youtube.svg';
-import { ReactComponent as Twitter } from '@/assets/icons/twitter.svg';
-import { ReactComponent as Instagram } from '@/assets/icons/instagram.svg';
-import { ReactComponent as Facebook } from '@/assets/icons/facebook.svg';
-import { ReactComponent as Tiktok } from '@/assets/icons/tiktok.svg';
-import { ReactComponent as Website } from '@/assets/icons/earth.svg';
-import { ReactComponent as LinkedInIcon } from '@/assets/icons/linkedin.svg';
-import { ReactComponent as Controller } from '@/assets/icons/controller.svg';
-import { ReactComponent as Engineering } from '@/assets/icons/engineering.svg';
-import { ReactComponent as Startup } from '@/assets/icons/startup.svg';
-import { ReactComponent as GraduationCap } from '@/assets/icons/graduation_cap.svg';
-import { ReactComponent as Database } from '@/assets/icons/database.svg';
+import { ReactComponent as Sparkle } from '@/assets/icons/ai.svg';
 import { ReactComponent as Kanban } from '@/assets/icons/board.svg';
-import { ReactComponent as UsersThree } from '@/assets/icons/users.svg';
+import { ReactComponent as Controller } from '@/assets/icons/controller.svg';
+import { ReactComponent as Database } from '@/assets/icons/database.svg';
+import { ReactComponent as Website } from '@/assets/icons/earth.svg';
+import { ReactComponent as Engineering } from '@/assets/icons/engineering.svg';
+import { ReactComponent as Facebook } from '@/assets/icons/facebook.svg';
+import { ReactComponent as GraduationCap } from '@/assets/icons/graduation_cap.svg';
+import { ReactComponent as Instagram } from '@/assets/icons/instagram.svg';
+import { ReactComponent as LinkedInIcon } from '@/assets/icons/linkedin.svg';
 import { ReactComponent as Management } from '@/assets/icons/management.svg';
 import { ReactComponent as Marketing } from '@/assets/icons/marketing.svg';
-import { ReactComponent as User } from '@/assets/icons/user.svg';
-import { ReactComponent as Sales } from '@/assets/icons/sales.svg';
-import { ReactComponent as Sparkle } from '@/assets/icons/ai.svg';
 import { ReactComponent as Doc } from '@/assets/icons/page.svg';
+import { ReactComponent as Sales } from '@/assets/icons/sales.svg';
+import { ReactComponent as Startup } from '@/assets/icons/startup.svg';
+import { ReactComponent as Tiktok } from '@/assets/icons/tiktok.svg';
+import { ReactComponent as Twitter } from '@/assets/icons/twitter.svg';
+import { ReactComponent as User } from '@/assets/icons/user.svg';
+import { ReactComponent as UsersThree } from '@/assets/icons/users.svg';
 import { ReactComponent as Wiki } from '@/assets/icons/wiki.svg';
+import { ReactComponent as Youtube } from '@/assets/icons/youtube.svg';
 
 const categoryIcons: Record<string, React.ReactElement> = {
   [TemplateIcon.project]: <Controller className='h-5 w-5' />,

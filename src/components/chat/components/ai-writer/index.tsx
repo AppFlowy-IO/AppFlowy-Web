@@ -1,4 +1,6 @@
-import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ConfirmDiscard } from '@/components/chat/components/ai-writer/confirm-discard';
 import { Error } from '@/components/chat/components/ai-writer/error';
 import { Loading } from '@/components/chat/components/ai-writer/loading';
@@ -6,11 +8,11 @@ import { AskAnything } from '@/components/chat/components/ai-writer/tools/ask-an
 import { Explain } from '@/components/chat/components/ai-writer/tools/explain';
 import { FixSpelling } from '@/components/chat/components/ai-writer/tools/fix-spelling';
 import { ImproveWriting } from '@/components/chat/components/ai-writer/tools/improve-writing';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useTranslation } from 'react-i18next';
+import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
 import { AIAssistantType } from '@/components/chat/types';
 import { useWriterContext } from '@/components/chat/writer/context';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+
 
 type PointerDownOutsideEvent = CustomEvent<{
   originalEvent: PointerEvent;

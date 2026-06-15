@@ -1,14 +1,15 @@
+import { debounce } from 'lodash-es';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
+
 import { YjsEditor } from '@/application/slate-yjs';
-import { UIVariant, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { insertDataToDoc } from '@/components/ai-chat/utils';
-import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useAppView, useCurrentWorkspaceId, useOpenPageModal, useLoadViews } from '@/components/app/app.hooks';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useService } from '@/components/main/app.hooks';
-import { debounce } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 
 function DrawerContent({
   openViewId,
@@ -18,16 +19,17 @@ function DrawerContent({
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
-  } = useAppHandlers();
+    bindViewSync,
+  } = useAppOperations();
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
   const {
     getInsertData,
     clearInsertData,
@@ -38,41 +40,63 @@ function DrawerContent({
     id: string;
     doc: YDoc;
   } | undefined>(undefined);
-  const service = useService();
-  const requestInstance = service?.getAxiosInstance();
-  const initialScrolling = React.useRef(false);
+  const requestInstance = getAxiosInstance();
+  const initialScrolling = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [editor, setEditor] = useState<YjsEditor | undefined>(undefined);
+  const [syncBound, setSyncBound] = useState(false);
 
   const onEditorConnected = useCallback((editor: YjsEditor) => {
     setEditor(editor);
   }, []);
 
-  const loadPageDoc = useCallback(async(id: string) => {
-
+  const loadPageDoc = useCallback(async (targetViewId: string) => {
     setNotFound(false);
     setDoc(undefined);
+    setSyncBound(false);
     try {
-      const doc = await loadView(id);
+      const doc = await loadView(targetViewId);
 
-      setDoc({ doc, id });
-    } catch(e) {
+      setDoc({ doc, id: targetViewId });
+    } catch (e) {
       setNotFound(true);
       console.error(e);
     }
-
   }, [loadView]);
 
   const view = useAppView(openViewId);
 
   useEffect(() => {
-    if(openViewId) {
+    if (openViewId) {
       void loadPageDoc(openViewId);
     } else {
       setDoc(undefined);
+      setSyncBound(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openViewId]);
+  }, [openViewId, loadPageDoc]);
+
+  useEffect(() => {
+    if (!doc || !bindViewSync || syncBound) return;
+
+    const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+
+    if (docViewId !== doc.id) {
+      return;
+    }
+
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
+    const syncContext = bindViewSync(doc.doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+    }
+  }, [doc, bindViewSync, syncBound]);
 
   useEffect(() => {
     const insertData = getInsertData(openViewId);
@@ -95,20 +119,22 @@ function DrawerContent({
   }, [editor, clearInsertData, doc, getInsertData, openViewId, drawerOpen]);
 
   useEffect(() => {
-    const container = document.querySelector('.ai-chat-view');
+    const container = containerRef.current;
+
+    if (!container) return;
 
     const debounceStopScrolling = debounce(() => {
       initialScrolling.current = false;
     }, 500);
 
     const observer = new MutationObserver(() => {
-      if(!initialScrolling.current) {
+      if (!initialScrolling.current) {
         return;
       }
 
-      const textBox = document.querySelector('.ai-chat-view [role="textbox"]');
+      const textBox = container.querySelector('[role="textbox"]');
 
-      if(textBox) {
+      if (textBox) {
         void smoothScrollIntoViewIfNeeded(textBox, {
           behavior: 'smooth',
           block: 'end',
@@ -124,22 +150,21 @@ function DrawerContent({
         range.collapse(false);
         const selection = window.getSelection();
 
-        if(selection) {
+        if (selection) {
           selection.removeAllRanges();
           selection.addRange(range);
         }
       }
     });
 
-    if(container) {
-      observer.observe(container, {
-        childList: true,
-        subtree: true,
-      });
-    }
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+    });
 
     return () => {
       observer.disconnect();
+      debounceStopScrolling.cancel();
     };
   }, []);
 
@@ -157,9 +182,9 @@ function DrawerContent({
     } : null;
   }, [view, workspaceId]);
 
-  const handleUploadFile = useCallback((file: File) => {
+  const handleUploadFile = useCallback((file: File, onProgress?: (progress: number) => void) => {
     if(view && uploadFile) {
-      return uploadFile(view.view_id, file);
+      return uploadFile(view.view_id, file, onProgress);
     }
 
     return Promise.reject();
@@ -172,7 +197,7 @@ function DrawerContent({
   }
 
   return (
-    <div className={'h-fit w-full relative ai-chat-view'}>
+    <div ref={containerRef} className={'h-fit w-full relative ai-chat-view'}>
       {
         doc && viewMeta && (
           <Document
@@ -183,8 +208,9 @@ function DrawerContent({
             viewMeta={viewMeta}
             navigateToView={toView}
             loadViewMeta={loadViewMeta}
-            createRowDoc={createRowDoc}
+            createRow={createRow}
             loadView={loadView}
+            bindViewSync={bindViewSync}
             updatePage={updatePage}
             addPage={addPage}
             deletePage={deletePage}

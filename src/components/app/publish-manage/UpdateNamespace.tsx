@@ -1,8 +1,9 @@
-import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
-import { NormalModal } from '@/components/_shared/modal';
 import { IconButton, OutlinedInput, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
+import { NormalModal } from '@/components/_shared/modal';
 
 function UpdateNamespace({
   namespace,

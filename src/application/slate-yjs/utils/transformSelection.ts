@@ -1,4 +1,6 @@
-import { Editor, Element as SlateElement, Operation, Point, Range, Text } from 'slate';
+import { Editor, Element as SlateElement, Operation, Point, Range, Text, Transforms } from 'slate';
+
+import { Log } from '@/utils/log';
 
 /**
  * Transform selection/cursor position through Slate operations
@@ -90,6 +92,29 @@ export function isValidSelection(editor: Editor, selection: Range): boolean {
 }
 
 /**
+ * Clamp or clear the current editor selection if it points outside the current
+ * Slate tree. This prevents slate-react from trying to resolve a stale offset
+ * into a DOM point after inline content is replaced.
+ */
+export function ensureValidSelection(editor: Editor): boolean {
+  const { selection } = editor;
+
+  if (!selection || isValidSelection(editor, selection)) {
+    return true;
+  }
+
+  const nearestSelection = findNearestValidSelection(editor, selection);
+
+  if (nearestSelection) {
+    Transforms.select(editor, nearestSelection);
+  } else {
+    Transforms.deselect(editor);
+  }
+
+  return false;
+}
+
+/**
  * Find the nearest valid selection when the original selection cannot be transformed
  * @param editor - Slate editor instance
  * @param originalSelection - The original selection (may be null or invalid)
@@ -97,14 +122,14 @@ export function isValidSelection(editor: Editor, selection: Range): boolean {
  */
 export function findNearestValidSelection(editor: Editor, originalSelection: Range | null): Range | null {
   try {
-    console.debug('🎯 Finding nearest valid selection for:', originalSelection);
+    Log.debug('🎯 Finding nearest valid selection for:', originalSelection);
 
     // Strategy 1: Try to fix the original selection if it exists
     if (originalSelection) {
       const fixedSelection = tryFixSelection(editor, originalSelection);
 
       if (fixedSelection) {
-        console.debug('✅ Fixed original selection:', fixedSelection);
+        Log.debug('✅ Fixed original selection:', fixedSelection);
         return fixedSelection;
       }
     }
@@ -114,7 +139,7 @@ export function findNearestValidSelection(editor: Editor, originalSelection: Ran
       const nearestSelection = findNearestTextNode(editor, originalSelection.anchor.path);
 
       if (nearestSelection) {
-        console.debug('✅ Found nearest text node selection:', nearestSelection);
+        Log.debug('✅ Found nearest text node selection:', nearestSelection);
         return nearestSelection;
       }
     }
@@ -123,7 +148,7 @@ export function findNearestValidSelection(editor: Editor, originalSelection: Ran
     const startSelection = findDocumentStart(editor);
 
     if (startSelection) {
-      console.debug('✅ Using document start selection:', startSelection);
+      Log.debug('✅ Using document start selection:', startSelection);
       return startSelection;
     }
 
@@ -131,7 +156,7 @@ export function findNearestValidSelection(editor: Editor, originalSelection: Ran
     const endSelection = findDocumentEnd(editor);
 
     if (endSelection) {
-      console.debug('✅ Using document end selection:', endSelection);
+      Log.debug('✅ Using document end selection:', endSelection);
       return endSelection;
     }
 

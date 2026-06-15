@@ -1,6 +1,7 @@
+import React, { useMemo } from 'react';
+
 import { TemplateSummary, TemplateCategory } from '@/application/template.type';
 import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
-import React, { useMemo } from 'react';
 
 function TemplateItem({ template, category }: { template: TemplateSummary; category: TemplateCategory }) {
   const iframeUrl = useMemo(() => {

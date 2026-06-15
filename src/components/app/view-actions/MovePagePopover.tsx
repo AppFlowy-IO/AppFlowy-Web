@@ -1,17 +1,17 @@
-import { View, ViewLayout } from '@/application/types';
-import { ReactComponent as SelectedIcon } from '@/assets/icons/tick.svg';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
-import SpaceItem from '@/components/app/outline/SpaceItem';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Separator } from '@/components/ui/separator';
-import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
-import { filterOutByCondition } from '@/components/_shared/outline/utils';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { View, ViewLayout } from '@/application/types';
+import { ReactComponent as SelectedIcon } from '@/assets/icons/tick.svg';
+import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
+import { filterOutByCondition } from '@/components/_shared/outline/utils';
+import { useAppOperations, useAppOutline } from '@/components/app/app.hooks';
+import SpaceItem from '@/components/app/outline/SpaceItem';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SearchInput } from '@/components/ui/search-input';
+import { Separator } from '@/components/ui/separator';
 
 function MovePagePopover({
   viewId,
@@ -28,7 +28,7 @@ function MovePagePopover({
   const outline = useAppOutline();
 
   const [search, setSearch] = React.useState<string>('');
-  const { movePage } = useAppHandlers();
+  const { movePage } = useAppOperations();
 
   const views = useMemo(() => {
     if (!outline) return [];

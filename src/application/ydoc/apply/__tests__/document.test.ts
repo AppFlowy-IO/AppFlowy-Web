@@ -1,7 +1,7 @@
 import { YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import * as Y from 'yjs';
-import * as docJson from '../../../../../cypress/fixtures/simple_doc.json';
+import * as docJson from '../../../../../playwright/fixtures/simple_doc.json';
 
 describe('apply document', () => {
   it('should apply document', () => {

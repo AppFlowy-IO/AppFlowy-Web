@@ -1,16 +1,18 @@
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+
 import { useChatContext } from '@/components/chat/chat/context';
-import { SpaceList } from '../add-messages-to-page-wrapper/space-list';
-import { Label } from '@/components/ui/label';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
+import { useViewContentInserter } from '@/components/chat/hooks/use-view-content-inserter';
+import { useEditorContext } from '@/components/chat/provider/editor-provider';
+import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
+import { ChatMessage } from '@/components/chat/types';
+import { Label } from '@/components/ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { toast } from 'sonner';
-import { useViewContentInserter } from '@/components/chat/hooks/use-view-content-inserter';
-import { useTranslation } from 'react-i18next';
-import { useEditorContext } from '@/components/chat/provider/editor-provider';
-import { ChatMessage } from '@/components/chat/types';
-import { useCallback, useState } from 'react';
-import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
+
+import { SpaceList } from '../add-messages-to-page-wrapper/space-list';
 
 export function AddMessageToPageWrapper({
   onFinished,

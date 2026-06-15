@@ -1,6 +1,7 @@
-import { useChatContext } from '@/components/chat/chat/context';
 import { EditorData } from '@appflowyinc/editor';
 import { useCallback } from 'react';
+
+import { useChatContext } from '@/components/chat/chat/context';
 
 export function useViewContentInserter() {
   const { requestInstance } = useChatContext();

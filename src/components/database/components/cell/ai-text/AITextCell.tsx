@@ -1,8 +1,9 @@
+import { useRef, useState } from 'react';
+
 import { AICell, CellProps } from '@/application/database-yjs/cell.type';
 import AITextCellActions from '@/components/database/components/cell/ai-text/AITextCellActions';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { useRef, useState } from 'react';
 
 export function AITextCell({ cell, style, readOnly, rowId, fieldId, isHovering, wrap }: CellProps<AICell>) {
   const ref = useRef<HTMLDivElement>(null);

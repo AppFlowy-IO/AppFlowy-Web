@@ -1,8 +1,11 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { ErrorType } from '@/application/utils/error-utils';
+
 import { withContextsMinimal } from '../../../.storybook/decorators';
+
 import RecordNotFound from './RecordNotFound';
+
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 const meta = {
   title: 'Error Pages/RecordNotFound',

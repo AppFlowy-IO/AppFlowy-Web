@@ -1,8 +1,10 @@
-import { useCodeBlock } from '@/components/editor/components/blocks/code/Code.hooks';
-import { CodeNode, EditorElementProps } from '@/components/editor/editor.type';
 import { forwardRef, lazy, Suspense, useState } from 'react';
 import { Element } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
+
+import { useCodeBlock } from '@/components/editor/components/blocks/code/Code.hooks';
+import { CodeNode, EditorElementProps } from '@/components/editor/editor.type';
+
 import CodeToolbar from './CodeToolbar';
 import LanguageSelect from './SelectLanguage';
 
@@ -12,6 +14,7 @@ export const CodeBlock = forwardRef<HTMLDivElement, EditorElementProps<CodeNode>
   ({ node, children, ...attributes }, ref) => {
     const { language, handleChangeLanguage } = useCodeBlock(node);
     const [showToolbar, setShowToolbar] = useState(false);
+    const isMermaid = language === 'mermaid';
 
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
@@ -50,10 +53,18 @@ export const CodeBlock = forwardRef<HTMLDivElement, EditorElementProps<CodeNode>
         <div {...attributes} ref={ref} className={`${attributes.className ?? ''} flex w-full`}>
           <pre
             spellCheck={false}
-            className={`appflowy-scroller flex w-full flex-col overflow-auto  rounded-[8px] border border-border-primary bg-fill-list-active p-5 pt-12`}
+            className={`appflowy-scroller relative flex w-full flex-col overflow-auto rounded-[8px] border border-border-primary bg-fill-list-active p-5 pt-12`}
           >
-            <code>{children}</code>
-            {language === 'mermaid' && (
+            <code
+              className={
+                isMermaid
+                  ? 'pointer-events-none absolute h-px w-px overflow-hidden opacity-0'
+                  : undefined
+              }
+            >
+              {children}
+            </code>
+            {isMermaid && (
               <Suspense>
                 <MermaidChat node={node} />
               </Suspense>

@@ -1,12 +1,15 @@
-import { Banner } from '@/components/chat/components/multi-selection/banner';
-import { ANIMATION_PRESETS, MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
-import { cn } from '@/lib/utils';
-import { useChatMessagesContext } from './messages-provider';
-import { AuthorType, ChatMessage } from '@/components/chat/types';
-import { CheckStatus } from '@/components/chat/types/checkbox';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+
 import { useChatContext } from '@/components/chat/chat/context';
+import { Banner } from '@/components/chat/components/multi-selection/banner';
+import { ANIMATION_PRESETS, MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
+import { AuthorType, ChatMessage } from '@/components/chat/types';
+import { CheckStatus } from '@/components/chat/types/checkbox';
+import { cn } from '@/lib/utils';
+
+import { useChatMessagesContext } from './messages-provider';
+
 
 interface SelectionModeContextTypes {
   messages: ChatMessage[];
@@ -84,12 +87,16 @@ export const SelectionModeProvider = ({ children }: { children: ReactNode }) => 
   const handleUnselectAll = useCallback(() => {
     setMessages([]);
   }, []);
-
-  return <SelectionModeContext.Provider
-    value={{
+  const contextValue = useMemo(
+    () => ({
       messages,
       toggleMessage,
-    }}
+    }),
+    [messages, toggleMessage]
+  );
+
+  return <SelectionModeContext.Provider
+    value={contextValue}
   >
     <div
       className={cn('h-full w-full  px-1')}

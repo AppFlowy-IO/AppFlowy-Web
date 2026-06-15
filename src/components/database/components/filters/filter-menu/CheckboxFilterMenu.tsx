@@ -1,8 +1,9 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { CheckboxFilter, CheckboxFilterCondition } from '@/application/database-yjs';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function CheckboxFilterMenu ({ filter }: { filter: CheckboxFilter }) {
   const { t } = useTranslation();

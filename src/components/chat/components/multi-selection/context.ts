@@ -1,5 +1,6 @@
-import { ChatMessage } from '@/components/chat/types';
 import { createContext, useContext } from 'react';
+
+import { ChatMessage } from '@/components/chat/types';
 
 interface SelectionContextType {
   messages: ChatMessage[];

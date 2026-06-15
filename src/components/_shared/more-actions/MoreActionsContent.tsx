@@ -1,3 +1,7 @@
+import React, { useCallback, useContext, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
+
 import { clearRedirectTo } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
@@ -7,12 +11,9 @@ import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
 import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
 import CacheClearingDialog from '@/components/_shared/modal/CacheClearingDialog';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { openUrl } from '@/utils/url';
-import React, { useCallback, useContext, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 
 function MoreActionsContent({
   itemClicked,
@@ -20,13 +21,15 @@ function MoreActionsContent({
   itemClicked: (item: { Icon: React.ElementType; label: string; onClick: () => void }) => void;
 }) {
   const { isDark, setDark } = useContext(ThemeModeContext) || {};
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleLogout = useCallback(() => {
     clearRedirectTo(); // Clear stored redirect URL from previous user
     invalidToken();
+    // Clean up old global key for backward compatibility
+    localStorage.removeItem('last_view_id');
     navigate('/login?redirectTo=' + encodeURIComponent(window.location.href));
   }, [navigate]);
 
@@ -82,8 +85,8 @@ function MoreActionsContent({
     return items;
   }, [t, isAuthenticated, handleLogin, isDark, setDark]);
 
-  const actionsContent = useMemo(() => {
-    return (
+  return (
+    <>
       <div className={'flex w-[240px] flex-col gap-2 px-2 py-2 max-md:w-full'}>
         {actions.map((action, index) => (
           <button
@@ -101,12 +104,6 @@ function MoreActionsContent({
           </button>
         ))}
       </div>
-    );
-  }, [actions, itemClicked]);
-
-  return (
-    <>
-      {actionsContent}
       <CacheClearingDialog open={openConfirm} onClose={() => setOpenConfirm(false)} />
       <LogoutConfirm
         open={openLogoutConfirm}

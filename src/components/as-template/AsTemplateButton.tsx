@@ -1,10 +1,11 @@
-import { useAppView } from '@/components/app/app.hooks';
-import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
-import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@mui/material';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as TemplateIcon } from '@/assets/icons/template.svg';
+import { useAppView } from '@/components/app/app.hooks';
+import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 
 function AsTemplateButton ({ viewId }: { viewId: string }) {
   const { t } = useTranslation();

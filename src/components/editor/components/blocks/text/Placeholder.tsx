@@ -1,10 +1,12 @@
+import { CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Editor, Element, Range } from 'slate';
+import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
+
 import { BlockType, ToggleListBlockData } from '@/application/types';
 import { HeadingNode, ToggleListNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
-import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
-import { Editor, Element, Range } from 'slate';
-import { useTranslation } from 'react-i18next';
+
 
 function Placeholder({ node, ...attributes }: { node: Element; className?: string; style?: CSSProperties }) {
   const { t } = useTranslation();
@@ -42,6 +44,27 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
   const unSelectedPlaceholder = useMemo(() => {
     switch(block?.type) {
       case BlockType.Paragraph: {
+        try {
+          const path = ReactEditor.findPath(editor, node);
+          const inNotes = Editor.above(editor, {
+            at: path,
+            match: (n) =>
+              !Editor.isEditor(n) &&
+              Element.isElement(n) &&
+              n.type === BlockType.AIMeetingNotesBlock,
+          });
+
+          if (inNotes) return t('document.aiMeeting.notesPlaceholder');
+        } catch {
+          // ignore
+        }
+
+        // Show placeholder when the document is empty (single empty paragraph)
+        // This matches the desktop "Enter a / to insert a block, or start typing" behavior
+        if(editor.children.length <= 1) {
+          return t('cardDetails.notesPlaceholder');
+        }
+
         return '';
       }
 
@@ -100,9 +123,24 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, t]);
+  }, [block, editor, node, t]);
+
+  const isInsideTableCell = useMemo(() => {
+    try {
+      const path = ReactEditor.findPath(editor, node);
+
+      return !!Editor.above(editor, {
+        at: path,
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableCellBlock,
+      });
+    } catch {
+      return false;
+    }
+  }, [editor, node]);
 
   const selectedPlaceholder = useMemo(() => {
+    // Don't show slash placeholder inside table cells
+    if (isInsideTableCell) return '';
 
     if(block?.type === BlockType.ToggleListBlock && (block?.data as ToggleListBlockData).level) {
       return unSelectedPlaceholder;
@@ -122,7 +160,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block?.data, block?.type, t, unSelectedPlaceholder]);
+  }, [block?.data, block?.type, isInsideTableCell, t, unSelectedPlaceholder]);
 
   useEffect(() => {
     if(!selected) return;

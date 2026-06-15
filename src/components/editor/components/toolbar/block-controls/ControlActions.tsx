@@ -1,29 +1,36 @@
+import { IconButton, Tooltip } from '@mui/material';
+import React, { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Transforms } from 'slate';
+import { ReactEditor, useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { CONTAINER_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
+import { filterValidNodes, findSlateEntryByBlockId, getSelectedPaths } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import { ReactComponent as DragSvg } from '@/assets/icons/drag.svg';
+import { ReactComponent as AddSvg } from '@/assets/icons/plus.svg';
+import { useBlockDrag } from '@/components/editor/components/drag-drop/useBlockDrag';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import ControlsMenu from '@/components/editor/components/toolbar/block-controls/ControlsMenu';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 import { isMac } from '@/utils/hotkeys';
-import { IconButton, Tooltip } from '@mui/material';
-import React, { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddSvg } from '@/assets/icons/plus.svg';
-import { ReactComponent as DragSvg } from '@/assets/icons/drag.svg';
-import { Transforms } from 'slate';
-import { ReactEditor, useSlateStatic } from 'slate-react';
-import { filterValidNodes, findSlateEntryByBlockId, getSelectedPaths } from '@/application/slate-yjs/utils/editor';
 
-function ControlActions({ setOpenMenu, blockId }: {
+type ControlActionsProps = {
   blockId: string | null;
+  parentId?: string | null;
   setOpenMenu?: (open: boolean) => void;
-}) {
-  const { setSelectedBlockIds } = useEditorContext();
+  onDraggingChange?: (dragging: boolean) => void;
+};
+
+function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: ControlActionsProps) {
+  const { setSelectedBlockIds } = useEditorLocalState();
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const openMenu = Boolean(menuAnchorEl);
+  const dragHandleRef = useRef<HTMLButtonElement | null>(null);
 
   const editor = useSlateStatic() as YjsEditor;
   const { t } = useTranslation();
@@ -110,10 +117,18 @@ function ControlActions({ setOpenMenu, blockId }: {
     onAdded();
   }, [editor, blockId, onAdded]);
 
+  const { isDragging } = useBlockDrag({
+    blockId: blockId ?? undefined,
+    parentId: parentId ?? undefined,
+    dragHandleRef,
+    disabled: openMenu,
+    onDragChange: onDraggingChange,
+  });
+
   return (
     <div className={'gap-1 flex w-full flex-grow transform items-center justify-end'}>
       <Tooltip
-        title={<div className={'flex flex-col'}>
+        title={<div className={'flex flex-col items-center justify-center text-center'}>
           <div>{t('blockActions.addBelowTooltip')}</div>
           <div>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t('blockActions.addAboveTooltip')}`}</div>
         </div>}
@@ -128,17 +143,23 @@ function ControlActions({ setOpenMenu, blockId }: {
         </IconButton>
       </Tooltip>
       <Tooltip
-        title={<div className={'flex flex-col'}>
+        title={<div className={'flex flex-col items-center justify-center text-center'}>
+          <div>{t('blockActions.dragTooltip')}</div>
           <div>{t('blockActions.openMenuTooltip')}</div>
         </div>}
         disableInteractive={true}
       >
         <IconButton
-          data-testid={'open-block-options'}
-          onClick={onClickOptions}
+          ref={dragHandleRef}
           size={'small'}
+          data-testid={'drag-block'}
+          onClick={onClickOptions}
+          className={`${isDragging ? 'cursor-grabbing opacity-70' : 'cursor-grab'}`}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+          }}
         >
-          <DragSvg/>
+          <DragSvg />
         </IconButton>
       </Tooltip>
       {blockId && openMenu && <ControlsMenu

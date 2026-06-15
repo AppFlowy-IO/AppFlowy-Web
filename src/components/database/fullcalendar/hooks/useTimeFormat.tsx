@@ -2,8 +2,8 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 
 import { TimeFormat } from '@/application/types';
-import { useCurrentUser } from '@/components/main/app.hooks';
 import { MetadataKey } from '@/application/user-metadata';
+import { useCurrentUser } from '@/components/main/app.hooks';
 
 /**
  * Hook for consistent time formatting across calendar components

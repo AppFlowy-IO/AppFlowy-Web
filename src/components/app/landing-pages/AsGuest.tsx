@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { ERROR_CODE } from '@/application/constants';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
+import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
+import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
-import { useService } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
 
 export function AsGuest() {
   const { t } = useTranslation();
-  const service = useService();
   const [searchParams] = useSearchParams();
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('workspace_id');
@@ -24,21 +25,41 @@ export function AsGuest() {
   const [page, setPage] = useState<{ view_id: string; name: string } | null>(null);
 
   const [isInvalid, setIsInvalid] = useState(false);
+  const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const [notInvitee, setNotInvitee] = useState(false);
 
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<LandingPageError>();
+
+  const isAuthenticated = useIsAuthenticatedOptional();
+  const url = useMemo(() => window.location.href, []);
+
+  // Redirect unauthenticated users to login, preserving the invitation URL
+  useEffect(() => {
+    if (!isAuthenticated) {
+      window.open('/login?redirectTo=' + encodeURIComponent(url), '_self');
+    }
+  }, [isAuthenticated, url]);
 
   const loadInvitation = useCallback(async () => {
-    if (!service) return;
     setLoading(true);
+    setError(undefined);
+
     if (!workspaceId || !code) {
+      setError({
+        message: t(
+          'landingPage.error.invalidInvitationUrl',
+          'This invitation link is missing required information. Please ask the sender for a new link.'
+        ),
+      });
       setIsError(true);
+      setLoading(false);
       return;
     }
 
     try {
-      const info = await service.getGuestInvitation(workspaceId, code);
+      const info = await WorkspaceService.getGuestInvitation(workspaceId, code);
 
       setWorkspace({
         id: info.workspace_id,
@@ -55,33 +76,39 @@ export function AsGuest() {
       });
 
       if (info.is_existing_member) {
+        setIsError(false);
         return;
       }
 
-      await service.acceptGuestInvitation(workspaceId, code);
+      await WorkspaceService.acceptGuestInvitation(workspaceId, code);
+      setIsError(false);
 
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInvalid(true);
       } else if (e.code === ERROR_CODE.ALREADY_JOINED) {
         // do nothing
       } else if (e.code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) {
         setNotInvitee(true);
       } else {
+        setError(e);
         setIsError(true);
       }
     } finally {
       setLoading(false);
     }
-  }, [code, service, workspaceId]);
+  }, [code, t, workspaceId]);
 
   useEffect(() => {
-    void loadInvitation();
-  }, [loadInvitation]);
+    if (isAuthenticated) {
+      void loadInvitation();
+    }
+  }, [isAuthenticated, loadInvitation]);
 
   if (isInvalid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (notInvitee) {
@@ -89,7 +116,7 @@ export function AsGuest() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={loadInvitation} />;
+    return <ErrorPage onRetry={loadInvitation} error={error} />;
   }
 
   return (

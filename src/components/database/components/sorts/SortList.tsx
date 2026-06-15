@@ -1,9 +1,10 @@
+import { useCallback, useMemo, useState } from 'react';
+
 import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { useReorderSorts } from '@/application/database-yjs/dispatch';
 import DragItem from '@/components/database/components/drag-and-drop/DragItem';
 import { useDragContextValue, DragContext } from '@/components/database/components/drag-and-drop/useDragContext';
 import Sort from '@/components/database/components/sorts/Sort';
-import { useCallback, useMemo, useState } from 'react';
 
 function SortList () {
   const sorts = useSortsSelector();

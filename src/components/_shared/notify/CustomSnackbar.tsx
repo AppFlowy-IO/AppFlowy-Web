@@ -1,4 +1,3 @@
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import ErrorOutline from '@mui/icons-material/ErrorOutline';
 import HighlightOff from '@mui/icons-material/HighlightOff';
 import PowerSettingsNew from '@mui/icons-material/PowerSettingsNew';
@@ -6,6 +5,8 @@ import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
 import IconButton from '@mui/material/IconButton';
 import { CustomContentProps, SnackbarContent, useSnackbar } from 'notistack';
 import React from 'react';
+
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
 const CustomSnackbar = React.forwardRef<HTMLDivElement, CustomContentProps>((props, ref) => {
   const { id, message, variant } = props;

@@ -17,10 +17,13 @@ export function Board() {
 
   const group = groups[0];
 
-  if (!group) return null;
+  if (!group) {
+    return null;
+  }
+
   return (
     <BoardProvider>
-      <div className={'database-board flex w-full flex-1 flex-col'}>
+      <div className={'database-board flex h-full min-h-0 w-full flex-1 flex-col'}>
         <Group groupId={group} key={group} />
       </div>
     </BoardProvider>

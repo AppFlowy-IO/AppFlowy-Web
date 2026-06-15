@@ -1,12 +1,13 @@
+import { Chip, CircularProgress, OutlinedInput, Typography } from '@mui/material';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as ArrowRight } from '@/assets/icons/alt_arrow_right.svg';
+import { Popover } from '@/components/_shared/popover';
 import AddCategory from '@/components/as-template/category/AddCategory';
 import CategoryItem from '@/components/as-template/category/CategoryItem';
 import { useLoadCategories } from '@/components/as-template/hooks';
 import { CategoryIcon } from '@/components/as-template/icons';
-import { Popover } from '@/components/_shared/popover';
-import { Chip, CircularProgress, OutlinedInput, Typography } from '@mui/material';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 const ITEM_HEIGHT = 48;
 const ITEM_PADDING_TOP = 8;

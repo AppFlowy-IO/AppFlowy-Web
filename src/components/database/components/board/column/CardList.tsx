@@ -2,9 +2,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { PADDING_END } from '@/application/database-yjs';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
 import { Card } from '@/components/database/components/board/card';
-import { getScrollParent } from '@/components/global-comment/utils';
 import { cn } from '@/lib/utils';
 
 export enum CardType {
@@ -17,11 +16,18 @@ export interface RenderCard {
   id: string;
 }
 
+const CARD_LIST_MAX_HEIGHT = 2000;
+
+const CARD_LIST_STYLE = {
+  maxHeight: CARD_LIST_MAX_HEIGHT,
+  overflowY: 'auto',
+} as const;
+
 function CardList({
   data,
   fieldId,
   columnId,
-  setScrollElement,
+  setScrollElement: _setScrollElement,
 }: {
   columnId: string;
   data: RenderCard[];
@@ -30,7 +36,8 @@ function CardList({
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const parentOffsetRef = useRef(0);
-  const { creatingColumnId, setCreatingColumnId } = useBoardContext();
+  const { creatingColumnId } = useBoardSelection();
+  const { setCreatingColumnId } = useBoardActions();
 
   const isCreating = useMemo(() => {
     return creatingColumnId === columnId;
@@ -47,25 +54,22 @@ function CardList({
     [columnId, setCreatingColumnId]
   );
 
-  useLayoutEffect(() => {
-    parentOffsetRef.current = parentRef.current?.getBoundingClientRect()?.top ?? 0;
-  }, []);
-
   const getScrollElement = useCallback(() => {
     if (!parentRef.current) return null;
-    const el = (parentRef.current.closest('.appflowy-scroll-container') ||
-      getScrollParent(parentRef.current)) as HTMLDivElement;
+    // Board cards scroll within their local column container, not the document
+    // Return the parent div itself as the scroll container
+    return parentRef.current;
+  }, []);
 
-    if (setScrollElement) {
-      setScrollElement(el);
-    }
-
-    return el;
-  }, [setScrollElement]);
+  // Board columns have local scroll, so scrollMargin should always be 0
+  // No need for RAF measurement like Grid - layout is stable within the column
+  useLayoutEffect(() => {
+    parentOffsetRef.current = 0;
+  }, []);
 
   const virtualizer = useVirtualizer({
     count: data.length,
-    scrollMargin: parentOffsetRef.current,
+    scrollMargin: 0, // Always 0 for Board - items are positioned relative to column top
     overscan: 5,
     getScrollElement,
     estimateSize: () => 36,
@@ -74,15 +78,26 @@ function CardList({
     getItemKey: (index) => data[index].id || String(index),
   });
 
-  const items = virtualizer.getVirtualItems();
+  const virtualItems = virtualizer.getVirtualItems();
+  const viewportHeight = Math.min(
+    parentRef.current?.clientHeight || CARD_LIST_MAX_HEIGHT,
+    CARD_LIST_MAX_HEIGHT
+  );
+  const scrollTop = parentRef.current?.scrollTop ?? 0;
+  const renderStart = Math.max(0, scrollTop - 5 * 36);
+  const renderEnd = scrollTop + viewportHeight + 5 * 36;
+  const maxRenderedItems = Math.ceil(viewportHeight / 36) + 12;
+  const items = virtualItems.length > maxRenderedItems
+    ? virtualItems
+      .filter((item) => item.end >= renderStart && item.start <= renderEnd)
+      .slice(0, maxRenderedItems)
+    : virtualItems;
 
   return (
     <div
       ref={parentRef}
-      className='appflowy-custom-scroller w-full'
-      style={{
-        overflowY: 'auto',
-      }}
+      className='appflowy-custom-scroller w-full min-h-0 flex-1'
+      style={CARD_LIST_STYLE}
     >
       <div
         style={{

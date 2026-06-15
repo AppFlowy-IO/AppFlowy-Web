@@ -7,10 +7,10 @@ import {
   FileMediaCellDataItem,
   FileMediaType,
 } from '@/application/database-yjs/cell.type';
+import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import FileMediaCellMenu from '@/components/database/components/cell/file-media/FileMediaCellMenu';
 import PreviewImage from '@/components/database/components/cell/file-media/PreviewImage';
 import UnPreviewFile from '@/components/database/components/cell/file-media/UnPreviewFile';
-import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import { cn } from '@/lib/utils';
 
 export function FileMediaCell({
@@ -24,8 +24,11 @@ export function FileMediaCell({
   rowId,
   readOnly,
 }: CellProps<FileMediaCellType>) {
-  const value = cell?.data;
-  const { workspaceId, viewId } = useDatabaseContext();
+  const rawValue = cell?.data;
+  const value = useMemo(() => {
+    return Array.isArray(rawValue) ? rawValue.filter(Boolean) : [];
+  }, [rawValue]);
+  const { workspaceId, databasePageId } = useDatabaseContext();
   const [openPreview, setOpenPreview] = React.useState(false);
   const previewIndexRef = React.useRef(0);
   const photos = useMemo(() => {
@@ -113,7 +116,7 @@ export function FileMediaCell({
         <Suspense>
           <GalleryPreview
             workspaceId={workspaceId}
-            viewId={viewId}
+            viewId={databasePageId}
             images={photos}
             previewIndex={previewIndexRef.current}
             open={openPreview}

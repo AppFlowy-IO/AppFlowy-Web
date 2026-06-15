@@ -1,13 +1,14 @@
+import { debounce } from 'lodash-es';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
 import GlobalComment from '@/components/global-comment/GlobalComment';
 import {
   GlobalCommentContext,
   useLoadComments,
   useLoadReactions,
 } from '@/components/global-comment/GlobalComment.hooks';
-import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useState } from 'react';
 
-export function GlobalCommentProvider() {
+export function GlobalCommentProvider({ disableFixedAddComment }: { disableFixedAddComment?: boolean }) {
   const { comments, loading, reload } = useLoadComments();
   const { reactions, toggleReaction } = useLoadReactions();
   const [replyCommentId, setReplyCommentId] = useState<string | null>(null);
@@ -37,22 +38,35 @@ export function GlobalCommentProvider() {
     }
   }, [highLightCommentId, debounceClearHighLightCommentId]);
 
+  const contextValue = useMemo(
+    () => ({
+      reactions,
+      replyCommentId,
+      reload,
+      getComment,
+      loading,
+      comments,
+      replyComment,
+      toggleReaction,
+      highLightCommentId,
+      setHighLightCommentId,
+    }),
+    [
+      reactions,
+      replyCommentId,
+      reload,
+      getComment,
+      loading,
+      comments,
+      replyComment,
+      toggleReaction,
+      highLightCommentId,
+    ]
+  );
+
   return (
-    <GlobalCommentContext.Provider
-      value={{
-        reactions,
-        replyCommentId,
-        reload,
-        getComment,
-        loading,
-        comments,
-        replyComment,
-        toggleReaction,
-        highLightCommentId,
-        setHighLightCommentId,
-      }}
-    >
-      <GlobalComment />
+    <GlobalCommentContext.Provider value={contextValue}>
+      <GlobalComment disableFixedAddComment={disableFixedAddComment} />
     </GlobalCommentContext.Provider>
   );
 }

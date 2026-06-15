@@ -1,8 +1,12 @@
+import { Button } from '@mui/material';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as CloseSvg } from '@/assets/icons/close.svg';
 import { ReactComponent as InformationSvg } from '@/assets/icons/help.svg';
-import { Button } from '@mui/material';
 
 export const ErrorModal = ({ message, onClose }: { message: string; onClose: () => void }) => {
+  const { t } = useTranslation();
+
   return (
     <div className={'fixed inset-0 z-10 flex items-center justify-center bg-bg-mask backdrop-blur-sm'}>
       <div
@@ -19,7 +23,7 @@ export const ErrorModal = ({ message, onClose }: { message: string; onClose: () 
         <div className={'text-main-alert'}>
           <InformationSvg className={'h-24 w-24'} />
         </div>
-        <h1 className={'text-xl'}>Oops.. something went wrong</h1>
+        <h1 className={'text-xl'}>{t('error.generalError')}</h1>
         <h2>{message}</h2>
 
         <Button

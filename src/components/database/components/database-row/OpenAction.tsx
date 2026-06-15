@@ -16,6 +16,7 @@ function OpenAction({ rowId }: { rowId: string }) {
         <Button
           size={'icon-sm'}
           variant={'outline'}
+          data-testid="row-expand-button"
           className={'bg-surface-primary text-icon-secondary hover:bg-surface-primary-hover'}
           onClick={(e) => {
             e.stopPropagation();

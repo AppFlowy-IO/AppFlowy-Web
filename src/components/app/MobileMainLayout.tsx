@@ -1,3 +1,6 @@
+import React, { useMemo } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+
 import { UIVariant } from '@/application/types';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useViewErrorStatus } from '@/components/app/app.hooks';
@@ -5,8 +8,6 @@ import Main from '@/components/app/Main';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import SomethingError from '@/components/error/SomethingError';
-import React, { useMemo } from 'react';
-import { ErrorBoundary } from 'react-error-boundary';
 
 const MobileTopBar = React.lazy(() => import('@/components/_shared/mobile-topbar/MobileTopBar'));
 

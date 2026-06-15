@@ -1,5 +1,18 @@
+import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
+import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
+import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
+import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
+import {
+  AIMeetingBlock,
+  AIMeetingSection,
+  AIMeetingSpeakerBlock,
+} from '@/components/editor/components/blocks/ai-meeting';
+import { AudioBlock } from '@/components/editor/components/blocks/audio';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
 import { Callout } from '@/components/editor/components/blocks/callout';
 import { CodeBlock } from '@/components/editor/components/blocks/code';
@@ -8,6 +21,7 @@ import { DatabaseBlock } from '@/components/editor/components/blocks/database';
 import { DividerNode } from '@/components/editor/components/blocks/divider';
 import { FileBlock } from '@/components/editor/components/blocks/file';
 import { GalleryBlock } from '@/components/editor/components/blocks/gallery';
+import { GoogleDriveBlock } from '@/components/editor/components/blocks/google-drive';
 import { Heading } from '@/components/editor/components/blocks/heading';
 import { ImageBlock } from '@/components/editor/components/blocks/image';
 import { LinkPreview } from '@/components/editor/components/blocks/link-preview';
@@ -16,6 +30,7 @@ import { NumberedList } from '@/components/editor/components/blocks/numbered-lis
 import { Outline } from '@/components/editor/components/blocks/outline';
 import { Page } from '@/components/editor/components/blocks/page';
 import { Paragraph } from '@/components/editor/components/blocks/paragraph';
+import { PDFBlock } from '@/components/editor/components/blocks/pdf';
 import { Quote } from '@/components/editor/components/blocks/quote';
 import SimpleTable from '@/components/editor/components/blocks/simple-table/SimpleTable';
 import SimpleTableCell from '@/components/editor/components/blocks/simple-table/SimpleTableCell';
@@ -23,14 +38,15 @@ import SimpleTableRow from '@/components/editor/components/blocks/simple-table/S
 import { TableBlock, TableCellBlock } from '@/components/editor/components/blocks/table';
 import { Text } from '@/components/editor/components/blocks/text';
 import { VideoBlock } from '@/components/editor/components/blocks/video';
+import { handleBlockDrop } from '@/components/editor/components/drag-drop/handleBlockDrop';
+import { useBlockDrop } from '@/components/editor/components/drag-drop/useBlockDrop';
+import { usePopoverMountSignal } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { renderColor } from '@/utils/color';
-import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
-import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
-import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
+
 import SubPage from 'src/components/editor/components/blocks/sub-page/SubPage';
 import { TodoList } from 'src/components/editor/components/blocks/todo-list';
 import { ToggleList } from 'src/components/editor/components/blocks/toggle-list';
@@ -42,27 +58,28 @@ export const Element = ({
 }: RenderElementProps & {
   element: EditorElementProps['node'];
 }) => {
-  const {
-    jumpBlockId,
-    onJumpedBlockId,
-    selectedBlockIds,
-  } = useEditorContext();
+  const { jumpBlockId, onJumpedBlockId, readOnly } = useEditorContext();
+  const { selectedBlockIds } = useEditorLocalState();
 
   const { blockId, type } = node;
+
+  usePopoverMountSignal(blockId);
   const isSelected = useSelected();
   const selected = useMemo(() => {
     if (blockId && selectedBlockIds?.includes(blockId)) {
       return true;
     }
 
-    if ([
-      ...CONTAINER_BLOCK_TYPES,
-      ...SOFT_BREAK_TYPES,
-      BlockType.HeadingBlock,
-      BlockType.TableBlock,
-      BlockType.TableCell,
-      BlockType.SimpleTableBlock,
-    ].includes(type as BlockType)) {
+    if (
+      [
+        ...CONTAINER_BLOCK_TYPES,
+        ...SOFT_BREAK_TYPES,
+        BlockType.HeadingBlock,
+        BlockType.TableBlock,
+        BlockType.TableCell,
+        BlockType.SimpleTableBlock,
+      ].includes(type as BlockType)
+    ) {
       return false;
     }
 
@@ -71,15 +88,28 @@ export const Element = ({
 
   const editor = useSlateStatic();
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const [blockElement, setBlockElement] = React.useState<HTMLElement | null>(null);
+  const allowBlockDrop = useMemo(() => {
+    if (readOnly || type === YjsEditorKey.text) {
+      return false;
+    }
 
-  const scrollAndHighlight = useCallback(async (element: HTMLElement) => {
-    element.scrollIntoView({ block: 'start' });
-    element.className += ' highlight-block';
-    highlightTimeoutRef.current = setTimeout(() => {
-      element.className = element.className.replace('highlight-block', '');
-    }, 5000);
-    onJumpedBlockId?.();
-  }, [onJumpedBlockId]);
+    const blockType = node.type as BlockType;
+
+    return ![BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(blockType);
+  }, [node.type, readOnly, type]);
+
+  const scrollAndHighlight = useCallback(
+    async (element: HTMLElement) => {
+      element.scrollIntoView({ block: 'start' });
+      element.className += ' highlight-block';
+      highlightTimeoutRef.current = setTimeout(() => {
+        element.className = element.className.replace('highlight-block', '');
+      }, 5000);
+      onJumpedBlockId?.();
+    },
+    [onJumpedBlockId]
+  );
 
   useLayoutEffect(() => {
     if (!jumpBlockId || node.blockId !== jumpBlockId) {
@@ -102,6 +132,41 @@ export const Element = ({
       }
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (!allowBlockDrop) {
+      setBlockElement(null);
+      return;
+    }
+
+    try {
+      const domNode = ReactEditor.toDOMNode(editor, node);
+
+      setBlockElement((current) => (current === domNode ? current : domNode));
+    } catch {
+      setBlockElement(null);
+    }
+  }, [allowBlockDrop, editor, node]);
+
+  const onDropBlock = useCallback(
+    ({ sourceBlockId, targetBlockId, edge }: { sourceBlockId: string; targetBlockId: string; edge: Edge }) => {
+      if (!allowBlockDrop) return;
+
+      handleBlockDrop({
+        editor: editor as YjsEditor,
+        sourceBlockId,
+        targetBlockId,
+        edge,
+      });
+    },
+    [allowBlockDrop, editor]
+  );
+
+  const { isDraggingOver, dropEdge } = useBlockDrop({
+    blockId: allowBlockDrop ? blockId ?? undefined : undefined,
+    element: allowBlockDrop ? blockElement : null,
+    onDrop: onDropBlock,
+  });
   const Component = useMemo(() => {
     switch (type) {
       case BlockType.HeadingBlock:
@@ -139,6 +204,7 @@ export const Element = ({
       case BlockType.GridBlock:
       case BlockType.BoardBlock:
       case BlockType.CalendarBlock:
+      case BlockType.ChartBlock:
         return DatabaseBlock;
       case BlockType.LinkPreview:
         return LinkPreview;
@@ -156,10 +222,24 @@ export const Element = ({
         return SimpleTableCell;
       case BlockType.VideoBlock:
         return VideoBlock;
+      case BlockType.AudioBlock:
+        return AudioBlock;
+      case BlockType.GoogleDriveBlock:
+        return GoogleDriveBlock;
       case BlockType.ColumnsBlock:
         return Columns;
       case BlockType.ColumnBlock:
         return Column;
+      case BlockType.AIMeetingBlock:
+        return AIMeetingBlock;
+      case BlockType.AIMeetingSummaryBlock:
+      case BlockType.AIMeetingNotesBlock:
+      case BlockType.AIMeetingTranscriptionBlock:
+        return AIMeetingSection;
+      case BlockType.AIMeetingSpeakerBlock:
+        return AIMeetingSpeakerBlock;
+      case BlockType.PDFBlock:
+        return PDFBlock;
       default:
         return BlockNotFound;
     }
@@ -222,9 +302,7 @@ export const Element = ({
 
   const fallbackRender = useMemo(() => {
     return (props: FallbackProps) => {
-      return (
-        <ElementFallbackRender {...props} description={JSON.stringify(node)} />
-      );
+      return <ElementFallbackRender {...props} description={JSON.stringify(node)} />;
     };
   }, [node]);
 
@@ -238,10 +316,7 @@ export const Element = ({
 
   if ([BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(node.type as BlockType)) {
     return (
-      <Component
-        node={node}
-        {...attributes}
-      >
+      <Component node={node} {...attributes}>
         {children}
       </Component>
     );
@@ -252,16 +327,14 @@ export const Element = ({
       <div
         {...attributes}
         data-block-type={type}
-        className={className}
+        className={`${className} ${allowBlockDrop && isDraggingOver ? 'block-drop-target' : ''}`}
         style={blockStyle}
       >
-        <Component
-          style={style}
-          className={`flex w-full flex-col`}
-          node={node}
-        >
+        {allowBlockDrop && isDraggingOver && dropEdge === 'top' && <DropIndicator edge='top' gap='8px' />}
+        <Component style={style} className={`flex w-full flex-col`} node={node}>
           {children}
         </Component>
+        {allowBlockDrop && isDraggingOver && dropEdge === 'bottom' && <DropIndicator edge='bottom' gap='8px' />}
       </div>
     </ErrorBoundary>
   );

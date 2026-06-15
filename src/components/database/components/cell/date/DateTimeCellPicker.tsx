@@ -347,6 +347,7 @@ function DateTimeCellPicker({
         </div>
         <div className={'px-2 pb-2'}>
           <div
+            data-testid="clear-date-button"
             onClick={(e) => {
               e.stopPropagation();
               setIsRange(false);

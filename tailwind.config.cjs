@@ -7,7 +7,6 @@ module.exports = {
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
     './.storybook/**/*.{js,ts,jsx,tsx}',
-    './node_modules/react-tailwindcss-datepicker/dist/index.esm.js',
   ],
   important: '#body',
   darkMode: 'class',
@@ -47,5 +46,5 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  plugins: [require('tailwindcss-animate')],
 };

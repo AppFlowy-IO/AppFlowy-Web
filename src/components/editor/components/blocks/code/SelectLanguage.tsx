@@ -1,10 +1,11 @@
-import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
-import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
-import { Popover } from '@/components/_shared/popover';
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Button, TextField } from '@mui/material';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
+import { Popover } from '@/components/_shared/popover';
+import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 function SelectLanguage({
   readOnly,

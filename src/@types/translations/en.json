@@ -20,20 +20,25 @@
   },
   "signUp": {
     "buttonText": "Sign Up",
-    "title": "Sign Up to @:appName",
+    "title": "Create account with password",
     "getStartedText": "Get Started",
     "emptyPasswordError": "Password can't be empty",
     "repeatPasswordEmptyError": "Repeat password can't be empty",
     "unmatchedPasswordError": "Repeat password is not the same as password",
     "alreadyHaveAnAccount": "Already have an account?",
+    "preferMagicLink": "Prefer a magic link or social login?",
+    "goBack": "Go back",
     "emailHint": "Email",
     "passwordHint": "Password",
     "repeatPasswordHint": "Repeat password",
-    "signUpWith": "Sign up with:"
+    "signUpWith": "Sign up with:",
+    "signUpSuccess": "Account created successfully!",
+    "signUpFailed": "Failed to create account. Please try again.",
+    "emailAlreadyRegistered": "This email is already registered."
   },
   "signIn": {
     "loginTitle": "Login to @:appName",
-    "loginButtonText": "Login",
+    "loginButtonText": "Log in",
     "loginStartWithAnonymous": "Continue with an anonymous session",
     "continueAnonymousUser": "Continue with an anonymous session",
     "anonymous": "Anonymous",
@@ -42,8 +47,8 @@
     "forgotPassword": "Forgot password?",
     "emailHint": "Email",
     "passwordHint": "Password",
-    "dontHaveAnAccount": "Don't have an account?",
-    "createAccount": "Create account",
+    "dontHaveAnAccount": "Prefer to use a password?",
+    "createAccount": "Sign up here",
     "repeatPasswordEmptyError": "Repeat password can't be empty",
     "unmatchedPasswordError": "Repeat password is not the same as password",
     "syncPromptMessage": "Syncing the data might take a while. Please don't close this page",
@@ -148,6 +153,7 @@
   },
   "shareAction": {
     "buttonText": "Share",
+    "findAndReplace": "Find and replace",
     "workInProgress": "Coming soon",
     "markdown": "Markdown",
     "html": "HTML",
@@ -160,6 +166,13 @@
     "unPublish": "Unpublish",
     "visitSite": "Visit site",
     "exportAsTab": "Export as",
+    "exportPdf": "Export to PDF",
+    "exportPdfExporting": "Exporting...",
+    "exportPdfDescription": "Download this page as a PDF",
+    "exportPdfIncludeLinkedPages": "Include linked pages",
+    "exportPdfIncludeLinkedPagesPro": "Pro plan required",
+    "exportPdfSuccess": "PDF downloaded",
+    "exportPdfError": "Failed to export PDF",
     "publishTab": "Publish",
     "shareTab": "Share",
     "publishOnAppFlowy": "Publish on AppFlowy",
@@ -191,6 +204,7 @@
     "removeAccess": "Remove access",
     "canViewDescription": "Can’t make changes",
     "canEditDescription": "Can make any changes",
+    "fullAccessDescription": "Can edit and share with others",
     "turnIntoMember": "Turn into member",
     "notInvitedToPage": "Not invited to page",
     "keepTypingEmail": "Keep typing an email to invite",
@@ -211,6 +225,7 @@
     "upgradeText": " to the Pro plan to invite guests to this page",
     "pendingTooltip": "Invitation not yet accepted",
     "onlyFullAccess": "Only user with full access can invite others",
+    "readOnlyPublishTooltip": "You don't have permission to publish this page. Contact the page owner for access.",
     "onlyProCanInvite": "Please upgrade to the Pro plan to invite others",
     "upgradeConfirmTitle": "Upgrade to invite guest editors",
     "upgradeConfirmDescription": "Upgrade to Pro to collaborate with non-members on this page"
@@ -234,12 +249,16 @@
     "syncedAtLabel": "Synced: "
   },
   "importPanel": {
+    "title": "Import",
     "textAndMarkdown": "Text & Markdown",
     "documentFromV010": "Document from v0.1.0",
     "databaseFromV010": "Database from v0.1.0",
     "notionZip": "Notion Exported Zip File",
     "csv": "CSV",
-    "database": "Database"
+    "database": "Database",
+    "success": "Imported successfully",
+    "notionImportStarted": "Notion import started. Pages will appear in this view when ready.",
+    "failed": "Import failed"
   },
   "teamSpace": "Team space",
   "share": "Share",
@@ -247,6 +266,7 @@
     "rename": "Rename",
     "delete": "Delete",
     "duplicate": "Duplicate",
+    "lockPage": "Lock page",
     "unfavorite": "Remove from Favorites",
     "favorite": "Add to Favorites",
     "openNewTab": "Open in a new tab",
@@ -350,6 +370,10 @@
     "search": {
       "label": "Search",
       "noSpacesFound": "No spaces found"
+    },
+    "webSearch": {
+      "label": "Web Search",
+      "active": "Web Search On"
     },
     "view": {
       "placeholder": "Untitled"
@@ -542,6 +566,7 @@
     "referencePage": "This {{name}} is referenced",
     "addBlockBelow": "Add a block below",
     "aiGenerate": "Generate",
+    "fieldEditingUnavailable": "Editing {{field}} is not available on Web yet",
     "textField": "Add text that will be used to generate the content",
     "numberField": "Accepts numbers. These can be formatted as currency, percentages, or decimals",
     "dateField": "Accepts a date or a date range(time optional). Useful for deadlines, events, and scheduling",
@@ -556,7 +581,8 @@
     "AISummaryField": "Summarize the content of the record. Useful for getting a quick overview",
     "AITranslateField": "Translate the content of the record. Useful for multilingual support",
     "mediaField": "Add images, videos, or other media. Useful for rich content",
-    "personField": "Select a person from your workspace. Useful for assigning tasks or ownership"
+    "personField": "Select a person from your workspace. Useful for assigning tasks or ownership",
+    "timeField": "Add a time value. Useful for tracking duration or specific times"
   },
   "sideBar": {
     "closeSidebar": "Close sidebar",
@@ -794,9 +820,46 @@
         "removeHomePageSuccess": "Remove homepage successfully"
       }
     },
+    "manageData": {
+      "menuLabel": "Manage data",
+      "title": "Manage data",
+      "description": "Manage your AppFlowy workspace data",
+      "importWorkspace": {
+        "title": "Import your workspace",
+        "tooltip": "Import your workspace from an AppFlowy backup ZIP file",
+        "button": "Import",
+        "success": "Import started. We will send a confirmation email once the import is complete.",
+        "failed": "Failed to import workspace"
+      },
+      "backupWorkspace": {
+        "title": "Backup your workspace",
+        "tooltip": "Back up your AppFlowy workspace to a ZIP file",
+        "button": "Backup",
+        "started": "Backup started. We will send an email with a download link once the export is complete.",
+        "failed": "Failed to back up workspace"
+      }
+    },
     "accountPage": {
       "menuLabel": "My account",
+      "menuLabelAccountApp": "Account & App",
+      "menuLabelProfile": "Profile",
+      "profile": {
+        "title": "Profile",
+        "displayName": "Display name"
+      },
       "title": "My account",
+      "accountAndApp": "Account & App",
+      "dateTime": {
+        "title": "Date & Time Format"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "password": {
+        "title": "Password",
+        "description": "Your account password for signing in.",
+        "setupButton": "Setup password"
+      },
       "general": {
         "title": "Account name & profile image",
         "changeProfilePicture": "Change profile picture"
@@ -809,8 +872,16 @@
       },
       "login": {
         "title": "Account login",
+        "description": "Log out from your current session.",
         "loginLabel": "Log in",
         "logoutLabel": "Log out"
+      },
+      "deleteAccount": {
+        "title": "Delete account",
+        "description": "Permanently delete your account and remove access from all workspaces.",
+        "confirmDescription": "This will permanently delete your account, your data, and remove access from all workspaces. This action cannot be undone.",
+        "success": "Account deleted",
+        "failed": "Failed to delete account"
       }
     },
     "workspacePage": {
@@ -1496,6 +1567,18 @@
         "label": "Members",
         "user": "User",
         "role": "Role",
+        "email": "Email",
+        "pending": "Pending",
+        "joinedOn": "Joined on",
+        "invite": "Invite",
+        "inviteLinkTitle": "Invite link to add member",
+        "inviteLinkHintPrefix": "Click to copy link or",
+        "generateNewLink": "generate a new link",
+        "copyLink": "Copy link",
+        "inviteLinkGenerated": "Invite link generated",
+        "inviteByEmailTitle": "Invite member by email",
+        "inviteByEmailPlaceholder": "Invite by email",
+        "noMembers": "No members yet",
         "removeFromWorkspace": "Remove from Workspace",
         "removeFromWorkspaceSuccess": "Remove from workspace successfully",
         "removeFromWorkspaceFailed": "Remove from workspace failed",
@@ -1631,7 +1714,16 @@
       "addFilter": "Add filter",
       "cannotFindCreatableField": "Cannot find a suitable field to filter by",
       "conditon": "Condition",
-      "where": "Where"
+      "where": "Where",
+      "and": "And",
+      "or": "Or",
+      "nRules": "{{count}} rules",
+      "oneRule": "1 rule",
+      "advancedFilter": "Advanced Filter",
+      "useAdvancedFilter": "Use Advanced Filter",
+      "addToAdvancedFilter": "Add to advanced filter",
+      "addFilterRule": "Add filter rule",
+      "deleteAllFilters": "Delete filter"
     },
     "textFilter": {
       "contains": "Contains",
@@ -1651,8 +1743,11 @@
       }
     },
     "checkboxFilter": {
+      "is": "Is",
       "isChecked": "Checked",
       "isUnchecked": "Unchecked",
+      "checked": "Checked",
+      "unChecked": "Unchecked",
       "choicechipPrefix": {
         "is": "is"
       }
@@ -1680,6 +1775,7 @@
       "notEmpty": "Is not empty",
       "startDate": "Start date",
       "endDate": "End date",
+      "chooseDate": "Choose a date",
       "choicechipPrefix": {
         "before": "Before",
         "after": "After",
@@ -1704,7 +1800,8 @@
       "contains": "Contains",
       "doesNotContain": "Does not contain",
       "isEmpty": "Is empty",
-      "isNotEmpty": "Is not empty"
+      "isNotEmpty": "Is not empty",
+      "selectPerson": "Select person"
     },
     "field": {
       "label": "Property",
@@ -1733,6 +1830,10 @@
       "mediaFieldName": "Files & media",
       "translateFieldName": "AI Translate",
       "personFieldName": "Person",
+      "person": {
+        "notifyAssignee": "Notify assignee",
+        "noMatches": "No matches found"
+      },
       "translateTo": "Translate to",
       "numberFormat": "Number format",
       "dateFormat": "Date format",
@@ -1918,6 +2019,10 @@
     }
   },
   "document": {
+    "inlineDatabase": {
+      "viewInTrash": "This referenced database is in Trash",
+      "viewDeleted": "This referenced database was permanently deleted"
+    },
     "callout": {
       "changeIcon": "Icon",
       "quickStyle": "Quick Style",
@@ -1934,6 +2039,73 @@
       "note": "Note"
     },
     "menuName": "Document",
+    "aiMeeting": {
+      "titleDefault": "Meeting",
+      "tab": {
+        "summary": "Summary",
+        "notes": "Notes",
+        "transcript": "Transcript"
+      },
+      "readOnlyHint": "This content is read-only on web. Please edit it on the desktop app.",
+      "notesPlaceholder": "Add your notes… AI will turn them into a clean, share-ready summary.",
+      "speakerUnknown": "Unknown speaker",
+      "speakerFallback": "Speaker {{id}}",
+      "reference": {
+        "sourcesTooltip": "View sources",
+        "deletedTooltip": "Source deleted",
+        "deleted": "Source was deleted"
+      },
+      "copy": {
+        "summary": "Copy summary",
+        "notes": "Copy notes",
+        "transcript": "Copy transcript",
+        "summarySuccess": "Summary copied to clipboard",
+        "notesSuccess": "Notes copied to clipboard",
+        "transcriptSuccess": "Transcript copied to clipboard",
+        "noContent": "No content to copy"
+      },
+      "regenerate": {
+        "regenerate": "Regenerate",
+        "generating": "Generating",
+        "summaryTemplate": "Summary template",
+        "summaryDetail": "Summary detail",
+        "summaryLanguage": "Summary language",
+        "noSource": "No transcript or notes available to regenerate summary",
+        "success": "Summary regenerated",
+        "failed": "Failed to regenerate summary",
+        "template": {
+          "auto": "Auto",
+          "meetingMinutes": "Meeting minutes",
+          "actionFocused": "Action focused",
+          "executive": "Executive"
+        },
+        "detail": {
+          "concise": "Concise",
+          "balanced": "Balanced",
+          "detailed": "Detailed"
+        },
+        "language": {
+          "english": "English",
+          "chineseSimplified": "Chinese (Simplified)",
+          "chineseTraditional": "Chinese (Traditional)",
+          "spanish": "Spanish",
+          "french": "French",
+          "german": "German",
+          "japanese": "Japanese",
+          "korean": "Korean",
+          "portuguese": "Portuguese",
+          "russian": "Russian",
+          "thai": "Thai",
+          "vietnamese": "Vietnamese",
+          "danish": "Danish",
+          "finnish": "Finnish",
+          "norwegian": "Norwegian",
+          "dutch": "Dutch",
+          "italian": "Italian",
+          "swedish": "Swedish"
+        }
+      }
+    },
     "date": {
       "timeHintTextInTwelveHour": "01:00 PM",
       "timeHintTextInTwentyFourHour": "13:00"
@@ -1990,6 +2162,11 @@
         "file": "File",
         "continueWriting": "Continue Writing",
         "askAIAnything": "Ask AI Anything"
+      },
+      "linkedDatabase": {
+        "title": "Link to an existing database",
+        "empty": "No databases found",
+        "actionUnavailable": "Linking databases is not available right now"
       },
       "subPage": {
         "name": "Document",
@@ -2125,7 +2302,7 @@
       },
       "image": {
         "addAnImage": "Add images",
-        "copiedToPasteBoard": "The image link has been copied to the clipboard",
+        "copiedToPasteBoard": "Image copied to clipboard",
         "addAnImageDesktop": "Add an image",
         "addAnImageMobile": "Click to add one or more images",
         "dropImageToInsert": "Drop images to insert",
@@ -2152,7 +2329,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "The link has been copied to the clipboard",
-        "convertToLink": "Convert to embed link"
+        "convertToLink": "Convert to embed link",
+        "pasteAs": {
+          "title": "Paste as",
+          "mention": "Mention",
+          "url": "URL",
+          "bookmark": "Bookmark",
+          "embed": "Embed"
+        }
       },
       "outline": {
         "outlineBlock": "Table of Contents",
@@ -2196,7 +2380,11 @@
         "insertVideo": "Add video",
         "invalidVideoUrl": "The source URL is not supported yet.",
         "invalidVideoUrlYouTube": "YouTube is not supported yet.",
-        "supportedFormats": "Supported formats: MP4, WebM, MOV, AVI, FLV, MPEG/M4V, H.264"
+        "supportedFormats": "Supported formats: MP4, WebM, MOV, AVI, FLV, MPEG/M4V, H.264",
+        "errorInvalidUrl": "The video embed couldn't be loaded. Invalid URL.",
+        "errorFacebookPrivacy": "Facebook video couldn't be loaded. Check privacy settings.",
+        "errorFileCors": "Video file couldn't be loaded. Check URL and CORS settings.",
+        "errorGeneric": "The video embed couldn't be loaded. Check URL and privacy settings."
       },
       "file": {
         "name": "File",
@@ -2616,6 +2804,9 @@
     "yesterday": "Yesterday",
     "today": "Today",
     "tomorrow": "Tomorrow",
+    "thisWeek": "This week",
+    "lastWeek": "Last week",
+    "nextWeek": "Next week",
     "oneWeek": "1 week"
   },
   "notificationHub": {
@@ -2651,17 +2842,37 @@
   },
   "findAndReplace": {
     "find": "Find",
+    "findAndReplace": "Find & replace",
     "previousMatch": "Previous match",
     "nextMatch": "Next match",
     "close": "Close",
     "replace": "Replace",
     "replaceAll": "Replace all",
+    "all": "All",
     "noResult": "No results",
     "caseSensitive": "Case sensitive",
-    "searchMore": "Search to find more results"
+    "matchCase": "Match case",
+    "searchMore": "Search to find more results",
+    "findTextfieldHint": "Find text on page...",
+    "replaceTextfieldHint": "Replace with...",
+    "switchFindHint": "Switch to Find",
+    "switchFindAndReplaceHint": "Switch to Find & Replace",
+    "replacedMoreThanOneSuccessfully": "Replaced {} matches",
+    "replacedOneSuccessfully": "Replaced 1 match",
+    "noPermissionHint": "Replace is disabled while in read-only or locked mode",
+    "noMoreResultToast": "No more results found, looping around"
+  },
+  "lockPage": {
+    "lockPage": "Locked",
+    "reLockPage": "Re-lock",
+    "lockTooltip": "Page locked to prevent accidental editing. Click to unlock.",
+    "pageLockedToast": "Page locked. Editing is disabled until someone unlocks it.",
+    "pageUnlockedToast": "Page unlocked. Editing is enabled.",
+    "lockedOperationTooltip": "Page locked to prevent accidental editing."
   },
   "error": {
     "weAreSorry": "We're sorry",
+    "generalError": "Something went wrong. Please try again later",
     "loadingViewError": "We're having trouble loading this view. Please check your internet connection, refresh the app, and do not hesitate to reach out to the team if the issue continues.",
     "syncError": "Data is not synced from another device",
     "syncErrorHint": "Please reopen this page on the device where it was last edited, then open it again on the current device.",
@@ -3024,6 +3235,14 @@
     "continueWithGithub": "Continue with GitHub",
     "continueWithDiscord": "Continue with Discord",
     "continueWithApple": "Continue with Apple ",
+    "continueWithSaml": "Continue with SSO",
+    "continueWithSso": "Continue",
+    "ssoLogin": "SSO Login",
+    "ssoLoginDescription": "Enter your work email to sign in with your organization's identity provider.",
+    "emailPlaceholder": "Enter your work email",
+    "emailRequired": "Please enter your email address",
+    "invalidEmail": "Please enter a valid email address",
+    "signingIn": "Signing in...",
     "moreOptions": "More options",
     "collapse": "Collapse",
     "signInAgreement": "By clicking \"Continue\" above, you agreed to AppFlowy's",
@@ -3040,11 +3259,15 @@
       "retry": "Retry"
     },
     "importNotion": "Import from Notion",
+    "importWorkspace": "Import workspace",
+    "importFromAppFlowy": "Import from AppFlowy",
+    "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
     "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
+    "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
     },
@@ -3052,6 +3275,7 @@
     "addMessagesToPage": "Add messages to page",
     "addMessagesToPageDisabled": "No messages available",
     "accountSettings": "Account settings",
+    "settings": "Settings",
     "startWeekOn": "Start week on"
   },
   "globalComment": {
@@ -3094,6 +3318,25 @@
     "failedToAddComment": "Failed to add comment",
     "commentAddedSuccessfully": "Comment added successfully.",
     "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?"
+  },
+  "rowComment": {
+    "comments": "Comments",
+    "addComment": "Add a comment...",
+    "noComments": "No comments yet",
+    "editComment": "Edit",
+    "deleteComment": "Delete",
+    "confirmDelete": "Are you sure you want to delete this comment?",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "reply": "Reply",
+    "open": "Open",
+    "resolved": "Resolved",
+    "edited": "(edited)",
+    "addReply": "Add a reply...",
+    "attachFile": "Attach file",
+    "mention": "Mention someone",
+    "addEmoji": "Add reaction",
+    "moreActions": "More actions"
   },
   "template": {
     "asTemplate": "Save as template",
@@ -3160,6 +3403,7 @@
     "uploadingDescription": "The file is being uploaded"
   },
   "gallery": {
+    "menuName": "Gallery",
     "preview": "Open in full screen",
     "copy": "Copy",
     "download": "Download",
@@ -3492,7 +3736,7 @@
       "title": "Join <workspace /> on AppFlowy",
       "description": "You've been invited by <who />\nto join the workspace using this email:\n<email/>\nIf this isn't correct, please ask your collaborators to resend the invite.",
       "joinWorkspace": "Join workspace",
-      "invalid": "The invitation link has expired",
+      "invalid": "Unable to open invitation",
       "invalidMessage": "Please contact the workspace owner to resend the invitation",
       "hasJoined": "You've joined to\n<workspace />"
     },
@@ -3502,6 +3746,8 @@
       "haveBeenInvited": "You've been invited to Join this workspace with the contact information below.",
       "invalid": "The invitation code has expired",
       "invalidMessage": "Please ask your collaborators to resend the invite.",
+      "memberLimitTitle": "Workspace member limit reached",
+      "memberLimitDescription": "{{workspaceName}} has reached the Free plan member limit. Ask the workspace owner to upgrade their plan or remove a member, then try joining again.",
       "joining": "Joining...",
       "hasJoined": "You've joined to\n<workspace />"
     },
@@ -3595,5 +3841,77 @@
   "other_users": "Other users ({{count}})",
   "connecting": "Connecting...",
   "disconnected": "Disconnected from cloud. Reconnect to sync changes.",
-  "reconnect": "Reconnect"
+  "reconnect": "Reconnect",
+  "chart": {
+    "menuName": "Chart",
+    "upgradeRequired": "Upgrade Required",
+    "upgradeToProForChartTypes": "Upgrade to Pro plan to use horizontal bar, line, and donut charts",
+    "barChart": "Bar",
+    "horizontalBarChart": "Horizontal Bar",
+    "lineChart": "Line",
+    "donutChart": "Donut",
+    "dateGrouping": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month",
+      "year": "Year",
+      "relative": "Relative"
+    },
+    "chartType": "Chart type",
+    "xAxis": "X-Axis",
+    "yAxis": "Y-Axis",
+    "aggregation": "Aggregation",
+    "showEmptyValues": "Show empty values",
+    "cumulative": "Cumulative",
+    "dateCondition": "Date grouping",
+    "noGroupableFields": "No groupable fields available",
+    "emptyState": {
+      "title": "No data to display",
+      "description": "Add rows with data to see the chart",
+      "noField": "No fields available for grouping",
+      "noFieldDescription": "Create a SingleSelect, MultiSelect, Checkbox or Date field to use the chart view."
+    },
+    "tooltip": {
+      "count": "Count",
+      "sum": "Sum",
+      "average": "Average",
+      "min": "Min",
+      "max": "Max",
+      "median": "Median",
+      "countValues": "Count values",
+      "rows": "{{count}} rows",
+      "clickToView": "Click to view data"
+    },
+    "drilldown": {
+      "title": "Rows in \"{{category}}\"",
+      "close": "Close",
+      "rowCount": "{{count}} rows",
+      "noRows": "No rows in this category"
+    }
+  },
+  "list": {
+    "menuName": "List"
+  },
+  "common": {
+    "desktopOnly": "Coming soon to web. Available on desktop & mobile.",
+    "editNotSupported": "Editing not supported. Available on desktop & mobile.",
+    "comingSoonToWeb": "Coming soon to the web 👋. You can use this feature right now on our desktop or mobile app."
+  },
+  "versionHistory": {
+    "versionHistory": "Version history",
+    "all": "All",
+    "last7Days": "Last 7 days",
+    "last30Days": "Last 30 days",
+    "last60Days": "Last 60 days",
+    "onlyYours": "Only yours",
+    "restore": "Restore",
+    "currentVersion": "Current version",
+    "restoredFrom": "Restored from {}",
+    "more": "More...",
+    "upgrade": "Upgrade",
+    "forLongerVersionHistory": "for longer version history",
+    "revertedDialogTitle": "Page Restored",
+    "revertedDialogDescription": "This page was restored to a previous version from another device.",
+    "revertedDismiss": "Got it"
+  }
 }

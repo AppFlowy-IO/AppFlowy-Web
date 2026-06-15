@@ -1,22 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { parseChecklistData } from '@/application/database-yjs';
+import { parseChecklistFlexible } from '@/application/database-yjs';
 import { CellProps, ChecklistCell as ChecklistCellType } from '@/application/database-yjs/cell.type';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
+import { LinearProgressWithLabel } from '@/components/_shared/progress/LinearProgressWithLabel';
 import TaskList from '@/components/database/components/cell/checklist/TaskList';
 import { useNavigationKey } from '@/components/database/components/cell/checklist/useNavigationKey';
 import { useTaskActions } from '@/components/database/components/cell/checklist/useTaskActions';
 import NewTask from '@/components/database/components/database-row/checklist/NewTask';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { LinearProgressWithLabel } from '@/components/_shared/progress/LinearProgressWithLabel';
 import { cn } from '@/lib/utils';
 
 function ChecklistCell({ cell, style, fieldId, rowId, readOnly }: CellProps<ChecklistCellType>) {
   const data = useMemo(() => {
-    return parseChecklistData(cell?.data ?? '');
+    return parseChecklistFlexible(cell?.data ?? '');
   }, [cell?.data]);
   const tasks = useMemo(() => data?.options || [], [data]);
   const selectedTasks = useMemo(() => data?.selectedOptionIds || [], [data]);

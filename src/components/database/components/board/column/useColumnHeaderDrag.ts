@@ -1,10 +1,11 @@
-import { useReadOnly } from '@/application/database-yjs';
-import { useBoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 
-import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { useEffect, useRef, useState } from 'react';
+
+import { useReadOnly } from '@/application/database-yjs';
+import { useBoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 
 export enum StateType {
   IDLE = 'idle',

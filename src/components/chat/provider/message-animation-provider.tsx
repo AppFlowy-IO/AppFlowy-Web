@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 interface AnimationContextTypes {
   animatingIds: Set<number>;
@@ -40,15 +40,17 @@ export const MessageAnimationProvider = ({ children }: {
       return newSet;
     });
   }, []);
+  const contextValue = useMemo(
+    () => ({
+      animatingIds,
+      registerAnimation,
+      completeAnimation,
+    }),
+    [animatingIds, registerAnimation, completeAnimation]
+  );
 
   return (
-    <AnimationContext.Provider
-      value={{
-        animatingIds,
-        registerAnimation,
-        completeAnimation,
-      }}
-    >
+    <AnimationContext.Provider value={contextValue}>
       {children}
     </AnimationContext.Provider>
   );

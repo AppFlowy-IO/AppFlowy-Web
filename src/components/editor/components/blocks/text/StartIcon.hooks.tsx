@@ -1,13 +1,15 @@
+import { FC, useCallback, useMemo } from 'react';
+import { Editor, Element } from 'slate';
+import { ReactEditor, useSlate } from 'slate-react';
+
 import { BlockType } from '@/application/types';
 import { BulletedListIcon } from '@/components/editor/components/blocks/bulleted-list';
 import CalloutIcon from '@/components/editor/components/blocks/callout/CalloutIcon';
 import { NumberListIcon } from '@/components/editor/components/blocks/numbered-list';
+import CheckboxIcon from '@/components/editor/components/blocks/todo-list/CheckboxIcon';
 import ToggleIcon from '@/components/editor/components/blocks/toggle-list/ToggleIcon';
 import { TextNode } from '@/components/editor/editor.type';
-import { FC, useCallback, useMemo } from 'react';
-import { ReactEditor, useSlate } from 'slate-react';
-import { Editor, Element } from 'slate';
-import CheckboxIcon from '@/components/editor/components/blocks/todo-list/CheckboxIcon';
+
 
 export function useStartIcon (node: TextNode) {
   const editor = useSlate();

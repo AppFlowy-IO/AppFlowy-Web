@@ -1,7 +1,8 @@
-import AIChatDrawer from '@/components/ai-chat/AIChatDrawer';
-import { useAppViewId } from '@/components/app/app.hooks';
 import { EditorData } from '@appflowyinc/editor';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+
+import AIChatDrawer from '@/components/ai-chat/AIChatDrawer';
+import { useAIEnabled, useAppViewId } from '@/components/app/app.hooks';
 
 const DEFAULT_WIDTH = 600;
 
@@ -19,6 +20,7 @@ export const AIChatContext = React.createContext<{
   clearInsertData: (viewId: string) => void;
   setDrawerOpen: (open: boolean) => void;
   drawerOpen?: boolean;
+  enabled: boolean;
 } | undefined>(undefined);
 
 export function useAIChatContext() {
@@ -31,12 +33,18 @@ export function useAIChatContext() {
   return context;
 }
 
+// Optional version that returns undefined if provider is not available
+export function useAIChatContextOptional() {
+  return React.useContext(AIChatContext);
+}
+
 export function AIChatProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const chatId = useAppViewId();
+  const enabled = useAIEnabled();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [openViewId, setOpenViewId] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -52,37 +60,40 @@ export function AIChatProvider({
   }, [chatId]);
 
   useEffect(() => {
-    if(!openViewId) {
+    if(!enabled || !openViewId) {
+      if (!enabled) {
+        setSelectionMode(false);
+        setOpenViewId(null);
+      }
+
       setDrawerOpen(false);
       setInsertData(new Map());
     }
-  }, [openViewId]);
+  }, [enabled, openViewId]);
 
   const handleOpenSelectionMode = useCallback(() => {
+    if (!enabled) return;
     setSelectionMode(true);
-  }, []);
+  }, [enabled]);
 
   const handleCloseSelectionMode = useCallback(() => {
     setSelectionMode(false);
   }, []);
 
-  const handleOpenView = useCallback((viewId: string, insertData?: EditorData) => {
+  const handleOpenView = useCallback((viewId: string, data?: EditorData) => {
+    if (!enabled) return;
     setDrawerOpen(true);
     setOpenViewId(viewId);
 
-    // ensure that the insert data is updated before the view id has been updated
-    requestAnimationFrame(() => {
-      if(insertData) {
-        setInsertData(() => {
-          const newMap = new Map();
+    if (data) {
+      setInsertData((prev) => {
+        const newMap = new Map(prev);
 
-          newMap.set(viewId, insertData);
-          return newMap;
-        });
-      }
-    });
-
-  }, []);
+        newMap.set(viewId, data);
+        return newMap;
+      });
+    }
+  }, [enabled]);
 
   const handleCloseView = useCallback(() => {
     setOpenViewId(null);
@@ -94,32 +105,53 @@ export function AIChatProvider({
 
   const clearInsertData = useCallback((viewId: string) => {
     setInsertData((prev) => {
-      prev.delete(viewId);
-      return prev;
+      const newMap = new Map(prev);
+
+      newMap.delete(viewId);
+      return newMap;
     });
   }, []);
 
+  const handleSetDrawerOpen = useCallback((open: boolean) => {
+    if (!enabled && open) return;
+    setDrawerOpen(open);
+  }, [enabled]);
+
+  const contextValue = useMemo(() => ({
+    chatId,
+    openViewId,
+    onOpenView: handleOpenView,
+    onCloseView: handleCloseView,
+    selectionMode,
+    onOpenSelectionMode: handleOpenSelectionMode,
+    onCloseSelectionMode: handleCloseSelectionMode,
+    drawerWidth,
+    onSetDrawerWidth: setDrawerWidth,
+    getInsertData,
+    clearInsertData,
+    drawerOpen,
+    setDrawerOpen: handleSetDrawerOpen,
+    enabled,
+  }), [
+    chatId,
+    openViewId,
+    handleOpenView,
+    handleCloseView,
+    selectionMode,
+    handleOpenSelectionMode,
+    handleCloseSelectionMode,
+    drawerWidth,
+    getInsertData,
+    clearInsertData,
+    drawerOpen,
+    handleSetDrawerOpen,
+    enabled,
+  ]);
+
   return (
-    <AIChatContext.Provider
-      value={{
-        chatId,
-        openViewId,
-        onOpenView: handleOpenView,
-        onCloseView: handleCloseView,
-        selectionMode,
-        onOpenSelectionMode: handleOpenSelectionMode,
-        onCloseSelectionMode: handleCloseSelectionMode,
-        drawerWidth,
-        onSetDrawerWidth: setDrawerWidth,
-        getInsertData,
-        clearInsertData,
-        drawerOpen,
-        setDrawerOpen,
-      }}
-    >
+    <AIChatContext.Provider value={contextValue}>
       {children}
-      <AIChatDrawer />
+      {enabled && <AIChatDrawer />}
     </AIChatContext.Provider>
   );
 }
-

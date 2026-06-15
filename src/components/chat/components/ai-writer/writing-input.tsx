@@ -1,23 +1,25 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+
 import { ReactComponent as SendIcon } from '@/assets/icons/filled_round_arrow_up.svg';
 import { ReactComponent as AutoTextIcon } from '@/assets/icons/text.svg';
 import { ReactComponent as ImageTextIcon } from '@/assets/icons/text_image.svg';
-import { ViewTree } from '../ai-writer/view-tree';
-import { WritingMore } from '../ai-writer/writing-more';
 import { ModelSelector } from '@/components/chat/components/chat-input/model-selector';
-import { Button } from '@/components/ui/button';
+import { PromptModal } from '@/components/chat/components/chat-input/prompt-modal';
 import { FormatGroup } from '@/components/chat/components/ui/format-group';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { Textarea } from '@/components/chat/components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { toast } from 'sonner';
-import { useTranslation } from 'react-i18next';
-import { cn } from '@/lib/utils';
 import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
 import { ChatInputMode } from '@/components/chat/types';
 import { AiPrompt } from '@/components/chat/types/prompt';
 import { useWriterContext } from '@/components/chat/writer/context';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { PromptModal } from '@/components/chat/components/chat-input/prompt-modal';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+import { ViewTree } from '../ai-writer/view-tree';
+import { WritingMore } from '../ai-writer/writing-more';
 
 const MAX_HEIGHT = 200;
 // Prevent focus on page load and cause the page to scroll

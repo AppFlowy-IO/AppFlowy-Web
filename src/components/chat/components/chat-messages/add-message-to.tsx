@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
 import { AddMessageToPageWrapper } from '@/components/chat/components/add-messages-to-page-wrapper';
+import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
-import { useTranslation } from 'react-i18next';
-import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
+
 
 export function AddMessageTo({ id }: { id: number }) {
   const { getMessage } = useChatMessagesContext();

@@ -1,4 +1,8 @@
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { usePropertiesSelector } from '@/application/database-yjs';
+import { ReactComponent as Checklist } from '@/assets/icons/database/checklist.svg';
 import Property from '@/components/database/components/settings/Property';
 import {
   PropertyDragContext,
@@ -10,9 +14,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
-import React from 'react';
-import { useTranslation } from 'react-i18next';
-import { ReactComponent as Checklist } from '@/assets/icons/database/checklist.svg';
+
 
 function Properties () {
   const { t } = useTranslation();

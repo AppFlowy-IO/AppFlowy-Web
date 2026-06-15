@@ -1,3 +1,8 @@
+import { PopoverProps } from '@mui/material/Popover';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
@@ -6,12 +11,9 @@ import { ReactComponent as Heading1 } from '@/assets/icons/h1.svg';
 import { ReactComponent as Heading2 } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3 } from '@/assets/icons/h3.svg';
 import { ReactComponent as DownArrow } from '@/assets/icons/triangle_down.svg';
-import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { Popover } from '@/components/_shared/popover';
-import { PopoverProps } from '@mui/material/Popover';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useSlateStatic } from 'slate-react';
+import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+
 import ActionButton from './ActionButton';
 
 const popoverProps: Partial<PopoverProps> = {
@@ -108,6 +110,7 @@ export function Heading() {
     <div className={'flex items-center justify-center'}>
       <ActionButton
         ref={ref}
+        data-testid="heading-button"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -133,13 +136,13 @@ export function Heading() {
           {...popoverProps}
         >
           <div className={'flex h-[32px] items-center justify-center px-2'}>
-            <ActionButton active={isActivated(1)} tooltip={t('editor.heading1')} onClick={toHeading(1)}>
+            <ActionButton active={isActivated(1)} tooltip={t('editor.heading1')} onClick={toHeading(1)} data-testid="heading-1-button">
               <Heading1 className='h-4 w-4' />
             </ActionButton>
-            <ActionButton active={isActivated(2)} tooltip={t('editor.heading2')} onClick={toHeading(2)}>
+            <ActionButton active={isActivated(2)} tooltip={t('editor.heading2')} onClick={toHeading(2)} data-testid="heading-2-button">
               <Heading2 className='h-4 w-4' />
             </ActionButton>
-            <ActionButton active={isActivated(3)} tooltip={t('editor.heading3')} onClick={toHeading(3)}>
+            <ActionButton active={isActivated(3)} tooltip={t('editor.heading3')} onClick={toHeading(3)} data-testid="heading-3-button">
               <Heading3 className='h-4 w-4' />
             </ActionButton>
           </div>

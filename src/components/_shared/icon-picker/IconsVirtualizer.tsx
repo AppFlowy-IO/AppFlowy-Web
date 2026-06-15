@@ -1,7 +1,8 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
+import React from 'react';
+
 import IconItem from '@/components/_shared/icon-picker/IconItem';
 
-import React from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 
 function IconsVirtualizer ({
   onSelected,

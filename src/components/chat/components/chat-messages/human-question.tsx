@@ -1,7 +1,9 @@
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useEffect, useState } from 'react';
+
 import { stringToColor } from '@/components/chat/lib/utils';
 import { User } from '@/components/chat/types';
-import { useEffect, useState } from 'react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+
 
 function HumanQuestion({
   content,

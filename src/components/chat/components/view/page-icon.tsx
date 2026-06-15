@@ -1,12 +1,13 @@
+import DOMPurify from 'dompurify';
+import { useEffect, useMemo, useState } from 'react';
+
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as DocIcon } from '@/assets/icons/page.svg';
 import { getIcon, renderColor } from '@/components/chat/lib/utils';
-import { cn } from '@/lib/utils';
 import { View, ViewIconType, ViewLayout } from '@/components/chat/types';
-import DOMPurify from 'dompurify';
-import { useEffect, useMemo, useState } from 'react';
+import { cn } from '@/lib/utils';
 
 function PageIcon({ view }: {
   view: View;

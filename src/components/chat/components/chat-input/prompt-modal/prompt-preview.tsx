@@ -1,7 +1,9 @@
-import { Button } from '@/components/ui/button';
-import { useTranslation } from 'react-i18next';
-import { AiPrompt } from '@/components/chat/types/prompt';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { AiPrompt } from '@/components/chat/types/prompt';
+import { Button } from '@/components/ui/button';
+
 
 export function PromptPreview({
   prompt,

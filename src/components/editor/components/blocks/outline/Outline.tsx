@@ -5,7 +5,7 @@ import { useReadOnly, useSlate } from 'slate-react';
 
 import { extractHeadings, nestHeadings } from '@/components/editor/components/blocks/outline/utils';
 import { EditorElementProps, HeadingNode, OutlineNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 import { cn } from '@/lib/utils';
 import { ColorEnum, renderColor, toBlockColor } from '@/utils/color';
 
@@ -17,7 +17,7 @@ export const Outline = memo(
     const noVisibleHeadings = hasHeadings && root.length === 0;
     const { t } = useTranslation();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
-    const { collapsedMap } = useEditorContext();
+    const { collapsedMap } = useEditorLocalState();
 
     const [isReady, setIsReady] = useState(false);
 

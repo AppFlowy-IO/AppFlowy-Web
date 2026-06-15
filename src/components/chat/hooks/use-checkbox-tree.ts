@@ -1,7 +1,8 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+
 import { findAncestors } from '@/components/chat/lib/views';
 import { View } from '@/components/chat/types';
 import { CheckStatus } from '@/components/chat/types/checkbox';
-import { useCallback, useEffect, useRef, useState } from 'react';
 
 export const useCheckboxTree = (initialSelected: string[] = [], source: View[]) => {
   const [selected, setSelected] = useState<Set<string>>(

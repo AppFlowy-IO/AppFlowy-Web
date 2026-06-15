@@ -1,6 +1,7 @@
-import { renderColor } from '@/utils/color';
 import { EmojiMartData } from '@emoji-mart/data';
 import axios from 'axios';
+
+import { renderColor } from '@/utils/color';
 
 const http = axios.create();
 

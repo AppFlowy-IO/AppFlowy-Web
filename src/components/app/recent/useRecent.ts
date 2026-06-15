@@ -1,5 +1,6 @@
-import { useAppRecent } from '@/components/app/app.hooks';
 import { useEffect } from 'react';
+
+import { useAppRecent } from '@/components/app/app.hooks';
 
 export function useRecent () {
   const {

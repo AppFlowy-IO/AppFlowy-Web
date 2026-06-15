@@ -1,6 +1,6 @@
-import isURL from 'validator/lib/isURL';
-import isIP from 'validator/lib/isIP';
 import isFQDN from 'validator/lib/isFQDN';
+import isIP from 'validator/lib/isIP';
+import isURL from 'validator/lib/isURL';
 
 export const downloadPage = 'https://appflowy.com/download';
 
@@ -13,6 +13,15 @@ export const desktopDownloadLink = 'https://appflowy.com/download/#pop';
 
 export function isValidUrl(input: string) {
   return isURL(input, { require_protocol: true, require_host: false });
+}
+
+export function isSingleURLText(input: string) {
+  const trimmed = input.trim();
+
+  if (!trimmed) return false;
+  if (trimmed.split(/\r\n|\r|\n/).filter(Boolean).length !== 1) return false;
+
+  return Boolean(processUrl(trimmed));
 }
 
 // Process the URL to make sure it's a valid URL

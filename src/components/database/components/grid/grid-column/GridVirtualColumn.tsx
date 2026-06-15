@@ -8,6 +8,7 @@ import GridCell from '@/components/database/components/grid/grid-cell/GridCell';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
 
 
@@ -32,16 +33,17 @@ function GridVirtualColumn({
   const { hoverRowId } = useGridContext();
   const { field } = useFieldSelector(columnData.fieldId || '');
   const fieldType = field ? (Number(field?.get(YjsDatabaseKey.type)) as FieldType) : undefined;
+  const disableRelationRollupEdit = isFieldEditingDisabled(fieldType);
   const notNeedSelected = useMemo(
     () =>
       [
         FieldType.Checkbox,
-        FieldType.AISummaries,
-        FieldType.AITranslations,
+        FieldType.Summary,
+        FieldType.Translate,
         FieldType.CreatedTime,
         FieldType.LastEditedTime,
-      ].includes(fieldType as FieldType),
-    [fieldType]
+      ].includes(fieldType as FieldType) || disableRelationRollupEdit,
+    [disableRelationRollupEdit, fieldType]
   );
   const isActiveCell =
     !notNeedSelected &&
@@ -61,6 +63,7 @@ function GridVirtualColumn({
       data-is-primary={columnData.isPrimary}
       onClick={(e) => {
         if (readOnly) return;
+        if (disableRelationRollupEdit) return;
         if (
           rowData.type === RenderRowType.Row &&
           columnData.type === GridColumnType.Field &&
@@ -76,7 +79,9 @@ function GridVirtualColumn({
       }}
       className={cn(
         'grid-row-cell relative min-h-fit',
-        readOnly || [FieldType.CreatedTime, FieldType.LastEditedTime].includes(fieldType as FieldType)
+        readOnly ||
+          [FieldType.CreatedTime, FieldType.LastEditedTime].includes(fieldType as FieldType) ||
+          disableRelationRollupEdit
           ? 'cursor-text'
           : 'cursor-pointer',
         columnData.wrap ? 'whitespace-prewrap' : 'whitespace-nowrap',
@@ -86,7 +91,7 @@ function GridVirtualColumn({
         readOnly && rowType === RenderRowType.CalculateRow ? 'border-t border-border-primary' : ''
       )}
       style={{
-        width: columnData.width,
+        width: column.size,
       }}
     >
       <GridCell

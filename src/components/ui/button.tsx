@@ -22,10 +22,10 @@ const buttonVariants = cva(
         loading: 'opacity-50 cursor-not-allowed',
       },
       size: {
-        sm: 'h-7 text-sm px-3 rounded-300 gap-2 font-normal',
-        default: 'h-8 text-sm px-3 rounded-300 gap-2 font-normal',
-        lg: 'h-10 rounded-400 text-sm px-4 gap-2 font-medium',
-        xl: 'h-14 rounded-500 px-4 text-xl gap-2 font-medium',
+        sm: 'text-sm px-3 py-1 rounded-300 gap-2 font-normal',
+        default: 'text-sm px-3 py-1.5 rounded-300 gap-2 font-normal',
+        lg: 'rounded-400 text-sm px-4 py-[10px] gap-2 font-medium',
+        xl: 'rounded-500 px-4 text-xl py-[14px] gap-2 font-medium',
         'icon-sm': 'w-6 h-6 rounded-300 p-0.5 text-icon-primary disabled:text-icon-tertiary',
         icon: 'w-7 h-7 rounded-300 p-1 text-icon-primary disabled:text-icon-tertiary',
         'icon-lg': 'w-8 h-8 rounded-300 p-2 text-icon-primary disabled:text-icon-tertiary',
@@ -55,19 +55,7 @@ const Button = React.forwardRef<
     VariantProps<typeof buttonVariants> & {
       asChild?: boolean;
     }
->((
-  {
-    className,
-    variant,
-    size,
-    loading,
-    asChild = false,
-    children,
-    danger,
-    ...props
-  },
-  ref,
-) => {
+>(({ className, variant, size, loading, asChild = false, children, danger, ...props }, ref) => {
   const Comp = asChild ? Slot : 'button';
 
   return (

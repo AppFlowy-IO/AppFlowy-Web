@@ -1,3 +1,6 @@
+import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,8 +11,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function RenameFile ({
   open,

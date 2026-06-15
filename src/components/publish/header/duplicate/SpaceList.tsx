@@ -1,10 +1,11 @@
+import { Button, CircularProgress, Tooltip } from '@mui/material';
+import React, { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { SpaceView } from '@/application/types';
 import { ReactComponent as LockSvg } from '@/assets/icons/lock.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
-import { Button, CircularProgress, Tooltip } from '@mui/material';
-import React, { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
 
 export interface SpaceListProps {
   value: string;

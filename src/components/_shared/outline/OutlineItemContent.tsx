@@ -1,10 +1,11 @@
-import { UIVariant, View } from '@/application/types';
-import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
-import PublishIcon from '@/components/_shared/view-icon/PublishIcon';
 import { Tooltip } from '@mui/material';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { UIVariant, View } from '@/application/types';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import PublishIcon from '@/components/_shared/view-icon/PublishIcon';
+import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 
 function OutlineItemContent({
   item,
@@ -23,12 +24,14 @@ function OutlineItemContent({
   const { name, view_id, extra } = item;
   const [hovered, setHovered] = React.useState(false);
   const isSpace = extra?.is_space;
+  const isDatabaseView = extra?.database_id && !extra?.is_database_container;
   const { t } = useTranslation();
 
   return (
     <div
       onClick={async() => {
-        if(isSpace || (!item.is_published && variant === 'publish')) {
+
+        if(isSpace || (!item.is_published && variant === 'publish' && !isDatabaseView)) {
           setIsExpanded(prev => !prev);
           return;
         }
@@ -65,7 +68,7 @@ function OutlineItemContent({
       >
         <div data-testid={isSpace ? 'space-name' : 'page-name'} className={'flex-1 truncate'}>{name || t('menuAppHeader.defaultNewPageName')}</div>
       </Tooltip>
-      {hovered && variant === UIVariant.Publish && <PublishIcon
+      {hovered && variant === UIVariant.Publish && !isDatabaseView && <PublishIcon
         variant={variant}
         view={item}
       />}

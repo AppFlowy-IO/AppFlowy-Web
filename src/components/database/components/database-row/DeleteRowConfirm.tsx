@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
 
 export function DeleteRowConfirm({
   open,
@@ -50,7 +51,7 @@ export function DeleteRowConfirm({
         }}
         onKeyDown={(e) => {
           e.stopPropagation();
-          console.debug(e.key);
+          Log.debug(e.key);
           if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
             handleDelete();
           }

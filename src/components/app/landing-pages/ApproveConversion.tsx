@@ -5,18 +5,18 @@ import { useSearchParams } from 'react-router-dom';
 import { ERROR_CODE } from '@/application/constants';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
-import { useService } from '@/components/main/app.hooks';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
+import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
+import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 export function ApproveConversion() {
   const { t } = useTranslation();
-  const service = useService();
   const [searchParams] = useSearchParams();
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('workspace_id');
@@ -29,23 +29,33 @@ export function ApproveConversion() {
   const [guestName, setGuestName] = useState<string>();
 
   const [isInvalid, setIsInvalid] = useState(false);
+  const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const [notInvitee, setNotInvitee] = useState(false);
 
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<LandingPageError>();
 
   const [isAlreadyMember, setIsAlreadyMember] = useState(false);
 
   const loadConversion = useCallback(async () => {
-    if (!service) return;
     setLoading(true);
+    setError(undefined);
+
     if (!workspaceId || !code) {
+      setError({
+        message: t(
+          'landingPage.error.invalidInvitationUrl',
+          'This invitation link is missing required information. Please ask the sender for a new link.'
+        ),
+      });
       setIsError(true);
+      setLoading(false);
       return;
     }
 
     try {
-      const info = await service.getGuestToMemberConversionInfo(workspaceId, code);
+      const info = await WorkspaceService.getGuestToMemberConversionInfo(workspaceId, code);
 
       setWorkspace({
         id: workspaceId,
@@ -63,22 +73,25 @@ export function ApproveConversion() {
 
       setGuestName(info.guest_name);
 
+      setIsError(false);
       setIsAlreadyMember(info.guest_is_already_a_member);
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInvalid(true);
       } else if (e.code === ERROR_CODE.ALREADY_JOINED) {
         setIsAlreadyMember(true);
       } else if (e.code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) {
         setNotInvitee(true);
       } else {
+        setError(e);
         setIsError(true);
       }
     } finally {
       setLoading(false);
     }
-  }, [service, workspaceId, code]);
+  }, [workspaceId, code, t]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {
@@ -93,15 +106,24 @@ export function ApproveConversion() {
   );
 
   const handleApprove = useCallback(async () => {
-    if (!service) return;
     setLoading(true);
+    setError(undefined);
+
     if (!workspaceId || !code) {
+      setError({
+        message: t(
+          'landingPage.error.invalidInvitationUrl',
+          'This invitation link is missing required information. Please ask the sender for a new link.'
+        ),
+      });
       setIsError(true);
+      setLoading(false);
       return;
     }
 
     try {
-      await service.approveTurnGuestToMember(workspaceId, code);
+      await WorkspaceService.approveTurnGuestToMember(workspaceId, code);
+      setIsError(false);
       setIsAlreadyMember(true);
       // eslint-disable-next-line
     } catch (e: any) {
@@ -110,11 +132,12 @@ export function ApproveConversion() {
         return;
       }
 
+      setError(e);
       setIsError(true);
     } finally {
       setLoading(false);
     }
-  }, [service, workspaceId, code]);
+  }, [workspaceId, code, t]);
 
   useEffect(() => {
     void loadConversion();
@@ -145,7 +168,7 @@ export function ApproveConversion() {
   }
 
   if (isInvalid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (notInvitee) {
@@ -153,7 +176,7 @@ export function ApproveConversion() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={handleApprove} />;
+    return <ErrorPage onRetry={handleApprove} error={error} />;
   }
 
   return (

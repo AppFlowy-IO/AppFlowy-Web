@@ -1,7 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 
-import { AuthLayout } from '@/components/app/AuthLayout';
 import AppWorkspaceRedirect from '@/components/app/AppWorkspaceRedirect';
+import { AuthLayout } from '@/components/app/AuthLayout';
 import { ApproveConversion } from '@/components/app/landing-pages/ApproveConversion';
 import ApproveRequestPage from '@/components/app/landing-pages/ApproveRequestPage';
 import { AsGuest } from '@/components/app/landing-pages/AsGuest';

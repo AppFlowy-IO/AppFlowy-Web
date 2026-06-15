@@ -1,3 +1,5 @@
+import { useCallback, useMemo } from 'react';
+
 import { NumberFormat } from '@/application/database-yjs';
 import { CellProps, NumberCell as NumberCellType } from '@/application/database-yjs/cell.type';
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
@@ -5,7 +7,6 @@ import { YjsDatabaseKey } from '@/application/types';
 import { useFieldTypeOption } from '@/components/database/components/cell/Cell.hooks';
 import NumberCellEditing from '@/components/database/components/cell/number/NumberCellEditing';
 import { cn } from '@/lib/utils';
-import { useCallback, useMemo } from 'react';
 
 export function NumberCell({
   cell,

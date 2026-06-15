@@ -5,18 +5,28 @@ import { useTranslation } from 'react-i18next';
 import { View } from '@/application/types';
 import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
 import { findAncestors } from '@/components/_shared/outline/utils';
 import { RichTooltip } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { useAppOutline, useToView } from '@/components/app/app.hooks';
 
 function ListItem({
-  selectedView,
+  itemId,
+  preview,
+  query,
+  selected,
+  subtitle,
+  title,
   view,
   onClick,
   onClose,
 }: {
-  selectedView: string;
+  itemId: string;
+  preview?: string;
+  query?: string;
+  selected: boolean;
+  subtitle?: string;
+  title?: string;
   view: View;
   onClick: () => void;
   onClose: () => void;
@@ -24,7 +34,7 @@ function ListItem({
   const { t } = useTranslation();
   const outline = useAppOutline();
   const [open, setOpen] = useState<boolean>(false);
-  const toView = useAppHandlers().toView;
+  const toView = useToView();
 
   const ancestors = useMemo(() => {
     if (!outline) return [];
@@ -117,29 +127,77 @@ function ListItem({
       </>
     );
   }, [ancestors, open, renderBreadcrumb]);
+  const displayTitle = title?.trim() || view.name.trim() || t('menuAppHeader.defaultNewPageName');
+  const displaySubtitle = subtitle?.trim();
 
   return (
     <div
-      data-item-id={view.view_id}
+      data-item-id={itemId}
       style={{
-        backgroundColor: selectedView === view.view_id ? 'var(--fill-list-active)' : undefined,
+        backgroundColor: selected ? 'var(--fill-list-active)' : undefined,
       }}
       onClick={onClick}
-      className={'flex w-full cursor-pointer flex-col gap-1 px-4 py-2 hover:bg-fill-list-active'}
+      className={'flex w-full cursor-pointer gap-3 px-4 py-3 hover:bg-fill-list-active'}
     >
-      <div className={'flex items-center gap-3'}>
-        <div className={'flex h-7 w-7 items-center justify-center rounded border border-line-border'}>
-          <PageIcon view={view} className={'flex h-5 w-5 items-center justify-center'} />
-        </div>
-        <div className={'flex-1 truncate text-base font-medium'}>
-          {view.name.trim() || t('menuAppHeader.defaultNewPageName')}
-        </div>
+      <div className={'flex h-[22px] w-5 shrink-0 items-center justify-center'}>
+        <PageIcon view={view} className={'flex h-5 w-5 items-center justify-center'} />
       </div>
 
-      <div className={'ml-10'}>
-        <div className={'flex w-full items-center gap-2 overflow-hidden text-sm text-text-secondary'}>{breadcrumbs}</div>
+      <div className={'min-w-0 flex-1'}>
+        <div className={'flex min-w-0 items-center gap-2'}>
+          <div className={'min-w-0 truncate text-base font-medium leading-[22px] text-text-primary'}>
+            <HighlightedText text={displayTitle} query={query} />
+          </div>
+          {!preview && !displaySubtitle && (
+            <div className={'flex min-w-0 items-center gap-2 overflow-hidden text-sm text-text-secondary'}>
+              {breadcrumbs}
+            </div>
+          )}
+        </div>
+        {preview ? (
+          <div
+            className={'mt-1 overflow-hidden whitespace-pre-line text-sm leading-[22px] text-text-secondary'}
+            style={{
+              display: '-webkit-box',
+              WebkitBoxOrient: 'vertical',
+              WebkitLineClamp: 2,
+            }}
+          >
+            <HighlightedText text={preview} query={query} />
+          </div>
+        ) : displaySubtitle ? (
+          <div className={'mt-1 flex w-full items-center gap-2 overflow-hidden text-sm text-text-secondary'}>
+            <span className={'truncate'}>{displaySubtitle}</span>
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function HighlightedText({ text, query }: { text: string; query?: string }) {
+  const keyword = query?.trim();
+
+  if (!keyword) return <>{text}</>;
+
+  const parts = text.split(new RegExp(`(${escapeRegExp(keyword)})`, 'ig'));
+
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.toLowerCase() === keyword.toLowerCase() ? (
+          <mark key={`${part}-${index}`} className={'bg-fill-theme-select px-0.5 text-text-primary'}>
+            {part}
+          </mark>
+        ) : (
+          <span key={`${part}-${index}`}>{part}</span>
+        )
+      )}
+    </>
   );
 }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useSelectFieldOptions } from '@/application/database-yjs';
 import { useAddSelectOption } from '@/application/database-yjs/dispatch';
 import { getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
@@ -10,7 +11,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { useSelectFieldOptions } from '@/application/database-yjs';
 
 
 function AddGroupColumn({ fieldId }: { fieldId: string; groupId: string }) {

@@ -1,9 +1,14 @@
 import dayjs from 'dayjs';
 import { every, filter, some } from 'lodash-es';
 
-import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
-import { FieldType } from '@/application/database-yjs/database.type';
+import {
+  getConditionCellData,
+  getConditionCellText,
+  getConditionDateCell,
+  getRowConditionSnapshot,
+} from '@/application/database-yjs/condition-value-cache';
+import { FieldType, FilterType } from '@/application/database-yjs/database.type';
 import {
   CheckboxFilter,
   CheckboxFilterCondition,
@@ -11,16 +16,22 @@ import {
   ChecklistFilterCondition,
   DateFilter,
   DateFilterCondition,
+  isRelativeDateCondition,
   NumberFilter,
   NumberFilterCondition,
-  parseChecklistData,
+  parseChecklistFlexible,
+  parseSelectOptionTypeOptions,
   PersonFilterCondition,
+  RelationFilterCondition,
+  resolveRelativeDates,
   SelectOptionFilter,
   SelectOptionFilterCondition,
   TextFilter,
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
+import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
@@ -28,13 +39,10 @@ import {
   YDatabaseFields,
   YDatabaseFilter,
   YDatabaseFilters,
-  YDatabaseRow,
   YDoc,
   YjsDatabaseKey,
-  YjsEditorKey,
 } from '@/application/types';
 import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
-import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 
 export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   const fieldId = filter.get(YjsDatabaseKey.field_id);
@@ -54,6 +62,8 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   switch (fieldType) {
     case FieldType.URL:
     case FieldType.RichText:
+    case FieldType.Relation:
+    case FieldType.Rollup:
       return value as TextFilter;
     case FieldType.Number:
       return value as NumberFilter;
@@ -91,17 +101,17 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
 
     case FieldType.Person:
       try {
-        const personIds = JSON.parse(value.content) as string[];
+        const userIds = JSON.parse(value.content) as string[];
 
         return {
           ...value,
-          personIds,
+          userIds,
         };
       } catch (e) {
         console.error('Error parsing person filter content:', e);
         return {
           ...value,
-          personIds: [],
+          userIds: [],
         };
       }
   }
@@ -109,81 +119,585 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   return value;
 }
 
+function wrapPlainObjectAsFilter(obj: Record<string, unknown>): YDatabaseFilter {
+  return {
+    get: (key: string) => obj[key],
+  } as unknown as YDatabaseFilter;
+}
+
+function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
+  if (node === null || typeof node !== 'object') return null;
+
+  // Already a Yjs Map with .get()
+  if (typeof (node as YDatabaseFilter).get === 'function') {
+    return node as YDatabaseFilter;
+  }
+
+  // Plain object from desktop sync -- wrap it
+  return wrapPlainObjectAsFilter(node as Record<string, unknown>);
+}
+
+function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
+  const children = filter.get(YjsDatabaseKey.children);
+
+  if (!children) return [];
+
+  let childArray: unknown[];
+
+  if (Array.isArray(children)) {
+    childArray = children;
+  } else if (typeof (children as { toArray?: () => unknown[] }).toArray === 'function') {
+    childArray = (children as { toArray: () => unknown[] }).toArray();
+  } else {
+    return [];
+  }
+
+  return childArray
+    .map(normalizeFilterNode)
+    .filter((node): node is YDatabaseFilter => node !== null);
+}
+
+function parseRelationFilterIds(content: string): string[] | null {
+  const trimmed = content.trim();
+
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (Array.isArray(parsed)) {
+      return parsed.map((id) => String(id)).filter(Boolean);
+    }
+  } catch (e) {
+    return null;
+  }
+
+  return null;
+}
+
+export function relationFilterFillData(content: string, condition: number): RowId[] | null {
+  const normalized = normalizeRelationCondition(condition);
+
+  if (normalized !== RelationFilterCondition.RelationContains) {
+    return null;
+  }
+
+  return parseRelationFilterIds(content) ?? null;
+}
+
+function getRelationRowIds(cellData: unknown): string[] {
+  if (!cellData) return [];
+
+  if (typeof cellData === 'object' && 'toJSON' in cellData) {
+    const json = (cellData as { toJSON: () => unknown }).toJSON();
+
+    if (Array.isArray(json)) {
+      return json.map((id) => String(id)).filter(Boolean);
+    }
+  }
+
+  if (Array.isArray(cellData)) {
+    return cellData.map((id) => String(id)).filter(Boolean);
+  }
+
+  if (typeof cellData === 'string') {
+    try {
+      const parsed = JSON.parse(cellData);
+
+      if (Array.isArray(parsed)) {
+        return parsed.map((id) => String(id)).filter(Boolean);
+      }
+    } catch (e) {
+      return cellData
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function normalizeRelationCondition(condition: number): RelationFilterCondition | null {
+  switch (condition) {
+    case RelationFilterCondition.RelationIsEmpty:
+    case RelationFilterCondition.RelationIsNotEmpty:
+    case RelationFilterCondition.RelationContains:
+    case RelationFilterCondition.RelationDoesNotContain:
+      return condition;
+    case RelationFilterCondition.RelationLegacyTextIsEmpty:
+      return RelationFilterCondition.RelationIsEmpty;
+    case RelationFilterCondition.RelationLegacyTextIsNotEmpty:
+      return RelationFilterCondition.RelationIsNotEmpty;
+    default:
+      return null;
+  }
+}
+
+export function relationFilterCheck(cellData: unknown, filterRowIds: string[], condition: number) {
+  const normalized = normalizeRelationCondition(condition);
+
+  if (normalized === null) return true;
+
+  const cellRowIds = getRelationRowIds(cellData);
+
+  switch (normalized) {
+    case RelationFilterCondition.RelationIsEmpty:
+      return cellRowIds.length === 0;
+    case RelationFilterCondition.RelationIsNotEmpty:
+      return cellRowIds.length > 0;
+    case RelationFilterCondition.RelationContains:
+      if (filterRowIds.length === 0) return true;
+      return some(filterRowIds, (rowId) => cellRowIds.includes(rowId));
+    case RelationFilterCondition.RelationDoesNotContain:
+      if (filterRowIds.length === 0) return true;
+      return every(filterRowIds, (rowId) => !cellRowIds.includes(rowId));
+    default:
+      return true;
+  }
+}
+
+// ============================================================================
+// Tree utility types and functions for per-row operator support
+// ============================================================================
+
+export interface FilterDraft {
+  id: string;
+  fieldId: string;
+  fieldType: number;
+  condition: number;
+  content: string;
+  operator: FilterType.And | FilterType.Or | null;
+}
+
+/**
+ * Recursively flatten a filter tree into a flat list with per-row operators.
+ * Mirrors the desktop's `collectFilters()` logic from `filter_entities.dart`.
+ */
+export function flattenFilterTree(
+  filtersArray: YDatabaseFilters,
+  fields: YDatabaseFields
+): FilterDraft[] {
+  const result: FilterDraft[] = [];
+
+  if (!filtersArray || filtersArray.length === 0) return result;
+
+  const rootFilter = filtersArray.get(0);
+
+  if (!rootFilter) return result;
+
+  const rootNode = typeof rootFilter.get === 'function'
+    ? rootFilter
+    : wrapPlainObjectAsFilter(rootFilter as unknown as Record<string, unknown>);
+
+  const rootType = Number(rootNode.get(YjsDatabaseKey.filter_type));
+
+  if (rootType !== FilterType.And && rootType !== FilterType.Or) {
+    // Not in advanced mode - single flat data filter
+    return result;
+  }
+
+  const rootOperator = rootType; // Already narrowed to And | Or by the guard above
+  const children = getFilterChildren(rootNode);
+
+  for (let i = 0; i < children.length; i++) {
+    collectFiltersRecursive(
+      children[i],
+      i === 0 ? null : rootOperator,
+      fields,
+      result
+    );
+  }
+
+  // Also collect any sibling top-level filters at indices 1+ (can appear from
+  // concurrent desktop sync adding flat filters while web is in advanced mode).
+  // filterBy() combines top-level entries with AND, so siblings always get And.
+  for (let i = 1; i < filtersArray.length; i++) {
+    const sibling = filtersArray.get(i);
+
+    if (!sibling) continue;
+
+    // Siblings are always AND'd with the root group by filterBy().
+    collectFiltersRecursive(
+      sibling,
+      FilterType.And,
+      fields,
+      result
+    );
+  }
+
+  return result;
+}
+
+function collectFiltersRecursive(
+  filterNode: YDatabaseFilter,
+  inheritedOperator: FilterType.And | FilterType.Or | null,
+  fields: YDatabaseFields,
+  result: FilterDraft[]
+): void {
+  const node = typeof filterNode.get === 'function'
+    ? filterNode
+    : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
+
+  const filterType = Number(node.get(YjsDatabaseKey.filter_type));
+
+  if (filterType === FilterType.And || filterType === FilterType.Or) {
+    const groupOperator = filterType; // Already narrowed to And | Or by the guard above
+    const children = getFilterChildren(node);
+
+    for (let i = 0; i < children.length; i++) {
+      collectFiltersRecursive(
+        children[i],
+        i === 0 ? inheritedOperator : groupOperator,
+        fields,
+        result
+      );
+    }
+
+    return;
+  }
+
+  // Data filter - extract as draft
+  const fieldId = node.get(YjsDatabaseKey.field_id);
+
+  if (!fieldId) return;
+
+  const field = fields.get(fieldId);
+  let fieldTypeNum: number;
+
+  if (field) {
+    fieldTypeNum = Number(field.get(YjsDatabaseKey.type));
+  } else {
+    // Desktop stores field type under 'ty' key; YjsDatabaseKey.type resolves to 'ty'
+    const tyValue = node.get(YjsDatabaseKey.type);
+
+    fieldTypeNum = tyValue !== undefined ? Number(tyValue) : FieldType.RichText;
+  }
+
+  result.push({
+    id: String(node.get(YjsDatabaseKey.id) ?? ''),
+    fieldId,
+    fieldType: fieldTypeNum,
+    condition: Number(node.get(YjsDatabaseKey.condition)),
+    content: String(node.get(YjsDatabaseKey.content) ?? ''),
+    operator: inheritedOperator,
+  });
+}
+
+/**
+ * Group consecutive drafts by their operator.
+ * Mirrors desktop's `_groupByConsecutiveOperator()`.
+ *
+ * Example: [A(null), B(Or), C(Or), D(And)] →
+ *   [{ operator: Or, drafts: [A, B, C] }, { operator: And, drafts: [D] }]
+ */
+export function groupByConsecutiveOperator(
+  drafts: FilterDraft[]
+): { operator: FilterType.And | FilterType.Or; drafts: FilterDraft[] }[] {
+  if (drafts.length < 2) {
+    return [{ operator: FilterType.And, drafts }];
+  }
+
+  const groups: { operator: FilterType.And | FilterType.Or; drafts: FilterDraft[] }[] = [];
+  let currentOperator = drafts[1].operator ?? FilterType.And;
+  let currentDrafts: FilterDraft[] = [drafts[0], drafts[1]];
+
+  for (let i = 2; i < drafts.length; i++) {
+    const op = drafts[i].operator ?? FilterType.And;
+
+    if (op === currentOperator) {
+      currentDrafts.push(drafts[i]);
+    } else {
+      groups.push({ operator: currentOperator, drafts: currentDrafts });
+      currentOperator = op;
+      currentDrafts = [drafts[i]];
+    }
+  }
+
+  groups.push({ operator: currentOperator, drafts: currentDrafts });
+
+  return groups;
+}
+
+type FilterOptions = {
+  getRelationCellText?: (rowId: string, fieldId: string) => string;
+  getRollupCellText?: (rowId: string, fieldId: string) => string;
+};
+
+type SelectOptionFilterContext = {
+  content: string;
+  filterOptionIds: string[];
+  filterOptionIdSet: Set<string>;
+  optionIdByValue: Map<string, string>;
+};
+
 function createPredicate(conditions: ((row: Row) => boolean)[]) {
   return function (item: Row) {
     return every(conditions, (condition) => condition(item));
   };
 }
 
+function createSelectOptionFilterContext(field: YDatabaseField, content: string): SelectOptionFilterContext {
+  const typeOption = parseSelectOptionTypeOptions(field);
+  const optionIdByValue = new Map<string, string>();
+
+  typeOption?.options?.forEach((option) => {
+    if (option.id) optionIdByValue.set(option.id, option.id);
+    if (option.name) optionIdByValue.set(option.name, option.id);
+  });
+
+  const filterOptionIds = content.split(',').map((item) => item.trim()).filter(Boolean);
+
+  return {
+    content,
+    filterOptionIds,
+    filterOptionIdSet: new Set(filterOptionIds),
+    optionIdByValue,
+  };
+}
+
+function getSelectedOptionIds(data: unknown, context: SelectOptionFilterContext) {
+  if (typeof data !== 'string') return [];
+
+  const trimmed = data.trim();
+  const looksLikeChecklist =
+    trimmed.startsWith('{') || trimmed.includes('[x]') || trimmed.includes('[X]') || trimmed.includes('[ ]');
+  const checklist = looksLikeChecklist ? parseChecklistFlexible(data) : null;
+  const rawIdsOrNames = checklist
+    ? checklist.selectedOptionIds
+      ?.map((idOrName) => checklist.options?.find((opt) => opt.id === idOrName)?.name ?? idOrName)
+      .filter(Boolean) ?? []
+    : data.split(',').map((item) => item.trim()).filter(Boolean);
+
+  return rawIdsOrNames
+    .map((idOrName) => context.optionIdByValue.get(idOrName))
+    .filter((item): item is string => Boolean(item));
+}
+
+function selectOptionFilterCheckWithContext(data: unknown, condition: number, context: SelectOptionFilterContext) {
+  const selectedIds = getSelectedOptionIds(data, context);
+
+  if (SelectOptionFilterCondition.OptionIsEmpty === condition) {
+    return selectedIds.length === 0;
+  }
+
+  if (SelectOptionFilterCondition.OptionIsNotEmpty === condition) {
+    return selectedIds.length > 0;
+  }
+
+  switch (condition) {
+    case SelectOptionFilterCondition.OptionIs:
+      if (!context.content) return true;
+      if (selectedIds.length === 0) return false;
+      return every(selectedIds, (id) => context.filterOptionIdSet.has(id));
+
+    case SelectOptionFilterCondition.OptionIsNot:
+      if (!context.content) return true;
+      if (selectedIds.length === 0) return true;
+      return !every(selectedIds, (id) => context.filterOptionIdSet.has(id));
+
+    case SelectOptionFilterCondition.OptionContains:
+      if (!context.content) return true;
+      if (selectedIds.length === 0) return false;
+      return some(selectedIds, (id) => context.filterOptionIdSet.has(id));
+
+    case SelectOptionFilterCondition.OptionDoesNotContain:
+      if (!context.content) return true;
+      if (selectedIds.length === 0) return true;
+      return every(context.filterOptionIds, (option) => !selectedIds.includes(option));
+
+    default:
+      return false;
+  }
+}
+
+function parseJsonStringArray(value: string, logMessage?: string) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch (e) {
+    if (logMessage) {
+      console.error(logMessage, e);
+    }
+
+    return null;
+  }
+}
+
+function personFilterCheckWithParsedIds(userIds: string[], filterIds: string[], condition: number) {
+  if (PersonFilterCondition.PersonIsEmpty === condition) {
+    return userIds.length === 0;
+  }
+
+  if (PersonFilterCondition.PersonIsNotEmpty === condition) {
+    return userIds.length > 0;
+  }
+
+  switch (condition) {
+    case PersonFilterCondition.PersonContains:
+      if (filterIds.length === 0) return true;
+      return every(filterIds, (id) => userIds.includes(id));
+
+    case PersonFilterCondition.PersonDoesNotContain:
+      if (filterIds.length === 0) return true;
+      return every(filterIds, (id) => !userIds.includes(id));
+
+    default:
+      return false;
+  }
+}
+
+function personFilterCheckWithIds(data: string, filterIds: string[] | null, condition: number) {
+  if (!filterIds) return false;
+
+  const userIds = parseJsonStringArray(data);
+
+  if (!userIds) return false;
+
+  return personFilterCheckWithParsedIds(userIds, filterIds, condition);
+}
+
 export function filterBy(
   rows: Row[],
   filters: YDatabaseFilters,
   fields: YDatabaseFields,
-  rowMetas: Record<RowId, YDoc>
+  rowMetas: Record<RowId, YDoc>,
+  options?: FilterOptions
 ) {
   const filterArray = filters.toArray();
 
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
-  const conditions = filterArray.map((filter) => {
-    return (row: { id: string }) => {
-      const fieldId = filter.get(YjsDatabaseKey.field_id);
-      const field = fields.get(fieldId);
+  const compileFilterPredicate = (filterNode: YDatabaseFilter): ((row: Row) => boolean) => {
+    if (!filterNode || typeof filterNode !== 'object') {
+      return () => true;
+    }
 
-      if (!field) return true;
-      const fieldType = Number(field.get(YjsDatabaseKey.type));
+    // Wrap plain objects that lack .get() (e.g. from desktop sync)
+    const node = typeof filterNode.get === 'function'
+      ? filterNode
+      : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
+
+    const filterType = Number(node.get(YjsDatabaseKey.filter_type));
+
+    if (filterType === FilterType.And || filterType === FilterType.Or) {
+      const childPredicates = getFilterChildren(node).map(compileFilterPredicate);
+
+      if (childPredicates.length === 0) return () => true;
+
+      if (filterType === FilterType.And) {
+        return (row: Row) => every(childPredicates, (predicate) => predicate(row));
+      }
+
+      return (row: Row) => some(childPredicates, (predicate) => predicate(row));
+    }
+
+    const fieldId = node.get(YjsDatabaseKey.field_id);
+    const field = fields.get(fieldId);
+
+    if (!field) return () => true;
+
+    const fieldType = Number(field.get(YjsDatabaseKey.type));
+    const filterValue = parseFilter(fieldType, node);
+    const condition = Number(filterValue.condition);
+    const rawContent = filterValue.content;
+    const content = typeof rawContent === 'string' ? rawContent : '';
+    const relationRowIds = fieldType === FieldType.Relation ? parseRelationFilterIds(content) : undefined;
+    const selectOptionContext =
+      fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect
+        ? createSelectOptionFilterContext(field, content)
+        : undefined;
+    const personFilterIds = fieldType === FieldType.Person ? parseJsonStringArray(content) : undefined;
+
+    return (row: Row): boolean => {
       const rowId = row.id;
       const rowMeta = rowMetas[rowId];
 
       if (!rowMeta) return false;
-      const filterValue = parseFilter(fieldType, filter);
-      const meta = rowMeta.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
-      if (!meta) return false;
+      const snapshot = getRowConditionSnapshot(rowMeta);
 
-      const cells = meta.get(YjsDatabaseKey.cells);
-      const cell = cells.get(fieldId);
+      if (!snapshot) return false;
 
-      const { condition, content } = filterValue;
+      const cellData = getConditionCellData(snapshot, fieldId);
 
-      const cellData = (cell?.get(YjsDatabaseKey.data) as string) || '';
+      if (fieldType === FieldType.Relation) {
+        if (relationRowIds !== null && relationRowIds !== undefined) {
+          return relationFilterCheck(cellData, relationRowIds, condition);
+        }
+
+        // Empty content on the new relation conditions (IsEmpty / IsNotEmpty /
+        // Contains / DoesNotContain) means "evaluate by relation row IDs";
+        // route to relationFilterCheck so it inspects cellRowIds. Falling
+        // through to textFilterCheck would either hide every row (DoesNotContain)
+        // or treat rows with relation IDs but blank/deleted titles as empty.
+        if (
+          !content.trim() &&
+          (condition === RelationFilterCondition.RelationIsEmpty ||
+            condition === RelationFilterCondition.RelationIsNotEmpty ||
+            condition === RelationFilterCondition.RelationContains ||
+            condition === RelationFilterCondition.RelationDoesNotContain)
+        ) {
+          return relationFilterCheck(cellData, [], condition);
+        }
+
+        const cellText = options?.getRelationCellText?.(rowId, fieldId) ?? '';
+
+        return textFilterCheck(cellText, content, condition);
+      }
 
       switch (fieldType) {
         case FieldType.URL:
         case FieldType.RichText:
-          return textFilterCheck(cellData, content, condition);
+          return textFilterCheck(getConditionCellText(snapshot, fieldId, field), content, condition);
+        case FieldType.Rollup: {
+          const cellText = options?.getRollupCellText?.(rowId, fieldId) ?? '';
+
+          // Numeric rollups compare the calculated number; non-numeric rollups
+          // fall back to text matching against the joined-value rendering.
+          return isNumericRollupField(field)
+            ? numberFilterCheck(cellText, content, condition)
+            : textFilterCheck(cellText, content, condition);
+        }
+
+        case FieldType.Time:
         case FieldType.Number:
-          return numberFilterCheck(cellData, content, condition);
+          return numberFilterCheck(getConditionCellText(snapshot, fieldId, field), content, condition);
         case FieldType.Checkbox:
           return checkboxFilterCheck(cellData, condition);
         case FieldType.SingleSelect:
         case FieldType.MultiSelect:
-          return selectOptionFilterCheck(cellData, content, condition);
+          return selectOptionContext
+            ? selectOptionFilterCheckWithContext(cellData, condition, selectOptionContext)
+            : selectOptionFilterCheck(field, cellData, content, condition);
         case FieldType.Checklist:
-          return checklistFilterCheck(cellData, content, condition);
+          return checklistFilterCheck(cellData as string, content, condition);
         case FieldType.DateTime:
-          return dateFilterCheck(cell ? parseYDatabaseDateTimeCellToCell(cell) : null, filterValue as DateFilter);
+          return dateFilterCheck(getConditionDateCell(snapshot, fieldId), filterValue as DateFilter);
         case FieldType.CreatedTime: {
-          const data = meta.get(YjsDatabaseKey.created_at);
+          const data = snapshot.row.get(YjsDatabaseKey.created_at);
 
           return rowTimeFilterCheck(data, filterValue as DateFilter);
         }
 
         case FieldType.LastEditedTime: {
-          const data = meta.get(YjsDatabaseKey.last_modified);
+          const data = snapshot.row.get(YjsDatabaseKey.last_modified);
 
           return rowTimeFilterCheck(data, filterValue as DateFilter);
         }
 
         case FieldType.Person: {
-          return personFilterCheck(cellData, content, condition);
+          return personFilterCheckWithIds(typeof cellData === 'string' ? cellData : '', personFilterIds ?? null, condition);
         }
 
         default:
           return true;
       }
     };
-  });
+  };
+
+  const conditions = filterArray.map(compileFilterPredicate);
   const predicate = createPredicate(conditions);
 
   return filter(rows, predicate);
@@ -245,19 +759,19 @@ export function numberFilterCheck(data: string, content: string, condition: numb
   }
 }
 
-export function checkboxFilterCheck(data: string, condition: number) {
+export function checkboxFilterCheck(data: unknown, condition: number) {
   switch (condition) {
     case CheckboxFilterCondition.IsChecked:
-      return getChecked(data);
+      return parseCheckboxValue(data as string);
     case CheckboxFilterCondition.IsUnChecked:
-      return !getChecked(data);
+      return !parseCheckboxValue(data as string);
     default:
       return false;
   }
 }
 
-export function checklistFilterCheck(data: string, content: string, condition: number) {
-  const percentage = parseChecklistData(data)?.percentage ?? 0;
+export function checklistFilterCheck(data: unknown, content: string, condition: number) {
+  const percentage = typeof data === 'string' ? parseChecklistFlexible(data)?.percentage ?? 0 : 0;
 
   if (condition === ChecklistFilterCondition.IsComplete) {
     return percentage === 1;
@@ -267,6 +781,10 @@ export function checklistFilterCheck(data: string, content: string, condition: n
 }
 
 export function rowTimeFilterCheck(data: string, filter: DateFilter) {
+  if (isRelativeDateCondition(filter.condition)) {
+    return relativeDateRangeMatches(data, filter);
+  }
+
   const { condition, end = '', start = '', timestamp = '' } = filter;
 
   switch (condition) {
@@ -296,10 +814,40 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
   }
 }
 
+// Resolves a relative-date filter to a concrete [start, end] range and tests whether
+// the cell's relevant timestamp (start for "DateStarts*", end for "DateEnds*") falls in it.
+function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp?: string): boolean {
+  // Mirrors desktop: DateStarts* relatives match against cell.start; DateEnds* match against cell.end.
+  const isEndCondition = filter.condition >= DateFilterCondition.DateEndsToday;
+  const target = isEndCondition ? endTimestamp ?? '' : data;
+
+  if (!target) return false;
+
+  const resolved = resolveRelativeDates(filter);
+
+  // Single-day relatives (Today/Yesterday/Tomorrow) → same-day check.
+  if (resolved.timestamp !== undefined) {
+    return isTimestampInSameDay(target, resolved.timestamp.toString());
+  }
+
+  if (resolved.start !== undefined && resolved.end !== undefined) {
+    // resolved.end is local midnight of the last day; extend to end-of-day for inclusive matching.
+    const endInclusive = resolved.end + 24 * 60 * 60 - 1;
+
+    return isTimestampBetweenRange(target, resolved.start.toString(), endInclusive.toString());
+  }
+
+  return false;
+}
+
 export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
   const { condition, end = '', start = '', timestamp = '' } = filter;
 
   const { data = '', endTimestamp = '' } = cell || {};
+
+  if (isRelativeDateCondition(condition)) {
+    return relativeDateRangeMatches(data, filter, endTimestamp);
+  }
 
   switch (condition) {
     case DateFilterCondition.DateEndIsEmpty:
@@ -351,69 +899,18 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
   }
 }
 
-export function selectOptionFilterCheck(data: string, content: string, condition: number) {
-  if (SelectOptionFilterCondition.OptionIsEmpty === condition) {
-    return data === '';
-  }
-
-  if (SelectOptionFilterCondition.OptionIsNotEmpty === condition) {
-    return data !== '';
-  }
-
-  const selectedOptionIds = data.split(',').filter((item) => item.trim() !== '');
-  const filterOptionIds = content.split(',').filter((item) => item.trim() !== '');
-
-  switch (condition) {
-    case SelectOptionFilterCondition.OptionIs:
-    case SelectOptionFilterCondition.OptionContains:
-      if (!content) return true;
-      return some(filterOptionIds, (option) => selectedOptionIds.includes(option));
-
-    case SelectOptionFilterCondition.OptionIsNot:
-    case SelectOptionFilterCondition.OptionDoesNotContain:
-      if (!content) return true;
-      return every(filterOptionIds, (option) => !selectedOptionIds.includes(option));
-
-    // Default case, if no conditions match
-    default:
-      return false;
-  }
+export function selectOptionFilterCheck(field: YDatabaseField, data: unknown, content: string, condition: number) {
+  return selectOptionFilterCheckWithContext(data, condition, createSelectOptionFilterContext(field, content));
 }
 
 
 export function personFilterCheck(data: string, content: string, condition: number) {
-  let userIds: string[] = [];
-  let filterIds: string[] = [];
+  const userIds = parseJsonStringArray(data, 'Error parsing person filter data:');
+  const filterIds = parseJsonStringArray(content, 'Error parsing person filter data:');
 
-  try {
-    userIds = JSON.parse(data || '[]');
-    filterIds = JSON.parse(content || '[]');
-  } catch (e) {
-    console.error('Error parsing person filter data:', e);
-    return false;
-  }
+  if (!userIds || !filterIds) return false;
 
-  if (PersonFilterCondition.PersonIsEmpty === condition) {
-    return filterIds.length === 0 || data === '';
-  }
-
-  if (PersonFilterCondition.PersonIsNotEmpty === condition) {
-    return filterIds.length > 0 && data !== '';
-  }
-
-  switch (condition) {
-    case PersonFilterCondition.PersonContains:
-      if (filterIds.length === 0) return true;
-      return some(filterIds, (id) => userIds.includes(id));
-
-    case PersonFilterCondition.PersonDoesNotContain:
-      if (filterIds.length === 0) return true;
-      return every(filterIds, (id) => !userIds.includes(id));
-
-    // Default case, if no conditions match
-    default:
-      return false;
-  }
+  return personFilterCheckWithParsedIds(userIds, filterIds, condition);
 }
 
 // Return the default value for the filter
@@ -513,6 +1010,22 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
   const content = filter.get(YjsDatabaseKey.content);
   const condition = Number(filter.get(YjsDatabaseKey.condition));
   const today = dayjs().startOf('day').unix().toString();
+
+  // Relative-date conditions (Today / This week / etc.) ignore the stored
+  // timestamp and always pre-fill from the resolved range so the new row
+  // satisfies the filter.
+  if (isRelativeDateCondition(condition)) {
+    const resolved = resolveRelativeDates({
+      condition,
+      timestamp: undefined,
+      start: undefined,
+      end: undefined,
+    } as DateFilter);
+    const isEnd = condition >= DateFilterCondition.DateEndsToday;
+    const fill = (resolved.timestamp ?? resolved.start ?? Number(today)).toString();
+
+    return isEnd ? { data: fill, endTimestamp: fill, isRange: true } : { data: fill, isRange: false };
+  }
 
   try {
     const {
@@ -647,8 +1160,10 @@ export function filterFillData(filter: YDatabaseFilter, field: YDatabaseField) {
   switch (fieldType) {
     case FieldType.URL:
     case FieldType.RichText:
+    case FieldType.Relation:
       return textFilterFillData(content, condition);
     case FieldType.Number:
+    case FieldType.Time:
       return numberFilterFillData(content, condition);
     case FieldType.Checkbox:
       return checkboxFilterFillData(condition);
@@ -664,12 +1179,24 @@ export function filterFillData(filter: YDatabaseFilter, field: YDatabaseField) {
   }
 }
 
-export function getDefaultFilterCondition(fieldType: FieldType) {
+export function getDefaultFilterCondition(fieldType: FieldType, field?: YDatabaseField) {
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
       return {
         condition: TextFilterCondition.TextContains,
+        content: '',
+      };
+    case FieldType.Rollup:
+      // Numeric rollups (Sum, Avg, Count, …) get number conditions; everything
+      // else falls back to text conditions because the rollup renders as a
+      // joined string of target values.
+      return isNumericRollupField(field)
+        ? { condition: NumberFilterCondition.Equal, content: '' }
+        : { condition: TextFilterCondition.TextContains, content: '' };
+    case FieldType.Relation:
+      return {
+        condition: RelationFilterCondition.RelationContains,
         content: '',
       };
     case FieldType.Checkbox:
@@ -693,7 +1220,12 @@ export function getDefaultFilterCondition(fieldType: FieldType) {
     case FieldType.Number:
       return {
         condition: NumberFilterCondition.Equal,
-        value: '',
+        content: '',
+      };
+    case FieldType.Time:
+      return {
+        condition: NumberFilterCondition.Equal,
+        content: '',
       };
     case FieldType.DateTime:
     case FieldType.CreatedTime:

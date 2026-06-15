@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
+import { Log } from '@/utils/log';
 
 /**
  * Hook to handle authenticated image loading for AppFlowy file storage URLs
@@ -21,6 +22,7 @@ export function useAuthenticatedImage(src: string | undefined): string {
 
         let isMounted = true;
 
+        Log.debug('[useAuthenticatedImage] src', src);
         getImageUrl(src)
             .then((url) => {
                 if (isMounted) {

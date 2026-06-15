@@ -1,3 +1,5 @@
+import { AxiosInstance } from 'axios';
+
 import {
   createInitialInstance,
   getAccessToken,
@@ -14,7 +16,7 @@ import {
   View,
 } from '@/components/chat/types';
 import { AvailableModel } from '@/components/chat/types/ai-model';
-import { AxiosInstance } from 'axios';
+import { extractNextJsonObject } from './stream-json-parser';
 
 export class WriterRequest {
   private axiosInstance: AxiosInstance = createInitialInstance();
@@ -41,6 +43,7 @@ export class WriterRequest {
     ragIds: string[];
     completionHistory: CompletionResult[];
     promptId?: string;
+    customPrompt?: string;
     modelName?: string;
   }, onMessage: (text: string, comment: string, done?: boolean) => void) => {
     const baseUrl = this.axiosInstance.defaults.baseURL;
@@ -61,6 +64,7 @@ export class WriterRequest {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
         'ai-model': payload.modelName || 'Auto',
+        'x-platform': 'web-app',
       },
       body: JSON.stringify({
         text: payload.inputText,
@@ -75,6 +79,7 @@ export class WriterRequest {
           rag_ids: payload.ragIds.length === 0 ? [this.viewId] : payload.ragIds,
           completion_history: payload.completionHistory,
           prompt_id: payload.promptId,
+          custom_prompt: payload.customPrompt ? { system: payload.customPrompt } : undefined,
         },
       }),
     });
@@ -112,40 +117,23 @@ export class WriterRequest {
           buffer += decoder.decode(chunk, { stream: true });
 
           while(buffer.length > 0) {
-            const openBraceIndex = buffer.indexOf('{');
+            const extracted = extractNextJsonObject(buffer);
 
-            if(openBraceIndex === -1) break;
-
-            let closeBraceIndex = -1;
-            let depth = 0;
-
-            for(let i = openBraceIndex; i < buffer.length; i++) {
-              if(buffer[i] === '{') depth++;
-              if(buffer[i] === '}') depth--;
-              if(depth === 0) {
-                closeBraceIndex = i;
-                break;
-              }
-            }
-
-            if(closeBraceIndex === -1) break;
-
-            const jsonStr = buffer.slice(openBraceIndex, closeBraceIndex + 1);
+            if(!extracted) break;
 
             try {
-              const data = JSON.parse(jsonStr);
+              const data = JSON.parse(extracted.jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
-                if(key === StreamType.META_DATA || key === StreamType.KEEP_ALIVE_KEY) {
-                  return;
-                }
-
                 if(key === StreamType.COMMENT) {
                   comment += value;
                   return;
                 }
 
-                text += value;
+                // Only append known content types to the answer text
+                if(key === StreamType.TEXT || key === StreamType.IMAGE) {
+                  text += value;
+                }
               });
 
               onMessage(text, comment, false);
@@ -153,14 +141,19 @@ export class WriterRequest {
               console.error('Failed to parse JSON:', e);
             }
 
-            buffer = buffer.slice(closeBraceIndex + 1);
+            buffer = buffer.slice(extracted.nextIndex);
           }
+        }
+
+        if(!text.trim() && !comment.trim()) {
+          throw new Error('Empty AI summary result from stream');
         }
 
         onMessage(text, comment, true);
 
       } catch(error) {
         console.error('Stream reading error:', error);
+        throw error;
       } finally {
         reader.releaseLock();
         try {
@@ -175,7 +168,7 @@ export class WriterRequest {
   };
   
   async getView(viewId: string) {
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=1&root_view_id=${viewId}`;
+    const url = `/api/workspace/${this.workspaceId}/view/${viewId}?depth=1`;
 
     const res = await this.axiosInstance.get<{
       code: number;
@@ -191,7 +184,7 @@ export class WriterRequest {
   }
 
   fetchViews = async() => {
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=10`;
+    const url = `/api/workspace/${this.workspaceId}/view/${this.workspaceId}?depth=10`;
 
     const res = await this.axiosInstance.get<{
       code: number;

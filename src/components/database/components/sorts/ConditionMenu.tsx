@@ -1,3 +1,6 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { SortCondition } from '@/application/database-yjs';
 import { useUpdateSort } from '@/application/database-yjs/dispatch';
 import {
@@ -7,8 +10,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent, DropdownMenuItemTick,
 } from '@/components/ui/dropdown-menu';
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function ConditionMenu ({
   open,

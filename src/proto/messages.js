@@ -280,6 +280,244 @@ export const messages = $root.messages = (() => {
         return Message;
     })();
 
+    messages.HttpRealtimeMessage = (function() {
+
+        /**
+         * Properties of a HttpRealtimeMessage.
+         * @memberof messages
+         * @interface IHttpRealtimeMessage
+         * @property {string|null} [deviceId] HttpRealtimeMessage deviceId
+         * @property {Uint8Array|null} [payload] HttpRealtimeMessage payload
+         */
+
+        /**
+         * Constructs a new HttpRealtimeMessage.
+         * @memberof messages
+         * @classdesc Represents a HttpRealtimeMessage.
+         * @implements IHttpRealtimeMessage
+         * @constructor
+         * @param {messages.IHttpRealtimeMessage=} [properties] Properties to set
+         */
+        function HttpRealtimeMessage(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * HttpRealtimeMessage deviceId.
+         * @member {string} deviceId
+         * @memberof messages.HttpRealtimeMessage
+         * @instance
+         */
+        HttpRealtimeMessage.prototype.deviceId = "";
+
+        /**
+         * HttpRealtimeMessage payload.
+         * @member {Uint8Array} payload
+         * @memberof messages.HttpRealtimeMessage
+         * @instance
+         */
+        HttpRealtimeMessage.prototype.payload = $util.newBuffer([]);
+
+        /**
+         * Creates a new HttpRealtimeMessage instance using the specified properties.
+         * @function create
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.IHttpRealtimeMessage=} [properties] Properties to set
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage instance
+         */
+        HttpRealtimeMessage.create = function create(properties) {
+            return new HttpRealtimeMessage(properties);
+        };
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @function encode
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.IHttpRealtimeMessage} message HttpRealtimeMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        HttpRealtimeMessage.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.deviceId != null && Object.hasOwnProperty.call(message, "deviceId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.deviceId);
+            if (message.payload != null && Object.hasOwnProperty.call(message, "payload"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.payload);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message, length delimited. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.IHttpRealtimeMessage} message HttpRealtimeMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        HttpRealtimeMessage.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer.
+         * @function decode
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        HttpRealtimeMessage.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.messages.HttpRealtimeMessage();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.deviceId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.payload = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        HttpRealtimeMessage.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a HttpRealtimeMessage message.
+         * @function verify
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        HttpRealtimeMessage.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.deviceId != null && message.hasOwnProperty("deviceId"))
+                if (!$util.isString(message.deviceId))
+                    return "deviceId: string expected";
+            if (message.payload != null && message.hasOwnProperty("payload"))
+                if (!(message.payload && typeof message.payload.length === "number" || $util.isString(message.payload)))
+                    return "payload: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a HttpRealtimeMessage message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage
+         */
+        HttpRealtimeMessage.fromObject = function fromObject(object) {
+            if (object instanceof $root.messages.HttpRealtimeMessage)
+                return object;
+            let message = new $root.messages.HttpRealtimeMessage();
+            if (object.deviceId != null)
+                message.deviceId = String(object.deviceId);
+            if (object.payload != null)
+                if (typeof object.payload === "string")
+                    $util.base64.decode(object.payload, message.payload = $util.newBuffer($util.base64.length(object.payload)), 0);
+                else if (object.payload.length >= 0)
+                    message.payload = object.payload;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a HttpRealtimeMessage message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.HttpRealtimeMessage} message HttpRealtimeMessage
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        HttpRealtimeMessage.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.deviceId = "";
+                if (options.bytes === String)
+                    object.payload = "";
+                else {
+                    object.payload = [];
+                    if (options.bytes !== Array)
+                        object.payload = $util.newBuffer(object.payload);
+                }
+            }
+            if (message.deviceId != null && message.hasOwnProperty("deviceId"))
+                object.deviceId = message.deviceId;
+            if (message.payload != null && message.hasOwnProperty("payload"))
+                object.payload = options.bytes === String ? $util.base64.encode(message.payload, 0, message.payload.length) : options.bytes === Array ? Array.prototype.slice.call(message.payload) : message.payload;
+            return object;
+        };
+
+        /**
+         * Converts this HttpRealtimeMessage to JSON.
+         * @function toJSON
+         * @memberof messages.HttpRealtimeMessage
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        HttpRealtimeMessage.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for HttpRealtimeMessage
+         * @function getTypeUrl
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        HttpRealtimeMessage.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/messages.HttpRealtimeMessage";
+        };
+
+        return HttpRealtimeMessage;
+    })();
+
     return messages;
 })();
 
@@ -547,6 +785,7 @@ export const collab = $root.collab = (() => {
          * @interface ISyncRequest
          * @property {collab.IRid|null} [lastMessageId] SyncRequest lastMessageId
          * @property {Uint8Array|null} [stateVector] SyncRequest stateVector
+         * @property {string|null} [version] SyncRequest version
          */
 
         /**
@@ -585,6 +824,14 @@ export const collab = $root.collab = (() => {
         SyncRequest.prototype.stateVector = $util.newBuffer([]);
 
         /**
+         * SyncRequest version.
+         * @member {string} version
+         * @memberof collab.SyncRequest
+         * @instance
+         */
+        SyncRequest.prototype.version = "";
+
+        /**
          * Creates a new SyncRequest instance using the specified properties.
          * @function create
          * @memberof collab.SyncRequest
@@ -612,6 +859,8 @@ export const collab = $root.collab = (() => {
                 $root.collab.Rid.encode(message.lastMessageId, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             if (message.stateVector != null && Object.hasOwnProperty.call(message, "stateVector"))
                 writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.stateVector);
+            if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.version);
             return writer;
         };
 
@@ -654,6 +903,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 2: {
                         message.stateVector = reader.bytes();
+                        break;
+                    }
+                case 3: {
+                        message.version = reader.string();
                         break;
                     }
                 default:
@@ -699,6 +952,9 @@ export const collab = $root.collab = (() => {
             if (message.stateVector != null && message.hasOwnProperty("stateVector"))
                 if (!(message.stateVector && typeof message.stateVector.length === "number" || $util.isString(message.stateVector)))
                     return "stateVector: buffer expected";
+            if (message.version != null && message.hasOwnProperty("version"))
+                if (!$util.isString(message.version))
+                    return "version: string expected";
             return null;
         };
 
@@ -724,6 +980,8 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.stateVector, message.stateVector = $util.newBuffer($util.base64.length(object.stateVector)), 0);
                 else if (object.stateVector.length >= 0)
                     message.stateVector = object.stateVector;
+            if (object.version != null)
+                message.version = String(object.version);
             return message;
         };
 
@@ -749,11 +1007,14 @@ export const collab = $root.collab = (() => {
                     if (options.bytes !== Array)
                         object.stateVector = $util.newBuffer(object.stateVector);
                 }
+                object.version = "";
             }
             if (message.lastMessageId != null && message.hasOwnProperty("lastMessageId"))
                 object.lastMessageId = $root.collab.Rid.toObject(message.lastMessageId, options);
             if (message.stateVector != null && message.hasOwnProperty("stateVector"))
                 object.stateVector = options.bytes === String ? $util.base64.encode(message.stateVector, 0, message.stateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.stateVector) : message.stateVector;
+            if (message.version != null && message.hasOwnProperty("version"))
+                object.version = message.version;
             return object;
         };
 
@@ -795,6 +1056,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.IRid|null} [messageId] Update messageId
          * @property {number|null} [flags] Update flags
          * @property {Uint8Array|null} [payload] Update payload
+         * @property {string|null} [version] Update version
          */
 
         /**
@@ -839,6 +1101,14 @@ export const collab = $root.collab = (() => {
         Update.prototype.payload = $util.newBuffer([]);
 
         /**
+         * Update version.
+         * @member {string} version
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.version = "";
+
+        /**
          * Creates a new Update instance using the specified properties.
          * @function create
          * @memberof collab.Update
@@ -868,6 +1138,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 2, wireType 0 =*/16).uint32(message.flags);
             if (message.payload != null && Object.hasOwnProperty.call(message, "payload"))
                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.payload);
+            if (message.version != null && Object.hasOwnProperty.call(message, "version"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.version);
             return writer;
         };
 
@@ -916,6 +1188,10 @@ export const collab = $root.collab = (() => {
                         message.payload = reader.bytes();
                         break;
                     }
+                case 4: {
+                        message.version = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -962,6 +1238,9 @@ export const collab = $root.collab = (() => {
             if (message.payload != null && message.hasOwnProperty("payload"))
                 if (!(message.payload && typeof message.payload.length === "number" || $util.isString(message.payload)))
                     return "payload: buffer expected";
+            if (message.version != null && message.hasOwnProperty("version"))
+                if (!$util.isString(message.version))
+                    return "version: string expected";
             return null;
         };
 
@@ -989,6 +1268,8 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.payload, message.payload = $util.newBuffer($util.base64.length(object.payload)), 0);
                 else if (object.payload.length >= 0)
                     message.payload = object.payload;
+            if (object.version != null)
+                message.version = String(object.version);
             return message;
         };
 
@@ -1015,6 +1296,7 @@ export const collab = $root.collab = (() => {
                     if (options.bytes !== Array)
                         object.payload = $util.newBuffer(object.payload);
                 }
+                object.version = "";
             }
             if (message.messageId != null && message.hasOwnProperty("messageId"))
                 object.messageId = $root.collab.Rid.toObject(message.messageId, options);
@@ -1022,6 +1304,8 @@ export const collab = $root.collab = (() => {
                 object.flags = message.flags;
             if (message.payload != null && message.hasOwnProperty("payload"))
                 object.payload = options.bytes === String ? $util.base64.encode(message.payload, 0, message.payload.length) : options.bytes === Array ? Array.prototype.slice.call(message.payload) : message.payload;
+            if (message.version != null && message.hasOwnProperty("version"))
+                object.version = message.version;
             return object;
         };
 
@@ -1904,6 +2188,1274 @@ export const collab = $root.collab = (() => {
         return CollabMessage;
     })();
 
+    /**
+     * Compression type for collab payloads.
+     * @name collab.PayloadCompressionType
+     * @enum {number}
+     * @property {number} COMPRESSION_NONE=0 COMPRESSION_NONE value
+     * @property {number} COMPRESSION_ZSTD=1 COMPRESSION_ZSTD value
+     * @property {number} COMPRESSION_GZIP=2 COMPRESSION_GZIP value
+     */
+    collab.PayloadCompressionType = (function() {
+        const valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "COMPRESSION_NONE"] = 0;
+        values[valuesById[1] = "COMPRESSION_ZSTD"] = 1;
+        values[valuesById[2] = "COMPRESSION_GZIP"] = 2;
+        return values;
+    })();
+
+    collab.CollabDocStateParams = (function() {
+
+        /**
+         * Properties of a CollabDocStateParams.
+         * @memberof collab
+         * @interface ICollabDocStateParams
+         * @property {string|null} [objectId] CollabDocStateParams objectId
+         * @property {number|null} [collabType] CollabDocStateParams collabType
+         * @property {collab.PayloadCompressionType|null} [compression] CollabDocStateParams compression
+         * @property {Uint8Array|null} [sv] CollabDocStateParams sv
+         * @property {Uint8Array|null} [docState] CollabDocStateParams docState
+         */
+
+        /**
+         * Constructs a new CollabDocStateParams.
+         * @memberof collab
+         * @classdesc Parameters for a single collab document state in batch sync.
+         * @implements ICollabDocStateParams
+         * @constructor
+         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
+         */
+        function CollabDocStateParams(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabDocStateParams objectId.
+         * @member {string} objectId
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.objectId = "";
+
+        /**
+         * CollabDocStateParams collabType.
+         * @member {number} collabType
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.collabType = 0;
+
+        /**
+         * CollabDocStateParams compression.
+         * @member {collab.PayloadCompressionType} compression
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.compression = 0;
+
+        /**
+         * CollabDocStateParams sv.
+         * @member {Uint8Array} sv
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.sv = $util.newBuffer([]);
+
+        /**
+         * CollabDocStateParams docState.
+         * @member {Uint8Array} docState
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.docState = $util.newBuffer([]);
+
+        /**
+         * Creates a new CollabDocStateParams instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams instance
+         */
+        CollabDocStateParams.create = function create(properties) {
+            return new CollabDocStateParams(properties);
+        };
+
+        /**
+         * Encodes the specified CollabDocStateParams message. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabDocStateParams.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
+            if (message.collabType != null && Object.hasOwnProperty.call(message, "collabType"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.collabType);
+            if (message.compression != null && Object.hasOwnProperty.call(message, "compression"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.compression);
+            if (message.sv != null && Object.hasOwnProperty.call(message, "sv"))
+                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.sv);
+            if (message.docState != null && Object.hasOwnProperty.call(message, "docState"))
+                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabDocStateParams message, length delimited. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabDocStateParams.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabDocStateParams.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabDocStateParams();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.objectId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.collabType = reader.int32();
+                        break;
+                    }
+                case 3: {
+                        message.compression = reader.int32();
+                        break;
+                    }
+                case 4: {
+                        message.sv = reader.bytes();
+                        break;
+                    }
+                case 5: {
+                        message.docState = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabDocStateParams.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabDocStateParams message.
+         * @function verify
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabDocStateParams.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                if (!$util.isString(message.objectId))
+                    return "objectId: string expected";
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                if (!$util.isInteger(message.collabType))
+                    return "collabType: integer expected";
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                switch (message.compression) {
+                default:
+                    return "compression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            if (message.sv != null && message.hasOwnProperty("sv"))
+                if (!(message.sv && typeof message.sv.length === "number" || $util.isString(message.sv)))
+                    return "sv: buffer expected";
+            if (message.docState != null && message.hasOwnProperty("docState"))
+                if (!(message.docState && typeof message.docState.length === "number" || $util.isString(message.docState)))
+                    return "docState: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a CollabDocStateParams message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         */
+        CollabDocStateParams.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabDocStateParams)
+                return object;
+            let message = new $root.collab.CollabDocStateParams();
+            if (object.objectId != null)
+                message.objectId = String(object.objectId);
+            if (object.collabType != null)
+                message.collabType = object.collabType | 0;
+            switch (object.compression) {
+            default:
+                if (typeof object.compression === "number") {
+                    message.compression = object.compression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.compression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.compression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.compression = 2;
+                break;
+            }
+            if (object.sv != null)
+                if (typeof object.sv === "string")
+                    $util.base64.decode(object.sv, message.sv = $util.newBuffer($util.base64.length(object.sv)), 0);
+                else if (object.sv.length >= 0)
+                    message.sv = object.sv;
+            if (object.docState != null)
+                if (typeof object.docState === "string")
+                    $util.base64.decode(object.docState, message.docState = $util.newBuffer($util.base64.length(object.docState)), 0);
+                else if (object.docState.length >= 0)
+                    message.docState = object.docState;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabDocStateParams message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.CollabDocStateParams} message CollabDocStateParams
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabDocStateParams.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.objectId = "";
+                object.collabType = 0;
+                object.compression = options.enums === String ? "COMPRESSION_NONE" : 0;
+                if (options.bytes === String)
+                    object.sv = "";
+                else {
+                    object.sv = [];
+                    if (options.bytes !== Array)
+                        object.sv = $util.newBuffer(object.sv);
+                }
+                if (options.bytes === String)
+                    object.docState = "";
+                else {
+                    object.docState = [];
+                    if (options.bytes !== Array)
+                        object.docState = $util.newBuffer(object.docState);
+                }
+            }
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                object.objectId = message.objectId;
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                object.collabType = message.collabType;
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                object.compression = options.enums === String ? $root.collab.PayloadCompressionType[message.compression] === undefined ? message.compression : $root.collab.PayloadCompressionType[message.compression] : message.compression;
+            if (message.sv != null && message.hasOwnProperty("sv"))
+                object.sv = options.bytes === String ? $util.base64.encode(message.sv, 0, message.sv.length) : options.bytes === Array ? Array.prototype.slice.call(message.sv) : message.sv;
+            if (message.docState != null && message.hasOwnProperty("docState"))
+                object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
+            return object;
+        };
+
+        /**
+         * Converts this CollabDocStateParams to JSON.
+         * @function toJSON
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabDocStateParams.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabDocStateParams
+         * @function getTypeUrl
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabDocStateParams.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabDocStateParams";
+        };
+
+        return CollabDocStateParams;
+    })();
+
+    collab.CollabBatchSyncRequest = (function() {
+
+        /**
+         * Properties of a CollabBatchSyncRequest.
+         * @memberof collab
+         * @interface ICollabBatchSyncRequest
+         * @property {Array.<collab.ICollabDocStateParams>|null} [items] CollabBatchSyncRequest items
+         * @property {collab.PayloadCompressionType|null} [responseCompression] CollabBatchSyncRequest responseCompression
+         */
+
+        /**
+         * Constructs a new CollabBatchSyncRequest.
+         * @memberof collab
+         * @classdesc Request to sync multiple collab documents in a batch.
+         * Used before operations like duplicate to ensure server has latest state.
+         * @implements ICollabBatchSyncRequest
+         * @constructor
+         * @param {collab.ICollabBatchSyncRequest=} [properties] Properties to set
+         */
+        function CollabBatchSyncRequest(properties) {
+            this.items = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabBatchSyncRequest items.
+         * @member {Array.<collab.ICollabDocStateParams>} items
+         * @memberof collab.CollabBatchSyncRequest
+         * @instance
+         */
+        CollabBatchSyncRequest.prototype.items = $util.emptyArray;
+
+        /**
+         * CollabBatchSyncRequest responseCompression.
+         * @member {collab.PayloadCompressionType} responseCompression
+         * @memberof collab.CollabBatchSyncRequest
+         * @instance
+         */
+        CollabBatchSyncRequest.prototype.responseCompression = 0;
+
+        /**
+         * Creates a new CollabBatchSyncRequest instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.ICollabBatchSyncRequest=} [properties] Properties to set
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest instance
+         */
+        CollabBatchSyncRequest.create = function create(properties) {
+            return new CollabBatchSyncRequest(properties);
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncRequest message. Does not implicitly {@link collab.CollabBatchSyncRequest.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.ICollabBatchSyncRequest} message CollabBatchSyncRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.items != null && message.items.length)
+                for (let i = 0; i < message.items.length; ++i)
+                    $root.collab.CollabDocStateParams.encode(message.items[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.responseCompression != null && Object.hasOwnProperty.call(message, "responseCompression"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.responseCompression);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncRequest message, length delimited. Does not implicitly {@link collab.CollabBatchSyncRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.ICollabBatchSyncRequest} message CollabBatchSyncRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabBatchSyncRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncRequest();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.items && message.items.length))
+                            message.items = [];
+                        message.items.push($root.collab.CollabDocStateParams.decode(reader, reader.uint32()));
+                        break;
+                    }
+                case 2: {
+                        message.responseCompression = reader.int32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabBatchSyncRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabBatchSyncRequest message.
+         * @function verify
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabBatchSyncRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.items != null && message.hasOwnProperty("items")) {
+                if (!Array.isArray(message.items))
+                    return "items: array expected";
+                for (let i = 0; i < message.items.length; ++i) {
+                    let error = $root.collab.CollabDocStateParams.verify(message.items[i]);
+                    if (error)
+                        return "items." + error;
+                }
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                switch (message.responseCompression) {
+                default:
+                    return "responseCompression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            return null;
+        };
+
+        /**
+         * Creates a CollabBatchSyncRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest
+         */
+        CollabBatchSyncRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabBatchSyncRequest)
+                return object;
+            let message = new $root.collab.CollabBatchSyncRequest();
+            if (object.items) {
+                if (!Array.isArray(object.items))
+                    throw TypeError(".collab.CollabBatchSyncRequest.items: array expected");
+                message.items = [];
+                for (let i = 0; i < object.items.length; ++i) {
+                    if (typeof object.items[i] !== "object")
+                        throw TypeError(".collab.CollabBatchSyncRequest.items: object expected");
+                    message.items[i] = $root.collab.CollabDocStateParams.fromObject(object.items[i]);
+                }
+            }
+            switch (object.responseCompression) {
+            default:
+                if (typeof object.responseCompression === "number") {
+                    message.responseCompression = object.responseCompression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.responseCompression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.responseCompression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.responseCompression = 2;
+                break;
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabBatchSyncRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.CollabBatchSyncRequest} message CollabBatchSyncRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabBatchSyncRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults)
+                object.items = [];
+            if (options.defaults)
+                object.responseCompression = options.enums === String ? "COMPRESSION_NONE" : 0;
+            if (message.items && message.items.length) {
+                object.items = [];
+                for (let j = 0; j < message.items.length; ++j)
+                    object.items[j] = $root.collab.CollabDocStateParams.toObject(message.items[j], options);
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                object.responseCompression = options.enums === String ? $root.collab.PayloadCompressionType[message.responseCompression] === undefined ? message.responseCompression : $root.collab.PayloadCompressionType[message.responseCompression] : message.responseCompression;
+            return object;
+        };
+
+        /**
+         * Converts this CollabBatchSyncRequest to JSON.
+         * @function toJSON
+         * @memberof collab.CollabBatchSyncRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabBatchSyncRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabBatchSyncRequest
+         * @function getTypeUrl
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabBatchSyncRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabBatchSyncRequest";
+        };
+
+        return CollabBatchSyncRequest;
+    })();
+
+    collab.CollabBatchSyncResult = (function() {
+
+        /**
+         * Properties of a CollabBatchSyncResult.
+         * @memberof collab
+         * @interface ICollabBatchSyncResult
+         * @property {string|null} [objectId] CollabBatchSyncResult objectId
+         * @property {number|null} [collabType] CollabBatchSyncResult collabType
+         * @property {collab.PayloadCompressionType|null} [compression] CollabBatchSyncResult compression
+         * @property {Uint8Array|null} [missingUpdate] CollabBatchSyncResult missingUpdate
+         * @property {string|null} [error] CollabBatchSyncResult error
+         * @property {Uint8Array|null} [serverStateVector] CollabBatchSyncResult serverStateVector
+         */
+
+        /**
+         * Constructs a new CollabBatchSyncResult.
+         * @memberof collab
+         * @classdesc Result for a single collab in batch sync response.
+         * @implements ICollabBatchSyncResult
+         * @constructor
+         * @param {collab.ICollabBatchSyncResult=} [properties] Properties to set
+         */
+        function CollabBatchSyncResult(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabBatchSyncResult objectId.
+         * @member {string} objectId
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.objectId = "";
+
+        /**
+         * CollabBatchSyncResult collabType.
+         * @member {number} collabType
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.collabType = 0;
+
+        /**
+         * CollabBatchSyncResult compression.
+         * @member {collab.PayloadCompressionType} compression
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.compression = 0;
+
+        /**
+         * CollabBatchSyncResult missingUpdate.
+         * @member {Uint8Array} missingUpdate
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.missingUpdate = $util.newBuffer([]);
+
+        /**
+         * CollabBatchSyncResult error.
+         * @member {string} error
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.error = "";
+
+        /**
+         * CollabBatchSyncResult serverStateVector.
+         * @member {Uint8Array} serverStateVector
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.serverStateVector = $util.newBuffer([]);
+
+        /**
+         * Creates a new CollabBatchSyncResult instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.ICollabBatchSyncResult=} [properties] Properties to set
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult instance
+         */
+        CollabBatchSyncResult.create = function create(properties) {
+            return new CollabBatchSyncResult(properties);
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResult message. Does not implicitly {@link collab.CollabBatchSyncResult.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.ICollabBatchSyncResult} message CollabBatchSyncResult message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResult.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
+            if (message.collabType != null && Object.hasOwnProperty.call(message, "collabType"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.collabType);
+            if (message.compression != null && Object.hasOwnProperty.call(message, "compression"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.compression);
+            if (message.missingUpdate != null && Object.hasOwnProperty.call(message, "missingUpdate"))
+                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.missingUpdate);
+            if (message.error != null && Object.hasOwnProperty.call(message, "error"))
+                writer.uint32(/* id 5, wireType 2 =*/42).string(message.error);
+            if (message.serverStateVector != null && Object.hasOwnProperty.call(message, "serverStateVector"))
+                writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.serverStateVector);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResult message, length delimited. Does not implicitly {@link collab.CollabBatchSyncResult.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.ICollabBatchSyncResult} message CollabBatchSyncResult message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResult.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResult message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResult.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncResult();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.objectId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.collabType = reader.int32();
+                        break;
+                    }
+                case 3: {
+                        message.compression = reader.int32();
+                        break;
+                    }
+                case 4: {
+                        message.missingUpdate = reader.bytes();
+                        break;
+                    }
+                case 5: {
+                        message.error = reader.string();
+                        break;
+                    }
+                case 6: {
+                        message.serverStateVector = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResult message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResult.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabBatchSyncResult message.
+         * @function verify
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabBatchSyncResult.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                if (!$util.isString(message.objectId))
+                    return "objectId: string expected";
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                if (!$util.isInteger(message.collabType))
+                    return "collabType: integer expected";
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                switch (message.compression) {
+                default:
+                    return "compression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            if (message.missingUpdate != null && message.hasOwnProperty("missingUpdate"))
+                if (!(message.missingUpdate && typeof message.missingUpdate.length === "number" || $util.isString(message.missingUpdate)))
+                    return "missingUpdate: buffer expected";
+            if (message.error != null && message.hasOwnProperty("error"))
+                if (!$util.isString(message.error))
+                    return "error: string expected";
+            if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
+                if (!(message.serverStateVector && typeof message.serverStateVector.length === "number" || $util.isString(message.serverStateVector)))
+                    return "serverStateVector: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a CollabBatchSyncResult message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult
+         */
+        CollabBatchSyncResult.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabBatchSyncResult)
+                return object;
+            let message = new $root.collab.CollabBatchSyncResult();
+            if (object.objectId != null)
+                message.objectId = String(object.objectId);
+            if (object.collabType != null)
+                message.collabType = object.collabType | 0;
+            switch (object.compression) {
+            default:
+                if (typeof object.compression === "number") {
+                    message.compression = object.compression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.compression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.compression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.compression = 2;
+                break;
+            }
+            if (object.missingUpdate != null)
+                if (typeof object.missingUpdate === "string")
+                    $util.base64.decode(object.missingUpdate, message.missingUpdate = $util.newBuffer($util.base64.length(object.missingUpdate)), 0);
+                else if (object.missingUpdate.length >= 0)
+                    message.missingUpdate = object.missingUpdate;
+            if (object.error != null)
+                message.error = String(object.error);
+            if (object.serverStateVector != null)
+                if (typeof object.serverStateVector === "string")
+                    $util.base64.decode(object.serverStateVector, message.serverStateVector = $util.newBuffer($util.base64.length(object.serverStateVector)), 0);
+                else if (object.serverStateVector.length >= 0)
+                    message.serverStateVector = object.serverStateVector;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabBatchSyncResult message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.CollabBatchSyncResult} message CollabBatchSyncResult
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabBatchSyncResult.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.objectId = "";
+                object.collabType = 0;
+                object.compression = options.enums === String ? "COMPRESSION_NONE" : 0;
+                if (options.bytes === String)
+                    object.missingUpdate = "";
+                else {
+                    object.missingUpdate = [];
+                    if (options.bytes !== Array)
+                        object.missingUpdate = $util.newBuffer(object.missingUpdate);
+                }
+                object.error = "";
+                if (options.bytes === String)
+                    object.serverStateVector = "";
+                else {
+                    object.serverStateVector = [];
+                    if (options.bytes !== Array)
+                        object.serverStateVector = $util.newBuffer(object.serverStateVector);
+                }
+            }
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                object.objectId = message.objectId;
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                object.collabType = message.collabType;
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                object.compression = options.enums === String ? $root.collab.PayloadCompressionType[message.compression] === undefined ? message.compression : $root.collab.PayloadCompressionType[message.compression] : message.compression;
+            if (message.missingUpdate != null && message.hasOwnProperty("missingUpdate"))
+                object.missingUpdate = options.bytes === String ? $util.base64.encode(message.missingUpdate, 0, message.missingUpdate.length) : options.bytes === Array ? Array.prototype.slice.call(message.missingUpdate) : message.missingUpdate;
+            if (message.error != null && message.hasOwnProperty("error"))
+                object.error = message.error;
+            if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
+                object.serverStateVector = options.bytes === String ? $util.base64.encode(message.serverStateVector, 0, message.serverStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.serverStateVector) : message.serverStateVector;
+            return object;
+        };
+
+        /**
+         * Converts this CollabBatchSyncResult to JSON.
+         * @function toJSON
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabBatchSyncResult.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabBatchSyncResult
+         * @function getTypeUrl
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabBatchSyncResult.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabBatchSyncResult";
+        };
+
+        return CollabBatchSyncResult;
+    })();
+
+    collab.CollabBatchSyncResponse = (function() {
+
+        /**
+         * Properties of a CollabBatchSyncResponse.
+         * @memberof collab
+         * @interface ICollabBatchSyncResponse
+         * @property {Array.<collab.ICollabBatchSyncResult>|null} [results] CollabBatchSyncResponse results
+         * @property {collab.PayloadCompressionType|null} [responseCompression] CollabBatchSyncResponse responseCompression
+         */
+
+        /**
+         * Constructs a new CollabBatchSyncResponse.
+         * @memberof collab
+         * @classdesc Response from batch sync containing results for each collab.
+         * @implements ICollabBatchSyncResponse
+         * @constructor
+         * @param {collab.ICollabBatchSyncResponse=} [properties] Properties to set
+         */
+        function CollabBatchSyncResponse(properties) {
+            this.results = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabBatchSyncResponse results.
+         * @member {Array.<collab.ICollabBatchSyncResult>} results
+         * @memberof collab.CollabBatchSyncResponse
+         * @instance
+         */
+        CollabBatchSyncResponse.prototype.results = $util.emptyArray;
+
+        /**
+         * CollabBatchSyncResponse responseCompression.
+         * @member {collab.PayloadCompressionType} responseCompression
+         * @memberof collab.CollabBatchSyncResponse
+         * @instance
+         */
+        CollabBatchSyncResponse.prototype.responseCompression = 0;
+
+        /**
+         * Creates a new CollabBatchSyncResponse instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.ICollabBatchSyncResponse=} [properties] Properties to set
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse instance
+         */
+        CollabBatchSyncResponse.create = function create(properties) {
+            return new CollabBatchSyncResponse(properties);
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResponse message. Does not implicitly {@link collab.CollabBatchSyncResponse.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.ICollabBatchSyncResponse} message CollabBatchSyncResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResponse.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.results != null && message.results.length)
+                for (let i = 0; i < message.results.length; ++i)
+                    $root.collab.CollabBatchSyncResult.encode(message.results[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.responseCompression != null && Object.hasOwnProperty.call(message, "responseCompression"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.responseCompression);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResponse message, length delimited. Does not implicitly {@link collab.CollabBatchSyncResponse.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.ICollabBatchSyncResponse} message CollabBatchSyncResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResponse.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResponse message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResponse.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncResponse();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.results && message.results.length))
+                            message.results = [];
+                        message.results.push($root.collab.CollabBatchSyncResult.decode(reader, reader.uint32()));
+                        break;
+                    }
+                case 2: {
+                        message.responseCompression = reader.int32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResponse message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResponse.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabBatchSyncResponse message.
+         * @function verify
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabBatchSyncResponse.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.results != null && message.hasOwnProperty("results")) {
+                if (!Array.isArray(message.results))
+                    return "results: array expected";
+                for (let i = 0; i < message.results.length; ++i) {
+                    let error = $root.collab.CollabBatchSyncResult.verify(message.results[i]);
+                    if (error)
+                        return "results." + error;
+                }
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                switch (message.responseCompression) {
+                default:
+                    return "responseCompression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            return null;
+        };
+
+        /**
+         * Creates a CollabBatchSyncResponse message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse
+         */
+        CollabBatchSyncResponse.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabBatchSyncResponse)
+                return object;
+            let message = new $root.collab.CollabBatchSyncResponse();
+            if (object.results) {
+                if (!Array.isArray(object.results))
+                    throw TypeError(".collab.CollabBatchSyncResponse.results: array expected");
+                message.results = [];
+                for (let i = 0; i < object.results.length; ++i) {
+                    if (typeof object.results[i] !== "object")
+                        throw TypeError(".collab.CollabBatchSyncResponse.results: object expected");
+                    message.results[i] = $root.collab.CollabBatchSyncResult.fromObject(object.results[i]);
+                }
+            }
+            switch (object.responseCompression) {
+            default:
+                if (typeof object.responseCompression === "number") {
+                    message.responseCompression = object.responseCompression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.responseCompression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.responseCompression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.responseCompression = 2;
+                break;
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabBatchSyncResponse message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.CollabBatchSyncResponse} message CollabBatchSyncResponse
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabBatchSyncResponse.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults)
+                object.results = [];
+            if (options.defaults)
+                object.responseCompression = options.enums === String ? "COMPRESSION_NONE" : 0;
+            if (message.results && message.results.length) {
+                object.results = [];
+                for (let j = 0; j < message.results.length; ++j)
+                    object.results[j] = $root.collab.CollabBatchSyncResult.toObject(message.results[j], options);
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                object.responseCompression = options.enums === String ? $root.collab.PayloadCompressionType[message.responseCompression] === undefined ? message.responseCompression : $root.collab.PayloadCompressionType[message.responseCompression] : message.responseCompression;
+            return object;
+        };
+
+        /**
+         * Converts this CollabBatchSyncResponse to JSON.
+         * @function toJSON
+         * @memberof collab.CollabBatchSyncResponse
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabBatchSyncResponse.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabBatchSyncResponse
+         * @function getTypeUrl
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabBatchSyncResponse.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabBatchSyncResponse";
+        };
+
+        return CollabBatchSyncResponse;
+    })();
+
     return collab;
 })();
 
@@ -1929,6 +3481,9 @@ export const notification = $root.notification = (() => {
          * @property {notification.IMentionablePersonListChanged|null} [mentionablePersonListChanged] WorkspaceNotification mentionablePersonListChanged
          * @property {notification.IServerLimit|null} [serverLimit] WorkspaceNotification serverLimit
          * @property {notification.IWorkspaceMemberProfileChanged|null} [workspaceMemberProfileChanged] WorkspaceNotification workspaceMemberProfileChanged
+         * @property {notification.IFolderChanged|null} [folderChanged] WorkspaceNotification folderChanged
+         * @property {notification.IFolderViewChanged|null} [folderViewChanged] WorkspaceNotification folderViewChanged
+         * @property {notification.IInboxNotification|null} [inboxNotification] WorkspaceNotification inboxNotification
          */
 
         /**
@@ -2002,17 +3557,41 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.workspaceMemberProfileChanged = null;
 
+        /**
+         * WorkspaceNotification folderChanged.
+         * @member {notification.IFolderChanged|null|undefined} folderChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.folderChanged = null;
+
+        /**
+         * WorkspaceNotification folderViewChanged.
+         * @member {notification.IFolderViewChanged|null|undefined} folderViewChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.folderViewChanged = null;
+
+        /**
+         * WorkspaceNotification inboxNotification.
+         * @member {notification.IInboxNotification|null|undefined} inboxNotification
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.inboxNotification = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -2054,6 +3633,12 @@ export const notification = $root.notification = (() => {
                 $root.notification.ServerLimit.encode(message.serverLimit, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
             if (message.workspaceMemberProfileChanged != null && Object.hasOwnProperty.call(message, "workspaceMemberProfileChanged"))
                 $root.notification.WorkspaceMemberProfileChanged.encode(message.workspaceMemberProfileChanged, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
+            if (message.folderChanged != null && Object.hasOwnProperty.call(message, "folderChanged"))
+                $root.notification.FolderChanged.encode(message.folderChanged, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+            if (message.folderViewChanged != null && Object.hasOwnProperty.call(message, "folderViewChanged"))
+                $root.notification.FolderViewChanged.encode(message.folderViewChanged, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+            if (message.inboxNotification != null && Object.hasOwnProperty.call(message, "inboxNotification"))
+                $root.notification.InboxNotification.encode(message.inboxNotification, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
             return writer;
         };
 
@@ -2116,6 +3701,18 @@ export const notification = $root.notification = (() => {
                     }
                 case 7: {
                         message.workspaceMemberProfileChanged = $root.notification.WorkspaceMemberProfileChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 8: {
+                        message.folderChanged = $root.notification.FolderChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 9: {
+                        message.folderViewChanged = $root.notification.FolderViewChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 10: {
+                        message.inboxNotification = $root.notification.InboxNotification.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -2222,6 +3819,36 @@ export const notification = $root.notification = (() => {
                         return "workspaceMemberProfileChanged." + error;
                 }
             }
+            if (message.folderChanged != null && message.hasOwnProperty("folderChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.FolderChanged.verify(message.folderChanged);
+                    if (error)
+                        return "folderChanged." + error;
+                }
+            }
+            if (message.folderViewChanged != null && message.hasOwnProperty("folderViewChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.FolderViewChanged.verify(message.folderViewChanged);
+                    if (error)
+                        return "folderViewChanged." + error;
+                }
+            }
+            if (message.inboxNotification != null && message.hasOwnProperty("inboxNotification")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.InboxNotification.verify(message.inboxNotification);
+                    if (error)
+                        return "inboxNotification." + error;
+                }
+            }
             return null;
         };
 
@@ -2271,6 +3898,21 @@ export const notification = $root.notification = (() => {
                 if (typeof object.workspaceMemberProfileChanged !== "object")
                     throw TypeError(".notification.WorkspaceNotification.workspaceMemberProfileChanged: object expected");
                 message.workspaceMemberProfileChanged = $root.notification.WorkspaceMemberProfileChanged.fromObject(object.workspaceMemberProfileChanged);
+            }
+            if (object.folderChanged != null) {
+                if (typeof object.folderChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.folderChanged: object expected");
+                message.folderChanged = $root.notification.FolderChanged.fromObject(object.folderChanged);
+            }
+            if (object.folderViewChanged != null) {
+                if (typeof object.folderViewChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.folderViewChanged: object expected");
+                message.folderViewChanged = $root.notification.FolderViewChanged.fromObject(object.folderViewChanged);
+            }
+            if (object.inboxNotification != null) {
+                if (typeof object.inboxNotification !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.inboxNotification: object expected");
+                message.inboxNotification = $root.notification.InboxNotification.fromObject(object.inboxNotification);
             }
             return message;
         };
@@ -2322,6 +3964,21 @@ export const notification = $root.notification = (() => {
                 object.workspaceMemberProfileChanged = $root.notification.WorkspaceMemberProfileChanged.toObject(message.workspaceMemberProfileChanged, options);
                 if (options.oneofs)
                     object.payload = "workspaceMemberProfileChanged";
+            }
+            if (message.folderChanged != null && message.hasOwnProperty("folderChanged")) {
+                object.folderChanged = $root.notification.FolderChanged.toObject(message.folderChanged, options);
+                if (options.oneofs)
+                    object.payload = "folderChanged";
+            }
+            if (message.folderViewChanged != null && message.hasOwnProperty("folderViewChanged")) {
+                object.folderViewChanged = $root.notification.FolderViewChanged.toObject(message.folderViewChanged, options);
+                if (options.oneofs)
+                    object.payload = "folderViewChanged";
+            }
+            if (message.inboxNotification != null && message.hasOwnProperty("inboxNotification")) {
+                object.inboxNotification = $root.notification.InboxNotification.toObject(message.inboxNotification, options);
+                if (options.oneofs)
+                    object.payload = "inboxNotification";
             }
             return object;
         };
@@ -5283,6 +6940,1019 @@ export const notification = $root.notification = (() => {
         };
 
         return WorkspaceMemberProfileChanged;
+    })();
+
+    notification.FolderChanged = (function() {
+
+        /**
+         * Properties of a FolderChanged.
+         * @memberof notification
+         * @interface IFolderChanged
+         * @property {string|null} [outlineDiffJson] FolderChanged outlineDiffJson
+         * @property {string|null} [folderRid] FolderChanged folderRid
+         */
+
+        /**
+         * Constructs a new FolderChanged.
+         * @memberof notification
+         * @classdesc Represents a FolderChanged.
+         * @implements IFolderChanged
+         * @constructor
+         * @param {notification.IFolderChanged=} [properties] Properties to set
+         */
+        function FolderChanged(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * FolderChanged outlineDiffJson.
+         * @member {string} outlineDiffJson
+         * @memberof notification.FolderChanged
+         * @instance
+         */
+        FolderChanged.prototype.outlineDiffJson = "";
+
+        /**
+         * FolderChanged folderRid.
+         * @member {string|null|undefined} folderRid
+         * @memberof notification.FolderChanged
+         * @instance
+         */
+        FolderChanged.prototype.folderRid = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * FolderChanged _folderRid.
+         * @member {"folderRid"|undefined} _folderRid
+         * @memberof notification.FolderChanged
+         * @instance
+         */
+        Object.defineProperty(FolderChanged.prototype, "_folderRid", {
+            get: $util.oneOfGetter($oneOfFields = ["folderRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new FolderChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {notification.IFolderChanged=} [properties] Properties to set
+         * @returns {notification.FolderChanged} FolderChanged instance
+         */
+        FolderChanged.create = function create(properties) {
+            return new FolderChanged(properties);
+        };
+
+        /**
+         * Encodes the specified FolderChanged message. Does not implicitly {@link notification.FolderChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {notification.IFolderChanged} message FolderChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FolderChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.outlineDiffJson != null && Object.hasOwnProperty.call(message, "outlineDiffJson"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.outlineDiffJson);
+            if (message.folderRid != null && Object.hasOwnProperty.call(message, "folderRid"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.folderRid);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified FolderChanged message, length delimited. Does not implicitly {@link notification.FolderChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {notification.IFolderChanged} message FolderChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FolderChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a FolderChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.FolderChanged} FolderChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FolderChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.FolderChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.outlineDiffJson = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.folderRid = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a FolderChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.FolderChanged} FolderChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FolderChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a FolderChanged message.
+         * @function verify
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        FolderChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.outlineDiffJson != null && message.hasOwnProperty("outlineDiffJson"))
+                if (!$util.isString(message.outlineDiffJson))
+                    return "outlineDiffJson: string expected";
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                properties._folderRid = 1;
+                if (!$util.isString(message.folderRid))
+                    return "folderRid: string expected";
+            }
+            return null;
+        };
+
+        /**
+         * Creates a FolderChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.FolderChanged} FolderChanged
+         */
+        FolderChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.FolderChanged)
+                return object;
+            let message = new $root.notification.FolderChanged();
+            if (object.outlineDiffJson != null)
+                message.outlineDiffJson = String(object.outlineDiffJson);
+            if (object.folderRid != null)
+                message.folderRid = String(object.folderRid);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a FolderChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {notification.FolderChanged} message FolderChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        FolderChanged.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults)
+                object.outlineDiffJson = "";
+            if (message.outlineDiffJson != null && message.hasOwnProperty("outlineDiffJson"))
+                object.outlineDiffJson = message.outlineDiffJson;
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                object.folderRid = message.folderRid;
+                if (options.oneofs)
+                    object._folderRid = "folderRid";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this FolderChanged to JSON.
+         * @function toJSON
+         * @memberof notification.FolderChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        FolderChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for FolderChanged
+         * @function getTypeUrl
+         * @memberof notification.FolderChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        FolderChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.FolderChanged";
+        };
+
+        return FolderChanged;
+    })();
+
+    notification.FolderViewChanged = (function() {
+
+        /**
+         * Properties of a FolderViewChanged.
+         * @memberof notification
+         * @interface IFolderViewChanged
+         * @property {number|null} [changeType] FolderViewChanged changeType
+         * @property {string|null} [viewId] FolderViewChanged viewId
+         * @property {string|null} [viewJson] FolderViewChanged viewJson
+         * @property {string|null} [parentViewId] FolderViewChanged parentViewId
+         * @property {Array.<string>|null} [childViewIds] FolderViewChanged childViewIds
+         * @property {string|null} [folderRid] FolderViewChanged folderRid
+         */
+
+        /**
+         * Constructs a new FolderViewChanged.
+         * @memberof notification
+         * @classdesc Represents a FolderViewChanged.
+         * @implements IFolderViewChanged
+         * @constructor
+         * @param {notification.IFolderViewChanged=} [properties] Properties to set
+         */
+        function FolderViewChanged(properties) {
+            this.childViewIds = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * FolderViewChanged changeType.
+         * @member {number} changeType
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.changeType = 0;
+
+        /**
+         * FolderViewChanged viewId.
+         * @member {string} viewId
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.viewId = "";
+
+        /**
+         * FolderViewChanged viewJson.
+         * @member {string|null|undefined} viewJson
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.viewJson = null;
+
+        /**
+         * FolderViewChanged parentViewId.
+         * @member {string|null|undefined} parentViewId
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.parentViewId = null;
+
+        /**
+         * FolderViewChanged childViewIds.
+         * @member {Array.<string>} childViewIds
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.childViewIds = $util.emptyArray;
+
+        /**
+         * FolderViewChanged folderRid.
+         * @member {string|null|undefined} folderRid
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.folderRid = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * FolderViewChanged _viewJson.
+         * @member {"viewJson"|undefined} _viewJson
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        Object.defineProperty(FolderViewChanged.prototype, "_viewJson", {
+            get: $util.oneOfGetter($oneOfFields = ["viewJson"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * FolderViewChanged _parentViewId.
+         * @member {"parentViewId"|undefined} _parentViewId
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        Object.defineProperty(FolderViewChanged.prototype, "_parentViewId", {
+            get: $util.oneOfGetter($oneOfFields = ["parentViewId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * FolderViewChanged _folderRid.
+         * @member {"folderRid"|undefined} _folderRid
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        Object.defineProperty(FolderViewChanged.prototype, "_folderRid", {
+            get: $util.oneOfGetter($oneOfFields = ["folderRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new FolderViewChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.IFolderViewChanged=} [properties] Properties to set
+         * @returns {notification.FolderViewChanged} FolderViewChanged instance
+         */
+        FolderViewChanged.create = function create(properties) {
+            return new FolderViewChanged(properties);
+        };
+
+        /**
+         * Encodes the specified FolderViewChanged message. Does not implicitly {@link notification.FolderViewChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.IFolderViewChanged} message FolderViewChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FolderViewChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.changeType != null && Object.hasOwnProperty.call(message, "changeType"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.changeType);
+            if (message.viewId != null && Object.hasOwnProperty.call(message, "viewId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.viewId);
+            if (message.viewJson != null && Object.hasOwnProperty.call(message, "viewJson"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.viewJson);
+            if (message.parentViewId != null && Object.hasOwnProperty.call(message, "parentViewId"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.parentViewId);
+            if (message.childViewIds != null && message.childViewIds.length)
+                for (let i = 0; i < message.childViewIds.length; ++i)
+                    writer.uint32(/* id 5, wireType 2 =*/42).string(message.childViewIds[i]);
+            if (message.folderRid != null && Object.hasOwnProperty.call(message, "folderRid"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.folderRid);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified FolderViewChanged message, length delimited. Does not implicitly {@link notification.FolderViewChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.IFolderViewChanged} message FolderViewChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FolderViewChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a FolderViewChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.FolderViewChanged} FolderViewChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FolderViewChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.FolderViewChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.changeType = reader.uint32();
+                        break;
+                    }
+                case 2: {
+                        message.viewId = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.viewJson = reader.string();
+                        break;
+                    }
+                case 4: {
+                        message.parentViewId = reader.string();
+                        break;
+                    }
+                case 5: {
+                        if (!(message.childViewIds && message.childViewIds.length))
+                            message.childViewIds = [];
+                        message.childViewIds.push(reader.string());
+                        break;
+                    }
+                case 6: {
+                        message.folderRid = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a FolderViewChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.FolderViewChanged} FolderViewChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FolderViewChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a FolderViewChanged message.
+         * @function verify
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        FolderViewChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.changeType != null && message.hasOwnProperty("changeType"))
+                if (!$util.isInteger(message.changeType))
+                    return "changeType: integer expected";
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                if (!$util.isString(message.viewId))
+                    return "viewId: string expected";
+            if (message.viewJson != null && message.hasOwnProperty("viewJson")) {
+                properties._viewJson = 1;
+                if (!$util.isString(message.viewJson))
+                    return "viewJson: string expected";
+            }
+            if (message.parentViewId != null && message.hasOwnProperty("parentViewId")) {
+                properties._parentViewId = 1;
+                if (!$util.isString(message.parentViewId))
+                    return "parentViewId: string expected";
+            }
+            if (message.childViewIds != null && message.hasOwnProperty("childViewIds")) {
+                if (!Array.isArray(message.childViewIds))
+                    return "childViewIds: array expected";
+                for (let i = 0; i < message.childViewIds.length; ++i)
+                    if (!$util.isString(message.childViewIds[i]))
+                        return "childViewIds: string[] expected";
+            }
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                properties._folderRid = 1;
+                if (!$util.isString(message.folderRid))
+                    return "folderRid: string expected";
+            }
+            return null;
+        };
+
+        /**
+         * Creates a FolderViewChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.FolderViewChanged} FolderViewChanged
+         */
+        FolderViewChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.FolderViewChanged)
+                return object;
+            let message = new $root.notification.FolderViewChanged();
+            if (object.changeType != null)
+                message.changeType = object.changeType >>> 0;
+            if (object.viewId != null)
+                message.viewId = String(object.viewId);
+            if (object.viewJson != null)
+                message.viewJson = String(object.viewJson);
+            if (object.parentViewId != null)
+                message.parentViewId = String(object.parentViewId);
+            if (object.childViewIds) {
+                if (!Array.isArray(object.childViewIds))
+                    throw TypeError(".notification.FolderViewChanged.childViewIds: array expected");
+                message.childViewIds = [];
+                for (let i = 0; i < object.childViewIds.length; ++i)
+                    message.childViewIds[i] = String(object.childViewIds[i]);
+            }
+            if (object.folderRid != null)
+                message.folderRid = String(object.folderRid);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a FolderViewChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.FolderViewChanged} message FolderViewChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        FolderViewChanged.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults)
+                object.childViewIds = [];
+            if (options.defaults) {
+                object.changeType = 0;
+                object.viewId = "";
+            }
+            if (message.changeType != null && message.hasOwnProperty("changeType"))
+                object.changeType = message.changeType;
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                object.viewId = message.viewId;
+            if (message.viewJson != null && message.hasOwnProperty("viewJson")) {
+                object.viewJson = message.viewJson;
+                if (options.oneofs)
+                    object._viewJson = "viewJson";
+            }
+            if (message.parentViewId != null && message.hasOwnProperty("parentViewId")) {
+                object.parentViewId = message.parentViewId;
+                if (options.oneofs)
+                    object._parentViewId = "parentViewId";
+            }
+            if (message.childViewIds && message.childViewIds.length) {
+                object.childViewIds = [];
+                for (let j = 0; j < message.childViewIds.length; ++j)
+                    object.childViewIds[j] = message.childViewIds[j];
+            }
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                object.folderRid = message.folderRid;
+                if (options.oneofs)
+                    object._folderRid = "folderRid";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this FolderViewChanged to JSON.
+         * @function toJSON
+         * @memberof notification.FolderViewChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        FolderViewChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for FolderViewChanged
+         * @function getTypeUrl
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        FolderViewChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.FolderViewChanged";
+        };
+
+        return FolderViewChanged;
+    })();
+
+    notification.InboxNotification = (function() {
+
+        /**
+         * Properties of an InboxNotification.
+         * @memberof notification
+         * @interface IInboxNotification
+         * @property {string|null} [id] InboxNotification id
+         * @property {string|null} [type] InboxNotification type
+         * @property {string|null} [viewId] InboxNotification viewId
+         * @property {number|Long|null} [actorUid] InboxNotification actorUid
+         * @property {string|null} [metadataJson] InboxNotification metadataJson
+         * @property {number|Long|null} [createdAt] InboxNotification createdAt
+         */
+
+        /**
+         * Constructs a new InboxNotification.
+         * @memberof notification
+         * @classdesc Represents an InboxNotification.
+         * @implements IInboxNotification
+         * @constructor
+         * @param {notification.IInboxNotification=} [properties] Properties to set
+         */
+        function InboxNotification(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * InboxNotification id.
+         * @member {string} id
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.id = "";
+
+        /**
+         * InboxNotification type.
+         * @member {string} type
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.type = "";
+
+        /**
+         * InboxNotification viewId.
+         * @member {string|null|undefined} viewId
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.viewId = null;
+
+        /**
+         * InboxNotification actorUid.
+         * @member {number|Long|null|undefined} actorUid
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.actorUid = null;
+
+        /**
+         * InboxNotification metadataJson.
+         * @member {string} metadataJson
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.metadataJson = "";
+
+        /**
+         * InboxNotification createdAt.
+         * @member {number|Long} createdAt
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.createdAt = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * InboxNotification _viewId.
+         * @member {"viewId"|undefined} _viewId
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        Object.defineProperty(InboxNotification.prototype, "_viewId", {
+            get: $util.oneOfGetter($oneOfFields = ["viewId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * InboxNotification _actorUid.
+         * @member {"actorUid"|undefined} _actorUid
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        Object.defineProperty(InboxNotification.prototype, "_actorUid", {
+            get: $util.oneOfGetter($oneOfFields = ["actorUid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new InboxNotification instance using the specified properties.
+         * @function create
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.IInboxNotification=} [properties] Properties to set
+         * @returns {notification.InboxNotification} InboxNotification instance
+         */
+        InboxNotification.create = function create(properties) {
+            return new InboxNotification(properties);
+        };
+
+        /**
+         * Encodes the specified InboxNotification message. Does not implicitly {@link notification.InboxNotification.verify|verify} messages.
+         * @function encode
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.IInboxNotification} message InboxNotification message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InboxNotification.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.id != null && Object.hasOwnProperty.call(message, "id"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.id);
+            if (message.type != null && Object.hasOwnProperty.call(message, "type"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.type);
+            if (message.viewId != null && Object.hasOwnProperty.call(message, "viewId"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.viewId);
+            if (message.actorUid != null && Object.hasOwnProperty.call(message, "actorUid"))
+                writer.uint32(/* id 4, wireType 0 =*/32).int64(message.actorUid);
+            if (message.metadataJson != null && Object.hasOwnProperty.call(message, "metadataJson"))
+                writer.uint32(/* id 5, wireType 2 =*/42).string(message.metadataJson);
+            if (message.createdAt != null && Object.hasOwnProperty.call(message, "createdAt"))
+                writer.uint32(/* id 6, wireType 0 =*/48).int64(message.createdAt);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified InboxNotification message, length delimited. Does not implicitly {@link notification.InboxNotification.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.IInboxNotification} message InboxNotification message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InboxNotification.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an InboxNotification message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.InboxNotification} InboxNotification
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InboxNotification.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.InboxNotification();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.id = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.type = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.viewId = reader.string();
+                        break;
+                    }
+                case 4: {
+                        message.actorUid = reader.int64();
+                        break;
+                    }
+                case 5: {
+                        message.metadataJson = reader.string();
+                        break;
+                    }
+                case 6: {
+                        message.createdAt = reader.int64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an InboxNotification message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.InboxNotification} InboxNotification
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InboxNotification.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an InboxNotification message.
+         * @function verify
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        InboxNotification.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.id != null && message.hasOwnProperty("id"))
+                if (!$util.isString(message.id))
+                    return "id: string expected";
+            if (message.type != null && message.hasOwnProperty("type"))
+                if (!$util.isString(message.type))
+                    return "type: string expected";
+            if (message.viewId != null && message.hasOwnProperty("viewId")) {
+                properties._viewId = 1;
+                if (!$util.isString(message.viewId))
+                    return "viewId: string expected";
+            }
+            if (message.actorUid != null && message.hasOwnProperty("actorUid")) {
+                properties._actorUid = 1;
+                if (!$util.isInteger(message.actorUid) && !(message.actorUid && $util.isInteger(message.actorUid.low) && $util.isInteger(message.actorUid.high)))
+                    return "actorUid: integer|Long expected";
+            }
+            if (message.metadataJson != null && message.hasOwnProperty("metadataJson"))
+                if (!$util.isString(message.metadataJson))
+                    return "metadataJson: string expected";
+            if (message.createdAt != null && message.hasOwnProperty("createdAt"))
+                if (!$util.isInteger(message.createdAt) && !(message.createdAt && $util.isInteger(message.createdAt.low) && $util.isInteger(message.createdAt.high)))
+                    return "createdAt: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates an InboxNotification message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.InboxNotification} InboxNotification
+         */
+        InboxNotification.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.InboxNotification)
+                return object;
+            let message = new $root.notification.InboxNotification();
+            if (object.id != null)
+                message.id = String(object.id);
+            if (object.type != null)
+                message.type = String(object.type);
+            if (object.viewId != null)
+                message.viewId = String(object.viewId);
+            if (object.actorUid != null)
+                if ($util.Long)
+                    (message.actorUid = $util.Long.fromValue(object.actorUid)).unsigned = false;
+                else if (typeof object.actorUid === "string")
+                    message.actorUid = parseInt(object.actorUid, 10);
+                else if (typeof object.actorUid === "number")
+                    message.actorUid = object.actorUid;
+                else if (typeof object.actorUid === "object")
+                    message.actorUid = new $util.LongBits(object.actorUid.low >>> 0, object.actorUid.high >>> 0).toNumber();
+            if (object.metadataJson != null)
+                message.metadataJson = String(object.metadataJson);
+            if (object.createdAt != null)
+                if ($util.Long)
+                    (message.createdAt = $util.Long.fromValue(object.createdAt)).unsigned = false;
+                else if (typeof object.createdAt === "string")
+                    message.createdAt = parseInt(object.createdAt, 10);
+                else if (typeof object.createdAt === "number")
+                    message.createdAt = object.createdAt;
+                else if (typeof object.createdAt === "object")
+                    message.createdAt = new $util.LongBits(object.createdAt.low >>> 0, object.createdAt.high >>> 0).toNumber();
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an InboxNotification message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.InboxNotification} message InboxNotification
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        InboxNotification.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.id = "";
+                object.type = "";
+                object.metadataJson = "";
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, false);
+                    object.createdAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.createdAt = options.longs === String ? "0" : 0;
+            }
+            if (message.id != null && message.hasOwnProperty("id"))
+                object.id = message.id;
+            if (message.type != null && message.hasOwnProperty("type"))
+                object.type = message.type;
+            if (message.viewId != null && message.hasOwnProperty("viewId")) {
+                object.viewId = message.viewId;
+                if (options.oneofs)
+                    object._viewId = "viewId";
+            }
+            if (message.actorUid != null && message.hasOwnProperty("actorUid")) {
+                if (typeof message.actorUid === "number")
+                    object.actorUid = options.longs === String ? String(message.actorUid) : message.actorUid;
+                else
+                    object.actorUid = options.longs === String ? $util.Long.prototype.toString.call(message.actorUid) : options.longs === Number ? new $util.LongBits(message.actorUid.low >>> 0, message.actorUid.high >>> 0).toNumber() : message.actorUid;
+                if (options.oneofs)
+                    object._actorUid = "actorUid";
+            }
+            if (message.metadataJson != null && message.hasOwnProperty("metadataJson"))
+                object.metadataJson = message.metadataJson;
+            if (message.createdAt != null && message.hasOwnProperty("createdAt"))
+                if (typeof message.createdAt === "number")
+                    object.createdAt = options.longs === String ? String(message.createdAt) : message.createdAt;
+                else
+                    object.createdAt = options.longs === String ? $util.Long.prototype.toString.call(message.createdAt) : options.longs === Number ? new $util.LongBits(message.createdAt.low >>> 0, message.createdAt.high >>> 0).toNumber() : message.createdAt;
+            return object;
+        };
+
+        /**
+         * Converts this InboxNotification to JSON.
+         * @function toJSON
+         * @memberof notification.InboxNotification
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        InboxNotification.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for InboxNotification
+         * @function getTypeUrl
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        InboxNotification.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.InboxNotification";
+        };
+
+        return InboxNotification;
     })();
 
     return notification;

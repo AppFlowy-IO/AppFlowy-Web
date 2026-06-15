@@ -6,6 +6,7 @@ import { useAppAwareness } from '@/components/app/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 const isImageSource = (value?: string) => {
   if (!value) return false;
@@ -20,7 +21,7 @@ export function Users({ viewId }: { viewId?: string }) {
   const users = useUsersSelector(awareness);
 
   useEffect(() => {
-    console.debug('[Header.Users] users updated', users);
+    Log.debug('[Header.Users] users updated', users);
   }, [users]);
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);

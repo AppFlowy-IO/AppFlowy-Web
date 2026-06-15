@@ -1,14 +1,17 @@
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { Editor, EditorData, EditorProvider, FixedToolbar, useEditor } from '@appflowyinc/editor';
+
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+
 import '@appflowyinc/editor/style';
 import React, { useCallback, useContext, useEffect, useMemo } from 'react';
 
 import { QuickNote, QuickNoteEditorData } from '@/application/types';
+import { QuickNoteService } from '@/application/services/domains';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { useAddNode } from '@/components/quick-note/QuickNote.hooks';
 import { getTitle } from '@/components/quick-note/utils';
+
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
@@ -90,19 +93,18 @@ function NoteEditor({
   }, [editor, note.id]);
 
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const service = useService();
 
   const handleUpdate = useCallback(
     async (data: EditorData) => {
-      if (!service || !currentWorkspaceId) return;
+      if (!currentWorkspaceId) return;
       try {
-        await service.updateQuickNote(currentWorkspaceId, note.id, data as QuickNoteEditorData[]);
+        await QuickNoteService.update(currentWorkspaceId, note.id, data as QuickNoteEditorData[]);
         // eslint-disable-next-line
       } catch (e: any) {
         console.error(e);
       }
     },
-    [service, currentWorkspaceId, note.id]
+    [currentWorkspaceId, note.id]
   );
 
   const updatedAt = useMemo(() => {

@@ -1,5 +1,6 @@
-import { DEFAULT_ROW_HEIGHT, useDatabaseContext } from '@/application/database-yjs';
 import { useCallback, useRef } from 'react';
+
+import { DEFAULT_ROW_HEIGHT, useDatabaseContext } from '@/application/database-yjs';
 
 export function useMeasureHeight ({
   forceUpdate,

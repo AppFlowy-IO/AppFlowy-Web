@@ -1,6 +1,7 @@
+import { forwardRef, memo } from 'react';
+
 import { HEADER_HEIGHT } from '@/application/constants';
 import { EditorElementProps, HeadingNode } from '@/components/editor/editor.type';
-import { forwardRef, memo } from 'react';
 
 export const Heading = memo(
   forwardRef<HTMLDivElement, EditorElementProps<HeadingNode>>(({ node, children, ...attributes }, ref) => {

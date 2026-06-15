@@ -1,10 +1,13 @@
-import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import SpaceItem from '@/components/chat/components/view/space-item';
-import { useTranslation } from 'react-i18next';
 import { hasDatabaseViewChild, searchDatabaseViews } from '@/components/chat/lib/views';
+import { useViewLoader } from '@/components/chat/provider/view-loader-provider';
 import { View } from '@/components/chat/types';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+
+
 import ViewList from './view-list';
 
 export function SpaceList({

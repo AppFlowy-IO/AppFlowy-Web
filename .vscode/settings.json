@@ -43,5 +43,6 @@
   "editor.quickSuggestions": {
     "strings": "on"
   },
-  "files.autoSave": "afterDelay"
+  "files.autoSave": "afterDelay",
+  "dart.mcpServerLogFile": null
 }

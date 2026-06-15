@@ -1,24 +1,37 @@
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import { TransitionProps } from '@mui/material/transitions';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, View, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
-import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import {
+  useAppOperations,
+  useAppOutline,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+  useLoadViews,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
+} from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { ViewService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
 
@@ -35,99 +48,212 @@ const Transition = React.forwardRef(function Transition(
 
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
-
   const { t } = useTranslation();
+  const operations = useAppOperations();
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
+    bindViewSync,
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
-    eventEmitter,
-    ...handlers
-  } = useAppHandlers();
+  } = operations;
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
+  const eventEmitter = useEventEmitter();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
+
   const outline = useAppOutline();
+  const requestInstance = getAxiosInstance();
   const { getViewReadOnlyStatus } = useViewOperations();
-  const [doc, setDoc] = React.useState<
-    | {
-        id: string;
-        doc: YDoc;
+
+  // Document state
+  const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
+  const [notFound, setNotFound] = useState(false);
+  const [syncBound, setSyncBound] = useState(false);
+
+  // Fallback view metadata fetched from server (used when view not in outline yet).
+  // Stores the full View (including children/extra) so getFirstChildView can
+  // resolve database containers to their first child view.
+  const [fallbackMeta, setFallbackMeta] = useState<View | null>(null);
+
+  // Get view from outline
+  const outlineView = useMemo(() => {
+    if (!outline || !viewId) return undefined;
+    return findView(outline, viewId);
+  }, [outline, viewId]);
+
+  // Compute effective view ID (for database containers, use first child)
+  const effectiveViewId = useMemo(() => {
+    if (!viewId) return undefined;
+
+    // Try outline first, then fallback
+    const meta = outlineView || fallbackMeta;
+
+    if (meta) {
+      const firstChild = getFirstChildView(meta as Parameters<typeof getFirstChildView>[0]);
+
+      return firstChild?.view_id ?? viewId;
+    }
+
+    return viewId;
+  }, [viewId, outlineView, fallbackMeta]);
+
+  // Get effective view from outline
+  const effectiveOutlineView = useMemo(() => {
+    if (!outline || !effectiveViewId) return undefined;
+    return findView(outline, effectiveViewId);
+  }, [outline, effectiveViewId]);
+
+  // Fetch fallback metadata when view not in outline
+  useEffect(() => {
+    // Skip if modal closed, view already in outline, or missing dependencies
+    if (!open || effectiveOutlineView || !effectiveViewId || !workspaceId) {
+      // Clear fallback when no longer needed
+      if (fallbackMeta && (effectiveOutlineView || !open)) {
+        setFallbackMeta(null);
       }
-    | undefined
-  >(undefined);
-  const [notFound, setNotFound] = React.useState(false);
-  const service = useService();
-  const requestInstance = service?.getAxiosInstance();
+
+      return;
+    }
+
+    let cancelled = false;
+
+    ViewService.get(workspaceId, effectiveViewId)
+      .then((fetchedView) => {
+        if (!cancelled && fetchedView) {
+          setFallbackMeta(fetchedView);
+        }
+      })
+      .catch((e) => {
+        console.warn('[ViewModal] Failed to fetch view metadata for', effectiveViewId, e);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, effectiveOutlineView, effectiveViewId, workspaceId, fallbackMeta]);
+
+  // Load document
   const loadPageDoc = useCallback(
-    async (id: string) => {
+    async (targetViewId: string) => {
       setNotFound(false);
       setDoc(undefined);
+      setSyncBound(false);
       try {
-        const doc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
-        setDoc({ doc, id });
+        setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
         setNotFound(true);
-        console.error(e);
+        console.error('[ViewModal] Failed to load document:', e);
       }
     },
     [loadView]
   );
 
+  // Wait for metadata (outline or fallback) before loading the doc.
+  // This ensures database containers resolve to their first child view,
+  // and the correct layout is known for the page-view API call.
+  const resolvedView = effectiveOutlineView || fallbackMeta;
+
+  // Gate on metadata availability via a boolean so outline updates (e.g. a
+  // title edit propagating through the outline tree) don't churn the dep
+  // array and re-trigger loadPageDoc — which would setDoc(undefined) and
+  // remount the editor mid-keystroke.
+  const hasResolvedView = !!resolvedView;
+
   useEffect(() => {
-    if (open && viewId) {
-      void loadPageDoc(viewId);
+    if (open && effectiveViewId && hasResolvedView) {
+      void loadPageDoc(effectiveViewId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, viewId]);
+  }, [open, effectiveViewId, loadPageDoc, hasResolvedView]);
+
+  const layout = resolvedView?.layout ?? ViewLayout.Document;
+
+  // Build viewMeta for the View component
+  const viewMeta: ViewMetaProps | null = useMemo(() => {
+    if (!resolvedView) return null;
+
+    // When we have full outline view, use all properties
+    if (effectiveOutlineView) {
+      return {
+        name: effectiveOutlineView.name,
+        icon: effectiveOutlineView.icon || undefined,
+        cover: effectiveOutlineView.extra?.cover || undefined,
+        layout: effectiveOutlineView.layout,
+        visibleViewIds: [],
+        viewId: effectiveOutlineView.view_id,
+        extra: effectiveOutlineView.extra,
+        workspaceId,
+      };
+    }
+
+    // Fallback: resolvedView is a full View from the server
+    return {
+      name: resolvedView.name,
+      icon: resolvedView.icon || undefined,
+      cover: resolvedView.extra?.cover || undefined,
+      layout: resolvedView.layout,
+      visibleViewIds: [],
+      viewId: resolvedView.view_id,
+      extra: resolvedView.extra,
+      workspaceId,
+    };
+  }, [resolvedView, effectiveOutlineView, workspaceId]);
 
   const handleClose = useCallback(() => {
     setDoc(undefined);
+    setSyncBound(false);
+    setFallbackMeta(null);
     onClose();
   }, [onClose]);
 
-  const view = useMemo(() => {
-    if (!outline || !viewId) return;
-    return findView(outline, viewId);
-  }, [outline, viewId]);
+  useEffect(() => {
+    if (!doc || !bindViewSync || syncBound) return;
 
-  const viewMeta: ViewMetaProps | null = useMemo(() => {
-    return view
-      ? {
-          name: view.name,
-          icon: view.icon || undefined,
-          cover: view.extra?.cover || undefined,
-          layout: view.layout,
-          visibleViewIds: [],
-          viewId: view.view_id,
-          extra: view.extra,
-          workspaceId,
-        }
-      : null;
-  }, [view, workspaceId]);
+    const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+
+    if (docViewId !== doc.id) {
+      return;
+    }
+
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
+    const syncContext = bindViewSync(doc.doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+    }
+  }, [doc, bindViewSync, syncBound]);
 
   const handleUploadFile = useCallback(
-    (file: File) => {
-      if (view && uploadFile) {
-        return uploadFile(view.view_id, file);
+    (file: File, onProgress?: (progress: number) => void) => {
+      if (resolvedView && uploadFile) {
+        return uploadFile(resolvedView.view_id, file, onProgress);
       }
 
       return Promise.reject();
     },
-    [uploadFile, view]
+    [uploadFile, resolvedView]
   );
 
   const ref = useRef<HTMLDivElement | null>(null);
-  const [movePageOpen, setMovePageOpen] = React.useState(false);
+  const [movePageOpen, setMovePageOpen] = useState(false);
+
   const renderModalTitle = useCallback(() => {
-    if (!viewId) return null;
-    const space = findAncestors(outline || [], viewId)?.find((item) => item.extra?.is_space);
+    if (!effectiveViewId) return null;
+    const space = findAncestors(outline || [], effectiveViewId)?.find((item) => item.extra?.is_space);
 
     return (
       <div
@@ -138,7 +264,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
             <IconButton
               size={'small'}
               onClick={async () => {
-                await toView(viewId);
+                await toView(effectiveViewId);
                 handleClose();
               }}
             >
@@ -148,7 +274,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
           <Divider orientation={'vertical'} className={'h-4'} />
           {space && ref.current && (
             <MovePagePopover
-              viewId={viewId}
+              viewId={effectiveViewId}
               open={movePageOpen}
               onOpenChange={setMovePageOpen}
               onMoved={() => {
@@ -175,8 +301,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
 
         <div className={'flex items-center gap-4'}>
-          <Users viewId={viewId} />
-          <ShareButton viewId={viewId} />
+          <Users viewId={effectiveViewId} />
+          <ShareButton viewId={effectiveViewId} />
           {ref.current && (
             <MoreActions
               menuContentProps={{
@@ -184,7 +310,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
                 align: 'end',
               }}
               onDeleted={handleClose}
-              viewId={viewId}
+              viewId={effectiveViewId}
+              enableVersionHistory={false}
             />
           )}
 
@@ -195,15 +322,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [handleClose, movePageOpen, outline, t, toView, viewId]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
 
-  const layout = view?.layout || ViewLayout.Document;
-
-  // Check if view is in shareWithMe and determine readonly status
+  // Check if view is in shareWithMe and determine readonly status.
+  // `resolvedView` includes the server-fetched fallback, so locked pages opened
+  // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
-    if (!viewId) return false;
-    return getViewReadOnlyStatus(viewId, outline);
-  }, [getViewReadOnlyStatus, viewId, outline]);
+    if (!effectiveViewId) return false;
+    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
+  }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
 
   const View = useMemo(() => {
     switch (layout) {
@@ -212,6 +339,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Grid:
       case ViewLayout.Board:
       case ViewLayout.Calendar:
+      case ViewLayout.Chart:
         return DatabaseView;
       default:
         return null;
@@ -229,17 +357,35 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
-        createRowDoc={createRowDoc}
+        createRow={createRow}
         loadView={loadView}
+        bindViewSync={bindViewSync}
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}
         onWordCountChange={setWordCount}
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
-        {...handlers}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+        getSubscriptions={operations.getSubscriptions}
+        getMentionUser={getMentionUser}
+        eventEmitter={eventEmitter}
+        getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+        loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
+        loadDatabasePrompts={operations.loadDatabasePrompts}
+        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+        loadRowDocument={operations.loadRowDocument}
+        createRowDocument={operations.createRowDocument}
+        duplicateRowDocument={operations.duplicateRowDocument}
+        updatePageIcon={operations.updatePageIcon}
+        updatePageName={operations.updatePageName}
+        generateAISummaryForRow={operations.generateAISummaryForRow}
+        generateAITranslateForRow={operations.generateAITranslateForRow}
       />
     );
   }, [
@@ -251,23 +397,28 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     isReadOnly,
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
+    bindViewSync,
     updatePage,
     addPage,
     deletePage,
+    operations,
     openPageModal,
     loadViews,
     setWordCount,
     handleUploadFile,
-    handlers,
+    scheduleDeferredCleanup,
+    getMentionUser,
+    eventEmitter,
+    loadDatabaseRelations,
   ]);
 
   const currentUser = useCurrentUser();
 
   useEffect(() => {
     const handleShareViewsChanged = ({ emails, viewId: id }: { emails: string[]; viewId: string }) => {
-      if (id === viewId && emails.includes(currentUser?.email || '')) {
+      if (id === effectiveViewId && emails.includes(currentUser?.email || '')) {
         toast.success('Permission changed');
       }
     };
@@ -281,7 +432,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
       }
     };
-  }, [eventEmitter, viewId, currentUser?.email]);
+  }, [eventEmitter, effectiveViewId, currentUser?.email]);
 
   return (
     <Dialog
@@ -289,9 +440,11 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       onClose={handleClose}
       fullWidth={true}
       keepMounted={false}
-      disableAutoFocus={false}
+      disableAutoFocus={true}
       disableEnforceFocus={false}
       disableRestoreFocus={true}
+      disableScrollLock={true}
+      disablePortal={false}
       TransitionComponent={Transition}
       PaperProps={{
         ref,
@@ -299,7 +452,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       }}
     >
       {renderModalTitle()}
-      {notFound ? <RecordNotFound viewId={viewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {notFound ? <RecordNotFound viewId={effectiveViewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
     </Dialog>
   );
 }

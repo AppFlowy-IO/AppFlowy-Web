@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { Login } from '@/components/login';
@@ -8,16 +8,35 @@ import CheckEmailResetPassword from '@/components/login/CheckEmailResetPassword'
 import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { SignUpPassword } from '@/components/login/SignUpPassword';
+import { isSafeRedirectUrl, safeDecodeRedirectParam } from '@/application/session/sign_in';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 function LoginPage() {
-  const [search] = useSearchParams();
+  const [search, setSearch] = useSearchParams();
   const action = search.get('action') || '';
   const email = search.get('email') || '';
   const force = search.get('force') === 'true';
   const redirectTo = search.get('redirectTo') || '';
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const type = search.get('type') || '';
+  const isAuthenticated = useIsAuthenticatedOptional();
 
+
+  // Strip unsafe redirectTo from URL immediately, preserving all other params
+  useEffect(() => {
+    if (!redirectTo) return;
+
+    const decodedRedirect = safeDecodeRedirectParam(redirectTo);
+
+    if (!decodedRedirect || !isSafeRedirectUrl(decodedRedirect)) {
+      setSearch((prev) => {
+        const next = new URLSearchParams(prev);
+
+        next.delete('redirectTo');
+        return next;
+      });
+    }
+  }, [redirectTo, setSearch]);
 
   useEffect(() => {
     if (action === LOGIN_ACTION.CHANGE_PASSWORD || force) {
@@ -25,9 +44,9 @@ function LoginPage() {
     }
 
     if (isAuthenticated && redirectTo) {
-      const decodedRedirect = decodeURIComponent(redirectTo);
+      const decodedRedirect = safeDecodeRedirectParam(redirectTo);
 
-      if (decodedRedirect !== window.location.href) {
+      if (decodedRedirect && isSafeRedirectUrl(decodedRedirect) && decodedRedirect !== window.location.href) {
         window.location.href = decodedRedirect;
       }
     }
@@ -36,7 +55,7 @@ function LoginPage() {
   const renderContent = useMemo(() => {
     switch (action) {
       case LOGIN_ACTION.CHECK_EMAIL:
-        return <CheckEmail email={email} redirectTo={redirectTo} />;
+        return <CheckEmail email={email} redirectTo={redirectTo} otpType={type === 'signup' ? 'signup' : undefined} />;
       case LOGIN_ACTION.ENTER_PASSWORD:
         return <EnterPassword email={email} redirectTo={redirectTo} />;
       case LOGIN_ACTION.RESET_PASSWORD:
@@ -45,10 +64,12 @@ function LoginPage() {
         return <CheckEmailResetPassword email={email} redirectTo={redirectTo} />;
       case LOGIN_ACTION.CHANGE_PASSWORD:
         return <ChangePassword email={email} redirectTo={redirectTo} />;
+      case LOGIN_ACTION.SIGN_UP_PASSWORD:
+        return <SignUpPassword redirectTo={redirectTo} />;
       default:
         return <Login redirectTo={redirectTo} />;
     }
-  }, [action, email, redirectTo]);
+  }, [action, email, redirectTo, type]);
 
   return (
     <div className={'flex h-screen w-screen items-center justify-center bg-background-primary'}>{renderContent}</div>

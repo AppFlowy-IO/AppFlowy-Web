@@ -1,8 +1,11 @@
+import { EditorProvider } from '@appflowyinc/editor';
+
+import { ChatMessageMetadata } from '@/components/chat/types';
+
 import { AnswerMd } from '../chat-messages/answer-md';
 import { MessageActions } from '../chat-messages/message-actions';
 import MessageSources from '../chat-messages/message-sources';
-import { ChatMessageMetadata } from '@/components/chat/types';
-import { EditorProvider } from '@appflowyinc/editor';
+
 import MessageCheckbox from './message-checkbox';
 
 export function AIAnswer({

@@ -1,5 +1,8 @@
-import { UpdatePagePayload, View, ViewIconType } from '@/application/types';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+
+import { UpdatePagePayload, View, ViewIconType } from '@/application/types';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -9,8 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import React, { useCallback, useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
+
 
 function RenameModal ({ view, open, onClose, viewId, updatePage }: {
   open: boolean;

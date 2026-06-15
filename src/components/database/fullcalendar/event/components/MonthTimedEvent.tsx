@@ -1,8 +1,8 @@
 import { EventApi, EventContentArg } from '@fullcalendar/core';
 import dayjs from 'dayjs';
 
-import { cn } from '@/lib/utils';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
+import { cn } from '@/lib/utils';
 
 import { EventIconButton } from './EventIconButton';
 

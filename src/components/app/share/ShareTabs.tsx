@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
@@ -7,21 +7,38 @@ import { useAppView } from '@/components/app/app.hooks';
 import PublishPanel from '@/components/app/share/PublishPanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
+import { useShareAccessDetails } from '@/components/app/share/useShareAccessDetails';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+// Lazy: only loaded when the user opens the Export tab.
+const ExportPanel = lazy(() => import('@/components/app/share/ExportPanel'));
+
 enum TabKey {
   SHARE = 'share',
   PUBLISH = 'publish',
+  EXPORT_AS = 'export_as',
   TEMPLATE = 'template',
 }
 
-function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: string; onClose: () => void }) {
+function ShareTabs({
+  opened,
+  viewId,
+  onClose,
+  onOpenPublishManage,
+}: {
+  opened: boolean;
+  viewId: string;
+  onClose: () => void;
+  onOpenPublishManage?: () => void;
+}) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
   const currentUser = useCurrentUser();
+  const { people, isLoadingPeople, loadPeople, currentUserAccessLevel, hasFullAccess, sectionType } =
+    useShareAccessDetails(viewId, opened);
 
   const options = useMemo(() => {
     return [
@@ -36,6 +53,11 @@ function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: strin
         icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
         Panel: PublishPanel,
       },
+      {
+        value: TabKey.EXPORT_AS,
+        label: t('shareAction.exportAsTab'),
+        Panel: ExportPanel,
+      },
       currentUser?.email?.endsWith('appflowy.io') &&
         view?.is_published && {
           value: TabKey.TEMPLATE,
@@ -43,12 +65,17 @@ function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: strin
           icon: <Templates className={'mb-0 h-5 w-5'} />,
           Panel: TemplatePanel,
         },
-    ].filter(Boolean) as {
+    ].filter(Boolean) as Array<{
       value: TabKey;
       label: string;
       icon?: React.JSX.Element;
-      Panel: React.FC<{ viewId: string; onClose: () => void; opened: boolean }>;
-    }[];
+      Panel: React.FC<{
+        viewId: string;
+        onClose: () => void;
+        opened: boolean;
+        onOpenPublishManage?: () => void;
+      }>;
+    }>;
   }, [currentUser?.email, t, view?.is_published]);
 
   useEffect(() => {
@@ -76,7 +103,34 @@ function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: strin
       <Separator className='my-0' />
       {options.map((option) => (
         <TabsContent key={option.value} value={option.value}>
-          <option.Panel viewId={viewId} onClose={onClose} opened={opened} />
+          <Suspense fallback={null}>
+            {option.value === TabKey.SHARE ? (
+              <SharePanel
+                viewId={viewId}
+                people={people}
+                isLoadingPeople={isLoadingPeople}
+                onPeopleChange={loadPeople}
+                hasFullAccess={hasFullAccess}
+                sectionType={sectionType}
+              />
+            ) : option.value === TabKey.PUBLISH ? (
+              <PublishPanel
+                viewId={viewId}
+                onClose={onClose}
+                opened={opened}
+                onOpenPublishManage={onOpenPublishManage}
+                currentUserAccessLevel={currentUserAccessLevel}
+                shareDetailsLoading={isLoadingPeople}
+              />
+            ) : (
+              <option.Panel
+                viewId={viewId}
+                onClose={onClose}
+                opened={opened}
+                onOpenPublishManage={onOpenPublishManage}
+              />
+            )}
+          </Suspense>
         </TabsContent>
       ))}
     </Tabs>

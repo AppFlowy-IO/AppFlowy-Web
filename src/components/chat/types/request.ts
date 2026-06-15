@@ -98,8 +98,11 @@ export enum ChatInputMode {
 }
 
 export interface ChatSettings {
-  // from view id
+  name: string;
   rag_ids: string[];
+  metadata: Record<string, unknown>;
+  full_workspace?: boolean;
+  web_search_enabled: boolean;
 }
 
 export enum SpacePermission {
@@ -128,6 +131,10 @@ export interface ViewExtra {
     type: CoverType;
     value: string;
   };
+
+  // Database container support (aligned with Desktop/Flutter)
+  is_database_container?: boolean;
+  database_id?: string;
 }
 
 export interface ViewIcon {
@@ -164,4 +171,6 @@ export enum StreamType {
   IMAGE = '2',
   KEEP_ALIVE_KEY = '3',
   COMMENT = '4',
+  PROGRESS = '5',
+  REASONING = '6',
 }

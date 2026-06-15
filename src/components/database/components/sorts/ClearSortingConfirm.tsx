@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { useClearSortingDispatch } from '@/application/database-yjs/dispatch';
 import { Button } from '@/components/ui/button';
 import {
@@ -8,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useTranslation } from 'react-i18next';
 
 export function ClearSortingConfirm ({ open, onClose, onRemoved }: {
   open: boolean;

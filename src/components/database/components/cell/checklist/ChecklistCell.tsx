@@ -1,10 +1,10 @@
 import { isNaN } from 'lodash-es';
 import { useMemo } from 'react';
 
-import { parseChecklistData } from '@/application/database-yjs';
+import { parseChecklistFlexible } from '@/application/database-yjs';
 import { CellProps, ChecklistCell as ChecklistCellType } from '@/application/database-yjs/cell.type';
-import ChecklistCellMenu from '@/components/database/components/cell/checklist/ChecklistCellMenu';
 import LinearProgressWithLabel from '@/components/_shared/progress/LinearProgressWithLabel';
+import ChecklistCellMenu from '@/components/database/components/cell/checklist/ChecklistCellMenu';
 import { cn } from '@/lib/utils';
 
 export function ChecklistCell({
@@ -17,7 +17,7 @@ export function ChecklistCell({
   rowId,
 }: CellProps<ChecklistCellType>) {
   const data = useMemo(() => {
-    return parseChecklistData(cell?.data ?? '');
+    return parseChecklistFlexible(cell?.data ?? '');
   }, [cell?.data]);
 
   const tasks = data?.options;

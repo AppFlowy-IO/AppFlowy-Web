@@ -1,10 +1,11 @@
+import { Range } from 'slate';
+import { ReactEditor } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
-import { Range } from 'slate';
-import { ReactEditor } from 'slate-react';
 
 export function withInsertBreak(editor: ReactEditor) {
   const { insertBreak, insertSoftBreak } = editor;

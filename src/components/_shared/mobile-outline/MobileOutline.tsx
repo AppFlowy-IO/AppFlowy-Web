@@ -1,4 +1,5 @@
 import { UIVariant, View } from '@/application/types';
+
 import OutlineItem from './OutlineItem';
 
 export function MobileOutline ({

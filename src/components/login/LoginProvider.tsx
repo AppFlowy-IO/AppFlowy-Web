@@ -1,14 +1,16 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { useCallback, useContext, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AuthService } from '@/application/services/domains';
 import { AuthProvider } from '@/application/types';
 import { ReactComponent as AppleSvg } from '@/assets/login/apple.svg';
 import { ReactComponent as DiscordSvg } from '@/assets/login/discord.svg';
 import { ReactComponent as GithubSvg } from '@/assets/login/github.svg';
 import { ReactComponent as GoogleSvg } from '@/assets/login/google.svg';
+import { ReactComponent as SamlSvg } from '@/assets/login/saml.svg';
 import { notify } from '@/components/_shared/notify';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import SamlLoginDialog from '@/components/login/SamlLoginDialog';
 import { Button } from '@/components/ui/button';
 
 const moreOptionsVariants = {
@@ -41,7 +43,8 @@ function LoginProvider({
 }) {
   const { t } = useTranslation();
   const [expand, setExpand] = React.useState(false);
-  const service = useContext(AFConfigContext)?.service;
+  // SAML SSO dialog state
+  const [samlDialogOpen, setSamlDialogOpen] = useState(false);
 
   const allOptions = useMemo(
     () => [
@@ -65,6 +68,11 @@ function LoginProvider({
         value: AuthProvider.DISCORD,
         Icon: DiscordSvg,
       },
+      {
+        label: t('web.continueWithSaml'),
+        value: AuthProvider.SAML,
+        Icon: SamlSvg,
+      },
     ],
     [t]
   );
@@ -74,28 +82,40 @@ function LoginProvider({
     return allOptions.filter((option) => availableProviders.includes(option.value));
   }, [allOptions, availableProviders]);
 
+  // Handle SAML SSO login with email domain
+  const handleSamlSubmit = useCallback(
+    async (domain: string) => {
+      await AuthService.signInSaml({ redirectTo, domain });
+    },
+    [redirectTo]
+  );
+
   const handleClick = useCallback(
     async (option: AuthProvider) => {
       try {
         switch (option) {
           case AuthProvider.GOOGLE:
-            await service?.signInGoogle({ redirectTo });
+            await AuthService.signInGoogle({ redirectTo });
             break;
           case AuthProvider.APPLE:
-            await service?.signInApple({ redirectTo });
+            await AuthService.signInApple({ redirectTo });
             break;
           case AuthProvider.GITHUB:
-            await service?.signInGithub({ redirectTo });
+            await AuthService.signInGithub({ redirectTo });
             break;
           case AuthProvider.DISCORD:
-            await service?.signInDiscord({ redirectTo });
+            await AuthService.signInDiscord({ redirectTo });
             break;
+          case AuthProvider.SAML:
+            // Open SAML dialog to get user's email for domain identification
+            setSamlDialogOpen(true);
+            return;
         }
       } catch (e) {
         notify.error(t('web.signInError'));
       }
     },
-    [service, t, redirectTo]
+    [t, redirectTo]
   );
 
   const renderOption = useCallback(
@@ -180,6 +200,12 @@ function LoginProvider({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <SamlLoginDialog
+        open={samlDialogOpen}
+        onOpenChange={setSamlDialogOpen}
+        onSubmit={handleSamlSubmit}
+      />
     </div>
   );
 }

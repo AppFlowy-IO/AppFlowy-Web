@@ -2,9 +2,9 @@ import { useMemo } from 'react';
 
 import { useDatabaseContext, useDatabaseView, useFiltersSelector, useSortsSelector } from '@/application/database-yjs';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
+import { AFScroller } from '@/components/_shared/scroller';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { Separator } from '@/components/ui/separator';
-import { AFScroller } from '@/components/_shared/scroller';
 
 import Filters from 'src/components/database/components/filters/Filters';
 import Sorts from 'src/components/database/components/sorts/Sorts';
@@ -34,7 +34,11 @@ export function DatabaseConditions() {
   return (
     <div
       style={{
+        // Collapse to 0 height when not expanded to avoid unnecessary space
         height: expanded ? '40px' : '0',
+        visibility: expanded ? 'visible' : 'hidden',
+        opacity: expanded ? 1 : 0,
+        pointerEvents: expanded ? 'auto' : 'none',
         paddingLeft: paddingStart === undefined ? '96px' : paddingStart,
         paddingRight: paddingEnd === undefined ? '96px' : paddingEnd,
       }}

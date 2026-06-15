@@ -1,0 +1,67 @@
+import { useCallback } from 'react';
+
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { YDoc, YDocWithMeta } from '@/application/types';
+import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
+import { Log } from '@/utils/log';
+
+/**
+ * Hook to bind a Y.js document to WebSocket sync.
+ * Should be called AFTER the component renders with the document.
+ */
+export function useBindViewSync() {
+  const syncContext = useSyncInternalOptional();
+  const registerSyncContext = syncContext?.registerSyncContext;
+
+  return useCallback(
+    (doc: YDoc): SyncContext | null => {
+      if (!registerSyncContext) {
+        Log.warn('[useBindViewSync] registerSyncContext not available');
+        return null;
+      }
+
+      const docWithMeta = doc as YDocWithMeta;
+
+      // Skip if already bound
+      if (docWithMeta._syncBound) {
+        Log.debug('[useBindViewSync] skipped - already bound', {
+          viewId: docWithMeta.view_id,
+          objectId: docWithMeta.object_id,
+        });
+        return null;
+      }
+
+      const collabType = docWithMeta._collabType;
+      const objectId = docWithMeta.object_id;
+      const viewId = docWithMeta.view_id ?? objectId;
+
+      // Use explicit undefined check for collabType since Types.Document = 0 is falsy
+      if (collabType === undefined || !objectId || !viewId) {
+        Log.warn('[useBindViewSync] failed - missing metadata', {
+          hasCollabType: collabType !== undefined,
+          hasObjectId: !!objectId,
+          hasViewId: !!viewId,
+        });
+        return null;
+      }
+
+      Log.debug('[useBindViewSync] starting', {
+        viewId,
+        objectId,
+        collabType,
+      });
+
+      const result = registerSyncContext({ doc, collabType });
+
+      docWithMeta._syncBound = true;
+
+      Log.debug('[useBindViewSync] complete', {
+        viewId,
+        collabType,
+      });
+
+      return result;
+    },
+    [registerSyncContext]
+  );
+}

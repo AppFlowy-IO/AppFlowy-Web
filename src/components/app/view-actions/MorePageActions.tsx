@@ -1,20 +1,23 @@
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+
 import { View, ViewIconType } from '@/application/types';
+import { getViewUrl } from '@/application/view-utils';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as OpenIcon } from '@/assets/icons/open.svg';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import MoreActionsContent from '@/components/app/header/MoreActionsContent';
 import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { toast } from 'sonner';
 
-import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
-import { useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+
 
 function MorePageActions({ view, onClose }: {
   view: View;
@@ -29,7 +32,7 @@ function MorePageActions({ view, onClose }: {
   const {
     updatePage,
     uploadFile,
-  } = useAppHandlers();
+  } = useAppOperations();
   const { t } = useTranslation();
 
   const viewId = view.view_id;
@@ -106,8 +109,10 @@ function MorePageActions({ view, onClose }: {
         <DropdownMenuItem
           data-testid={'more-page-open-new-tab'}
           onSelect={() => {
-            if (!currentWorkspaceId) return;
-            window.open(`/app/${currentWorkspaceId}/${view.view_id}`, '_blank');
+            const url = getViewUrl(view, currentWorkspaceId);
+
+            if (!url) return;
+            window.open(url, '_blank');
           }}
         >
           <OpenIcon />

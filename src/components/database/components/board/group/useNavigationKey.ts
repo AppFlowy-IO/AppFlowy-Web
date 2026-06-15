@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { useBoardContext } from '@/components/database/board/BoardProvider';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
 
 export function useNavigationKey(
   element: HTMLElement | null,
@@ -107,7 +108,7 @@ export function useNavigationKey(
         event.preventDefault();
 
         if (isEsc) {
-          console.debug('esc');
+          Log.debug('esc');
           clearSelection();
           return;
         }

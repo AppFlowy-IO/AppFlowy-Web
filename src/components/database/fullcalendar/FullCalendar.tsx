@@ -1,8 +1,9 @@
 import dayjs from 'dayjs';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
-import { CalendarEvent } from '@/application/database-yjs';
+import { CalendarEvent, useDatabaseContext } from '@/application/database-yjs';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
+import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
 
 import { CalendarContent } from './CalendarContent';
@@ -48,17 +49,18 @@ function Calendar() {
 
   // Drag handlers
   const handleDragStart = useCallback((rowId: string) => {
-    console.debug('🎯 Drag started for rowId:', rowId);
+    Log.debug('🎯 Drag started for rowId:', rowId);
     setDraggingRowId(rowId);
   }, []);
 
   const handleDragEnd = useCallback(() => {
-    console.debug('🎯 Drag ended');
+    Log.debug('🎯 Drag ended');
     setDraggingRowId(null);
   }, []);
 
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
+  const { onRendered } = useDatabaseContext();
 
   // Check for mobile device on component mount
   useEffect(() => {
@@ -66,6 +68,13 @@ function Calendar() {
 
     setIsMobile(isMobile);
   }, []);
+
+  // Notify parent when calendar data is ready (rendered)
+  useEffect(() => {
+    if (calendarData) {
+      onRendered?.();
+    }
+  }, [calendarData, onRendered]);
 
   // Handle calendar data changes from CalendarContent
   const handleCalendarDataChange = useCallback((data: CalendarData) => {

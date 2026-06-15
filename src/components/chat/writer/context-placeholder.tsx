@@ -1,9 +1,11 @@
+import { EditorProvider } from '@appflowyinc/editor';
+
 import { AIAssistant } from '@/components/chat/components/ai-writer';
 import { RenderEditor } from '@/components/chat/components/ai-writer/render-editor';
 import useEnsureBottomVisible from '@/components/chat/components/ai-writer/use-ensure-bottom-visible';
 import { AIAssistantType } from '@/components/chat/types';
+
 import { useWriterContext } from './context';
-import { EditorProvider } from '@appflowyinc/editor';
 
 export function ContextPlaceholder() {
   const {

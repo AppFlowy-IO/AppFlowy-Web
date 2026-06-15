@@ -1,8 +1,9 @@
-import { TemplateIcon } from '@/application/template.type';
-import { CategoryIcon } from '@/components/as-template/icons';
 import { IconButton, InputLabel } from '@mui/material';
 import { forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { TemplateIcon } from '@/application/template.type';
+import { CategoryIcon } from '@/components/as-template/icons';
 
 const options = Object.values(TemplateIcon);
 

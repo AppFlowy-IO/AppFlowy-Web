@@ -1,6 +1,7 @@
-import { AIAssistantType, ChatInputMode, ResponseFormat, View } from '@/components/chat/types';
 import { EditorData } from '@appflowyinc/editor';
 import { createContext, useContext } from 'react';
+
+import { AIAssistantType, ChatInputMode, ResponseFormat, View } from '@/components/chat/types';
 
 export enum ApplyingState {
   idle = 'idle',

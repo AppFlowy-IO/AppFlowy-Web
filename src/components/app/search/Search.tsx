@@ -1,35 +1,118 @@
-import { Dialog, Divider, InputBase } from '@mui/material';
+import { Dialog, InputBase } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as DownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
-import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
-import { useAppRecent } from '@/components/app/app.hooks';
+import { notify } from '@/components/_shared/notify';
+import { findAncestors } from '@/components/_shared/outline/utils';
+import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useAppOutline,
+  useAppRecent,
+  useAppViewId,
+  useCurrentWorkspaceId,
+  useToView,
+} from '@/components/app/app.hooks';
 import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
-import TitleMatch from '@/components/app/search/TitleMatch';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Popover } from '@/components/_shared/popover';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
-enum SEARCH_TYPE {
-  AI_SUGGESTION = 'AI_SUGGESTION',
-  TITLE_MATCH = 'TITLE_MATCH',
+function getAIChatParent(outline: View[] | undefined, currentViewId: string | undefined) {
+  if (!outline?.length) return;
+
+  const currentPath = currentViewId ? findAncestors(outline, currentViewId) : undefined;
+  const currentSpace = currentPath?.find((view) => view.extra?.is_space);
+
+  return currentSpace || outline.find((view) => view.extra?.is_space) || outline[0];
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Something went wrong';
 }
 
 export function Search() {
   const [open, setOpen] = React.useState<boolean>(false);
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = React.useState<string>('');
-  const [searchType, setSearchType] = React.useState<SEARCH_TYPE>(SEARCH_TYPE.AI_SUGGESTION);
-  const [searchTypeAnchorEl, setSearchTypeAnchorEl] = React.useState<null | HTMLElement>(null);
-  const handleClose = () => {
+  const [askingAI, setAskingAI] = React.useState<boolean>(false);
+  const outline = useAppOutline();
+  const currentViewId = useAppViewId();
+  const currentWorkspaceId = useCurrentWorkspaceId();
+  const aiEnabled = useAIEnabled();
+  const { addPage } = useAppOperations();
+  const toView = useToView();
+  const handleClose = useCallback(() => {
     setOpen(false);
     setSearchValue('');
-  };
+  }, []);
+
+  const handleAskAI = useCallback(
+    async (query: string, sourceIds?: string[]) => {
+      if (!aiEnabled || !addPage || !currentWorkspaceId) return;
+
+      const parent = getAIChatParent(outline, currentViewId);
+
+      if (!parent) {
+        notify.error(t('search.createAIChatFailed', { defaultValue: 'Unable to create an AI chat here' }));
+        return;
+      }
+
+      setAskingAI(true);
+      try {
+        const created = await addPage(parent.view_id, {
+          layout: ViewLayout.AIChat,
+          name: query || t('chat.newChat', { defaultValue: 'New chat' }),
+          prev_view_id: parent.children?.[parent.children.length - 1]?.view_id,
+        });
+        const initialSettings = buildInitialAIChatSettings({ parent, query, sourceIds });
+        let settingsError: unknown;
+
+        if (Object.keys(initialSettings).length > 0) {
+          try {
+            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+              import('@/components/chat/request'),
+              import('@/application/services/js-services/http'),
+            ]);
+            const axiosInstance = getAxiosInstance();
+
+            if (!axiosInstance) {
+              throw new Error('Missing axios instance');
+            }
+
+            const request = new ChatRequest(currentWorkspaceId, created.view_id, axiosInstance);
+
+            await request.updateChatSettings(initialSettings);
+          } catch (error) {
+            settingsError = error;
+          }
+        }
+
+        if (settingsError) {
+          notify.error(
+            t('search.updateAIChatSettingsFailed', {
+              defaultValue: 'AI chat was created, but the context could not be attached',
+            })
+          );
+        }
+
+        await toView(created.view_id);
+        handleClose();
+      } catch (error) {
+        notify.error(getErrorMessage(error));
+      } finally {
+        setAskingAI(false);
+      }
+    },
+    [addPage, aiEnabled, currentViewId, currentWorkspaceId, handleClose, outline, t, toView]
+  );
 
   const onKeyDown = useCallback((e: KeyboardEvent) => {
     switch (true) {
@@ -103,7 +186,7 @@ export function Search() {
               autoFocus={true}
               className={'flex-1'}
               fullWidth={true}
-              placeholder={searchType === SEARCH_TYPE.AI_SUGGESTION ? t('AISearchPlaceholder') : t('searchLabel')}
+              placeholder={t('searchLabel')}
             />
             <span
               style={{
@@ -118,69 +201,14 @@ export function Search() {
             >
               <CloseIcon className={'h-3 w-3'} />
             </span>
-            <Tooltip delayDuration={1000}>
-              <TooltipTrigger asChild>
-                <span
-                  onMouseDown={(e) => e.preventDefault()}
-                  className={'flex cursor-pointer items-center rounded bg-fill-content-hover p-1 px-2 text-xs'}
-                >
-                  BETA
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side='right'>
-                <span>we currently only support searching for pages and content in documents</span>
-              </TooltipContent>
-            </Tooltip>
           </div>
         </div>
-        <div className={'flex w-full items-center gap-2 p-4 py-2'}>
-          <div
-            onClick={(e) => {
-              setSearchTypeAnchorEl(e.currentTarget);
-            }}
-            className={
-              'flex cursor-pointer items-center gap-2 overflow-hidden rounded-[8px] border border-border-primary p-2 text-sm hover:border-text-primary'
-            }
-          >
-            <span className={' max-w-[100px] truncate'}>
-              {searchType === SEARCH_TYPE.TITLE_MATCH ? t('titleOnly') : t('AIsearch')}
-            </span>
-            <DownIcon className={'h-5 w-5'} />
-          </div>
-        </div>
-        <Divider className={'border-line-default'} />
         {!searchValue ? (
           <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
-        ) : searchType === SEARCH_TYPE.AI_SUGGESTION ? (
-          <BestMatch searchValue={searchValue} onClose={handleClose} />
         ) : (
-          <TitleMatch searchValue={searchValue} onClose={handleClose} />
+          <BestMatch askingAI={askingAI} searchValue={searchValue} onAskAI={handleAskAI} onClose={handleClose} />
         )}
       </Dialog>
-      <Popover
-        open={Boolean(searchTypeAnchorEl)}
-        anchorEl={searchTypeAnchorEl}
-        onClose={() => setSearchTypeAnchorEl(null)}
-        slotProps={{
-          paper: {
-            className: 'p-2 w-fit my-2',
-          },
-        }}
-      >
-        {[SEARCH_TYPE.AI_SUGGESTION, SEARCH_TYPE.TITLE_MATCH].map((type) => (
-          <div
-            key={type}
-            className={'flex cursor-pointer items-center gap-2 rounded-[8px] p-2 text-sm hover:bg-fill-content-hover'}
-            onClick={() => {
-              setSearchType(type);
-              setSearchTypeAnchorEl(null);
-            }}
-          >
-            {type === SEARCH_TYPE.TITLE_MATCH ? t('titleOnly') : t('AIsearch')}
-            {type === searchType && <CheckIcon className={'h-5 w-5 text-function-info'} />}
-          </div>
-        ))}
-      </Popover>
     </>
   );
 }

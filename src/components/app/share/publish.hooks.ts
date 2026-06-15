@@ -1,11 +1,47 @@
-import { UpdatePublishConfigPayload } from '@/application/types';
-import { notify } from '@/components/_shared/notify';
-import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
+import { UpdatePublishConfigPayload, View } from '@/application/types';
+import { notify } from '@/components/_shared/notify';
+import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { ViewService, PublishService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
+
 export function useLoadPublishInfo(viewId: string) {
-  const view = useAppView(viewId);
+  const outlineView = useAppView(viewId);
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+
+  // Fallback view fetched from server when not in outline (e.g. lazy-loaded children)
+  const [fallbackView, setFallbackView] = React.useState<View | null>(null);
+
+  useEffect(() => {
+    if (outlineView || !viewId || !workspaceId) {
+      if (outlineView) {
+        setFallbackView((prev) => (prev?.view_id === viewId ? null : prev));
+      }
+
+      return;
+    }
+
+    let cancelled = false;
+
+    ViewService.get(workspaceId, viewId)
+      .then((fetchedView) => {
+        if (!cancelled && fetchedView) {
+          setFallbackView(fetchedView);
+        }
+      })
+      .catch(() => {
+        // View not found - ignore
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [outlineView, viewId, workspaceId]);
+
+  const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null) ?? undefined;
+
   const [publishInfo, setPublishInfo] = React.useState<{
     namespace: string,
     publishName: string,
@@ -13,39 +49,49 @@ export function useLoadPublishInfo(viewId: string) {
     commentEnabled: boolean,
     duplicateEnabled: boolean,
   }>();
+  const [publishInfoViewId, setPublishInfoViewId] = React.useState<string | null>(null);
+  const publishInfoRequestSeqRef = React.useRef(0);
   const [loading, setLoading] = React.useState<boolean>(false);
-  const service = useService();
 
-  const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
-  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
-  const isPublisher = publishInfo?.publisherEmail === currentUser?.email;
+  const currentViewPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
+  const isPublisher = currentViewPublishInfo?.publisherEmail === currentUser?.email;
 
   const loadPublishInfo = useCallback(async() => {
-    if(!service) return;
+    const requestSeq = publishInfoRequestSeqRef.current + 1;
+
+    publishInfoRequestSeqRef.current = requestSeq;
+
     setLoading(true);
     try {
-      const res = await service.getPublishInfo(viewId);
+      const res = await PublishService.getViewInfo(viewId);
 
+      if (publishInfoRequestSeqRef.current !== requestSeq) return;
       setPublishInfo(res);
+      setPublishInfoViewId(viewId);
 
       // eslint-disable-next-line
     } catch(e: any) {
-      // do nothing
+      if (publishInfoRequestSeqRef.current !== requestSeq) return;
+      // Not published or fetch failed - clear stale publish info
+      setPublishInfo(undefined);
+      setPublishInfoViewId(viewId);
+    } finally {
+      if (publishInfoRequestSeqRef.current === requestSeq) {
+        setLoading(false);
+      }
     }
-
-    setLoading(false);
-  }, [viewId, service]);
+  }, [viewId]);
 
   useEffect(() => {
     void loadPublishInfo();
   }, [loadPublishInfo]);
 
   const updatePublishConfig = useCallback(async(payload: UpdatePublishConfigPayload) => {
-    if(!service || !workspaceId) return;
+    if(!workspaceId) return;
     try {
-      await service.updatePublishConfig(workspaceId, payload);
+      await PublishService.updateConfig(workspaceId, payload);
       setPublishInfo(prev => {
         if(!prev) return prev;
         return {
@@ -61,11 +107,21 @@ export function useLoadPublishInfo(viewId: string) {
       notify.error(e.message);
     }
 
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   const url = useMemo(() => {
-    return `${window.origin}/${publishInfo?.namespace}/${publishInfo?.publishName}`;
-  }, [publishInfo]);
+    return `${window.origin}/${currentViewPublishInfo?.namespace}/${currentViewPublishInfo?.publishName}`;
+  }, [currentViewPublishInfo]);
 
-  return { publishInfo, url, loadPublishInfo, view, loading, isPublisher, isOwner, updatePublishConfig };
+  return {
+    publishInfo: currentViewPublishInfo,
+    publishInfoViewId,
+    url,
+    loadPublishInfo,
+    view,
+    loading,
+    isPublisher,
+    isOwner,
+    updatePublishConfig,
+  };
 }

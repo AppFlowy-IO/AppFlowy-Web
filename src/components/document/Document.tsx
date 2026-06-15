@@ -11,12 +11,13 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { appendFirstEmptyParagraph } from '@/application/slate-yjs/utils/yjs';
 import { ViewComponentProps, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { getUserIconUrl } from '@/application/user-metadata';
+import EditorSkeleton from '@/components/_shared/skeleton/EditorSkeleton';
 import { useAppAwareness } from '@/components/app/app.hooks';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
 import { Editor } from '@/components/editor';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { CollabService } from '@/application/services/domains';
 import ViewMetaPreview from '@/components/view-meta/ViewMetaPreview';
-import EditorSkeleton from '@/components/_shared/skeleton/EditorSkeleton';
 
 export type DocumentProps = ViewComponentProps & {
   onEditorConnected?: (editor: YjsEditor) => void;
@@ -42,20 +43,20 @@ export const Document = (props: DocumentProps) => {
   const currentUser = useCurrentUser();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
   const userAvatar = useMemo(() => getUserIconUrl(currentUser, workspaceAvatar), [currentUser, workspaceAvatar]);
-  const service = useService();
   const dispatchUserAwareness = useDispatchUserAwareness(awareness);
   const dispatchCursorAwareness = useDispatchCursorAwareness(awareness);
   const { clearAwareness, clearCursor } = useDispatchClearAwareness(awareness);
 
   // Sync user information to awareness when component mounts or user changes
   useEffect(() => {
-    if (!currentUser || !service || !awareness) return;
+    if (!currentUser || !awareness) return;
 
-    const deviceId = service.getDeviceId();
+    const deviceId = CollabService.getDeviceId();
     const colors = generateUserColors(currentUser.name || '');
 
     const userParams = {
       uid: Number(currentUser.uid),
+      user_uuid: currentUser.uuid,
       device_id: deviceId,
       user_name: currentUser.name || 'Anonymous',
       cursor_color: colors.cursor_color,
@@ -64,7 +65,7 @@ export const Document = (props: DocumentProps) => {
     };
 
     dispatchUserAwareness(userParams);
-  }, [currentUser, service, awareness, dispatchUserAwareness, userAvatar]);
+  }, [currentUser, awareness, dispatchUserAwareness, userAvatar]);
 
   // Clean up awareness when component unmounts
   useEffect(() => {
@@ -117,12 +118,13 @@ export const Document = (props: DocumentProps) => {
   const handleSyncCursor = useCallback(
     (editor: YjsEditor) => {
       // Set up cursor synchronization when editor is connected
-      if (currentUser && service && awareness) {
-        const deviceId = service.getDeviceId();
+      if (currentUser && awareness) {
+        const deviceId = CollabService.getDeviceId();
         const colors = generateUserColors(currentUser.name || '');
 
         const userParams = {
           uid: Number(currentUser.uid),
+          user_uuid: currentUser.uuid,
           device_id: deviceId,
           user_name: currentUser.name || 'Anonymous',
           cursor_color: colors.cursor_color,
@@ -133,7 +135,7 @@ export const Document = (props: DocumentProps) => {
         dispatchCursorAwareness(userParams, editor);
       }
     },
-    [dispatchCursorAwareness, currentUser, service, awareness, userAvatar]
+    [dispatchCursorAwareness, currentUser, awareness, userAvatar]
   );
 
   const handleEditorConnected = useCallback(
@@ -174,6 +176,7 @@ export const Document = (props: DocumentProps) => {
             onEditorConnected={handleEditorConnected}
             onSelectionChange={handleSyncCursor}
             awareness={awareness}
+            databaseRelations={viewMeta.database_relations}
             {...props}
           />
         </div>

@@ -1,12 +1,14 @@
-import { useChatContext } from '@/components/chat/chat/context';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+
+import { ReactComponent as ChatIcon } from '@/assets/icons/chat_suggestion.svg';
+import { useChatContext } from '@/components/chat/chat/context';
 import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { Suggestions } from '@/components/chat/types';
-import { ReactComponent as ChatIcon } from '@/assets/icons/chat_suggestion.svg';
-import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+
 
 interface MessageSuggestionsProps {
   suggestions: Suggestions;

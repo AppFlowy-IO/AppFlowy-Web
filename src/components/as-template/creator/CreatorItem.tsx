@@ -1,3 +1,8 @@
+import { IconButton, Tooltip } from '@mui/material';
+import MenuItem from '@mui/material/MenuItem';
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { TemplateCreator } from '@/application/template.type';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
@@ -5,10 +10,6 @@ import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
 import DeleteCreator from '@/components/as-template/creator/DeleteCreator';
 import EditCreator from '@/components/as-template/creator/EditCreator';
-import { IconButton, Tooltip } from '@mui/material';
-import MenuItem from '@mui/material/MenuItem';
-import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function CreatorItem({
   onClick,

@@ -1,5 +1,6 @@
-import { QuickNote } from '@/application/types';
 import dayjs from 'dayjs';
+
+import { QuickNote } from '@/application/types';
 
 export function getTitle(note: QuickNote): string {
   let text = '';

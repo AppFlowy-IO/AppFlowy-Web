@@ -6,20 +6,20 @@ import { toast } from 'sonner';
 import { ERROR_CODE } from '@/application/constants';
 import { Invitation } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
+import { AccessService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 function AcceptInvitationPage() {
   const currentUser = useCurrentUser();
   const [searchParams] = useSearchParams();
   const invitationId = searchParams.get('invited_id');
-  const service = useService();
   const [invitation, setInvitation] = useState<Invitation>();
   const { t } = useTranslation();
   const [hasJoined, setHasJoined] = useState(false);
@@ -27,16 +27,17 @@ function AcceptInvitationPage() {
   const [loading, setLoading] = useState(false);
   const [notInvitee, setNotInvitee] = useState(false);
   const [isError, setIsError] = useState(false);
+  const [errorInfo, setErrorInfo] = useState<{ code?: number; message?: string }>();
+  const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const loadInvitation = useCallback(async () => {
-    if (!service) return;
     if (!invitationId) {
       setIsError(true);
       return;
     }
 
     try {
-      const res = await service.getInvitation(invitationId);
+      const res = await AccessService.getInvitation(invitationId);
 
       if (res.status === 'Accepted') {
         setHasJoined(true);
@@ -51,13 +52,15 @@ function AcceptInvitationPage() {
       }
 
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInValid(true);
         return;
       }
 
+      setErrorInfo({ code: e.code, message: e.message });
       setIsError(true);
     }
-  }, [invitationId, service]);
+  }, [invitationId]);
 
   useEffect(() => {
     void loadInvitation();
@@ -91,13 +94,14 @@ function AcceptInvitationPage() {
 
     try {
       setLoading(true);
-      await service?.acceptInvitation(invitationId);
+      await AccessService.acceptInvitation(invitationId);
       toast.success(t('invitation.successMessage'));
       window.open(`/app/${invitation?.workspace_id}`, '_self');
       setHasJoined(true);
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInValid(true);
         return;
       }
@@ -107,11 +111,12 @@ function AcceptInvitationPage() {
         return;
       }
 
+      setErrorInfo({ code: e.code, message: e.message });
       setIsError(true);
     } finally {
       setLoading(false);
     }
-  }, [invitationId, invitation, service, t]);
+  }, [invitationId, invitation, t]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {
@@ -126,7 +131,7 @@ function AcceptInvitationPage() {
   );
 
   if (isInValid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (notInvitee) {
@@ -134,7 +139,7 @@ function AcceptInvitationPage() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={handleJoinWorkspace} />;
+    return <ErrorPage onRetry={handleJoinWorkspace} error={errorInfo} />;
   }
 
   if (hasJoined) {

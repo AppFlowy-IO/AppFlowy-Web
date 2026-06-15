@@ -1,6 +1,7 @@
-import { Subscription, SubscriptionPlan } from '@/application/types';
-import { isOfficialHost } from '@/utils/subscription';
 import { useCallback, useEffect, useState } from 'react';
+
+import { Subscription, SubscriptionPlan } from '@/application/types';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 /**
  * Hook to manage subscription plan loading and Pro feature detection
@@ -17,7 +18,7 @@ export function useSubscriptionPlan(
 } {
     const [activeSubscriptionPlan, setActiveSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
     // Pro features are enabled by default on self-hosted instances
-    const isPro = activeSubscriptionPlan === SubscriptionPlan.Pro || !isOfficialHost();
+    const isPro = activeSubscriptionPlan === SubscriptionPlan.Pro || !isAppFlowyHosted();
 
     const loadSubscription = useCallback(async () => {
         try {
@@ -33,9 +34,7 @@ export function useSubscriptionPlan(
                 return;
             }
 
-            const subscription = subscriptions[0];
-
-            setActiveSubscriptionPlan(subscription?.plan || SubscriptionPlan.Free);
+            setActiveSubscriptionPlan(getProAccessPlanFromSubscriptions(subscriptions));
         } catch (e: unknown) {
             // Silently handle expected errors (API not initialized, no response data, etc.)
             // These are normal scenarios when the service isn't available or there's no subscription data
@@ -56,7 +55,7 @@ export function useSubscriptionPlan(
 
     useEffect(() => {
         // Only load subscription for official host (self-hosted instances have Pro features enabled by default)
-        if (isOfficialHost()) {
+        if (isAppFlowyHosted()) {
             void loadSubscription();
         }
     }, [loadSubscription]);
@@ -66,4 +65,3 @@ export function useSubscriptionPlan(
         isPro,
     };
 }
-

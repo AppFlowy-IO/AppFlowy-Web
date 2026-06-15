@@ -1,9 +1,10 @@
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { notify } from '@/components/_shared/notify';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { MathEquationNode } from '@/components/editor/editor.type';
-import { notify } from '@/components/_shared/notify';
 import { copyTextToClipboard } from '@/utils/copy';
-import { useTranslation } from 'react-i18next';
 
 function MathEquationToolbar({ node }: { node: MathEquationNode }) {
   const { t } = useTranslation();

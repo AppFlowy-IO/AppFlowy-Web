@@ -1,17 +1,18 @@
-import { YjsEditor } from '@/application/slate-yjs';
-import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
-import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
-import { useLeafContext } from '@/components/editor/components/leaf/leaf.hooks';
-import { notify } from '@/components/_shared/notify';
-import { Popover } from '@/components/_shared/popover';
-import { copyTextToClipboard } from '@/utils/copy';
-import { openUrl } from '@/utils/url';
 import { IconButton } from '@mui/material';
 import { debounce } from 'lodash-es';
 import React, { memo, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Text } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
+import { notify } from '@/components/_shared/notify';
+import { Popover } from '@/components/_shared/popover';
+import { useLeafContext } from '@/components/editor/components/leaf/leaf.hooks';
+import { copyTextToClipboard } from '@/utils/copy';
+import { openUrl } from '@/utils/url';
 
 export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; children: React.ReactNode; text: Text; textColor?: string }) => {
   const editor = useSlateStatic() as YjsEditor;
@@ -64,7 +65,7 @@ export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; chi
           backgroundColor: selected ? 'var(--content-blue-100)' : undefined,
           color: textColor || 'var(--text-action)',
         }}
-        className={`cursor-pointer select-auto py-0.5 underline`}
+        className={'href-link cursor-pointer select-auto py-0.5 underline'}
       >
         {children}
         {hovered && (

@@ -1,3 +1,5 @@
+import { Log } from '@/utils/log';
+
 export function saveRedirectTo(redirectTo: string) {
   localStorage.setItem('redirectTo', redirectTo);
 }
@@ -40,13 +42,55 @@ export function withSignIn() {
   };
 }
 
+/**
+ * Decodes a percent-encoded redirect parameter, returning null on malformed input
+ * so that bad values are always treated as unsafe rather than crashing.
+ */
+export function safeDecodeRedirectParam(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns true only if the URL is safe to redirect to after authentication.
+ * Safe means: a relative path (starts with "/" but NOT "//") OR
+ * an absolute URL whose origin matches window.location.origin.
+ */
+export function isSafeRedirectUrl(url: string): boolean {
+  if (!url) return false;
+
+  // Relative path — safe (but "//evil.com" is protocol-relative, not safe)
+  if (url.startsWith('/') && !url.startsWith('//')) {
+    return true;
+  }
+
+  // Absolute URL — only safe if same origin
+  try {
+    const parsed = new URL(url);
+
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export function afterAuth() {
   const redirectTo = getRedirectTo();
 
   clearRedirectTo();
 
   if (redirectTo) {
-    const url = new URL(decodeURIComponent(redirectTo));
+    const decoded = safeDecodeRedirectParam(redirectTo);
+
+    if (!decoded || !isSafeRedirectUrl(decoded)) {
+      window.location.href = '/app';
+      return;
+    }
+
+    const url = new URL(decoded, window.location.origin);
     const pathname = url.pathname;
 
     // Check if URL contains workspace/view UUIDs (user-specific paths)
@@ -55,14 +99,19 @@ export function afterAuth() {
 
     if (hasUserSpecificIds) {
       // Don't redirect to user-specific pages from previous sessions
+      Log.info('[Auth] afterAuth: blocking user-specific redirect, going to /app', { pathname });
       window.location.href = '/app';
     } else if (pathname === '/' || !pathname) {
+      // Preserve query params and hash but redirect to /app path
       url.pathname = '/app';
+      Log.info('[Auth] afterAuth: root path redirect, going to /app');
       window.location.href = url.toString();
     } else {
-      window.location.href = url.toString();
+      Log.info('[Auth] afterAuth: redirecting to saved destination', { pathname });
+      window.location.href = decoded;
     }
   } else {
+    Log.info('[Auth] afterAuth: no redirectTo saved, going to /app');
     window.location.href = '/app';
   }
 }

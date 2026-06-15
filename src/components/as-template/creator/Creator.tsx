@@ -1,13 +1,14 @@
+import { Button, CircularProgress, OutlinedInput, Tooltip, Typography } from '@mui/material';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as ArrowRight } from '@/assets/icons/alt_arrow_right.svg';
+import { Popover } from '@/components/_shared/popover';
 import AddCreator from '@/components/as-template/creator/AddCreator';
 import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
 import CreatorItem from '@/components/as-template/creator/CreatorItem';
 import { useLoadCreators } from '@/components/as-template/hooks';
 import { accountLinkIcon } from '@/components/as-template/icons';
-import { Popover } from '@/components/_shared/popover';
-import { Button, CircularProgress, OutlinedInput, Tooltip, Typography } from '@mui/material';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 const ITEM_HEIGHT = 48;
 const ITEM_PADDING_TOP = 8;

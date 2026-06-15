@@ -1,8 +1,9 @@
+import { memo } from 'react';
+
 import { AppProvider } from '@/components/app/app.hooks';
 import MainLayout from '@/components/app/MainLayout';
-import { getPlatform } from '@/utils/platform';
-import { memo } from 'react';
 import MobileMainLayout from '@/components/app/MobileMainLayout';
+import { getPlatform } from '@/utils/platform';
 
 export function AuthLayout () {
   const isMobile = getPlatform().isMobile;

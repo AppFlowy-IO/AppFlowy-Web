@@ -1,13 +1,14 @@
-import { BlockType } from '@/application/types';
-import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
-import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
-import MathEquationToolbar from '@/components/editor/components/blocks/math-equation/MathEquationToolbar';
-import { EditorElementProps, MathEquationNode } from '@/components/editor/editor.type';
-import { KatexMath } from '@/components/_shared/katex-math';
 import { forwardRef, memo, Suspense, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
+
+import { BlockType } from '@/application/types';
+import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
+import { KatexMath } from '@/components/_shared/katex-math';
+import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
+import MathEquationToolbar from '@/components/editor/components/blocks/math-equation/MathEquationToolbar';
+import { EditorElementProps, MathEquationNode } from '@/components/editor/editor.type';
 
 export const MathEquation = memo(
   forwardRef<HTMLDivElement, EditorElementProps<MathEquationNode>>(
@@ -66,7 +67,7 @@ export const MathEquation = memo(
               )}
             </div>
 
-            <div ref={ref} className={'absolute h-full w-full caret-transparent'}>
+            <div ref={ref} className={'absolute h-full w-full caret-transparent text-transparent'}>
               {children}
             </div>
             {showToolbar && <MathEquationToolbar node={node} />}

@@ -1,5 +1,5 @@
 import { IconButton } from '@mui/material';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 import { HEADER_HEIGHT } from '@/application/constants';
 import { UIVariant } from '@/application/types';
@@ -14,6 +14,7 @@ import MobileFolder from '@/components/_shared/mobile-topbar/MobileFolder';
 import PublishMobileFolder from '@/components/_shared/mobile-topbar/PublishMobileFolder';
 import MoreActionsContent from '@/components/_shared/more-actions/MoreActionsContent';
 import { openOrDownload } from '@/utils/open_schema';
+import { getPlatform } from '@/utils/platform';
 
 const PublishBreadcrumb = withPublishBreadcrumb(Breadcrumb);
 const AppBreadcrumb = withAppBreadcrumb(Breadcrumb);
@@ -21,6 +22,15 @@ const AppBreadcrumb = withAppBreadcrumb(Breadcrumb);
 function MobileTopBar({ variant }: { variant?: UIVariant }) {
   const [openFolder, setOpenFolder] = React.useState(false);
   const [openMore, setOpenMore] = React.useState(false);
+  const isMobile = getPlatform().isMobile;
+  const folderDrawerWidth = useMemo(() => {
+    if (typeof window === 'undefined') return undefined;
+    const availableWidth = Math.max(0, window.innerWidth - 56);
+
+    if (isMobile) return availableWidth;
+
+    return Math.min(420, availableWidth);
+  }, [isMobile]);
 
   const handleOpenFolder = useCallback(() => {
     setOpenFolder(true);
@@ -50,12 +60,13 @@ function MobileTopBar({ variant }: { variant?: UIVariant }) {
       }
     >
       <MobileDrawer
-        swipeAreaWidth={window.innerWidth - 56}
+        swipeAreaWidth={folderDrawerWidth}
         onOpen={handleOpenFolder}
         onClose={handleCloseFolder}
         open={openFolder}
         anchor={'left'}
         showPuller={false}
+        topOffset={HEADER_HEIGHT}
         triggerNode={
           <IconButton>
             <MenuIcon />

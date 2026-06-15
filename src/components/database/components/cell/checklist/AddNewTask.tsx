@@ -1,7 +1,8 @@
-import { Button } from '@/components/ui/button';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { Button } from '@/components/ui/button';
+import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 
 function AddNewTask({
   value,

@@ -1,9 +1,11 @@
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly } from '@/application/database-yjs';
+import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
 import DragItem from '@/components/database/components/drag-and-drop/DragItem';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function RowProperty(props: {
@@ -16,6 +18,9 @@ function RowProperty(props: {
   const readOnly = useReadOnly();
 
   const { fieldId, setActivePropertyId } = props;
+  const { field } = useFieldSelector(fieldId);
+  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const isEditingDisabled = isFieldEditingDisabled(fieldType);
 
   if (readOnly) {
     return <RowPropertyPrimitive {...props} />;
@@ -30,7 +35,7 @@ function RowProperty(props: {
         <Tooltip>
           <TooltipTrigger
             onClick={() => {
-              if (readOnly) return;
+              if (readOnly || isEditingDisabled) return;
               setActivePropertyId(fieldId);
             }}
             className={'relative top-2 h-full'}

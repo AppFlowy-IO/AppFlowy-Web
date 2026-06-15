@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, FieldVisibility, useFieldSelector, useFieldVisibility } from '@/application/database-yjs';
@@ -6,7 +6,11 @@ import {
   useDuplicatePropertyDispatch,
   useHidePropertyDispatch,
   useShowPropertyDispatch,
+  useSwitchPropertyType,
+  useUpdatePropertyNameDispatch,
 } from '@/application/database-yjs/dispatch';
+import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
+import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -18,9 +22,14 @@ import FileMediaPropertyMenuContent from '@/components/database/components/prope
 import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import PropertySelectTrigger from '@/components/database/components/property/PropertySelectTrigger';
+import RelationCreationDialog, {
+  RelationCreationResult,
+} from '@/components/database/components/property/relation/RelationCreationDialog';
 import RelationPropertyMenuContent from '@/components/database/components/property/relation/RelationPropertyMenuContent';
+import RollupPropertyMenuContent from '@/components/database/components/property/rollup/RollupPropertyMenuContent';
 import SelectPropertyMenuContent from '@/components/database/components/property/select/SelectPropertyMenuContent';
 import TranslatePropertyMenuContext from '@/components/database/components/property/translate/TranslatePropertyMenuContext';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,9 +57,37 @@ function PropertyMenu({
   const onShowProperty = useShowPropertyDispatch();
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
+  const isEditingDisabled = isFieldEditingDisabled(type);
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
   const { t } = useTranslation();
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [relationDialogOpen, setRelationDialogOpen] = useState(false);
+  const switchType = useSwitchPropertyType();
+  const updatePropertyName = useUpdatePropertyNameDispatch(fieldId);
+  const updateRelationTypeOption = useUpdateRelationTypeOption(fieldId);
+  const initialRelationFieldName =
+    field?.get(YjsDatabaseKey.name) || t('grid.field.relationFieldName');
+
+  const handleRequestRelation = useCallback(() => {
+    onOpenChange?.(false);
+    setRelationDialogOpen(true);
+  }, [onOpenChange]);
+
+  const handleCreateRelation = useCallback(
+    (result: RelationCreationResult) => {
+      setRelationDialogOpen(false);
+      switchType(fieldId, FieldType.Relation);
+      updatePropertyName(result.fieldName);
+      void updateRelationTypeOption({
+        database_id: result.relatedDatabaseId,
+        is_two_way: result.isTwoWay,
+        reciprocal_field_name: result.reciprocalFieldName,
+        source_limit: result.sourceLimit,
+        target_limit: RelationLimit.NoLimit,
+      });
+    },
+    [fieldId, switchType, updatePropertyName, updateRelationTypeOption]
+  );
   const operations = useMemo(
     () => [
       {
@@ -104,14 +141,20 @@ function PropertyMenu({
         return <DataTimePropertyMenuContent {...props} enableInclusivitiesTime={true} />;
       case FieldType.Relation:
         return <RelationPropertyMenuContent {...props} />;
-      case FieldType.FileMedia:
+      case FieldType.Media:
         return <FileMediaPropertyMenuContent {...props} />;
-      case FieldType.AITranslations:
+      case FieldType.Translate:
         return <TranslatePropertyMenuContext {...props} />;
+      case FieldType.Rollup:
+        return <RollupPropertyMenuContent {...props} />;
       default:
         return null;
     }
   }, [fieldId, type]);
+
+  if (isEditingDisabled) {
+    return children ? <>{children}</> : null;
+  }
 
   return (
     <>
@@ -131,7 +174,7 @@ function PropertyMenu({
               <TooltipContent side={'bottom'}>{t('grid.field.switchPrimaryFieldTooltip')}</TooltipContent>
             </Tooltip>
           ) : (
-            <PropertySelectTrigger fieldId={fieldId} />
+            <PropertySelectTrigger fieldId={fieldId} onRequestRelation={handleRequestRelation} />
           )}
 
           {propertyContent}
@@ -164,6 +207,12 @@ function PropertyMenu({
           setDeleteConfirmOpen(false);
         }}
         open={deleteConfirmOpen}
+      />
+      <RelationCreationDialog
+        open={relationDialogOpen}
+        initialFieldName={initialRelationFieldName}
+        onOpenChange={setRelationDialogOpen}
+        onCreate={handleCreateRelation}
       />
     </>
   );

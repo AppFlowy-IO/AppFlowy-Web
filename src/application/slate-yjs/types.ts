@@ -1,4 +1,5 @@
 import { Element, NodeEntry } from 'slate';
+
 import type Y from 'yjs';
 
 export type HistoryStackItem = {

@@ -1,13 +1,14 @@
+import { IconButton, InputBase, Tooltip } from '@mui/material';
+import { debounce } from 'lodash-es';
 import React, { useMemo } from 'react';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import { useTranslation } from 'react-i18next';
+
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { ReactComponent as CollapseIcon } from '@/assets/icons/shrink.svg';
-
-import { IconButton, InputBase, Tooltip } from '@mui/material';
-import { useTranslation } from 'react-i18next';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { debounce } from 'lodash-es';
+
 
 function NoteListHeader({
   onSearch,

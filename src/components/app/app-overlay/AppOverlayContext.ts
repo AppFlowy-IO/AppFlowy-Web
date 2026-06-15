@@ -1,28 +1,23 @@
 import { createContext, useContext } from 'react';
 
-export const AppOverlayContext = createContext<{
+type AppOverlayContextType = {
   openRenameModal: (viewId: string) => void;
   openDeleteModal: (viewId: string) => void;
   openManageSpaceModal: (viewId: string) => void;
   openCreateSpaceModal: () => void;
   openDeleteSpaceModal: (viewId: string) => void;
-}>({
-  openRenameModal: () => {
-    //
-  },
-  openDeleteModal: () => {
-    //
-  },
-  openManageSpaceModal: () => {
-    //
-  },
-  openCreateSpaceModal: () => {
-    //
-  },
-  openDeleteSpaceModal: () => {
-    //
-  },
-});
+  /**
+   * Show a blocking loading overlay that prevents user interaction.
+   * Used during operations like duplicate to prevent opening incomplete pages.
+   */
+  showBlockingLoader: (message?: string) => void;
+  /**
+   * Hide the blocking loading overlay.
+   */
+  hideBlockingLoader: () => void;
+};
+
+export const AppOverlayContext = createContext<AppOverlayContextType | undefined>(undefined);
 
 export function useAppOverlayContext () {
   const context = useContext(AppOverlayContext);

@@ -47,7 +47,7 @@ const Columns = forwardRef<
   const readOnly = useReadOnly();
 
   return (
-    <div ref={ref} className={'columns flex w-fit min-w-full flex-1 gap-2'}>
+    <div ref={ref} className={'columns flex h-full min-h-0 w-fit min-w-full flex-1 gap-2'}>
       {!readOnly && <HiddenGroupColumn fieldId={fieldId} groupId={props.groupId} getRows={getRows} />}
 
       {columnsWithRows.map((data) => (

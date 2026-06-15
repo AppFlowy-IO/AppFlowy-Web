@@ -1,240 +1,759 @@
-import { BasePoint, Element, Node, Text, Transforms } from 'slate';
+import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import {
-  beforePasted,
-  findSlateEntryByBlockId,
   getBlockEntry,
   getSharedRoot,
+  getParentSimpleTableCellBlockId,
+  isInsideSimpleTableCell,
 } from '@/application/slate-yjs/utils/editor';
-import { assertDocExists, deleteBlock, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, YjsEditorKey } from '@/application/types';
-import { deserializeHTML } from '@/components/editor/utils/fragment';
-import { processUrl } from '@/utils/url';
+import { assertDocExists, getBlock, getChildrenArray, getText } from '@/application/slate-yjs/utils/yjs';
+import { BlockType, MentionType, YjsEditorKey } from '@/application/types';
+import { parseHTML } from '@/components/editor/parsers/html-parser';
+import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
+import { parseTSVTable } from '@/components/editor/parsers/table-parser';
+import { ParsedBlock } from '@/components/editor/parsers/types';
+import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
+import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
+import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
+import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
+import { isSingleURLText, processUrl } from '@/utils/url';
 
+/**
+ * Enhances Slate editor with improved paste handling
+ * Features:
+ * - AST-based HTML parsing (reliable, secure)
+ * - Markdown detection and parsing
+ * - Smart merge logic (context-aware)
+ * - URL detection (links, videos, page refs)
+ * - Table support
+ */
 export const withPasted = (editor: ReactEditor) => {
+  /**
+   * Main paste handler - processes clipboard data
+   */
   editor.insertTextData = (data: DataTransfer) => {
-    if (!beforePasted(editor)) return false;
-    const text = data.getData('text/plain');
+    // Code blocks (and other soft-break types) accept only plain text.
+    // Insert directly so the content goes inside the block, not below it.
+    const entry = getBlockEntry(editor as YjsEditor);
 
-    if (text) {
-      const lines = text.split(/\r\n|\r|\n/);
-
-      const html = data.getData('text/html');
-
-      const lineLength = lines.filter(Boolean).length;
-      const point = editor.selection?.anchor as BasePoint;
-      const entry = getBlockEntry(editor as YjsEditor, point);
-
-      if (!entry) return false;
-
+    if (entry) {
       const [node] = entry;
 
-      if (lineLength === 1) {
-        const isUrl = !!processUrl(text);
+      if (SOFT_BREAK_TYPES.includes(node.type as BlockType)) {
+        const text = data.getData('text/plain');
 
-        if (isUrl) {
-          const isAppFlowyLinkUrl = isURL(text, {
-            host_whitelist: [window.location.hostname],
-          });
+        if (text) {
+          editor.insertText(text);
+          return true;
+        }
+      }
+    }
 
-          if (isAppFlowyLinkUrl) {
-            const url = new URL(text);
-            const blockId = url.searchParams.get('blockId');
+    const html = data.getData('text/html');
+    const text = data.getData('text/plain');
 
-            if (blockId) {
-              const pageId = url.pathname.split('/').pop();
-              const point = editor.selection?.anchor as BasePoint;
+    // Priority 0: If pasting tabular content (TSV/multi-cell) inside a table cell,
+    // fill adjacent cells instead of inserting as blocks
+    if (entry) {
+      const blockId = (entry[0] as { blockId?: string }).blockId;
 
-              Transforms.insertNodes(
-                editor,
-                {
-                  text: '@',
-                  mention: {
-                    type: MentionType.PageRef,
-                    page_id: pageId,
-                    block_id: blockId,
-                  },
-                },
-                { at: point, select: true, voids: false }
-              );
+      if (blockId && isInsideSimpleTableCell(editor as YjsEditor, blockId)) {
+        const plainText = text?.trim();
 
-              return true;
-            }
+        // Check for tab-separated content (copied table cells / spreadsheet data)
+        if (plainText && plainText.includes('\t')) {
+          return handlePasteIntoTableCells(editor as YjsEditor, blockId, plainText);
+        }
+
+        // Check for HTML table content — extract cell texts and fill adjacent cells
+        if (html && (html.includes('<table') || html.includes('<tr'))) {
+          const cellTexts = extractCellTextsFromHTML(html);
+
+          if (cellTexts.length > 0) {
+            const tsvText = cellTexts.map((row) => row.join('\t')).join('\n');
+
+            return handlePasteIntoTableCells(editor as YjsEditor, blockId, tsvText);
+          }
+        }
+
+        if (plainText && isSingleURLText(plainText)) {
+          return handleURLPaste(editor, plainText);
+        }
+      }
+    }
+
+    // Priority 1: HTML (if available)
+    if (html && html.trim().length > 0) {
+      console.log('[AppFlowy] Handling HTML paste', html);
+      return handleHTMLPaste(editor, html, text);
+    }
+
+    // Priority 2: Plain text
+    if (text && text.trim().length > 0) {
+      console.log('[AppFlowy] Handling Plain Text paste', text);
+      return handlePlainTextPaste(editor, text);
+    }
+
+    return false;
+  };
+
+  return editor;
+};
+
+/**
+ * Extracts cell text values from an HTML table fragment.
+ * Returns a 2D array of strings (rows × columns).
+ */
+function extractCellTextsFromHTML(html: string): string[][] {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const rows = doc.querySelectorAll('tr');
+
+    if (rows.length === 0) return [];
+
+    const result: string[][] = [];
+
+    rows.forEach((row) => {
+      const cells = row.querySelectorAll('td, th');
+      const rowTexts: string[] = [];
+
+      cells.forEach((cell) => {
+        rowTexts.push(cell.textContent?.trim() ?? '');
+      });
+
+      if (rowTexts.length > 0) {
+        result.push(rowTexts);
+      }
+    });
+
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Handles pasting tab-separated content into table cells.
+ * Distributes each tab-separated value into adjacent cells of the same row.
+ */
+function handlePasteIntoTableCells(editor: YjsEditor, blockId: string, text: string): boolean {
+  try {
+    const sharedRoot = getSharedRoot(editor);
+
+    // Find which cell we're in
+    const cellBlockId = getParentSimpleTableCellBlockId(editor, blockId);
+
+    if (!cellBlockId) return false;
+
+    const cellBlock = getBlock(cellBlockId, sharedRoot);
+
+    if (!cellBlock) return false;
+
+    // Find the row
+    const rowId = cellBlock.get(YjsEditorKey.block_parent);
+    const rowBlock = getBlock(rowId, sharedRoot);
+
+    if (!rowBlock) return false;
+
+    const rowChildren = getChildrenArray(rowBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+    if (!rowChildren) return false;
+
+    // Find current cell's index in the row
+    const cellIds = rowChildren.toArray();
+    const cellIndex = cellIds.indexOf(cellBlockId);
+
+    if (cellIndex === -1) return false;
+
+    // Parse TSV: split by tabs for columns, newlines for rows
+    const rows = text.split('\n').filter((line) => line.length > 0);
+
+    if (rows.length === 0) return false;
+
+    // For each row of pasted data
+    const doc = assertDocExists(sharedRoot);
+
+    doc.transact(() => {
+      for (let rowOffset = 0; rowOffset < rows.length; rowOffset++) {
+        const values = rows[rowOffset].split('\t');
+
+        // Find the target row (current row + offset)
+        const tableId = rowBlock.get(YjsEditorKey.block_parent);
+        const tableBlock = getBlock(tableId, sharedRoot);
+
+        if (!tableBlock) continue;
+
+        const tableChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+        if (!tableChildren) continue;
+
+        const rowIds = tableChildren.toArray();
+        const currentRowIndex = rowIds.indexOf(rowId);
+        const targetRowIndex = currentRowIndex + rowOffset;
+
+        if (targetRowIndex >= rowIds.length) continue;
+
+        const targetRowBlock = getBlock(rowIds[targetRowIndex], sharedRoot);
+
+        if (!targetRowBlock) continue;
+
+        const targetRowCells = getChildrenArray(targetRowBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+        if (!targetRowCells) continue;
+
+        // Fill each value into the corresponding cell
+        for (let colOffset = 0; colOffset < values.length; colOffset++) {
+          const targetCellIndex = cellIndex + colOffset;
+
+          if (targetCellIndex >= targetRowCells.length) continue;
+
+          const targetCellId = targetRowCells.get(targetCellIndex);
+          const targetCell = getBlock(targetCellId, sharedRoot);
+
+          if (!targetCell) continue;
+
+          // Get the first paragraph in the cell
+          const cellChildren = getChildrenArray(targetCell.get(YjsEditorKey.block_children), sharedRoot);
+
+          if (!cellChildren || cellChildren.length === 0) continue;
+
+          const paragraphId = cellChildren.get(0);
+          const paragraph = getBlock(paragraphId, sharedRoot);
+
+          if (!paragraph) continue;
+
+          const textId = paragraph.get(YjsEditorKey.block_external_id);
+
+          if (!textId) continue;
+
+          const yText = getText(textId, sharedRoot);
+
+          if (!yText) continue;
+
+          // Only fill if it's the first cell (where cursor is) and first row — insert text there
+          // For other cells, clear and set the value
+          if (rowOffset === 0 && colOffset === 0) {
+            // First cell: insert at cursor position (handled by Slate default)
+            continue;
           }
 
-          const isVideoUrl = isURL(text, {
-            host_whitelist: ['youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com'],
-          });
-
-          if (isVideoUrl) {
-            insertFragment(editor, [
-              {
-                type: BlockType.VideoBlock,
-                data: { url: text } as VideoBlockData,
-                children: [
-                  {
-                    text: '',
-                  },
-                ],
-              },
-            ]);
-            return true;
+          // Clear existing text and insert new value
+          if (yText.length > 0) {
+            yText.delete(0, yText.length);
           }
 
-          insertFragment(editor, [
-            {
-              type: BlockType.LinkPreview,
-              data: { url: text } as LinkPreviewBlockData,
-              children: [{ text: '' }],
+          yText.insert(0, values[colOffset].trim());
+        }
+      }
+    });
+
+    // For the first cell (cursor position), insert text normally via Slate
+    const firstRowValues = rows[0].split('\t');
+
+    if (firstRowValues.length > 0) {
+      editor.insertText(firstRowValues[0].trim());
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error pasting into table cells:', error);
+    return false;
+  }
+}
+
+/**
+ * Handles HTML paste using AST-based parsing
+ */
+function handleHTMLPaste(editor: ReactEditor, html: string, fallbackText?: string): boolean {
+  try {
+    // Parse HTML to structured blocks
+    const blocks = parseHTML(html);
+
+    console.log('[AppFlowy] Parsed HTML blocks:', JSON.stringify(blocks, null, 2));
+
+    if (blocks.length === 0) {
+      // If HTML parsing fails, fallback to plain text
+      if (fallbackText) {
+        return handlePlainTextPaste(editor, fallbackText);
+      }
+
+      return false;
+    }
+
+    // Insert blocks through YJS
+    return insertParsedBlocks(editor, blocks);
+  } catch (error) {
+    console.error('Error handling HTML paste:', error);
+    return false;
+  }
+}
+
+/**
+ * Handles plain text paste with URL detection and Markdown support
+ */
+function handlePlainTextPaste(editor: ReactEditor, text: string): boolean {
+  const lines = text.split(/\r\n|\r|\n/);
+  const lineLength = lines.filter(Boolean).length;
+
+  // Special case: Single line
+  if (lineLength === 1) {
+    const pastedText = text.trim();
+    const isUrl = !!processUrl(pastedText);
+
+    if (isUrl) {
+      return handleURLPaste(editor, pastedText);
+    }
+
+    // Check if it's Markdown (even for single line)
+    if (detectMarkdown(text)) {
+      return handleMarkdownPaste(editor, text);
+    }
+
+    // If not URL and not Markdown, insert as plain text
+    const point = editor.selection?.anchor as BasePoint;
+
+    if (point) {
+      Transforms.insertNodes(editor, { text }, { at: point, select: true, voids: false });
+      return true;
+    }
+
+    return false;
+  }
+
+  const fragmentBlocks = parsePlainTextFragments(text);
+
+  if (fragmentBlocks) {
+    return insertParsedBlocks(editor, fragmentBlocks);
+  }
+
+  // Multi-line text: Check if it's Markdown
+  if (detectMarkdown(text)) {
+    return handleMarkdownPaste(editor, text);
+  }
+
+  // Check for TSV
+  if (detectTSV(text)) {
+    return handleTSVPaste(editor, text);
+  }
+
+  // Plain multi-line text: Create paragraphs
+  return handleMultiLinePlainText(editor, lines);
+}
+
+/**
+ * Handles TSV paste
+ */
+function handleTSVPaste(editor: ReactEditor, tsv: string): boolean {
+  try {
+    const block = parseTSVTable(tsv);
+
+    if (!block) {
+      return false;
+    }
+
+    return insertParsedBlocks(editor, [block]);
+  } catch (error) {
+    console.error('Error handling TSV paste:', error);
+    return false;
+  }
+}
+
+/**
+ * Handles Markdown paste
+ */
+function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
+  try {
+    // Parse Markdown to structured blocks
+    const blocks = parseMarkdown(markdown);
+
+    if (blocks.length === 0) {
+      return false;
+    }
+
+    // Insert blocks directly
+    return insertParsedBlocks(editor, blocks);
+  } catch (error) {
+    console.error('Error handling Markdown paste:', error);
+    return false;
+  }
+}
+
+/**
+ * Handles URL paste.
+ *
+ * Internal AppFlowy links that point at a specific block are inserted as a
+ * page-reference mention directly. Every other URL is pasted as an inline link
+ * and the "Paste as" menu (Mention / URL / Bookmark / Embed) is shown so the
+ * user can choose how to render it — matching the desktop app's behavior.
+ */
+function handleURLPaste(editor: ReactEditor, url: string): boolean {
+  // Check for AppFlowy internal links
+  const isAppFlowyLinkUrl = isURL(url, {
+    host_whitelist: [window.location.hostname],
+  });
+
+  if (isAppFlowyLinkUrl) {
+    const urlObj = new URL(url);
+    const blockId = urlObj.searchParams.get('blockId');
+
+    if (blockId) {
+      const pageId = urlObj.pathname.split('/').pop();
+      const point = editor.selection?.anchor as BasePoint;
+
+      if (point) {
+        Transforms.insertNodes(
+          editor,
+          {
+            text: '@',
+            mention: {
+              type: MentionType.PageRef,
+              page_id: pageId,
+              block_id: blockId,
             },
-          ]);
+          },
+          { at: point, select: true, voids: false }
+        );
 
-          return true;
-        }
+        return true;
+      }
+    }
+  }
+
+  // Insert the URL as an inline link and show the "Paste as" menu so the user
+  // can convert it to a Mention / Bookmark / Embed (matches desktop behavior).
+  return insertLinkedURLTextAndShowPasteAsMenu(editor, url);
+}
+
+function cloneRange(range: Range): Range {
+  return {
+    anchor: {
+      path: [...range.anchor.path],
+      offset: range.anchor.offset,
+    },
+    focus: {
+      path: [...range.focus.path],
+      offset: range.focus.offset,
+    },
+  };
+}
+
+function getInsertedURLRange(editor: ReactEditor, url: string, insertionPoint: BasePoint): Range | undefined {
+  const selection = editor.selection;
+
+  if (selection && editor.string(selection) === url) {
+    return cloneRange(selection);
+  }
+
+  const end = selection
+    ? Range.end(selection)
+    : { path: insertionPoint.path, offset: insertionPoint.offset + url.length };
+  const start = {
+    path: [...end.path],
+    offset: Math.max(0, end.offset - url.length),
+  };
+  const fallbackRange: Range = {
+    anchor: start,
+    focus: {
+      path: [...end.path],
+      offset: end.offset,
+    },
+  };
+
+  if (Editor.hasPath(editor, start.path) && editor.string(fallbackRange) === url) {
+    return fallbackRange;
+  }
+
+  return undefined;
+}
+
+function dispatchPasteAsMenuEvent(editor: ReactEditor, payload: Omit<PasteAsMenuPayload, 'position'>) {
+  window.setTimeout(() => {
+    try {
+      const rect = getRangeRect();
+      const position = rect
+        ? {
+            top: rect.bottom + 4,
+            left: rect.left,
+          }
+        : undefined;
+      const editorDom = ReactEditor.toDOMNode(editor, editor);
+
+      editorDom.dispatchEvent(
+        new CustomEvent<PasteAsMenuPayload>(PASTE_AS_MENU_EVENT, {
+          detail: {
+            ...payload,
+            position,
+          },
+        })
+      );
+    } catch (error) {
+      console.error('Error showing paste-as menu:', error);
+    }
+  });
+}
+
+function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string): boolean {
+  const href = processUrl(url) || url;
+
+  if (!editor.selection) return false;
+
+  if (Range.isExpanded(editor.selection)) {
+    Transforms.delete(editor);
+  }
+
+  const point = editor.selection?.anchor as BasePoint | undefined;
+
+  if (!point) return false;
+
+  editor.insertText(url);
+
+  const insertedRange = getInsertedURLRange(editor, url, point);
+
+  if (insertedRange) {
+    Transforms.select(editor, insertedRange);
+    editor.addMark(EditorMarkFormat.Href, href);
+    Transforms.select(editor, insertedRange);
+    Transforms.collapse(editor, { edge: 'end' });
+    dispatchPasteAsMenuEvent(editor, { url, range: insertedRange });
+  }
+
+  return true;
+}
+
+/**
+ * Handles multi-line plain text (no Markdown)
+ */
+function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean {
+  const blocks = lines
+    .map((line) => line.replace(/\uFEFF/g, ''))
+    .filter((line) => line.trim().length > 0)
+    .map((line) => ({
+      type: BlockType.Paragraph,
+      data: {},
+      text: line,
+      formats: [],
+      children: [],
+    }));
+
+  return insertParsedBlocks(editor, blocks);
+}
+
+/**
+ * Converts ParsedBlock to Slate Element with proper text wrapper
+ */
+function parsedBlockToSlateElement(block: ParsedBlock): Element {
+  const { type, data, children } = block;
+
+  if (SIMPLE_TABLE_CONTAINER_BLOCK_TYPES.includes(type)) {
+    return {
+      type,
+      data,
+      children: children.map(parsedBlockToSlateElement),
+    } as Element;
+  }
+
+  // Convert text + formats to Slate text nodes
+  const textNodes = parsedBlockToTextNodes(block);
+
+  // Create children - text wrapper + any nested blocks
+  const slateChildren: (Element | Text)[] = [
+    { type: YjsEditorKey.text, children: textNodes } as Element,
+    ...children.map(parsedBlockToSlateElement),
+  ];
+
+  return {
+    type,
+    data,
+    children: slateChildren,
+  } as Element;
+}
+
+const SIMPLE_TABLE_CONTAINER_BLOCK_TYPES = [
+  BlockType.SimpleTableBlock,
+  BlockType.SimpleTableRowBlock,
+  BlockType.SimpleTableCellBlock,
+];
+
+/**
+ * Converts ParsedBlock text to Slate text nodes with formats
+ */
+function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
+  const { text, formats } = block;
+
+  if (formats.length === 0) {
+    return [{ text }];
+  }
+
+  // Create segments based on format boundaries
+  const boundaries = new Set<number>([0, text.length]);
+
+  formats.forEach((format) => {
+    boundaries.add(format.start);
+    boundaries.add(format.end);
+  });
+
+  const positions = Array.from(boundaries).sort((a, b) => a - b);
+  const nodes: Text[] = [];
+
+  for (let i = 0; i < positions.length - 1; i++) {
+    const start = positions[i];
+    const end = positions[i + 1];
+    const segment = text.slice(start, end);
+
+    if (segment.length === 0) continue;
+
+    // Find all formats that apply to this segment
+    const activeFormats = formats.filter((format) => format.start <= start && format.end >= end);
+
+    // Build attributes object
+    const attributes: Record<string, unknown> = {};
+
+    activeFormats.forEach((format) => {
+      switch (format.type) {
+        case 'bold':
+          attributes.bold = true;
+          break;
+        case 'italic':
+          attributes.italic = true;
+          break;
+        case 'underline':
+          attributes.underline = true;
+          break;
+        case 'strikethrough':
+          attributes.strikethrough = true;
+          break;
+        case 'code':
+          attributes.code = true;
+          break;
+        case 'link':
+          attributes.href = format.data?.href;
+          break;
+        case 'color':
+          attributes.font_color = format.data?.color;
+          break;
+        case 'bgColor':
+          attributes.bg_color = format.data?.bgColor;
+          break;
+      }
+    });
+
+    nodes.push({ text: segment, ...attributes } as Text);
+  }
+
+  return nodes;
+}
+
+/**
+ * Inserts parsed blocks into the editor using YJS
+ */
+/**
+ * Block types that should not be nested inside table cells.
+ * When pasting these inside a cell, they are inserted after the parent table instead.
+ */
+const TABLE_BLOCK_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
+
+function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
+  if (blocks.length === 0) return false;
+
+  try {
+    const point = editor.selection?.anchor;
+
+    if (!point) return false;
+
+    const entry = getBlockEntry(editor as YjsEditor, point);
+
+    if (!entry) return false;
+
+    const [node] = entry;
+    const blockId = (node as { blockId?: string }).blockId;
+
+    if (!blockId) return false;
+
+    const sharedRoot = getSharedRoot(editor as YjsEditor);
+    const block = getBlock(blockId, sharedRoot);
+
+    // Check if we're pasting inside a table cell
+    const insideTable = isInsideSimpleTableCell(editor as YjsEditor, blockId);
+
+    if (insideTable) {
+      // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
+      const cellBlocks = blocks.filter((b) => !TABLE_BLOCK_TYPES.includes(b.type));
+      const tableBlocks = blocks.filter((b) => TABLE_BLOCK_TYPES.includes(b.type));
+
+      // Insert text blocks inside the cell
+      if (cellBlocks.length > 0) {
+        const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
+        const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+        const index = parentChildren.toArray().findIndex((id) => id === blockId);
+        const doc = assertDocExists(sharedRoot);
+        const slateNodes = cellBlocks.map(parsedBlockToSlateElement);
+
+        doc.transact(() => {
+          slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+        });
       }
 
-      if (lineLength > 1 && node.type !== BlockType.CodeBlock) {
-        if (html) {
-          return insertHtmlData(editor, data);
-        } else {
-          const fragment = lines.map((line) => ({
-            type: BlockType.Paragraph,
-            children: [
-              {
-                type: 'text',
-                children: [{ text: line }],
-              },
-            ],
-          }));
+      // Insert table blocks after the parent SimpleTable
+      if (tableBlocks.length > 0) {
+        // Walk up to find the SimpleTableBlock ancestor
+        let currentId: string | undefined = blockId;
+        let tableAncestorId: string | undefined;
 
-          insertFragment(editor, fragment);
-          return true;
+        while (currentId) {
+          const currentBlock = getBlock(currentId, sharedRoot);
+
+          if (!currentBlock) break;
+
+          if (currentBlock.get(YjsEditorKey.block_type) === BlockType.SimpleTableBlock) {
+            tableAncestorId = currentId;
+            break;
+          }
+
+          currentId = currentBlock.get(YjsEditorKey.block_parent);
         }
-      }
 
-      for (const line of lines) {
-        const point = editor.selection?.anchor as BasePoint;
+        if (tableAncestorId) {
+          const tableBlock = getBlock(tableAncestorId, sharedRoot);
+          const tableParent = getBlock(tableBlock.get(YjsEditorKey.block_parent), sharedRoot);
+          const tableParentChildren = getChildrenArray(tableParent.get(YjsEditorKey.block_children), sharedRoot);
+          const tableIndex = tableParentChildren.toArray().findIndex((id) => id === tableAncestorId);
+          const doc = assertDocExists(sharedRoot);
+          const slateNodes = tableBlocks.map(parsedBlockToSlateElement);
 
-        if (line) {
-          Transforms.insertNodes(
-            editor,
-            { text: `${line}${lineLength > 1 ? `\n` : ''}` },
-            {
-              at: point,
-              select: true,
-              voids: false,
-            }
-          );
+          doc.transact(() => {
+            slateContentInsertToYData(tableBlock.get(YjsEditorKey.block_parent), tableIndex + 1, slateNodes, doc);
+          });
         }
       }
 
       return true;
     }
 
-    return false;
-  };
+    // Normal paste (not inside table cell)
+    const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
+    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+    const index = parentChildren.toArray().findIndex((id) => id === blockId);
+    const doc = assertDocExists(sharedRoot);
 
-  editor.insertFragment = (fragment, options = {}) => {
-    return insertFragment(editor, fragment, options);
-  };
+    // Convert parsed blocks to Slate elements with proper text wrapper
+    const slateNodes = blocks.map(parsedBlockToSlateElement);
 
-  return editor;
-};
-
-export function insertHtmlData(editor: ReactEditor, data: DataTransfer) {
-  const html = data.getData('text/html');
-
-  if (html) {
-    console.debug('insert HTML Data', html);
-    const fragment = deserializeHTML(html) as Node[];
-
-    insertFragment(editor, fragment);
+    // Insert into YJS document
+    doc.transact(() => {
+      slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+    });
 
     return true;
+  } catch (error) {
+    console.error('Error inserting parsed blocks:', error);
+    return false;
   }
-
-  return false;
-}
-
-function insertFragment(editor: ReactEditor, fragment: Node[], options = {}) {
-  console.debug('insertFragment', fragment, options);
-  if (!beforePasted(editor)) return;
-
-  const point = editor.selection?.anchor as BasePoint;
-  const entry = getBlockEntry(editor as YjsEditor, point);
-
-  if (!entry) return;
-
-  const [node] = entry;
-
-  if (!node) return;
-
-  const blockId = node.blockId as string;
-  const sharedRoot = getSharedRoot(editor as YjsEditor);
-  const isEmptyNode = CustomEditor.getBlockTextContent(node) === '';
-  const block = getBlock(blockId, sharedRoot);
-  const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-  const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-  const index = parentChildren.toArray().findIndex((id) => id === block.get(YjsEditorKey.block_id));
-  const doc = assertDocExists(sharedRoot);
-
-  if (fragment.length === 1) {
-    const firstNode = fragment[0] as Element;
-
-    const findTextNodes = (node: Node): Node[] => {
-      if (Text.isText(node)) {
-        return [];
-      }
-
-      if (Element.isElement(node) && node.textId) {
-        return [node];
-      }
-
-      return node.children.flatMap(findTextNodes);
-    };
-
-    const textNodes = findTextNodes(firstNode);
-
-    if (textNodes.length === 1) {
-      const textNode = textNodes[0] as Element;
-      const texts = textNode.children.filter((node) => Text.isText(node));
-
-      Transforms.insertNodes(editor, texts, { at: point, select: true, voids: false });
-      return;
-    }
-  }
-
-  let lastBlockId = blockId;
-
-  doc.transact(() => {
-    const newBlockIds = slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, fragment, doc);
-
-    lastBlockId = newBlockIds[newBlockIds.length - 1];
-    if (isEmptyNode) {
-      deleteBlock(sharedRoot, blockId);
-    }
-  });
-
-  setTimeout(() => {
-    try {
-      const entry = findSlateEntryByBlockId(editor as YjsEditor, lastBlockId);
-
-      if (!entry) return;
-
-      const [, path] = entry;
-
-      const point = editor.end(path);
-
-      editor.select(point);
-    } catch (e) {
-      console.error(e);
-    }
-  }, 50);
-
-  return;
 }

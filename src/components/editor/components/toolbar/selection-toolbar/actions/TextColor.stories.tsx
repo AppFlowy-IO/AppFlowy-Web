@@ -1,7 +1,9 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { SubscriptionPlan } from '@/application/types';
+
 import { hostnameAndSubscriptionArgTypes } from '../../../../../../../.storybook/argTypes';
+
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 // Component to demonstrate Pro feature availability
 // Note: This story uses a local isOfficialHost function, so it doesn't need to mock window.location.hostname

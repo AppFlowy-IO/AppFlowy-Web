@@ -1,9 +1,10 @@
+import { useCallback, useMemo } from 'react';
+
 import { SelectOptionFilter, SelectOptionFilterCondition } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import SingleSelectFilterConditionsSelect from '@/components/database/components/filters/filter-menu/SingleSelectOptionFilterConditionsSelect';
-import { useCallback, useMemo } from 'react';
 
 function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
   const displaySelectOptionList = useMemo(() => {
@@ -27,6 +28,7 @@ function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }
 
       updateFilter({
         filterId: filter.id,
+        fieldId: filter.fieldId,
         content: newSelectedIds.filter((id) => id !== '').join(','),
       });
     },

@@ -1,10 +1,11 @@
+import { Grid, IconButton, InputLabel, Tooltip } from '@mui/material';
+import React, { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { TemplateSummary } from '@/application/template.type';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import AddRelatedTemplates from '@/components/as-template/related-template/AddRelatedTemplates';
 import TemplateItem from '@/components/as-template/related-template/TemplateItem';
-import { Grid, IconButton, InputLabel, Tooltip } from '@mui/material';
-import React, { forwardRef, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 
 function RelatedTemplates(
   {

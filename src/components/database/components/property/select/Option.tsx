@@ -1,19 +1,21 @@
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { useEffect, useRef, useState } from 'react';
+
 import { SelectOption, useReadOnly } from '@/application/database-yjs';
+import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
+import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import OptionMenu from '@/components/database/components/property/select/OptionMenu';
 import { useOptionDragContext } from '@/components/database/components/property/select/useOptionDragContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 
-import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
-import { useEffect, useRef, useState } from 'react';
+
 
 export enum DragState {
   IDLE = 'idle',

@@ -1,3 +1,11 @@
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import {
+  draggable,
+  dropTargetForElements,
+} from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import React, { useEffect, useRef, useState } from 'react';
+
 import { useReadOnly } from '@/application/database-yjs';
 import DropColumnIndicator from '@/components/database/components/drag-and-drop/DropColumnIndicator';
 import {
@@ -7,13 +15,6 @@ import {
 } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column';
 import { cn } from '@/lib/utils';
-import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import {
-  draggable,
-  dropTargetForElements,
-} from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import React, { useEffect, useRef, useState } from 'react';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
 const draggingState: ItemState = { type: GridDragState.DRAGGING };

@@ -1,10 +1,10 @@
 import { BaseRange, Descendant, Editor, Operation, Transforms } from 'slate';
-import { ReactEditor } from 'slate-react';
 import Y, { Transaction, YEvent } from 'yjs';
 
 import { translateYEvents } from '@/application/slate-yjs/utils/applyToSlate';
 import { applyToYjs } from '@/application/slate-yjs/utils/applyToYjs';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
+import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { CollabOrigin, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 type LocalChange = {
@@ -85,7 +85,6 @@ export function withYjs<T extends Editor>(
   }
 ): T & YjsEditor {
   const {
-    id,
     uploadFile,
     localOrigin = CollabOrigin.Local,
     readSummary,
@@ -117,17 +116,21 @@ export function withYjs<T extends Editor>(
       e.children = content.children;
     }
 
-    if (selection && !ReactEditor.hasRange(editor, selection)) {
+    // `ReactEditor.hasRange` only checks path existence, not whether each
+    // offset is within its node's text length. After a content swap the path
+    // can still resolve while the offset overshoots the new text — that's the
+    // "Cannot resolve a DOM point from Slate point" precondition. Use the
+    // offset-aware validator instead.
+    if (selection && !isValidSelection(e, selection)) {
       try {
         Transforms.select(e, Editor.start(editor, [0]));
-      } catch (e) {
-        console.error(e);
+      } catch (err) {
+        console.error(err);
         editor.deselect();
       }
     }
 
     onContentChange?.(content.children);
-    console.debug('===initializeDocumentContent', e.children);
     Editor.normalize(e, { force: true });
   };
 
@@ -157,13 +160,34 @@ export function withYjs<T extends Editor>(
       translateYEvents(e, events);
     }
 
-    // Update my cursor position
+    // Restore the cached cursor. The cached selection's paths may still be
+    // reachable in the new tree while its offsets overshoot the new text
+    // length (e.g. a peer shortened the text under the cursor). Applying it
+    // unchanged would leave editor.selection at offset > text length, which
+    // crashes slate-react's render-time selection sync (`toDOMPoint`). Clamp
+    // via `findNearestValidSelection`, falling back to deselect if no point
+    // can be recovered.
     try {
       if (newSelection) {
-        Transforms.select(editor, newSelection);
+        if (isValidSelection(editor, newSelection)) {
+          Transforms.select(editor, newSelection);
+        } else {
+          const clamped = findNearestValidSelection(editor, newSelection);
+
+          if (clamped) {
+            Transforms.select(editor, clamped);
+          } else {
+            editor.deselect();
+          }
+        }
       }
     } catch (error) {
       console.error(error);
+      try {
+        editor.deselect();
+      } catch {
+        // Selection may already be null.
+      }
     }
 
     // Restore the apply function to store local changes after applying remote changes
@@ -176,12 +200,32 @@ export function withYjs<T extends Editor>(
     YjsEditor.applyRemoteEvents(e, events, transaction);
   };
 
+  // When the sync layer is about to destroy this doc (version-reset or revert),
+  // it emits 'reset' before calling doc.destroy(). We must disconnect the editor
+  // immediately so that:
+  //   1. observeDeep events from the dying doc don't mutate editor.children
+  //   2. Slate's <Editable> layout effect doesn't try to sync a stale selection
+  //      against DOM nodes that no longer exist (the "Cannot resolve a DOM point"
+  //      crash triggered by flushSync in react-use-websocket).
+  const handleDocReset = () => {
+    if (!YjsEditor.connected(e)) return;
+    console.debug('[Version] withYjs: doc reset received, disconnecting editor for docId=%s', doc.guid);
+    try {
+      e.deselect();
+    } catch {
+      // Selection may already be null — safe to ignore.
+    }
+
+    e.disconnect();
+  };
+
+  doc.on('reset', handleDocReset);
+
   e.connect = () => {
     if (YjsEditor.connected(e)) {
       throw new Error('Already connected');
     }
 
-    console.debug('===connect', id);
     initializeDocumentContent();
     e.sharedRoot.observeDeep(handleYEvents);
     connectSet.add(e);
@@ -189,9 +233,10 @@ export function withYjs<T extends Editor>(
 
   e.disconnect = () => {
     if (!YjsEditor.connected(e)) {
-      throw new Error('Not connected');
+      return;
     }
 
+    doc.off('reset', handleDocReset);
     e.sharedRoot.unobserveDeep(handleYEvents);
     connectSet.delete(e);
   };

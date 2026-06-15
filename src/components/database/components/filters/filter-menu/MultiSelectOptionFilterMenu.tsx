@@ -1,9 +1,11 @@
+import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import { SelectOptionFilter, SelectOptionFilterCondition } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
-import { useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+
 import FieldMenuTitle from './FieldMenuTitle';
 
 function MultiSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
@@ -50,6 +52,7 @@ function MultiSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter })
 
       updateFilter({
         filterId: filter.id,
+        fieldId: filter.fieldId,
         content: newSelectedIds.filter((id) => id !== '').join(','),
       });
     },

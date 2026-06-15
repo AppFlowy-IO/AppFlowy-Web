@@ -1,17 +1,21 @@
+import { Button, CircularProgress, Divider, IconButton, Tooltip } from '@mui/material';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { validate as uuidValidate } from 'uuid';
+
 import { SubscriptionPlan, View } from '@/application/types';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
-import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { notify } from '@/components/_shared/notify';
+import { flattenViews } from '@/components/_shared/outline/utils';
+import { usePublishing, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import HomePageSetting from '@/components/app/publish-manage/HomePageSetting';
 import PublishedPages from '@/components/app/publish-manage/PublishedPages';
 import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
 import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
-import { notify } from '@/components/_shared/notify';
-import { flattenViews } from '@/components/_shared/outline/utils';
+import { PublishService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
-import { Button, CircularProgress, Divider, IconButton, Tooltip } from '@mui/material';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 export function PublishManage({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();
@@ -19,7 +23,6 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   const currentUser = useCurrentUser();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
   const [loading, setLoading] = React.useState<boolean>(false);
-  const service = useService();
   const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const [namespace, setNamespace] = React.useState<string>('');
   const [homePageId, setHomePageId] = React.useState<string>('');
@@ -29,22 +32,22 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     return publishViews.find((view) => view.view_id === homePageId);
   }, [homePageId, publishViews]);
   const loadPublishNamespace = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
     try {
-      const namespace = await service.getPublishNamespace(workspaceId);
+      const ns = await PublishService.getNamespace(workspaceId);
 
-      setNamespace(namespace);
+      setNamespace(ns);
 
       // eslint-disable-next-line
     } catch (e: any) {
       console.error(e);
     }
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   const loadHomePageId = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
     try {
-      const { view_id } = await service.getPublishHomepage(workspaceId);
+      const { view_id } = await PublishService.getHomepage(workspaceId);
 
       setHomePageId(view_id);
 
@@ -52,13 +55,13 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     } catch (e: any) {
       console.error(e);
     }
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   const loadPublishPages = useCallback(async () => {
-    if (!service || !namespace) return;
+    if (!namespace) return;
     setLoading(true);
     try {
-      const outline = await service.getPublishOutline(namespace);
+      const outline = await PublishService.getOutline(namespace);
 
       setPublishViews(
         flattenViews(outline)
@@ -77,13 +80,13 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     }
 
     setLoading(false);
-  }, [namespace, service]);
+  }, [namespace]);
 
   const handleUpdateNamespace = useCallback(
     async (newNamespace: string) => {
-      if (!service || !workspaceId) return;
+      if (!workspaceId) return;
       try {
-        await service.updatePublishNamespace(workspaceId, {
+        await PublishService.updateNamespace(workspaceId, {
           old_namespace: namespace,
           new_namespace: newNamespace,
         });
@@ -96,18 +99,18 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         throw e;
       }
     },
-    [namespace, service, t, workspaceId]
+    [namespace, t, workspaceId]
   );
 
   const handleUpdateHomePage = useCallback(
     async (newHomePageId: string) => {
-      if (!service || !workspaceId) return;
+      if (!workspaceId) return;
       if (!isOwner) {
         return;
       }
 
       try {
-        await service.updatePublishHomepage(workspaceId, newHomePageId);
+        await PublishService.updateHomepage(workspaceId, newHomePageId);
 
         setHomePageId(newHomePageId);
         notify.success(t('settings.sites.success.setHomepageSuccess'));
@@ -117,18 +120,18 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         throw e;
       }
     },
-    [isOwner, service, t, workspaceId]
+    [isOwner, t, workspaceId]
   );
 
   const handleRemoveHomePage = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
     if (!isOwner) {
       notify.error(t('settings.sites.error.onlyWorkspaceOwnerCanRemoveHomepage'));
       return;
     }
 
     try {
-      await service.removePublishHomepage(workspaceId);
+      await PublishService.removeHomepage(workspaceId);
 
       setHomePageId('');
       notify.success(t('settings.sites.success.removeHomePageSuccess'));
@@ -137,9 +140,11 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
       notify.error(e.message);
       throw e;
     }
-  }, [isOwner, service, t, workspaceId]);
+  }, [isOwner, t, workspaceId]);
 
-  const { publish, unpublish } = useAppHandlers();
+  const { publish, unpublish } = usePublishing();
+  const getSubscriptions = useGetSubscriptions();
+  const isHosted = useMemo(() => isAppFlowyHosted(), []);
   const handlePublish = useCallback(
     async (view: View, publishName: string) => {
       if (!publish) return;
@@ -171,7 +176,6 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     [loadPublishPages, t, unpublish]
   );
 
-  const { getSubscriptions } = useAppHandlers();
   const [activeSubscription, setActiveSubscription] = React.useState<SubscriptionPlan | null>(null);
   const loadSubscription = useCallback(async () => {
     try {
@@ -182,25 +186,29 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         return;
       }
 
-      const subscription = subscriptions[0];
-
-      setActiveSubscription(subscription?.plan || SubscriptionPlan.Free);
+      setActiveSubscription(getProAccessPlanFromSubscriptions(subscriptions));
     } catch (e) {
       console.error(e);
     }
   }, [getSubscriptions]);
 
   useEffect(() => {
+    if (!isHosted) {
+      setActiveSubscription(null);
+      return;
+    }
+
     void loadSubscription();
-  }, [loadSubscription]);
+  }, [isHosted, loadSubscription]);
 
   useEffect(() => {
     void loadPublishNamespace();
   }, [loadPublishNamespace]);
 
   useEffect(() => {
+    if (publishViews.length === 0) return;
     void loadHomePageId();
-  }, [loadHomePageId]);
+  }, [loadHomePageId, publishViews.length]);
 
   useEffect(() => {
     void loadPublishPages();
@@ -208,7 +216,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   const url = `${window.location.origin}/${namespace}`;
 
   return (
-    <div className={'flex flex-col gap-2'}>
+    <div className={'flex flex-col gap-2'} data-testid='publish-manage-panel'>
       <div className={'px-1  text-base font-medium'}>{t('namespace')}</div>
       <div className={'px-1  text-xs text-text-secondary'}>{t('manageNamespaceDescription')}</div>
       <Divider className={'mb-2'} />
@@ -250,20 +258,26 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
             publishViews={publishViews}
             onRemoveHomePage={handleRemoveHomePage}
             onUpdateHomePage={handleUpdateHomePage}
+            canEdit={!uuidValidate(namespace)}
           />
           <Tooltip
             title={
-              isOwner
-                ? activeSubscription === SubscriptionPlan.Free
-                  ? t('settings.sites.error.onlyProCanUpdateNamespace')
-                  : undefined
-                : t('settings.sites.error.onlyWorkspaceOwnerCanUpdateNamespace')
+              !isOwner
+                ? t('settings.sites.error.onlyWorkspaceOwnerCanUpdateNamespace')
+                : isHosted && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free)
+                ? t('settings.sites.error.onlyProCanUpdateNamespace')
+                : undefined
             }
           >
             <IconButton
               size={'small'}
+              data-testid='edit-namespace-button'
               onClick={(e) => {
-                if (!isOwner || activeSubscription === SubscriptionPlan.Free) {
+                // Block if not owner, or if on official host with Free/unloaded subscription
+                if (
+                  !isOwner ||
+                  (isHosted && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free))
+                ) {
                   return;
                 }
 

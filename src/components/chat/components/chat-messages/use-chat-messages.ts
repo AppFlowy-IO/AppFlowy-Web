@@ -1,6 +1,7 @@
+import { useCallback, useRef, useState } from 'react';
+
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
-import { useCallback, useRef, useState } from 'react';
 
 const DEFAULT_LIMIT = 20;
 

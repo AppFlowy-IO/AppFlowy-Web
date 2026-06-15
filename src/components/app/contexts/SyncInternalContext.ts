@@ -1,25 +1,39 @@
-import { createContext, useContext } from 'react';
 import EventEmitter from 'events';
+
+import { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
-import { YDoc, Types } from '@/application/types';
-import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
-import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
-import { UpdateCollabInfo } from '@/components/ws/useSync';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { RegisterSyncContext } from '@/components/ws/useSync';
 
 // Internal context for synchronization layer
 // This context is only used within the app provider layers
+// Note: the WebSocket/BroadcastChannel transports are deliberately NOT exposed
+// here — their identity changes whenever a message arrives, which would
+// re-render every consumer per message. Message routing happens in useSync,
+// which receives the transports directly in AppSyncLayer.
 export interface SyncInternalContextType {
-  webSocket: AppflowyWebSocketType; // WebSocket connection from useAppflowyWebSocket
-  broadcastChannel: BroadcastChannelType; // BroadcastChannel from useBroadcastChannel
-  registerSyncContext: (params: {
-    doc: YDoc;
-    collabType: Types;
-    awareness?: Awareness;
-  }) => { doc: YDoc };
+  registerSyncContext: (params: RegisterSyncContext) => SyncContext;
+  revertCollabVersion: (viewId: string, version: string) => Promise<void>;
   eventEmitter: EventEmitter;
   awarenessMap: Record<string, Awareness>;
-  lastUpdatedCollab: UpdateCollabInfo | null;
+  /**
+   * Flush all pending updates for all registered sync contexts.
+   * This ensures all local changes are sent to the server before operations like duplicate.
+   */
+  flushAllSync: () => Promise<boolean>;
+  /**
+   * Sync all registered collab documents to the server via HTTP API.
+   * This is similar to desktop's collab_full_sync_batch - it sends the full doc state
+   * to ensure the server has the latest data before operations like duplicate.
+   */
+  syncAllToServer: (workspaceId: string) => Promise<void>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   * If the same objectId is re-registered before the timer fires,
+   * the cleanup is cancelled and the existing context is reused.
+   */
+  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void;
 }
 
 export const SyncInternalContext = createContext<SyncInternalContextType | null>(null);
@@ -27,10 +41,16 @@ export const SyncInternalContext = createContext<SyncInternalContextType | null>
 // Hook to access sync internal context
 export function useSyncInternal() {
   const context = useContext(SyncInternalContext);
-  
+
   if (!context) {
     throw new Error('useSyncInternal must be used within a SyncInternalProvider');
   }
-  
+
   return context;
+}
+
+// Optional hook that returns null when not in a SyncInternalProvider
+// Use this for components that may render outside the main app context (e.g., publish view)
+export function useSyncInternalOptional() {
+  return useContext(SyncInternalContext);
 }

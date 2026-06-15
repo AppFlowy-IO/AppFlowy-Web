@@ -175,7 +175,7 @@ describe('HTTP API - Auth & User Operations', () => {
 
             const result = await APIService.getAppOutline(testWorkspaceId);
 
-            expect(Array.isArray(result)).toBe(true);
+            expect(Array.isArray(result.outline)).toBe(true);
         }, 30000);
     });
 
