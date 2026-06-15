@@ -297,7 +297,6 @@ export function useWorkspaceData() {
 
         // Append shareWithMe data as hidden space if available
         const nextFolderRid = parseFolderRid(res.folderRid);
-
         let outlineWithShareWithMe = res.outline;
 
         if (shareWithMeResult && shareWithMeResult.children && shareWithMeResult.children.length > 0) {
