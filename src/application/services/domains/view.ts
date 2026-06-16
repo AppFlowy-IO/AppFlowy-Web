@@ -10,6 +10,9 @@ export {
 } from '../js-services/http/view-api';
 export {
   getAppViewCached as get,
+  getCachedAppView as getCached,
+  getCachedAppViewFromDisk as getCachedFromDisk,
   invalidateViewCache as invalidateCache,
+  refreshAppViewCache as refresh,
   getAppDatabaseViewRelationsFromCollab as getDatabaseRelations,
 } from '../js-services/cached-api';
