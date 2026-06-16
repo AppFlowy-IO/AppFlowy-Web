@@ -306,14 +306,18 @@ export enum MentionType {
   childPage = 'childPage',
   externalLink = 'externalLink',
   Person = 'person',
+  Database = 'database',
+  DatabaseRow = 'database_row',
 }
 
 export interface Mention {
   // inline page ref id
   page_id?: string;
   block_id?: string;
+  row_id?: string;
   // reminder date ref id
   date?: string;
+  end?: string;
   reminder_id?: string;
   reminder_option?: string;
   include_time?: boolean;
@@ -325,7 +329,141 @@ export interface Mention {
   // mention person
   person_id?: string;
   person_name?: string;
+
+  // database and database row references
+  database_id?: string;
+  database_view_id?: string;
+  database_row_id?: string;
+  row_document_id?: string;
+
+  // Optional denormalized display data for mention types that cannot be
+  // resolved from the outline alone, such as database rows.
+  data?: Record<string, unknown>;
 }
+
+export enum MentionTargetKind {
+  Person = 'person',
+  Page = 'page',
+  Database = 'database',
+  DatabaseRow = 'database_row',
+  Date = 'date',
+  ExternalLink = 'external_link',
+}
+
+export enum MentionSearchSectionKind {
+  Suggested = 'suggested',
+  People = 'people',
+  Pages = 'pages',
+  Databases = 'databases',
+  DatabaseRows = 'database_rows',
+  Dates = 'dates',
+  Links = 'links',
+}
+
+export interface MentionSearchContext {
+  view_id?: string;
+  database_id?: string;
+  database_view_id?: string;
+  row_id?: string;
+}
+
+export interface MentionSearchFilter {
+  database_ids?: string[];
+  database_view_ids?: string[];
+  database_row_ids?: string[];
+}
+
+export interface MentionSearchRequest {
+  query?: string;
+  limit?: number;
+  cursor?: string;
+  include?: MentionTargetKind[];
+  context?: MentionSearchContext;
+  filter?: MentionSearchFilter;
+}
+
+export interface MentionPayloadPerson {
+  type: MentionTargetKind.Person;
+  person_id: string;
+  person_name: string;
+  page_id: string;
+  block_id?: string;
+  row_id?: string;
+}
+
+export interface MentionPayloadPage {
+  type: MentionTargetKind.Page;
+  page_id: string;
+  block_id?: string;
+  row_id?: string;
+}
+
+export interface MentionPayloadDatabase {
+  type: MentionTargetKind.Database;
+  database_id: string;
+  database_view_id?: string;
+}
+
+export interface MentionPayloadDatabaseRow {
+  type: MentionTargetKind.DatabaseRow;
+  database_id: string;
+  database_view_id?: string;
+  row_id: string;
+  row_document_id?: string;
+}
+
+export interface MentionPayloadDate {
+  type: MentionTargetKind.Date;
+  start: string;
+  end?: string;
+  reminder_id?: string;
+  reminder_option?: string;
+  include_time?: boolean;
+}
+
+export interface MentionPayloadExternalLink {
+  type: MentionTargetKind.ExternalLink | MentionType.externalLink;
+  url: string;
+}
+
+export type MentionSearchPayload =
+  | MentionPayloadPerson
+  | MentionPayloadPage
+  | MentionPayloadDatabase
+  | MentionPayloadDatabaseRow
+  | MentionPayloadDate
+  | MentionPayloadExternalLink;
+
+export interface MentionSearchResultItem {
+  kind: MentionTargetKind;
+  object_id?: string;
+  title: string;
+  subtitle?: string;
+  icon?: string;
+  database_id?: string;
+  database_view_id?: string;
+  database_row_id?: string;
+  row_document_id?: string;
+  can_access_context?: boolean;
+  mention: MentionSearchPayload;
+}
+
+export interface MentionSearchSection {
+  kind: MentionSearchSectionKind;
+  title: string;
+  items: MentionSearchResultItem[];
+  next_cursor?: string;
+  has_more: boolean;
+  status: string;
+  message?: string;
+}
+
+export interface MentionSearchResponse {
+  sections: MentionSearchSection[];
+  partial?: boolean;
+}
+
+export type SearchMentions = (request: MentionSearchRequest) => Promise<MentionSearchResponse>;
 
 export interface FolderMeta {
   current_view: ViewId;
@@ -1435,6 +1573,8 @@ export interface ViewComponentProps {
   getSubscriptions?: () => Promise<Subscription[]>;
   eventEmitter?: EventEmitter;
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 

@@ -14,7 +14,9 @@ import {
   LoadDatabasePrompts,
   LoadView,
   LoadViewMeta,
+  MentionSearchContext,
   RowId,
+  SearchMentions,
   Subscription,
   TestDatabasePromptConfig,
   TimeFormat,
@@ -97,6 +99,8 @@ export interface DatabaseContextState {
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   loadViews?: () => Promise<View[]>;
   uploadFile?: (file: File) => Promise<string>;
   loadDatabasePrompts?: LoadDatabasePrompts;

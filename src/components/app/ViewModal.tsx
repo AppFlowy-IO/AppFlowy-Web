@@ -5,7 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import {
+  MentionSearchRequest,
+  UIVariant,
+  View,
+  ViewComponentProps,
+  ViewLayout,
+  ViewMetaProps,
+  YDoc,
+  YDocWithMeta,
+} from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
@@ -30,7 +39,7 @@ import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ViewService } from '@/application/services/domains';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -67,6 +76,16 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const eventEmitter = useEventEmitter();
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
+  const searchMentions = useCallback(
+    (request: MentionSearchRequest) => {
+      if (!workspaceId) {
+        return Promise.reject(new Error('workspaceId is required'));
+      }
+
+      return WorkspaceService.searchMentions(workspaceId, request);
+    },
+    [workspaceId]
+  );
   const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
   const outline = useAppOutline();
@@ -372,6 +391,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         scheduleDeferredCleanup={scheduleDeferredCleanup}
         getSubscriptions={operations.getSubscriptions}
         getMentionUser={getMentionUser}
+        searchMentions={searchMentions}
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
@@ -410,6 +430,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     handleUploadFile,
     scheduleDeferredCleanup,
     getMentionUser,
+    searchMentions,
     eventEmitter,
     loadDatabaseRelations,
   ]);

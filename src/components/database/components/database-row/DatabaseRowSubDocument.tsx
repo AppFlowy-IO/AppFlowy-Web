@@ -112,12 +112,23 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const row = useRowData(rowId) as YDatabaseRow | undefined;
   const currentUser = useCurrentUserOptional();
   const workspaceId = useCurrentWorkspaceIdOptional();
+  const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
 
   // Get context for Editor props and row document operations
   // The context provides mode-specific implementations:
   // - App mode: authenticated APIs, WebSocket sync
   // - Publish mode: published cache, no writes
   const context = useDatabaseContextOptional();
+  const mentionContext = useMemo(
+    () => ({
+      ...context?.mentionContext,
+      view_id: documentId,
+      database_id: context?.mentionContext?.database_id ?? databaseId,
+      database_view_id: context?.mentionContext?.database_view_id ?? context?.activeViewId,
+      row_id: rowId,
+    }),
+    [context?.activeViewId, context?.mentionContext, databaseId, documentId, rowId]
+  );
 
   // Row document operations from context (mode-specific implementations)
   const loadRowDocument = context?.loadRowDocument;
@@ -1011,6 +1022,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       viewId={documentId}
       doc={doc}
       readOnly={false}
+      mentionContext={mentionContext}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}
     />

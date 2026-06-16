@@ -119,6 +119,22 @@ export type EnvConfig = {
     wsURL: string;
 };
 
+export type TestAuthToken = {
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    user: any;
+};
+
+export type FeatureFixtureAccount = {
+    feature: string;
+    name: string;
+    email: string;
+    token: TestAuthToken;
+    workspaceId: string;
+};
+
 export function getEnvConfig(): EnvConfig {
     const baseURL = process.env.APPFLOWY_BASE_URL;
     const gotrueURL = process.env.APPFLOWY_GOTRUE_BASE_URL;
@@ -131,29 +147,73 @@ export function getEnvConfig(): EnvConfig {
     return { baseURL, gotrueURL, wsURL };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function ensureWorkspace(mockToken?: any): Promise<string> {
+export function setActiveTestToken(mockToken: TestAuthToken): void {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getTokenParsed } = require('@/application/session/token');
+
+    getTokenParsed.mockReturnValue(mockToken);
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getAxiosInstance } = require('../http_api');
+    const axiosInstance = getAxiosInstance();
+
+    if (axiosInstance && mockToken.access_token) {
+        axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${mockToken.access_token}`;
+    }
+}
+
+export function createTestToken(authResult: {
+    accessToken: string;
+    refreshToken: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    user: any;
+}): TestAuthToken {
+    return {
+        access_token: authResult.accessToken,
+        refresh_token: authResult.refreshToken,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user: authResult.user,
+    };
+}
+
+export async function ensureWorkspace(mockToken?: TestAuthToken): Promise<string> {
     // Set up mock if provided
     if (mockToken) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { getTokenParsed } = require('@/application/session/token');
-
-        getTokenParsed.mockReturnValue(mockToken);
-
-        // Also set the Authorization header directly on the axios instance
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { getAxiosInstance } = require('../http_api');
-        const axiosInstance = getAxiosInstance();
-
-        if (axiosInstance && mockToken.access_token) {
-            axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${mockToken.access_token}`;
-        }
+        setActiveTestToken(mockToken);
     }
 
     // Server always returns a workspace (creates "My Workspace" for new users)
     const workspaceInfo = await APIService.getUserWorkspaceInfo();
 
     return workspaceInfo.selected_workspace.id;
+}
+
+function normalizeFixturePart(value: string): string {
+    return value
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'default';
+}
+
+export async function getFeatureFixtureAccount(
+    authHelper: AuthHelper,
+    feature: string,
+    name: string
+): Promise<FeatureFixtureAccount> {
+    const normalizedFeature = normalizeFixturePart(feature);
+    const normalizedName = normalizeFixturePart(name);
+    const email = `fixture-${normalizedFeature}-${normalizedName}@appflowy.io`;
+    const authResult = await authHelper.signInUser(email);
+    const token = createTestToken(authResult);
+    const workspaceId = await ensureWorkspace(token);
+
+    return {
+        feature: normalizedFeature,
+        name: normalizedName,
+        email,
+        token,
+        workspaceId,
+    };
 }
 
 // Auth helper for creating test users

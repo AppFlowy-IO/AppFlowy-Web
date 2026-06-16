@@ -71,6 +71,35 @@ import { EditorInlineAttributes } from '@/slate-editor';
 import { Log } from '@/utils/log';
 import { renderDate } from '@/utils/time';
 
+type MentionTextContent = NonNullable<EditorInlineAttributes['mention']>;
+
+function getMentionDataTitle(mention: MentionTextContent) {
+  const title = mention.data?.title;
+
+  return typeof title === 'string' && title.length > 0 ? title : undefined;
+}
+
+function getMentionTextContent(mention: MentionTextContent): string {
+  if (mention.type === MentionType.Date) {
+    const date = mention.date || '';
+    const isUnix = date?.length === 10;
+
+    return renderDate(date, 'MMM DD, YYYY', isUnix);
+  }
+
+  if (mention.type === MentionType.Database || mention.type === MentionType.DatabaseRow) {
+    const title = getMentionDataTitle(mention);
+
+    if (title) return title;
+
+    return mention.type === MentionType.DatabaseRow ? 'Database row' : 'Database';
+  }
+
+  const name = document.querySelector('[data-mention-id="' + mention.page_id + '"]')?.textContent || '';
+
+  return name;
+}
+
 export const CustomEditor = {
   getEditorContent(editor: YjsEditor) {
     const allNodes = editor.children ?? [];
@@ -97,16 +126,7 @@ export const CustomEditor = {
       }
 
       if (node.mention) {
-        if (node.mention.type === MentionType.Date) {
-          const date = node.mention.date || '';
-          const isUnix = date?.length === 10;
-
-          return renderDate(date, 'MMM DD, YYYY', isUnix);
-        } else {
-          const name = document.querySelector('[data-mention-id="' + node.mention.page_id + '"]')?.textContent || '';
-
-          return name;
-        }
+        return getMentionTextContent(node.mention);
       }
 
       return node.text || '';

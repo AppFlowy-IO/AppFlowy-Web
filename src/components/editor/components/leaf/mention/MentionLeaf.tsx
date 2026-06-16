@@ -4,6 +4,7 @@ import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { Mention, MentionType } from '@/application/types';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
+import MentionDatabase from '@/components/editor/components/leaf/mention/MentionDatabase';
 import MentionDate from '@/components/editor/components/leaf/mention/MentionDate';
 import MentionExternalLink from '@/components/editor/components/leaf/mention/MentionExternalLink';
 import MentionPage from '@/components/editor/components/leaf/mention/MentionPage';
@@ -34,7 +35,15 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     if (type === MentionType.Person && person_id) {
       return <MentionPerson type={type} personId={person_id} person_name={person_name} />;
     }
-  }, [type, page_id, date, text, block_id, reminder, url, person_id, person_name, include_time]);
+
+    if (type === MentionType.Database && mention.database_id) {
+      return <MentionDatabase mention={mention} />;
+    }
+
+    if (type === MentionType.DatabaseRow && mention.database_id && (mention.row_id || mention.database_row_id)) {
+      return <MentionDatabase mention={mention} />;
+    }
+  }, [type, page_id, date, text, block_id, reminder, url, person_id, person_name, include_time, mention]);
 
   // check if the mention is selected
   const { isSelected, select, isCursorBefore } = useLeafSelected(text);
