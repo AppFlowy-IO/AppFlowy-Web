@@ -20,16 +20,14 @@ export function parseYDatabaseCommonCellToCell(cell: YDatabaseCell): Cell {
   return {
     createdAt: Number(cell.get(YjsDatabaseKey.created_at)),
     lastModified: Number(cell.get(YjsDatabaseKey.last_modified)),
-    fieldType: parseInt(cell.get(YjsDatabaseKey.field_type)) as FieldType,
+    fieldType: Number.parseInt(cell.get(YjsDatabaseKey.field_type)) as FieldType,
     data: cell.get(YjsDatabaseKey.data),
   };
 }
 
 export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseField): Cell {
-  const cellType = parseInt(cell.get(YjsDatabaseKey.field_type));
-  const sourceType = Number(
-    cell.get(YjsDatabaseKey.source_field_type) ?? cellType
-  ) as FieldType;
+  const cellType = Number.parseInt(cell.get(YjsDatabaseKey.field_type));
+  const sourceType = Number(cell.get(YjsDatabaseKey.source_field_type) ?? cellType) as FieldType;
 
   let value = parseYDatabaseCommonCellToCell(cell);
 
@@ -88,10 +86,7 @@ function transformCellData(
         return stringifyChecklistStruct(parsed);
       }
 
-      if (
-        (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) &&
-        field
-      ) {
+      if ((sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) && field) {
         // Resolve options by the source select type — the field's current type
         // is Checklist here, so its own type-option holds no select options.
         const typeOption = parseSelectOptionTypeOptions(field, sourceType);
@@ -151,15 +146,16 @@ function transformCellData(
 
       if (sourceType === FieldType.RichText && typeof data === 'string') {
         const names = data.split(',').map((s) => s.trim());
-        const ids = names
-          .map((name) => options.find((o) => o.name === name)?.id)
-          .filter(Boolean);
+        const ids = names.map((name) => options.find((o) => o.name === name)?.id).filter(Boolean);
 
         return ids.join(',');
       }
 
       // Checkbox → SingleSelect/MultiSelect: map "Yes"/"No" to option IDs
-      if (sourceType === FieldType.Checkbox && (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean')) {
+      if (
+        sourceType === FieldType.Checkbox &&
+        (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean')
+      ) {
         const isChecked = parseCheckboxValue(data);
         const targetName = isChecked ? 'Yes' : 'No';
         const matchingOption = options.find((o) => o.name === targetName);

@@ -146,13 +146,9 @@ export const renderPublishPage = ({ hostname, pathname, metaData, publishError }
 };
 
 const appendPublishErrorScript = ($: CheerioAPI, error: PublishErrorPayload) => {
-  const serialized = JSON.stringify(error)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e');
+  const serialized = JSON.stringify(error).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 
-  $('head').append(
-    `<script id="appflowy-publish-error">window.__APPFLOWY_PUBLISH_ERROR__ = ${serialized};</script>`
-  );
+  $('head').append(`<script id="appflowy-publish-error">window.__APPFLOWY_PUBLISH_ERROR__ = ${serialized};</script>`);
 };
 
 const setOrUpdateMetaTag = ($: CheerioAPI, selector: string, attribute: string, content: string) => {
@@ -184,10 +180,10 @@ const argbToRgba = (color: string): string => {
     return color.replace('0x', '#');
   }
 
-  const r = parseInt(hex.slice(2, 4), 16);
-  const g = parseInt(hex.slice(4, 6), 16);
-  const b = parseInt(hex.slice(6, 8), 16);
-  const a = hasAlpha ? parseInt(hex.slice(0, 2), 16) / 255 : 1;
+  const r = Number.parseInt(hex.slice(2, 4), 16);
+  const g = Number.parseInt(hex.slice(4, 6), 16);
+  const b = Number.parseInt(hex.slice(6, 8), 16);
+  const a = hasAlpha ? Number.parseInt(hex.slice(0, 2), 16) / 255 : 1;
 
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 };

@@ -7,24 +7,20 @@ import { TemplateCategoryFormValues } from '@/application/template.type';
 import BgColorPicker from '@/components/as-template/category/BgColorPicker';
 import IconPicker from '@/components/as-template/category/IconPicker';
 
-const CategoryForm = forwardRef<HTMLInputElement, {
-  defaultValues: TemplateCategoryFormValues;
-  onSubmit: (data: TemplateCategoryFormValues) => void;
-}>(({
-  defaultValues,
-  onSubmit,
-}, ref) => {
+const CategoryForm = forwardRef<
+  HTMLInputElement,
+  {
+    defaultValues: TemplateCategoryFormValues;
+    onSubmit: (data: TemplateCategoryFormValues) => void;
+  }
+>(({ defaultValues, onSubmit }, ref) => {
   const { t } = useTranslation();
-  const {
-    control,
-    handleSubmit,
-  } = useForm<TemplateCategoryFormValues>({
+  const { control, handleSubmit } = useForm<TemplateCategoryFormValues>({
     defaultValues,
   });
 
   return (
-    <form className={'flex flex-col gap-4 py-2'} onSubmit={handleSubmit(onSubmit)}
-    >
+    <form className={'flex flex-col gap-4 py-2'} onSubmit={handleSubmit(onSubmit)}>
       <Controller
         control={control}
         rules={{
@@ -32,15 +28,16 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             field: t('template.category.name'),
           }),
         }}
-
         render={({ field, fieldState }) => (
           <TextField
             error={!!fieldState.error}
-            helperText={fieldState.error?.message} required {...field}
+            helperText={fieldState.error?.message}
+            required
+            {...field}
             label={t('template.category.name')}
           />
         )}
-        name="name"
+        name='name'
       />
 
       <Controller
@@ -50,17 +47,18 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             field: t('template.category.desc'),
           }),
         }}
-
         render={({ field, fieldState }) => (
           <TextField
             multiline
             minRows={3}
             error={!!fieldState.error}
-            helperText={fieldState.error?.message} required {...field}
+            helperText={fieldState.error?.message}
+            required
+            {...field}
             label={t('template.category.desc')}
           />
         )}
-        name="description"
+        name='description'
       />
 
       <Controller
@@ -70,13 +68,8 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             field: t('template.category.icon'),
           }),
         }}
-
-        render={({ field }) => (
-          <IconPicker
-            {...field}
-          />
-        )}
-        name="icon"
+        render={({ field }) => <IconPicker {...field} />}
+        name='icon'
       />
 
       <Controller
@@ -86,13 +79,8 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             field: t('template.category.bgColor'),
           }),
         }}
-
-        render={({ field }) => (
-          <BgColorPicker
-            {...field}
-          />
-        )}
-        name="bg_color"
+        render={({ field }) => <BgColorPicker {...field} />}
+        name='bg_color'
       />
       <Controller
         control={control}
@@ -101,7 +89,7 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             field: t('template.category.type'),
           }),
         }}
-        name="category_type"
+        name='category_type'
         render={({ field }) => (
           <FormControl>
             <FormLabel>{t('template.category.type')}</FormLabel>
@@ -109,7 +97,7 @@ const CategoryForm = forwardRef<HTMLInputElement, {
               row
               value={field.value}
               onChange={(e) => {
-                field.onChange(parseInt(e.target.value, 10));
+                field.onChange(Number.parseInt(e.target.value, 10));
               }}
             >
               <FormControlLabel value={0} control={<Radio />} label={t('template.category.byUseCase')} />
@@ -117,7 +105,6 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             </RadioGroup>
           </FormControl>
         )}
-
       />
       <Controller
         control={control}
@@ -126,23 +113,22 @@ const CategoryForm = forwardRef<HTMLInputElement, {
             field: t('template.category.priority'),
           }),
         }}
-
         render={({ field, fieldState }) => (
           <TextField
-            type="number"
+            type='number'
             error={!!fieldState.error}
             helperText={fieldState.error?.message}
             required
             label={t('template.category.priority')}
             {...field}
             onChange={(e) => {
-              field.onChange(parseInt(e.target.value, 10));
+              field.onChange(Number.parseInt(e.target.value, 10));
             }}
           />
         )}
-        name="priority"
+        name='priority'
       />
-      <input type="submit" ref={ref} style={{ display: 'none' }} />
+      <input type='submit' ref={ref} style={{ display: 'none' }} />
     </form>
   );
 });

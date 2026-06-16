@@ -79,13 +79,13 @@ function rgbaToArgb(color: string): string {
     return '';
   }
 
-  const r = parseInt(match[1].substring(0, 2), 16);
-  const g = parseInt(match[1].substring(2, 4), 16);
-  const b = parseInt(match[1].substring(4, 6), 16);
+  const r = Number.parseInt(match[1].substring(0, 2), 16);
+  const g = Number.parseInt(match[1].substring(2, 4), 16);
+  const b = Number.parseInt(match[1].substring(4, 6), 16);
   let a = 255;
 
   if (typeof match[2] !== 'undefined') {
-    a = parseInt(match[2], 16);
+    a = Number.parseInt(match[2], 16);
   }
 
   const hex = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0');
@@ -117,13 +117,13 @@ function argbToHtmlHex(color: string): string {
     b = 0;
 
   if (match[1].length === 8) {
-    r = parseInt(match[1].substring(2, 4), 16);
-    g = parseInt(match[1].substring(4, 6), 16);
-    b = parseInt(match[1].substring(6, 8), 16);
+    r = Number.parseInt(match[1].substring(2, 4), 16);
+    g = Number.parseInt(match[1].substring(4, 6), 16);
+    b = Number.parseInt(match[1].substring(6, 8), 16);
   } else if (match[1].length === 6) {
-    r = parseInt(match[1].substring(0, 2), 16);
-    g = parseInt(match[1].substring(2, 4), 16);
-    b = parseInt(match[1].substring(4, 6), 16);
+    r = Number.parseInt(match[1].substring(0, 2), 16);
+    g = Number.parseInt(match[1].substring(2, 4), 16);
+    b = Number.parseInt(match[1].substring(4, 6), 16);
   }
 
   const hex = (v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0');
