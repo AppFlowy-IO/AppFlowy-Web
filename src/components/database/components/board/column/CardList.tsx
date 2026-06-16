@@ -125,7 +125,7 @@ function CardList({
                 top: 0,
                 left: 0,
                 transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                paddingTop: virtualRow.index === 0 ? 10 : undefined,
+                paddingTop: virtualRow.index === 0 ? 4 : undefined,
               }}
             >
               <Card

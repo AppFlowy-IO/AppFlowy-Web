@@ -6,7 +6,6 @@ import {
   parseSelectOptionTypeOptions,
   Row,
   SelectOptionColor,
-  useDatabaseContext,
   useFieldSelector,
 } from '@/application/database-yjs';
 import { useToggleHiddenGroupColumnDispatch, useUpdateSelectOption } from '@/application/database-yjs/dispatch';
@@ -14,7 +13,6 @@ import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
-import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import {
   BOARD_COLUMN_COLOR_OPTIONS,
   getBoardColumnColorLabelKey,
@@ -69,8 +67,6 @@ export function ColumnMenu({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const toggleHidden = useToggleHiddenGroupColumnDispatch(groupId, fieldId);
   const updateSelectOption = useUpdateSelectOption(fieldId);
-  const { getSubscriptions } = useDatabaseContext();
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
   const { field, clock } = useFieldSelector(fieldId);
 
   const { t } = useTranslation();
@@ -99,12 +95,12 @@ export function ColumnMenu({
   };
 
   const colorOptions = useMemo(() => {
-    return BOARD_COLUMN_COLOR_OPTIONS.filter((_, index) => isPro || index < 10).map((color) => ({
+    return BOARD_COLUMN_COLOR_OPTIONS.map((color) => ({
       color,
       label: t(getBoardColumnColorLabelKey(color)),
       swatchColor: getBoardColumnColorStyle(color)?.paletteColor || 'transparent',
     }));
-  }, [isPro, t]);
+  }, [t]);
 
   const options = useMemo(() => {
     return [

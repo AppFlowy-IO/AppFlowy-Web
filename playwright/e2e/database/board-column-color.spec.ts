@@ -20,12 +20,14 @@ interface SelectOptionInfo {
   color: string;
 }
 
-const colorTargets: Record<SelectOptionColor, { fillVar: string }> = {
+const colorTargets: Record<SelectOptionColor, { boardBackgroundVar: string; selectOptionFillVar: string }> = {
   Blue: {
-    fillVar: '--tag-fill-09-light',
+    boardBackgroundVar: '--block-bg-color-12',
+    selectOptionFillVar: '--tag-fill-09-light',
   },
   Lime: {
-    fillVar: '--tag-fill-06-light',
+    boardBackgroundVar: '--block-bg-color-6',
+    selectOptionFillVar: '--tag-fill-06-light',
   },
 };
 
@@ -54,7 +56,7 @@ test.describe('Board column color', () => {
 
     const column = BoardSelectors.boardContainer(page).locator(`[data-column-id="${todoOption.optionId}"]`);
     const columnSurface = getColumnSurface(column);
-    const expectedBackgroundColor = await resolveCssColor(page, colorTargets[targetColor].fillVar);
+    const expectedBackgroundColor = await resolveCssColor(page, colorTargets[targetColor].boardBackgroundVar);
 
     await expect(column).toBeVisible({ timeout: 15000 });
     await expect.poll(() => getComputedBackgroundColor(columnSurface)).toBe(expectedBackgroundColor);
@@ -78,7 +80,7 @@ test.describe('Board column color', () => {
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 15000 });
 
     await openGridSelectOptionEditor(page, todoOption);
-    await selectOptionMenuColor(page, target.fillVar);
+    await selectOptionMenuColor(page, target.selectOptionFillVar);
 
     await expect
       .poll(() => findSelectOptionByIdViaYjs(page, todoOption.optionId).then((option) => option.color))
@@ -89,7 +91,7 @@ test.describe('Board column color', () => {
 
     const column = BoardSelectors.boardContainer(page).locator(`[data-column-id="${todoOption.optionId}"]`);
     const columnSurface = getColumnSurface(column);
-    const expectedBackgroundColor = await resolveCssColor(page, target.fillVar);
+    const expectedBackgroundColor = await resolveCssColor(page, target.boardBackgroundVar);
 
     await expect(column).toBeVisible({ timeout: 15000 });
     await expect.poll(() => getComputedBackgroundColor(columnSurface)).toBe(expectedBackgroundColor);

@@ -15,7 +15,6 @@ function ColumnHeaderPrimitive(
     id,
     fieldId,
     className,
-    rowCount,
     addCardBefore,
     getCards,
     groupId,
@@ -32,7 +31,7 @@ function ColumnHeaderPrimitive(
   } & React.HTMLAttributes<HTMLDivElement>,
   ref: React.Ref<HTMLDivElement>
 ) {
-  const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId);
+  const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId, Boolean(showColorColumns));
   const { t } = useTranslation();
   const readOnly = useReadOnly();
 
@@ -47,7 +46,6 @@ function ColumnHeaderPrimitive(
     >
       <div className={'flex flex-1 items-center gap-2'}>
         <div className={'w-auto max-w-[170px] overflow-hidden'}>{header}</div>
-        <span className={'text-xs text-text-secondary'}>{rowCount}</span>
       </div>
       {!readOnly && (
         <div className={'flex items-center'}>

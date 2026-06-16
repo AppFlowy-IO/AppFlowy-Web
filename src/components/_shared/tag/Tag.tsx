@@ -10,6 +10,11 @@ export interface TagProps {
   badge?: string;
 }
 
+function toCssColor(color: string | undefined, fallback?: string) {
+  if (!color) return fallback;
+  return color.startsWith('--') ? `var(${color})` : color;
+}
+
 export const Tag: FC<TagProps> = ({ bgColor, textColor, label, badge }) => {
   const className = useMemo(() => {
     return cn(
@@ -22,15 +27,15 @@ export const Tag: FC<TagProps> = ({ bgColor, textColor, label, badge }) => {
   return (
     <div
       style={{
-        backgroundColor: bgColor ? `var(${bgColor})` : undefined,
-        color: `var(${textColor || '--text-primary'})`,
+        backgroundColor: toCssColor(bgColor),
+        color: toCssColor(textColor, 'var(--text-primary)'),
       }}
       className={className}
     >
       {badge && (
         <CircleIcon
           style={{
-            color: `var(${badge})`,
+            color: toCssColor(badge),
           }}
           className={`!h-1.5 !w-1.5 min-w-1.5`}
         />

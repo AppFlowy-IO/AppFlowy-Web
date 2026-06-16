@@ -1032,29 +1032,34 @@ export function useGroup(groupId: string) {
 
 export function useBoardLayoutSettings() {
   const view = useDatabaseView();
-  const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
+  const layoutSettings = view?.get(YjsDatabaseKey.layout_settings);
+  const layoutSetting = layoutSettings?.get('1');
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
-  const [showColorColumns, setShowColorColumns] = useState(false);
+  const [showColorColumns, setShowColorColumns] = useState(true);
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!layoutSetting) return;
+    if (!view) return;
 
     const observerEvent = () => {
-      setIsCollapsed(Boolean(layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups)));
-      setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
-      setShowColorColumns(Boolean(layoutSetting?.get(YjsDatabaseKey.show_color_columns)));
+      const currentLayoutSetting = view.get(YjsDatabaseKey.layout_settings)?.get('1');
+
+      setIsCollapsed(currentLayoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups) ?? true);
+      setHideUnGroup(currentLayoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column) ?? false);
+      setShowColorColumns(currentLayoutSetting?.get(YjsDatabaseKey.show_color_columns) ?? true);
     };
 
     observerEvent();
-    layoutSetting.observe(observerEvent);
+    layoutSettings?.observeDeep(observerEvent);
+    view.observe(observerEvent);
 
     return () => {
-      layoutSetting.unobserve(observerEvent);
+      layoutSettings?.unobserveDeep(observerEvent);
+      view.unobserve(observerEvent);
     };
-  }, [view, layoutSetting]);
+  }, [view, layoutSettings, layoutSetting]);
 
   useEffect(() => {
     const observerEvent = () => {

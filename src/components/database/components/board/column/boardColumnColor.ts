@@ -8,16 +8,27 @@ import {
   useFieldSelector,
 } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
-import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
 export interface BoardColumnColorStyle {
   backgroundColor: string;
   highlightColor: string;
+  labelColor: string;
   paletteColor: string;
   textColor: string;
 }
 
-export const BOARD_COLUMN_COLOR_OPTIONS = Object.values(SelectOptionColor);
+export const BOARD_COLUMN_COLOR_OPTIONS = [
+  SelectOptionColor.OptionColor1,
+  SelectOptionColor.OptionColor2,
+  SelectOptionColor.OptionColor3,
+  SelectOptionColor.OptionColor4,
+  SelectOptionColor.OptionColor5,
+  SelectOptionColor.OptionColor6,
+  SelectOptionColor.OptionColor7,
+  SelectOptionColor.OptionColor8,
+  SelectOptionColor.OptionColor9,
+  SelectOptionColor.OptionColor10,
+];
 
 export type BoardColumnColorLabelKey =
   | 'colors.mauve'
@@ -64,28 +75,117 @@ const BOARD_COLUMN_COLOR_LABEL_KEYS: Record<SelectOptionColor, BoardColumnColorL
   [SelectOptionColor.OptionColor20]: 'colors.ironEmphasized',
 };
 
+const SELECT_OPTION_TO_PALETTE_COLOR: Record<SelectOptionColor, string> = {
+  [SelectOptionColor.OptionColor1]: '--palette-bg-color-14',
+  [SelectOptionColor.OptionColor2]: '--palette-bg-color-16',
+  [SelectOptionColor.OptionColor3]: '--palette-bg-color-18',
+  [SelectOptionColor.OptionColor4]: '--palette-bg-color-2',
+  [SelectOptionColor.OptionColor5]: '--palette-bg-color-4',
+  [SelectOptionColor.OptionColor6]: '--palette-bg-color-6',
+  [SelectOptionColor.OptionColor7]: '--palette-bg-color-8',
+  [SelectOptionColor.OptionColor8]: '--palette-bg-color-10',
+  [SelectOptionColor.OptionColor9]: '--palette-bg-color-12',
+  [SelectOptionColor.OptionColor10]: '--palette-bg-color-20',
+  [SelectOptionColor.OptionColor11]: '--palette-bg-color-14',
+  [SelectOptionColor.OptionColor12]: '--palette-bg-color-16',
+  [SelectOptionColor.OptionColor13]: '--palette-bg-color-18',
+  [SelectOptionColor.OptionColor14]: '--palette-bg-color-2',
+  [SelectOptionColor.OptionColor15]: '--palette-bg-color-4',
+  [SelectOptionColor.OptionColor16]: '--palette-bg-color-6',
+  [SelectOptionColor.OptionColor17]: '--palette-bg-color-8',
+  [SelectOptionColor.OptionColor18]: '--palette-bg-color-10',
+  [SelectOptionColor.OptionColor19]: '--palette-bg-color-12',
+  [SelectOptionColor.OptionColor20]: '--palette-bg-color-20',
+};
+
+const SELECT_OPTION_TO_BACKGROUND_COLOR: Record<SelectOptionColor, string> = {
+  [SelectOptionColor.OptionColor1]: '--block-bg-color-14',
+  [SelectOptionColor.OptionColor2]: '--block-bg-color-16',
+  [SelectOptionColor.OptionColor3]: '--block-bg-color-18',
+  [SelectOptionColor.OptionColor4]: '--block-bg-color-2',
+  [SelectOptionColor.OptionColor5]: '--block-bg-color-4',
+  [SelectOptionColor.OptionColor6]: '--block-bg-color-6',
+  [SelectOptionColor.OptionColor7]: '--block-bg-color-8',
+  [SelectOptionColor.OptionColor8]: '--block-bg-color-10',
+  [SelectOptionColor.OptionColor9]: '--block-bg-color-12',
+  [SelectOptionColor.OptionColor10]: '--block-bg-color-20',
+  [SelectOptionColor.OptionColor11]: '--block-bg-color-14',
+  [SelectOptionColor.OptionColor12]: '--block-bg-color-16',
+  [SelectOptionColor.OptionColor13]: '--block-bg-color-18',
+  [SelectOptionColor.OptionColor14]: '--block-bg-color-2',
+  [SelectOptionColor.OptionColor15]: '--block-bg-color-4',
+  [SelectOptionColor.OptionColor16]: '--block-bg-color-6',
+  [SelectOptionColor.OptionColor17]: '--block-bg-color-8',
+  [SelectOptionColor.OptionColor18]: '--block-bg-color-10',
+  [SelectOptionColor.OptionColor19]: '--block-bg-color-12',
+  [SelectOptionColor.OptionColor20]: '--block-bg-color-20',
+};
+
+const SELECT_OPTION_TO_LABEL_COLOR: Record<SelectOptionColor, string> = {
+  [SelectOptionColor.OptionColor1]: '--block-border-color-14',
+  [SelectOptionColor.OptionColor2]: '--block-border-color-16',
+  [SelectOptionColor.OptionColor3]: '--block-border-color-18',
+  [SelectOptionColor.OptionColor4]: '--block-border-color-2',
+  [SelectOptionColor.OptionColor5]: '--block-border-color-4',
+  [SelectOptionColor.OptionColor6]: '--block-border-color-6',
+  [SelectOptionColor.OptionColor7]: '--block-border-color-8',
+  [SelectOptionColor.OptionColor8]: '--block-border-color-10',
+  [SelectOptionColor.OptionColor9]: '--block-border-color-12',
+  [SelectOptionColor.OptionColor10]: '--block-border-color-20',
+  [SelectOptionColor.OptionColor11]: '--block-border-color-14',
+  [SelectOptionColor.OptionColor12]: '--block-border-color-16',
+  [SelectOptionColor.OptionColor13]: '--block-border-color-18',
+  [SelectOptionColor.OptionColor14]: '--block-border-color-2',
+  [SelectOptionColor.OptionColor15]: '--block-border-color-4',
+  [SelectOptionColor.OptionColor16]: '--block-border-color-6',
+  [SelectOptionColor.OptionColor17]: '--block-border-color-8',
+  [SelectOptionColor.OptionColor18]: '--block-border-color-10',
+  [SelectOptionColor.OptionColor19]: '--block-border-color-12',
+  [SelectOptionColor.OptionColor20]: '--block-border-color-20',
+};
+
+const SELECT_OPTION_TO_TEXT_COLOR: Record<SelectOptionColor, string> = {
+  [SelectOptionColor.OptionColor1]: '--block-text-color-14',
+  [SelectOptionColor.OptionColor2]: '--block-text-color-16',
+  [SelectOptionColor.OptionColor3]: '--block-text-color-18',
+  [SelectOptionColor.OptionColor4]: '--block-text-color-2',
+  [SelectOptionColor.OptionColor5]: '--block-text-color-4',
+  [SelectOptionColor.OptionColor6]: '--block-text-color-6',
+  [SelectOptionColor.OptionColor7]: '--block-text-color-8',
+  [SelectOptionColor.OptionColor8]: '--block-text-color-10',
+  [SelectOptionColor.OptionColor9]: '--block-text-color-12',
+  [SelectOptionColor.OptionColor10]: '--block-text-color-20',
+  [SelectOptionColor.OptionColor11]: '--block-text-color-14',
+  [SelectOptionColor.OptionColor12]: '--block-text-color-16',
+  [SelectOptionColor.OptionColor13]: '--block-text-color-18',
+  [SelectOptionColor.OptionColor14]: '--block-text-color-2',
+  [SelectOptionColor.OptionColor15]: '--block-text-color-4',
+  [SelectOptionColor.OptionColor16]: '--block-text-color-6',
+  [SelectOptionColor.OptionColor17]: '--block-text-color-8',
+  [SelectOptionColor.OptionColor18]: '--block-text-color-10',
+  [SelectOptionColor.OptionColor19]: '--block-text-color-12',
+  [SelectOptionColor.OptionColor20]: '--block-text-color-20',
+};
+
 function cssVar(token?: string) {
   return token ? `var(${token})` : undefined;
-}
-
-function withColorOpacity(color: string, opacity: number) {
-  return `color-mix(in srgb, ${color} ${opacity * 100}%, transparent)`;
 }
 
 export function getBoardColumnColorStyle(color: SelectOptionColor | undefined): BoardColumnColorStyle | undefined {
   if (!color) return undefined;
 
-  const optionColor = cssVar(SelectOptionColorMap[color]);
-  const textColor = cssVar(SelectOptionFgColorMap[color]);
+  const backgroundColor = cssVar(SELECT_OPTION_TO_BACKGROUND_COLOR[color]);
+  const labelColor = cssVar(SELECT_OPTION_TO_LABEL_COLOR[color]);
+  const paletteColor = cssVar(SELECT_OPTION_TO_PALETTE_COLOR[color]);
+  const textColor = cssVar(SELECT_OPTION_TO_TEXT_COLOR[color]);
 
-  if (!optionColor || !textColor) return undefined;
-
-  const translucentOptionColor = withColorOpacity(optionColor, 0.4);
+  if (!backgroundColor || !labelColor || !paletteColor || !textColor) return undefined;
 
   return {
-    backgroundColor: translucentOptionColor,
-    highlightColor: translucentOptionColor,
-    paletteColor: optionColor,
+    backgroundColor,
+    highlightColor: backgroundColor,
+    labelColor,
+    paletteColor,
     textColor,
   };
 }

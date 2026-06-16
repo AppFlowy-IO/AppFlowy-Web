@@ -243,6 +243,18 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
     layoutSettings.set('1', layoutSetting);
   }
 
+  if (layoutSetting.get(YjsDatabaseKey.hide_ungrouped_column) === undefined) {
+    layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, false);
+  }
+
+  if (layoutSetting.get(YjsDatabaseKey.collapse_hidden_groups) === undefined) {
+    layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, true);
+  }
+
+  if (layoutSetting.get(YjsDatabaseKey.show_color_columns) === undefined) {
+    layoutSetting.set(YjsDatabaseKey.show_color_columns, true);
+  }
+
   return layoutSetting;
 }
 
@@ -1777,7 +1789,7 @@ function generateBoardLayoutSettings() {
 
   layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, false);
   layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, true);
-  layoutSetting.set(YjsDatabaseKey.show_color_columns, false);
+  layoutSetting.set(YjsDatabaseKey.show_color_columns, true);
   layoutSettings.set('1', layoutSetting);
   return layoutSettings;
 }

@@ -8,10 +8,11 @@ import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { Tag } from '@/components/_shared/tag';
+import { getBoardColumnColorStyle } from '@/components/database/components/board/column/boardColumnColor';
 import { getBoardColumnName } from '@/components/database/components/board/column/columnName';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
-export function useRenderColumn(id: string, fieldId: string) {
+export function useRenderColumn(id: string, fieldId: string, showColorColumns = false) {
   const { field, clock } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const { t } = useTranslation();
@@ -37,14 +38,17 @@ export function useRenderColumn(id: string, fieldId: string) {
       );
     if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
       const option = parseSelectOptionTypeOptions(field)?.options.find((option) => option?.id === id);
+      const colorStyle = showColorColumns ? getBoardColumnColorStyle(option?.color) : undefined;
 
       return (
         <Tooltip title={label} enterNextDelay={1000} enterDelay={1000}>
           <span>
             <Tag
               label={label}
-              textColor={option?.color ? SelectOptionFgColorMap[option?.color] : 'text-text-primary'}
-              bgColor={option?.color ? SelectOptionColorMap[option?.color] : 'transparent'}
+              textColor={
+                colorStyle?.textColor || (option?.color ? SelectOptionFgColorMap[option?.color] : 'text-text-primary')
+              }
+              bgColor={colorStyle?.labelColor || (option?.color ? SelectOptionColorMap[option?.color] : 'transparent')}
             />
           </span>
         </Tooltip>
@@ -53,7 +57,7 @@ export function useRenderColumn(id: string, fieldId: string) {
 
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, clock, fieldType, id, label]);
+  }, [field, clock, fieldType, id, label, showColorColumns]);
 
   const renameEnabled = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
