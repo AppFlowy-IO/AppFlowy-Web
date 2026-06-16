@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { AccessService, ViewService } from '@/application/services/domains';
 import { Role, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
@@ -35,12 +35,15 @@ jest.mock('@/application/services/domains', () => ({
   },
   ViewService: {
     get: jest.fn(),
+    getCached: jest.fn(),
+    getCachedFromDisk: jest.fn(),
     getDatabaseRelations: jest.fn(),
     getMultiple: jest.fn(),
     getNavigation: jest.fn(),
     getOutline: jest.fn(),
     getTrash: jest.fn(),
     invalidateCache: jest.fn(),
+    refresh: jest.fn(),
   },
   WorkspaceService: {
     getMentionableUsers: jest.fn(),
@@ -135,9 +138,14 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     jest.clearAllMocks();
 
     (AccessService.getShareWithMe as jest.Mock).mockResolvedValue(null);
+    (ViewService.getCached as jest.Mock).mockReturnValue(undefined);
+    (ViewService.getCachedFromDisk as jest.Mock).mockResolvedValue(undefined);
     (ViewService.getDatabaseRelations as jest.Mock).mockResolvedValue({});
     (ViewService.getMultiple as jest.Mock).mockResolvedValue([]);
     (ViewService.getNavigation as jest.Mock).mockResolvedValue(createView('navigation-root'));
+    (ViewService.refresh as jest.Mock).mockImplementation((activeWorkspaceId: string, viewId: string) =>
+      ViewService.get(activeWorkspaceId, viewId)
+    );
     (ViewService.getTrash as jest.Mock).mockResolvedValue([]);
   });
 
@@ -314,6 +322,269 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       Array.from({ length: MAX_SIDEBAR_OUTLINE_REVALIDATION_EXPANDED_IDS }, (_, index) => `view-${index}`),
       1
     );
+  });
+
+  it('shows cached children immediately while refreshing a manually expanded view', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      has_children: true,
+    });
+    const cachedRoot = createView('space-id', {
+      children: [createView('cached-child-id')],
+      has_children: true,
+    });
+    const refreshedRoot = createView('space-id', {
+      children: [createView('refreshed-child-id')],
+      has_children: true,
+    });
+    const refresh = createDeferred<View>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getCached as jest.Mock).mockReturnValue(cachedRoot);
+    (ViewService.refresh as jest.Mock).mockReturnValue(refresh.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    let loadPromise!: Promise<View[]>;
+
+    await act(async () => {
+      loadPromise = result.current.loadViewChildren?.('space-id') ?? Promise.resolve([]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['cached-child-id']);
+    expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, 'space-id');
+    expect(ViewService.get).not.toHaveBeenCalled();
+
+    await act(async () => {
+      refresh.resolve(refreshedRoot);
+      await loadPromise;
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['refreshed-child-id']);
+  });
+
+  it('starts refresh immediately and shows disk cached children while the server request is pending', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      has_children: true,
+    });
+    const diskCachedRoot = createView('space-id', {
+      children: [createView('disk-child-id')],
+      has_children: true,
+    });
+    const refreshedRoot = createView('space-id', {
+      children: [createView('refreshed-child-id')],
+      has_children: true,
+    });
+    const diskCache = createDeferred<View | undefined>();
+    const refresh = createDeferred<View>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getCachedFromDisk as jest.Mock).mockReturnValue(diskCache.promise);
+    (ViewService.refresh as jest.Mock).mockReturnValue(refresh.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    let loadPromise!: Promise<View[]>;
+
+    await act(async () => {
+      loadPromise = result.current.loadViewChildren?.('space-id') ?? Promise.resolve([]);
+      await Promise.resolve();
+    });
+
+    expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, 'space-id');
+    expect(result.current.outline?.[0]?.children).toEqual([]);
+
+    await act(async () => {
+      diskCache.resolve(diskCachedRoot);
+      await Promise.resolve();
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['disk-child-id']);
+
+    await act(async () => {
+      refresh.resolve(refreshedRoot);
+      await loadPromise;
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['refreshed-child-id']);
+  });
+
+  it('marks manually collapsed children stale without evicting the cached view payload', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      has_children: true,
+    });
+    const loadedRoot = createView('space-id', {
+      children: [createView('child-id')],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.get as jest.Mock).mockResolvedValueOnce(loadedRoot);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    await act(async () => {
+      await result.current.loadViewChildren?.('space-id');
+    });
+
+    await waitFor(() => {
+      expect(result.current.loadedViewIds?.has('space-id')).toBe(true);
+    });
+
+    (ViewService.invalidateCache as jest.Mock).mockClear();
+
+    act(() => {
+      result.current.markViewChildrenStale?.('space-id');
+    });
+
+    expect(result.current.loadedViewIds?.has('space-id')).toBe(false);
+    expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it('does not let stale cached children replace current outline children while refreshing', async () => {
+    const eventEmitter = new EventEmitter();
+    const childA = createView('child-a');
+    const childB = createView('child-b');
+    const childC = createView('child-c');
+    const root = createView('space-id', {
+      children: [childA, childB],
+      has_children: true,
+    });
+    const staleCachedRoot = createView('space-id', {
+      children: [childA],
+      has_children: true,
+    });
+    const refreshedRoot = createView('space-id', {
+      children: [childA, childB, childC],
+      has_children: true,
+    });
+    const refresh = createDeferred<View>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getCached as jest.Mock).mockReturnValue(staleCachedRoot);
+    (ViewService.refresh as jest.Mock).mockReturnValue(refresh.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b']);
+    });
+
+    let loadPromise!: Promise<View[]>;
+
+    await act(async () => {
+      loadPromise = result.current.loadViewChildren?.('space-id') ?? Promise.resolve([]);
+      await Promise.resolve();
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b']);
+
+    await act(async () => {
+      refresh.resolve(refreshedRoot);
+      await loadPromise;
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([
+      'child-a',
+      'child-b',
+      'child-c',
+    ]);
+  });
+
+  it('keeps transient fallback children visible without marking the subtree loaded', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      has_children: true,
+    });
+    const cachedRoot = createView('space-id', {
+      children: [createView('cached-child-id')],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getCached as jest.Mock).mockReturnValue(cachedRoot);
+    (ViewService.refresh as jest.Mock).mockRejectedValueOnce({ code: -1, message: 'network unavailable' });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    let children: View[] = [];
+
+    await act(async () => {
+      children = (await result.current.loadViewChildren?.('space-id')) ?? [];
+    });
+
+    expect(children.map((view) => view.view_id)).toEqual(['cached-child-id']);
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['cached-child-id']);
+    expect(result.current.loadedViewIds?.has('space-id')).toBe(false);
+    expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+  });
+
+  it('clears cached fallback children when refresh returns an authoritative error', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      has_children: true,
+    });
+    const cachedRoot = createView('space-id', {
+      children: [createView('cached-child-id')],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getCached as jest.Mock).mockReturnValue(cachedRoot);
+    (ViewService.refresh as jest.Mock).mockRejectedValueOnce({
+      code: ERROR_CODE.NOT_HAS_PERMISSION,
+      message: 'no permission',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    let children: View[] = [createView('placeholder')];
+
+    await act(async () => {
+      children = (await result.current.loadViewChildren?.('space-id')) ?? [];
+    });
+
+    expect(children).toEqual([]);
+    expect(result.current.outline?.[0]?.children).toEqual([]);
+    expect(result.current.outline?.[0]?.has_children).toBe(false);
+    expect(result.current.loadedViewIds?.has('space-id')).toBe(false);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, 'space-id');
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, 'cached-child-id');
   });
 
   it('does not let lazy child folder rid hide unapplied root outline changes', async () => {
