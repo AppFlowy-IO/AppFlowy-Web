@@ -31,9 +31,7 @@ export class EnhancedBigStats {
     }
 
     // Trim whitespace and remove currency symbols and separators
-    const cleaned = input
-      .toString()
-      .trim()
+    const cleaned = input.toString().trim()
       // Remove all currency symbols, thousand separators, and other non-numeric characters
       // except for digits, period, plus, minus, and 'e' for scientific notation
       .replace(/[^0-9.e+-]/gi, '')
@@ -315,10 +313,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use for formatted values
    * @returns All statistical values with both raw and formatted representations
    */
-  getStats(
-    decimalPlaces: number = 4,
-    format: NumberFormat = NumberFormat.Num
-  ): {
+  getStats(decimalPlaces: number = 4, format: NumberFormat = NumberFormat.Num): {
     count: number;
     sum: { raw: string; formatted: string };
     average: { raw: string; formatted: string };

@@ -83,15 +83,7 @@ export function getFieldDateTimeFormats(typeOption: YMapFieldTypeOption | undefi
   };
 }
 
-export function getDateCellStr({
-  cell,
-  field,
-  currentUser,
-}: {
-  cell: DateTimeCell;
-  field: YDatabaseField;
-  currentUser?: User;
-}) {
+export function getDateCellStr({ cell, field, currentUser }: { cell: DateTimeCell; field: YDatabaseField; currentUser?: User }) {
   const typeOptionMap = field.get(YjsDatabaseKey.type_option);
   const typeOption = typeOptionMap?.get(String(cell.fieldType));
 

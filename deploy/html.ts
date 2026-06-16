@@ -146,9 +146,13 @@ export const renderPublishPage = ({ hostname, pathname, metaData, publishError }
 };
 
 const appendPublishErrorScript = ($: CheerioAPI, error: PublishErrorPayload) => {
-  const serialized = JSON.stringify(error).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  const serialized = JSON.stringify(error)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
 
-  $('head').append(`<script id="appflowy-publish-error">window.__APPFLOWY_PUBLISH_ERROR__ = ${serialized};</script>`);
+  $('head').append(
+    `<script id="appflowy-publish-error">window.__APPFLOWY_PUBLISH_ERROR__ = ${serialized};</script>`
+  );
 };
 
 const setOrUpdateMetaTag = ($: CheerioAPI, selector: string, attribute: string, content: string) => {

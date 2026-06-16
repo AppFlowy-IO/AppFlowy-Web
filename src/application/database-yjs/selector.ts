@@ -718,9 +718,7 @@ export function useAdvancedFilterSelector(filterId: string) {
       // Handle both Yjs Y.Array (with .get() method) and plain JavaScript array (from desktop sync)
       const isYArray = typeof (children as { get?: unknown }).get === 'function';
       const childrenArray = children as { length: number; get?: (index: number) => unknown } | unknown[];
-      const childCount = Array.isArray(childrenArray)
-        ? childrenArray.length
-        : (childrenArray as { length: number }).length;
+      const childCount = Array.isArray(childrenArray) ? childrenArray.length : (childrenArray as { length: number }).length;
 
       let foundFilter: unknown = null;
 
@@ -1023,7 +1021,9 @@ export function useGroup(groupId: string) {
         .map(normalizeGroupColumn)
         .filter((column): column is GroupColumn => Boolean(column));
 
-      setColumns(persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId)));
+      setColumns(
+        persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId))
+      );
     };
 
     observerEvent();
@@ -1966,8 +1966,7 @@ export function useCalendarEventsSelector() {
     if (!field || !rowOrders || !filedId) return;
     const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
-    if (![FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(fieldType) || !primaryFieldId)
-      return;
+    if (![FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(fieldType) || !primaryFieldId) return;
 
     const observerEvent = () => {
       const newEvents: CalendarEvent[] = [];
@@ -2047,10 +2046,7 @@ export function useCalendarEventsSelector() {
             id: `${row.id}`,
             start: getDate(value.data),
             isRange: value.isRange || false,
-            end:
-              value.endTimestamp && value.isRange
-                ? getDate(value.endTimestamp)
-                : dayjs(getDate(value.data)).add(30, 'minute').toDate(),
+            end: value.endTimestamp && value.isRange ? getDate(value.endTimestamp) : dayjs(getDate(value.data)).add(30, 'minute').toDate(),
             title,
             allDay,
             rowId: row.id,
