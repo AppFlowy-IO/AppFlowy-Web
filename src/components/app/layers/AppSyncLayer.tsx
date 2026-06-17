@@ -27,7 +27,15 @@ const WS_READY_STATE_OPEN = 1;
 export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   const { currentWorkspaceId, isAuthenticated } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
-  const eventEmitterRef = useRef<AppEventEmitter>(new EventEmitter() as AppEventEmitter);
+  // Lazy-init so a throwaway EventEmitter isn't constructed on every render
+  // (useRef keeps only the first value but still evaluates its argument each time).
+  const eventEmitterRef = useRef<AppEventEmitter | null>(null);
+
+  if (eventEmitterRef.current === null) {
+    eventEmitterRef.current = new EventEmitter() as AppEventEmitter;
+  }
+
+  const eventEmitter = eventEmitterRef.current;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -39,9 +47,9 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
 
     if (globalWindow.Cypress) {
       // Expose event emitter for Cypress so tests can simulate workspace notifications
-      globalWindow.__APPFLOWY_EVENT_EMITTER__ = eventEmitterRef.current;
+      globalWindow.__APPFLOWY_EVENT_EMITTER__ = eventEmitter;
     }
-  }, []);
+  }, [eventEmitter]);
 
   // Initialize WebSocket connection - currentWorkspaceId and service are guaranteed to exist when this component renders
   const webSocket = useAppflowyWebSocket({
@@ -57,7 +65,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   const { registerSyncContext, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
     webSocket,
     broadcastChannel,
-    eventEmitterRef.current,
+    eventEmitter,
     currentWorkspaceId!
   );
 
@@ -67,25 +75,25 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
 
   // Set up WebSocket reconnection event listener
   useEffect(() => {
-    const currentEventEmitter = eventEmitterRef.current;
+    const currentEventEmitter = eventEmitter;
 
     currentEventEmitter.on(APP_EVENTS.RECONNECT_WEBSOCKET, webSocketReconnect);
 
     return () => {
       currentEventEmitter.off(APP_EVENTS.RECONNECT_WEBSOCKET, webSocketReconnect);
     };
-  }, [webSocketReconnect]);
+  }, [eventEmitter, webSocketReconnect]);
 
   // Emit WebSocket status on actual readyState transitions only — not on every
   // webSocket identity change (which happens for each incoming message).
   const webSocketReadyState = webSocket.readyState;
 
   useLayoutEffect(() => {
-    const currentEventEmitter = eventEmitterRef.current;
+    const currentEventEmitter = eventEmitter;
 
     currentEventEmitter.webSocketReadyState = webSocketReadyState;
     currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocketReadyState);
-  }, [webSocketReadyState]);
+  }, [eventEmitter, webSocketReadyState]);
 
   // Wire the persistent sync_outbox drain to this WebSocket. The drain loop
   // runs whenever a record is enqueued AND the socket is OPEN. The drain is
@@ -191,7 +199,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   useEffect(() => {
     if (!isAuthenticated || !currentWorkspaceId) return;
 
-    const currentEventEmitter = eventEmitterRef.current;
+    const currentEventEmitter = eventEmitter;
 
     const handleUserProfileChange = async (profileChange: notification.IUserProfileChange) => {
       try {
@@ -373,7 +381,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       currentEventEmitter.off(APP_EVENTS.USER_PROFILE_CHANGED, handleUserProfileChange);
       currentEventEmitter.off(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, handleWorkspaceMemberProfileChange);
     };
-  }, [isAuthenticated, currentWorkspaceId]);
+  }, [eventEmitter, isAuthenticated, currentWorkspaceId]);
 
   // Context value for synchronization layer. The webSocket/broadcastChannel
   // transports are intentionally excluded: their identity changes on every
@@ -383,13 +391,13 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     () => ({
       registerSyncContext,
       revertCollabVersion,
-      eventEmitter: eventEmitterRef.current,
+      eventEmitter,
       awarenessMap,
       flushAllSync,
       syncAllToServer,
       scheduleDeferredCleanup,
     }),
-    [registerSyncContext, revertCollabVersion, awarenessMap, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
+    [eventEmitter, registerSyncContext, revertCollabVersion, awarenessMap, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
   );
 
   return <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>;
