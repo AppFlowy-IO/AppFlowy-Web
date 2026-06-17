@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
 import { ReactComponent as CloudOffIcon } from '@/assets/icons/cloud_off.svg';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Log } from '@/utils/log';
@@ -17,30 +18,41 @@ const READY_STATE = {
   CLOSED: 3,
 } as const;
 
+function getStoredWebSocketReadyState(eventEmitter: AppEventEmitter) {
+  const { webSocketReadyState } = eventEmitter;
+
+  return typeof webSocketReadyState === 'number' ? webSocketReadyState : undefined;
+}
+
 export function ConnectBanner() {
-  const [readyState, setReadyState] = useState<number>(READY_STATE.CONNECTING);
-  const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
   const eventEmitter = useEventEmitter();
+  const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
   const { t } = useTranslation();
 
-  // Listen to WebSocket status changes
-  useEffect(() => {
-    if (!eventEmitter) return;
+  // Subscribe to WebSocket status via the event emitter, which caches the
+  // latest readyState (see AppSyncLayer). useSyncExternalStore reads that
+  // cached snapshot on mount, so a banner that mounts after the socket already
+  // opened reflects the current state instead of waiting for the next event.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, onChange);
 
-    const handleWebSocketStatus = (status: number) => {
-      setReadyState(status);
-    };
+      return () => {
+        eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, onChange);
+      };
+    },
+    [eventEmitter]
+  );
 
-    eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+  const getSnapshot = useCallback(
+    () => getStoredWebSocketReadyState(eventEmitter) ?? READY_STATE.CONNECTING,
+    [eventEmitter]
+  );
 
-    return () => {
-      eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
-    };
-  }, [eventEmitter]);
+  const readyState = useSyncExternalStore(subscribe, getSnapshot);
 
   // Manual reconnect
   const handleReconnect = useCallback(() => {
-    if (!eventEmitter) return;
     eventEmitter.emit(APP_EVENTS.RECONNECT_WEBSOCKET);
   }, [eventEmitter]);
 
