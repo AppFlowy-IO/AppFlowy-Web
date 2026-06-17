@@ -6,8 +6,10 @@ import {
   buildMentionSearchCacheKey,
   buildMentionSearchRequests,
   flattenMentionSearchSections,
+  getMentionSearchResultDisplayTitle,
   mentionSearchItemToMention,
   mergeMentionSearchResponses,
+  normalizeMentionSearchSectionsForPicker,
   shouldCacheMentionSearchSections,
 } from '../mentionUtils';
 
@@ -33,7 +35,9 @@ describe('mention panel API mapping', () => {
     });
 
     expect(mention).toEqual({
-      type: MentionType.DatabaseRow,
+      type: MentionType.PageRef,
+      page_id: 'view-1',
+      block_id: 'row-1',
       database_id: 'database-1',
       database_view_id: 'view-1',
       row_id: 'row-1',
@@ -43,6 +47,31 @@ describe('mention panel API mapping', () => {
         title: 'Row title',
         subtitle: 'Database name',
         icon: undefined,
+      },
+    });
+  });
+
+  it('maps database search items to page refs for desktop compatibility', () => {
+    const mention = mentionSearchItemToMention({
+      kind: MentionTargetKind.Database,
+      object_id: 'database-view-1',
+      title: 'Roadmap DB',
+      database_id: 'database-1',
+      database_view_id: 'database-view-1',
+      mention: {
+        type: MentionTargetKind.Database,
+        database_id: 'database-1',
+        database_view_id: 'database-view-1',
+      },
+    });
+
+    expect(mention).toMatchObject({
+      type: MentionType.PageRef,
+      page_id: 'database-view-1',
+      database_id: 'database-1',
+      database_view_id: 'database-view-1',
+      data: {
+        title: 'Roadmap DB',
       },
     });
   });
@@ -97,6 +126,87 @@ describe('mention panel API mapping', () => {
         title: 'https://example.com',
       },
     });
+  });
+
+  it('maps reminder search items to date mentions with generated reminder ids', () => {
+    const mention = mentionSearchItemToMention({
+      kind: MentionTargetKind.Reminder,
+      object_id: 'reminder-tomorrow-9am',
+      title: 'Reminder tomorrow 9 AM',
+      subtitle: '2026-06-18 09:00',
+      mention: {
+        type: MentionTargetKind.Date,
+        start: '2026-06-18T09:00:00+08:00',
+        reminder_option: 'atTimeOfEvent',
+        include_time: true,
+      },
+    });
+
+    expect(mention).toMatchObject({
+      type: MentionType.Date,
+      date: '2026-06-18T09:00:00+08:00',
+      reminder_option: 'atTimeOfEvent',
+      include_time: true,
+      data: {
+        title: 'Reminder tomorrow 9 AM',
+        subtitle: '2026-06-18 09:00',
+      },
+    });
+    expect(mention?.reminder_id).toEqual(expect.any(String));
+    expect(mention?.reminder_id).not.toHaveLength(0);
+  });
+
+  it('accepts documented date payload field names for date quick picks', () => {
+    const mention = mentionSearchItemToMention({
+      kind: MentionTargetKind.Date,
+      title: 'Tomorrow',
+      subtitle: '2026-06-18',
+      mention: {
+        type: MentionTargetKind.Date,
+        date: '2026-06-18T00:00:00+08:00',
+        include_time: false,
+      },
+    });
+
+    expect(mention).toMatchObject({
+      type: MentionType.Date,
+      date: '2026-06-18T00:00:00+08:00',
+      include_time: false,
+    });
+    expect(mention?.reminder_id).toBeUndefined();
+  });
+
+  it('uses the default page title for unnamed page-like search results', () => {
+    expect(
+      getMentionSearchResultDisplayTitle(
+        {
+          kind: MentionTargetKind.Page,
+          object_id: 'page-1',
+          title: '',
+          mention: {
+            type: MentionTargetKind.Page,
+            page_id: 'page-1',
+          },
+        },
+        'Untitled'
+      )
+    ).toBe('Untitled');
+
+    expect(
+      getMentionSearchResultDisplayTitle(
+        {
+          kind: MentionTargetKind.DatabaseRow,
+          object_id: 'row-1',
+          title: '   ',
+          mention: {
+            type: MentionTargetKind.DatabaseRow,
+            database_id: 'database-1',
+            row_id: 'row-1',
+          },
+        },
+        'Untitled'
+      )
+    ).toBe('Untitled');
   });
 
   it('builds distinct cache keys for different mention contexts', () => {
@@ -207,6 +317,30 @@ describe('mention panel API mapping', () => {
     expect(buildMentionSearchRequests(request)).toEqual([request]);
   });
 
+  it('keeps date and reminder in the primary typed search request when rows are split out', () => {
+    const requests = buildMentionSearchRequests({
+      query: 'tom',
+    });
+
+    expect(requests).toEqual([
+      {
+        query: 'tom',
+        include: [
+          MentionTargetKind.Person,
+          MentionTargetKind.Page,
+          MentionTargetKind.Database,
+          MentionTargetKind.Date,
+          MentionTargetKind.Reminder,
+          MentionTargetKind.ExternalLink,
+        ],
+      },
+      {
+        query: 'tom',
+        include: [MentionTargetKind.DatabaseRow],
+      },
+    ]);
+  });
+
   it('merges split mention search responses using picker section order', () => {
     const response = mergeMentionSearchResponses([
       {
@@ -257,6 +391,71 @@ describe('mention panel API mapping', () => {
       MentionSearchSectionKind.DatabaseRows,
       MentionSearchSectionKind.Links,
     ]);
+  });
+
+  it('normalizes database sections into pages for desktop picker parity', () => {
+    const sections = normalizeMentionSearchSectionsForPicker([
+      {
+        kind: MentionSearchSectionKind.People,
+        title: 'People',
+        has_more: false,
+        status: 'ready',
+        items: [],
+      },
+      {
+        kind: MentionSearchSectionKind.Pages,
+        title: 'Pages',
+        has_more: false,
+        status: 'ready',
+        items: [
+          {
+            kind: MentionTargetKind.Page,
+            object_id: 'page-1',
+            title: 'Project Tracker 2',
+            subtitle: 'Page',
+            mention: {
+              type: MentionTargetKind.Page,
+              page_id: 'page-1',
+            },
+          },
+        ],
+      },
+      {
+        kind: MentionSearchSectionKind.Databases,
+        title: 'Databases',
+        has_more: false,
+        status: 'ready',
+        items: [
+          {
+            kind: MentionTargetKind.Database,
+            object_id: 'database-view-1',
+            title: 'Completed Project',
+            subtitle: 'Database',
+            mention: {
+              type: MentionTargetKind.Database,
+              database_id: 'database-1',
+              database_view_id: 'database-view-1',
+            },
+          },
+        ],
+      },
+      {
+        kind: MentionSearchSectionKind.Dates,
+        title: 'Date & Reminder',
+        has_more: false,
+        status: 'ready',
+        items: [],
+      },
+    ]);
+
+    expect(sections.map((section) => section.kind)).toEqual([
+      MentionSearchSectionKind.People,
+      MentionSearchSectionKind.Pages,
+      MentionSearchSectionKind.Dates,
+    ]);
+    expect(sections[1].title).toBe('Pages');
+    expect(sections[1].items.map((item) => item.title)).toEqual(['Project Tracker 2', 'Completed Project']);
+    expect(sections[1].items[1].kind).toBe(MentionTargetKind.Database);
   });
 
   it('does not cache typed row-capable searches until a row section is present', () => {

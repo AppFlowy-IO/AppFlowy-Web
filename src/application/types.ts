@@ -347,6 +347,7 @@ export enum MentionTargetKind {
   Database = 'database',
   DatabaseRow = 'database_row',
   Date = 'date',
+  Reminder = 'reminder',
   ExternalLink = 'external_link',
 }
 
@@ -414,7 +415,8 @@ export interface MentionPayloadDatabaseRow {
 
 export interface MentionPayloadDate {
   type: MentionTargetKind.Date;
-  start: string;
+  start?: string;
+  date?: string;
   end?: string;
   reminder_id?: string;
   reminder_option?: string;

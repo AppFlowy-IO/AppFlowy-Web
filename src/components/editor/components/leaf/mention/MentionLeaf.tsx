@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { type ReactNode, useMemo, useRef } from 'react';
 import { Element, Text } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
@@ -10,16 +10,26 @@ import MentionExternalLink from '@/components/editor/components/leaf/mention/Men
 import MentionPage from '@/components/editor/components/leaf/mention/MentionPage';
 import { MentionPerson } from '@/components/editor/components/leaf/mention/MentionPerson';
 
-export function MentionLeaf({ mention, text, children }: { mention: Mention; text: Text; children: React.ReactNode }) {
+export function MentionLeaf({ mention, text, children }: { mention: Mention; text: Text; children: ReactNode }) {
   const editor = useSlateStatic();
   const readonly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
-  const { type, date, page_id, reminder_id, reminder_option, block_id, url, person_id, person_name, include_time } = mention;
+  const { type, date, page_id, reminder_id, reminder_option, block_id, url, person_id, person_name, include_time } =
+    mention;
 
   const reminder = useMemo(() => {
     return reminder_id ? { id: reminder_id ?? '', option: reminder_option ?? '' } : undefined;
   }, [reminder_id, reminder_option]);
 
   const content = useMemo(() => {
+    if (
+      type === MentionType.PageRef &&
+      mention.database_id &&
+      mention.page_id &&
+      (mention.row_id || mention.database_row_id)
+    ) {
+      return <MentionDatabase mention={mention} />;
+    }
+
     if ([MentionType.PageRef, MentionType.childPage].includes(type) && page_id) {
       return <MentionPage text={text} type={type} pageId={page_id} blockId={block_id} />;
     }
@@ -57,7 +67,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     return classList.join(' ');
   }, [readonly, isSelected]);
 
-  const ref = React.useRef<HTMLSpanElement>(null);
+  const ref = useRef<HTMLSpanElement>(null);
 
   return (
     <>
@@ -68,7 +78,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
           top: isCursorBefore ? 0 : 'auto',
           bottom: isCursorBefore ? 'auto' : 0,
         }}
-        className={'absolute bottom-0 right-0 overflow-hidden !text-transparent pointer-events-none'}
+        className={'pointer-events-none absolute bottom-0 right-0 overflow-hidden !text-transparent'}
       >
         {children}
       </span>

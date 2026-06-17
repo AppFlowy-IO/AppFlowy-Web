@@ -1,3 +1,5 @@
+import { v4 as uuidv4 } from 'uuid';
+
 import {
   Mention,
   MentionSearchRequest,
@@ -32,6 +34,7 @@ const ALL_MENTION_TARGETS_EXCEPT_DATABASE_ROWS = [
   MentionTargetKind.Page,
   MentionTargetKind.Database,
   MentionTargetKind.Date,
+  MentionTargetKind.Reminder,
   MentionTargetKind.ExternalLink,
 ];
 
@@ -67,6 +70,73 @@ function mentionSectionOrder(kind: MentionSearchSectionKind) {
   return index === -1 ? MENTION_SECTION_ORDER.length : index;
 }
 
+export function normalizeMentionSearchSectionsForPicker(
+  sections: MentionSearchSection[],
+  pagesTitle = 'Pages'
+): MentionSearchSection[] {
+  let databaseSection: MentionSearchSection | undefined;
+  const normalizedSections: MentionSearchSection[] = [];
+
+  sections.forEach((section) => {
+    if (section.kind === MentionSearchSectionKind.Databases) {
+      if (section.items.length === 0) return;
+
+      databaseSection = databaseSection
+        ? {
+            ...databaseSection,
+            items: [...databaseSection.items, ...section.items],
+            has_more: databaseSection.has_more || section.has_more,
+            next_cursor: databaseSection.next_cursor ?? section.next_cursor,
+            message: databaseSection.message ?? section.message,
+          }
+        : {
+            ...section,
+            items: [...section.items],
+          };
+      return;
+    }
+
+    normalizedSections.push({
+      ...section,
+      items: [...section.items],
+    });
+  });
+
+  if (!databaseSection) {
+    return normalizedSections;
+  }
+
+  const pagesIndex = normalizedSections.findIndex((section) => section.kind === MentionSearchSectionKind.Pages);
+
+  if (pagesIndex >= 0) {
+    const pagesSection = normalizedSections[pagesIndex];
+
+    normalizedSections[pagesIndex] = {
+      ...pagesSection,
+      items: [...pagesSection.items, ...databaseSection.items],
+      has_more: pagesSection.has_more || databaseSection.has_more,
+      next_cursor: pagesSection.next_cursor ?? databaseSection.next_cursor,
+      message: pagesSection.message ?? databaseSection.message,
+    };
+    return normalizedSections;
+  }
+
+  const insertIndex = normalizedSections.findIndex(
+    (section) => mentionSectionOrder(section.kind) > mentionSectionOrder(MentionSearchSectionKind.Pages)
+  );
+  const pagesSection = {
+    ...databaseSection,
+    kind: MentionSearchSectionKind.Pages,
+    title: pagesTitle,
+  };
+
+  if (insertIndex === -1) {
+    return [...normalizedSections, pagesSection];
+  }
+
+  return [...normalizedSections.slice(0, insertIndex), pagesSection, ...normalizedSections.slice(insertIndex)];
+}
+
 function withDisplayData(mention: Mention, item: MentionSearchResultItem): Mention {
   return {
     ...mention,
@@ -76,6 +146,26 @@ function withDisplayData(mention: Mention, item: MentionSearchResultItem): Menti
       icon: item.icon,
     },
   };
+}
+
+export function getMentionSearchResultDisplayTitle(item: MentionSearchResultItem, defaultPageTitle: string) {
+  const title = item.title.trim();
+
+  if (title) return title;
+
+  if (
+    item.kind === MentionTargetKind.Page ||
+    item.kind === MentionTargetKind.Database ||
+    item.kind === MentionTargetKind.DatabaseRow
+  ) {
+    return defaultPageTitle;
+  }
+
+  return item.subtitle || item.object_id || defaultPageTitle;
+}
+
+function getDatabaseMentionPageId(item: MentionSearchResultItem, databaseViewId?: string, databaseId?: string) {
+  return databaseViewId || item.object_id || databaseId;
 }
 
 export function mentionSearchItemToMention(item: MentionSearchResultItem): Mention | null {
@@ -103,6 +193,7 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
         item
       );
     }
+
     case MentionTargetKind.Page: {
       const pageMention = mention as {
         page_id: string;
@@ -120,21 +211,27 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
         item
       );
     }
+
     case MentionTargetKind.Database: {
       const databaseMention = mention as {
         database_id: string;
         database_view_id?: string;
       };
+      const pageId = getDatabaseMentionPageId(item, databaseMention.database_view_id, databaseMention.database_id);
+
+      if (!pageId) return null;
 
       return withDisplayData(
         {
-          type: MentionType.Database,
+          type: MentionType.PageRef,
+          page_id: pageId,
           database_id: databaseMention.database_id,
           database_view_id: databaseMention.database_view_id,
         },
         item
       );
     }
+
     case MentionTargetKind.DatabaseRow: {
       const databaseRowMention = mention as {
         database_id: string;
@@ -142,10 +239,15 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
         row_id: string;
         row_document_id?: string;
       };
+      const pageId = getDatabaseMentionPageId(item, databaseRowMention.database_view_id, databaseRowMention.database_id);
+
+      if (!pageId) return null;
 
       return withDisplayData(
         {
-          type: MentionType.DatabaseRow,
+          type: MentionType.PageRef,
+          page_id: pageId,
+          block_id: databaseRowMention.row_id,
           database_id: databaseRowMention.database_id,
           database_view_id: databaseRowMention.database_view_id,
           row_id: databaseRowMention.row_id,
@@ -155,27 +257,34 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
         item
       );
     }
-    case MentionTargetKind.Date: {
+
+    case MentionTargetKind.Date:
+    case MentionTargetKind.Reminder: {
       const dateMention = mention as {
-        start: string;
+        start?: string;
+        date?: string;
         end?: string;
         reminder_id?: string;
         reminder_option?: string;
         include_time?: boolean;
       };
+      const date = dateMention.start ?? dateMention.date;
+
+      if (!date) return null;
 
       return withDisplayData(
         {
           type: MentionType.Date,
-          date: dateMention.start,
+          date,
           end: dateMention.end,
-          reminder_id: dateMention.reminder_id,
+          reminder_id: dateMention.reminder_id ?? (item.kind === MentionTargetKind.Reminder ? uuidv4() : undefined),
           reminder_option: dateMention.reminder_option,
           include_time: dateMention.include_time,
         },
         item
       );
     }
+
     case MentionTargetKind.ExternalLink: {
       const linkMention = mention as {
         url: string;
@@ -189,6 +298,7 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
         item
       );
     }
+
     default:
       return null;
   }
@@ -225,9 +335,7 @@ export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
   });
 }
 
-export function buildMentionSearchRequests(
-  request: MentionSearchRequest
-): MentionSearchRequest[] {
+export function buildMentionSearchRequests(request: MentionSearchRequest): MentionSearchRequest[] {
   const query = request.query?.trim() ?? '';
   const include = request.include ?? [];
   const includesDatabaseRows = include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
@@ -243,12 +351,10 @@ export function buildMentionSearchRequests(
 
   return [
     ...(primaryInclude.length > 0 ? [{ ...request, include: primaryInclude }] : []),
-    withDatabaseRowSearchFilter(
-      {
-        ...request,
-        include: [MentionTargetKind.DatabaseRow],
-      }
-    ),
+    withDatabaseRowSearchFilter({
+      ...request,
+      include: [MentionTargetKind.DatabaseRow],
+    }),
   ];
 }
 
@@ -271,9 +377,7 @@ export function shouldCacheMentionSearchSections(
     return true;
   }
 
-  return sections.some(
-    (section) => section.kind === MentionSearchSectionKind.DatabaseRows && section.items.length > 0
-  );
+  return sections.some((section) => section.kind === MentionSearchSectionKind.DatabaseRows && section.items.length > 0);
 }
 
 export function mergeMentionSearchResponses(responses: MentionSearchResponse[]): MentionSearchResponse {

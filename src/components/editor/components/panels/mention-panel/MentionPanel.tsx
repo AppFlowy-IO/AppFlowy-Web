@@ -1,130 +1,90 @@
 import { Button, Divider } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
-import dayjs from 'dayjs';
-import { sortBy, uniqBy } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Editor as SlateEditor, Element as SlateElement, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import {
   Mention,
+  MentionSearchResultItem,
   MentionSearchSection,
+  MentionSearchSectionKind,
   MentionTargetKind,
   MentionType,
-  View,
   ViewLayout,
 } from '@/application/types';
-import { WorkspaceService } from '@/application/services/domains';
-import { isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
-import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
-import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
-import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
-import { ReactComponent as UserIcon } from '@/assets/icons/user.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
+import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 import {
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
+  getMentionSearchResultDisplayTitle,
   mergeMentionSearchResponses,
   MentionPanelSearchResult,
+  normalizeMentionSearchSectionsForPicker,
   shouldCacheMentionSearchSections,
 } from './mentionUtils';
 
 enum MentionTag {
   Result = 'result',
-  Page = 'page',
-  LoadMore = 'loadMore',
-  NewPage = 'newPage',
-  Date = 'date',
 }
 
 interface Option {
-  category: MentionTag;
   index: number;
 }
 
-function createMentionOptions({
-  resultsLength,
-  showMore,
-  viewsLength,
-  dateLength,
-  newPageLength,
-}: {
-  resultsLength: number;
-  showMore: boolean;
-  viewsLength: number;
-  dateLength: number;
-  newPageLength: number;
-}) {
-  const options = [
-    ...Array(resultsLength)
-      .fill(0)
-      .map((_, index) => ({
-        category: MentionTag.Result,
-        index,
-      })),
-    ...Array(viewsLength)
-      .fill(0)
-      .map((_, index) => ({
-        category: MentionTag.Page,
-        index,
-      })),
-    showMore && {
-      category: MentionTag.LoadMore,
-      index: 0,
-    },
-    ...Array(dateLength)
-      .fill(0)
-      .map((_, index) => ({
-        category: MentionTag.Date,
-        index,
-      })),
-    ...Array(newPageLength)
-      .fill(0)
-      .map((_, index) => ({
-        category: MentionTag.NewPage,
-        index,
-      })),
-  ].filter(Boolean) as Option[];
-
-  return options;
+function createMentionOptions(resultsLength: number) {
+  return Array.from({ length: resultsLength }, (_, index) => ({ index }));
 }
 
 const MENTION_SEARCH_LIMIT = 20;
 const MENTION_SEARCH_CACHE_LIMIT = 50;
 const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
+const PAGE_RESULT_COLLAPSE_LIMIT = 4;
+
+type MentionPanelOption =
+  | {
+      kind: 'result';
+      key: string;
+      result: MentionPanelSearchResult;
+    }
+  | {
+      kind: 'morePages';
+      key: string;
+      remainingCount: number;
+    };
+
+interface MentionPanelResultSection {
+  section: MentionSearchSection;
+  options: MentionPanelOption[];
+}
 
 const DEFAULT_MENTION_INCLUDE = [
   MentionTargetKind.Person,
   MentionTargetKind.Page,
   MentionTargetKind.Database,
   MentionTargetKind.DatabaseRow,
+  MentionTargetKind.Date,
+  MentionTargetKind.Reminder,
   MentionTargetKind.ExternalLink,
 ];
 
 const PAGE_REFERENCE_INCLUDE = [MentionTargetKind.Page, MentionTargetKind.Database, MentionTargetKind.DatabaseRow];
-
-interface FooterAction {
-  key: string;
-  category: MentionTag;
-  index: number;
-  label: React.ReactNode;
-  icon?: React.ReactNode;
-  onClick: () => void;
-}
 
 function getSelectedBlockId(editor: YjsEditor): string | undefined {
   const entry = SlateEditor.above(editor, {
@@ -156,18 +116,39 @@ function delay(ms: number) {
   });
 }
 
-function MentionResultIcon({ kind }: { kind: MentionTargetKind }) {
+function isImageSource(value?: string) {
+  if (!value) return false;
+
+  return /^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:') || value.startsWith('/');
+}
+
+function MentionPersonAvatar({ item, title }: { item: MentionSearchResultItem; title: string }) {
+  const displayName = title || item.title || item.subtitle || item.object_id || '?';
+
+  return (
+    <Avatar size={'sm'} shape={'circle'} className={'h-6 w-6 min-w-6'}>
+      <AvatarImage src={isImageSource(item.icon) ? item.icon : undefined} alt={displayName} />
+      <AvatarFallback name={displayName} className={'text-xs font-medium'}>
+        {displayName}
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
+function MentionResultIcon({ item, title }: { item: MentionSearchResultItem; title: string }) {
   const className = 'h-5 w-5 min-w-5 text-icon-primary';
+  const { kind } = item;
 
   switch (kind) {
     case MentionTargetKind.Person:
-      return <UserIcon className={className} />;
+      return <MentionPersonAvatar item={item} title={title} />;
     case MentionTargetKind.Database:
-      return <DatabaseIcon className={className} />;
     case MentionTargetKind.DatabaseRow:
       return <DocumentIcon className={className} />;
     case MentionTargetKind.Date:
       return <DateIcon className={className} />;
+    case MentionTargetKind.Reminder:
+      return <ReminderIcon className={className} />;
     case MentionTargetKind.ExternalLink:
       return <LinkIcon className={className} />;
     case MentionTargetKind.Page:
@@ -187,63 +168,91 @@ function MentionResultButton({
   selected: boolean;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   const { item } = result;
-  const subtitle = item.kind === MentionTargetKind.DatabaseRow ? undefined : item.subtitle;
+  const subtitle =
+    item.kind === MentionTargetKind.Page ||
+    item.kind === MentionTargetKind.Database ||
+    item.kind === MentionTargetKind.DatabaseRow
+      ? undefined
+      : item.subtitle;
+  const title = getMentionSearchResultDisplayTitle(item, t('menuAppHeader.defaultNewPageName'));
 
   return (
     <Button
       color={'inherit'}
       size={'small'}
       data-option-index={index}
-      startIcon={<MentionResultIcon kind={item.kind} />}
-      className={`min-h-[32px] scroll-m-2 justify-start hover:bg-fill-content-hover ${
+      startIcon={<MentionResultIcon item={item} title={title} />}
+      className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-primary hover:bg-fill-content-hover ${
         selected ? 'bg-fill-content-hover' : ''
       }`}
       onClick={onClick}
     >
       <span className={'flex min-w-0 flex-col items-start'}>
-        <span className={'max-w-[240px] truncate'}>{item.title}</span>
-        {subtitle && <span className={'max-w-[240px] truncate text-xs text-text-secondary'}>{subtitle}</span>}
+        <span className={'max-w-[280px] truncate'}>{title}</span>
+        {subtitle && <span className={'max-w-[280px] truncate text-xs text-text-secondary'}>{subtitle}</span>}
       </span>
     </Button>
   );
 }
 
-function FooterActionButton({ action, selected }: { action: FooterAction; selected: boolean }) {
+function MentionMoreResultsButton({
+  remainingCount,
+  index,
+  selected,
+  onClick,
+}: {
+  remainingCount: number;
+  index: number;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const { t } = useTranslation();
+  const label = t('document.mention.moreResults', {
+    count: remainingCount,
+    defaultValue: '{{count}} more results...',
+  });
+
   return (
     <Button
       color={'inherit'}
-      startIcon={action.icon}
       size={'small'}
-      data-option-index={action.index}
-      className={`min-h-[32px] scroll-m-2 justify-start hover:bg-fill-content-hover ${
+      data-option-index={index}
+      startIcon={<MoreIcon className={'h-5 w-5 min-w-5 text-icon-tertiary'} />}
+      className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-tertiary hover:bg-fill-content-hover ${
         selected ? 'bg-fill-content-hover' : ''
       }`}
-      onClick={action.onClick}
+      onClick={onClick}
     >
-      {action.label}
+      <span className={'max-w-[280px] truncate'}>{label}</span>
     </Button>
+  );
+}
+
+function MentionSectionTitle({ section }: { section: MentionSearchSection }) {
+  return (
+    <div className={'flex min-h-7 items-center px-0 text-sm font-semibold text-text-tertiary'}>
+      <span className={'truncate'}>{section.title}</span>
+    </div>
   );
 }
 
 export function MentionPanel() {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
-  const showDate = activePanel === PanelType.Mention;
-  const { workspaceId, viewId, loadViews, addPage, openPageModal, searchMentions, mentionContext, loadViewMeta } =
-    useEditorContext();
+  const { workspaceId, viewId, searchMentions, mentionContext, loadViewMeta } = useEditorContext();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Mention) || isPanelOpen(PanelType.PageReference);
   }, [isPanelOpen]);
-  const selectedOptionRef = React.useRef<Option | null>(null);
-  const [selectedOption, setSelectedOption] = React.useState<Option | null>(null);
+  const selectedOptionRef = useRef<Option | null>(null);
+  const [selectedOption, setSelectedOption] = useState<Option | null>(null);
   const editor = useSlateStatic() as YjsEditor;
-  const [moreCount, setMoreCount] = useState<number>(5);
-  const [views, setViews] = useState<View[]>([]);
   const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
   const [mentionSearchLoading, setMentionSearchLoading] = useState(false);
   const [mentionSearchFailed, setMentionSearchFailed] = useState(false);
+  const [showMorePages, setShowMorePages] = useState(false);
   const mentionSearchCacheRef = useRef<Map<string, MentionSearchSection[]>>(new Map());
   const mentionSearchRequestIdRef = useRef(0);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
@@ -260,60 +269,27 @@ export function MentionPanel() {
     }),
     [mentionContext, mentionInclude, searchText]
   );
-  const mentionSearchRequests = useMemo(
-    () => buildMentionSearchRequests(mentionSearchRequest),
-    [mentionSearchRequest]
-  );
+  const mentionSearchRequests = useMemo(() => buildMentionSearchRequests(mentionSearchRequest), [mentionSearchRequest]);
   const mentionSearchCacheKey = useMemo(
     () => buildMentionSearchRequestsCacheKey(mentionSearchRequests),
     [mentionSearchRequests]
   );
-  const useServerMentionSearch = Boolean(searchMentions);
-  const useLegacyMentionSearch = !useServerMentionSearch || mentionSearchFailed;
+  const pickerMentionSections = useMemo(
+    () => normalizeMentionSearchSectionsForPicker(mentionSections),
+    [mentionSections]
+  );
 
   useEffect(() => {
     if (!open) {
       selectedOptionRef.current = null;
       setSelectedOption(null);
-      setMoreCount(5);
+      setShowMorePages(false);
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open || !loadViews || !useLegacyMentionSearch) return;
-
-    void (async () => {
-      try {
-        const views = await loadViews();
-
-        // Collect mentionable views in a single tree walk, skipping:
-        // 1. Spaces (not pages)
-        // 2. Child views of databases (e.g. "View of Trip" Grid/Board under "Trip")
-        // 3. Embedded database views under documents (database blocks inside a doc)
-        const mentionable: View[] = [];
-        const collectMentionable = (items: View[], parentIsDatabase: boolean) => {
-          for (const view of items) {
-            const isDb = isDatabaseLayout(view.layout);
-            const skip = view.extra?.is_space || parentIsDatabase || isEmbeddedView(view);
-
-            if (!skip) {
-              mentionable.push(view);
-            }
-
-            collectMentionable(view.children || [], parentIsDatabase || isDb);
-          }
-        };
-
-        collectMentionable(views || [], false);
-
-        const result = sortBy(uniqBy(mentionable, 'view_id'), 'last_edited_time').reverse();
-
-        setViews(result);
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-  }, [loadViews, open, useLegacyMentionSearch]);
+    setShowMorePages(false);
+  }, [mentionSearchCacheKey]);
 
   useEffect(() => {
     if (!open || !searchMentions) {
@@ -349,9 +325,18 @@ export function MentionPanel() {
           .then(async (responses) => {
             if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
 
-            let sections = mergeMentionSearchResponses(responses).sections ?? [];
+            const initialSections = mergeMentionSearchResponses(responses).sections ?? [];
+            let sections = initialSections;
+            const shouldCacheInitialSections = shouldCacheMentionSearchSections(
+              mentionSearchRequests,
+              initialSections,
+              hasMentionSearchQuery
+            );
 
-            if (!shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
+            setMentionSections(initialSections);
+            setMentionSearchFailed(false);
+
+            if (!shouldCacheInitialSections) {
               const rowRequest = mentionSearchRequests.find((request) => {
                 const include = request.include ?? [];
 
@@ -378,7 +363,11 @@ export function MentionPanel() {
             if (shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
               setCachedMentionSections(mentionSearchCacheRef.current, mentionSearchCacheKey, sections);
             }
-            setMentionSections(sections);
+
+            if (sections !== initialSections) {
+              setMentionSections(sections);
+            }
+
             setMentionSearchFailed(false);
           })
           .catch((error) => {
@@ -403,55 +392,74 @@ export function MentionPanel() {
     };
   }, [hasMentionSearchQuery, mentionSearchCacheKey, mentionSearchRequests, open, searchMentions]);
 
-  const filteredViews = useMemo(() => {
-    return views.filter((view) => {
-      if (!searchText) return true;
-      return view.name.toLowerCase().includes(searchText.toLowerCase());
-    });
-  }, [searchText, views]);
-
-  const splicedViews = useMemo(() => {
-    return filteredViews.slice(0, moreCount);
-  }, [filteredViews, moreCount]);
-
-  const showMore = moreCount < filteredViews.length;
-  const mentionSearchResults = useMemo(
+  const rawMentionSearchResults = useMemo(
     () =>
-      useServerMentionSearch && !mentionSearchFailed
-        ? flattenMentionSearchSections(mentionSections).filter(
-            (result) => hasMentionSearchQuery || result.item.kind !== MentionTargetKind.DatabaseRow
-          )
-        : [],
-    [hasMentionSearchQuery, mentionSearchFailed, mentionSections, useServerMentionSearch]
+      flattenMentionSearchSections(pickerMentionSections).filter(
+        (result) => hasMentionSearchQuery || result.item.kind !== MentionTargetKind.DatabaseRow
+      ),
+    [hasMentionSearchQuery, pickerMentionSections]
   );
-  const mentionResultSections = useMemo(() => {
+  const { mentionResultSections, mentionPanelOptions } = useMemo(() => {
     const resultsBySection = new Map<number, MentionPanelSearchResult[]>();
 
-    mentionSearchResults.forEach((result) => {
+    rawMentionSearchResults.forEach((result) => {
       const results = resultsBySection.get(result.sectionIndex) ?? [];
 
       results.push(result);
       resultsBySection.set(result.sectionIndex, results);
     });
 
-    return mentionSections
-      .map((section, sectionIndex) => ({
-        section,
-        results: resultsBySection.get(sectionIndex) ?? [],
-      }))
-      .filter(({ results }) => results.length > 0);
-  }, [mentionSearchResults, mentionSections]);
-  const mentionResultIndexByKey = useMemo(() => {
-    return new Map(mentionSearchResults.map((result, index) => [result.key, index]));
-  }, [mentionSearchResults]);
+    const options: MentionPanelOption[] = [];
+    const sections = pickerMentionSections
+      .map<MentionPanelResultSection | null>((section, sectionIndex) => {
+        const results = resultsBySection.get(sectionIndex) ?? [];
+
+        if (results.length === 0) return null;
+
+        const shouldCollapse =
+          section.kind === MentionSearchSectionKind.Pages &&
+          !showMorePages &&
+          results.length > PAGE_RESULT_COLLAPSE_LIMIT;
+        const visibleResults = shouldCollapse ? results.slice(0, PAGE_RESULT_COLLAPSE_LIMIT) : results;
+        const sectionOptions: MentionPanelOption[] = visibleResults.map((result) => ({
+          kind: 'result',
+          key: result.key,
+          result,
+        }));
+
+        if (shouldCollapse) {
+          sectionOptions.push({
+            kind: 'morePages',
+            key: `${section.kind}:${sectionIndex}:more`,
+            remainingCount: results.length - PAGE_RESULT_COLLAPSE_LIMIT,
+          });
+        }
+
+        options.push(...sectionOptions);
+
+        return {
+          section,
+          options: sectionOptions,
+        };
+      })
+      .filter((section): section is MentionPanelResultSection => Boolean(section));
+
+    return {
+      mentionResultSections: sections,
+      mentionPanelOptions: options,
+    };
+  }, [pickerMentionSections, rawMentionSearchResults, showMorePages]);
+  const mentionOptionIndexByKey = useMemo(() => {
+    return new Map(mentionPanelOptions.map((option, index) => [option.key, index]));
+  }, [mentionPanelOptions]);
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
     if (!selectedOption) return;
-    const { category, index } = selectedOption;
+    const { index } = selectedOption;
 
     const el = ref.current?.querySelector(
-      `[data-option-category="${category}"] [data-option-index="${index}"]`
+      `[data-option-category="${MentionTag.Result}"] [data-option-index="${index}"]`
     ) as HTMLButtonElement | null;
 
     el?.scrollIntoView({
@@ -496,16 +504,6 @@ export function MentionPanel() {
       return true;
     },
     [closePanel, removeContent, editor]
-  );
-
-  const handleSelectedPage = useCallback(
-    (viewId: string, type = MentionType.PageRef) => {
-      handleAddMention({
-        page_id: viewId,
-        type,
-      });
-    },
-    [handleAddMention]
   );
 
   const notifyPersonMention = useCallback(
@@ -566,135 +564,6 @@ export function MentionPanel() {
     [editor, handleAddMention, mentionContext?.row_id, mentionContext?.view_id, notifyPersonMention, viewId]
   );
 
-  const handleAddPage = useCallback(
-    async (type = MentionType.PageRef) => {
-      if (!addPage || !viewId) return;
-      try {
-        const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
-
-        handleSelectedPage(response.view_id, type);
-        openPageModal?.(response.view_id);
-      } catch (e) {
-        console.error(e);
-      }
-    },
-    [addPage, searchText, handleSelectedPage, viewId, openPageModal]
-  );
-  const dateOptions = useMemo(() => {
-    if (!showDate) return [];
-    const onClick = (value: string) => {
-      let date: string | undefined;
-
-      switch (value) {
-        case 'today':
-          date = dayjs().toISOString();
-          break;
-        case 'tomorrow':
-          date = dayjs().add(1, 'day').toISOString();
-          break;
-        case 'yesterday':
-          date = dayjs().subtract(1, 'day').toISOString();
-          break;
-        default:
-          break;
-      }
-
-      if (!date) return;
-
-      handleAddMention({
-        date,
-        type: MentionType.Date,
-      });
-    };
-
-    return [
-      {
-        name: t('relativeDates.today'),
-        value: 'today',
-        onClick: () => onClick('today'),
-      },
-      {
-        name: t('relativeDates.tomorrow'),
-        value: 'tomorrow',
-        onClick: () => onClick('tomorrow'),
-      },
-      {
-        name: t('relativeDates.yesterday'),
-        value: 'yesterday',
-        onClick: () => onClick('yesterday'),
-      },
-    ].filter((option) => (searchText ? option.name.toLowerCase().includes(searchText.toLowerCase()) : true));
-  }, [handleAddMention, t, showDate, searchText]);
-
-  const handleClickMore = useCallback(() => {
-    setMoreCount(moreCount + 5);
-
-    setSelectedOption((prev) => {
-      if (!prev) return null;
-      return {
-        category: MentionTag.Page,
-        index: moreCount,
-      };
-    });
-  }, [moreCount]);
-
-  const dateFooterActions = useMemo<FooterAction[]>(
-    () =>
-      dateOptions.map((option, index) => ({
-        key: option.value,
-        category: MentionTag.Date,
-        index,
-        label: option.name,
-        onClick: option.onClick,
-      })),
-    [dateOptions]
-  );
-  const createFooterActions = useMemo<FooterAction[]>(
-    () => [
-      {
-        key: 'new-sub-page',
-        category: MentionTag.NewPage,
-        index: 0,
-        icon: <AddIcon />,
-        label: (
-          <>
-            <span>{t('button.create')}</span>
-            <span className={'mx-1'}>{searchText ? `"${searchText}"` : 'new'}</span>
-            <span>{t('document.slashMenu.subPage.keyword1')}</span>
-          </>
-        ),
-        onClick: () => {
-          setSelectedOption({
-            category: MentionTag.NewPage,
-            index: 0,
-          });
-          void handleAddPage(MentionType.childPage);
-        },
-      },
-      {
-        key: 'new-page-in',
-        category: MentionTag.NewPage,
-        index: 1,
-        icon: <ArrowIcon className={'mx-0.5'} />,
-        label: (
-          <>
-            <span>{t('button.create')}</span>
-            <span className={'mx-1'}>{searchText ? `"${searchText}"` : 'new'}</span>
-            <span>page in...</span>
-          </>
-        ),
-        onClick: () => {
-          setSelectedOption({
-            category: MentionTag.NewPage,
-            index: 1,
-          });
-          void handleAddPage(MentionType.PageRef);
-        },
-      },
-    ],
-    [handleAddPage, searchText, t]
-  );
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!open) return;
@@ -705,25 +574,12 @@ export function MentionPanel() {
           e.preventDefault();
           if (selectedOptionRef.current) {
             const index = selectedOptionRef.current.index;
+            const option = mentionPanelOptions[index];
 
-            if (selectedOptionRef.current.category === MentionTag.Result) {
-              const result = mentionSearchResults[index];
-
-              if (result) {
-                handleSelectedSearchResult(result);
-              }
-            } else if (selectedOptionRef.current.category === MentionTag.NewPage) {
-              void handleAddPage(index === 0 ? MentionType.childPage : MentionType.PageRef);
-            } else if (selectedOptionRef.current.category === MentionTag.Page) {
-              const viewId = splicedViews[index]?.view_id;
-
-              if (viewId) {
-                handleSelectedPage(viewId, MentionType.PageRef);
-              }
-            } else if (selectedOptionRef.current.category === MentionTag.Date) {
-              dateFooterActions[index]?.onClick();
-            } else if (selectedOptionRef.current.category === MentionTag.LoadMore) {
-              handleClickMore();
+            if (option?.kind === 'result') {
+              handleSelectedSearchResult(option.result);
+            } else if (option?.kind === 'morePages') {
+              setShowMorePages(true);
             }
           }
 
@@ -732,13 +588,7 @@ export function MentionPanel() {
         case 'ArrowDown': {
           e.stopPropagation();
           e.preventDefault();
-          const options = createMentionOptions({
-            resultsLength: mentionSearchResults.length,
-            viewsLength: useLegacyMentionSearch ? splicedViews.length : 0,
-            dateLength: dateFooterActions.length,
-            newPageLength: createFooterActions.length,
-            showMore: useLegacyMentionSearch && showMore,
-          });
+          const options = createMentionOptions(mentionPanelOptions.length);
 
           if (options.length === 0) break;
 
@@ -752,8 +602,8 @@ export function MentionPanel() {
             break;
           }
 
-          const { category, index } = selectedOptionRef.current;
-          const currentIndex = options.findIndex((option) => option.category === category && option.index === index);
+          const { index } = selectedOptionRef.current;
+          const currentIndex = options.findIndex((option) => option.index === index);
 
           if (currentIndex === -1) {
             setSelectedOption(e.key === 'ArrowDown' ? options[0] : options[options.length - 1]);
@@ -782,22 +632,8 @@ export function MentionPanel() {
     return () => {
       slateDom.removeEventListener('keydown', handleKeyDown);
     };
-  }, [
-    editor,
-    handleClickMore,
-    handleAddPage,
-    handleSelectedPage,
-    handleSelectedSearchResult,
-    open,
-    selectedOptionRef,
-    mentionSearchResults,
-    splicedViews,
-    dateFooterActions,
-    createFooterActions,
-    showMore,
-    useLegacyMentionSearch,
-  ]);
-  const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
+  }, [editor, handleSelectedSearchResult, mentionPanelOptions, open, selectedOptionRef]);
+  const [transformOrigin, setTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
 
   useEffect(() => {
     if (open && panelPosition) {
@@ -827,120 +663,65 @@ export function MentionPanel() {
       disableRestoreFocus={true}
       disableEnforceFocus={true}
       transformOrigin={transformOrigin}
+      PaperProps={{
+        sx: {
+          border: '1px solid var(--border-primary)',
+          backgroundColor: 'var(--surface-primary)',
+          boxShadow: '0px 4px 32px rgba(0, 0, 0, 0.48) !important',
+        },
+      }}
       onMouseDown={(e) => e.preventDefault()}
     >
       <div
         ref={ref}
-        className={'appflowy-scroller relative flex max-h-[560px] w-[320px] flex-col gap-2 overflow-y-auto p-2'}
+        className={
+          'appflowy-scroller relative flex max-h-[560px] w-[400px] flex-col overflow-y-auto bg-surface-primary py-1'
+        }
       >
-        {useServerMentionSearch && !mentionSearchFailed && (
-          <div data-option-category={MentionTag.Result} className={'flex flex-col gap-2'}>
-            {mentionResultSections.map(({ section, results }) => (
+        {searchMentions && (
+          <div data-option-category={MentionTag.Result} className={'flex flex-col'}>
+            {mentionResultSections.map(({ section, options }, sectionResultIndex) => (
               <div
                 key={`${section.kind}:${section.title}`}
                 data-section-kind={section.kind}
-                className={'flex flex-col gap-2'}
+                className={'flex flex-col px-2 py-1'}
               >
-                <div className={'scroll-my-10 px-1 text-text-secondary'}>{section.title}</div>
-                {results.map((result) => {
-                  const index = mentionResultIndexByKey.get(result.key) ?? 0;
+                {sectionResultIndex > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
+                <MentionSectionTitle section={section} />
+                {options.map((option) => {
+                  const index = mentionOptionIndexByKey.get(option.key) ?? 0;
+
+                  if (option.kind === 'morePages') {
+                    return (
+                      <MentionMoreResultsButton
+                        key={option.key}
+                        remainingCount={option.remainingCount}
+                        index={index}
+                        selected={selectedOption?.index === index}
+                        onClick={() => setShowMorePages(true)}
+                      />
+                    );
+                  }
 
                   return (
                     <MentionResultButton
-                      key={result.key}
-                      result={result}
+                      key={option.key}
+                      result={option.result}
                       index={index}
-                      selected={selectedOption?.index === index && selectedOption?.category === MentionTag.Result}
-                      onClick={() => handleSelectedSearchResult(result)}
+                      selected={selectedOption?.index === index}
+                      onClick={() => handleSelectedSearchResult(option.result)}
                     />
                   );
                 })}
               </div>
             ))}
-            {!mentionSearchLoading && mentionSearchResults.length === 0 && searchText && (
+            {!mentionSearchLoading && rawMentionSearchResults.length === 0 && (searchText || mentionSearchFailed) && (
               <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
                 {t('findAndReplace.noResult')}
               </div>
             )}
           </div>
         )}
-
-        {useLegacyMentionSearch && (
-          <>
-            <div className={'scroll-my-10 px-1 text-text-secondary'}>{t('inlineActions.recentPages')}</div>
-            <div data-option-category={MentionTag.Page} className={'flex flex-col gap-2'}>
-              {splicedViews && splicedViews.length > 0 ? (
-                <div className={'flex w-full flex-col gap-2'}>
-                  {splicedViews.map((view, index) => (
-                    <Button
-                      color={'inherit'}
-                      size={'small'}
-                      key={view.view_id}
-                      data-option-index={index}
-                      startIcon={<PageIcon view={view} className={'flex h-5 w-5 min-w-5 items-center justify-center'} />}
-                      className={`min-h-[32px] scroll-m-2 justify-start truncate hover:bg-fill-content-hover ${
-                        selectedOption?.index === index && selectedOption?.category === MentionTag.Page
-                          ? 'bg-fill-content-hover'
-                          : ''
-                      }`}
-                      onClick={() => handleSelectedPage(view.view_id)}
-                    >
-                      {view.name || t('menuAppHeader.defaultNewPageName')}
-                    </Button>
-                  ))}
-                </div>
-              ) : (
-                <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
-                  {t('findAndReplace.noResult')}
-                </div>
-              )}
-              {showMore && (
-                <div data-option-category={MentionTag.LoadMore} className={'w-full'}>
-                  <Button
-                    color={'inherit'}
-                    size={'small'}
-                    data-option-index={0}
-                    startIcon={<MoreIcon />}
-                    className={`min-h-[32px] w-full scroll-m-2 justify-start hover:bg-fill-content-hover ${
-                      selectedOption?.index === 0 && selectedOption?.category === MentionTag.LoadMore
-                        ? 'bg-fill-content-hover'
-                        : ''
-                    }`}
-                    onClick={handleClickMore}
-                  >
-                    {filteredViews.length - moreCount} {t('document.mention.morePages')}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        <div className={'flex w-full flex-col gap-2'}>
-          {dateFooterActions.length > 0 && (
-            <div className={'flex flex-col gap-2'} data-option-category={MentionTag.Date}>
-              <div className={'scroll-my-10 px-1 text-text-secondary'}>{t('inlineActions.date')}</div>
-              {dateFooterActions.map((action) => (
-                <FooterActionButton
-                  key={action.key}
-                  action={action}
-                  selected={selectedOption?.index === action.index && selectedOption?.category === action.category}
-                />
-              ))}
-            </div>
-          )}
-
-          <div data-option-category={MentionTag.NewPage} className={'flex w-full flex-col gap-2'}>
-            <Divider />
-            {createFooterActions.map((action) => (
-              <FooterActionButton
-                key={action.key}
-                action={action}
-                selected={selectedOption?.index === action.index && selectedOption?.category === action.category}
-              />
-            ))}
-          </div>
-        </div>
       </div>
     </Popover>
   );
