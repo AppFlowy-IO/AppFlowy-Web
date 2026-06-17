@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
 import { ReactComponent as CloudOffIcon } from '@/assets/icons/cloud_off.svg';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Log } from '@/utils/log';
@@ -17,14 +18,22 @@ const READY_STATE = {
   CLOSED: 3,
 } as const;
 
+function getStoredWebSocketReadyState(eventEmitter: AppEventEmitter) {
+  const { webSocketReadyState } = eventEmitter;
+
+  return typeof webSocketReadyState === 'number' ? webSocketReadyState : undefined;
+}
+
 export function ConnectBanner() {
-  const [readyState, setReadyState] = useState<number>(READY_STATE.CONNECTING);
-  const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
   const eventEmitter = useEventEmitter();
+  const [readyState, setReadyState] = useState<number>(
+    () => getStoredWebSocketReadyState(eventEmitter) ?? READY_STATE.CONNECTING
+  );
+  const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
   const { t } = useTranslation();
 
   // Listen to WebSocket status changes
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!eventEmitter) return;
 
     const handleWebSocketStatus = (status: number) => {
@@ -32,6 +41,7 @@ export function ConnectBanner() {
     };
 
     eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+    setReadyState(getStoredWebSocketReadyState(eventEmitter) ?? READY_STATE.CONNECTING);
 
     return () => {
       eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);

@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { type FC, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -8,6 +8,7 @@ import { db } from '@/application/db';
 import { CollabService, UserService } from '@/application/services/domains';
 import { getTokenParsed } from '@/application/session/token';
 import { clearDrainConfig, configureDrain, setCurrentSession, startDrainAll } from '@/application/sync-outbox';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useAppflowyWebSocket, useBroadcastChannel, useSync } from '@/components/ws';
 import { notification } from '@/proto/messages';
 
@@ -15,7 +16,7 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '../contexts/SyncInternalContext';
 
 interface AppSyncLayerProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 const WS_READY_STATE_OPEN = 1;
@@ -23,10 +24,10 @@ const WS_READY_STATE_OPEN = 1;
 // Second layer: WebSocket connection and synchronization
 // Handles WebSocket connection, broadcast channel, sync context, and event management
 // Depends on workspace ID and service from auth layer
-export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
+export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   const { currentWorkspaceId, isAuthenticated } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
-  const eventEmitterRef = useRef<EventEmitter>(new EventEmitter());
+  const eventEmitterRef = useRef<AppEventEmitter>(new EventEmitter() as AppEventEmitter);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -79,9 +80,10 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   // webSocket identity change (which happens for each incoming message).
   const webSocketReadyState = webSocket.readyState;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const currentEventEmitter = eventEmitterRef.current;
 
+    currentEventEmitter.webSocketReadyState = webSocketReadyState;
     currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocketReadyState);
   }, [webSocketReadyState]);
 

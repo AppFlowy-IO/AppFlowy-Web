@@ -82,6 +82,7 @@ const authContextValue = {
 
 let consumerRenderCount = 0;
 let websocketStatusEmits = 0;
+let latestWebSocketReadyState: number | undefined;
 
 const ContextConsumer = memo(function ContextConsumer() {
   const { eventEmitter } = useSyncInternal();
@@ -93,6 +94,7 @@ const ContextConsumer = memo(function ContextConsumer() {
       websocketStatusEmits += 1;
     };
 
+    latestWebSocketReadyState = eventEmitter.webSocketReadyState;
     eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleStatus);
 
     return () => {
@@ -126,6 +128,7 @@ describe('AppSyncLayer per-message churn', () => {
     jest.clearAllMocks();
     consumerRenderCount = 0;
     websocketStatusEmits = 0;
+    latestWebSocketReadyState = undefined;
     mockUseBroadcastChannel.mockReturnValue(stableBcValue);
     mockUseSync.mockReturnValue(stableSyncValue);
     mockUseAppflowyWebSocket.mockReturnValue(createWsValue(null));
@@ -169,5 +172,11 @@ describe('AppSyncLayer per-message churn', () => {
     rerenderLayer(rerender);
 
     expect(websocketStatusEmits).toBe(emitsAfterMount + 1);
+  });
+
+  it('stores the latest readyState for consumers that subscribe after the status event', () => {
+    renderLayer();
+
+    expect(latestWebSocketReadyState).toBe(1);
   });
 });
