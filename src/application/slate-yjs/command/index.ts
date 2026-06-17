@@ -87,6 +87,16 @@ function getMentionTextContent(mention: MentionTextContent): string {
     return renderDate(date, 'MMM DD, YYYY', isUnix);
   }
 
+  if (mention.type === MentionType.Person) {
+    const title = getMentionDataTitle(mention);
+
+    return mention.person_name || title || mention.person_id || '';
+  }
+
+  if (mention.type === MentionType.externalLink) {
+    return mention.url || getMentionDataTitle(mention) || '';
+  }
+
   if (mention.type === MentionType.Database || mention.type === MentionType.DatabaseRow) {
     const title = getMentionDataTitle(mention);
 
@@ -97,7 +107,7 @@ function getMentionTextContent(mention: MentionTextContent): string {
 
   const name = document.querySelector('[data-mention-id="' + mention.page_id + '"]')?.textContent || '';
 
-  return name;
+  return name || getMentionDataTitle(mention) || '';
 }
 
 export const CustomEditor = {

@@ -1,6 +1,5 @@
 import {
   Mention,
-  MentionSearchFilter,
   MentionSearchRequest,
   MentionSearchResponse,
   MentionSearchResultItem,
@@ -36,31 +35,8 @@ const ALL_MENTION_TARGETS_EXCEPT_DATABASE_ROWS = [
   MentionTargetKind.ExternalLink,
 ];
 
-function unique(values: string[]): string[] {
-  return [...new Set(values.filter(Boolean))];
-}
-
-function mergeMentionSearchFilters(
-  baseFilter: MentionSearchFilter | undefined,
-  rowSearchFilter: MentionSearchFilter | undefined
-): MentionSearchFilter | undefined {
-  if (!baseFilter && !rowSearchFilter) return undefined;
-
-  return {
-    ...baseFilter,
-    ...rowSearchFilter,
-    database_ids: unique([...(baseFilter?.database_ids ?? []), ...(rowSearchFilter?.database_ids ?? [])]),
-    database_view_ids: unique([...(baseFilter?.database_view_ids ?? []), ...(rowSearchFilter?.database_view_ids ?? [])]),
-    database_row_ids: unique([...(baseFilter?.database_row_ids ?? []), ...(rowSearchFilter?.database_row_ids ?? [])]),
-  };
-}
-
-function withDatabaseRowSearchFilter(
-  request: MentionSearchRequest,
-  rowSearchFilter?: MentionSearchFilter
-): MentionSearchRequest {
-  const mergedFilter = mergeMentionSearchFilters(request.filter, rowSearchFilter);
-  const requestWithFilter = mergedFilter ? { ...request, filter: mergedFilter } : request;
+function withDatabaseRowSearchFilter(request: MentionSearchRequest): MentionSearchRequest {
+  const requestWithFilter = request;
   const context = request.context;
   const existingFilter = requestWithFilter.filter;
   const databaseIds = existingFilter?.database_ids ?? [];
@@ -105,71 +81,114 @@ function withDisplayData(mention: Mention, item: MentionSearchResultItem): Menti
 export function mentionSearchItemToMention(item: MentionSearchResultItem): Mention | null {
   const { mention } = item;
 
-  switch (mention.type) {
-    case MentionTargetKind.Person:
+  switch (item.kind) {
+    case MentionTargetKind.Person: {
+      const personMention = mention as {
+        person_id: string;
+        person_name?: string;
+        page_id: string;
+        block_id?: string;
+        row_id?: string;
+      };
+
       return withDisplayData(
         {
           type: MentionType.Person,
-          person_id: mention.person_id,
-          person_name: mention.person_name || item.title,
-          page_id: mention.page_id,
-          block_id: mention.block_id,
-          row_id: mention.row_id,
+          person_id: personMention.person_id,
+          person_name: personMention.person_name || item.title,
+          page_id: personMention.page_id,
+          block_id: personMention.block_id,
+          row_id: personMention.row_id,
         },
         item
       );
-    case MentionTargetKind.Page:
+    }
+    case MentionTargetKind.Page: {
+      const pageMention = mention as {
+        page_id: string;
+        block_id?: string;
+        row_id?: string;
+      };
+
       return withDisplayData(
         {
           type: MentionType.PageRef,
-          page_id: mention.page_id,
-          block_id: mention.block_id,
-          row_id: mention.row_id,
+          page_id: pageMention.page_id,
+          block_id: pageMention.block_id,
+          row_id: pageMention.row_id,
         },
         item
       );
-    case MentionTargetKind.Database:
+    }
+    case MentionTargetKind.Database: {
+      const databaseMention = mention as {
+        database_id: string;
+        database_view_id?: string;
+      };
+
       return withDisplayData(
         {
           type: MentionType.Database,
-          database_id: mention.database_id,
-          database_view_id: mention.database_view_id,
+          database_id: databaseMention.database_id,
+          database_view_id: databaseMention.database_view_id,
         },
         item
       );
-    case MentionTargetKind.DatabaseRow:
+    }
+    case MentionTargetKind.DatabaseRow: {
+      const databaseRowMention = mention as {
+        database_id: string;
+        database_view_id?: string;
+        row_id: string;
+        row_document_id?: string;
+      };
+
       return withDisplayData(
         {
           type: MentionType.DatabaseRow,
-          database_id: mention.database_id,
-          database_view_id: mention.database_view_id,
-          row_id: mention.row_id,
-          database_row_id: item.database_row_id ?? mention.row_id,
-          row_document_id: item.row_document_id ?? mention.row_document_id,
+          database_id: databaseRowMention.database_id,
+          database_view_id: databaseRowMention.database_view_id,
+          row_id: databaseRowMention.row_id,
+          database_row_id: item.database_row_id ?? databaseRowMention.row_id,
+          row_document_id: item.row_document_id ?? databaseRowMention.row_document_id,
         },
         item
       );
-    case MentionTargetKind.Date:
+    }
+    case MentionTargetKind.Date: {
+      const dateMention = mention as {
+        start: string;
+        end?: string;
+        reminder_id?: string;
+        reminder_option?: string;
+        include_time?: boolean;
+      };
+
       return withDisplayData(
         {
           type: MentionType.Date,
-          date: mention.start,
-          end: mention.end,
-          reminder_id: mention.reminder_id,
-          reminder_option: mention.reminder_option,
-          include_time: mention.include_time,
+          date: dateMention.start,
+          end: dateMention.end,
+          reminder_id: dateMention.reminder_id,
+          reminder_option: dateMention.reminder_option,
+          include_time: dateMention.include_time,
         },
         item
       );
-    case MentionTargetKind.ExternalLink:
-    case MentionType.externalLink:
+    }
+    case MentionTargetKind.ExternalLink: {
+      const linkMention = mention as {
+        url: string;
+      };
+
       return withDisplayData(
         {
           type: MentionType.externalLink,
-          url: mention.url,
+          url: linkMention.url,
         },
         item
       );
+    }
     default:
       return null;
   }
@@ -207,8 +226,7 @@ export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
 }
 
 export function buildMentionSearchRequests(
-  request: MentionSearchRequest,
-  rowSearchFilter?: MentionSearchFilter
+  request: MentionSearchRequest
 ): MentionSearchRequest[] {
   const query = request.query?.trim() ?? '';
   const include = request.include ?? [];
@@ -229,14 +247,33 @@ export function buildMentionSearchRequests(
       {
         ...request,
         include: [MentionTargetKind.DatabaseRow],
-      },
-      rowSearchFilter
+      }
     ),
   ];
 }
 
 export function buildMentionSearchRequestsCacheKey(requests: MentionSearchRequest[]) {
   return requests.map(buildMentionSearchCacheKey).join('\n');
+}
+
+function requestIncludesDatabaseRows(request: MentionSearchRequest): boolean {
+  const include = request.include ?? [];
+
+  return include.length === 0 || include.includes(MentionTargetKind.DatabaseRow);
+}
+
+export function shouldCacheMentionSearchSections(
+  requests: MentionSearchRequest[],
+  sections: MentionSearchSection[],
+  hasQuery: boolean
+) {
+  if (!hasQuery || !requests.some(requestIncludesDatabaseRows)) {
+    return true;
+  }
+
+  return sections.some(
+    (section) => section.kind === MentionSearchSectionKind.DatabaseRows && section.items.length > 0
+  );
 }
 
 export function mergeMentionSearchResponses(responses: MentionSearchResponse[]): MentionSearchResponse {

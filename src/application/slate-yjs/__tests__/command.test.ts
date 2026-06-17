@@ -55,4 +55,24 @@ describe('CustomEditor.getBlockTextContent', () => {
       })
     ).toBe('Database row');
   });
+
+  it('uses person names for person mentions', () => {
+    expect(
+      getMentionTextContent({
+        type: MentionType.Person,
+        person_id: 'person-1',
+        person_name: 'Ada Lovelace',
+        page_id: 'page-1',
+      })
+    ).toBe('Ada Lovelace');
+  });
+
+  it('uses urls for external link mentions', () => {
+    expect(
+      getMentionTextContent({
+        type: MentionType.externalLink,
+        url: 'https://example.com',
+      })
+    ).toBe('https://example.com');
+  });
 });

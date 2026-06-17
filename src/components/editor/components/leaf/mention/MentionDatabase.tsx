@@ -2,7 +2,7 @@ import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 
 import { Mention, MentionType } from '@/application/types';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
-import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
+import { ReactComponent as RefPageIcon } from '@/assets/icons/ref_page.svg';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
 function getDisplayText(mention: Mention) {
@@ -63,7 +63,7 @@ function MentionDatabase({ mention }: { mention: Mention }) {
     [navigateToView, resolvedViewId, targetRowId]
   );
 
-  const Icon = isRowMention ? GridIcon : DatabaseIcon;
+  const Icon = isRowMention ? RefPageIcon : DatabaseIcon;
 
   return (
     <span

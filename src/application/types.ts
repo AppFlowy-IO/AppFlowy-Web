@@ -405,7 +405,7 @@ export interface MentionPayloadDatabase {
 }
 
 export interface MentionPayloadDatabaseRow {
-  type: MentionTargetKind.DatabaseRow;
+  type: MentionTargetKind.DatabaseRow | 'databaseRow';
   database_id: string;
   database_view_id?: string;
   row_id: string;

@@ -8,6 +8,7 @@ import {
   flattenMentionSearchSections,
   mentionSearchItemToMention,
   mergeMentionSearchResponses,
+  shouldCacheMentionSearchSections,
 } from '../mentionUtils';
 
 describe('mention panel API mapping', () => {
@@ -23,7 +24,7 @@ describe('mention panel API mapping', () => {
       row_document_id: 'row-document-1',
       can_access_context: true,
       mention: {
-        type: MentionTargetKind.DatabaseRow,
+        type: 'databaseRow',
         database_id: 'database-1',
         database_view_id: 'view-1',
         row_id: 'row-1',
@@ -176,19 +177,12 @@ describe('mention panel API mapping', () => {
     ]);
   });
 
-  it('applies embedded database filters only to the dedicated row request', () => {
-    const requests = buildMentionSearchRequests(
-      {
-        query: 'email',
-        include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
-        context: { view_id: 'document-1' },
-      },
-      {
-        database_ids: ['embedded-database-1', 'embedded-database-2'],
-        database_view_ids: ['embedded-view-1', 'embedded-view-2'],
-        database_row_ids: [],
-      }
-    );
+  it('does not scope document-level row search without an explicit database context', () => {
+    const requests = buildMentionSearchRequests({
+      query: 'email',
+      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
+      context: { view_id: 'document-1' },
+    });
 
     expect(requests).toEqual([
       {
@@ -200,11 +194,6 @@ describe('mention panel API mapping', () => {
         query: 'email',
         include: [MentionTargetKind.DatabaseRow],
         context: { view_id: 'document-1' },
-        filter: {
-          database_ids: ['embedded-database-1', 'embedded-database-2'],
-          database_view_ids: ['embedded-view-1', 'embedded-view-2'],
-          database_row_ids: [],
-        },
       },
     ]);
   });
@@ -268,5 +257,64 @@ describe('mention panel API mapping', () => {
       MentionSearchSectionKind.DatabaseRows,
       MentionSearchSectionKind.Links,
     ]);
+  });
+
+  it('does not cache typed row-capable searches until a row section is present', () => {
+    const requests = buildMentionSearchRequests({
+      query: 'hr',
+      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
+      context: { view_id: 'document-1' },
+    });
+
+    expect(
+      shouldCacheMentionSearchSections(
+        requests,
+        [
+          {
+            kind: MentionSearchSectionKind.Pages,
+            title: 'Pages',
+            has_more: false,
+            status: 'ready',
+            items: [
+              {
+                kind: MentionTargetKind.Page,
+                title: 'HR handbook',
+                mention: {
+                  type: MentionTargetKind.Page,
+                  page_id: 'page-1',
+                },
+              },
+            ],
+          },
+        ],
+        true
+      )
+    ).toBe(false);
+
+    expect(
+      shouldCacheMentionSearchSections(
+        requests,
+        [
+          {
+            kind: MentionSearchSectionKind.DatabaseRows,
+            title: 'Database rows',
+            has_more: false,
+            status: 'ready',
+            items: [
+              {
+                kind: MentionTargetKind.DatabaseRow,
+                title: 'HR',
+                mention: {
+                  type: MentionTargetKind.DatabaseRow,
+                  database_id: 'database-1',
+                  row_id: 'row-1',
+                },
+              },
+            ],
+          },
+        ],
+        true
+      )
+    ).toBe(true);
   });
 });

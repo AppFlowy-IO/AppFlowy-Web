@@ -11,15 +11,14 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import {
-  BlockType,
   Mention,
-  MentionSearchFilter,
   MentionSearchSection,
   MentionTargetKind,
   MentionType,
   View,
   ViewLayout,
 } from '@/application/types';
+import { WorkspaceService } from '@/application/services/domains';
 import { isDatabaseLayout, isEmbeddedView } from '@/application/view-utils';
 import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
@@ -27,7 +26,6 @@ import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
-import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as UserIcon } from '@/assets/icons/user.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
@@ -42,6 +40,7 @@ import {
   flattenMentionSearchSections,
   mergeMentionSearchResponses,
   MentionPanelSearchResult,
+  shouldCacheMentionSearchSections,
 } from './mentionUtils';
 
 enum MentionTag {
@@ -106,6 +105,7 @@ function createMentionOptions({
 
 const MENTION_SEARCH_LIMIT = 20;
 const MENTION_SEARCH_CACHE_LIMIT = 50;
+const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 
 const DEFAULT_MENTION_INCLUDE = [
   MentionTargetKind.Person,
@@ -117,13 +117,6 @@ const DEFAULT_MENTION_INCLUDE = [
 
 const PAGE_REFERENCE_INCLUDE = [MentionTargetKind.Page, MentionTargetKind.Database, MentionTargetKind.DatabaseRow];
 
-const DATABASE_BLOCK_TYPES = new Set([
-  BlockType.GridBlock,
-  BlockType.BoardBlock,
-  BlockType.CalendarBlock,
-  BlockType.ChartBlock,
-]);
-
 interface FooterAction {
   key: string;
   category: MentionTag;
@@ -133,41 +126,12 @@ interface FooterAction {
   onClick: () => void;
 }
 
-function getDatabaseBlockViewIds(data: { view_id?: unknown; view_ids?: unknown }): string[] {
-  if (Array.isArray(data.view_ids)) {
-    return data.view_ids.filter((id): id is string => typeof id === 'string' && id.length > 0);
-  }
+function getSelectedBlockId(editor: YjsEditor): string | undefined {
+  const entry = SlateEditor.above(editor, {
+    match: (value) => SlateElement.isElement(value) && typeof (value as { blockId?: unknown }).blockId === 'string',
+  });
 
-  return typeof data.view_id === 'string' && data.view_id.length > 0 ? [data.view_id] : [];
-}
-
-function collectEmbeddedDatabaseRowSearchFilter(editor: YjsEditor): MentionSearchFilter | undefined {
-  const databaseIds = new Set<string>();
-  const databaseViewIds = new Set<string>();
-
-  for (const [node] of SlateEditor.nodes(editor, {
-    at: [],
-    match: (value) => SlateElement.isElement(value) && DATABASE_BLOCK_TYPES.has((value as { type: BlockType }).type),
-  })) {
-    const data = (node as { data?: { database_id?: unknown; view_id?: unknown; view_ids?: unknown } }).data;
-
-    if (!data) continue;
-    if (typeof data.database_id === 'string' && data.database_id.length > 0) {
-      databaseIds.add(data.database_id);
-    }
-
-    getDatabaseBlockViewIds(data).forEach((viewId) => databaseViewIds.add(viewId));
-  }
-
-  if (databaseIds.size === 0 && databaseViewIds.size === 0) {
-    return undefined;
-  }
-
-  return {
-    database_ids: [...databaseIds],
-    database_view_ids: [...databaseViewIds],
-    database_row_ids: [],
-  };
+  return (entry?.[0] as { blockId?: string } | undefined)?.blockId;
 }
 
 function setCachedMentionSections(
@@ -186,6 +150,12 @@ function setCachedMentionSections(
   cache.set(key, sections);
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function MentionResultIcon({ kind }: { kind: MentionTargetKind }) {
   const className = 'h-5 w-5 min-w-5 text-icon-primary';
 
@@ -195,7 +165,7 @@ function MentionResultIcon({ kind }: { kind: MentionTargetKind }) {
     case MentionTargetKind.Database:
       return <DatabaseIcon className={className} />;
     case MentionTargetKind.DatabaseRow:
-      return <GridIcon className={className} />;
+      return <DocumentIcon className={className} />;
     case MentionTargetKind.Date:
       return <DateIcon className={className} />;
     case MentionTargetKind.ExternalLink:
@@ -218,6 +188,7 @@ function MentionResultButton({
   onClick: () => void;
 }) {
   const { item } = result;
+  const subtitle = item.kind === MentionTargetKind.DatabaseRow ? undefined : item.subtitle;
 
   return (
     <Button
@@ -232,7 +203,7 @@ function MentionResultButton({
     >
       <span className={'flex min-w-0 flex-col items-start'}>
         <span className={'max-w-[240px] truncate'}>{item.title}</span>
-        {item.subtitle && <span className={'max-w-[240px] truncate text-xs text-text-secondary'}>{item.subtitle}</span>}
+        {subtitle && <span className={'max-w-[240px] truncate text-xs text-text-secondary'}>{subtitle}</span>}
       </span>
     </Button>
   );
@@ -258,7 +229,8 @@ function FooterActionButton({ action, selected }: { action: FooterAction; select
 export function MentionPanel() {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
   const showDate = activePanel === PanelType.Mention;
-  const { viewId, loadViews, addPage, openPageModal, searchMentions, mentionContext } = useEditorContext();
+  const { workspaceId, viewId, loadViews, addPage, openPageModal, searchMentions, mentionContext, loadViewMeta } =
+    useEditorContext();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const open = useMemo(() => {
@@ -279,16 +251,6 @@ export function MentionPanel() {
     () => (activePanel === PanelType.PageReference ? PAGE_REFERENCE_INCLUDE : DEFAULT_MENTION_INCLUDE),
     [activePanel]
   );
-  const embeddedDatabaseRowSearchFilter = useMemo(
-    () => {
-      if (!open || !hasMentionSearchQuery || mentionContext?.database_id || mentionContext?.database_view_id) {
-        return undefined;
-      }
-
-      return collectEmbeddedDatabaseRowSearchFilter(editor);
-    },
-    [editor, hasMentionSearchQuery, mentionContext?.database_id, mentionContext?.database_view_id, open]
-  );
   const mentionSearchRequest = useMemo(
     () => ({
       query: searchText ?? '',
@@ -299,8 +261,8 @@ export function MentionPanel() {
     [mentionContext, mentionInclude, searchText]
   );
   const mentionSearchRequests = useMemo(
-    () => buildMentionSearchRequests(mentionSearchRequest, embeddedDatabaseRowSearchFilter),
-    [embeddedDatabaseRowSearchFilter, mentionSearchRequest]
+    () => buildMentionSearchRequests(mentionSearchRequest),
+    [mentionSearchRequest]
   );
   const mentionSearchCacheKey = useMemo(
     () => buildMentionSearchRequestsCacheKey(mentionSearchRequests),
@@ -384,12 +346,38 @@ export function MentionPanel() {
     const timer = window.setTimeout(
       () => {
         void Promise.all(mentionSearchRequests.map((request) => searchMentions(request)))
-          .then((responses) => {
+          .then(async (responses) => {
             if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
 
-            const sections = mergeMentionSearchResponses(responses).sections ?? [];
+            let sections = mergeMentionSearchResponses(responses).sections ?? [];
 
-            setCachedMentionSections(mentionSearchCacheRef.current, mentionSearchCacheKey, sections);
+            if (!shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
+              const rowRequest = mentionSearchRequests.find((request) => {
+                const include = request.include ?? [];
+
+                return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
+              });
+
+              if (rowRequest) {
+                await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
+
+                if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
+
+                try {
+                  const rowRetryResponse = await searchMentions(rowRequest);
+
+                  sections = mergeMentionSearchResponses([...responses, rowRetryResponse]).sections ?? [];
+                } catch (error) {
+                  console.error(error);
+                }
+              }
+            }
+
+            if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
+
+            if (shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
+              setCachedMentionSections(mentionSearchCacheRef.current, mentionSearchCacheKey, sections);
+            }
             setMentionSections(sections);
             setMentionSearchFailed(false);
           })
@@ -478,13 +466,13 @@ export function MentionPanel() {
       closePanel();
       editor.flushLocalChanges();
 
-      editor.insertText('@');
+      Transforms.insertText(editor, '@');
 
       const newSelection = editor.selection;
 
       if (!newSelection) {
         console.error('newSelection is undefined');
-        return;
+        return false;
       }
 
       const start = {
@@ -504,6 +492,8 @@ export function MentionPanel() {
       Transforms.collapse(editor, {
         edge: 'end',
       });
+
+      return true;
     },
     [closePanel, removeContent, editor]
   );
@@ -518,11 +508,62 @@ export function MentionPanel() {
     [handleAddMention]
   );
 
+  const notifyPersonMention = useCallback(
+    async (mention: Mention) => {
+      if (mention.type !== MentionType.Person || !mention.person_id || !workspaceId) return;
+
+      const targetViewId = mention.page_id || mentionContext?.view_id || viewId;
+
+      if (!targetViewId) return;
+
+      const rowId = mention.row_id || mentionContext?.row_id;
+      let viewName = t('menuAppHeader.defaultNewPageName');
+      let viewLayout: ViewLayout | undefined;
+
+      try {
+        const meta = await loadViewMeta?.(targetViewId);
+
+        viewName = meta?.name || viewName;
+        viewLayout = meta?.layout;
+      } catch {
+        // Keep the stored mention usable even when metadata is unavailable.
+      }
+
+      try {
+        await WorkspaceService.updatePageMention(workspaceId, targetViewId, {
+          person_id: mention.person_id,
+          block_id: mention.block_id ?? null,
+          row_id: rowId ?? null,
+          require_notification: true,
+          view_name: viewName,
+          view_layout: viewLayout,
+          is_row_document: Boolean(rowId),
+        });
+      } catch (error) {
+        console.error('Failed to update page mention:', error);
+      }
+    },
+    [loadViewMeta, mentionContext?.row_id, mentionContext?.view_id, t, viewId, workspaceId]
+  );
+
   const handleSelectedSearchResult = useCallback(
     (result: MentionPanelSearchResult) => {
-      handleAddMention(result.mention);
+      const selectedBlockId = getSelectedBlockId(editor);
+      const mention =
+        result.mention.type === MentionType.Person
+          ? {
+              ...result.mention,
+              page_id: result.mention.page_id || mentionContext?.view_id || viewId,
+              block_id: result.mention.block_id || selectedBlockId,
+              row_id: result.mention.row_id || mentionContext?.row_id,
+            }
+          : result.mention;
+
+      if (handleAddMention(mention) && mention.type === MentionType.Person) {
+        void notifyPersonMention(mention);
+      }
     },
-    [handleAddMention]
+    [editor, handleAddMention, mentionContext?.row_id, mentionContext?.view_id, notifyPersonMention, viewId]
   );
 
   const handleAddPage = useCallback(
