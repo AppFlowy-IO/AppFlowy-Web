@@ -1,6 +1,6 @@
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 
-import { Mention, MentionType } from '@/application/types';
+import { Mention } from '@/application/types';
 import { ReactComponent as RefPageIcon } from '@/assets/icons/ref_page.svg';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
@@ -20,7 +20,7 @@ function MentionDatabase({ mention }: { mention: Mention }) {
   const databaseViewId = mention.database_view_id || mention.page_id;
   const [resolvedViewId, setResolvedViewId] = useState<string | undefined>(databaseViewId);
   const content = getDisplayText(mention);
-  const isRowMention = mention.type === MentionType.DatabaseRow || Boolean(mention.row_id || mention.database_row_id);
+  const isRowMention = Boolean(mention.row_id || mention.database_row_id);
   const targetRowId = isRowMention ? mention.row_id ?? mention.database_row_id : undefined;
   const canNavigate = Boolean(resolvedViewId);
 

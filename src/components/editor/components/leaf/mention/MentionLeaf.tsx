@@ -45,14 +45,6 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     if (type === MentionType.Person && person_id) {
       return <MentionPerson type={type} personId={person_id} person_name={person_name} />;
     }
-
-    if (type === MentionType.Database && mention.database_id) {
-      return <MentionDatabase mention={mention} />;
-    }
-
-    if (type === MentionType.DatabaseRow && mention.database_id && (mention.row_id || mention.database_row_id)) {
-      return <MentionDatabase mention={mention} />;
-    }
   }, [type, page_id, date, text, block_id, reminder, url, person_id, person_name, include_time, mention]);
 
   // check if the mention is selected

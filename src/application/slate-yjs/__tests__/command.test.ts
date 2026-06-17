@@ -16,20 +16,11 @@ describe('CustomEditor.getBlockTextContent', () => {
     return CustomEditor.getBlockTextContent(node);
   }
 
-  it('uses display titles for database mentions', () => {
+  it('uses display titles for database row page mentions', () => {
     expect(
       getMentionTextContent({
-        type: MentionType.Database,
-        database_id: 'database-1',
-        data: {
-          title: 'Product roadmap',
-        },
-      })
-    ).toBe('Product roadmap');
-
-    expect(
-      getMentionTextContent({
-        type: MentionType.DatabaseRow,
+        type: MentionType.PageRef,
+        page_id: 'database-view-1',
         database_id: 'database-1',
         row_id: 'row-1',
         data: {
@@ -39,21 +30,15 @@ describe('CustomEditor.getBlockTextContent', () => {
     ).toBe('Launch checklist');
   });
 
-  it('uses non-empty fallback labels for database mentions without display titles', () => {
+  it('uses row ids for database row page mentions without display titles', () => {
     expect(
       getMentionTextContent({
-        type: MentionType.Database,
-        database_id: 'database-1',
-      })
-    ).toBe('Database');
-
-    expect(
-      getMentionTextContent({
-        type: MentionType.DatabaseRow,
+        type: MentionType.PageRef,
+        page_id: 'database-view-1',
         database_id: 'database-1',
         row_id: 'row-1',
       })
-    ).toBe('Database row');
+    ).toBe('row-1');
   });
 
   it('uses person names for person mentions', () => {

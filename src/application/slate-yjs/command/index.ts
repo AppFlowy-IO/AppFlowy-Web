@@ -97,12 +97,12 @@ function getMentionTextContent(mention: MentionTextContent): string {
     return mention.url || getMentionDataTitle(mention) || '';
   }
 
-  if (mention.type === MentionType.Database || mention.type === MentionType.DatabaseRow) {
+  if (mention.type === MentionType.PageRef && mention.database_id && (mention.row_id || mention.database_row_id)) {
     const title = getMentionDataTitle(mention);
 
     if (title) return title;
 
-    return mention.type === MentionType.DatabaseRow ? 'Database row' : 'Database';
+    return mention.row_id || mention.database_row_id || '';
   }
 
   const name = document.querySelector('[data-mention-id="' + mention.page_id + '"]')?.textContent || '';

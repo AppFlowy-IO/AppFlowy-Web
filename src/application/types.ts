@@ -306,8 +306,6 @@ export enum MentionType {
   childPage = 'childPage',
   externalLink = 'externalLink',
   Person = 'person',
-  Database = 'database',
-  DatabaseRow = 'database_row',
 }
 
 export interface Mention {
