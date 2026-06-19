@@ -5,6 +5,7 @@ import { MentionSearchSectionKind, MentionTargetKind, MentionType } from '@/appl
 import {
   buildMentionSearchCacheKey,
   buildMentionSearchRequests,
+  buildMentionSearchRequestsCacheKey,
   flattenMentionSearchSections,
   getMentionSearchResultDisplayTitle,
   mentionSearchItemToMention,
@@ -222,6 +223,56 @@ describe('mention panel API mapping', () => {
     });
 
     expect(base).not.toEqual(rowContext);
+  });
+
+  it('normalizes mention cache keys for query casing and unordered sets', () => {
+    const first = buildMentionSearchCacheKey({
+      query: ' HR ',
+      include: [MentionTargetKind.Page, MentionTargetKind.Person],
+      filter: {
+        database_ids: ['database-b', 'database-a'],
+      },
+    });
+    const second = buildMentionSearchCacheKey({
+      query: 'hr',
+      include: [MentionTargetKind.Person, MentionTargetKind.Page],
+      filter: {
+        database_ids: ['database-a', 'database-b'],
+      },
+    });
+    const empty = buildMentionSearchCacheKey({
+      query: '',
+      include: [MentionTargetKind.Person, MentionTargetKind.Page],
+      filter: {
+        database_ids: ['database-a', 'database-b'],
+      },
+    });
+
+    expect(first).toEqual(second);
+    expect(first).not.toEqual(empty);
+  });
+
+  it('scopes mention cache keys by workspace and user', () => {
+    const requests = buildMentionSearchRequests({
+      query: 'road',
+      include: [MentionTargetKind.Page],
+      context: { view_id: 'view-1' },
+    });
+    const firstWorkspace = buildMentionSearchRequestsCacheKey(requests, {
+      workspaceId: 'workspace-1',
+      userId: 'user-1',
+    });
+    const secondWorkspace = buildMentionSearchRequestsCacheKey(requests, {
+      workspaceId: 'workspace-2',
+      userId: 'user-1',
+    });
+    const secondUser = buildMentionSearchRequestsCacheKey(requests, {
+      workspaceId: 'workspace-1',
+      userId: 'user-2',
+    });
+
+    expect(firstWorkspace).not.toEqual(secondWorkspace);
+    expect(firstWorkspace).not.toEqual(secondUser);
   });
 
   it('splits typed database-row mention search into a scoped dedicated row request', () => {

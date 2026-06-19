@@ -126,6 +126,7 @@ function SharePanel({
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
           hasFullAccess={hasFullAccess}
+          sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} />
         <CopyLink />

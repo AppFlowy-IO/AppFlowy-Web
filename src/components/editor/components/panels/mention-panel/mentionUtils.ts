@@ -324,15 +324,39 @@ export function flattenMentionSearchSections(sections: MentionSearchSection[]): 
   );
 }
 
+function normalizeOptionalString(value?: string | null) {
+  const trimmed = value?.trim();
+
+  return trimmed ? trimmed : null;
+}
+
+function normalizeStringList(values?: string[]) {
+  return Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean))).sort();
+}
+
 export function buildMentionSearchCacheKey(request: MentionSearchRequest) {
   return JSON.stringify({
-    query: request.query ?? '',
-    limit: request.limit ?? null,
-    cursor: request.cursor ?? null,
-    include: request.include ?? [],
-    context: request.context ?? {},
-    filter: request.filter ?? {},
+    query: request.query?.trim().toLowerCase() ?? '',
+    limit: request.limit && request.limit > 0 ? request.limit : null,
+    cursor: normalizeOptionalString(request.cursor),
+    include: normalizeStringList(request.include),
+    context: {
+      view_id: normalizeOptionalString(request.context?.view_id),
+      database_id: normalizeOptionalString(request.context?.database_id),
+      database_view_id: normalizeOptionalString(request.context?.database_view_id),
+      row_id: normalizeOptionalString(request.context?.row_id),
+    },
+    filter: {
+      database_ids: normalizeStringList(request.filter?.database_ids),
+      database_view_ids: normalizeStringList(request.filter?.database_view_ids),
+      database_row_ids: normalizeStringList(request.filter?.database_row_ids),
+    },
   });
+}
+
+interface MentionSearchCacheScope {
+  workspaceId?: string | null;
+  userId?: string | null;
 }
 
 export function buildMentionSearchRequests(request: MentionSearchRequest): MentionSearchRequest[] {
@@ -358,8 +382,16 @@ export function buildMentionSearchRequests(request: MentionSearchRequest): Menti
   ];
 }
 
-export function buildMentionSearchRequestsCacheKey(requests: MentionSearchRequest[]) {
-  return requests.map(buildMentionSearchCacheKey).join('\n');
+export function buildMentionSearchRequestsCacheKey(
+  requests: MentionSearchRequest[],
+  scope: MentionSearchCacheScope = {}
+) {
+  const scopeKey = JSON.stringify({
+    workspace_id: normalizeOptionalString(scope.workspaceId),
+    user_id: normalizeOptionalString(scope.userId),
+  });
+
+  return [scopeKey, ...requests.map(buildMentionSearchCacheKey)].join('\n');
 }
 
 function requestIncludesDatabaseRows(request: MentionSearchRequest): boolean {

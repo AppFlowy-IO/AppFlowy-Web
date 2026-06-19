@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AccessLevel, IPeopleWithAccessType } from '@/application/types';
-import { findAncestors, findView } from '@/components/_shared/outline/utils';
+import { findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { AccessService } from '@/application/services/domains';
 import { resolveShareSectionType, ShareSectionType } from '@/components/app/share/shareSectionType';
@@ -25,13 +25,12 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         return;
       }
 
-      const ancestorViewIds = findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [];
       const requestSeq = ++loadPeopleRequestSeq.current;
 
       setIsLoadingPeople(true);
       setHasLoadedPeople(false);
       try {
-        const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
+        const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, signal);
 
         if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
         setPeople(detail.shared_with);
@@ -49,7 +48,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         }
       }
     },
-    [currentUserEmail, currentWorkspaceId, viewId, outline]
+    [currentUserEmail, currentWorkspaceId, viewId]
   );
 
   useEffect(() => {

@@ -27,8 +27,17 @@ import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
+import {
+  getCachedMentionSections,
+  isMentionSearchRetryLater,
+  markMentionSearchRetryLater,
+  mentionSearchRetryLaterRemainingMs,
+  setCachedMentionSections,
+  startMentionSearchRefresh,
+} from './mentionSearchCache';
 import {
   buildMentionSearchRequests,
   buildMentionSearchRequestsCacheKey,
@@ -53,7 +62,6 @@ function createMentionOptions(resultsLength: number) {
 }
 
 const MENTION_SEARCH_LIMIT = 20;
-const MENTION_SEARCH_CACHE_LIMIT = 50;
 const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 const PAGE_RESULT_COLLAPSE_LIMIT = 4;
 
@@ -92,22 +100,6 @@ function getSelectedBlockId(editor: YjsEditor): string | undefined {
   });
 
   return (entry?.[0] as { blockId?: string } | undefined)?.blockId;
-}
-
-function setCachedMentionSections(
-  cache: Map<string, MentionSearchSection[]>,
-  key: string,
-  sections: MentionSearchSection[]
-) {
-  if (cache.size >= MENTION_SEARCH_CACHE_LIMIT) {
-    const oldestKey = cache.keys().next().value;
-
-    if (oldestKey) {
-      cache.delete(oldestKey);
-    }
-  }
-
-  cache.set(key, sections);
 }
 
 function delay(ms: number) {
@@ -238,9 +230,26 @@ function MentionSectionTitle({ section }: { section: MentionSearchSection }) {
   );
 }
 
+function MentionPanelLoadingState() {
+  return (
+    <div className={'flex min-h-[136px] flex-col gap-3 px-4 py-3'} aria-hidden={'true'}>
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className={'flex items-center gap-3'}>
+          <div className={'h-7 w-7 shrink-0 animate-pulse rounded-full bg-fill-content-hover'} />
+          <div className={'flex min-w-0 flex-1 flex-col gap-2'}>
+            <div className={'h-3 w-32 animate-pulse rounded bg-fill-content-hover'} />
+            <div className={'h-2.5 w-44 animate-pulse rounded bg-fill-content-hover'} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function MentionPanel() {
   const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, activePanel } = usePanelContext();
   const { workspaceId, viewId, searchMentions, mentionContext, loadViewMeta } = useEditorContext();
+  const currentUser = useCurrentUserOptional();
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
   const open = useMemo(() => {
@@ -252,8 +261,8 @@ export function MentionPanel() {
   const [mentionSections, setMentionSections] = useState<MentionSearchSection[]>([]);
   const [mentionSearchLoading, setMentionSearchLoading] = useState(false);
   const [mentionSearchFailed, setMentionSearchFailed] = useState(false);
+  const [mentionSearchDeferred, setMentionSearchDeferred] = useState(false);
   const [showMorePages, setShowMorePages] = useState(false);
-  const mentionSearchCacheRef = useRef<Map<string, MentionSearchSection[]>>(new Map());
   const mentionSearchRequestIdRef = useRef(0);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
   const mentionInclude = useMemo(
@@ -271,8 +280,12 @@ export function MentionPanel() {
   );
   const mentionSearchRequests = useMemo(() => buildMentionSearchRequests(mentionSearchRequest), [mentionSearchRequest]);
   const mentionSearchCacheKey = useMemo(
-    () => buildMentionSearchRequestsCacheKey(mentionSearchRequests),
-    [mentionSearchRequests]
+    () =>
+      buildMentionSearchRequestsCacheKey(mentionSearchRequests, {
+        workspaceId,
+        userId: currentUser?.uuid,
+      }),
+    [currentUser?.uuid, mentionSearchRequests, workspaceId]
   );
   const pickerMentionSections = useMemo(
     () => normalizeMentionSearchSectionsForPicker(mentionSections),
@@ -295,6 +308,7 @@ export function MentionPanel() {
     if (!open || !searchMentions) {
       setMentionSections([]);
       setMentionSearchFailed(false);
+      setMentionSearchDeferred(false);
       setMentionSearchLoading(false);
       return;
     }
@@ -302,89 +316,155 @@ export function MentionPanel() {
     selectedOptionRef.current = null;
     setSelectedOption(null);
 
-    const cachedSections = mentionSearchCacheRef.current.get(mentionSearchCacheKey);
+    const searchMentionsFn = searchMentions;
+    let cancelled = false;
+    let timer: number | undefined;
+    const requestId = mentionSearchRequestIdRef.current + 1;
+    const cachedSections = getCachedMentionSections(mentionSearchCacheKey);
+
+    mentionSearchRequestIdRef.current = requestId;
 
     if (cachedSections) {
       setMentionSections(cachedSections);
       setMentionSearchFailed(false);
+      setMentionSearchDeferred(false);
       setMentionSearchLoading(false);
-      return;
+
+      if (mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey) === 0) {
+        void startMentionSearchRefresh(mentionSearchCacheKey, async () => {
+          const sections = await fetchMentionSections();
+
+          cacheMentionSections(sections);
+
+          if (isCurrentRequest()) {
+            setMentionSections(sections);
+            setMentionSearchFailed(false);
+          }
+        }).catch((error) => {
+          if (isMentionSearchRetryLater(error)) {
+            markMentionSearchRetryLater(mentionSearchCacheKey, error);
+            return;
+          }
+
+          console.error(error);
+        });
+      }
+
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
-    const requestId = mentionSearchRequestIdRef.current + 1;
-
-    mentionSearchRequestIdRef.current = requestId;
     setMentionSections([]);
     setMentionSearchFailed(false);
-    setMentionSearchLoading(true);
+    setMentionSearchDeferred(false);
 
-    const timer = window.setTimeout(
-      () => {
-        void Promise.all(mentionSearchRequests.map((request) => searchMentions(request)))
-          .then(async (responses) => {
-            if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
+    function isCurrentRequest() {
+      return !cancelled && mentionSearchRequestIdRef.current === requestId;
+    }
 
-            const initialSections = mergeMentionSearchResponses(responses).sections ?? [];
-            let sections = initialSections;
-            const shouldCacheInitialSections = shouldCacheMentionSearchSections(
-              mentionSearchRequests,
-              initialSections,
-              hasMentionSearchQuery
-            );
+    function cacheMentionSections(sections: MentionSearchSection[]) {
+      if (shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
+        setCachedMentionSections(mentionSearchCacheKey, sections);
+      }
+    }
 
-            setMentionSections(initialSections);
+    async function fetchMentionSections() {
+      const responses = await Promise.all(mentionSearchRequests.map((request) => searchMentionsFn(request)));
+      const initialSections = mergeMentionSearchResponses(responses).sections ?? [];
+      let sections = initialSections;
+      const shouldCacheInitialSections = shouldCacheMentionSearchSections(
+        mentionSearchRequests,
+        initialSections,
+        hasMentionSearchQuery
+      );
+
+      if (!shouldCacheInitialSections) {
+        const rowRequest = mentionSearchRequests.find((request) => {
+          const include = request.include ?? [];
+
+          return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
+        });
+
+        if (rowRequest) {
+          await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
+
+          if (!isCurrentRequest()) return sections;
+
+          try {
+            const rowRetryResponse = await searchMentionsFn(rowRequest);
+
+            sections = mergeMentionSearchResponses([...responses, rowRetryResponse]).sections ?? [];
+          } catch (error) {
+            if (isMentionSearchRetryLater(error)) {
+              markMentionSearchRetryLater(mentionSearchCacheKey, error);
+            } else {
+              console.error(error);
+            }
+          }
+        }
+      }
+
+      return sections;
+    }
+
+    function scheduleSearch(delayMs: number) {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(runSearch, delayMs);
+    }
+
+    function runSearch() {
+      void fetchMentionSections()
+        .then((sections) => {
+          if (!isCurrentRequest()) return;
+
+          cacheMentionSections(sections);
+          setMentionSections(sections);
+          setMentionSearchFailed(false);
+          setMentionSearchDeferred(false);
+        })
+        .catch((error) => {
+          if (!isCurrentRequest()) return;
+
+          if (isMentionSearchRetryLater(error)) {
+            markMentionSearchRetryLater(mentionSearchCacheKey, error);
+            const fallbackSections = getCachedMentionSections(mentionSearchCacheKey);
+
+            if (fallbackSections) {
+              setMentionSections(fallbackSections);
+              setMentionSearchFailed(false);
+              setMentionSearchDeferred(false);
+              return;
+            }
+
+            setMentionSearchDeferred(true);
             setMentionSearchFailed(false);
+            scheduleSearch(mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey));
+            return;
+          }
 
-            if (!shouldCacheInitialSections) {
-              const rowRequest = mentionSearchRequests.find((request) => {
-                const include = request.include ?? [];
+          console.error(error);
+          setMentionSections([]);
+          setMentionSearchFailed(true);
+          setMentionSearchDeferred(false);
+        })
+        .finally(() => {
+          if (!isCurrentRequest()) return;
 
-                return include.length === 1 && include[0] === MentionTargetKind.DatabaseRow;
-              });
+          setMentionSearchLoading(false);
+        });
+    }
 
-              if (rowRequest) {
-                await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
+    const retryLaterMs = mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey);
 
-                if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
-
-                try {
-                  const rowRetryResponse = await searchMentions(rowRequest);
-
-                  sections = mergeMentionSearchResponses([...responses, rowRetryResponse]).sections ?? [];
-                } catch (error) {
-                  console.error(error);
-                }
-              }
-            }
-
-            if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
-
-            if (shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
-              setCachedMentionSections(mentionSearchCacheRef.current, mentionSearchCacheKey, sections);
-            }
-
-            if (sections !== initialSections) {
-              setMentionSections(sections);
-            }
-
-            setMentionSearchFailed(false);
-          })
-          .catch((error) => {
-            if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
-
-            console.error(error);
-            setMentionSections([]);
-            setMentionSearchFailed(true);
-          })
-          .finally(() => {
-            if (cancelled || mentionSearchRequestIdRef.current !== requestId) return;
-
-            setMentionSearchLoading(false);
-          });
-      },
-      hasMentionSearchQuery ? 120 : 0
-    );
+    if (retryLaterMs > 0) {
+      setMentionSearchDeferred(true);
+      setMentionSearchLoading(false);
+      scheduleSearch(retryLaterMs);
+    } else {
+      setMentionSearchLoading(true);
+      scheduleSearch(hasMentionSearchQuery ? 120 : 0);
+    }
 
     return () => {
       cancelled = true;
@@ -452,6 +532,8 @@ export function MentionPanel() {
   const mentionOptionIndexByKey = useMemo(() => {
     return new Map(mentionPanelOptions.map((option, index) => [option.key, index]));
   }, [mentionPanelOptions]);
+  const showMentionSearchLoadingState =
+    searchMentions && (mentionSearchLoading || mentionSearchDeferred) && rawMentionSearchResults.length === 0;
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
@@ -584,6 +666,11 @@ export function MentionPanel() {
           }
 
           break;
+        case 'Escape':
+          e.stopPropagation();
+          e.preventDefault();
+          closePanel();
+          break;
         case 'ArrowUp':
         case 'ArrowDown': {
           e.stopPropagation();
@@ -632,7 +719,7 @@ export function MentionPanel() {
     return () => {
       slateDom.removeEventListener('keydown', handleKeyDown);
     };
-  }, [editor, handleSelectedSearchResult, mentionPanelOptions, open, selectedOptionRef]);
+  }, [closePanel, editor, handleSelectedSearchResult, mentionPanelOptions, open, selectedOptionRef]);
   const [transformOrigin, setTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
 
   useEffect(() => {
@@ -677,49 +764,57 @@ export function MentionPanel() {
         className={
           'appflowy-scroller relative flex max-h-[560px] w-[400px] flex-col overflow-y-auto bg-surface-primary py-1'
         }
+        aria-busy={showMentionSearchLoadingState}
       >
         {searchMentions && (
           <div data-option-category={MentionTag.Result} className={'flex flex-col'}>
-            {mentionResultSections.map(({ section, options }, sectionResultIndex) => (
-              <div
-                key={`${section.kind}:${section.title}`}
-                data-section-kind={section.kind}
-                className={'flex flex-col px-2 py-1'}
-              >
-                {sectionResultIndex > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
-                <MentionSectionTitle section={section} />
-                {options.map((option) => {
-                  const index = mentionOptionIndexByKey.get(option.key) ?? 0;
+            {showMentionSearchLoadingState ? (
+              <MentionPanelLoadingState />
+            ) : (
+              mentionResultSections.map(({ section, options }, sectionResultIndex) => (
+                <div
+                  key={`${section.kind}:${section.title}`}
+                  data-section-kind={section.kind}
+                  className={'flex flex-col px-2 py-1'}
+                >
+                  {sectionResultIndex > 0 && <Divider className={'-mx-2 mb-1 border-border-primary'} />}
+                  <MentionSectionTitle section={section} />
+                  {options.map((option) => {
+                    const index = mentionOptionIndexByKey.get(option.key) ?? 0;
 
-                  if (option.kind === 'morePages') {
+                    if (option.kind === 'morePages') {
+                      return (
+                        <MentionMoreResultsButton
+                          key={option.key}
+                          remainingCount={option.remainingCount}
+                          index={index}
+                          selected={selectedOption?.index === index}
+                          onClick={() => setShowMorePages(true)}
+                        />
+                      );
+                    }
+
                     return (
-                      <MentionMoreResultsButton
+                      <MentionResultButton
                         key={option.key}
-                        remainingCount={option.remainingCount}
+                        result={option.result}
                         index={index}
                         selected={selectedOption?.index === index}
-                        onClick={() => setShowMorePages(true)}
+                        onClick={() => handleSelectedSearchResult(option.result)}
                       />
                     );
-                  }
-
-                  return (
-                    <MentionResultButton
-                      key={option.key}
-                      result={option.result}
-                      index={index}
-                      selected={selectedOption?.index === index}
-                      onClick={() => handleSelectedSearchResult(option.result)}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-            {!mentionSearchLoading && rawMentionSearchResults.length === 0 && (searchText || mentionSearchFailed) && (
-              <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
-                {t('findAndReplace.noResult')}
-              </div>
+                  })}
+                </div>
+              ))
             )}
+            {!mentionSearchLoading &&
+              !mentionSearchDeferred &&
+              rawMentionSearchResults.length === 0 &&
+              (searchText || mentionSearchFailed) && (
+                <div className={'flex items-center justify-center p-2 text-sm text-text-secondary'}>
+                  {t('findAndReplace.noResult')}
+                </div>
+              )}
           </div>
         )}
       </div>

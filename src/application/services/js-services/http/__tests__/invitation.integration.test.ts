@@ -209,7 +209,7 @@ describe('HTTP API - Invitation & Sharing Operations', () => {
             const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
-                    const result = await APIService.getShareDetail(testWorkspaceId, outline[0].view_id, []);
+                    const result = await APIService.getShareDetail(testWorkspaceId, outline[0].view_id);
                     expect(result).toBeDefined();
                 } catch (error: any) {
                     // May fail if view is not shared, which is fine

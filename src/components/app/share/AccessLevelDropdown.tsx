@@ -90,7 +90,7 @@ export function AccessLevelDropdown({
     );
   }, [loading, isYou, handleRemoveAccess, t]);
 
-  if (person.access_level === AccessLevel.FullAccess && !canModify) {
+  if (!canModify) {
     return (
       <div className='mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary'>
         {getAccessLevelText(person.access_level)}
