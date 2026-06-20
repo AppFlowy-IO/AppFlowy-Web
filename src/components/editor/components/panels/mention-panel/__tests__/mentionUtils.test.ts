@@ -52,6 +52,30 @@ describe('mention panel API mapping', () => {
     });
   });
 
+  it('leaves database row page id unresolved when database view id is missing', () => {
+    const mention = mentionSearchItemToMention({
+      kind: MentionTargetKind.DatabaseRow,
+      object_id: 'row-1',
+      title: 'Row title',
+      database_id: 'database-1',
+      database_row_id: 'row-1',
+      mention: {
+        type: MentionTargetKind.DatabaseRow,
+        database_id: 'database-1',
+        row_id: 'row-1',
+      },
+    });
+
+    expect(mention).toMatchObject({
+      type: MentionType.PageRef,
+      block_id: 'row-1',
+      database_id: 'database-1',
+      row_id: 'row-1',
+      database_row_id: 'row-1',
+    });
+    expect(mention?.page_id).toBeUndefined();
+  });
+
   it('maps database search items to page refs for desktop compatibility', () => {
     const mention = mentionSearchItemToMention({
       kind: MentionTargetKind.Database,

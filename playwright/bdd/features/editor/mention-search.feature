@@ -23,6 +23,13 @@ Feature: Mention panel search
     When I search mentions for "example.com"
     Then the mention panel shows an external link for "example.com"
 
+  Scenario: Database-row retry-later keeps primary mention results visible
+    Given a blank mention search document page is open
+    And database-row mention search retries later for "example.com"
+    When I search mentions for "example.com"
+    Then the mention panel shows an external link for "example.com"
+    And the mention panel does not show database rows
+
   Scenario: Typed mention query searches embedded database rows
     Given a mention search document contains an indexed fixture database row
     When I search mentions for the fixture database row

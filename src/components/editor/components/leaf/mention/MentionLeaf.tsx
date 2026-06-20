@@ -24,7 +24,6 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     if (
       type === MentionType.PageRef &&
       mention.database_id &&
-      mention.page_id &&
       (mention.row_id || mention.database_row_id)
     ) {
       return <MentionDatabase mention={mention} />;

@@ -239,14 +239,13 @@ export function mentionSearchItemToMention(item: MentionSearchResultItem): Menti
         row_id: string;
         row_document_id?: string;
       };
-      const pageId = getDatabaseMentionPageId(item, databaseRowMention.database_view_id, databaseRowMention.database_id);
 
-      if (!pageId) return null;
+      if (!databaseRowMention.database_id) return null;
 
       return withDisplayData(
         {
           type: MentionType.PageRef,
-          page_id: pageId,
+          page_id: databaseRowMention.database_view_id,
           block_id: databaseRowMention.row_id,
           database_id: databaseRowMention.database_id,
           database_view_id: databaseRowMention.database_view_id,

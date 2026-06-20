@@ -10,7 +10,7 @@ import {
   Workspace,
 } from '@/application/types';
 
-import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, withRetry } from './core';
+import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
 interface AFWorkspace {
   workspace_id: string;
@@ -117,20 +117,14 @@ interface SharedObjectAccessDetails {
 export async function getShareDetail(workspaceId: string, viewId: string, signal?: AbortSignal) {
   const url = `/api/sharing/workspace/${workspaceId}/access-details/v2`;
 
-  const detail = await withRetry(() =>
-    executeAPIRequest<SharedObjectAccessDetails>(() =>
-      getAxios()?.post<APIResponse<SharedObjectAccessDetails>>(
-        url,
-        {
-          target: {
-            type: 'page',
-            page_id: viewId,
-          },
-        },
-        { signal }
-      )
-    ),
-    { signal }
+  const detail = await executeAPIRequest<SharedObjectAccessDetails>(() =>
+    getAxios()?.get<APIResponse<SharedObjectAccessDetails>>(url, {
+      params: {
+        type: 'page',
+        page_id: viewId,
+      },
+      signal,
+    })
   );
 
   return {

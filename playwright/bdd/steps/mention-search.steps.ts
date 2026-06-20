@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { AuthTestUtils } from '../../support/auth-utils';
-import { DatabaseGridSelectors, EditorSelectors, SidebarSelectors } from '../../support/selectors';
+import { BlockSelectors, DatabaseGridSelectors, EditorSelectors, SidebarSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 import { renameCurrentDatabasePage } from '../../support/relation-test-helpers';
 
@@ -132,6 +132,35 @@ Given('a blank mention search document page is open', async ({ page }) => {
   await focusEditor(page);
 });
 
+Given('database-row mention search retries later for {string}', async ({ page }, query: string) => {
+  await page.route('**/mentions/search', async (route) => {
+    const request = route.request();
+    const body = request.postDataJSON() as {
+      query?: string;
+      include?: string[];
+    } | null;
+    const isDatabaseRowOnlyRequest =
+      body?.query === query &&
+      Array.isArray(body.include) &&
+      body.include.length === 1 &&
+      body.include[0] === 'database_row';
+
+    if (!isDatabaseRowOnlyRequest) {
+      await route.continue();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: -5,
+        message: 'retry later',
+      }),
+    });
+  });
+});
+
 Given('a mention search document contains an indexed fixture database row', async ({ page, request }) => {
   const state = getState(page);
   const rowKeyword = `Mention Row ${state.runId}`;
@@ -169,7 +198,7 @@ Given('a mention search document contains an indexed fixture database row', asyn
   await insertLinkedDatabaseViaSlash(page, docViewId, databaseName);
   await waitForGridReady(page);
   await expect(DatabaseGridSelectors.rowById(page, rowId)).toContainText(rowKeyword, { timeout: 30000 });
-  await focusEditor(page);
+  await focusParagraphBelowLinkedDatabase(page);
 });
 
 When('I open the mention panel with an empty query', async ({ page }) => {
@@ -201,9 +230,8 @@ When('I search mentions for the fixture database row', async ({ page }) => {
       const isRowRequest =
         body?.query === rowKeyword &&
         Array.isArray(body.include) &&
-        body.include.includes('database_row') &&
-        Array.isArray(body.filter?.database_ids) &&
-        body.filter.database_ids.includes(requireDatabaseId(state));
+        body.include.length === 1 &&
+        body.include[0] === 'database_row';
 
       if (isRowRequest) {
         state.rowSearchRequestBody = body;
@@ -214,7 +242,7 @@ When('I search mentions for the fixture database row', async ({ page }) => {
     { timeout: 30000 }
   );
 
-  await searchMentionsInEditor(page, rowKeyword);
+  await searchMentionsAtCurrentSelection(page, rowKeyword);
   await rowRequestPromise;
 });
 
@@ -248,13 +276,20 @@ Then('the mention panel shows an external link for {string}', async ({ page }, h
 });
 
 Then('the browser sent a database-row mention search request', async ({ page }) => {
-  expect(getState(page).rowSearchRequestBody).toMatchObject({
+  const body = getState(page).rowSearchRequestBody as {
+    query?: string;
+    include?: string[];
+    filter?: { database_ids?: string[] };
+  };
+
+  expect(body).toMatchObject({
     query: requireRowKeyword(getState(page)),
     include: ['database_row'],
-    filter: {
-      database_ids: [requireDatabaseId(getState(page))],
-    },
   });
+
+  if (body.filter?.database_ids) {
+    expect(body.filter.database_ids).toContain(requireDatabaseId(getState(page)));
+  }
 });
 
 Then('the mention panel shows the fixture database row', async ({ page }) => {
@@ -487,9 +522,8 @@ async function mockDatabaseRowMentionSearch(page: Page, state: MentionFixtureSta
 
     if (
       !Array.isArray(body.include) ||
-      !body.include.includes('database_row') ||
-      !Array.isArray(body.filter?.database_ids) ||
-      !body.filter.database_ids.includes(databaseId)
+      body.include.length !== 1 ||
+      body.include[0] !== 'database_row'
     ) {
       await route.fulfill({
         status: 200,
@@ -642,6 +676,44 @@ async function openMentionPanel(page: Page): Promise<void> {
 async function searchMentionsInEditor(page: Page, query: string): Promise<void> {
   await openMentionPanel(page);
   await page.keyboard.type(query, { delay: 30 });
+}
+
+async function searchMentionsAtCurrentSelection(page: Page, query: string): Promise<void> {
+  await page.keyboard.type('@', { delay: 20 });
+  await expect(mentionPanel(page)).toBeVisible({ timeout: 15000 });
+  await page.keyboard.type(query, { delay: 30 });
+}
+
+async function focusParagraphBelowLinkedDatabase(page: Page): Promise<void> {
+  const blockId = await page.evaluate(() => {
+    const testWindow = window as Window & {
+      __TEST_EDITOR__?: {
+        children?: Array<{ type?: string; blockId?: string; children?: unknown[] }>;
+      };
+      __TEST_CUSTOM_EDITOR__?: {
+        addBelowBlock?: (editor: unknown, blockId: string, type: string, data: Record<string, never>) => string | void;
+      };
+    };
+    const editor = testWindow.__TEST_EDITOR__;
+    const customEditor = testWindow.__TEST_CUSTOM_EDITOR__;
+    const linkedDatabaseBlock = editor?.children?.find((node) => node.type === 'grid');
+
+    if (!editor || !customEditor?.addBelowBlock || !linkedDatabaseBlock?.blockId) {
+      return null;
+    }
+
+    return customEditor.addBelowBlock(editor, linkedDatabaseBlock.blockId, 'paragraph', {}) ?? null;
+  });
+
+  if (!blockId) {
+    throw new Error('Unable to create a paragraph below the linked database for mention search');
+  }
+
+  const paragraph = BlockSelectors.blockByType(page, 'paragraph').last();
+
+  await expect(paragraph).toBeVisible({ timeout: 15000 });
+  await paragraph.click({ force: true });
+  await page.waitForTimeout(200);
 }
 
 async function focusEditor(page: Page): Promise<void> {
