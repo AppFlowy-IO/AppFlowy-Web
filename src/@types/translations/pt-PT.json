@@ -642,6 +642,15 @@
         "copy": "Cópia",
         "cut": "Corte",
         "paste": "Colar"
+      },
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Colar como",
+          "mention": "Menção",
+          "url": "URL",
+          "bookmark": "Marcador",
+          "embed": "Incorporar"
+        }
       }
     },
     "textBlock": {

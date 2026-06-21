@@ -1,6 +1,7 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
+import { deleteCollabDB } from '@/application/db';
 import {
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
@@ -39,6 +40,19 @@ export interface SyncContext {
    * Used by version reset flows where pending updates are stale and must be discarded.
    */
   discardPendingUpdates?: () => Promise<void>;
+  /**
+   * Called after a local Yjs update is observed. The WebSocket path still owns
+   * immediate delivery; this hook lets the app schedule a debounced HTTP full
+   * sync when the WebSocket is reconnecting.
+   */
+  onLocalUpdate?: (objectId: string) => void;
+  /**
+   * Called after this context participates in a WebSocket state-vector sync
+   * exchange. A completed manifest-style exchange reconciles the full Yjs
+   * state, so HTTP fallback dirty markers for the object can be cleared when
+   * the socket is open.
+   */
+  onManifestSync?: (objectId: string) => void;
   /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
@@ -82,6 +96,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       },
     },
   });
+  ctx.onManifestSync?.(doc.guid);
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
@@ -97,6 +112,7 @@ const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): 
     void ctx.discardPendingUpdates?.();
     ctx.flush = undefined;
     ctx.discardPendingUpdates = undefined;
+    void deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
     ctx.doc.destroy();
   }
 };
@@ -188,6 +204,7 @@ export const initSync = (ctx: SyncContext) => {
       version: doc.version ?? null,
       payload: update,
     });
+    ctx.onLocalUpdate?.(doc.guid);
   };
 
   const onDestroy = () => {

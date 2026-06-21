@@ -51,10 +51,10 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
         return RelationCell;
       case FieldType.URL:
       case FieldType.RichText:
-      case FieldType.AISummaries:
-      case FieldType.AITranslations:
+      case FieldType.Summary:
+      case FieldType.Translate:
         return TextCell;
-      case FieldType.FileMedia:
+      case FieldType.Media:
         return FileMediaCell;
       case FieldType.Person:
         return PersonCell;

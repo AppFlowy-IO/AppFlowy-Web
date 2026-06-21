@@ -18,8 +18,19 @@ export function decodeCellToText(
   const sourceType = Number(cell.get(YjsDatabaseKey.source_field_type) ?? cell.get(YjsDatabaseKey.field_type)) as FieldType;
   const data = cell.get(YjsDatabaseKey.data);
 
-  // If types match and data is string/number, return raw string.
-  if (sourceType === targetType && (typeof data === 'string' || typeof data === 'number')) {
+  // If types match and data is string/number, return raw string. Skip the
+  // fast-path for select/checklist: their cell data stores option IDs, but
+  // for rendering / filtering we need the option names.
+  const needsOptionResolution =
+    targetType === FieldType.SingleSelect ||
+    targetType === FieldType.MultiSelect ||
+    targetType === FieldType.Checklist;
+
+  if (
+    sourceType === targetType &&
+    !needsOptionResolution &&
+    (typeof data === 'string' || typeof data === 'number')
+  ) {
     return String(data);
   }
 

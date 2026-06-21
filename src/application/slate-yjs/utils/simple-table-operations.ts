@@ -36,25 +36,49 @@ function setTableData(tableBlock: YBlock, data: Record<string, unknown>) {
   tableBlock.set(YjsEditorKey.block_data, JSON.stringify(data));
 }
 
-function getRowCount(sharedRoot: ReturnType<typeof getSharedRoot>, tableBlock: YBlock): number {
-  const children = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+function getColumnCount(sharedRoot: ReturnType<typeof getSharedRoot>, tableBlock: YBlock): number {
+  const rows = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-  return children ? children.length : 0;
+  if (rows.length === 0) return 0;
+
+  return getChildEntriesOfType(sharedRoot, rows[0].block, BlockType.SimpleTableCellBlock).length;
 }
 
-function getColumnCount(sharedRoot: ReturnType<typeof getSharedRoot>, tableBlock: YBlock): number {
-  const children = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+interface IndexedTableChild {
+  id: string;
+  block: YBlock;
+  rawIndex: number;
+}
 
-  if (!children || children.length === 0) return 0;
+function getChildEntriesOfType(
+  sharedRoot: ReturnType<typeof getSharedRoot>,
+  parentBlock: YBlock,
+  type: BlockType
+): IndexedTableChild[] {
+  const children = getChildrenArray(parentBlock.get(YjsEditorKey.block_children), sharedRoot);
 
-  const firstRowId = children.get(0);
-  const firstRow = getBlock(firstRowId, sharedRoot);
+  if (!children) return [];
 
-  if (!firstRow) return 0;
+  const entries: IndexedTableChild[] = [];
 
-  const rowChildren = getChildrenArray(firstRow.get(YjsEditorKey.block_children), sharedRoot);
+  for (let rawIndex = 0; rawIndex < children.length; rawIndex++) {
+    const id = children.get(rawIndex);
+    const block = getBlock(id, sharedRoot);
 
-  return rowChildren ? rowChildren.length : 0;
+    if (!block || block.get(YjsEditorKey.block_type) !== type) continue;
+
+    entries.push({ id, block, rawIndex });
+  }
+
+  return entries;
+}
+
+function getRawInsertionIndex(entries: IndexedTableChild[], semanticIndex: number, rawLength: number) {
+  if (entries.length === 0) return rawLength;
+  if (semanticIndex <= 0) return entries[0].rawIndex;
+  if (semanticIndex >= entries.length) return entries[entries.length - 1].rawIndex + 1;
+
+  return entries[semanticIndex].rawIndex;
 }
 
 /**
@@ -86,7 +110,11 @@ function createContainerBlock(sharedRoot: ReturnType<typeof getSharedRoot>, ty: 
   return block as YBlock;
 }
 
-const TABLE_CONTAINER_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
+const TABLE_CONTAINER_TYPES = [
+  BlockType.SimpleTableBlock,
+  BlockType.SimpleTableRowBlock,
+  BlockType.SimpleTableCellBlock,
+];
 
 /**
  * Deep copy a table block, using createContainerBlock for table/row/cell blocks
@@ -189,10 +217,12 @@ export function addRowToTable(editor: YjsEditor, tableBlockId: string) {
     if (!tableBlock) return;
 
     const colCount = getColumnCount(sharedRoot, tableBlock);
-    const rowCount = getRowCount(sharedRoot, tableBlock);
+    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
+    const rawInsertIndex = getRawInsertionIndex(rowEntries, rowEntries.length, rowChildren?.length ?? 0);
     const newRow = createEmptyRow(sharedRoot, colCount);
 
-    updateBlockParent(sharedRoot, newRow, tableBlock, rowCount);
+    updateBlockParent(sharedRoot, newRow, tableBlock, rawInsertIndex);
   });
 
   executeOperations(sharedRoot, operations, 'addRowToTable');
@@ -210,10 +240,17 @@ export function insertRowAtIndex(editor: YjsEditor, tableBlockId: string, rowInd
 
     if (!tableBlock) return;
 
+    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
     const colCount = getColumnCount(sharedRoot, tableBlock);
     const newRow = createEmptyRow(sharedRoot, colCount);
 
-    updateBlockParent(sharedRoot, newRow, tableBlock, rowIndex);
+    updateBlockParent(
+      sharedRoot,
+      newRow,
+      tableBlock,
+      getRawInsertionIndex(rowEntries, rowIndex, rowChildren?.length ?? 0)
+    );
 
     // Remap row attributes
     const data = getTableData(tableBlock);
@@ -237,17 +274,16 @@ export function deleteRow(editor: YjsEditor, tableBlockId: string, rowIndex: num
 
     if (!tableBlock) return;
 
-    const rowCount = getRowCount(sharedRoot, tableBlock);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
+    const rowCount = rowEntries.length;
 
     if (rowCount <= 1) return; // Don't delete the last row
 
-    const children = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntry = rowEntries[rowIndex];
 
-    if (!children || rowIndex >= children.length) return;
+    if (!rowEntry) return;
 
-    const rowId = children.get(rowIndex);
-
-    deleteBlock(sharedRoot, rowId);
+    deleteBlock(sharedRoot, rowEntry.id);
 
     // Remap row attributes
     const data = getTableData(tableBlock);
@@ -271,12 +307,12 @@ export function duplicateRow(editor: YjsEditor, tableBlockId: string, rowIndex: 
 
     if (!tableBlock) return;
 
-    const children = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
+    const rowEntry = rowEntries[rowIndex];
 
-    if (!children || rowIndex >= children.length) return;
+    if (!rowEntry) return;
 
-    const sourceRowId = children.get(rowIndex);
-    const sourceRow = getBlock(sourceRowId, sharedRoot);
+    const sourceRow = rowEntry.block;
 
     if (!sourceRow) return;
 
@@ -288,7 +324,7 @@ export function duplicateRow(editor: YjsEditor, tableBlockId: string, rowIndex: 
 
     if (!newRow) return;
 
-    updateBlockParent(sharedRoot, newRow, tableBlock, rowIndex + 1);
+    updateBlockParent(sharedRoot, newRow, tableBlock, rowEntry.rawIndex + 1);
 
     // Remap row attributes
     const data = getTableData(tableBlock);
@@ -318,20 +354,16 @@ export function addColumnToTable(editor: YjsEditor, tableBlockId: string) {
     if (!tableBlock) return;
 
     const colCount = getColumnCount(sharedRoot, tableBlock);
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
-
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
-
-      if (!row) continue;
-
-      const cellCount = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot)?.length ?? 0;
+    for (const rowEntry of rowEntries) {
+      const row = rowEntry.block;
+      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
+      const cellEntries = getChildEntriesOfType(sharedRoot, row, BlockType.SimpleTableCellBlock);
+      const rawInsertIndex = getRawInsertionIndex(cellEntries, cellEntries.length, cellChildren?.length ?? 0);
       const cell = createEmptyCell(sharedRoot);
 
-      updateBlockParent(sharedRoot, cell, row, cellCount);
+      updateBlockParent(sharedRoot, cell, row, rawInsertIndex);
     }
 
     // Set the new column's width to match existing columns
@@ -360,19 +392,15 @@ export function insertColumnAtIndex(editor: YjsEditor, tableBlockId: string, col
 
     if (!tableBlock) return;
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
-
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
-
-      if (!row) continue;
-
+    for (const rowEntry of rowEntries) {
+      const row = rowEntry.block;
+      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
+      const cellEntries = getChildEntriesOfType(sharedRoot, row, BlockType.SimpleTableCellBlock);
       const cell = createEmptyCell(sharedRoot);
 
-      updateBlockParent(sharedRoot, cell, row, colIndex);
+      updateBlockParent(sharedRoot, cell, row, getRawInsertionIndex(cellEntries, colIndex, cellChildren?.length ?? 0));
     }
 
     // Remap column attributes
@@ -408,23 +436,14 @@ export function deleteColumn(editor: YjsEditor, tableBlockId: string, colIndex: 
 
     if (colCount <= 1) return; // Don't delete the last column
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
+    for (const rowEntry of rowEntries) {
+      const cellEntry = getChildEntriesOfType(sharedRoot, rowEntry.block, BlockType.SimpleTableCellBlock)[colIndex];
 
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
+      if (!cellEntry) continue;
 
-      if (!row) continue;
-
-      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
-
-      if (!cellChildren || colIndex >= cellChildren.length) continue;
-
-      const cellId = cellChildren.get(colIndex);
-
-      deleteBlock(sharedRoot, cellId);
+      deleteBlock(sharedRoot, cellEntry.id);
     }
 
     // Remap column attributes
@@ -449,26 +468,14 @@ export function duplicateColumn(editor: YjsEditor, tableBlockId: string, colInde
 
     if (!tableBlock) return;
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
+    for (const rowEntry of rowEntries) {
+      const cellEntry = getChildEntriesOfType(sharedRoot, rowEntry.block, BlockType.SimpleTableCellBlock)[colIndex];
 
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
+      if (!cellEntry) continue;
 
-      if (!row) continue;
-
-      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
-
-      if (!cellChildren || colIndex >= cellChildren.length) continue;
-
-      const sourceCellId = cellChildren.get(colIndex);
-      const sourceCell = getBlock(sourceCellId, sharedRoot);
-
-      if (!sourceCell) continue;
-
-      const newCellId = deepCopyTableBlock(sharedRoot, sourceCell);
+      const newCellId = deepCopyTableBlock(sharedRoot, cellEntry.block);
 
       if (!newCellId) continue;
 
@@ -476,7 +483,7 @@ export function duplicateColumn(editor: YjsEditor, tableBlockId: string, colInde
 
       if (!newCell) continue;
 
-      updateBlockParent(sharedRoot, newCell, row, colIndex + 1);
+      updateBlockParent(sharedRoot, newCell, rowEntry.block, cellEntry.rawIndex + 1);
     }
 
     // Remap column attributes
@@ -506,28 +513,26 @@ export function addRowAndColumnToTable(editor: YjsEditor, tableBlockId: string) 
     if (!tableBlock) return;
 
     // First add column to all existing rows
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
-
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
-
-      if (!row) continue;
-
-      const cellCount = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot)?.length ?? 0;
+    for (const rowEntry of rowEntries) {
+      const row = rowEntry.block;
+      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
+      const cellEntries = getChildEntriesOfType(sharedRoot, row, BlockType.SimpleTableCellBlock);
+      const rawInsertIndex = getRawInsertionIndex(cellEntries, cellEntries.length, cellChildren?.length ?? 0);
       const cell = createEmptyCell(sharedRoot);
 
-      updateBlockParent(sharedRoot, cell, row, cellCount);
+      updateBlockParent(sharedRoot, cell, row, rawInsertIndex);
     }
 
     // Then add new row (with the new column count)
     const colCount = getColumnCount(sharedRoot, tableBlock);
-    const rowCount = getRowCount(sharedRoot, tableBlock);
+    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const updatedRowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
+    const rawInsertIndex = getRawInsertionIndex(updatedRowEntries, updatedRowEntries.length, rowChildren?.length ?? 0);
     const newRow = createEmptyRow(sharedRoot, colCount);
 
-    updateBlockParent(sharedRoot, newRow, tableBlock, rowCount);
+    updateBlockParent(sharedRoot, newRow, tableBlock, rawInsertIndex);
   });
 
   executeOperations(sharedRoot, operations, 'addRowAndColumnToTable');
@@ -549,30 +554,17 @@ export function clearRowContent(editor: YjsEditor, tableBlockId: string, rowInde
 
     if (!tableBlock) return;
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntry = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock)[rowIndex];
 
-    if (!rowChildren || rowIndex >= rowChildren.length) return;
+    if (!rowEntry) return;
 
-    const rowId = rowChildren.get(rowIndex);
-    const row = getBlock(rowId, sharedRoot);
+    const cellEntries = getChildEntriesOfType(sharedRoot, rowEntry.block, BlockType.SimpleTableCellBlock);
 
-    if (!row) return;
-
-    const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
-
-    if (!cellChildren) return;
-
-    // Delete all cells and replace with empty ones
-    const cellIds = cellChildren.toArray();
-
-    for (const cellId of cellIds) {
-      deleteBlock(sharedRoot, cellId);
-    }
-
-    for (let i = 0; i < cellIds.length; i++) {
+    for (const cellEntry of cellEntries) {
+      deleteBlock(sharedRoot, cellEntry.id);
       const cell = createEmptyCell(sharedRoot);
 
-      updateBlockParent(sharedRoot, cell, row, i);
+      updateBlockParent(sharedRoot, cell, rowEntry.block, cellEntry.rawIndex);
     }
   });
 
@@ -591,27 +583,18 @@ export function clearColumnContent(editor: YjsEditor, tableBlockId: string, colI
 
     if (!tableBlock) return;
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
+    for (const rowEntry of rowEntries) {
+      const cellEntry = getChildEntriesOfType(sharedRoot, rowEntry.block, BlockType.SimpleTableCellBlock)[colIndex];
 
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
+      if (!cellEntry) continue;
 
-      if (!row) continue;
-
-      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
-
-      if (!cellChildren || colIndex >= cellChildren.length) continue;
-
-      const cellId = cellChildren.get(colIndex);
-
-      deleteBlock(sharedRoot, cellId);
+      deleteBlock(sharedRoot, cellEntry.id);
 
       const cell = createEmptyCell(sharedRoot);
 
-      updateBlockParent(sharedRoot, cell, row, colIndex);
+      updateBlockParent(sharedRoot, cell, rowEntry.block, cellEntry.rawIndex);
     }
   });
 
@@ -636,17 +619,14 @@ export function reorderRow(editor: YjsEditor, tableBlockId: string, fromIndex: n
 
     if (!tableBlock) return;
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren || fromIndex >= rowChildren.length || toIndex >= rowChildren.length) return;
+    if (fromIndex >= rowEntries.length || toIndex >= rowEntries.length) return;
 
-    const sourceRowId = rowChildren.get(fromIndex);
-    const sourceRow = getBlock(sourceRowId, sharedRoot);
-
-    if (!sourceRow) return;
+    const sourceRow = rowEntries[fromIndex];
 
     // Deep copy, delete original, insert copy at target
-    const newRowId = deepCopyTableBlock(sharedRoot, sourceRow);
+    const newRowId = deepCopyTableBlock(sharedRoot, sourceRow.block);
 
     if (!newRowId) return;
 
@@ -654,12 +634,13 @@ export function reorderRow(editor: YjsEditor, tableBlockId: string, fromIndex: n
 
     if (!newRow) return;
 
-    deleteBlock(sharedRoot, sourceRowId);
+    deleteBlock(sharedRoot, sourceRow.id);
 
-    // Adjust toIndex since we deleted a row
-    const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const updatedRowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
+    const rawInsertIndex = getRawInsertionIndex(updatedRowEntries, toIndex, rowChildren?.length ?? 0);
 
-    updateBlockParent(sharedRoot, newRow, tableBlock, adjustedToIndex);
+    updateBlockParent(sharedRoot, newRow, tableBlock, rawInsertIndex);
 
     // Remap row attributes
     const data = getTableData(tableBlock);
@@ -685,26 +666,14 @@ export function reorderColumn(editor: YjsEditor, tableBlockId: string, fromIndex
 
     if (!tableBlock) return;
 
-    const rowChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const rowEntries = getChildEntriesOfType(sharedRoot, tableBlock, BlockType.SimpleTableRowBlock);
 
-    if (!rowChildren) return;
-
-    for (let i = 0; i < rowChildren.length; i++) {
-      const rowId = rowChildren.get(i);
-      const row = getBlock(rowId, sharedRoot);
-
-      if (!row) continue;
-
-      const cellChildren = getChildrenArray(row.get(YjsEditorKey.block_children), sharedRoot);
-
-      if (!cellChildren || fromIndex >= cellChildren.length) continue;
-
-      const sourceCellId = cellChildren.get(fromIndex);
-      const sourceCell = getBlock(sourceCellId, sharedRoot);
+    for (const rowEntry of rowEntries) {
+      const sourceCell = getChildEntriesOfType(sharedRoot, rowEntry.block, BlockType.SimpleTableCellBlock)[fromIndex];
 
       if (!sourceCell) continue;
 
-      const newCellId = deepCopyTableBlock(sharedRoot, sourceCell);
+      const newCellId = deepCopyTableBlock(sharedRoot, sourceCell.block);
 
       if (!newCellId) continue;
 
@@ -712,11 +681,13 @@ export function reorderColumn(editor: YjsEditor, tableBlockId: string, fromIndex
 
       if (!newCell) continue;
 
-      deleteBlock(sharedRoot, sourceCellId);
+      deleteBlock(sharedRoot, sourceCell.id);
 
-      const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
+      const cellChildren = getChildrenArray(rowEntry.block.get(YjsEditorKey.block_children), sharedRoot);
+      const updatedCellEntries = getChildEntriesOfType(sharedRoot, rowEntry.block, BlockType.SimpleTableCellBlock);
+      const rawInsertIndex = getRawInsertionIndex(updatedCellEntries, toIndex, cellChildren?.length ?? 0);
 
-      updateBlockParent(sharedRoot, newCell, row, adjustedToIndex);
+      updateBlockParent(sharedRoot, newCell, rowEntry.block, rawInsertIndex);
     }
 
     // Remap column attributes

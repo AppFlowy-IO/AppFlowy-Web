@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import * as Y from 'yjs';
 
 import { RelationCell as RelationCellType, RelationCellData } from '@/application/database-yjs/cell.type';
-import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import { useUpdateRelationCell } from '@/application/database-yjs/dispatch/relation';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import NoDatabaseSelectedContent from '@/components/database/components/cell/relation/NoDatabaseSelectedContent';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
@@ -55,29 +54,15 @@ function RelationCellMenu ({
     relatedDatabaseId,
   } = useRelationData(fieldId, { enabled: hookEnabled });
 
-  const updateCell = useUpdateCellDispatch(rowId, fieldId);
+  const updateRelationCell = useUpdateRelationCell(rowId, fieldId);
 
   const onAddRelationRowId = useCallback((rowId: string) => {
-    const newData = new Y.Array<string>();
-
-    if (data) {
-      newData.push(data.toArray());
-    }
-
-    newData.push([rowId]);
-
-    updateCell(newData);
-  }, [data, updateCell]);
+    void updateRelationCell({ insertedRowIds: [rowId] });
+  }, [updateRelationCell]);
 
   const onRemoveRelationRowId = useCallback((rowId: string) => {
-    const newData = new Y.Array<string>();
-
-    if (data) {
-      newData.push(data.toArray().filter((id) => id !== rowId));
-    }
-
-    updateCell(newData);
-  }, [data, updateCell]);
+    void updateRelationCell({ removedRowIds: [rowId] });
+  }, [updateRelationCell]);
 
   const handleCloseMenu = useCallback(() => {
     onOpenChange?.(false);
@@ -106,7 +91,7 @@ function RelationCellMenu ({
               const databaseId = Object.entries(relations || []).find(([, id]) => id === view.view_id)?.[0];
 
               if (databaseId) {
-                onUpdateDatabaseId(databaseId);
+                void onUpdateDatabaseId(databaseId);
               }
             }}
           />

@@ -23,6 +23,7 @@ export const DatabaseBlock = memo(
     const viewIds = getViewIds(node.data);
     const viewId = viewIds.length > 0 ? viewIds[0] : '';
     const allowedViewIds = Array.isArray(node.data?.view_ids) ? node.data.view_ids : undefined;
+    const databaseId = typeof node.data?.database_id === 'string' ? node.data.database_id : undefined;
     const context = useEditorContext();
     const workspaceId = context.workspaceId;
 
@@ -43,8 +44,10 @@ export const DatabaseBlock = memo(
     // 1. Document loading
     const { doc, notFound, setNotFound } = useDocumentLoader({
       viewId,
+      databaseId,
       loadView,
       bindViewSync,
+      eventEmitter: context.eventEmitter,
     });
 
     // 2. Visible view IDs from block data
@@ -75,6 +78,14 @@ export const DatabaseBlock = memo(
     const notFoundRef = useRef(notFound);
 
     notFoundRef.current = notFound;
+
+    // Remember the database container (parent) id while the view is still reachable.
+    // Once the container is moved to trash, ViewService.get(viewId) returns 404 and
+    // viewMeta becomes null, so the response can no longer tell us the parent id. We
+    // still need it to recognize the deletion as "in trash" rather than "permanently
+    // deleted": the trash list only contains the container id, never the embedded
+    // child view id. Keyed by viewId so a stale parent is ignored if the block swaps views.
+    const lastKnownParentRef = useRef<{ viewId: string; parentId: string } | null>(null);
 
     useEffect(() => {
       const eventEmitter = context.eventEmitter;
@@ -109,13 +120,23 @@ export const DatabaseBlock = memo(
             return;
           }
 
-          // Build the set of IDs to check: the view itself, its parent (database container),
-          // and the document page. When a database container is trashed, only the container
-          // ID appears in trash — not its child view IDs.
+          // Cache the parent id whenever the view is reachable, so we can still resolve
+          // the container after it is trashed (at which point viewMeta is null).
+          if (viewMeta?.parent_view_id) {
+            lastKnownParentRef.current = { viewId, parentId: viewMeta.parent_view_id };
+          }
+
+          // Build the set of IDs to check: the view itself and its parent (database
+          // container). When a database container is trashed, only the container ID
+          // appears in trash — not its child view IDs — so fall back to the last known
+          // parent id when the trashed view no longer reports its metadata.
+          const cachedParentId =
+            lastKnownParentRef.current?.viewId === viewId ? lastKnownParentRef.current.parentId : null;
+          const parentId = viewMeta?.parent_view_id ?? cachedParentId;
           const idsToCheck = new Set<string>([viewId]);
 
-          if (viewMeta?.parent_view_id) {
-            idsToCheck.add(viewMeta.parent_view_id);
+          if (parentId) {
+            idsToCheck.add(parentId);
           }
 
           const isInTrash = trashItems?.some((item) => idsToCheck.has(item.view_id));

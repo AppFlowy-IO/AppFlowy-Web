@@ -3,6 +3,7 @@ import { generateRandomEmail } from '../../support/test-config';
 import {
   WorkspaceSelectors,
   AuthSelectors,
+  AccountSelectors,
 } from '../../support/selectors';
 import {
   assertLoginPageReady,
@@ -53,9 +54,12 @@ test.describe('Login and Logout Flow', () => {
       await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible();
       await expect(page.getByText(testEmail)).toBeVisible();
 
-      // Step 8: Click logout menu item
-      await expect(AuthSelectors.logoutMenuItem(page)).toBeVisible();
-      await AuthSelectors.logoutMenuItem(page).click();
+      // Step 8: Open Settings dialog and click Logout button in Account panel
+      await expect(AccountSelectors.settingsButton(page)).toBeVisible();
+      await AccountSelectors.settingsButton(page).click();
+      await expect(AccountSelectors.settingsDialog(page)).toBeVisible();
+      await expect(AccountSelectors.logoutButton(page)).toBeVisible();
+      await AccountSelectors.logoutButton(page).click();
       await page.waitForTimeout(1000);
 
       // Step 9: Verify logout confirmation dialog
@@ -91,9 +95,12 @@ test.describe('Login and Logout Flow', () => {
       await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible();
       await expect(page.getByText(testEmail)).toBeVisible();
 
-      // Click logout
-      await expect(AuthSelectors.logoutMenuItem(page)).toBeVisible();
-      await AuthSelectors.logoutMenuItem(page).click();
+      // Open Settings dialog and click Logout button in Account panel
+      await expect(AccountSelectors.settingsButton(page)).toBeVisible();
+      await AccountSelectors.settingsButton(page).click();
+      await expect(AccountSelectors.settingsDialog(page)).toBeVisible();
+      await expect(AccountSelectors.logoutButton(page)).toBeVisible();
+      await AccountSelectors.logoutButton(page).click();
       await page.waitForTimeout(1000);
 
       // Confirm logout
@@ -124,14 +131,21 @@ test.describe('Login and Logout Flow', () => {
       // Verify dropdown is open
       await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible();
 
-      // Click logout menu item
-      await expect(AuthSelectors.logoutMenuItem(page)).toBeVisible();
-      await AuthSelectors.logoutMenuItem(page).click();
+      // Open Settings dialog and click Logout button in Account panel
+      await expect(AccountSelectors.settingsButton(page)).toBeVisible();
+      await AccountSelectors.settingsButton(page).click();
+      await expect(AccountSelectors.settingsDialog(page)).toBeVisible();
+      await expect(AccountSelectors.logoutButton(page)).toBeVisible();
+      await AccountSelectors.logoutButton(page).click();
       await page.waitForTimeout(1000);
 
       // Click Cancel button
       await page.getByRole('button', { name: 'Cancel' }).click();
       await page.waitForTimeout(1000);
+
+      // Close the Settings dialog that remains open after cancel
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
 
       // Verify user remains logged in
       await expect(page).toHaveURL(/\/app/);

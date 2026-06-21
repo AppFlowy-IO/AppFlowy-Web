@@ -93,6 +93,31 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/server-info/auth-providers');
   });
 
+  it('identifies server-info requests as web so page history is not hidden by native client gates', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        data: {
+          enable_page_history: true,
+          ai_enabled: true,
+        },
+      },
+    });
+
+    await expect(module.getServerInfo()).resolves.toEqual({
+      enable_page_history: true,
+      ai_enabled: true,
+    });
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/server-info', {
+      headers: {
+        'x-platform': 'web',
+      },
+    });
+  });
+
   it('falls back to password provider when API responds with error', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);

@@ -44,6 +44,19 @@ export async function updatePage(workspaceId: string, viewId: string, data: Upda
   return executeAPIVoidRequest(() => getAxios()?.patch<APIResponse>(url, data));
 }
 
+export async function favoritePageView(
+  workspaceId: string,
+  viewId: string,
+  isFavorite: boolean,
+  isPinned: boolean = false
+): Promise<void> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/favorite`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.post<APIResponse>(url, { is_favorite: isFavorite, is_pinned: isPinned })
+  );
+}
+
 export async function updatePageIcon(
   workspaceId: string,
   viewId: string,
@@ -102,7 +115,7 @@ export async function restorePage(workspaceId: string, viewId?: string) {
   return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
 }
 
-export async function movePageTo(workspaceId: string, viewId: string, parentViewId: string, prevViewId?: string) {
+export async function movePageTo(workspaceId: string, viewId: string, parentViewId: string, prevViewId?: string | null) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/move`;
 
   return executeAPIVoidRequest(() =>

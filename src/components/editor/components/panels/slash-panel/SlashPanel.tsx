@@ -8,15 +8,28 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
-import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
+import { applyYDoc } from '@/application/ydoc/apply';
+import {
+  findSlateEntryByBlockId,
+  getBlockEntry,
+  isInsideSimpleTableCell as isBlockInsideSimpleTableCell,
+} from '@/application/slate-yjs/utils/editor';
 import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
+  AudioBlockData,
+  AudioUrlType,
   BlockData,
   BlockType,
   CalloutBlockData,
+  CodeBlockData,
+  GalleryBlockData,
+  GalleryLayout,
+  GoogleDriveBlockData,
   HeadingBlockData,
   ImageBlockData,
+  LinkPreviewBlockData,
+  LinkPreviewType,
   SubpageNodeData,
   ToggleListBlockData,
   VideoBlockData,
@@ -28,15 +41,19 @@ import {
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
+import { ReactComponent as ChartIcon } from '@/assets/icons/chart.svg';
 import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
+import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
@@ -44,8 +61,10 @@ import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
 import { ReactComponent as ImageIcon } from '@/assets/icons/image.svg';
 import { ReactComponent as CodeIcon } from '@/assets/icons/inline_code.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as NumberedListIcon } from '@/assets/icons/numbered_list.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
+import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { ReactComponent as QuoteIcon } from '@/assets/icons/quote.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
@@ -55,6 +74,7 @@ import { ReactComponent as ToggleHeading2Icon } from '@/assets/icons/toggle_h2.s
 import { ReactComponent as ToggleHeading3Icon } from '@/assets/icons/toggle_h3.svg';
 import { ReactComponent as ChevronRight, ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
 import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
+import { ReactComponent as GoogleIcon } from '@/assets/login/google.svg';
 import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
@@ -72,19 +92,29 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Log } from '@/utils/log';
 import { getCharacters } from '@/utils/word';
+import {
+  filterSlashMenuOptions,
+  groupSlashMenuOptions,
+  SlashMenuGroupKey,
+  SlashMenuOptionBase,
+} from './slash-menu-options';
 
 type DatabaseOption = {
   databaseId: string;
   view: View;
 };
 
-const AI_MEETING_DATABASE_OPTION_KEYS = new Set([
-  'grid',
-  'linkedGrid',
-  'board',
-  'linkedKanban',
-  'calendar',
-  'linkedCalendar',
+interface SlashMenuOption extends SlashMenuOptionBase {
+  icon: React.ReactNode;
+  onClick?: () => void;
+}
+
+const AI_MEETING_BLOCK_TYPES = new Set<BlockType>([
+  BlockType.AIMeetingBlock,
+  BlockType.AIMeetingSummaryBlock,
+  BlockType.AIMeetingNotesBlock,
+  BlockType.AIMeetingTranscriptionBlock,
+  BlockType.AIMeetingSpeakerBlock,
 ]);
 
 function filterViewsByDatabases(views: View[], allowedIds: Set<string>, keyword: string) {
@@ -158,7 +188,9 @@ const DatabaseTreeItem: React.FC<{
                 }
               }}
             >
-              <ChevronRight className={`transform transition-transform ${effectiveExpanded ? 'rotate-90' : 'rotate-0'}`} />
+              <ChevronRight
+                className={`transform transition-transform ${effectiveExpanded ? 'rotate-90' : 'rotate-0'}`}
+              />
             </OutlineButton>
           ) : (
             <div style={{ width: 16, height: 16 }} />
@@ -202,12 +234,13 @@ export function SlashPanel({
 }: {
   setEmojiPosition: (position: { top: number; left: number }) => void;
 }) {
-  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent } = usePanelContext();
+  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, openPanel } = usePanelContext();
   const {
     addPage,
     openPageModal,
     viewId: documentId,
     loadViewMeta,
+    loadView,
     getMoreAIContext,
     createDatabaseView,
     loadViews,
@@ -238,20 +271,42 @@ export function SlashPanel({
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
 
-  const shouldRestrictAIMeetingDatabaseOptions = useCallback(() => {
+  const getIsInsideAIMeeting = useCallback(() => {
     const { selection } = editor;
 
     if (!selection) return false;
 
-    const inAIMeetingSection = Editor.above(editor, {
-      at: selection,
-      match: (n) =>
-        !Editor.isEditor(n) &&
-        Element.isElement(n) &&
-        (n.type === BlockType.AIMeetingSummaryBlock || n.type === BlockType.AIMeetingNotesBlock),
-    });
+    try {
+      const inAIMeeting = Editor.above(editor, {
+        at: selection,
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && AI_MEETING_BLOCK_TYPES.has(n.type as BlockType),
+      });
 
-    return Boolean(inAIMeetingSection);
+      return Boolean(inAIMeeting);
+    } catch {
+      return false;
+    }
+  }, [editor]);
+
+  const getIsInsideSimpleTableCell = useCallback(() => {
+    try {
+      const block = getBlockEntry(editor);
+      const blockId = block?.[0].blockId;
+
+      if (blockId && isBlockInsideSimpleTableCell(editor, blockId)) return true;
+    } catch {
+      // Fall back to the ancestor lookup below; selections can briefly point at stale paths while the panel opens.
+    }
+
+    try {
+      const inSimpleTableCell = Editor.above(editor, {
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableCellBlock,
+      });
+
+      return Boolean(inSimpleTableCell);
+    } catch {
+      return false;
+    }
   }, [editor]);
 
   useEffect(() => {
@@ -303,6 +358,8 @@ export function SlashPanel({
         return BlockType.BoardBlock;
       case ViewLayout.Calendar:
         return BlockType.CalendarBlock;
+      case ViewLayout.Chart:
+        return BlockType.ChartBlock;
       default:
         return null;
     }
@@ -335,9 +392,14 @@ export function SlashPanel({
       }
 
       if (newBlockId && isEmbedBlockTypes(type)) {
-        // Skip selection for database blocks (Grid, Board, Calendar) as they open in a modal
+        // Skip selection for database blocks as they open in a modal
         // and don't need cursor positioning. Explicitly deselect to prevent Slate from scrolling.
-        const isDatabaseBlock = [BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock].includes(type);
+        const isDatabaseBlock = [
+          BlockType.GridBlock,
+          BlockType.BoardBlock,
+          BlockType.CalendarBlock,
+          BlockType.ChartBlock,
+        ].includes(type);
 
         if (isDatabaseBlock) {
           Transforms.deselect(editor);
@@ -352,17 +414,21 @@ export function SlashPanel({
         }
       }
 
-      if ([BlockType.FileBlock, BlockType.ImageBlock, BlockType.EquationBlock, BlockType.VideoBlock].includes(type)) {
-        setTimeout(() => {
-          if (!newBlockId) return;
-          const entry = findSlateEntryByBlockId(editor, newBlockId);
-
-          if (!entry) return;
-          const [node] = entry;
-          const dom = ReactEditor.toDOMNode(editor, node);
-
-          openPopover(newBlockId, type, dom);
-        }, 50);
+      if (
+        newBlockId &&
+        [
+          BlockType.FileBlock,
+          BlockType.AudioBlock,
+          BlockType.ImageBlock,
+          BlockType.LinkPreview,
+          BlockType.GalleryBlock,
+          BlockType.GoogleDriveBlock,
+          BlockType.EquationBlock,
+          BlockType.VideoBlock,
+          BlockType.PDFBlock,
+        ].includes(type)
+      ) {
+        openPopover(newBlockId, type);
       }
     },
     [editor, openPopover]
@@ -376,8 +442,6 @@ export function SlashPanel({
     if (!databaseOutline.length) return [];
     return filterViewsByDatabases(databaseOutline, allowedDatabaseIds, databaseSearch);
   }, [databaseOutline, allowedDatabaseIds, databaseSearch]);
-
-  const { openPanel } = usePanelContext();
 
   const { askAIAnything, continueWriting } = useAIWriter();
   const aiEnabled = useAIEnabled();
@@ -397,7 +461,7 @@ export function SlashPanel({
       // 1. Database containers (v0.10.7+) - always selectable
       // 2. Legacy top-level databases (pre-v0.10.7) - selectable
       // 3. Child views of containers/databases - NOT selectable (hidden)
-      const databaseLayouts = new Set([ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar]);
+      const databaseLayouts = new Set([ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.Chart]);
       const selectableDatabaseViews: View[] = [];
 
       const collectSelectable = (items: View[], parentIsDatabase: boolean) => {
@@ -435,7 +499,7 @@ export function SlashPanel({
 
       Log.debug('[SlashPanel] loadDatabasesForPicker:', {
         databaseViews: selectableDatabaseViews.length,
-        databaseViewNames: selectableDatabaseViews.map(v => v.name),
+        databaseViewNames: selectableDatabaseViews.map((v) => v.name),
       });
 
       setDatabaseOptions(options);
@@ -508,9 +572,7 @@ export function SlashPanel({
 
       try {
         const databaseViewId = option.view.view_id;
-        const baseName =
-          option.view.name ||
-          t('document.view.placeholder', { defaultValue: 'Untitled' });
+        const baseName = option.view.name || t('document.view.placeholder', { defaultValue: 'Untitled' });
 
         // Database ID is available on database containers and database views via `extra.database_id`.
         // Prefer the outline value, then fallback to view meta / legacy database_relations mapping.
@@ -519,9 +581,11 @@ export function SlashPanel({
 
         if (!databaseId) {
           if (!loadViewMeta) {
-            notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
-              defaultValue: 'Unable to fetch database information',
-            }));
+            notify.error(
+              t('document.slashMenu.linkedDatabase.actionUnavailable', {
+                defaultValue: 'Unable to fetch database information',
+              })
+            );
             return;
           }
 
@@ -551,9 +615,7 @@ export function SlashPanel({
             });
 
             if (freshRelations) {
-              relationEntry = Object.entries(freshRelations).find(
-                ([_, baseViewId]) => baseViewId === databaseViewId
-              );
+              relationEntry = Object.entries(freshRelations).find(([_, baseViewId]) => baseViewId === databaseViewId);
             }
           }
 
@@ -571,9 +633,11 @@ export function SlashPanel({
         });
 
         if (!databaseId) {
-          notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
-            defaultValue: 'Could not find database ID',
-          }));
+          notify.error(
+            t('document.slashMenu.linkedDatabase.actionUnavailable', {
+              defaultValue: 'Could not find database ID',
+            })
+          );
           return;
         }
 
@@ -594,6 +658,10 @@ export function SlashPanel({
               });
             case ViewLayout.Calendar:
               return t('document.calendar.referencedCalendarPrefix', {
+                defaultValue: 'View of',
+              });
+            case ViewLayout.Chart:
+              return t('document.chart.referencedChartPrefix', {
                 defaultValue: 'View of',
               });
             default:
@@ -617,11 +685,30 @@ export function SlashPanel({
           referencedName,
         });
 
-        turnInto(blockType, createDatabaseNodeData({
-          parentId: documentId,
-          viewIds: [response.view_id],
-          databaseId: response.database_id,
-        }));
+        if (response.database_update?.length && loadView) {
+          try {
+            const databaseDoc = await loadView(response.view_id, false, false, {
+              databaseId: response.database_id || databaseId,
+            });
+
+            applyYDoc(databaseDoc, new Uint8Array(response.database_update));
+          } catch (error) {
+            Log.warn('[SlashPanel] failed to apply linked database update', {
+              viewId: response.view_id,
+              databaseId: response.database_id || databaseId,
+              error,
+            });
+          }
+        }
+
+        turnInto(
+          blockType,
+          createDatabaseNodeData({
+            parentId: documentId,
+            viewIds: [response.view_id],
+            databaseId: response.database_id,
+          })
+        );
       } catch (e) {
         const error = e as Error;
 
@@ -638,50 +725,65 @@ export function SlashPanel({
       blockTypeByLayout,
       turnInto,
       t,
+      loadView,
       loadViewMeta,
       loadDatabaseRelations,
     ]
   );
 
-  const options: {
-    label: string;
-    key: string;
-    icon: React.ReactNode;
-    keywords: string[];
-    onClick?: () => void;
-  }[] = useMemo(() => {
-    const restrictDatabaseOptionsInAIMeeting = shouldRestrictAIMeetingDatabaseOptions();
+  const groupLabels = useMemo<Record<SlashMenuGroupKey, string>>(
+    () => ({
+      [SlashMenuGroupKey.AppFlowyAI]: t('document.slashMenu.group.appflowyAI', { defaultValue: 'AppFlowy AI' }),
+      [SlashMenuGroupKey.BasicBlocks]: t('document.slashMenu.group.basicBlocks', { defaultValue: 'Basic blocks' }),
+      [SlashMenuGroupKey.Media]: t('document.slashMenu.group.media', { defaultValue: 'Media' }),
+      [SlashMenuGroupKey.Database]: t('document.slashMenu.group.database', { defaultValue: 'Database' }),
+      [SlashMenuGroupKey.AdvancedBlocks]: t('document.slashMenu.group.advancedBlocks', {
+        defaultValue: 'Advanced blocks',
+      }),
+      [SlashMenuGroupKey.Inline]: t('document.slashMenu.group.inline', { defaultValue: 'Inline' }),
+    }),
+    [t]
+  );
 
-    return [
-      ...(aiEnabled ? [
-        {
-          label: t('document.slashMenu.name.askAIAnything'),
-          key: 'askAIAnything',
-          icon: <AskAIIcon />,
-          keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'],
-          onClick: () => {
-            const content = getBeforeContent();
+  const options: SlashMenuOption[] = useMemo(() => {
+    const isInsideSimpleTableCell = getIsInsideSimpleTableCell();
+    const isInsideAIMeeting = getIsInsideAIMeeting();
 
-            askAIAnything(content);
-          },
-        },
-        {
-          label: t('document.slashMenu.name.continueWriting'),
-          key: 'continueWriting',
-          disabled: chars < 2,
-          icon: <ContinueWritingIcon />,
-          keywords: ['ai', 'writing', 'continue'],
-          onClick: () => {
-            const content = getBeforeContent();
+    const allOptions: SlashMenuOption[] = [
+      ...(aiEnabled
+        ? [
+            {
+              label: t('document.slashMenu.name.askAIAnything'),
+              key: 'askAIAnything',
+              icon: <AskAIIcon />,
+              group: SlashMenuGroupKey.AppFlowyAI,
+              keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'],
+              onClick: () => {
+                const content = getBeforeContent();
 
-            void continueWriting(content);
-          },
-        },
-      ] : []),
+                askAIAnything(content);
+              },
+            },
+            {
+              label: t('document.slashMenu.name.continueWriting'),
+              key: 'continueWriting',
+              disabled: chars < 2,
+              icon: <ContinueWritingIcon />,
+              group: SlashMenuGroupKey.AppFlowyAI,
+              keywords: ['ai', 'writing', 'continue'],
+              onClick: () => {
+                const content = getBeforeContent();
+
+                void continueWriting(content);
+              },
+            },
+          ]
+        : []),
       {
         label: t('document.slashMenu.name.text'),
         key: 'text',
         icon: <TextIcon />,
+        group: SlashMenuGroupKey.BasicBlocks,
         onClick: () => {
           turnInto(BlockType.Paragraph, {});
         },
@@ -691,7 +793,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.heading1'),
         key: 'heading1',
         icon: <Heading1Icon />,
-        keywords: ['heading1', 'h1', 'heading'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['heading1', 'h1', 'heading', 'heading 1'],
+        shortcut: '#',
         onClick: () => {
           turnInto(BlockType.HeadingBlock, {
             level: 1,
@@ -702,7 +806,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.heading2'),
         key: 'heading2',
         icon: <Heading2Icon />,
-        keywords: ['heading2', 'h2', 'subheading', 'heading'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['heading2', 'h2', 'subheading', 'heading', 'heading 2'],
+        shortcut: '##',
         onClick: () => {
           turnInto(BlockType.HeadingBlock, {
             level: 2,
@@ -713,7 +819,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.heading3'),
         key: 'heading3',
         icon: <Heading3Icon />,
-        keywords: ['heading3', 'h3', 'subheading', 'heading'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['heading3', 'h3', 'subheading', 'heading', 'heading 3'],
+        shortcut: '###',
         onClick: () => {
           turnInto(BlockType.HeadingBlock, {
             level: 3,
@@ -724,7 +832,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.image'),
         key: 'image',
         icon: <ImageIcon />,
-        keywords: ['image', 'img'],
+        group: SlashMenuGroupKey.Media,
+        keywords: ['image', 'img', 'photo', 'picture'],
         onClick: () => {
           turnInto(BlockType.ImageBlock, {
             url: '',
@@ -733,9 +842,23 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.slashMenu.name.photoGallery', { defaultValue: 'Photo gallery' }),
+        key: 'photoGallery',
+        icon: <GalleryIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['photo', 'gallery', 'image gallery', 'photo gallery', 'browser'],
+        onClick: () => {
+          turnInto(BlockType.GalleryBlock, {
+            images: [],
+            layout: GalleryLayout.Carousel,
+          } as GalleryBlockData);
+        },
+      },
+      {
         label: t('embedVideo'),
         key: 'video',
         icon: <VideoIcon />,
+        group: SlashMenuGroupKey.Media,
         keywords: ['video', 'youtube', 'embed'],
         onClick: () => {
           turnInto(BlockType.VideoBlock, {
@@ -745,10 +868,63 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.slashMenu.name.audio', { defaultValue: 'Audio' }),
+        key: 'audio',
+        icon: <AudioIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['audio', 'music', 'sound', 'media'],
+        onClick: () => {
+          turnInto(BlockType.AudioBlock, {
+            url: '',
+            url_type: AudioUrlType.Network,
+          } as AudioBlockData);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.pdf', { defaultValue: 'PDF' }),
+        key: 'pdf',
+        icon: <PDFIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['pdf', 'file', 'document', 'embed'],
+        onClick: () => {
+          turnInto(BlockType.PDFBlock, {});
+        },
+      },
+      {
+        label: t('document.slashMenu.name.googleDrive', { defaultValue: 'Google Drive' }),
+        key: 'googleDrive',
+        icon: <GoogleIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['drive', 'google drive', 'google', 'docs', 'sheets', 'slides'],
+        onClick: () => {
+          turnInto(BlockType.GoogleDriveBlock, {
+            url: '',
+            uploaded_at: Date.now(),
+            width_factor: 1,
+            height_factor: 1,
+          } as GoogleDriveBlockData);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.bookmark', { defaultValue: 'Web bookmark' }),
+        key: 'bookmark',
+        icon: <LinkIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['bookmark', 'web bookmark', 'link card', 'url card', 'link', 'bm'],
+        onClick: () => {
+          turnInto(BlockType.LinkPreview, {
+            url: '',
+            preview_type: LinkPreviewType.Bookmark,
+          } as LinkPreviewBlockData);
+        },
+      },
+      {
         label: t('document.slashMenu.name.bulletedList'),
         key: 'bulletedList',
         icon: <BulletedListIcon />,
-        keywords: ['bulleted', 'list'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['bulleted', 'list', 'unordered', 'ul', 'bl'],
+        shortcut: '-',
         onClick: () => {
           turnInto(BlockType.BulletedListBlock, {});
         },
@@ -757,7 +933,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.numberedList'),
         key: 'numberedList',
         icon: <NumberedListIcon />,
-        keywords: ['numbered', 'list'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['numbered', 'list', 'ordered', 'ol', 'nl'],
+        shortcut: '1.',
         onClick: () => {
           turnInto(BlockType.NumberedListBlock, {});
         },
@@ -766,7 +944,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.todoList'),
         key: 'todoList',
         icon: <TodoListIcon />,
-        keywords: ['todo', 'list'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['todo', 'to-do', 'list', 'checkbox', 'task'],
+        shortcut: '[]',
         onClick: () => {
           turnInto(BlockType.TodoListBlock, {});
         },
@@ -775,7 +955,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.divider'),
         key: 'divider',
         icon: <DividerIcon />,
-        keywords: ['divider', 'line'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['divider', 'line', 'separator', 'break', 'horizontal line', 'hr'],
+        shortcut: '---',
         onClick: () => {
           turnInto(BlockType.DividerBlock, {});
         },
@@ -784,7 +966,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.quote'),
         key: 'quote',
         icon: <QuoteIcon />,
-        keywords: ['quote'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['quote', 'refer', 'blockquote', 'citation'],
+        shortcut: '"',
         onClick: () => {
           turnInto(BlockType.QuoteBlock, {});
         },
@@ -793,7 +977,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedDoc'),
         key: 'linkedDoc',
         icon: <RefDocumentIcon />,
-        keywords: ['linked', 'doc', 'page', 'document'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['linked', 'doc', 'page', 'document', 'reference'],
+        aliases: ['link to page', 'link to doc', 'referenced page', 'referenced document', 'ltp', 'ltd', 'rp', 'rd'],
         onClick: () => {
           const rect = getRangeRect();
 
@@ -805,7 +991,19 @@ export function SlashPanel({
         label: t('document.menuName'),
         key: 'document',
         icon: <DocumentIcon />,
-        keywords: ['document', 'doc', 'page', 'create', 'add'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: [
+          'document',
+          'doc',
+          'page',
+          'create',
+          'add',
+          'sub page',
+          'child page',
+          'insert page',
+          'embed page',
+          'new page',
+        ],
         onClick: async () => {
           if (!documentId || !addPage || !openPageModal) return;
           try {
@@ -828,7 +1026,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.grid'),
         key: 'grid',
         icon: <GridIcon />,
-        keywords: ['grid', 'table', 'database'],
+        group: SlashMenuGroupKey.Database,
+        keywords: ['grid', 'table', 'database', 'data table'],
         onClick: async () => {
           if (!documentId || !addPage) return;
 
@@ -859,11 +1058,14 @@ export function SlashPanel({
               databaseViewId: response.view_id,
             });
 
-            turnInto(BlockType.GridBlock, createDatabaseNodeData({
-              parentId: documentId,
-              viewIds: [response.view_id],
-              databaseId: response.database_id,
-            }));
+            turnInto(
+              BlockType.GridBlock,
+              createDatabaseNodeData({
+                parentId: documentId,
+                viewIds: [response.view_id],
+                databaseId: response.database_id,
+              })
+            );
 
             openPageModal?.(response.view_id);
 
@@ -906,7 +1108,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedGrid'),
         key: 'linkedGrid',
         icon: <GridIcon />,
-        keywords: ['linked', 'grid', 'table', 'database'],
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'grid', 'table', 'database', 'data table'],
+        aliases: ['link to grid', 'link to database', 'referenced grid', 'ltg'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Grid, 'linkedGrid');
         },
@@ -915,6 +1119,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.kanban'),
         key: 'board',
         icon: <BoardIcon />,
+        group: SlashMenuGroupKey.Database,
         keywords: ['board', 'kanban', 'database'],
         onClick: async () => {
           if (!documentId || !addPage) return;
@@ -946,11 +1151,14 @@ export function SlashPanel({
               databaseViewId: response.view_id,
             });
 
-            turnInto(BlockType.BoardBlock, createDatabaseNodeData({
-              parentId: documentId,
-              viewIds: [response.view_id],
-              databaseId: response.database_id,
-            }));
+            turnInto(
+              BlockType.BoardBlock,
+              createDatabaseNodeData({
+                parentId: documentId,
+                viewIds: [response.view_id],
+                databaseId: response.database_id,
+              })
+            );
 
             openPageModal?.(response.view_id);
 
@@ -993,7 +1201,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedKanban'),
         key: 'linkedKanban',
         icon: <BoardIcon />,
+        group: SlashMenuGroupKey.Database,
         keywords: ['linked', 'kanban', 'board', 'database'],
+        aliases: ['link to board', 'link to kanban', 'referenced board', 'ltb'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Board, 'linkedKanban');
         },
@@ -1002,6 +1212,7 @@ export function SlashPanel({
         label: t('document.slashMenu.name.calendar'),
         key: 'calendar',
         icon: <CalendarIcon />,
+        group: SlashMenuGroupKey.Database,
         keywords: ['calendar', 'date', 'database'],
         onClick: async () => {
           if (!documentId || !addPage) return;
@@ -1033,11 +1244,14 @@ export function SlashPanel({
               databaseViewId: response.view_id,
             });
 
-            turnInto(BlockType.CalendarBlock, createDatabaseNodeData({
-              parentId: documentId,
-              viewIds: [response.view_id],
-              databaseId: response.database_id,
-            }));
+            turnInto(
+              BlockType.CalendarBlock,
+              createDatabaseNodeData({
+                parentId: documentId,
+                viewIds: [response.view_id],
+                databaseId: response.database_id,
+              })
+            );
 
             openPageModal?.(response.view_id);
 
@@ -1080,16 +1294,113 @@ export function SlashPanel({
         label: t('document.slashMenu.name.linkedCalendar'),
         key: 'linkedCalendar',
         icon: <CalendarIcon />,
+        group: SlashMenuGroupKey.Database,
         keywords: ['linked', 'calendar', 'date', 'database'],
+        aliases: ['link to calendar', 'referenced calendar', 'ltc'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Calendar, 'linkedCalendar');
         },
       },
       {
-        label: 'Table',
+        label: t('document.slashMenu.name.chart', { defaultValue: 'Chart' }),
+        key: 'chart',
+        icon: <ChartIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['chart', 'database', 'visualization'],
+        onClick: async () => {
+          if (!documentId || !addPage) return;
+
+          let scrollContainer: HTMLElement | null = null;
+
+          try {
+            const domNode = ReactEditor.toDOMNode(editor, editor);
+
+            scrollContainer = domNode.closest('.appflowy-scroll-container');
+          } catch (e) {
+            // Ignore
+          }
+
+          if (!scrollContainer) {
+            scrollContainer = document.querySelector('.appflowy-scroll-container');
+          }
+
+          const savedScrollTop = scrollContainer?.scrollTop;
+
+          try {
+            const response = await addPage(documentId, {
+              layout: ViewLayout.Chart,
+              name: t('document.plugins.database.newDatabase'),
+            });
+
+            Log.debug('[SlashPanel] {} created chart', {
+              documentId,
+              databaseViewId: response.view_id,
+            });
+
+            turnInto(
+              BlockType.ChartBlock,
+              createDatabaseNodeData({
+                parentId: documentId,
+                viewIds: [response.view_id],
+                databaseId: response.database_id,
+              })
+            );
+
+            openPageModal?.(response.view_id);
+
+            if (savedScrollTop !== undefined) {
+              const restoreScroll = () => {
+                let currentContainer: HTMLElement | null = null;
+
+                if (scrollContainer?.isConnected) {
+                  currentContainer = scrollContainer;
+                } else {
+                  try {
+                    const domNode = ReactEditor.toDOMNode(editor, editor);
+
+                    currentContainer = domNode.closest('.appflowy-scroll-container');
+                  } catch {
+                    currentContainer = document.querySelector('.appflowy-scroll-container');
+                  }
+                }
+
+                if (!currentContainer) return;
+                if (Math.abs(currentContainer.scrollTop - savedScrollTop) <= 5) return;
+
+                currentContainer.scrollTop = savedScrollTop;
+              };
+
+              requestAnimationFrame(restoreScroll);
+              setTimeout(restoreScroll, 50);
+              setTimeout(restoreScroll, 250);
+              setTimeout(restoreScroll, 600);
+              setTimeout(restoreScroll, 1200);
+              setTimeout(restoreScroll, 1800);
+            }
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } catch (e: any) {
+            notify.error(e.message);
+          }
+        },
+      },
+      {
+        label: t('document.slashMenu.name.linkedChart', { defaultValue: 'Linked Chart' }),
+        key: 'linkedChart',
+        icon: <ChartIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'chart', 'database', 'visualization'],
+        aliases: ['link to chart', 'referenced chart'],
+        onClick: () => {
+          void handleOpenLinkedDatabasePicker(ViewLayout.Chart, 'linkedChart');
+        },
+      },
+      {
+        label: t('document.slashMenu.name.table'),
         key: 'simpleTable',
         icon: <SimpleTableIcon />,
-        keywords: ['table', 'simple table'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['table', 'simple table', 'rows', 'columns', 'data'],
+        aliases: ['st'],
         onClick: () => {
           const block = getBlockEntry(editor);
 
@@ -1115,20 +1426,29 @@ export function SlashPanel({
           const tableId = CustomEditor.createSimpleTable(editor, parentBlockId, 2, 2, insertIndex);
 
           if (tableId) {
-            setTimeout(() => {
+            const selectTableStart = () => {
               try {
                 const entry = findSlateEntryByBlockId(editor, tableId);
 
-                if (entry) {
-                  const point = Editor.start(editor, entry[1]);
+                if (!entry) return false;
 
-                  Transforms.select(editor, point);
-                  ReactEditor.focus(editor);
-                }
+                const point = Editor.start(editor, entry[1]);
+
+                Transforms.select(editor, point);
+                ReactEditor.focus(editor);
+                return true;
               } catch {
-                // ignore
+                return false;
               }
-            }, 200);
+            };
+
+            if (!selectTableStart()) {
+              requestAnimationFrame(() => {
+                if (!selectTableStart()) {
+                  setTimeout(selectTableStart, 50);
+                }
+              });
+            }
           }
         },
       },
@@ -1136,7 +1456,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.callout'),
         key: 'callout',
         icon: <CalloutIcon />,
-        keywords: ['callout'],
+        group: SlashMenuGroupKey.AdvancedBlocks,
+        keywords: ['callout', 'note', 'tip'],
         onClick: () => {
           turnInto(BlockType.CalloutBlock, {
             icon: '📌',
@@ -1147,7 +1468,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.outline'),
         key: 'outline',
         icon: <OutlineIcon />,
-        keywords: ['outline', 'table', 'contents'],
+        group: SlashMenuGroupKey.AdvancedBlocks,
+        keywords: ['outline', 'table', 'contents', 'table of contents', 'toc', 'tableofcontents'],
         onClick: () => {
           turnInto(BlockType.OutlineBlock, {});
         },
@@ -1156,7 +1478,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.mathEquation'),
         key: 'math',
         icon: <FormulaIcon />,
-        keywords: ['math', 'equation', 'formula'],
+        group: SlashMenuGroupKey.AdvancedBlocks,
+        keywords: ['math', 'equation', 'formula', 'tex', 'latex', 'katex'],
+        shortcut: '$$',
         onClick: () => {
           turnInto(BlockType.EquationBlock, {});
         },
@@ -1165,16 +1489,32 @@ export function SlashPanel({
         label: t('document.slashMenu.name.code'),
         key: 'code',
         icon: <CodeIcon />,
-        keywords: ['code', 'block'],
+        group: SlashMenuGroupKey.AdvancedBlocks,
+        keywords: ['code', 'block', 'codeblock', 'cb'],
+        shortcut: '```',
         onClick: () => {
           turnInto(BlockType.CodeBlock, {});
+        },
+      },
+      {
+        label: t('document.slashMenu.name.mermaid', { defaultValue: 'Mermaid' }),
+        key: 'mermaid',
+        icon: <CodeIcon />,
+        group: SlashMenuGroupKey.AdvancedBlocks,
+        keywords: ['mermaid', 'diagram', 'chart'],
+        onClick: () => {
+          turnInto(BlockType.CodeBlock, {
+            language: 'mermaid',
+          } as CodeBlockData);
         },
       },
       {
         label: t('document.slashMenu.name.toggleList'),
         key: 'toggleList',
         icon: <ToggleListIcon />,
-        keywords: ['toggle', 'list'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['toggle', 'list', 'collapsed list', 'dropdown', 'cl', 'tl'],
+        shortcut: '>',
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
             collapsed: false,
@@ -1185,7 +1525,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.toggleHeading1'),
         key: 'toggleHeading1',
         icon: <ToggleHeading1Icon />,
-        keywords: ['toggle', 'heading1', 'h1', 'heading'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['toggle', 'heading1', 'h1', 'heading', 'heading 1'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
             collapsed: false,
@@ -1197,7 +1538,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.toggleHeading2'),
         key: 'toggleHeading2',
         icon: <ToggleHeading2Icon />,
-        keywords: ['toggle', 'heading2', 'h2', 'subheading', 'heading'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['toggle', 'heading2', 'h2', 'subheading', 'heading', 'heading 2'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
             collapsed: false,
@@ -1209,7 +1551,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.toggleHeading3'),
         key: 'toggleHeading3',
         icon: <ToggleHeading3Icon />,
-        keywords: ['toggle', 'heading3', 'h3', 'subheading', 'heading'],
+        group: SlashMenuGroupKey.BasicBlocks,
+        keywords: ['toggle', 'heading3', 'h3', 'subheading', 'heading', 'heading 3'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
             collapsed: false,
@@ -1221,7 +1564,8 @@ export function SlashPanel({
         label: t('document.slashMenu.name.emoji'),
         key: 'emoji',
         icon: <EmojiIcon />,
-        keywords: ['emoji'],
+        group: SlashMenuGroupKey.Inline,
+        keywords: ['emoji', 'reaction'],
         onClick: () => {
           setTimeout(() => {
             const rect = getRangeRect();
@@ -1235,21 +1579,34 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.slashMenu.name.dateOrReminder'),
+        key: 'dateOrReminder',
+        icon: <DateIcon />,
+        group: SlashMenuGroupKey.Inline,
+        keywords: ['date', 'reminder', 'time', 'schedule'],
+        onClick: () => {
+          const rect = getRangeRect();
+
+          if (!rect) return;
+          openPanel(PanelType.Mention, { top: rect.top, left: rect.left });
+        },
+      },
+      {
         label: t('document.slashMenu.name.file'),
         key: 'file',
         icon: <FileIcon />,
-        keywords: ['file', 'upload'],
+        group: SlashMenuGroupKey.Media,
+        keywords: ['file', 'upload', 'attachment', 'pdf', 'video', 'audio', 'zip', 'archive'],
         onClick: () => {
           turnInto(BlockType.FileBlock, {});
         },
       },
-    ].filter((option) => {
-      if (option.disabled) return false;
-      if (restrictDatabaseOptionsInAIMeeting && AI_MEETING_DATABASE_OPTION_KEYS.has(option.key)) return false;
-      if (!searchText) return true;
-      return option.keywords.some((keyword: string) => {
-        return keyword.toLowerCase().includes(searchText.toLowerCase());
-      });
+    ];
+
+    return filterSlashMenuOptions(allOptions, {
+      searchText,
+      isInsideSimpleTableCell,
+      isInsideAIMeeting,
     });
   }, [
     t,
@@ -1267,10 +1624,12 @@ export function SlashPanel({
     searchText,
     handleOpenLinkedDatabasePicker,
     editor,
-    shouldRestrictAIMeetingDatabaseOptions,
+    getIsInsideAIMeeting,
+    getIsInsideSimpleTableCell,
   ]);
 
-  const resultLength = options.length;
+  const optionGroups = useMemo(() => groupSlashMenuOptions(options), [options]);
+  const orderedOptions = useMemo(() => optionGroups.flatMap(({ options }) => options), [optionGroups]);
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
@@ -1297,27 +1656,14 @@ export function SlashPanel({
   }, [selectedOption]);
 
   useEffect(() => {
-    if (!open || options.length === 0) return;
-    setSelectedOption(options[0].key);
-  }, [open, options]);
-
-  const countRef = useRef(0);
-
-  useEffect(() => {
     if (!open) return;
 
-    if (searchText && resultLength === 0) {
-      countRef.current += 1;
-    } else {
-      countRef.current = 0;
-    }
-
-    if (countRef.current > 1) {
-      closePanel();
-      countRef.current = 0;
-      return;
-    }
-  }, [closePanel, open, resultLength, searchText]);
+    setSelectedOption((current) => {
+      if (orderedOptions.length === 0) return null;
+      if (current && orderedOptions.some((option) => option.key === current)) return current;
+      return orderedOptions[0].key;
+    });
+  }, [open, orderedOptions]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1326,25 +1672,34 @@ export function SlashPanel({
 
       switch (key) {
         case 'Enter':
+        case 'NumpadEnter': {
           e.stopPropagation();
           e.preventDefault();
-          if (selectedOptionRef.current) {
-            handleSelectOption(selectedOptionRef.current);
-            const item = options.find((option) => option.key === selectedOptionRef.current);
+          if (orderedOptions.length === 0) return;
 
-            item?.onClick?.();
-          }
+          const item = orderedOptions.find((option) => option.key === selectedOptionRef.current) ?? orderedOptions[0];
+
+          handleSelectOption(item.key);
+          item.onClick?.();
 
           break;
+        }
+
         case 'ArrowUp':
-        case 'ArrowDown': {
+        case 'ArrowDown':
+        case 'Tab': {
           e.stopPropagation();
           e.preventDefault();
-          const index = options.findIndex((option) => option.key === selectedOptionRef.current);
-          const nextIndex =
-            key === 'ArrowDown' ? (index + 1) % options.length : (index - 1 + options.length) % options.length;
+          if (orderedOptions.length === 0) return;
 
-          setSelectedOption(options[nextIndex].key);
+          const index = orderedOptions.findIndex((option) => option.key === selectedOptionRef.current);
+          const currentIndex = index >= 0 ? index : 0;
+          const moveToPrevious = key === 'ArrowUp' || (key === 'Tab' && e.shiftKey);
+          const nextIndex = moveToPrevious
+            ? (currentIndex - 1 + orderedOptions.length) % orderedOptions.length
+            : (currentIndex + 1) % orderedOptions.length;
+
+          setSelectedOption(orderedOptions[nextIndex].key);
           break;
         }
 
@@ -1360,12 +1715,7 @@ export function SlashPanel({
     return () => {
       slateDom.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closePanel, editor, open, options, handleSelectOption]);
-
-  useEffect(() => {
-    if (options.length > 0) return;
-    setSelectedOption(null);
-  }, [options.length]);
+  }, [closePanel, editor, open, orderedOptions, handleSelectOption]);
 
   useEffect(() => {
     if (open && panelPosition) {
@@ -1376,9 +1726,9 @@ export function SlashPanel({
         isAlignBottom
           ? origins.transformOrigin
           : {
-            vertical: -30,
-            horizontal: origins.transformOrigin.horizontal,
-          }
+              vertical: -30,
+              horizontal: origins.transformOrigin.horizontal,
+            }
       );
     }
   }, [open, panelPosition]);
@@ -1417,24 +1767,30 @@ export function SlashPanel({
             'appflowy-scroller flex max-h-[400px] w-[320px] flex-col gap-2 overflow-y-auto overflow-x-hidden p-2'
           }
         >
-          {options.length > 0 ? (
-            options.map((option) => (
-              <Button
-                size={'small'}
-                color={'inherit'}
-                startIcon={option.icon}
-                key={option.key}
-                data-testid={`slash-menu-${option.key}`}
-                data-option-key={option.key}
-                onClick={() => {
-                  handleSelectOption(option.key);
-                  option.onClick?.();
-                }}
-                className={`scroll-m-2 justify-start hover:bg-fill-content-hover ${selectedOption === option.key ? 'bg-fill-content-hover' : ''
-                  }`}
-              >
-                {option.label}
-              </Button>
+          {optionGroups.length > 0 ? (
+            optionGroups.map(({ group, options: groupOptions }) => (
+              <div key={group} className={'flex flex-col gap-1'}>
+                <div className={'px-2 py-1 text-xs font-medium text-text-secondary'}>{groupLabels[group]}</div>
+                {groupOptions.map((option) => (
+                  <Button
+                    size={'small'}
+                    color={'inherit'}
+                    startIcon={option.icon}
+                    key={option.key}
+                    data-testid={`slash-menu-${option.key}`}
+                    data-option-key={option.key}
+                    onClick={() => {
+                      handleSelectOption(option.key);
+                      option.onClick?.();
+                    }}
+                    className={`scroll-m-2 justify-start hover:bg-fill-content-hover ${
+                      selectedOption === option.key ? 'bg-fill-content-hover' : ''
+                    }`}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
             ))
           ) : (
             <div className={'flex items-center justify-center py-4 text-sm text-text-secondary'}>

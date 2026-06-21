@@ -800,7 +800,16 @@
       "outline": {
         "addHeadingToCreateOutline": "بۆ دروستکردنی خشتەی ناوەڕۆک سەردێڕەکان داخڵ بکە"
       },
-      "openAI": "AI ژیری دەستکرد"
+      "openAI": "AI ژیری دەستکرد",
+      "urlPreview": {
+        "pasteAs": {
+          "title": "وەک دابنێ",
+          "mention": "ئاماژە",
+          "url": "URL",
+          "bookmark": "دڵخواز",
+          "embed": "جێگیرکردن"
+        }
+      }
     },
     "textBlock": {
       "placeholder": "بۆ فەرمانەکان '/' بنووسە"

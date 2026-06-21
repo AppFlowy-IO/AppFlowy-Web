@@ -8,6 +8,7 @@ import {
   isReferencedDatabaseView,
   getFirstChildView,
   getDatabaseTabViewIds,
+  resolveActiveDatabaseViewId,
   isLinkedDatabaseViewUnderDocument,
   canBeMoved,
 } from '../view-utils';
@@ -526,9 +527,7 @@ describe('view-utils', () => {
           children: [gridView, embeddedBoardView],
         });
 
-        expect(getDatabaseTabViewIds(embeddedBoardView.view_id, container)).toEqual([
-          embeddedBoardView.view_id,
-        ]);
+        expect(getDatabaseTabViewIds(embeddedBoardView.view_id, container)).toEqual([embeddedBoardView.view_id]);
       });
 
       it('falls back to display tabs when opening a container directly', () => {
@@ -583,6 +582,58 @@ describe('view-utils', () => {
           embeddedGridView.view_id,
           embeddedBoardView.view_id,
         ]);
+      });
+    });
+
+    describe('resolveActiveDatabaseViewId', () => {
+      it('uses the route id when opening a concrete database child view', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'grid-view',
+            tabViewId: null,
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('uses the first visible child when opening a database container route', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('uses a valid tab query over the route id', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: 'board-view',
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('board-view');
+      });
+
+      it('ignores a stale tab query when visible views are authoritative', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: 'deleted-view',
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('preserves legacy standalone behavior when no visible view list is known', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'grid-view',
+            tabViewId: 'board-view',
+            visibleViewIds: undefined,
+          })
+        ).toBe('board-view');
       });
     });
 

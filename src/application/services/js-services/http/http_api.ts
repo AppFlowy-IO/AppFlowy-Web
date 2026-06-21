@@ -193,6 +193,12 @@ export {
   deleteQuickNote,
 } from './misc-api';
 
+// Export
+export {
+  getViewPdfBlob,
+} from './export-api';
+export type { ExportPdfOptions, ExportPdfResult } from './export-api';
+
 // Notification
 export {
   listNotifications,

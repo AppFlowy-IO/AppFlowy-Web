@@ -39,7 +39,7 @@ export interface AuthInternalContextType {
   /** Error from loading workspace info — allows consumers to show error/retry UI. */
   workspaceInfoError?: Error;
   /** Retry loading workspace info after a failure. */
-  retryLoadWorkspaceInfo?: () => void;
+  retryLoadWorkspaceInfo?: () => Promise<UserWorkspaceInfo | undefined>;
 }
 
 export const AuthInternalContext = createContext<AuthInternalContextType | null>(null);

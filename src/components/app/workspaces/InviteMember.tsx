@@ -1,20 +1,43 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
-import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
-import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
+import { ERROR_CODE } from '@/application/constants';
+import { Workspace, WorkspaceMember } from '@/application/types';
 import { WorkspaceService } from '@/application/services/domains';
 import { NormalModal } from '@/components/_shared/modal';
-import { useGetSubscriptions } from '@/components/app/app.hooks';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+
+    if (typeof message === 'string') return message;
+  }
+
+  return 'Request failed';
+}
+
+function isAPIErrorCode(error: unknown, code: number): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
+}
+
+function parseInviteEmails(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((email) => email.trim())
+        .filter(Boolean)
+    )
+  );
+}
 
 function InviteMember({
   workspace,
@@ -25,15 +48,12 @@ function InviteMember({
   open?: boolean;
   openOnChange?: (open: boolean) => void;
 }) {
-  const getSubscriptions = useGetSubscriptions();
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);
   const currentWorkspaceId = workspace.id;
-  const [, setSearch] = useSearchParams();
 
   const currentUser = useCurrentUser();
-  const [memberCount, setMemberCount] = React.useState<number>(0);
   const memberListRef = useRef<WorkspaceMember[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const isOwner = workspace.owner?.uid.toString() === currentUser?.uid.toString();
@@ -42,54 +62,18 @@ function InviteMember({
     try {
       if (!currentWorkspaceId) return;
       memberListRef.current = await WorkspaceService.getMembers(currentWorkspaceId);
-      setMemberCount(memberListRef.current.length);
     } catch (e) {
       console.error(e);
     }
   }, [currentWorkspaceId]);
 
-  const [activeSubscriptionPlan, setActiveSubscriptionPaln] = React.useState<SubscriptionPlan | null>(null);
-
-  const loadSubscription = useCallback(async () => {
-    if (!isAppFlowyHosted()) {
-      setActiveSubscriptionPaln(SubscriptionPlan.Pro);
-      return;
-    }
-
-    try {
-      const subscriptions = await getSubscriptions?.();
-
-      if (!subscriptions || subscriptions.length === 0) {
-        setActiveSubscriptionPaln(SubscriptionPlan.Free);
-
-        return;
-      }
-
-      setActiveSubscriptionPaln(getProAccessPlanFromSubscriptions(subscriptions));
-    } catch (e) {
-      setActiveSubscriptionPaln(SubscriptionPlan.Free);
-      console.error(e);
-    }
-  }, [getSubscriptions]);
-
-  const isExceed = useMemo(() => {
-    if (activeSubscriptionPlan === null) return false;
-    if (activeSubscriptionPlan === SubscriptionPlan.Free) {
-      return memberCount >= 2;
-    }
-
-    if (activeSubscriptionPlan === SubscriptionPlan.Pro) {
-      return memberCount >= 10;
-    }
-
-    return false;
-  }, [activeSubscriptionPlan, memberCount]);
-
   const handleOk = async () => {
     if (!currentWorkspaceId) return;
     try {
       setLoading(true);
-      const emails = value.split(',').map((e) => e.trim());
+      const emails = parseInviteEmails(value);
+
+      if (emails.length === 0) return;
 
       const hadInvited = emails.filter((e) => memberListRef.current.find((m) => m.email === e));
 
@@ -104,7 +88,14 @@ function InviteMember({
       toast.success(t('inviteMember.inviteSuccess'));
       // eslint-disable-next-line
     } catch (e: any) {
-      toast.error(e.message);
+      const message = getErrorMessage(e);
+
+      if (isAPIErrorCode(e, ERROR_CODE.MAILER_ERROR)) {
+        openOnChange?.(false);
+        toast.warning(message);
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -115,20 +106,12 @@ function InviteMember({
       setValue('');
     } else {
       void loadMembers();
-      void loadSubscription();
       // Focus input after MUI Dialog animation completes
       const timer = setTimeout(() => inputRef.current?.focus(), 100);
 
       return () => clearTimeout(timer);
     }
-  }, [open, loadMembers, loadSubscription]);
-
-  const handleUpgrade = useCallback(async () => {
-    setSearch((prev) => {
-      prev.set('action', 'change_plan');
-      return prev;
-    });
-  }, [setSearch]);
+  }, [open, loadMembers]);
 
   if (!isOwner) return null;
 
@@ -144,22 +127,12 @@ function InviteMember({
       okButtonProps={HIDDEN_BUTTON_PROPS}
       cancelButtonProps={HIDDEN_BUTTON_PROPS}
     >
-      {isExceed && (
-        <div className={'mb-4 flex w-full flex-wrap items-center gap-1 overflow-hidden text-text-secondary'}>
-          <TipIcon className={'h-4 w-4 text-function-warning'} />
-          {t('inviteMember.inviteFailedMemberLimit')}
-          <span onClick={handleUpgrade} className={'cursor-pointer text-text-action hover:underline'}>
-            {t('inviteMember.upgrade')}
-          </span>
-        </div>
-      )}
       <div className='grid gap-4'>
         <div className='grid gap-3'>
           <Label htmlFor='emails'>{t('inviteMember.emails')}</Label>
           <Input
             id='emails'
             name='emails'
-            disabled={isExceed}
             ref={inputRef}
             onChange={(e) => setValue(e.target.value)}
             value={value}
@@ -172,8 +145,8 @@ function InviteMember({
           />
         </div>
       </div>
-      <div className='flex w-full justify-end gap-3 mt-4'>
-        <Button loading={loading} onClick={() => void handleOk()} disabled={!value || isExceed}>
+      <div className='mt-4 flex w-full justify-end gap-3'>
+        <Button loading={loading} onClick={() => void handleOk()} disabled={!value}>
           {loading && <Progress />}
           {t('inviteMember.requestInvites')}
         </Button>

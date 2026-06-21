@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, IPeopleWithAccessType } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
@@ -89,7 +90,7 @@ export function AccessLevelDropdown({
     );
   }, [loading, isYou, handleRemoveAccess, t]);
 
-  if (person.access_level === AccessLevel.FullAccess) {
+  if (person.access_level === AccessLevel.FullAccess && !canModify) {
     return (
       <div className='mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary'>
         {getAccessLevelText(person.access_level)}
@@ -160,6 +161,32 @@ export function AccessLevelDropdown({
                 </div>
                 {!loading && person.access_level === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
                 {loading === 'edit' && <Progress variant='primary' />}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={loading === 'full'}
+                onSelect={async (e) => {
+                  e.preventDefault();
+                  setLoading('full');
+                  try {
+                    await onAccessLevelChange(person.email, AccessLevel.FullAccess);
+                    setOpen(false);
+                    notify.success(t('shareAction.changeAccessSuccess', { email: person.email }));
+                  } catch (error) {
+                    notify.error(t('shareAction.changeAccessError'));
+                  } finally {
+                    setLoading(null);
+                  }
+                }}
+              >
+                <div className='flex items-center gap-2'>
+                  <CrownIcon />
+                  <div className='flex flex-col'>
+                    <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                    <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+                  </div>
+                </div>
+                {!loading && person.access_level === AccessLevel.FullAccess && <DropdownMenuItemTick />}
+                {loading === 'full' && <Progress variant='primary' />}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {renderRemoveAccess()}

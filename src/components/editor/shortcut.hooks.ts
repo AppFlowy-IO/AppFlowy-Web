@@ -224,11 +224,14 @@ export function useShortcuts(editor: ReactEditor) {
          * Special case for select all in code block: Only select all text in code block
          */
         case createHotkey(HOT_KEY_NAME.SELECT_ALL)(e):
+          event.preventDefault();
+
           if (node && node[0].type === BlockType.CodeBlock) {
-            event.preventDefault();
             editor.select(node[1]);
+            break;
           }
 
+          editor.select(Editor.range(editor, []));
           break;
         /**
          * Indent block: Tab

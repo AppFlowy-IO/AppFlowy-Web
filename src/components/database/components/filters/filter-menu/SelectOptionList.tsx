@@ -53,5 +53,5 @@ export function SelectOptionList({
     return Boolean(option && option.id);
   });
 
-  return <div className={'flex flex-col'}>{normalizedOptions.map(renderOption)}</div>;
+  return <div className={'appflowy-scroller flex max-h-[300px] flex-col overflow-y-auto'}>{normalizedOptions.map(renderOption)}</div>;
 }

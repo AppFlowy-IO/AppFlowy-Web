@@ -163,11 +163,17 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // and the correct layout is known for the page-view API call.
   const resolvedView = effectiveOutlineView || fallbackMeta;
 
+  // Gate on metadata availability via a boolean so outline updates (e.g. a
+  // title edit propagating through the outline tree) don't churn the dep
+  // array and re-trigger loadPageDoc — which would setDoc(undefined) and
+  // remount the editor mid-keystroke.
+  const hasResolvedView = !!resolvedView;
+
   useEffect(() => {
-    if (open && effectiveViewId && resolvedView) {
+    if (open && effectiveViewId && hasResolvedView) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [open, effectiveViewId, loadPageDoc, resolvedView]);
+  }, [open, effectiveViewId, loadPageDoc, hasResolvedView]);
 
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
@@ -318,11 +324,13 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     );
   }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
 
-  // Check if view is in shareWithMe and determine readonly status
+  // Check if view is in shareWithMe and determine readonly status.
+  // `resolvedView` includes the server-fetched fallback, so locked pages opened
+  // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewReadOnlyStatus(effectiveViewId, outline);
-  }, [getViewReadOnlyStatus, effectiveViewId, outline]);
+    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
+  }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
 
   const View = useMemo(() => {
     switch (layout) {
@@ -331,6 +339,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Grid:
       case ViewLayout.Board:
       case ViewLayout.Calendar:
+      case ViewLayout.Chart:
         return DatabaseView;
       default:
         return null;

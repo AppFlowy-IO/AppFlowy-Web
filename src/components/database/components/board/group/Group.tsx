@@ -2,7 +2,7 @@ import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-sc
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PADDING_END, useDatabaseContext, useReadOnly, useRowOrdersSelector, useRowsByGroup } from '@/application/database-yjs';
+import { PADDING_END, useDatabaseContext, useReadOnly, useRowsByGroup } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
@@ -25,112 +25,7 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const { paddingStart, paddingEnd, navigateToRow, ensureRow, loadRowFromSeed, blobPrefetchComplete } =
-    context;
-  const rowOrders = useRowOrdersSelector();
-
-  // Track visibility for lazy loading (rerender-move-effect-to-event pattern)
-  const [isVisible, setIsVisible] = useState(false);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const observedContainerRef = useRef<HTMLDivElement | null>(null);
-
-  // Store callbacks in refs to avoid triggering effect re-runs (advanced-use-latest pattern)
-  const ensureRowRef = useRef(ensureRow);
-  const loadRowFromSeedRef = useRef(loadRowFromSeed);
-  const loadedRowsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    ensureRowRef.current = ensureRow;
-    loadRowFromSeedRef.current = loadRowFromSeed;
-  });
-
-  // Set up intersection observer for lazy loading
-  useEffect(() => {
-    if (typeof IntersectionObserver === 'undefined') {
-      setIsVisible(true);
-      return;
-    }
-
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        // Once visible, stay visible (no need to unload)
-        if (entries[0]?.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      {
-        // Load slightly before entering viewport for smoother UX
-        rootMargin: '100px',
-        threshold: 0,
-      }
-    );
-
-    const container = containerRef.current;
-
-    if (container) {
-      observerRef.current.observe(container);
-      observedContainerRef.current = container;
-    }
-
-    return () => {
-      observerRef.current?.disconnect();
-    };
-  }, []);
-
-  // Reset loaded rows and visibility when group changes
-  useEffect(() => {
-    loadedRowsRef.current.clear();
-    setIsVisible(false);
-  }, [groupId]);
-
-  // Load row documents only when group becomes visible.
-  // Try cached data first (fast), then fall back to ensureRow (WebSocket sync).
-  // Uses Promise.all for parallel loading to avoid request waterfalls.
-  useEffect(() => {
-    // Only load when visible (lazy loading for off-screen groups)
-    if (!isVisible || !rowOrders || rowOrders.length === 0) return;
-
-    // Only load rows we haven't loaded yet (avoid re-loading on sort/filter changes)
-    const rowsToLoad = rowOrders.filter((row) => !loadedRowsRef.current.has(row.id));
-
-    if (rowsToLoad.length === 0) return;
-
-    const loadRows = async () => {
-      try {
-        if (blobPrefetchComplete && loadRowFromSeedRef.current) {
-          // Load all rows from cache in parallel
-          const results = await Promise.all(
-            rowsToLoad.map((row) => loadRowFromSeedRef.current!(row.id))
-          );
-
-          // Mark rows as loaded
-          rowsToLoad.forEach((row) => loadedRowsRef.current.add(row.id));
-
-          // Fall back to ensureRow for any rows not in cache
-          if (ensureRowRef.current) {
-            results.forEach((doc, index) => {
-              if (!doc) {
-                // Ignore errors - WebSocket sync provides fallback
-                ensureRowRef.current!(rowsToLoad[index].id)?.catch(() => undefined);
-              }
-            });
-          }
-        } else if (ensureRowRef.current) {
-          // No cache available, use ensureRow directly
-          rowsToLoad.forEach((row) => {
-            // Ignore errors - WebSocket sync provides fallback
-            ensureRowRef.current!(row.id)?.catch(() => undefined);
-            loadedRowsRef.current.add(row.id);
-          });
-        }
-      } catch {
-        // Silently handle errors - WebSocket sync will provide data as fallback
-      }
-    };
-
-    void loadRows();
-  }, [isVisible, blobPrefetchComplete, rowOrders]);
+  const { paddingStart, paddingEnd, navigateToRow } = context;
 
   const readOnly = useReadOnly();
   const getCards = useCallback(
@@ -199,16 +94,6 @@ export const Group = ({ groupId }: GroupProps) => {
 
   const handleRefCallback = useCallback((el: HTMLDivElement | null) => {
     ref.current = el;
-    containerRef.current = el;
-    if (observedContainerRef.current && observerRef.current) {
-      observerRef.current.unobserve(observedContainerRef.current);
-    }
-
-    observedContainerRef.current = el;
-    if (el && observerRef.current) {
-      observerRef.current.observe(el);
-    }
-
     if (!el) return;
     const container = getVerticalScrollContainer(el);
 
@@ -343,7 +228,7 @@ export const Group = ({ groupId }: GroupProps) => {
         tabIndex={0}
         onMouseLeave={handleMouseLeave}
         ref={handleRefCallback}
-        className={'appflowy-custom-scroller h-full overflow-x-auto px-24 focus:outline-none max-sm:!px-6'}
+        className={'appflowy-custom-scroller h-full min-h-0 overflow-x-auto px-24 focus:outline-none max-sm:!px-6'}
         style={{
           paddingLeft: paddingStart,
           paddingRight: paddingEnd,
@@ -351,7 +236,7 @@ export const Group = ({ groupId }: GroupProps) => {
         }}
         onScroll={handleScroll}
       >
-        <div className='flex h-full w-fit min-w-full flex-col'>
+        <div className='flex h-full min-h-0 w-fit min-w-full flex-col'>
           <Columns
             groupId={groupId}
             fieldId={fieldId}

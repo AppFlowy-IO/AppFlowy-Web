@@ -184,7 +184,11 @@ export interface Options {
 
 export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType => {
   const wsUrl = options.url || wsURL;
-  const token = options.token || getTokenParsed()?.access_token;
+  // The token is captured in state rather than read from the session on every
+  // render: a mid-session refresh by the HTTP layer must not change the socket
+  // URL (which would force a silent reconnect outside the throttled nonce
+  // path). Reconnects re-read the freshest token in bumpReconnectNonce.
+  const [token, setToken] = useState(() => options.token || getTokenParsed()?.access_token);
   // Stable across re-renders: generate once via lazy initializer, not on every render.
   const [clientId] = useState(() => options.clientId || random.uint32());
   const [deviceId] = useState(() => options.deviceId || random.uuidv4());
@@ -211,6 +215,12 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const tokenRefreshInFlightRef = useRef<Promise<ReconnectAuthStatus> | null>(null);
   const isMountedRef = useRef(true);
 
+  const syncTokenForReconnect = useCallback(() => {
+    const nextToken = options.token || getTokenParsed()?.access_token;
+
+    setToken((currentToken) => (currentToken === nextToken ? currentToken : nextToken));
+  }, [options.token]);
+
   const clearSlowPollRecovery = useCallback(() => {
     reconnectStoppedRef.current = false;
     if (slowPollTimerRef.current) {
@@ -231,8 +241,12 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     }
 
     lastNonceBumpRef.current = now;
+    // The stored token may have been rotated (e.g. refreshed by
+    // ensureFreshTokenForReconnect or the HTTP layer) while the socket was
+    // down; the new connection must authenticate with the freshest one.
+    syncTokenForReconnect();
     setReconnectNonce((n) => n + 1);
-  }, []);
+  }, [syncTokenForReconnect]);
 
   const ensureFreshTokenForReconnect = useCallback(async (): Promise<ReconnectAuthStatus> => {
     // If token is explicitly provided by caller, we can't refresh it from session state.
@@ -350,6 +364,10 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
         return false;
       }
 
+      // Automatic react-use-websocket retries reuse the current URL prop. If
+      // the HTTP layer rotated the stored token while this socket was open,
+      // refresh our URL token before the scheduled retry starts.
+      syncTokenForReconnect();
       return true;
     },
 
@@ -492,17 +510,30 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     [lastMessage]
   );
 
+  // Depend on the primitive fields, not the options object identity: callers
+  // typically pass an inline object literal, which would defeat the memo.
   const resolvedOptions = useMemo<Options>(
-    () => ({ ...options, url: wsUrl, clientId, deviceId }),
-    [options, wsUrl, clientId, deviceId]
+    () => ({
+      workspaceId: options.workspaceId,
+      token: options.token,
+      url: wsUrl,
+      clientId,
+      deviceId,
+    }),
+    [options.workspaceId, options.token, wsUrl, clientId, deviceId]
   );
 
-  return {
-    lastMessage: lastProtobufMessage,
-    sendMessage: sendProtobufMessage,
-    readyState,
-    options: resolvedOptions,
-    reconnectAttempt,
-    reconnect: manualReconnect,
-  };
+  // Memoized so consumers (and context values built from this) only re-render
+  // when something actually changed, not on every render of the host component.
+  return useMemo(
+    () => ({
+      lastMessage: lastProtobufMessage,
+      sendMessage: sendProtobufMessage,
+      readyState,
+      options: resolvedOptions,
+      reconnectAttempt,
+      reconnect: manualReconnect,
+    }),
+    [lastProtobufMessage, sendProtobufMessage, readyState, resolvedOptions, reconnectAttempt, manualReconnect]
+  );
 };

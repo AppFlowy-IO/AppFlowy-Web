@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { ComponentProps, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AppError, ErrorType } from '@/application/utils/error-utils';
@@ -11,6 +11,14 @@ import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { RequestAccessContent } from '@/components/app/share/RequestAccessContent';
 import { Progress } from '@/components/ui/progress';
 
+// Every error state below renders inside the app shell (content area, modal,
+// drawer, or mobile view) — never as a standalone full page. LandingPage defaults
+// to viewport sizing, which overflows past the sidebar and de-centers the card, so
+// embed it with `fitParent` to fill its container (matches RequestAccessContent).
+function EmbeddedLandingPage(props: ComponentProps<typeof LandingPage>) {
+  return <LandingPage {...props} fitParent />;
+}
+
 function RecordNotFound({
   viewId,
   noContent,
@@ -22,7 +30,7 @@ function RecordNotFound({
   noContent?: boolean;
   isViewNotFound?: boolean;
   error?: AppError;
-  onRetry?: () => void | Promise<void>;
+  onRetry?: () => void | Promise<unknown>;
 }) {
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -53,7 +61,7 @@ function RecordNotFound({
     switch (error.type) {
       case ErrorType.PageNotFound:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={WarningIcon}
             title={t('landingPage.pageNotFound.title')}
             description={t('landingPage.pageNotFound.description')}
@@ -66,7 +74,7 @@ function RecordNotFound({
 
       case ErrorType.Unauthorized:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={NoAccessIcon}
             title={t('landingPage.unauthorized.title')}
             description={t('landingPage.unauthorized.description')}
@@ -83,7 +91,7 @@ function RecordNotFound({
         }
 
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={NoAccessIcon}
             title={t('landingPage.forbidden.title')}
             description={t('landingPage.forbidden.description')}
@@ -96,7 +104,7 @@ function RecordNotFound({
 
       case ErrorType.ServerError:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={ErrorIcon}
             title={t('landingPage.serverError.title')}
             description={t('landingPage.serverError.description')}
@@ -116,7 +124,7 @@ function RecordNotFound({
 
       case ErrorType.NetworkError:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={ErrorIcon}
             title={t('landingPage.networkError.title')}
             description={t('landingPage.networkError.description')}
@@ -136,7 +144,7 @@ function RecordNotFound({
 
       case ErrorType.InvalidLink:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={WarningIcon}
             title={t('landingPage.invalidLink.title')}
             description={t('landingPage.invalidLink.description')}
@@ -149,7 +157,7 @@ function RecordNotFound({
 
       case ErrorType.AlreadyJoined:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={NoAccessIcon}
             title={t('landingPage.alreadyJoined.title')}
             description={t('landingPage.alreadyJoined.description')}
@@ -162,7 +170,7 @@ function RecordNotFound({
 
       case ErrorType.NotInvitee:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={NoAccessIcon}
             title={t('landingPage.notInvitee.title')}
             description={t('landingPage.notInvitee.description')}
@@ -175,7 +183,7 @@ function RecordNotFound({
 
       case ErrorType.Gone:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={WarningIcon}
             title={t('landingPage.gone.title')}
             description={t('landingPage.gone.description')}
@@ -188,7 +196,7 @@ function RecordNotFound({
 
       case ErrorType.Timeout:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={WarningIcon}
             title={t('landingPage.timeout.title')}
             description={t('landingPage.timeout.description')}
@@ -208,7 +216,7 @@ function RecordNotFound({
 
       case ErrorType.RateLimited:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={WarningIcon}
             title={t('landingPage.rateLimited.title')}
             description={t('landingPage.rateLimited.description')}
@@ -229,7 +237,7 @@ function RecordNotFound({
       case ErrorType.Unknown:
       default:
         return (
-          <LandingPage
+          <EmbeddedLandingPage
             Logo={ErrorIcon}
             title={t('landingPage.unknown.title')}
             description={t('landingPage.unknown.description')}

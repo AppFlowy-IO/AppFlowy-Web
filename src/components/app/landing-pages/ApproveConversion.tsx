@@ -7,6 +7,7 @@ import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
+import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
@@ -33,13 +34,23 @@ export function ApproveConversion() {
   const [notInvitee, setNotInvitee] = useState(false);
 
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<LandingPageError>();
 
   const [isAlreadyMember, setIsAlreadyMember] = useState(false);
 
   const loadConversion = useCallback(async () => {
     setLoading(true);
+    setError(undefined);
+
     if (!workspaceId || !code) {
+      setError({
+        message: t(
+          'landingPage.error.invalidInvitationUrl',
+          'This invitation link is missing required information. Please ask the sender for a new link.'
+        ),
+      });
       setIsError(true);
+      setLoading(false);
       return;
     }
 
@@ -62,6 +73,7 @@ export function ApproveConversion() {
 
       setGuestName(info.guest_name);
 
+      setIsError(false);
       setIsAlreadyMember(info.guest_is_already_a_member);
       // eslint-disable-next-line
     } catch (e: any) {
@@ -73,12 +85,13 @@ export function ApproveConversion() {
       } else if (e.code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) {
         setNotInvitee(true);
       } else {
+        setError(e);
         setIsError(true);
       }
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, code]);
+  }, [workspaceId, code, t]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {
@@ -94,13 +107,23 @@ export function ApproveConversion() {
 
   const handleApprove = useCallback(async () => {
     setLoading(true);
+    setError(undefined);
+
     if (!workspaceId || !code) {
+      setError({
+        message: t(
+          'landingPage.error.invalidInvitationUrl',
+          'This invitation link is missing required information. Please ask the sender for a new link.'
+        ),
+      });
       setIsError(true);
+      setLoading(false);
       return;
     }
 
     try {
       await WorkspaceService.approveTurnGuestToMember(workspaceId, code);
+      setIsError(false);
       setIsAlreadyMember(true);
       // eslint-disable-next-line
     } catch (e: any) {
@@ -109,11 +132,12 @@ export function ApproveConversion() {
         return;
       }
 
+      setError(e);
       setIsError(true);
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, code]);
+  }, [workspaceId, code, t]);
 
   useEffect(() => {
     void loadConversion();
@@ -152,7 +176,7 @@ export function ApproveConversion() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={handleApprove} />;
+    return <ErrorPage onRetry={handleApprove} error={error} />;
   }
 
   return (

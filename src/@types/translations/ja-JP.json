@@ -1638,7 +1638,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "リンクがクリップボードにコピーされました",
-        "convertToLink": "埋め込みリンクに変換"
+        "convertToLink": "埋め込みリンクに変換",
+        "pasteAs": {
+          "title": "貼り付け形式",
+          "mention": "メンション",
+          "url": "URL",
+          "bookmark": "ブックマーク",
+          "embed": "埋め込み"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "目次を作成するには見出しを追加してください。",

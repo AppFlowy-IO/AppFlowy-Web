@@ -516,46 +516,63 @@ export function deserializeHTML(html: string) {
 }
 
 export function convertSlateFragmentTo(fragment: SlateNode[]) {
-  const traverse = (node: SlateNode) => {
+  const traverse = (node: SlateNode): SlateNode | null => {
     if (SlateText.isText(node)) {
       return node;
     }
 
-    if (SlateElement.isElement(node)) {
-      const isTextChildren = node.children.every(SlateText.isText);
-      const children = node.children.map(traverse).filter(Boolean) as SlateText[];
-      const blockId = generateBlockId();
-
-      let type = node.type as BlockType;
-
-      if (!Object.values(BlockType).includes(type)) {
-        type = BlockType.Paragraph;
-      }
-
-      const blockChildren = isTextChildren
-        ? [
-            {
-              textId: blockId,
-              children: isTextChildren ? children : [],
-            },
-          ]
-        : [
-            {
-              textId: blockId,
-              children: [{ text: '' }],
-            },
-            ...children,
-          ];
-
-      return {
-        blockId,
-        data: node.data,
-        type,
-        children: blockChildren,
-      };
+    if (!SlateElement.isElement(node)) {
+      return null;
     }
 
-    return null;
+    // Text wrapper child of a block: preserve its shape (don't convert to a block).
+    // Without this, `'text'` falls through the BlockType check below and gets
+    // turned into a nested Paragraph block, which is the root cause of pasted
+    // content being indented one level deeper than the source.
+    if (node.type === YjsEditorKey.text) {
+      const textChildren = node.children.filter(SlateText.isText);
+
+      return {
+        textId: generateBlockId(),
+        type: YjsEditorKey.text,
+        children: textChildren,
+      } as unknown as SlateElement;
+    }
+
+    const blockId = generateBlockId();
+
+    let type = node.type as BlockType;
+
+    if (!Object.values(BlockType).includes(type)) {
+      type = BlockType.Paragraph;
+    }
+
+    const mappedChildren = node.children
+      .map(traverse)
+      .filter(Boolean) as SlateNode[];
+
+    const hasTextWrapper =
+      mappedChildren.length > 0 &&
+      SlateElement.isElement(mappedChildren[0]) &&
+      mappedChildren[0].type === YjsEditorKey.text;
+
+    const blockChildren = hasTextWrapper
+      ? mappedChildren
+      : [
+          {
+            textId: blockId,
+            type: YjsEditorKey.text,
+            children: [{ text: '' }],
+          },
+          ...mappedChildren,
+        ];
+
+    return {
+      blockId,
+      data: node.data,
+      type,
+      children: blockChildren,
+    } as unknown as SlateElement;
   };
 
   return fragment.map(traverse).filter(Boolean) as SlateElement[];

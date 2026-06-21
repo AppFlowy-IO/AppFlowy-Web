@@ -3,10 +3,13 @@ import EventEmitter from 'events';
 import { useEffect } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { notification } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 type WorkspaceNotification = notification.IWorkspaceNotification;
+const PERMISSION_CHANGED_REASON_OBJECT_DELETED = 1;
 
 function dispatchNotifications(
   eventEmitter: EventEmitter,
@@ -18,6 +21,14 @@ function dispatchNotifications(
 
   if (n.permissionChanged) {
     eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, n.permissionChanged);
+
+    if (
+      n.permissionChanged.objectId &&
+      n.permissionChanged.reason === PERMISSION_CHANGED_REASON_OBJECT_DELETED
+    ) {
+      void deleteOutboxByObjectId(n.permissionChanged.objectId);
+      void deleteCollabDB(n.permissionChanged.objectId, { destroyDoc: false });
+    }
   }
 
   if (n.sectionChanged) {

@@ -46,7 +46,15 @@ import {
   turnToBlock,
   updateBlockParent,
 } from '@/application/slate-yjs/utils/yjs';
-import { BlockData, BlockType, ToggleListBlockData, YBlock, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  BlockData,
+  BlockType,
+  CollabOrigin,
+  ToggleListBlockData,
+  YBlock,
+  YjsEditorKey,
+  YSharedRoot,
+} from '@/application/types';
 
 import { YjsEditor } from '../plugins/withYjs';
 
@@ -1174,7 +1182,7 @@ export function addBlock(
     extendNextSiblingsToToggleHeading(sharedRoot, newBlock);
   });
 
-  executeOperations(sharedRoot, operations, 'addBlock');
+  executeOperations(sharedRoot, operations, 'addBlock', CollabOrigin.LocalManual);
 
   return newBlockId;
 }

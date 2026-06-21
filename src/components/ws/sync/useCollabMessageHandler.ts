@@ -1,18 +1,18 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { openCollabDB } from '@/application/db';
+import { deleteCollabDB, openCollabDB } from '@/application/db';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, User, YDoc } from '@/application/types';
+import { User, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 import { rebuildCollabDoc } from './rebuildCollabDoc';
 import { replayQueuedMessages } from './replayQueuedMessages';
 import { SyncRefs } from './syncRefs';
-import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, UpdateCollabInfo, versionChanged } from './types';
+import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, versionChanged } from './types';
 
 import ICollabMessage = collab.ICollabMessage;
 
@@ -24,7 +24,6 @@ export function useCollabMessageHandler(
   registerSyncContext: (context: RegisterSyncContext) => SyncContext,
   scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void
 ) {
-  const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
 
@@ -158,6 +157,7 @@ export function useCollabMessageHandler(
               // `applyCollabMessage` would queue every subsequent message
               // and the doc would stay stuck until reload.
               await context.discardPendingUpdates?.();
+              await deleteCollabDB(previousDoc.guid, { destroyDoc: false });
               previousDoc.destroy();
 
               const localContext = context;
@@ -236,14 +236,7 @@ export function useCollabMessageHandler(
         }
       }
 
-      const updateTimestamp = message.update?.messageId?.timestamp;
-      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-      Log.debug('Received collab message:', message.collabType, publishedAt, message);
-
-      if (!refs.isDisposedRef.current) {
-        setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
-      }
+      Log.debug('Received collab message:', message.collabType, message);
     },
     [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup]
   );
@@ -341,5 +334,5 @@ export function useCollabMessageHandler(
     enqueueIncomingCollabMessage(message);
   }, [bcCollabMessage, enqueueIncomingCollabMessage]);
 
-  return { lastUpdatedCollab, applyCollabMessage };
+  return { applyCollabMessage };
 }

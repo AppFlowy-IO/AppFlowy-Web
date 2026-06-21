@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { ViewService } from '@/application/services/domains';
-import { TextCount, View } from '@/application/types';
+import { LoadViewOptions, TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
@@ -106,6 +106,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     loadViewChildren,
     loadViewChildrenBatch,
     markViewChildrenStale,
+    ensureViewVisibleInOutline,
+    revalidateSidebarOutline,
   } = useWorkspaceData();
 
   const breadcrumbViewId = useMemo(() => {
@@ -117,7 +119,16 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations();
+  const {
+    loadView,
+    toView,
+    awarenessMap,
+    getDatabaseIdForViewId,
+    getViewIdFromDatabaseId,
+    bindViewSync,
+    getCollabHistory,
+    previewCollabVersion,
+  } = useViewOperations();
 
   // Initialize row operations
   const { createRow } = useRowOperations();
@@ -147,6 +158,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     flushAllSync: syncContext.flushAllSync,
     syncAllToServer: syncContext.syncAllToServer,
     loadViewChildren,
+    getDatabaseIdForViewId,
   });
 
   // Check if current view has been deleted
@@ -435,8 +447,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Enhanced loadView with outline context
   const enhancedLoadView = useCallback(
-    async (viewId: string, isSubDocument = false, loadAwareness = false) => {
-      return loadView(viewId, isSubDocument, loadAwareness, stableOutlineRef.current);
+    async (viewId: string, isSubDocument = false, loadAwareness = false, options?: LoadViewOptions) => {
+      return loadView(viewId, isSubDocument, loadAwareness, stableOutlineRef.current, options);
     },
     [loadView, stableOutlineRef]
   );
@@ -486,6 +498,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       loadViewChildren,
       loadViewChildrenBatch,
       markViewChildrenStale,
+      ensureViewVisibleInOutline,
+      revalidateSidebarOutline,
       loadFavoriteViews,
       loadRecentViews,
       loadTrash,
@@ -497,7 +511,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     }),
     [
       outline, favoriteViews, recentViews, trashList, loadedViewIds,
-      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale,
+      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale, ensureViewVisibleInOutline, revalidateSidebarOutline,
       loadFavoriteViews, loadRecentViews, loadTrash, loadViews,
       refreshOutline, loadDatabaseRelations, getMentionUser, loadMentionableUsers,
     ]

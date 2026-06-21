@@ -1,5 +1,6 @@
 # Test results
 test-results/
+playwright/.features-gen/
 
 # Logs
 logs
@@ -45,4 +46,4 @@ cypress/downloads
 
 *storybook.log
 storybook-static
-docs/context
+docs/

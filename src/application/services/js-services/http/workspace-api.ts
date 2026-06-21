@@ -152,11 +152,49 @@ export async function inviteMembers(workspaceId: string, emails: string[]) {
   );
 }
 
-export async function getMembers(workspaceId: string) {
+export async function getMembers(workspaceId: string, includePending = false) {
   const url = `/api/workspace/${workspaceId}/member`;
 
   return executeAPIRequest<WorkspaceMember[]>(() =>
-    getAxios()?.get<APIResponse<WorkspaceMember[]>>(url)
+    getAxios()?.get<APIResponse<WorkspaceMember[]>>(url, {
+      params: includePending ? { include_pending: true } : undefined,
+    })
+  );
+}
+
+export async function removeMembers(workspaceId: string, emails: string[]) {
+  const url = `/api/workspace/${workspaceId}/member`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.delete<APIResponse>(url, {
+      data: emails,
+    })
+  );
+}
+
+export async function getWorkspaceInviteCode(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/invite-code`;
+
+  return executeAPIRequest<{ code: string | null }>(() =>
+    getAxios()?.get<APIResponse<{ code: string | null }>>(url)
+  );
+}
+
+export async function createWorkspaceInviteCode(workspaceId: string, validityPeriodHours?: number | null) {
+  const url = `/api/workspace/${workspaceId}/invite-code`;
+
+  return executeAPIRequest<{ code: string | null }>(() =>
+    getAxios()?.post<APIResponse<{ code: string | null }>>(url, {
+      validity_period_hours: validityPeriodHours ?? null,
+    })
+  );
+}
+
+export async function deleteWorkspaceInviteCode(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/invite-code`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.delete<APIResponse>(url)
   );
 }
 
@@ -273,5 +311,15 @@ export async function updatePublishNamespace(workspaceId: string, payload: Uploa
 
   return executeAPIVoidRequest(() =>
     getAxios()?.put<APIResponse>(url, payload)
+  );
+}
+
+export async function reorderWorkspaces(workspaceIds: string[]) {
+  const url = `/api/workspace/reorder`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.put<APIResponse>(url, {
+      workspace_ids: workspaceIds,
+    })
   );
 }

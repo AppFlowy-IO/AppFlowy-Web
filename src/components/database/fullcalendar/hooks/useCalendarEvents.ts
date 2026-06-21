@@ -33,7 +33,7 @@ export function useCalendarEvents() {
 
   // Handle event drop (move event to different time)
   const handleEventDrop = useCallback(
-    (dropInfo: EventDropArg) => {
+    async (dropInfo: EventDropArg) => {
       Log.debug('📅 Event dropped:', dropInfo.event);
 
       try {
@@ -74,7 +74,7 @@ export function useCalendarEvents() {
 
   // Handle event resize (change event duration)
   const handleEventResize = useCallback(
-    (resizeInfo: EventResizeDoneArg) => {
+    async (resizeInfo: EventResizeDoneArg) => {
       Log.debug('📅 Event resized:', resizeInfo.event);
 
       try {

@@ -270,4 +270,6 @@ export const FieldTypeNames: Record<number, string> = {
   12: 'Translate',
   13: 'Time',
   14: 'Media',
+  15: 'Person',
+  16: 'Rollup',
 };

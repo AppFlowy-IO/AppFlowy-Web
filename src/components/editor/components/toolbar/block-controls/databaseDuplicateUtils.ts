@@ -4,6 +4,7 @@ const DATABASE_BLOCK_TYPES = new Set([
   BlockType.GridBlock,
   BlockType.BoardBlock,
   BlockType.CalendarBlock,
+  BlockType.ChartBlock,
 ]);
 
 export function isDatabaseBlockType(type: BlockType | undefined): boolean {
@@ -18,6 +19,8 @@ export function getDatabaseLayoutFromBlockType(type: BlockType): ViewLayout | un
       return ViewLayout.Board;
     case BlockType.CalendarBlock:
       return ViewLayout.Calendar;
+    case BlockType.ChartBlock:
+      return ViewLayout.Chart;
     default:
       return undefined;
   }

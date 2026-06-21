@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
+  LoadViewOptions,
   Types,
   View,
   ViewLayout,
@@ -14,8 +15,8 @@ import {
   YDocWithMeta,
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
-import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
-import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { getDatabaseIdFromExtra, getFirstChildView, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
+import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
@@ -25,22 +26,45 @@ import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
 
-export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
+/**
+ * Determine whether the editor should be read-only for the given view.
+ *
+ * `fallbackView` is the resolved view object the page hosts already have
+ * (e.g. AppPage's `outlineView ?? fallbackView`, ViewModal's `resolvedView`).
+ * It's checked first so that locked pages remain read-only even when the page
+ * is opened before the outline branch loads — in that case `findView(outline)`
+ * misses the view and a lock check against the outline alone would let edits
+ * through.
+ */
+export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
   const isMobile = getPlatform().isMobile;
 
   if (isMobile) return true; // Mobile has highest priority - always readonly
 
+  // Lock check uses the resolved view first, falling back to the outline so
+  // direct-URL loads (before outline arrives) still honor the lock.
+  if (fallbackView?.view_id === viewId && fallbackView.is_locked) return true;
+
   if (!outline) return false;
 
-  // Check if view exists in shareWithMe
-  const shareWithMeView = findViewInShareWithMe(outline, viewId);
+  // A locked page is read-only for everyone until it is unlocked. The outline
+  // includes the hidden "Shared with me" space, so findView also resolves views
+  // shared with the current user.
+  const view = findView(outline, viewId);
 
-  if (shareWithMeView?.access_level !== undefined) {
-    // If found in shareWithMe, check access level
-    return shareWithMeView.access_level <= AccessLevel.ReadAndComment;
+  if (view?.is_locked) return true;
+
+  // Resolve the effective shared access level, inheriting from the nearest
+  // ancestor inside the "Shared with me" space. This makes pages inside a
+  // View-only private space read-only even though the page itself carries no
+  // explicit access level.
+  const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+  if (sharedAccessLevel !== undefined) {
+    return sharedAccessLevel <= AccessLevel.ReadAndComment;
   }
 
-  // If not found in shareWithMe, default is false (editable)
+  // If not part of the shared-with-me space, default is false (editable)
   return false;
 }
 
@@ -81,16 +105,19 @@ export function useViewOperations() {
     };
   }, [eventEmitter]);
 
-  const { resolveCollabObjectId, getViewIdFromDatabaseId } = useDatabaseIdentity({
+  const { resolveCollabObjectId, getDatabaseIdForViewId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
     databaseStorageId,
     registerSyncContext,
   });
 
   // Check if view should be readonly based on access permissions
-  const getViewReadOnlyStatusFromOutline = useCallback((viewId: string, outline?: View[]) => {
-    return getViewReadOnlyStatus(viewId, outline);
-  }, []);
+  const getViewReadOnlyStatusFromOutline = useCallback(
+    (viewId: string, outline?: View[], fallbackView?: View | null) => {
+      return getViewReadOnlyStatus(viewId, outline, fallbackView);
+    },
+    []
+  );
 
   /**
    * Load view document WITHOUT binding sync.
@@ -103,13 +130,30 @@ export function useViewOperations() {
    * Call bindViewSync() AFTER render to start WebSocket sync.
    */
   const loadView = useCallback(
-    async (viewId: string, isSubDocument = false, loadAwareness = false, outline?: View[]) => {
+    async (
+      viewId: string,
+      isSubDocument = false,
+      loadAwareness = false,
+      outline?: View[],
+      options?: LoadViewOptions
+    ) => {
       try {
         if (!currentWorkspaceId) {
           throw new Error('Workspace not found');
         }
 
-        const view = findView(outline || [], viewId);
+        let view = findView(outline || [], viewId);
+
+        if (!view && !isSubDocument && !options?.databaseId) {
+          try {
+            view = await ViewService.get(currentWorkspaceId, viewId);
+          } catch (e) {
+            Log.debug('[useViewOperations] failed to fetch view metadata before load', {
+              viewId,
+              error: e,
+            });
+          }
+        }
 
         // Check for AIChat early
         if (view?.layout === ViewLayout.AIChat) {
@@ -127,24 +171,50 @@ export function useViewOperations() {
           })();
         }
 
+        const layout = isSubDocument ? ViewLayout.Document : view?.layout;
+        const databaseIdHint = !isSubDocument
+          ? options?.databaseId ??
+            (
+              layout !== undefined && isDatabaseLayout(layout)
+                ? getDatabaseIdFromExtra(view)
+                : undefined
+            )
+          : undefined;
+
         // Use view-loader to open document (handles cache vs fetch)
-        const { doc, collabType: detectedCollabType } = await openView(
+        let { doc, collabType: detectedCollabType } = await openView(
           currentWorkspaceId,
           viewId,
-          isSubDocument ? ViewLayout.Document : view?.layout
+          layout,
+          { databaseId: databaseIdHint }
         );
 
         // Use detected collab type, or override for sub-documents
-        const collabType = isSubDocument ? Types.Document : detectedCollabType;
+        let collabType = isSubDocument ? Types.Document : detectedCollabType;
 
         Log.debug('[useViewOperations] loadView complete (sync not bound)', {
           viewId,
           layout: view?.layout,
           collabType,
+          databaseIdHint,
           isSubDocument,
         });
 
-        const collabObjectId = await resolveCollabObjectId(doc, viewId, collabType);
+        let collabObjectId = await resolveCollabObjectId(doc, viewId, collabType, {
+          databaseIdHint,
+          updateDocGuid: !!databaseIdHint,
+        });
+
+        if (collabType === Types.Database && !databaseIdHint && collabObjectId !== viewId) {
+          const canonical = await openView(currentWorkspaceId, viewId, layout, { databaseId: collabObjectId });
+
+          doc = canonical.doc;
+          detectedCollabType = canonical.collabType;
+          collabType = isSubDocument ? Types.Document : detectedCollabType;
+          collabObjectId = await resolveCollabObjectId(doc, viewId, collabType, {
+            databaseIdHint: collabObjectId,
+          });
+        }
 
         // Store metadata on doc for deferred sync binding
         const docWithMeta = doc as YDocWithMeta;
@@ -327,6 +397,7 @@ export function useViewOperations() {
           case ViewLayout.Grid:
           case ViewLayout.Board:
           case ViewLayout.Calendar:
+          case ViewLayout.Chart:
             searchParams.set('r', blockId);
             break;
           default:
@@ -413,6 +484,7 @@ export function useViewOperations() {
     bindViewSync,
     toView,
     awarenessMap,
+    getDatabaseIdForViewId,
     getViewIdFromDatabaseId,
     getViewReadOnlyStatus: getViewReadOnlyStatusFromOutline,
     getCollabHistory,

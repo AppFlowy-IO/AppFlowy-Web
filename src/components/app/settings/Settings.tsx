@@ -1,56 +1,56 @@
-import { Button, Dialog } from '@mui/material';
+import { Dialog } from '@mui/material';
 import React, { useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { SettingMenuItem } from '@/application/types';
-import { ReactComponent as SettingsIcon } from '@/assets/settings.svg';
+import { AccountAppPanel } from '@/components/app/settings/AccountAppPanel';
+import { ManageDataPanel } from '@/components/app/settings/ManageDataPanel';
+import { MembersPanel } from '@/components/app/settings/MembersPanel';
+import { ProfilePanel } from '@/components/app/settings/ProfilePanel';
 import SettingMenu from '@/components/app/settings/SettingMenu';
 
-export function Settings() {
-  const { t } = useTranslation();
-  const [open, setOpen] = React.useState(false);
-  const [search, setSearch] = useSearchParams();
+interface SettingsDialogProps {
+  open: boolean;
+  onClose: () => void;
+  onRequestOpen?: () => void;
+}
 
+export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogProps) {
+  const [search, setSearch] = useSearchParams();
   const [selectedItem, setSelectedItem] = React.useState<SettingMenuItem>(SettingMenuItem.ACCOUNT);
 
   useEffect(() => {
-    const item = search.get('setting') as SettingMenuItem;
+    const item = search.get('setting') as SettingMenuItem | null;
 
     if (item) {
-      setOpen(true);
       setSelectedItem(item);
+      onRequestOpen?.();
       setSearch((prev) => {
         prev.delete('setting');
         return prev;
       });
     }
-  }, [search, setSearch]);
+  }, [search, setSearch, onRequestOpen]);
 
   return (
-    <>
-      <Button
-        size={'small'}
-        className={'justify-start px-2'}
-        color={'inherit'}
-        onClick={() => {
-          setOpen(true);
-        }}
-        startIcon={<SettingsIcon />}
-      >
-        {t('settings.title')}
-      </Button>
-      <Dialog
-        classes={{
-          paper: 'w-[700px] flex bg-background-primary max-w-[90vw] max-h-[90vh] h-[600px] overflow-y-auto',
-        }}
-        open={open}
-        onClose={() => setOpen(false)}
-      >
-        <SettingMenu onSelectItem={setSelectedItem} selectedItem={selectedItem} />
-      </Dialog>
-    </>
+    <Dialog
+      classes={{
+        paper:
+          'w-[860px] h-[640px] max-w-[92vw] max-h-[90vh] flex flex-row overflow-hidden bg-surface-primary',
+      }}
+      open={open}
+      onClose={onClose}
+      PaperProps={{ 'data-testid': 'settings-dialog' }}
+    >
+      <SettingMenu onSelectItem={setSelectedItem} selectedItem={selectedItem} />
+      <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>
+        {selectedItem === SettingMenuItem.ACCOUNT && <AccountAppPanel />}
+        {selectedItem === SettingMenuItem.PROFILE && <ProfilePanel />}
+        {selectedItem === SettingMenuItem.MEMBERS && <MembersPanel />}
+        {selectedItem === SettingMenuItem.MANAGE_DATA && <ManageDataPanel />}
+      </div>
+    </Dialog>
   );
 }
 
-export default Settings;
+export default SettingsDialog;

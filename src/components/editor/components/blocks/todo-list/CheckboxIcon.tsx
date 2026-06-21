@@ -4,6 +4,7 @@ import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
+import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { TodoListNode } from '@/components/editor/editor.type';
@@ -21,6 +22,7 @@ function CheckboxIcon({ block, className }: { block: TodoListNode; className: st
 
       e.stopPropagation();
       e.preventDefault();
+      ensureValidSelection(editor);
       editor.collapse({
         edge: 'end',
       });

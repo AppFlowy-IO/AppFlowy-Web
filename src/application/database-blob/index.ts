@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { getCachedProviderDoc, openCollabDBWithProvider } from '@/application/db';
+import { getCachedProviderDoc, openCollabDBWithProvider, openRowCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { YDoc, YjsEditorKey } from '@/application/types';
@@ -24,6 +24,11 @@ type RowDocSeed = {
 
 type PrefetchOptions = {
   priorityRowIds?: string[];
+  /**
+   * Fetch a complete row seed set even when a cached RID exists. Filtered and
+   * sorted views need row data for the full view, not only recent changes.
+   */
+  forceFullSync?: boolean;
   /** Called immediately after seeds are cached (before IndexedDB persist). */
   onSeedsReady?: () => void;
 };
@@ -37,12 +42,21 @@ type SharedPrefetchEntry = {
   promise?: Promise<database_blob.DatabaseBlobDiffResponse>;
 };
 
+type FetchDiffResult = {
+  diff: database_blob.DatabaseBlobDiffResponse;
+  ready: boolean;
+};
+
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
 const MAX_ROW_DOC_SEEDS = 2000;
 const MAX_ROW_DOC_SEEDS_LOOKUP = 10000;
+const BLOB_DIFF_PENDING_RETRIES = 1;
+const BLOB_DIFF_DEFAULT_RETRY_MS = 1000;
+const BLOB_DIFF_MAX_RETRY_MS = 5000;
 
 const readyStatus = database_blob.DiffStatus.READY;
+const pendingStatus = database_blob.DiffStatus.PENDING;
 const sharedPrefetchEntries = new Map<string, SharedPrefetchEntry>();
 
 function ridCacheKey(databaseId: string) {
@@ -50,7 +64,28 @@ function ridCacheKey(databaseId: string) {
 }
 
 function sharedPrefetchKey(workspaceId: string, databaseId: string) {
-  return `${workspaceId}:${databaseId}`;
+  return `${workspaceId}:${databaseId}:delta`;
+}
+
+function fullSharedPrefetchKey(workspaceId: string, databaseId: string) {
+  return `${workspaceId}:${databaseId}:full`;
+}
+
+function sharedPrefetchKeyForOptions(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
+  return options?.forceFullSync ? fullSharedPrefetchKey(workspaceId, databaseId) : sharedPrefetchKey(workspaceId, databaseId);
+}
+
+function sharedPrefetchEntryMatchesDatabase(sharedKey: string, databaseId: string) {
+  return sharedKey.includes(`:${databaseId}:`) || sharedKey.endsWith(`:${databaseId}`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function retryDelayMs(retryAfterSecs?: number | null): number {
+  if (!retryAfterSecs || retryAfterSecs <= 0) return BLOB_DIFF_DEFAULT_RETRY_MS;
+  return Math.min(retryAfterSecs * 1000, BLOB_DIFF_MAX_RETRY_MS);
 }
 
 function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOptions) {
@@ -271,11 +306,10 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
 
 export function clearDatabaseRowDocSeedCache(databaseId: string) {
   const prefix = `${databaseId}_rows_`;
-  const sharedPrefetchSuffix = `:${databaseId}`;
   let hasUnsettledPrefetch = false;
 
   for (const [key, entry] of sharedPrefetchEntries.entries()) {
-    if (key.endsWith(sharedPrefetchSuffix)) {
+    if (sharedPrefetchEntryMatchesDatabase(key, databaseId)) {
       entry.onSeedsReadyCallbacks.clear();
 
       if (entry.promise && !entry.settled) {
@@ -307,7 +341,7 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
   }
 
   for (const [key, entry] of sharedPrefetchEntries.entries()) {
-    if (key.endsWith(sharedPrefetchSuffix)) {
+    if (sharedPrefetchEntryMatchesDatabase(key, databaseId)) {
       entry.onSeedsReadyCallbacks.clear();
       sharedPrefetchEntries.delete(key);
     }
@@ -534,7 +568,11 @@ function inspectDocRowData(doc: YDoc, objectId: string): {
   }
 }
 
-async function applyCollabUpdate(objectId: string, docState: database_blob.ICollabDocState) {
+async function applyCollabUpdate(
+  objectId: string,
+  docState: database_blob.ICollabDocState,
+  options?: { useSharedRowStorage?: boolean }
+) {
   const state = getDocState(docState);
 
   if (!state) {
@@ -573,7 +611,9 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
   });
 
   const openStartedAt = Date.now();
-  const { doc, provider } = await openCollabDBWithProvider(objectId, { skipCache: true });
+  const { doc, provider } = options?.useSharedRowStorage
+    ? await openRowCollabDBWithProvider(objectId, { skipCache: true })
+    : await openCollabDBWithProvider(objectId, { skipCache: true });
 
   const beforeState = inspectDocRowData(doc, objectId);
 
@@ -642,7 +682,7 @@ async function applyRowUpdate(
       cacheRowDocSeed(rowKey, rowDocState);
     }
 
-    await applyCollabUpdate(rowKey, rowDocState);
+    await applyCollabUpdate(rowId, rowDocState, { useSharedRowStorage: true });
   }
 
   const doc = update.document;
@@ -747,8 +787,48 @@ async function applyDiff(
   });
 }
 
-async function fetchReadyDiff(workspaceId: string, databaseId: string) {
-  const cachedRid = readCachedRid(databaseId);
+async function persistDiffToIndexedDB(
+  databaseId: string,
+  diff: database_blob.DatabaseBlobDiffResponse,
+  options: { source: string; writeRid: boolean }
+) {
+  const applyStartedAt = Date.now();
+
+  try {
+    await applyDiff(databaseId, diff, { seedCache: false });
+    Log.debug('[Database] blob diff persisted to IndexedDB', {
+      databaseId,
+      source: options.source,
+      durationMs: Date.now() - applyStartedAt,
+      ...summarizeDiff(diff),
+    });
+
+    if (!options.writeRid) return;
+
+    const maxRid = maxRidFromDiff(diff);
+
+    if (maxRid) {
+      writeCachedRid(databaseId, maxRid);
+      Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
+    }
+  } catch (error) {
+    Log.warn('[Database] blob diff persist failed', {
+      databaseId,
+      source: options.source,
+      error,
+    });
+  }
+}
+
+async function fetchReadyDiff(
+  workspaceId: string,
+  databaseId: string,
+  options?: {
+    forceFullSync?: boolean;
+    onPendingDiff?: (diff: database_blob.DatabaseBlobDiffResponse, attempt: number) => void;
+  }
+): Promise<FetchDiffResult> {
+  const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
   const request = database_blob.DatabaseBlobDiffRequest.create({
     maxKnownRid: cachedRid ? { timestamp: cachedRid.timestamp, seqNo: cachedRid.seqNo } : undefined,
     version: 1,
@@ -757,25 +837,63 @@ async function fetchReadyDiff(workspaceId: string, databaseId: string) {
   Log.debug('[Database] blob diff request', {
     workspaceId,
     databaseId,
+    forceFullSync: options?.forceFullSync ?? false,
     maxKnownRid: cachedRid ?? null,
   });
 
-  const startedAt = Date.now();
-  const diff = await databaseBlobDiff(workspaceId, databaseId, request);
+  const firstAttemptStartedAt = Date.now();
+  const maxAttempts = BLOB_DIFF_PENDING_RETRIES + 1;
 
-  Log.debug('[Database] blob diff response', {
-    databaseId,
-    status: diff.status,
-    retryAfterSecs: diff.retryAfterSecs ?? null,
-    durationMs: Date.now() - startedAt,
-    ...summarizeDiff(diff),
-  });
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptStartedAt = Date.now();
+    const diff = await databaseBlobDiff(workspaceId, databaseId, request);
 
-  if (diff.status !== readyStatus) {
-    throw new Error('database blob diff is not ready');
+    Log.debug('[Database] blob diff response', {
+      databaseId,
+      status: diff.status,
+      retryAfterSecs: diff.retryAfterSecs ?? null,
+      attempt,
+      durationMs: Date.now() - attemptStartedAt,
+      totalDurationMs: Date.now() - firstAttemptStartedAt,
+      ...summarizeDiff(diff),
+    });
+
+    if (diff.status === readyStatus) {
+      return { diff, ready: true };
+    }
+
+    if (diff.status !== pendingStatus) {
+      throw new Error(
+        `database blob diff failed: status=${diff.status}, attempts=${attempt}, message=${diff.message ?? 'none'}`
+      );
+    }
+
+    options?.onPendingDiff?.(diff, attempt);
+
+    if (attempt === maxAttempts) {
+      Log.warn('[Database] blob diff still pending; falling back to row sync', {
+        databaseId,
+        attempts: attempt,
+        message: diff.message ?? null,
+        ...summarizeDiff(diff),
+      });
+      return { diff, ready: false };
+    }
+
+    const delayMs = retryDelayMs(diff.retryAfterSecs);
+
+    Log.debug('[Database] blob diff pending; retrying', {
+      databaseId,
+      attempt,
+      nextAttempt: attempt + 1,
+      delayMs,
+      message: diff.message ?? null,
+    });
+
+    await sleep(delayMs);
   }
 
-  return diff;
+  throw new Error('database blob diff is not ready');
 }
 
 export async function prefetchDatabaseBlobDiff(
@@ -783,12 +901,16 @@ export async function prefetchDatabaseBlobDiff(
   databaseId: string,
   options?: PrefetchOptions
 ) {
-  const sharedKey = sharedPrefetchKey(workspaceId, databaseId);
+  const sharedKey = sharedPrefetchKeyForOptions(workspaceId, databaseId, options);
   const existingEntry = sharedPrefetchEntries.get(sharedKey);
 
-  if (existingEntry?.promise && !existingEntry.settled) {
-    applyPrefetchOptions(existingEntry, options);
-    return existingEntry.promise;
+  if (existingEntry?.promise) {
+    const canReuseSettledFullSeed = Boolean(options?.forceFullSync && existingEntry.settled && existingEntry.seedsReady);
+
+    if (!existingEntry.settled || canReuseSettledFullSeed) {
+      applyPrefetchOptions(existingEntry, options);
+      return existingEntry.promise;
+    }
   }
 
   if (existingEntry) {
@@ -804,14 +926,17 @@ export async function prefetchDatabaseBlobDiff(
 
   applyPrefetchOptions(entry, options);
 
-  const promise = (async () => {
-    const diff = await fetchReadyDiff(workspaceId, databaseId);
+  let pendingPersistQueue: Promise<void> = Promise.resolve();
+
+  const seedDiff = (diff: database_blob.DatabaseBlobDiffResponse, source: string) => {
     const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
       priorityRowIds: Array.from(entry.priorityRowIds),
     });
 
     Log.debug('[Database] blob seed cache prepared', {
       databaseId,
+      source,
+      forceFullSync: options?.forceFullSync ?? false,
       ...seedSummary,
       seedCount: rowDocSeedCache.size,
       lookupCount: rowDocSeedLookup.size,
@@ -820,28 +945,45 @@ export async function prefetchDatabaseBlobDiff(
     // Signal that seeds are available before the slow IndexedDB persist.
     notifySeedsReady(entry);
 
-    const applyStartedAt = Date.now();
+    return seedSummary;
+  };
 
-    try {
-      await applyDiff(databaseId, diff, { seedCache: false });
-      Log.debug('[Database] blob diff persisted to IndexedDB', {
-        databaseId,
-        durationMs: Date.now() - applyStartedAt,
-        ...summarizeDiff(diff),
-      });
+  const handlePendingDiff = (diff: database_blob.DatabaseBlobDiffResponse, attempt: number) => {
+    const summary = summarizeDiff(diff);
 
-      const maxRid = maxRidFromDiff(diff);
+    if (summary.rowDocStates === 0) return;
 
-      if (maxRid) {
-        writeCachedRid(databaseId, maxRid);
-        Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
+    seedDiff(diff, 'pending');
+
+    pendingPersistQueue = pendingPersistQueue.then(() =>
+      persistDiffToIndexedDB(databaseId, diff, {
+        source: `pending attempt ${attempt}`,
+        writeRid: false,
+      })
+    );
+  };
+
+  const promise = (async () => {
+    const { diff, ready } = await fetchReadyDiff(workspaceId, databaseId, {
+      forceFullSync: options?.forceFullSync,
+      onPendingDiff: handlePendingDiff,
+    });
+
+    if (!ready) {
+      if (!entry.seedsReady) {
+        notifySeedsReady(entry);
       }
-    } catch (error) {
-      Log.warn('[Database] blob diff persist failed', {
-        databaseId,
-        error,
-      });
+
+      await pendingPersistQueue;
+      return diff;
     }
+
+    seedDiff(diff, 'ready');
+    await pendingPersistQueue;
+    await persistDiffToIndexedDB(databaseId, diff, {
+      source: options?.forceFullSync ? 'ready full' : 'ready delta',
+      writeRid: !options?.forceFullSync,
+    });
 
     return diff;
   })().finally(() => {

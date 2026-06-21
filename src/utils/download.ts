@@ -3,6 +3,10 @@ import download from 'downloadjs';
 import { getTokenParsed } from '@/application/session/token';
 import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
 
+export function downloadBlob(blob: Blob, filename: string): void {
+  download(blob, filename);
+}
+
 export async function downloadFile(url: string, filename?: string): Promise<void> {
   try {
     let response: Response;

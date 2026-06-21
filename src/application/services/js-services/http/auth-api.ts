@@ -1,9 +1,11 @@
 import { AuthProvider } from '@/application/types';
 import { Log } from '@/utils/log';
 
-import { refreshToken } from './gotrue';
+import { verifyAndRefreshGoTrueToken } from './gotrue';
 import { parseGoTrueErrorFromUrl } from './gotrue-error';
 import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
+
+export { verifyToken } from './cloud-auth';
 
 export interface ServerInfo {
   enable_page_history: boolean;
@@ -53,52 +55,14 @@ export async function signInWithUrl(url: string) {
 
   Log.info('[Auth] signInWithUrl: tokens extracted from callback URL');
 
-  // CRITICAL: Clear old token BEFORE processing new OAuth tokens
-  // This prevents axios interceptor from trying to auto-refresh the old expired token
-  // during verifyToken() API call, which would cause a race condition where:
-  // 1. verifyToken() makes API call with NEW token in URL
-  // 2. Axios interceptor sees OLD token in localStorage, tries to refresh it
-  // 3. Old token refresh fails → invalidToken() called → session invalidated
-  // 4. Meanwhile, OAuth flow is trying to save NEW token → conflicts with invalidation
-  // By clearing the old token first, we ensure axios interceptor skips auto-refresh
-  const hadOldToken = !!localStorage.getItem('token');
-
-  if (hadOldToken) {
-    Log.info('[Auth] signInWithUrl: clearing old token to prevent race condition');
-    localStorage.removeItem('token');
-  }
-
-  Log.info('[Auth] signInWithUrl: verifying token with AppFlowy Cloud');
-  try {
-    await verifyToken(accessToken);
-  } catch (e) {
-    Log.error('[Auth] signInWithUrl: verifyToken failed', { message: (e as Error)?.message });
-    return Promise.reject({
-      code: -1,
-      message: 'Verify token failed',
-    });
-  }
-
-  Log.info('[Auth] signInWithUrl: refreshing token');
-  try {
-    await refreshToken(refresh_token);
-  } catch (e) {
-    Log.error('[Auth] signInWithUrl: refreshToken failed', { message: (e as Error)?.message });
-    return Promise.reject({
-      code: -1,
-      message: 'Refresh token failed',
-    });
-  }
-
-  Log.info('[Auth] signInWithUrl: OAuth callback processed successfully');
-}
-
-export async function verifyToken(accessToken: string) {
-  const url = `/api/user/verify/${accessToken}`;
-
-  return executeAPIRequest<{ is_new: boolean }>(() =>
-    getAxios()?.get<APIResponse<{ is_new: boolean }>>(url)
-  );
+  return verifyAndRefreshGoTrueToken({
+    accessToken,
+    refreshToken: refresh_token,
+    logContext: 'signInWithUrl',
+    verifyErrorMessage: 'Verify token failed',
+    refreshErrorMessage: 'Refresh token failed',
+    useVerifyErrorMessage: false,
+  });
 }
 
 export async function getServerInfo(): Promise<ServerInfo> {
@@ -106,7 +70,11 @@ export async function getServerInfo(): Promise<ServerInfo> {
 
   try {
     return await executeAPIRequest<ServerInfo>(() =>
-      getAxios()?.get<APIResponse<ServerInfo>>(url)
+      getAxios()?.get<APIResponse<ServerInfo>>(url, {
+        headers: {
+          'x-platform': 'web',
+        },
+      })
     );
   } catch (error) {
     console.warn('Server info API returned error:', (error as APIError)?.message);

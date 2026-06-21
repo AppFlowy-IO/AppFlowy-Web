@@ -10,6 +10,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
 import { BlockPopoverProvider } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { useDecorate } from '@/components/editor/components/blocks/code/useDecorate';
+import { useFindReplaceDecorations } from '@/components/editor/components/find-replace/FindReplaceContext';
 import { Leaf } from '@/components/editor/components/leaf';
 import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
@@ -64,6 +65,7 @@ function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Rang
 const EditorEditable = () => {
   const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
   const { decorateState } = useEditorLocalState();
+  const { getMatchDecorations } = useFindReplaceDecorations();
   const editor = useSlate();
 
   const codeDecorate = useDecorate(editor);
@@ -74,22 +76,27 @@ const EditorEditable = () => {
         class_name: string;
       })[] = [];
 
-      if (!decorateState) return [];
+      if (decorateState) {
+        Object.values(decorateState).forEach((state) => {
+          const intersection = Range.intersection(state.range, Editor.range(editor, path));
 
-      Object.values(decorateState).forEach((state) => {
-        const intersection = Range.intersection(state.range, Editor.range(editor, path));
+          if (intersection) {
+            highlightRanges.push({
+              ...intersection,
+              class_name: state.class_name,
+            });
+          }
+        });
+      }
 
-        if (intersection) {
-          highlightRanges.push({
-            ...intersection,
-            class_name: state.class_name,
-          });
-        }
-      });
+      // Find & replace match highlights (already scoped to this text node's path).
+      for (const match of getMatchDecorations(path)) {
+        highlightRanges.push(match as Range & { class_name: string });
+      }
 
       return highlightRanges;
     },
-    [editor, decorateState]
+    [editor, decorateState, getMatchDecorations]
   );
   const renderElement = useCallback((props: RenderElementProps) => {
     return (

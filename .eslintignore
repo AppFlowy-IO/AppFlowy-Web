@@ -9,3 +9,4 @@ vite.config.ts
 coverage/
 src/proto/**/*
 cypress/e2e/**
+scripts/export-indexeddb-to-zip.js

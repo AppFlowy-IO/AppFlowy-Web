@@ -7,7 +7,9 @@ import * as Y from 'yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
+import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { BlockType, CollabOrigin, YDoc } from '@/application/types';
+import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { withPlugins } from '@/components/editor/plugins';
@@ -37,7 +39,12 @@ import { getTextCount } from '@/utils/word';
 }
 
 const defaultInitialValue: Descendant[] = [];
-const DATABASE_BLOCK_TYPES = new Set([BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock]);
+const DATABASE_BLOCK_TYPES = new Set([
+  BlockType.GridBlock,
+  BlockType.BoardBlock,
+  BlockType.CalendarBlock,
+  BlockType.ChartBlock,
+]);
 const DATABASE_VIEW_DELETION_GRACE_MS = 1500;
 
 type DatabaseBlockInfo = {
@@ -245,6 +252,7 @@ function CollaborativeEditor({
   );
 
   const handleSlateChange = useCallback(() => {
+    ensureValidSelection(editor);
     handleDatabaseBlockLifecycle(editor);
   }, [editor, handleDatabaseBlockLifecycle]);
 
@@ -316,7 +324,9 @@ function CollaborativeEditor({
 
   return (
     <Slate key={key} editor={editor} initialValue={defaultInitialValue} onChange={handleSlateChange}>
-      <EditorEditable />
+      <FindReplaceProvider>
+        <EditorEditable />
+      </FindReplaceProvider>
     </Slate>
   );
 }

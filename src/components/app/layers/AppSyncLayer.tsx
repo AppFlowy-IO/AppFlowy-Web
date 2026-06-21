@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -53,35 +53,37 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   const broadcastChannel = useBroadcastChannel(`workspace:${currentWorkspaceId!}`);
 
   // Initialize sync context for collaborative editing
-  const { registerSyncContext, lastUpdatedCollab, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
+  const { registerSyncContext, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
     webSocket,
     broadcastChannel,
     eventEmitterRef.current,
     currentWorkspaceId!
   );
 
-  // Handle WebSocket reconnection
-  const reconnectWebSocket = useCallback(() => {
-    webSocket.reconnect();
-  }, [webSocket]);
+  // Handle WebSocket reconnection. Depend on the stable `reconnect` function,
+  // not the webSocket container whose identity changes per incoming message.
+  const webSocketReconnect = webSocket.reconnect;
 
   // Set up WebSocket reconnection event listener
   useEffect(() => {
     const currentEventEmitter = eventEmitterRef.current;
 
-    currentEventEmitter.on(APP_EVENTS.RECONNECT_WEBSOCKET, reconnectWebSocket);
+    currentEventEmitter.on(APP_EVENTS.RECONNECT_WEBSOCKET, webSocketReconnect);
 
     return () => {
-      currentEventEmitter.off(APP_EVENTS.RECONNECT_WEBSOCKET, reconnectWebSocket);
+      currentEventEmitter.off(APP_EVENTS.RECONNECT_WEBSOCKET, webSocketReconnect);
     };
-  }, [reconnectWebSocket]);
+  }, [webSocketReconnect]);
 
-  // Emit WebSocket status changes
+  // Emit WebSocket status on actual readyState transitions only — not on every
+  // webSocket identity change (which happens for each incoming message).
+  const webSocketReadyState = webSocket.readyState;
+
   useEffect(() => {
     const currentEventEmitter = eventEmitterRef.current;
 
-    currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocket.readyState);
-  }, [webSocket]);
+    currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocketReadyState);
+  }, [webSocketReadyState]);
 
   // Wire the persistent sync_outbox drain to this WebSocket. The drain loop
   // runs whenever a record is enqueued AND the socket is OPEN. The drain is
@@ -109,10 +111,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   // unrelated re-render (e.g. WS status, BC message, child remount) just
   // burns a localStorage read + JSON.parse. Token-refresh still flows in
   // because `isAuthenticated` gates AppSyncLayer's mount via the auth layer.
-  const currentUserId = useMemo(
-    () => (isAuthenticated ? getTokenParsed()?.user?.id ?? null : null),
-    [isAuthenticated]
-  );
+  const currentUserId = useMemo(() => (isAuthenticated ? getTokenParsed()?.user?.id ?? null : null), [isAuthenticated]);
 
   useEffect(() => {
     if (currentUserId && currentWorkspaceId) {
@@ -227,9 +226,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       }
     };
 
-    const handleWorkspaceMemberProfileChange = async (
-      profileChange: notification.IWorkspaceMemberProfileChanged
-    ) => {
+    const handleWorkspaceMemberProfileChange = async (profileChange: notification.IWorkspaceMemberProfileChanged) => {
       if (!currentWorkspaceId) {
         console.warn('No current workspace ID available');
         return;
@@ -298,9 +295,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
                   ...baseProfile,
                   name: profileChange.name ?? baseProfile.name,
                   avatar_url:
-                    profileChange.avatarUrl !== undefined
-                      ? profileChange.avatarUrl || null
-                      : baseProfile.avatar_url,
+                    profileChange.avatarUrl !== undefined ? profileChange.avatarUrl || null : baseProfile.avatar_url,
                   cover_image_url:
                     profileChange.coverImageUrl !== undefined
                       ? profileChange.coverImageUrl || null
@@ -378,21 +373,21 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
     };
   }, [isAuthenticated, currentWorkspaceId]);
 
-  // Context value for synchronization layer
+  // Context value for synchronization layer. The webSocket/broadcastChannel
+  // transports are intentionally excluded: their identity changes on every
+  // incoming message and would re-render all consumers per message. Everything
+  // exposed here is referentially stable across messages.
   const syncContextValue: SyncInternalContextType = useMemo(
     () => ({
-      webSocket,
-      broadcastChannel,
       registerSyncContext,
       revertCollabVersion,
       eventEmitter: eventEmitterRef.current,
       awarenessMap,
-      lastUpdatedCollab,
       flushAllSync,
       syncAllToServer,
       scheduleDeferredCleanup,
     }),
-    [webSocket, broadcastChannel, registerSyncContext, revertCollabVersion, awarenessMap, lastUpdatedCollab, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
+    [registerSyncContext, revertCollabVersion, awarenessMap, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
   );
 
   return <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>;

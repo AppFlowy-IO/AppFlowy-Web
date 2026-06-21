@@ -17,7 +17,7 @@ export interface TextCell extends Cell {
 }
 
 export interface AICell extends Cell {
-  fieldType: FieldType.AISummaries | FieldType.AITranslations;
+  fieldType: FieldType.Summary | FieldType.Translate;
   data: string;
 }
 
@@ -87,7 +87,7 @@ export interface FileMediaCellDataItem {
 export type FileMediaCellData = FileMediaCellDataItem[];
 
 export interface FileMediaCell extends Cell {
-  fieldType: FieldType.FileMedia;
+  fieldType: FieldType.Media;
   data: FileMediaCellData;
 }
 

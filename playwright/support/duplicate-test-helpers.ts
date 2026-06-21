@@ -3,6 +3,7 @@ import {
   AddPageSelectors,
   BlockSelectors,
   HeaderSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   SlashCommandSelectors,
@@ -45,9 +46,7 @@ export function pageItemByExactText(page: Page, pageName: string, last: boolean 
 }
 
 export function directChildPageItems(page: Page, pageName: string, last: boolean = false): Locator {
-  return pageItemByExactText(page, pageName, last).locator(
-    ':scope > div:nth-child(2) > [data-testid="page-item"]:visible'
-  );
+  return pageItemByExactText(page, pageName, last).locator(itemDirectChildPageItems(true));
 }
 
 async function navigateToSidebarPageItem(
@@ -172,12 +171,15 @@ export async function duplicateCurrentPageViaHeader(page: Page): Promise<void> {
   await dupBtn.click();
 
   const blockingLoader = page.getByTestId('blocking-loader');
-  await blockingLoader.waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
+  const loaderAppeared = await blockingLoader
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
 
-  if ((await blockingLoader.count()) > 0) {
-    await expect(blockingLoader)
-      .toBeHidden({ timeout: 10000 })
-      .catch(() => undefined);
+  if (loaderAppeared || (await blockingLoader.count()) > 0) {
+    await expect(blockingLoader, 'Expected duplicate blocking loader to finish before opening the copy').toBeHidden({
+      timeout: 60000,
+    });
   }
 
   await page.waitForTimeout(2000);
@@ -254,7 +256,7 @@ export async function createChildDocumentUnder(
   await parentItem.locator('> div').first().getByTestId('inline-add-page').first().click({ force: true });
   const popover = page.getByTestId('view-actions-popover');
   await expect(popover).toBeVisible({ timeout: 10000 });
-  await popover.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // The ViewModal dialog opens for the newly created child document.
@@ -278,10 +280,57 @@ export function databaseBlocks(editor: Locator): Locator {
   return editor.locator(BlockSelectors.blockSelector('grid'));
 }
 
+async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
+  let slateEditor = editor.locator('[data-slate-editor="true"]').first();
+
+  if (!(await slateEditor.isVisible({ timeout: 3000 }).catch(() => false))) {
+    slateEditor = page.locator('[data-slate-editor="true"]').first();
+  }
+
+  await expect(slateEditor).toBeVisible({ timeout: 15000 });
+  await slateEditor.scrollIntoViewIfNeeded();
+  await slateEditor.click({ force: true });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const activeElement = document.activeElement as Element | null;
+
+          return Boolean(activeElement?.closest('[data-slate-editor="true"]'));
+        }),
+      { timeout: 5000, message: 'Waiting for editor focus' }
+    )
+    .toBe(true);
+}
+
 async function openSlashMenuInEditor(page: Page, editor: Locator, line: number = 0): Promise<void> {
   const blocks = databaseBlocks(editor);
   const blockCount = await blocks.count();
   const slashPanel = SlashCommandSelectors.slashPanel(page);
+
+  // Type "/" and wait for the slash panel, retrying the keystroke on slow CI
+  // where the first "/" can race editor focus and silently fail to open the
+  // menu. Each retry strips the stray "/" and re-focuses before trying again.
+  const typeSlashUntilPanel = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.keyboard.type('/', { delay: 50 });
+
+      if (
+        await slashPanel
+          .first()
+          .isVisible({ timeout: 2500 })
+          .catch(() => false)
+      ) {
+        return;
+      }
+
+      await page.keyboard.press('Backspace').catch(() => undefined);
+      await page.waitForTimeout(300);
+      await focusEditorForSlash(page, editor);
+    }
+
+    await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  };
 
   if (line > 0 && blockCount > 0) {
     // Position cursor after the last database block by clicking below it,
@@ -295,47 +344,19 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
       // Click just below the last database block
       await page.mouse.click(box.x + box.width / 2, box.y + box.height + 10);
     } else {
-      await editor.click({ force: true });
+      await focusEditorForSlash(page, editor);
     }
 
     await page.waitForTimeout(300);
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
-    await page.keyboard.type('/', { delay: 50 });
-
-    if (
-      !(await slashPanel
-        .first()
-        .isVisible()
-        .catch(() => false))
-    ) {
-      await page.waitForTimeout(300);
-      await page.keyboard.type('/', { delay: 50 });
-    }
-
-    await expect(slashPanel).toBeVisible({ timeout: 10000 });
-    return;
   } else {
-    await editor.click({ position: { x: 200, y: 100 }, force: true });
+    await focusEditorForSlash(page, editor);
+    await page.waitForTimeout(300);
   }
 
-  await page.waitForTimeout(300);
-  await page.keyboard.type('/', { delay: 50 });
-
-  if (
-    (await slashPanel.count()) === 0 ||
-    !(await slashPanel
-      .first()
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-    await page.keyboard.type('/', { delay: 50 });
-  }
-
-  await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  await typeSlashUntilPanel();
 }
 
 export async function insertInlineGridViaSlash(page: Page, docViewId: string, line: number = 0): Promise<void> {
@@ -381,6 +402,8 @@ export async function insertLinkedGridViaSlash(
 ): Promise<void> {
   const editor = editorForView(page, docViewId);
   await expect(editor).toBeVisible({ timeout: 15000 });
+  const initialBlockCount = await databaseBlocks(editor).count();
+  let lastError: unknown;
 
   // The database picker loads its list from the cached outline at open time.
   // If the outline hasn't propagated the renamed database yet, the picker will
@@ -414,8 +437,17 @@ export async function insertLinkedGridViaSlash(
         return;
       }
     } catch (e) {
-      if (attempt === 2) throw e;
-      // Fall through to cleanup + retry below
+      lastError = e;
+      // Fall through to success detection + cleanup below
+    }
+
+    if ((await databaseBlocks(editor).count()) > initialBlockCount) {
+      return;
+    }
+
+    if (attempt === 2) {
+      if (lastError) throw lastError;
+      break;
     }
 
     // Picker didn't appear or database not found — close any open popovers and
@@ -437,28 +469,121 @@ export async function insertLinkedGridViaSlash(
 export async function editFirstGridCell(page: Page, gridBlock: Locator, text: string): Promise<void> {
   const firstCell = gridBlock.locator('[data-testid^="grid-cell-"]').first();
   await expect(firstCell).toBeVisible({ timeout: 15000 });
-  await firstCell.click({ force: true });
-  await page.waitForTimeout(300);
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
+
+  // The grid-row-cell wrapper owns the activation click handler. Clicking the
+  // inner data-testid div relies on bubbling, which can be eaten on slow CI if
+  // the row is still hydrating, so assert the editor is actually mounted.
+
+  // Wait for the primary cell's row data to finish hydrating. PrimaryCell.tsx
+  // renders a CircularProgress with testid `primary-cell-loading-<rowId>`
+  // until the row's collab content is loaded; clicking before then has no
+  // effect because the editable TextCell isn't mounted yet.
+  await expect(firstCell.locator('[data-testid^="primary-cell-loading-"]')).toHaveCount(0, {
+    timeout: 30000,
+  });
+
+  // The activation click handler lives on the .grid-row-cell wrapper (see
+  // GridVirtualColumn.tsx). Resolve it directly via the DOM rather than an
+  // ancestor xpath. Playwright's `ancestor::` returns the outermost match
+  // even with `.first()`, which is the document root, not the wrapper.
+  const editingTextarea = firstCell.locator('textarea');
+
+  let entered = false;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const handle = await firstCell.elementHandle();
+    const wrapper = handle
+      ? await handle.evaluateHandle((el) => (el as HTMLElement).closest('.grid-row-cell') ?? el)
+      : null;
+    const wrapperElement = wrapper?.asElement();
+
+    if (wrapperElement) {
+      await wrapperElement.click({ force: true });
+    } else {
+      await firstCell.click({ force: true });
+    }
+
+    if (await editingTextarea.isVisible().catch(() => false)) {
+      entered = true;
+      break;
+    }
+
+    try {
+      await expect(editingTextarea).toBeVisible({ timeout: 3000 });
+      entered = true;
+      break;
+    } catch {
+      // Some browsers / cell types only enter edit mode on Enter after focus,
+      // not on raw click. Try that next.
+      await page.keyboard.press('Enter').catch(() => undefined);
+
+      if (await editingTextarea.isVisible({ timeout: 1500 }).catch(() => false)) {
+        entered = true;
+        break;
+      }
+
+      await page.waitForTimeout(500);
+    }
+  }
+
+  if (!entered) {
+    throw new Error(
+      'First grid cell did not enter edit mode after click. Is the grid readOnly, ' +
+        'still loading, or covered by another element?'
+    );
+  }
+
+  await editingTextarea.focus();
+  await editingTextarea.fill(text);
+  await expect(editingTextarea).toHaveValue(text, { timeout: 5000 });
+  await editingTextarea.press('Enter');
+  // After Enter, the textarea unmounts and the cell re-renders with the new
+  // value. Wait for the textarea to be gone so the next innerText() reads the
+  // committed display text, not stale empty editing markup.
+  await expect(editingTextarea).toHaveCount(0, { timeout: 10000 });
+  await expect
+    .poll(async () => firstGridCellText(gridBlock), {
+      timeout: 15000,
+      message: `Expected first grid cell to contain "${text}" after editing`,
+    })
+    .toContain(text);
 }
 
 export async function firstGridCellText(gridBlock: Locator): Promise<string> {
   return (await gridBlock.locator('[data-testid^="grid-cell-"]').first().innerText()).trim();
 }
 
-export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+async function selectFilterFieldForBlock(page: Page, gridBlock: Locator, fieldName: string): Promise<void> {
+  const fieldPattern = new RegExp(`^\\s*${escapeRegExp(fieldName)}\\s*$`);
 
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Name$/ })
-    .first()
-    .click({ force: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(gridBlock.getByTestId('database-grid')).toBeVisible({ timeout: 30000 });
+    await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+
+    const popoverContent = page.locator('[data-slot="popover-content"]').last();
+    await expect(popoverContent).toBeVisible({ timeout: 10000 });
+
+    const fieldItem = popoverContent.locator('[data-item-id]').filter({ hasText: fieldPattern }).first();
+
+    if (
+      await expect(fieldItem)
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      await fieldItem.click({ force: true });
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  throw new Error(`Filter field "${fieldName}" did not appear in the property picker`);
+}
+
+export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
+  await selectFilterFieldForBlock(page, gridBlock, 'Name');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
@@ -469,15 +594,7 @@ export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Loca
 }
 
 export async function addDoneCheckedFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
-
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Done$/ })
-    .first()
-    .click({ force: true });
+  await selectFilterFieldForBlock(page, gridBlock, 'Done');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });

@@ -34,22 +34,8 @@ export interface RegisterSyncContext {
   emit?: (reply: messages.IMessage) => void;
 }
 
-export type UpdateCollabInfo = {
-  /**
-   * The objectId of the Y.Doc instance.
-   * It must be a valid UUID v4.
-   */
-  objectId: string;
-  collabType: Types;
-  /**
-   * The timestamp when the corresponding update has been known to the server.
-   */
-  publishedAt?: Date;
-};
-
 export type SyncContextType = {
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
-  lastUpdatedCollab: UpdateCollabInfo | null;
   /**
    * Wait until all pending updates for every registered sync context have
    * been drained to the WebSocket from the persistent sync_outbox. Resolves

@@ -29,7 +29,7 @@ export function getFieldName (fieldType: FieldType) {
       return 'Checklist';
     case FieldType.Relation:
       return 'Relation';
-    case FieldType.FileMedia:
+    case FieldType.Media:
       return 'Files & media';
     case FieldType.URL:
       return 'URL';
@@ -37,9 +37,9 @@ export function getFieldName (fieldType: FieldType) {
       return 'Last modified';
     case FieldType.CreatedTime:
       return 'Created at';
-    case FieldType.AISummaries:
+    case FieldType.Summary:
       return 'AI Summary';
-    case FieldType.AITranslations:
+    case FieldType.Translate:
       return 'AI Translate';
     case FieldType.Person:
       return 'Person';

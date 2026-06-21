@@ -129,12 +129,20 @@ test.describe('Duplicate row with inline database', () => {
     const dupGridBlock = dbBlocks(dupEditor).first();
     await expect(dupGridBlock).toBeVisible({ timeout: 30000 });
 
-    // Edit the duplicated row's inline grid cell
-    await editCell(page, dupGridBlock, 'modified in duplicate');
-    await page.waitForTimeout(1000);
+    // Ensure the inline grid has finished hydrating before we try to edit:
+    // at least one data row must be present, and its primary cell must not be
+    // showing the loading spinner. Without this gate, the edit can target a
+    // not-yet-mounted TextCell and never commit to the duplicated inline DB.
+    await expect(dupGridBlock.locator('[data-testid^="grid-cell-"]').first()).toBeVisible({
+      timeout: 30000,
+    });
+    await expect(dupGridBlock.locator('[data-testid^="primary-cell-loading-"]')).toHaveCount(0, {
+      timeout: 30000,
+    });
 
-    // Verify the edit took effect
-    expect(await cellText(dupGridBlock)).toBe('modified in duplicate');
+    // editCell asserts the cell text becomes the typed value before returning,
+    // so a separate re-check would be redundant.
+    await editCell(page, dupGridBlock, 'modified in duplicate');
 
     // Navigate back to the grid
     await page.goBack();

@@ -24,7 +24,10 @@ export function FileMediaCell({
   rowId,
   readOnly,
 }: CellProps<FileMediaCellType>) {
-  const value = cell?.data;
+  const rawValue = cell?.data;
+  const value = useMemo(() => {
+    return Array.isArray(rawValue) ? rawValue.filter(Boolean) : [];
+  }, [rawValue]);
   const { workspaceId, databasePageId } = useDatabaseContext();
   const [openPreview, setOpenPreview] = React.useState(false);
   const previewIndexRef = React.useRef(0);

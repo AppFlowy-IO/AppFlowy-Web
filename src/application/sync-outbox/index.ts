@@ -110,25 +110,13 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
   };
 
   // Fan out to sibling tabs immediately, regardless of WebSocket state. The
-  // server send happens later through the outbox drain; the peer broadcast
-  // keeps multi-tab collaboration responsive during reconnect windows.
+  // server send uses the same update shape below when the WebSocket is open;
+  // the durable outbox row remains the fallback when it is not.
   const broadcast = drainConfig?.broadcast;
 
   if (broadcast && drainConfig?.workspaceId === workspaceId) {
-    const peerMessage: messages.IMessage = {
-      collabMessage: {
-        objectId: record.objectId,
-        collabType: record.collabType,
-        update: {
-          flags: FLAGS_LIB0V1,
-          payload: record.payload,
-          version: record.version ?? undefined,
-        } as collab.IUpdate,
-      },
-    };
-
     try {
-      broadcast(peerMessage);
+      broadcast(buildUpdateMessage(record));
     } catch (error) {
       Log.warn('[outbox] broadcast failed', { objectId: record.objectId, error });
     }
@@ -143,15 +131,59 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
 
   const addPromise: Promise<unknown> = db.sync_outbox.add(row as SyncOutboxRecord);
   const set = inflightAdds.get(record.objectId) ?? new Set<Promise<unknown>>();
+  let sentImmediately = false;
+
+  const activeConfig = drainConfig;
+
+  if (
+    activeConfig &&
+    activeConfig.userId === enqueueUserId &&
+    activeConfig.workspaceId === enqueueWorkspaceId &&
+    !isPurging &&
+    !suppressedObjects.has(record.objectId) &&
+    activeConfig.isReady()
+  ) {
+    try {
+      activeConfig.send(buildUpdateMessage(record));
+      sentImmediately = true;
+    } catch (error) {
+      Log.warn('[outbox] immediate send failed; durable row will drain', { objectId: record.objectId, error });
+    }
+  }
 
   set.add(addPromise);
   inflightAdds.set(record.objectId, set);
 
   addPromise
-    .then(() => {
+    .then(async (id) => {
+      if (sentImmediately) {
+        if (typeof id === 'number') {
+          try {
+            await db.sync_outbox.bulkDelete([id]);
+          } catch (error) {
+            Log.warn('[outbox] immediate-send cleanup failed; leaving row for drain', {
+              objectId: record.objectId,
+              id,
+              error,
+            });
+          }
+        }
+
+        // A live keystroke may have followed older queued records. Kick a
+        // normal drain so those older rows are reconciled instead of waiting
+        // for refresh/reconnect.
+        scheduleDrain(record.objectId);
+        return;
+      }
+
       scheduleDrain(record.objectId);
     })
     .catch((error) => {
+      if (sentImmediately) {
+        Log.warn('[outbox] enqueue failed after immediate send', { objectId: record.objectId, error });
+        return;
+      }
+
       Log.error('[outbox] enqueue failed', { objectId: record.objectId, error });
 
       // IDB write failed (quota exhausted, upgrade blocked, etc.). Fall back
@@ -458,6 +490,20 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string):
   return Array.from(ids);
 }
 
+function buildUpdateMessage(record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version'>): messages.IMessage {
+  return {
+    collabMessage: {
+      objectId: record.objectId,
+      collabType: record.collabType,
+      update: {
+        flags: FLAGS_LIB0V1,
+        payload: record.payload,
+        version: record.version ?? undefined,
+      } as collab.IUpdate,
+    },
+  };
+}
+
 function scheduleDrain(objectId: string) {
   if (!drainConfig) return;
 
@@ -521,7 +567,9 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     // swapped out (workspace change / sign-out) or is not ready (WS closed).
     const config = drainConfig;
 
-    if (!config || config !== initialConfig || !config.isReady()) return;
+    if (!config || config !== initialConfig) return;
+
+    if (!config.isReady()) return;
 
     const userId = config.userId;
     const workspaceId = config.workspaceId;
@@ -557,10 +605,12 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     // and will be picked up by a future drain.
     if (suppressedObjects.has(objectId) || drainConfig !== initialConfig || isPurging) return;
 
+    if (!config.isReady()) return;
+
     try {
       config.send(message);
     } catch (error) {
-      Log.warn('[outbox] send failed; leaving records for retry', { objectId, error });
+      Log.warn('[outbox] send failed; leaving records queued', { objectId, error });
       return;
     }
 

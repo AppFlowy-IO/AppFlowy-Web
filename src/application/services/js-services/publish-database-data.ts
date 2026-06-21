@@ -26,21 +26,27 @@ import { Log } from '@/utils/log';
  */
 export async function gatherDatabasePublishData(
   viewId: string,
-  visibleViewIds?: string[]
+  visibleViewIds?: string[],
+  databaseIdHint?: string | null
 ): Promise<Uint8Array> {
-  // 1. Open the database doc from cache (opened when user navigated to the view).
-  //    The doc is cached under the viewId key in the provider cache.
-  //    Its guid may have been changed to databaseId by resolveCollabObjectId,
-  //    but the data is in the doc opened via viewId.
-  const dbDoc = await openCollabDB(viewId);
-  const dbSharedRoot = dbDoc.getMap(YjsEditorKey.data_section);
-  const db = dbSharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+  // 1. Open the database doc from cache. New database views use the canonical
+  //    databaseId cache key; fall back to the legacy viewId cache for users who
+  //    have not reopened/migrated this database yet.
+  let dbDoc = await openCollabDB(databaseIdHint || viewId);
+  let dbSharedRoot = dbDoc.getMap(YjsEditorKey.data_section);
+  let db = dbSharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+
+  if (!db && databaseIdHint && databaseIdHint !== viewId) {
+    dbDoc = await openCollabDB(viewId);
+    dbSharedRoot = dbDoc.getMap(YjsEditorKey.data_section);
+    db = dbSharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+  }
 
   if (!db) {
     throw new Error(`Database not found in doc for view ${viewId}`);
   }
 
-  const actualDatabaseId = db.get(YjsDatabaseKey.id) || dbDoc.guid || viewId;
+  const actualDatabaseId = databaseIdHint || db.get(YjsDatabaseKey.id) || dbDoc.guid || viewId;
 
   // 2. Collect all unique row IDs from all views
   const rowIdSet = new Set<string>();

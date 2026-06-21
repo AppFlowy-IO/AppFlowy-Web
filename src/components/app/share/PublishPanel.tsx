@@ -1,8 +1,8 @@
-import { Button, CircularProgress, Divider, Typography } from '@mui/material';
+import { Button, CircularProgress, Divider, Tooltip, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ViewLayout } from '@/application/types';
+import { AccessLevel, ViewLayout } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
@@ -18,11 +18,15 @@ function PublishPanel({
   opened,
   onClose,
   onOpenPublishManage,
+  currentUserAccessLevel,
+  shareDetailsLoading,
 }: {
   viewId: string;
   onClose: () => void;
   opened: boolean;
   onOpenPublishManage?: () => void;
+  currentUserAccessLevel?: AccessLevel;
+  shareDetailsLoading?: boolean;
 }) {
   const { t } = useTranslation();
   const { publish, unpublish } = usePublishing();
@@ -36,8 +40,7 @@ function PublishPanel({
     isOwner,
     isPublisher,
     updatePublishConfig,
-  } =
-    useLoadPublishInfo(viewId);
+  } = useLoadPublishInfo(viewId);
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
   // Track publish/unpublish actions locally so the panel updates immediately,
@@ -160,6 +163,7 @@ function PublishPanel({
                 void updatePublishConfig({ comments_enabled: e.target.checked, view_id: viewId });
               }}
               size={'small'}
+              inputProps={{ 'data-testid': 'publish-comments-switch' } as React.InputHTMLAttributes<HTMLInputElement>}
             />
           </div>
           <div className={'flex  items-center justify-between gap-4 p-1.5 text-sm'}>
@@ -217,6 +221,24 @@ function PublishPanel({
   const renderUnpublished = useCallback(() => {
     if (!view) return null;
     const list = [view, ...view.children];
+    const isReadOnlyUser = currentUserAccessLevel === AccessLevel.ReadOnly;
+    const publishDisabled = isReadOnlyUser || shareDetailsLoading || publishLoading;
+    const publishButton = (
+      <Button
+        onClick={() => {
+          if (isReadOnlyUser) return;
+          void handlePublish();
+        }}
+        variant={'contained'}
+        className={'w-full'}
+        data-testid={'publish-confirm-button'}
+        color={'primary'}
+        disabled={publishDisabled}
+        startIcon={publishLoading ? <CircularProgress color={'inherit'} size={16} /> : undefined}
+      >
+        {t('shareAction.publish')}
+      </Button>
+    );
 
     return (
       <div className={'flex w-full flex-col gap-4'}>
@@ -271,21 +293,15 @@ function PublishPanel({
             </div>
           </div>
         )}
-        <Button
-          onClick={() => {
-            void handlePublish();
-          }}
-          variant={'contained'}
-          className={'w-full'}
-          data-testid={'publish-confirm-button'}
-          color={'primary'}
-          startIcon={publishLoading ? <CircularProgress color={'inherit'} size={16} /> : undefined}
+        <Tooltip
+          disableHoverListener={!isReadOnlyUser}
+          title={isReadOnlyUser ? t('shareAction.readOnlyPublishTooltip') : ''}
         >
-          {t('shareAction.publish')}
-        </Button>
+          <span className={'w-full'}>{publishButton}</span>
+        </Tooltip>
       </div>
     );
-  }, [handlePublish, isDatabase, publishLoading, t, view, visibleViewId]);
+  }, [currentUserAccessLevel, handlePublish, isDatabase, publishLoading, shareDetailsLoading, t, view, visibleViewId]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch px-3 py-4'>

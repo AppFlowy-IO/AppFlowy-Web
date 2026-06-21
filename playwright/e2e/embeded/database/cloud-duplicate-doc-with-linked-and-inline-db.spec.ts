@@ -16,10 +16,25 @@ import {
   pageNamesByCopyText,
 } from '../../../support/duplicate-test-helpers';
 import { currentViewIdFromUrl } from '../../../support/page-utils';
+import { itemDirectChildPageItems } from '../../../support/selectors';
 
 const DUPLICATE_USER_EMAIL = 'duplicate@appflowy.io';
 const DUPLICATE_USER_PASSWORD = 'AppFlowy!@123';
 const DOCUMENT_NAME = 'Document with linked database';
+const INLINE_GRID_TEXT = 'This is inline Grid';
+
+async function expectFirstGridCellToContain(
+  gridBlock: ReturnType<typeof databaseBlocks>,
+  text: string,
+  timeout = 30000
+): Promise<void> {
+  await expect
+    .poll(async () => firstGridCellText(gridBlock), {
+      timeout,
+      message: `Expected first grid cell to contain "${text}"`,
+    })
+    .toContain(text);
+}
 
 test.describe('Cloud Duplicate Document With Linked And Inline Database', () => {
   test.beforeEach(async ({ page }) => {
@@ -56,7 +71,7 @@ test.describe('Cloud Duplicate Document With Linked And Inline Database', () => 
         '[data-testid="page-item"]:visible:has(> div:first-child [data-testid="page-name"]:text-is("Document with linked database"))'
       )
       .first()
-      .locator(':scope > div:nth-child(2) > [data-testid="page-item"]:visible')
+      .locator(itemDirectChildPageItems(true))
       .count();
     expect(originalChildPageCount).toBeGreaterThanOrEqual(3);
 
@@ -68,11 +83,11 @@ test.describe('Cloud Duplicate Document With Linked And Inline Database', () => 
     // Restore the expected cell content in case a previous test run corrupted it
     const currentCellText = await firstGridCellText(originalBlocks.nth(0));
 
-    if (!currentCellText.includes('This is inline Grid')) {
-      await editFirstGridCell(page, originalBlocks.nth(0), 'This is inline Grid');
+    if (!currentCellText.includes(INLINE_GRID_TEXT)) {
+      await editFirstGridCell(page, originalBlocks.nth(0), INLINE_GRID_TEXT);
     }
 
-    await expect(await firstGridCellText(originalBlocks.nth(0))).toContain('This is inline Grid');
+    await expectFirstGridCellToContain(originalBlocks.nth(0), INLINE_GRID_TEXT);
 
     const previousCopyCount = await pageNamesByCopyText(page, DOCUMENT_NAME).count();
     await duplicateCurrentPageViaHeader(page);
@@ -84,19 +99,20 @@ test.describe('Cloud Duplicate Document With Linked And Inline Database', () => 
     const copiedBlocks = databaseBlocks(copiedEditor);
     await expect(copiedBlocks).toHaveCount(originalBlockCount, { timeout: 30000 });
     await expectNoActiveFilters(copiedBlocks.nth(0));
-    await expect(await firstGridCellText(copiedBlocks.nth(0))).toContain('This is inline Grid');
+    await expectFirstGridCellToContain(copiedBlocks.nth(0), INLINE_GRID_TEXT, 60000);
 
     await editFirstGridCell(page, copiedBlocks.nth(0), 'edited in copy');
     await openPageByExactText(page, DOCUMENT_NAME);
-    await expect(
-      await firstGridCellText(databaseBlocks(editorForView(page, currentViewIdFromUrl(page))).nth(0))
-    ).toContain('This is inline Grid');
+    await expectFirstGridCellToContain(
+      databaseBlocks(editorForView(page, currentViewIdFromUrl(page))).nth(0),
+      INLINE_GRID_TEXT
+    );
 
     await openPageByExactText(page, copyName);
     await editFirstGridCell(
       page,
       databaseBlocks(editorForView(page, currentViewIdFromUrl(page))).nth(0),
-      'This is inline Grid'
+      INLINE_GRID_TEXT
     );
 
     await openPageByExactText(page, DOCUMENT_NAME);

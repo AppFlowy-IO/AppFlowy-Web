@@ -13,6 +13,7 @@ import {
   SubscriptionPlan,
 } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
@@ -49,7 +50,6 @@ interface InviteGuestProps {
   onInviteSuccess: () => Promise<void>;
   viewId: string;
   hasFullAccess: boolean;
-  activeSubscriptionPlan: SubscriptionPlan | null;
 }
 
 export function InviteGuest({
@@ -310,6 +310,8 @@ export function InviteGuest({
   const getAccessLevelText = useCallback(
     (accessLevel: AccessLevel) => {
       switch (accessLevel) {
+        case AccessLevel.FullAccess:
+          return t('shareAction.fullAccess');
         case AccessLevel.ReadAndWrite:
           return t('shareAction.canEdit');
         case AccessLevel.ReadOnly:
@@ -378,6 +380,20 @@ export function InviteGuest({
             </div>
             {selectedAccessLevel === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
           </div>
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+            onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
+          >
+            <div className='flex items-center gap-2'>
+              <CrownIcon className='h-4 w-4' />
+              <div className='flex flex-col'>
+                <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+              </div>
+            </div>
+            {selectedAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
+          </div>
         </PopoverContent>
       </Popover>
     );
@@ -430,8 +446,16 @@ export function InviteGuest({
       notify.success(t('shareAction.inviteSuccess'));
       // eslint-disable-next-line
     } catch (error: any) {
-      if (error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) {
-        setUpgradeModalOpen(true);
+      if (
+        error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
+        error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
+      ) {
+        if (isAppFlowyHosted()) {
+          setUpgradeModalOpen(true);
+        } else {
+          notify.error(error.message);
+        }
+
         return;
       }
 
@@ -521,8 +545,9 @@ export function InviteGuest({
           <div className='max-h-[200px] space-y-1 overflow-y-auto'>
             {allSuggestions.map((suggestion, index) => (
               <PersonSuggestionItem
-                key={`${suggestion.type}-${typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
-                  }`}
+                key={`${suggestion.type}-${
+                  typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
+                }`}
                 suggestion={suggestion}
                 isHovered={index === hoveredIndex}
                 onMouseEnter={() => setHoveredIndex(index)}
@@ -605,7 +630,7 @@ export function InviteGuest({
           onMouseDown={(e) => e.preventDefault()}
           onClick={handleSendInvites}
           loading={inviteLoading}
-          disabled={emailTags.length === 0 || isLoading}
+          disabled={canNotInvite || emailTags.length === 0 || isLoading}
         >
           {inviteLoading && <Progress />}
           {t('shareAction.invite')}

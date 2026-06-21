@@ -29,8 +29,12 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
 
   const getScrollElement = useCallback(() => {
     if (!parentRef.current) return null;
+    // Embedded databases have their own bounded scroll viewport (parentRef itself).
+    // Using the outer page scroll container would let @tanstack/react-virtual call
+    // scrollTo(0) on the document, jumping the user away on view switches.
+    if (isDocumentBlock) return parentRef.current;
     return parentRef.current.closest('.appflowy-scroll-container') || getScrollParent(parentRef.current);
-  }, [parentRef]);
+  }, [parentRef, isDocumentBlock]);
 
   const measureParentOffset = useCallback(() => {
     const scrollElement = getScrollElement();

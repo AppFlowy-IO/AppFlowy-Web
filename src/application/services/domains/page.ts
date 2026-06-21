@@ -3,6 +3,7 @@ export {
   updatePage as update,
   updatePageIcon as updateIcon,
   updatePageName as updateName,
+  favoritePageView as favorite,
   duplicatePage as duplicate,
   moveToTrash,
   restorePage as restore,

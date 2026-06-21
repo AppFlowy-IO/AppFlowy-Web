@@ -177,7 +177,7 @@ test.describe('Server info ai_enabled flag', () => {
       await DatabaseGridSelectors.firstCell(page).click({ force: true });
       await page.keyboard.type('content to summarize');
       await page.keyboard.press('Enter');
-      await addNewProperty(page, FieldType.AISummaries);
+      await addNewProperty(page, FieldType.Summary);
       aiSummaryFieldId = await getLastFieldId(page);
       expect(aiSummaryFieldId).not.toBe('');
 
@@ -191,7 +191,7 @@ test.describe('Server info ai_enabled flag', () => {
       });
       await expect.poll(async () => getLastFieldId(page), { timeout: 10000 }).not.toBe(lastFieldIdBeforeAdd);
       await page.keyboard.press('Escape');
-      await editLastProperty(page, FieldType.AITranslations);
+      await editLastProperty(page, FieldType.Translate);
       aiTranslateFieldId = await getLastFieldId(page);
       expect(aiTranslateFieldId).not.toBe('');
 
@@ -224,8 +224,8 @@ test.describe('Server info ai_enabled flag', () => {
       await trigger.hover();
       await page.waitForTimeout(600);
 
-      await expect(PropertyMenuSelectors.propertyTypeOption(page, FieldType.AISummaries)).toHaveCount(0);
-      await expect(PropertyMenuSelectors.propertyTypeOption(page, FieldType.AITranslations)).toHaveCount(0);
+      await expect(PropertyMenuSelectors.propertyTypeOption(page, FieldType.Summary)).toHaveCount(0);
+      await expect(PropertyMenuSelectors.propertyTypeOption(page, FieldType.Translate)).toHaveCount(0);
       await page.keyboard.press('Escape');
     });
 

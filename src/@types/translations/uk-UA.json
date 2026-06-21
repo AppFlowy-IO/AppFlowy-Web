@@ -1643,7 +1643,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Посилання скопійовано в буфер обміну",
-        "convertToLink": "Перетворити на вбудоване посилання"
+        "convertToLink": "Перетворити на вбудоване посилання",
+        "pasteAs": {
+          "title": "Вставити як",
+          "mention": "Згадка",
+          "url": "URL",
+          "bookmark": "Закладка",
+          "embed": "Вбудувати"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Додайте заголовки, щоб створити зміст.",

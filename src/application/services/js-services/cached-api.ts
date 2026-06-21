@@ -6,7 +6,7 @@
 import * as random from 'lib0/random';
 import * as Y from 'yjs';
 
-import { openCollabDB } from '@/application/db';
+import { db, openCollabDB } from '@/application/db';
 import { Log } from '@/utils/log';
 import {
   createRow,
@@ -67,6 +67,7 @@ import {
   UpdatePublishConfigPayload,
   UploadPublishNamespacePayload,
   UserWorkspaceInfo,
+  View,
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
@@ -94,10 +95,10 @@ const publishViewInfo = new Map<
   }
 >();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _getAppViewInFlight = new Map<string, Promise<any>>();
-const _getAppViewCache = new Map<string, { data: unknown; expiresAt: number }>();
+const _getAppViewInFlight = new Map<string, Promise<View>>();
+const _getAppViewCache = new Map<string, { data: View; expiresAt: number }>();
 const VIEW_CACHE_TTL_MS = 5000;
+const ANONYMOUS_VIEW_CACHE_SCOPE = 'anonymous';
 
 // ============================================================================
 // Simple getters
@@ -120,35 +121,51 @@ export function getDeviceId() {
  * Multiple components (AppPage, AppBusinessLayer, useViewMeta) independently call
  * getAppView for the same view during renders/re-renders.
  */
-export async function getAppViewCached(workspaceId: string, viewId: string) {
-  const key = `${workspaceId}:${viewId}`;
+function getCurrentAppViewCacheUserId() {
+  return getTokenParsed()?.user?.id;
+}
 
-  // 1. Return cached result if still fresh
-  const cached = _getAppViewCache.get(key);
+function getAppViewCacheKey(userId: string | undefined, workspaceId: string, viewId: string) {
+  return `${userId ?? ANONYMOUS_VIEW_CACHE_SCOPE}:${workspaceId}:${viewId}`;
+}
 
-  if (cached) {
-    if (Date.now() < cached.expiresAt) {
-      return cached.data;
-    }
+function writeAppViewCaches(workspaceId: string, viewId: string, data: View, userId = getCurrentAppViewCacheUserId()) {
+  _getAppViewCache.set(getAppViewCacheKey(userId, workspaceId, viewId), {
+    data,
+    expiresAt: Date.now() + VIEW_CACHE_TTL_MS,
+  });
 
-    // Eagerly evict expired entry
-    _getAppViewCache.delete(key);
-  }
+  if (!userId) return;
 
-  // 2. Share in-flight request if one exists
+  void db.app_view_cache
+    .put({
+      user_id: userId,
+      workspace_id: workspaceId,
+      view_id: viewId,
+      data,
+      updated_at: Date.now(),
+    })
+    .catch((error) => {
+      Log.warn('[ViewCache] failed to persist app view cache', {
+        userId,
+        workspaceId,
+        viewId,
+        error,
+      });
+    });
+}
+
+function requestAppView(workspaceId: string, viewId: string, userId = getCurrentAppViewCacheUserId()) {
+  const key = getAppViewCacheKey(userId, workspaceId, viewId);
   const existing = _getAppViewInFlight.get(key);
 
   if (existing) {
     return existing;
   }
 
-  // 3. Make the actual request
   const request = getView(workspaceId, viewId)
     .then((result) => {
-      _getAppViewCache.set(key, {
-        data: result,
-        expiresAt: Date.now() + VIEW_CACHE_TTL_MS,
-      });
+      writeAppViewCaches(workspaceId, viewId, result, userId);
       return result;
     })
     .finally(() => {
@@ -159,14 +176,63 @@ export async function getAppViewCached(workspaceId: string, viewId: string) {
   return request;
 }
 
+export async function getAppViewCached(workspaceId: string, viewId: string) {
+  const userId = getCurrentAppViewCacheUserId();
+  const key = getAppViewCacheKey(userId, workspaceId, viewId);
+
+  // 1. Return cached result if still fresh
+  const cached = _getAppViewCache.get(key);
+
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  // 2. Share in-flight request if one exists
+  return requestAppView(workspaceId, viewId, userId);
+}
+
+export function getCachedAppView(workspaceId: string, viewId: string): View | undefined {
+  return _getAppViewCache.get(getAppViewCacheKey(getCurrentAppViewCacheUserId(), workspaceId, viewId))?.data;
+}
+
+export async function getCachedAppViewFromDisk(workspaceId: string, viewId: string): Promise<View | undefined> {
+  const userId = getCurrentAppViewCacheUserId();
+
+  if (!userId) return undefined;
+
+  const record = await db.app_view_cache.get([userId, workspaceId, viewId]);
+
+  return record?.data;
+}
+
+export async function refreshAppViewCache(workspaceId: string, viewId: string) {
+  return requestAppView(workspaceId, viewId);
+}
+
 export function invalidateViewCache(workspaceId: string, viewId: string) {
-  const key = `${workspaceId}:${viewId}`;
+  const userId = getCurrentAppViewCacheUserId();
+  const key = getAppViewCacheKey(userId, workspaceId, viewId);
 
   _getAppViewCache.delete(key);
   _getAppViewInFlight.delete(key);
+
+  if (!userId) return;
+
+  void db.app_view_cache.delete([userId, workspaceId, viewId]).catch((error) => {
+    Log.warn('[ViewCache] failed to delete app view cache', {
+      userId,
+      workspaceId,
+      viewId,
+      error,
+    });
+  });
 }
 
-export async function getPageDocCached(workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) {
+export async function getPageDocCached(
+  workspaceId: string,
+  viewId: string,
+  errorCallback?: (error: { code: number }) => void
+) {
   const token = getTokenParsed();
   const userId = token?.user.id;
 
@@ -297,15 +363,25 @@ export async function getPublishInfoCached(viewId: string) {
 }
 
 export async function loginAuth(url: string) {
-  Log.info('[Auth] loginAuth: processing OAuth callback');
+  return finishAuthFlow('loginAuth', () => signInWithUrl(url));
+}
+
+async function finishAuthFlow(
+  logContext: string,
+  runAuthFlow: () => Promise<unknown>,
+  options?: { emitSessionValid?: boolean }
+) {
+  Log.info(`[Auth] ${logContext}: completing login flow`);
   try {
-    await signInWithUrl(url);
-    Log.info('[Auth] loginAuth: success, calling afterAuth');
-    emit(EventType.SESSION_VALID);
+    await runAuthFlow();
+    Log.info(`[Auth] ${logContext}: success, calling afterAuth`);
+    if (options?.emitSessionValid !== false) {
+      emit(EventType.SESSION_VALID);
+    }
+
     afterAuth();
-    return;
   } catch (e) {
-    Log.error('[Auth] loginAuth: failed', e);
+    Log.error(`[Auth] ${logContext}: failed`, e);
     emit(EventType.SESSION_INVALID);
     return Promise.reject(e);
   }
@@ -338,7 +414,9 @@ export async function getUserWorkspaceInfoTransformed(): Promise<UserWorkspaceIn
   };
 }
 
-export async function duplicatePublishViewTransformed(params: DuplicatePublishView): Promise<DuplicatePublishViewResponse> {
+export async function duplicatePublishViewTransformed(
+  params: DuplicatePublishView
+): Promise<DuplicatePublishViewResponse> {
   const response = await duplicatePublishViewAPI(params.workspaceId, {
     dest_view_id: params.spaceViewId,
     published_view_id: params.viewId,
@@ -367,7 +445,12 @@ export async function getAppDatabaseViewRelationsFromCollab(workspaceId: string,
   return result;
 }
 
-export async function uploadFileWithTracking(workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) {
+export async function uploadFileWithTracking(
+  workspaceId: string,
+  viewId: string,
+  file: File,
+  onProgress?: (progress: number) => void
+) {
   const uploadId = registerUpload();
 
   try {
@@ -450,6 +533,9 @@ export { createRow, deleteRow };
 // Auth wrapper functions (replace @withSignIn decorator)
 // ============================================================================
 
+// These low-level GoTrue functions complete provider-specific work only. UI login
+// paths should use the redirect-aware wrappers below so session events and
+// afterAuth() stay consistent across OAuth, password, signup, and OTP.
 export {
   signInWithPassword,
   signUpWithPassword,
@@ -491,12 +577,12 @@ export async function signInSamlWithRedirect(params: { redirectTo: string; domai
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInWithPassword(params);
+  return finishAuthFlow('signInWithPassword', () => signInWithPassword(params));
 }
 
 export async function signUpWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signUpWithPassword(params);
+  return finishAuthFlow('signUpWithPassword', () => signUpWithPassword(params));
 }
 
 export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email: string; redirectTo: string }) {
@@ -504,7 +590,14 @@ export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email
   return signInWithMagicLink(email, AUTH_CALLBACK_URL);
 }
 
-export async function signInOTPWithRedirect(params: { email: string; code: string; redirectTo: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
+export async function signInOTPWithRedirect(params: {
+  email: string;
+  code: string;
+  redirectTo: string;
+  type?: 'magiclink' | 'recovery' | 'signup';
+}) {
   saveRedirectTo(params.redirectTo);
-  return signInOTP(params);
+  return finishAuthFlow('signInOTP', () => signInOTP(params), {
+    emitSessionValid: params.type !== 'recovery',
+  });
 }

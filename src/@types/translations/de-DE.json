@@ -1883,7 +1883,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Der Link wurde in die Zwischenablage kopiert",
-        "convertToLink": "Konvertieren zum eingebetteten Link"
+        "convertToLink": "Konvertieren zum eingebetteten Link",
+        "pasteAs": {
+          "title": "Einfügen als",
+          "mention": "Erwähnung",
+          "url": "URL",
+          "bookmark": "Lesezeichen",
+          "embed": "Einbetten"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Füge Überschriften hinzu, um ein Inhaltsverzeichnis zu erstellen.",

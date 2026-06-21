@@ -52,7 +52,7 @@ test.describe('AI Field - Generate Button', () => {
     });
 
     // Add an AI Summary property
-    await addNewProperty(page, FieldType.AISummaries);
+    await addNewProperty(page, FieldType.Summary);
 
     // Get the field ID of the newly added AI Summary column
     const fieldId = await getLastFieldId(page);
@@ -111,7 +111,7 @@ test.describe('AI Field - Generate Button', () => {
     });
 
     // Add an AI Translations property
-    await addNewProperty(page, FieldType.AITranslations);
+    await addNewProperty(page, FieldType.Translate);
 
     const fieldId = await getLastFieldId(page);
 
@@ -166,7 +166,7 @@ test.describe('AI Field - Generate Button', () => {
     });
 
     // Add an AI Summary property
-    await addNewProperty(page, FieldType.AISummaries);
+    await addNewProperty(page, FieldType.Summary);
 
     const fieldId = await getLastFieldId(page);
 
@@ -225,7 +225,7 @@ test.describe('AI Field - Generate Button', () => {
     });
 
     // Add AI Summary property
-    await addNewProperty(page, FieldType.AISummaries);
+    await addNewProperty(page, FieldType.Summary);
 
     const fieldId = await getLastFieldId(page);
 

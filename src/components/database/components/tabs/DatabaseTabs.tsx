@@ -6,6 +6,7 @@ import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
+import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import RenameModal from '@/components/app/view-actions/RenameModal';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { DatabaseViewTabs } from '@/components/database/components/tabs/DatabaseViewTabs';
@@ -34,6 +35,8 @@ export interface DatabaseTabBarProps {
    * Used to update the block data in embedded database blocks.
    */
   onViewIdsChanged?: (viewIds: string[]) => void;
+  /** Persist a tab reorder (optimistic order + folder/localStorage). */
+  onReorderTabs?: (result: ReorderResult) => void;
 }
 
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
@@ -48,6 +51,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       onBeforeViewAddedToDatabase,
       onAfterViewAddedToDatabase,
       onViewIdsChanged,
+      onReorderTabs,
     },
     ref
   ) => {
@@ -153,6 +157,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           ? ViewLayout.Board
           : databaseLayout === DatabaseViewLayout.Calendar
           ? ViewLayout.Calendar
+          : databaseLayout === DatabaseViewLayout.Chart
+          ? ViewLayout.Chart
           : ViewLayout.Grid;
 
       const name = databaseView.get(YjsDatabaseKey.name) || '';
@@ -227,9 +233,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
-        <div
-          className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}
-        >
+        <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
           <DatabaseViewTabs
             viewIds={viewIds}
             selectedViewId={selectedViewId}
@@ -245,6 +249,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             setRenameViewId={setRenameViewId}
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
+            onReorderTabs={onReorderTabs}
             onBeforeViewAdded={onBeforeViewAddedToDatabase}
             onAfterViewAdded={onAfterViewAddedToDatabase}
             onViewAdded={(viewId) => {
@@ -326,7 +331,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             // If the "page view" in the URL was deleted, navigate to a remaining child view.
             // Otherwise the route can become a "Page Deleted" placeholder even though the database still has views.
             if (navigateToView && deletedViewId === databasePageId) {
-              const safeTarget = (selectedViewId && selectedViewId !== deletedViewId ? selectedViewId : nextViewId) || null;
+              const safeTarget =
+                (selectedViewId && selectedViewId !== deletedViewId ? selectedViewId : nextViewId) || null;
 
               if (safeTarget) {
                 void navigateToView(safeTarget);

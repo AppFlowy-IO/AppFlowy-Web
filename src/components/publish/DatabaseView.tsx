@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { usePublishContext } from '@/application/publish';
 import { UIVariant, ViewLayout, YjsEditorKey } from '@/application/types';
+import { resolveActiveDatabaseViewId } from '@/application/view-utils';
 import type {
   AppendBreadcrumb,
   CreateRow,
@@ -86,11 +87,17 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
 
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
-   * Comes from URL param 'v', defaults to databasePageId when not specified.
+   * Comes from URL param 'v', defaults to the route id for direct child-view
+   * routes, or the first visible child when the route points at a database
+   * container.
    */
   const activeViewId = useMemo(() => {
-    return search.get('v') || databasePageId;
-  }, [search, databasePageId]);
+    return resolveActiveDatabaseViewId({
+      databasePageId,
+      tabViewId: search.get('v'),
+      visibleViewIds,
+    });
+  }, [search, databasePageId, visibleViewIds]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {

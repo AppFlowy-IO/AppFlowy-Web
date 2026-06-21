@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import { getPrimaryFieldId, useDatabaseContext } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { createRowInRelatedDatabase } from '@/application/database-yjs/dispatch/relation';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { View, YDatabase, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { ReactComponent as AddIcon } from '@/assets/icons/add_new_page.svg';
 import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import RelationRowItem from '@/components/database/components/cell/relation/RelationRowItem';
@@ -16,6 +18,37 @@ import { SearchInput } from '@/components/ui/search-input';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+const recentRelationRowsByView = new Map<string, string[]>();
+
+function rememberRecentRelationRow(viewId: string | undefined, rowId: string) {
+  if (!viewId) return;
+
+  const previous = recentRelationRowsByView.get(viewId) ?? [];
+  const next = [rowId, ...previous.filter((id) => id !== rowId)].slice(0, 20);
+
+  recentRelationRowsByView.set(viewId, next);
+}
+
+function sortByRecentRows(rowIds: string[], viewId: string | undefined) {
+  const recentRows = viewId ? recentRelationRowsByView.get(viewId) ?? [] : [];
+
+  if (recentRows.length === 0) return rowIds;
+
+  const originalIndex = new Map(rowIds.map((id, index) => [id, index]));
+  const recentIndex = new Map(recentRows.map((id, index) => [id, index]));
+
+  return [...rowIds].sort((left, right) => {
+    const leftRecent = recentIndex.get(left);
+    const rightRecent = recentIndex.get(right);
+
+    if (leftRecent !== undefined || rightRecent !== undefined) {
+      return (leftRecent ?? Number.MAX_SAFE_INTEGER) - (rightRecent ?? Number.MAX_SAFE_INTEGER);
+    }
+
+    return (originalIndex.get(left) ?? 0) - (originalIndex.get(right) ?? 0);
+  });
+}
 
 function RelationCellMenuContent({
   relationRowIds,
@@ -34,21 +67,31 @@ function RelationCellMenuContent({
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
-  const { navigateToView, loadView, navigateToRow, createRow } = useDatabaseContext();
+  const { navigateToView, loadView, navigateToRow, createRow, bindViewSync } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
-  const onToggleSelectedRowId = useCallback(
-    (rowId: string) => {
-      if (relationRowIds?.includes(rowId)) {
-        onRemoveRelationRowId(rowId);
-      } else {
-        onAddRelationRowId(rowId);
-      }
-    },
-    [onAddRelationRowId, onRemoveRelationRowId, relationRowIds]
-  );
   const selectedViewId = useMemo(() => {
     return selectedView?.view_id;
   }, [selectedView]);
+  const openRelatedRow = useCallback(
+    (rowId: string) => {
+      onClose?.();
+      setTimeout(() => {
+        void navigateToRow?.(rowId, selectedViewId);
+      }, 0);
+    },
+    [navigateToRow, onClose, selectedViewId]
+  );
+  const onToggleSelectedRowId = useCallback(
+    (rowId: string) => {
+      if (relationRowIds?.includes(rowId)) {
+        openRelatedRow(rowId);
+      } else {
+        rememberRecentRelationRow(selectedViewId, rowId);
+        onAddRelationRowId(rowId);
+      }
+    },
+    [onAddRelationRowId, openRelatedRow, relationRowIds, selectedViewId]
+  );
 
   const [searchInput, setSearchInput] = useState<string>('');
   const [primaryFieldId, setPrimaryFieldId] = useState<string | null>(null);
@@ -58,6 +101,13 @@ function RelationCellMenuContent({
   const [rowIds, setRowIds] = useState<string[]>([]);
   const [rowContents, setRowContents] = useState<Map<string, string>>(new Map());
   const rowDocsRef = useRef<Map<string, YDoc>>(new Map());
+  const targetDocRef = useRef<YDoc | null>(null);
+  const [isCreatingAndLinking, setIsCreatingAndLinking] = useState(false);
+  // Synchronous double-tap guard — `isCreatingAndLinking` state is async and a
+  // user clicking the footer twice in the same frame can both see the stale
+  // `false` closure value. The ref is updated before React commits the
+  // disabled state, so the second click bails out unconditionally.
+  const isCreatingRef = useRef(false);
 
   const { selectedId, setSelectedId } = useNavigationKey({
     element,
@@ -77,6 +127,7 @@ function RelationCellMenuContent({
       try {
         const doc = await loadView(selectedViewId);
 
+        targetDocRef.current = doc;
         const guid = doc.guid;
 
         setGuid(guid);
@@ -159,16 +210,18 @@ function RelationCellMenuContent({
   }, [createRow, getContent, guid, rowIds]);
 
   const filteredRowIds = useMemo(() => {
+    const liveRowIds = sortByRecentRows(rowIds, selectedViewId);
+
     if (!searchInput) {
-      return rowIds;
+      return liveRowIds;
     }
 
-    return rowIds.filter((id) => {
+    return liveRowIds.filter((id) => {
       const content = rowContents.get(id) || '';
 
       return content.toLowerCase().includes(searchInput.toLowerCase());
     });
-  }, [rowContents, rowIds, searchInput]);
+  }, [rowContents, rowIds, searchInput, selectedViewId]);
 
   const unRelatedRowIds = useMemo(() => {
     return filteredRowIds.filter((id) => !relationRowIds?.includes(id));
@@ -177,27 +230,36 @@ function RelationCellMenuContent({
   const filteredRelatedRowIds = useMemo(() => {
     return (
       relationRowIds?.filter((id) => {
-        const content = rowContents.get(id) || '';
+        const content = rowContents.get(id) || (rowIds.includes(id) ? '' : t('document.mention.deletedPage'));
 
         return content.toLowerCase().includes(searchInput.toLowerCase());
       }) || []
     );
-  }, [relationRowIds, rowContents, searchInput]);
+  }, [relationRowIds, rowContents, rowIds, searchInput, t]);
 
-  const noResult = filteredRowIds.length === 0 && !loading;
+  // filteredRowIds covers live target rows (for adding); filteredRelatedRowIds
+  // covers the cell's already-related ids (including stale/deleted ones).
+  // Treating "no result" as both empty avoids hiding deleted relations the user
+  // may want to remove.
+  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !loading;
 
   const renderItem = useCallback(
     (id: string) => {
       const isRelated = relationRowIds?.includes(id);
+      const isDeleted = isRelated && !rowIds.includes(id);
+      const content = isDeleted ? t('document.mention.deletedPage') : rowContents.get(id) || '';
 
       return (
         <div
           onClick={() => {
-            // Close the popover first, then navigate after state settles
-            onClose?.();
-            setTimeout(() => {
-              void navigateToRow?.(id, selectedViewId);
-            }, 0);
+            if (isRelated) {
+              if (isDeleted) return;
+              openRelatedRow(id);
+              return;
+            }
+
+            rememberRecentRelationRow(selectedViewId, id);
+            onAddRelationRowId(id);
           }}
           className={cn(
             dropdownMenuItemVariants({
@@ -210,7 +272,7 @@ function RelationCellMenuContent({
           key={id}
           onMouseEnter={() => setSelectedId(id)}
         >
-          <RelationRowItem rowId={id} content={rowContents.get(id) || ''} />
+          <RelationRowItem rowId={id} content={content} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -220,6 +282,7 @@ function RelationCellMenuContent({
                   if (isRelated) {
                     onRemoveRelationRowId(id);
                   } else {
+                    rememberRecentRelationRow(selectedViewId, id);
                     onAddRelationRowId(id);
                   }
                 }}
@@ -244,16 +307,95 @@ function RelationCellMenuContent({
     [
       relationRowIds,
       rowContents,
+      rowIds,
       selectedId,
-      navigateToRow,
-      selectedViewId,
+      openRelatedRow,
       onAddRelationRowId,
       onRemoveRelationRowId,
-      onClose,
       setSelectedId,
+      selectedViewId,
       t,
     ]
   );
+
+  const trimmedSearch = searchInput.trim();
+  // Mirrors desktop's `_CreateAndLinkRowAction` (commit c811059939, AppFlowy#8644):
+  // any non-empty query exposes the create affordance, even when the live
+  // results already match. The user shouldn't have to clear partial matches
+  // to create a new row that happens to share a substring.
+  const showCreateAndLink = trimmedSearch.length > 0 && !loading && !noAccess && primaryFieldId !== null;
+
+  const handleCreateAndLink = useCallback(async () => {
+    const targetDoc = targetDocRef.current;
+
+    if (!targetDoc || !primaryFieldId || !trimmedSearch) return;
+    if (isCreatingRef.current) return;
+    isCreatingRef.current = true;
+    setIsCreatingAndLinking(true);
+    try {
+      const newRowId = await createRowInRelatedDatabase({
+        relatedDatabaseDoc: targetDoc,
+        primaryFieldId,
+        primaryText: trimmedSearch,
+        createRow,
+        bindViewSync,
+      });
+
+      if (!newRowId) return;
+
+      // Clear the search so the freshly-created row is visible in the linked
+      // section once the picker re-reads `relationRowIds`.
+      setSearchInput('');
+      // Locally append the new row id so the existing row-doc loader effect
+      // picks it up and `rowContents` resolves the typed text for display.
+      // Without this the picker captured `rowIds` once on open and would
+      // render the new linked row as "Deleted page" until the dialog reopens.
+      setRowIds((prev) => (prev.includes(newRowId) ? prev : [...prev, newRowId]));
+      rememberRecentRelationRow(selectedViewId, newRowId);
+      onAddRelationRowId(newRowId);
+    } finally {
+      isCreatingRef.current = false;
+      setIsCreatingAndLinking(false);
+    }
+  }, [bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, trimmedSearch]);
+
+  const renderCreateAndLink = useMemo(() => {
+    if (!showCreateAndLink) return null;
+
+    const databaseName = selectedView?.name ?? '';
+
+    return (
+      <button
+        type='button'
+        data-testid='relation-create-and-link'
+        disabled={isCreatingAndLinking}
+        onClick={() => {
+          void handleCreateAndLink();
+        }}
+        className={cn(
+          'flex w-full items-center gap-2 rounded-300 px-2 py-1.5 text-left text-sm',
+          'text-text-primary hover:bg-fill-content-hover',
+          'disabled:cursor-not-allowed disabled:opacity-60'
+        )}
+      >
+        <AddIcon className='h-4 w-4 shrink-0 text-icon-primary' />
+        <span className='min-w-0 flex-1 truncate'>
+          {t('grid.relation.createAndLinkRow', {
+            defaultValue: 'Create {{name}}',
+            name: trimmedSearch,
+          })}
+        </span>
+        {databaseName ? (
+          <span className='min-w-0 max-w-[40%] shrink-0 truncate text-xs text-text-tertiary'>
+            {t('grid.relation.createAndLinkRowDestination', {
+              defaultValue: 'in {{target}}',
+              target: databaseName,
+            })}
+          </span>
+        ) : null}
+      </button>
+    );
+  }, [handleCreateAndLink, isCreatingAndLinking, selectedView, showCreateAndLink, t, trimmedSearch]);
 
   const renderRelatedItems = useMemo(() => {
     if (!filteredRelatedRowIds || filteredRelatedRowIds.length === 0) {
@@ -335,6 +477,7 @@ function RelationCellMenuContent({
               </>
             )
           )}
+          {renderCreateAndLink}
         </div>
       </TooltipProvider>
     </div>

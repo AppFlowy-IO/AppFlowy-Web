@@ -7,7 +7,11 @@ export {
   getWorkspaces as getAll,
   getWorkspaceFolder as getFolder,
   inviteMembers,
+  removeMembers,
   getMembers,
+  getWorkspaceInviteCode as getInviteCode,
+  createWorkspaceInviteCode as createInviteCode,
+  deleteWorkspaceInviteCode as deleteInviteCode,
   getMentionableUsers,
   updatePageMention,
   joinWorkspaceByInvitationCode as joinByInvitationCode,
@@ -18,4 +22,5 @@ export {
   approveTurnGuestToMember,
   addRecentPages,
   updatePublishNamespace,
+  reorderWorkspaces as reorder,
 } from '../js-services/http/workspace-api';

@@ -8,6 +8,7 @@ import {
   getDateCellStr,
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
+  safeParseTimestamp,
   stringifyChecklist,
 } from '@/application/database-yjs/fields';
 import { parseCheckboxValue, parseTimeStringToMs } from '@/application/database-yjs/fields/text/utils';
@@ -52,7 +53,7 @@ export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseF
     }
   }
 
-  if (cellType === FieldType.FileMedia) {
+  if (cellType === FieldType.Media) {
     value = parseYDatabaseFileMediaCellToCell(cell);
   }
 
@@ -91,7 +92,9 @@ function transformCellData(
         (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) &&
         field
       ) {
-        const typeOption = parseSelectOptionTypeOptions(field);
+        // Resolve options by the source select type — the field's current type
+        // is Checklist here, so its own type-option holds no select options.
+        const typeOption = parseSelectOptionTypeOptions(field, sourceType);
         const options = typeOption?.options || [];
         const selectedIds = data.split(',');
         const checklistOptions: SelectOption[] = [];
@@ -118,6 +121,15 @@ function transformCellData(
     case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
       if (!field) return '';
+
+      // SingleSelect <-> MultiSelect: the switch copies the options 1:1, so the
+      // stored option IDs stay valid — keep them (desktop parity:
+      // SelectOptionIds::from(cell)). Without this the data would be dropped.
+      // Early-return before parsing options (which this path does not need).
+      if (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) {
+        return typeof data === 'string' ? data : '';
+      }
+
       const typeOption = parseSelectOptionTypeOptions(field);
       const options = typeOption?.options || [];
 
@@ -165,6 +177,20 @@ function transformCellData(
 
       return '';
 
+    case FieldType.DateTime: {
+      // text -> DateTime: parse a free-text date into a unix timestamp in
+      // SECONDS (desktop parity: cast_string_to_timestamp). A materialized
+      // Created/LastEditedTime timestamp (numeric seconds/ms) normalizes through
+      // safeParseTimestamp to seconds as well.
+      if (typeof data !== 'string' && typeof data !== 'number') return '';
+      const raw = String(data).trim();
+
+      if (!raw) return '';
+      const parsed = safeParseTimestamp(raw);
+
+      return parsed.isValid() ? String(parsed.unix()) : '';
+    }
+
     case FieldType.Checkbox:
       if (sourceType === FieldType.RichText) {
         if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
@@ -178,8 +204,9 @@ function transformCellData(
       if (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) {
         if (typeof data === 'string' && data) {
           const selectedIds = data.split(',');
-          // First, try to look up option names from field type_option (if still available)
-          const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
+          // First, try to look up option names from field type_option (if still available).
+          // Resolve by the source select type: the field's current type is Checkbox here.
+          const typeOption = field ? parseSelectOptionTypeOptions(field, sourceType) : null;
           const options = typeOption?.options || [];
           // Check if any selected option has name "Yes" (either by option lookup or direct ID match)
           const hasYes = selectedIds.some((id) => {
@@ -239,7 +266,7 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
     return {
       ...parseYDatabaseCommonCellToCell(cell),
       data: [],
-      fieldType: FieldType.FileMedia,
+      fieldType: FieldType.Media,
     } as FileMediaCell;
   }
 
@@ -249,7 +276,7 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
   return {
     ...parseYDatabaseCommonCellToCell(cell),
     data: dataJson,
-    fieldType: FieldType.FileMedia,
+    fieldType: FieldType.Media,
   };
 }
 
@@ -415,7 +442,9 @@ function stringifyFromSource(
     case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
       if (!field) return '';
-      const options = parseSelectOptionTypeOptions(field)?.options || [];
+      // The field's current type is no longer a select (we are stringifying a
+      // converted-to-text cell), so resolve options by the source select type.
+      const options = parseSelectOptionTypeOptions(field, sourceType)?.options || [];
 
       if (typeof data === 'string') {
         return data

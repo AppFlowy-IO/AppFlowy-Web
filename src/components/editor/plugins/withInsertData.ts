@@ -1,13 +1,34 @@
-import { Element, Node } from 'slate';
+import { Editor, Element, Node, Range, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { findSlateEntryByBlockId, getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
-import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType } from '@/application/types';
+import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
+import {
+  findSlateEntryByBlockId,
+  getBlockEntry,
+  getSharedRoot,
+  isInsideSimpleTableCell,
+} from '@/application/slate-yjs/utils/editor';
+import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
+import {
+  BlockType,
+  CollabOrigin,
+  FieldURLType,
+  FileBlockData,
+  ImageBlockData,
+  ImageType,
+  YjsEditorKey,
+} from '@/application/types';
+import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
+import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
+import { Log } from '@/utils/log';
+import { createPendingUploadId } from '@/utils/pending-upload';
+import { isSingleURLText } from '@/utils/url';
 
+type BlockElement = Element & { blockId?: string };
 
 export const withInsertData = (editor: ReactEditor) => {
   const { insertData } = editor;
@@ -15,14 +36,17 @@ export const withInsertData = (editor: ReactEditor) => {
   const e = editor as YjsEditor;
 
   editor.insertData = (data: DataTransfer) => {
+    const richFragment = extractAppFlowyClipboardFragment(data);
+
     // When pasting inside a table cell, check if the fragment contains table blocks
     // and prevent nesting tables. Instead, extract text and fill adjacent cells.
     const tableCheckEntry = getBlockEntry(e);
-    const tableCheckBlockId = tableCheckEntry ? (tableCheckEntry[0] as Element & { blockId?: string }).blockId : undefined;
+    const tableCheckBlockId = tableCheckEntry ? (tableCheckEntry[0] as BlockElement).blockId : undefined;
 
     if (tableCheckBlockId && isInsideSimpleTableCell(e, tableCheckBlockId)) {
       // Check plain text for TSV (tab-separated values)
       const plainText = data.getData('text/plain')?.trim();
+      const singleURLText = getSingleURLTextFromClipboard(data);
 
       if (plainText && plainText.includes('\t')) {
         // Delegate to insertTextData which has our TSV handler
@@ -31,25 +55,27 @@ export const withInsertData = (editor: ReactEditor) => {
         if (handled) return;
       }
 
+      if (singleURLText) {
+        const handled = editor.insertTextData(createTextDataTransfer(singleURLText, data.getData('text/html')));
+
+        if (handled) return;
+      }
+
       // Check for Slate fragment containing table blocks
       const fragment = data.getData('application/x-slate-fragment');
+      const parsedFragment = richFragment?.fragment;
 
       if (fragment) {
         try {
           const decoded = decodeURIComponent(window.atob(fragment));
           const parsed = JSON.parse(decoded) as Node[];
 
-          // Check if fragment contains table blocks
-          const hasTable = parsed.some((n: Node) =>
-            Element.isElement(n) && [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(n.type as BlockType)
-          );
-
-          if (hasTable) {
+          if (containsSimpleTableBlocks(parsed)) {
             // Extract text from table cells and paste as TSV
-            const texts = extractTextsFromFragment(parsed);
+            const texts = extractTSVFromTableFragment(parsed);
 
             if (texts) {
-              const handled = editor.insertTextData(createTSVDataTransfer(texts));
+              const handled = editor.insertTextData(createTextDataTransfer(texts));
 
               if (handled) return;
             }
@@ -58,16 +84,44 @@ export const withInsertData = (editor: ReactEditor) => {
           // Fall through to default handling
         }
       }
+
+      if (parsedFragment && containsSimpleTableBlocks(parsedFragment)) {
+        const texts = extractTSVFromTableFragment(parsedFragment);
+
+        if (texts) {
+          const handled = editor.insertTextData(createTextDataTransfer(texts));
+
+          if (handled) return;
+        }
+      }
     }
 
-    const fragment = data.getData('application/x-slate-fragment');
+    if (richFragment) {
+      const newFragment = convertSlateFragmentTo(richFragment.fragment);
 
-    if (fragment) {
-      const decoded = decodeURIComponent(window.atob(fragment));
-      const parsed = JSON.parse(decoded) as Node[];
-      const newFragment = convertSlateFragmentTo(parsed);
+      if (insertFragmentAsSiblings(e, newFragment)) return;
 
       return e.insertFragment(newFragment);
+    }
+
+    const rawFragment =
+      data.getData('application/x-slate-fragment') || extractSlateFragmentFromHTML(data.getData('text/html'));
+
+    if (rawFragment) {
+      const parsed = decodeSlateFragment(rawFragment);
+
+      if (parsed) {
+        const newFragment = convertSlateFragmentTo(parsed);
+
+        // Slate's default insertFragment nests pasted blocks under the current
+        // block when the cursor sits deep inside a text wrapper. Use the YJS
+        // insertion path instead so the pasted blocks become siblings of the
+        // current block at the same indent level.
+        if (insertFragmentAsSiblings(e, newFragment)) return;
+
+        return e.insertFragment(newFragment);
+      }
+      // Malformed fragment data — fall through to other handlers.
     }
 
     // Do something with the data...
@@ -89,48 +143,121 @@ export const withInsertData = (editor: ReactEditor) => {
       void (async () => {
         const text = CustomEditor.getBlockTextContent(node);
         let newBlockId: string = blockId;
+        const pendingUploads: Promise<void>[] = [];
 
-        for (const file of fileArray) {
-          const url = await e.uploadFile?.(file);
-          let fileId = '';
+        // One handler for the whole batch — each `new FileHandler()` opens
+        // its own IDB connection promise, so reusing avoids that overhead.
+        const fileHandler = new FileHandler();
 
-          if (!url) {
-            const fileHandler = new FileHandler();
-            const res = await fileHandler.handleFileUpload(file);
+        // Best-effort: a missing local snapshot must not block the remote
+        // upload (IndexedDB may be unavailable in private mode or over
+        // quota). Persist every snapshot in parallel so paste latency
+        // scales with the slowest IDB write, not the sum.
+        const fileIds = await Promise.all(
+          fileArray.map(async (file) => {
+            try {
+              const res = await fileHandler.handleFileUpload(file);
 
-            fileId = res.id;
-          }
+              // Paste path never renders the local preview itself — the
+              // block creates its own object URL via `getStoredFile`.
+              // Revoke the one created here so it doesn't leak until the
+              // tab unloads.
+              URL.revokeObjectURL(res.url);
+              return res.id;
+            } catch (err) {
+              Log.warn('withInsertData: failed to persist local snapshot for pasted file', err);
+              return '';
+            }
+          })
+        );
 
+        for (let i = 0; i < fileArray.length; i++) {
+          const file = fileArray[i];
+          const fileId = fileIds[i];
+          const pendingUploadId = createPendingUploadId();
           const isImage = file.type.startsWith('image/');
+          let insertedBlockId: string | undefined;
 
           if (isImage) {
             const data = {
-              url: url,
-              image_type: ImageType.External,
+              url: '',
+              image_type: undefined,
+              retry_local_url: fileId,
+              pending_upload_id: pendingUploadId,
             } as ImageBlockData;
 
-            if (fileId) {
-              data.retry_local_url = fileId;
-            }
-
-            // Handle images...
-            newBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data) || newBlockId;
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data);
+            newBlockId = insertedBlockId || newBlockId;
           } else {
             const data = {
-              url: url,
+              url: '',
               name: file.name,
               uploaded_at: Date.now(),
               url_type: FieldURLType.Upload,
+              retry_local_url: fileId,
+              pending_upload_id: pendingUploadId,
             } as FileBlockData;
 
-            if (fileId) {
-              data.retry_local_url = fileId;
-            }
-
-            // Handle files...
-            newBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data) || newBlockId;
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data);
+            newBlockId = insertedBlockId || newBlockId;
           }
 
+          if (insertedBlockId) {
+            pendingUploads.push(
+              (async () => {
+                let url: string | undefined;
+
+                try {
+                  url = await e.uploadFile?.(file);
+                } catch {
+                  return;
+                }
+
+                if (!url) return;
+
+                if (fileId) {
+                  await fileHandler.cleanup(fileId).catch(() => undefined);
+                }
+
+                // The paste handler runs in the background after the user
+                // already moved on. Skip the write if the placeholder is gone
+                // or already finalised so we don't clobber later edits.
+                let currentData: { url?: string; pending_upload_id?: string } | undefined;
+
+                try {
+                  const entry = findSlateEntryByBlockId(e, insertedBlockId);
+
+                  currentData = entry
+                    ? (entry[0] as { data?: { url?: string; pending_upload_id?: string } }).data ?? undefined
+                    : undefined;
+                } catch {
+                  return;
+                }
+
+                if (!currentData) return;
+                if (currentData.url) return;
+                if (currentData.pending_upload_id !== pendingUploadId) return;
+
+                if (isImage) {
+                  CustomEditor.setBlockData(e, insertedBlockId, {
+                    url,
+                    image_type: ImageType.External,
+                    retry_local_url: '',
+                    pending_upload_id: '',
+                  } as ImageBlockData);
+                } else {
+                  CustomEditor.setBlockData(e, insertedBlockId, {
+                    url,
+                    name: file.name,
+                    uploaded_at: Date.now(),
+                    url_type: FieldURLType.Upload,
+                    retry_local_url: '',
+                    pending_upload_id: '',
+                  } as FileBlockData);
+                }
+              })()
+            );
+          }
         }
 
         if (!text) {
@@ -151,71 +278,189 @@ export const withInsertData = (editor: ReactEditor) => {
           const [, path] = entry;
 
           editor.select(editor.start(path));
-
         }
 
+        void Promise.all(pendingUploads).catch((err) => {
+          Log.warn('withInsertData: failed to finalize pasted file upload', err);
+        });
       })();
-
     }
   };
 
   return editor;
 };
 
-/**
- * Extract text content from a Slate fragment that contains table cells.
- * Returns a TSV string (tab-separated rows).
- */
-function extractTextsFromFragment(nodes: Node[]): string | null {
-  const rows: string[][] = [];
+function getSingleURLTextFromClipboard(data: DataTransfer): string | undefined {
+  const plainText = data.getData('text/plain')?.trim();
 
-  for (const node of nodes) {
-    if (Element.isElement(node)) {
-      if (node.type === BlockType.SimpleTableBlock) {
-        // Table > Row > Cell > Paragraph
-        for (const row of (node.children || []) as Element[]) {
-          const cellTexts: string[] = [];
+  if (plainText && isSingleURLText(plainText)) return plainText;
 
-          for (const cell of (row.children || []) as Element[]) {
-            const text = Node.string(cell);
+  const html = data.getData('text/html')?.trim();
 
-            cellTexts.push(text);
-          }
+  if (!html) return undefined;
 
-          if (cellTexts.length > 0) {
-            rows.push(cellTexts);
-          }
-        }
-      } else if (node.type === BlockType.SimpleTableRowBlock) {
-        const cellTexts: string[] = [];
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const textContent = doc.body.textContent?.trim();
 
-        for (const cell of (node.children || []) as Element[]) {
-          cellTexts.push(Node.string(cell));
-        }
+    if (textContent && isSingleURLText(textContent)) return textContent;
 
-        if (cellTexts.length > 0) {
-          rows.push(cellTexts);
-        }
-      } else if (node.type === BlockType.SimpleTableCellBlock) {
-        rows.push([Node.string(node)]);
-      } else {
-        // Non-table content — just get text
-        rows.push([Node.string(node)]);
-      }
-    }
+    const href = doc.querySelector('a[href]')?.getAttribute('href')?.trim();
+
+    if (href && isSingleURLText(href)) return href;
+  } catch {
+    return undefined;
   }
 
-  if (rows.length === 0) return null;
-
-  return rows.map(row => row.join('\t')).join('\n');
+  return undefined;
 }
 
 /**
- * Create a DataTransfer object with TSV text data.
+ * When Slate copies content, it encodes the full Slate fragment as a base64
+ * blob in the `data-slate-fragment` HTML attribute. The system clipboard
+ * often drops the `application/x-slate-fragment` MIME entry, so we recover
+ * the fragment from the HTML attribute when available.
+ *
+ * Uses the same regex shape as `slate-dom`'s `getSlateFragmentAttribute`.
  */
-function createTSVDataTransfer(tsv: string): DataTransfer {
+function extractSlateFragmentFromHTML(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+
+  const match = html.match(/data-slate-fragment="(.+?)"/m);
+
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Decode the base64+URI-encoded JSON Slate fragment. Returns `null` for
+ * malformed input so the caller can fall back gracefully instead of throwing
+ * out of the paste handler.
+ */
+function decodeSlateFragment(raw: string): Node[] | null {
+  try {
+    return JSON.parse(decodeURIComponent(window.atob(raw))) as Node[];
+  } catch (err) {
+    Log.warn('decodeSlateFragment: malformed clipboard fragment', err);
+    return null;
+  }
+}
+
+/**
+ * Inserts a Slate fragment as siblings of the current block using the YJS
+ * shared doc, mirroring the path used by `insertParsedBlocks` for HTML paste.
+ *
+ * Returns true if the fragment was inserted; false if the caller should fall
+ * back to Slate's default `insertFragment`.
+ *
+ * Mirrors two behaviors of Slate's `Transforms.insertFragment`:
+ *  - If the selection is expanded, delete the selected range first.
+ *  - After insertion, place the cursor at the end of the last inserted block.
+ */
+function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean {
+  if (fragment.length === 0) return false;
+
+  try {
+    // Every fragment node must be a block-level element with a text wrapper
+    // child — anything else (loose text, inline-only fragments) goes through
+    // Slate's default path so inline pastes still work.
+    const allBlocks = fragment.every((n) => {
+      if (!Element.isElement(n)) return false;
+      const children = n.children;
+
+      return (
+        Array.isArray(children) &&
+        children.length > 0 &&
+        Element.isElement(children[0]) &&
+        children[0].type === YjsEditorKey.text
+      );
+    });
+
+    if (!allBlocks) return false;
+
+    // Match Slate's default `Transforms.insertFragment`: collapse expanded
+    // selection by deleting the selected range first. Re-fetch the block
+    // entry afterward because the deletion changes which block holds the
+    // cursor and whether it is empty.
+    if (editor.selection && !Range.isCollapsed(editor.selection)) {
+      Transforms.delete(editor);
+    }
+
+    const entry = getBlockEntry(editor);
+
+    if (!entry) return false;
+
+    const [node] = entry;
+    const blockId = (node as BlockElement).blockId;
+
+    if (!blockId) return false;
+
+    const sharedRoot = getSharedRoot(editor);
+    const block = getBlock(blockId, sharedRoot);
+
+    if (!block) return false;
+
+    const parentId = block.get(YjsEditorKey.block_parent);
+    const parent = getBlock(parentId, sharedRoot);
+
+    if (!parent) return false;
+
+    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+    const index = parentChildren.toArray().findIndex((id) => id === blockId);
+
+    if (index < 0) return false;
+
+    // If the current block is empty (no text, no children), the user expects
+    // paste to fill that block — not push it above the pasted content. Insert
+    // at the current index and remove the empty original.
+    const isEmpty = CustomEditor.getBlockTextContent(node as Node).length === 0 && (node.children?.length ?? 0) <= 1;
+
+    const doc = assertDocExists(sharedRoot);
+    let insertedIds: string[] = [];
+
+    doc.transact(() => {
+      if (isEmpty) {
+        insertedIds = slateContentInsertToYData(parentId, index, fragment, doc);
+        CustomEditor.deleteBlock(editor, blockId);
+      } else {
+        insertedIds = slateContentInsertToYData(parentId, index + 1, fragment, doc);
+      }
+    }, CollabOrigin.LocalManual);
+
+    // Place the cursor at the end of the last inserted block so subsequent
+    // edits target a valid location (not the now-deleted original block).
+    const lastId = insertedIds[insertedIds.length - 1];
+
+    if (lastId) {
+      const lastEntry = findSlateEntryByBlockId(editor, lastId);
+
+      if (lastEntry) {
+        const [, path] = lastEntry;
+
+        try {
+          Transforms.select(editor, Editor.end(editor, path));
+        } catch (err) {
+          // Editor.end can throw if the path was rebuilt mid-transact; the
+          // selection will be re-derived on the next user keystroke.
+          Log.warn('insertFragmentAsSiblings: could not set selection', err);
+        }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    Log.error('insertFragmentAsSiblings failed', err);
+    return false;
+  }
+}
+
+function createTextDataTransfer(text: string, html?: string): DataTransfer {
   const dt = new DataTransfer();
 
-  dt.setData('text/plain', tsv);
+  dt.setData('text/plain', text);
+
+  if (html) {
+    dt.setData('text/html', html);
+  }
+
   return dt;
 }

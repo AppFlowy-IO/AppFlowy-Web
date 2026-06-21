@@ -499,6 +499,15 @@
       },
       "outline": {
         "addHeadingToCreateOutline": "Adjon hozzá címeket a tartalomjegyzék létrehozásához."
+      },
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Beillesztés másként",
+          "mention": "Említés",
+          "url": "URL",
+          "bookmark": "Könyvjelző",
+          "embed": "Beágyazás"
+        }
       }
     },
     "textBlock": {

@@ -2,6 +2,7 @@ import { debounce } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Log } from '@/utils/log';
 
 /**
@@ -57,6 +58,15 @@ const setCursorPosition = (element: HTMLDivElement, position: number) => {
   
   range.setStart(textNode, safePosition);
   range.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+};
+
+const selectContentEditableText = (element: HTMLDivElement) => {
+  const range = document.createRange();
+  const selection = window.getSelection();
+
+  range.selectNodeContents(element);
   selection?.removeAllRanges();
   selection?.addRange(range);
 };
@@ -276,6 +286,13 @@ function TitleEditable({
     if (!contentRef.current) return;
     
     lastInputTimeRef.current = Date.now();
+
+    if (createHotkey(HOT_KEY_NAME.SELECT_ALL)(e.nativeEvent)) {
+      e.preventDefault();
+      e.stopPropagation();
+      selectContentEditableText(contentRef.current);
+      return;
+    }
 
     if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault();

@@ -17,6 +17,10 @@ type GridContextType = {
   resizeRows?: Map<string, number>;
   setResizeRow: (resizeRow: { rowId: string; maxCellHeight: number }) => void;
   onResizeRowEnd: (id: string) => void;
+  remainingRowCount: number;
+  lastVisibleRowId?: string;
+  loadMoreRows: () => void;
+  revealCreatedRow: () => void;
   showStickyHeader: boolean;
   setShowStickyHeader: (show: boolean) => void;
 };

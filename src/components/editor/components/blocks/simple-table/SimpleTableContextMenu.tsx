@@ -338,6 +338,13 @@ function useHighlight(type: 'row' | 'column', index: number, isOpen: boolean) {
   }, [isOpen, type, index, context]);
 }
 
+function getTableContainerWidth(anchor: HTMLElement | null) {
+  const rootWrapper = anchor?.closest('.simple-table-root-wrapper');
+  const scrollContainer = rootWrapper?.querySelector('.simple-table-scroll-container');
+
+  return scrollContainer instanceof HTMLElement ? scrollContainer.clientWidth : undefined;
+}
+
 // ============================================================================
 // Action trigger icon buttons
 // ============================================================================
@@ -409,9 +416,8 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
   }, [context]);
 
   const tableBlockId = context?.tableNode.blockId ?? '';
-  const rowCount = (context?.tableNode.children?.length ?? 0);
-  const firstRow = context?.tableNode.children?.[0];
-  const colCount = firstRow ? (firstRow as { children: unknown[] }).children?.length ?? 0 : 0;
+  const rowCount = context?.rowCount ?? 0;
+  const colCount = context?.columnCount ?? 0;
 
   const actions = useMemo<MenuAction[]>(() => {
     const items: MenuAction[] = [
@@ -470,11 +476,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
         label: 'Set to page width',
         icon: <SetToPageWidthIcon />,
         onClick: () => {
-          // Find the scroll container that holds this table
-          const firstCellOfTable = context?.tableNode?.children?.[0];
-          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
-          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
-          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
+          const containerWidth = getTableContainerWidth(buttonRef.current);
 
           if (containerWidth && colCount > 0) {
             // Set to page width: divide page width equally among all columns
@@ -495,11 +497,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
         label: 'Distribute columns evenly',
         icon: <DistributeIcon />,
         onClick: () => {
-          // Distribute evenly: same as set to page width — equal width columns
-          const firstCellOfTable = context?.tableNode?.children?.[0];
-          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
-          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
-          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
+          const containerWidth = getTableContainerWidth(buttonRef.current);
 
           if (containerWidth && colCount > 0) {
             const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
@@ -601,8 +599,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
   }, [context]);
 
   const tableBlockId = context?.tableNode.blockId ?? '';
-  const firstRow = context?.tableNode.children?.[0];
-  const colCount = firstRow ? (firstRow as { children: unknown[] }).children?.length ?? 0 : 0;
+  const colCount = context?.columnCount ?? 0;
 
   const actions = useMemo<MenuAction[]>(() => {
     const items: MenuAction[] = [
@@ -661,11 +658,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
         label: 'Set to page width',
         icon: <SetToPageWidthIcon />,
         onClick: () => {
-          // Find the scroll container that holds this table
-          const firstCellOfTable = context?.tableNode?.children?.[0];
-          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
-          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
-          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
+          const containerWidth = getTableContainerWidth(buttonRef.current);
 
           if (containerWidth && colCount > 0) {
             const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
@@ -685,10 +678,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
         label: 'Distribute columns evenly',
         icon: <DistributeIcon />,
         onClick: () => {
-          const firstCellOfTable = context?.tableNode?.children?.[0];
-          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
-          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
-          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
+          const containerWidth = getTableContainerWidth(buttonRef.current);
 
           if (containerWidth && colCount > 0) {
             const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));

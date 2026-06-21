@@ -38,7 +38,7 @@ export const ToggleList = memo(
       <>
         <div {...attributes} ref={ref} className={className} id={level ? `heading-${blockId}` : undefined}>
           {children}
-          {!readOnly && !collapsed && node.children.slice(1).length === 0 && (
+          {!readOnly && !collapsed && node.children.length <= 1 && (
             <div
               onMouseDown={(e) => {
                 e.preventDefault();

@@ -1,4 +1,4 @@
-import { Page, Locator } from '@playwright/test';
+import { Page } from '@playwright/test';
 
 /**
  * Centralized selectors for Playwright E2E tests
@@ -37,6 +37,31 @@ export function viewIdFromPageTestId(testId: string | null | undefined): string 
 }
 
 /**
+ * Sidebar children (space/page items) render inside a MUI `<Collapse>` (the
+ * expand/collapse animation). That nests child rows under
+ * `.MuiCollapse-root > .MuiCollapse-wrapper > .MuiCollapse-wrapperInner > <flex div>`
+ * instead of as direct children of the item. These helpers select the *direct*
+ * child page-items, traversing that wrapper with direct-child combinators so
+ * nested collapses (grandchildren) are excluded.
+ *
+ * The container element (an item's last / `nth-child(2)` div child) IS the
+ * `.MuiCollapse-root`, so use:
+ * - {@link itemDirectChildPageItems} from a sidebar item (space-item/page-item)
+ * - {@link collapseChildPageItems} from a children-container (the collapse root)
+ */
+const COLLAPSE_INNER = '.MuiCollapse-wrapper > .MuiCollapse-wrapperInner > div';
+
+/** Direct child page-items relative to a sidebar item element. */
+export function itemDirectChildPageItems(visible = false): string {
+  return `:scope > .MuiCollapse-root > ${COLLAPSE_INNER} > [data-testid="page-item"]${visible ? ':visible' : ''}`;
+}
+
+/** Direct child page-items relative to a children-container (the MUI Collapse root). */
+export function collapseChildPageItems(visible = false): string {
+  return `:scope > ${COLLAPSE_INNER} > [data-testid="page-item"]${visible ? ':visible' : ''}`;
+}
+
+/**
  * Page-related selectors
  */
 export const PageSelectors = {
@@ -47,7 +72,9 @@ export const PageSelectors = {
     page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first(),
   nameContaining: (page: Page, text: string) => page.getByTestId('page-name').filter({ hasText: text }),
   itemByName: (page: Page, pageName: string) =>
-    page.locator(`[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${pageName}"))`).first(),
+    page
+      .locator(`[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${pageName}"))`)
+      .first(),
   moreActionsButton: (page: Page, pageName?: string) => {
     if (pageName) {
       return PageSelectors.itemByName(page, pageName).getByTestId('page-more-actions').first();
@@ -153,6 +180,7 @@ export const ShareSelectors = {
   confirmUnpublishButton: (page: Page) => page.getByTestId('confirm-unpublish-button'),
   publishConfirmButton: (page: Page) => page.getByTestId('publish-confirm-button'),
   visitSiteButton: (page: Page) => page.getByTestId('visit-site-button'),
+  publishCommentsSwitch: (page: Page) => page.getByTestId('publish-comments-switch'),
   publishManageModal: (page: Page) => page.getByTestId('publish-manage-modal'),
   publishManagePanel: (page: Page) => page.getByTestId('publish-manage-panel'),
   editNamespaceButton: (page: Page) => page.getByTestId('edit-namespace-button'),
@@ -166,6 +194,7 @@ export const ShareSelectors = {
 export const WorkspaceSelectors = {
   dropdownTrigger: (page: Page) => page.getByTestId('workspace-dropdown-trigger'),
   dropdownContent: (page: Page) => page.getByTestId('workspace-dropdown-content'),
+  list: (page: Page) => page.getByTestId('workspace-list'),
   item: (page: Page) => page.getByTestId('workspace-item'),
   itemName: (page: Page) => page.getByTestId('workspace-item-name'),
   memberCount: (page: Page) => page.getByTestId('workspace-member-count'),
@@ -206,7 +235,8 @@ export const ModelSelectorSelectors = {
   searchInput: (page: Page) => page.getByTestId('model-search-input'),
   options: (page: Page) => page.locator('[data-testid^="model-option-"]'),
   optionByName: (page: Page, modelName: string) => page.getByTestId(`model-option-${modelName}`),
-  selectedOption: (page: Page) => page.locator('[data-testid^="model-option-"]').filter({ has: page.locator('.bg-fill-content-select') }),
+  selectedOption: (page: Page) =>
+    page.locator('[data-testid^="model-option-"]').filter({ has: page.locator('.bg-fill-content-select') }),
 };
 
 /**
@@ -234,9 +264,12 @@ export const DatabaseGridSelectors = {
   cells: (page: Page) => page.locator('[data-testid^="grid-cell-"]'),
   cellByIds: (page: Page, rowId: string, fieldId: string) => page.getByTestId(`grid-cell-${rowId}-${fieldId}`),
   cellsInRow: (page: Page, rowId: string) => page.locator(`[data-testid^="grid-cell-${rowId}-"]`),
-  cellsForField: (page: Page, fieldId: string) => page.locator(`[data-testid$="-${fieldId}"][data-testid^="grid-cell-"]`),
+  cellsForField: (page: Page, fieldId: string) =>
+    page.locator(`[data-testid$="-${fieldId}"][data-testid^="grid-cell-"]`),
   dataRowCellsForField: (page: Page, fieldId: string) =>
-    page.locator(`[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`),
+    page.locator(
+      `[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`
+    ),
   firstCell: (page: Page) => page.locator('[data-testid^="grid-cell-"]').first(),
   newRowButton: (page: Page) => page.getByTestId('grid-new-row'),
 };
@@ -256,6 +289,63 @@ export const DatabaseViewSelectors = {
   gridView: (page: Page) => page.getByTestId('grid-view'),
   boardView: (page: Page) => page.locator('[data-testid*="board"]'),
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
+  /**
+   * Locator for a layout option inside the AddViewButton dropdown
+   * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
+   * dedicated test ids; they're identified by visible label.
+   */
+  viewTypeOption: (page: Page, label: string) => page.getByRole('menuitem', { name: label }),
+};
+
+/**
+ * Chart view selectors
+ */
+export const ChartSelectors = {
+  chart: (page: Page) => page.getByTestId('database-chart'),
+  anyChart: (page: Page) => page.locator('.recharts-wrapper'),
+  barChart: (page: Page) => page.locator('.recharts-bar-rectangles'),
+  lineChart: (page: Page) => page.locator('.recharts-line'),
+  pieChart: (page: Page) => page.locator('.recharts-pie'),
+  bars: (page: Page) => page.locator('.recharts-bar-rectangle'),
+  dots: (page: Page) => page.locator('.recharts-dot'),
+  slices: (page: Page) => page.locator('.recharts-pie-sector'),
+  emptyStateNoField: (page: Page) => page.getByTestId('database-chart').getByText('No fields available for grouping'),
+  emptyStateNoData: (page: Page) => page.getByTestId('database-chart').getByText('No data'),
+  tooltip: (page: Page) => page.locator('.recharts-tooltip-wrapper'),
+  legend: (page: Page) => page.locator('.recharts-legend-wrapper'),
+};
+
+/**
+ * Chart settings dropdown selectors. The dropdown opens off the
+ * `database-actions-settings` (gear) button and contains nested submenus.
+ * Items are matched by visible label since the dropdown items have no
+ * dedicated test ids.
+ */
+export const ChartSettingsSelectors = {
+  settingsButton: (page: Page) => page.getByTestId('database-actions-settings'),
+  // Submenu triggers in the top-level Properties / Layout / Chart settings menu
+  chartSettingsSubTrigger: (page: Page) => page.getByRole('menuitem', { name: /chart settings/i }),
+  // Sub-submenu trigger inside Chart settings for the four chart types
+  chartTypeSubTrigger: (page: Page) => page.getByRole('menuitem', { name: /^chart type$/i }),
+  // Section labels inside the Chart settings submenu
+  xAxisLabel: (page: Page) => page.getByText('X-Axis', { exact: true }),
+  aggregationLabel: (page: Page) => page.getByText('Aggregation', { exact: true }),
+  yAxisLabel: (page: Page) => page.getByText('Y-Axis', { exact: true }),
+  // A specific aggregation row by label (e.g. "Count", "Sum", "Average").
+  aggregationItem: (page: Page, label: string) => page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
+  // A chart type row by label (Bar / Horizontal Bar / Line / Donut)
+  chartTypeItem: (page: Page, label: string) => page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
+  // Toggle rows
+  showEmptyValuesItem: (page: Page) => page.getByRole('menuitem', { name: /show empty values/i }),
+  cumulativeItem: (page: Page) => page.getByRole('menuitem', { name: /cumulative/i }),
+};
+
+/**
+ * Drill-down popup selectors (rendered when the user clicks a chart element).
+ */
+export const ChartDrilldownSelectors = {
+  dialog: (page: Page) => page.getByRole('dialog'),
+  closeButton: (page: Page) => page.getByRole('dialog').getByRole('button').first(),
 };
 
 /**
@@ -324,7 +414,8 @@ export const PropertyMenuSelectors = {
  * Single Select Column selectors
  */
 export const SingleSelectSelectors = {
-  selectOptionCell: (page: Page, rowId: string, fieldId: string) => page.getByTestId(`select-option-cell-${rowId}-${fieldId}`),
+  selectOptionCell: (page: Page, rowId: string, fieldId: string) =>
+    page.getByTestId(`select-option-cell-${rowId}-${fieldId}`),
   allSelectOptionCells: (page: Page) => page.locator('[data-testid^="select-option-cell-"]'),
   selectOption: (page: Page, optionId: string) => page.getByTestId(`select-option-${optionId}`),
   selectOptionMenu: (page: Page) => page.getByTestId('select-option-menu'),
@@ -387,7 +478,6 @@ export const AuthSelectors = {
   passwordInput: (page: Page) => page.getByTestId('password-input'),
   passwordSubmitButton: (page: Page) => page.getByTestId('password-submit-button'),
   createAccountButton: (page: Page) => page.getByTestId('login-create-account-button'),
-  logoutMenuItem: (page: Page) => page.getByTestId('logout-menu-item'),
   logoutConfirmButton: (page: Page) => page.getByTestId('logout-confirm-button'),
 };
 
@@ -406,8 +496,9 @@ export const SignUpSelectors = {
  * Account settings selectors
  */
 export const AccountSelectors = {
-  settingsButton: (page: Page) => page.getByTestId('account-settings-button'),
-  settingsDialog: (page: Page) => page.getByTestId('account-settings-dialog'),
+  settingsButton: (page: Page) => page.getByTestId('settings-button'),
+  settingsDialog: (page: Page) => page.getByTestId('settings-dialog'),
+  logoutButton: (page: Page) => page.getByTestId('settings-logout-button'),
   dateFormatDropdown: (page: Page) => page.getByTestId('date-format-dropdown'),
   dateFormatOptionYearMonthDay: (page: Page) => page.getByTestId('date-format-1'),
   timeFormatDropdown: (page: Page) => page.getByTestId('time-format-dropdown'),
@@ -421,10 +512,33 @@ export const AccountSelectors = {
  */
 export const AddPageSelectors = {
   inlineAddButton: (page: Page) => page.getByTestId('inline-add-page'),
+  addDocumentButton: (page: Page) => page.getByTestId('add-document-button'),
   addGridButton: (page: Page) => page.getByTestId('add-grid-button'),
   addCalendarButton: (page: Page) => page.getByTestId('add-calendar-button'),
   addBoardButton: (page: Page) => page.getByTestId('add-board-button'),
   addAIChatButton: (page: Page) => page.getByTestId('add-ai-chat-button'),
+  addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
+  addImportButton: (page: Page) => page.getByTestId('add-import-button'),
+};
+
+/**
+ * Export-As (PDF) selectors
+ */
+export const ExportSelectors = {
+  panel: (page: Page) => page.getByTestId('export-panel'),
+  pdfButton: (page: Page) => page.getByTestId('export-pdf-button'),
+  includeLinkedPagesSwitch: (page: Page) => page.getByTestId('export-include-linked-pages-switch'),
+};
+
+/**
+ * Import dialog selectors
+ */
+export const ImportSelectors = {
+  dialog: (page: Page) => page.getByTestId('import-dialog'),
+  markdownButton: (page: Page) => page.getByTestId('import-markdown'),
+  csvButton: (page: Page) => page.getByTestId('import-csv'),
+  markdownInput: (page: Page) => page.getByTestId('import-markdown-input'),
+  csvInput: (page: Page) => page.getByTestId('import-csv-input'),
 };
 
 /**

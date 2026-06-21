@@ -33,9 +33,12 @@ export enum BlockType {
   DividerBlock = 'divider',
   ImageBlock = 'image',
   VideoBlock = 'video',
+  AudioBlock = 'audio',
+  GoogleDriveBlock = 'google_drive',
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  ChartBlock = 'chart',
   OutlineBlock = 'outline',
   TableBlock = 'table',
   TableCell = 'table/cell',
@@ -108,8 +111,14 @@ export interface MathEquationBlockData extends BlockData {
   formula?: string;
 }
 
+export enum LinkPreviewType {
+  Bookmark = 'bookmark',
+  Embed = 'embed',
+}
+
 export interface LinkPreviewBlockData extends BlockData {
   url?: string;
+  preview_type?: LinkPreviewType;
 }
 
 export enum FieldURLType {
@@ -123,6 +132,7 @@ export interface FileBlockData extends BlockData {
   url?: string;
   url_type?: FieldURLType;
   retry_local_url?: string;
+  pending_upload_id?: string;
 }
 
 export enum ImageType {
@@ -138,6 +148,7 @@ export interface ImageBlockData extends BlockData {
   image_type?: ImageType;
   height?: number;
   retry_local_url?: string;
+  pending_upload_id?: string;
 }
 
 export enum VideoType {
@@ -161,6 +172,32 @@ export interface VideoBlockData extends BlockData {
   video_type?: VideoType;
   url_type?: DesktopVideoUrlType;
   name?: string;
+}
+
+export enum AudioUrlType {
+  Local = 'local',
+  Network = 'network',
+  Cloud = 'cloud',
+}
+
+export interface AudioBlockData extends BlockData {
+  url?: string;
+  url_type?: AudioUrlType | string;
+  name?: string;
+  uploaded_at?: number;
+  uploaded_by?: string;
+  duration_in_second?: number;
+  retry_local_url?: string;
+  pending_upload_id?: string;
+}
+
+export interface GoogleDriveBlockData extends BlockData {
+  url?: string;
+  name?: string;
+  email?: string;
+  uploaded_at?: number;
+  width_factor?: number;
+  height_factor?: number;
 }
 
 export interface AIMeetingBlockData extends BlockData {
@@ -194,6 +231,7 @@ export interface PDFBlockData extends BlockData {
   url?: string;
   url_type?: FieldURLType;
   retry_local_url?: string;
+  pending_upload_id?: string;
 }
 
 export enum GalleryLayout {
@@ -720,6 +758,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Calendar
   get(key: '2'): YDatabaseCalendarLayoutSetting;
+
+  // DatabaseViewLayout.Chart
+  get(key: '3'): YDatabaseChartLayoutSetting;
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
@@ -731,6 +772,12 @@ export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.number_of_days): number;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
+}
+
+export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
+  get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
+  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
+  get(key: 'showEmptyValues' | 'cumulative'): boolean;
 }
 
 export interface YDatabaseGroup extends Y.Map<unknown> {
@@ -909,12 +956,14 @@ export const layoutMap = {
   [ViewLayout.Grid]: 'grid',
   [ViewLayout.Board]: 'board',
   [ViewLayout.Calendar]: 'calendar',
+  [ViewLayout.Chart]: 'chart',
 };
 
 export const databaseLayoutMap = {
   [DatabaseViewLayout.Grid]: 'grid',
   [DatabaseViewLayout.Board]: 'board',
   [DatabaseViewLayout.Calendar]: 'calendar',
+  [DatabaseViewLayout.Chart]: 'chart',
 };
 
 export enum FontLayout {
@@ -956,7 +1005,17 @@ export interface PublishViewMetaData {
 export type AppendBreadcrumb = (view?: View) => void;
 
 export type CreateRow = (rowKey: string) => Promise<YDoc>;
-export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
+export interface LoadViewOptions {
+  databaseId?: string | null;
+  forceFetch?: boolean;
+}
+
+export type LoadView = (
+  viewId: string,
+  isSubDocument?: boolean,
+  loadAwareness?: boolean,
+  options?: LoadViewOptions
+) => Promise<YDoc>;
 
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
 
@@ -1143,6 +1202,8 @@ export interface View {
   has_children?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
+  is_locked?: boolean;
   last_edited_time?: string;
   favorited_at?: string;
   last_viewed_at?: string;
@@ -1241,6 +1302,8 @@ export interface WorkspaceMember {
   email: string;
   avatar_url: string;
   role: Role;
+  joined_at?: string | null;
+  is_pending_invitation?: boolean;
 }
 
 export interface GetRequestAccessInfoResponse {
@@ -1281,6 +1344,7 @@ export interface UpdatePagePayload {
     value: string;
   };
   extra?: Partial<ViewExtra>;
+  is_locked?: boolean;
 }
 
 export type ViewMetaCover = ViewCover;
@@ -1332,14 +1396,19 @@ export interface ViewComponentProps {
    * Only available in app mode - not provided in publish mode.
    */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
-  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
+  duplicateRowDocument?: (
+    databaseId: string,
+    sourceRowId: string,
+    newRowId: string,
+    clientDocStateB64?: string
+  ) => Promise<void>;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
-  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
   isTemplateThumb?: boolean;
@@ -1361,7 +1430,7 @@ export interface ViewComponentProps {
   updatePageName?: (viewId: string, name: string) => Promise<void>;
   currentUser?: User;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   getSubscriptions?: () => Promise<Subscription[]>;
   eventEmitter?: EventEmitter;
@@ -1387,6 +1456,14 @@ export interface DuplicatePageOptions {
   includeChildren?: boolean;
   suffix?: string;
   source?: number;
+}
+
+export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
+  /**
+   * Client-only lifecycle hook. Runs after the pre-duplicate collab sync and
+   * before the duplicate API request; it is not sent to the server.
+   */
+  afterPreSync?: () => Promise<void>;
 }
 
 export interface CreateDatabaseViewPayload {
@@ -1496,8 +1573,10 @@ export interface UpdateWorkspacePayload {
 
 export enum SettingMenuItem {
   ACCOUNT = 'ACCOUNT',
+  PROFILE = 'PROFILE',
   WORKSPACE = 'WORKSPACE',
   MEMBERS = 'MEMBERS',
+  MANAGE_DATA = 'MANAGE_DATA',
   SITES = 'SITES',
 }
 

@@ -1,11 +1,9 @@
 import { ERROR_CODE } from '@/application/constants';
-import { notify } from '@/components/_shared/notify';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
-import { hasProAccessFromPlans } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 import { getAxios, handleAPIError } from './core';
-import { getActiveSubscription } from './billing-api';
 
 export { uploadFileMultipart } from './multipart-upload';
 export { MULTIPART_THRESHOLD } from './multipart-upload.types';
@@ -19,20 +17,6 @@ export async function uploadFile(
 ) {
   Log.debug('[UploadFile] starting', { fileName: file.name, fileSize: file.size });
   const url = getAppFlowyFileUploadUrl(workspaceId, viewId);
-
-  // Check file size, if over 7MB, check subscription plan
-  if (file.size > 7 * 1024 * 1024) {
-    const plan = await getActiveSubscription(workspaceId);
-
-    if (!hasProAccessFromPlans(plan)) {
-      notify.error('Your file is over 7 MB limit of the Free plan. Upgrade for unlimited uploads.');
-
-      return Promise.reject({
-        code: ERROR_CODE.PAYLOAD_TOO_LARGE,
-        message: 'File size is too large. Please upgrade your plan for unlimited uploads.',
-      });
-    }
-  }
 
   const axiosInstance = getAxios();
 
@@ -65,7 +49,9 @@ export async function uploadFile(
     if (e.response?.status === 413) {
       return Promise.reject({
         code: ERROR_CODE.PAYLOAD_TOO_LARGE,
-        message: 'File size is too large. Please upgrade your plan for unlimited uploads.',
+        message: isAppFlowyHosted()
+          ? 'File size is too large. Please upgrade your plan for unlimited uploads.'
+          : 'File size is too large.',
       });
     }
 

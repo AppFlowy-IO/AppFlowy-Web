@@ -697,7 +697,16 @@
         "cut": "Vyjmout",
         "paste": "Vložit"
       },
-      "action": "Příkazy"
+      "action": "Příkazy",
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Vložit jako",
+          "mention": "Zmínka",
+          "url": "URL",
+          "bookmark": "Záložka",
+          "embed": "Vložený obsah"
+        }
+      }
     },
     "textBlock": {
       "placeholder": "Napište \"/\" pro zadání příkazu"

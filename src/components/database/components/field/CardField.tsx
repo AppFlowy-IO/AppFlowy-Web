@@ -101,7 +101,7 @@ export function CardField({
     return null;
   }
 
-  if (Number(type) === FieldType.FileMedia) {
+  if (Number(type) === FieldType.Media) {
     const count = (cell?.data as FileMediaCellData)?.length || 0;
 
     if (count === 0) return null;

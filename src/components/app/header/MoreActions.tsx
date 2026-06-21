@@ -1,13 +1,15 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { APP_EVENTS } from '@/application/constants';
 import { Role, ViewLayout } from '@/application/types';
 import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { AIService } from '@/application/services/domains';
-import { useAIEnabled, useAppOutline, useAppView, useCurrentWorkspaceId, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppOutline, useAppView, useCurrentWorkspaceId, useEventEmitter, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
 import { Button } from '@/components/ui/button';
 import {
@@ -110,6 +112,13 @@ function MoreActions({
   const pageHistoryEnabled = usePageHistoryEnabled();
   const showHistory = enableVersionHistory && pageHistoryEnabled && view?.layout === ViewLayout.Document;
 
+  const eventEmitter = useEventEmitter();
+  const isDocument = view?.layout === ViewLayout.Document;
+  const handleFindAndReplace = useCallback(() => {
+    handleClose();
+    eventEmitter?.emit(APP_EVENTS.FIND_AND_REPLACE, { viewId });
+  }, [eventEmitter, viewId, handleClose]);
+
   useEffect(() => {
     if (!showHistory && historyOpen) {
       setHistoryOpen(false);
@@ -135,7 +144,26 @@ function MoreActions({
         <DropdownMenuContent {...menuContentProps}>
           <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
 
-          {role === Role.Guest || shareWithMeView ? null : (
+          {role === Role.Guest || shareWithMeView ? (
+            // Guests and shared-with-me viewers don't get the editing actions
+            // in MoreActionsContent, but Find still works in read-only mode
+            // (the panel disables Replace itself), so surface it here.
+            isDocument && (
+              <>
+                <DropdownMenuItem
+                  data-testid={'more-page-find-and-replace'}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    handleFindAndReplace();
+                  }}
+                >
+                  <SearchIcon />
+                  {t('shareAction.findAndReplace')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )
+          ) : (
             <>
               <MoreActionsContent
                 itemClicked={() => {
@@ -144,6 +172,7 @@ function MoreActions({
                 onDeleted={onDeleted}
                 viewId={viewId}
                 onOpenHistory={showHistory ? handleOpenHistory : undefined}
+                onFindAndReplace={isDocument ? handleFindAndReplace : undefined}
               />
               <DropdownMenuSeparator />
             </>

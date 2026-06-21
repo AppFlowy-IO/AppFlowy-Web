@@ -1094,7 +1094,14 @@
         "copiedToPasteBoard": "O link da imagem foi copiado para a área de transferência"
       },
       "urlPreview": {
-        "copiedToPasteBoard": "O link foi copiado para a área de transferência"
+        "copiedToPasteBoard": "O link foi copiado para a área de transferência",
+        "pasteAs": {
+          "title": "Colar como",
+          "mention": "Menção",
+          "url": "URL",
+          "bookmark": "Favorito",
+          "embed": "Incorporar"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Adicione títulos para criar um sumário."

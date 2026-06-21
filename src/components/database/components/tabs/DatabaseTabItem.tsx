@@ -1,12 +1,19 @@
-import { memo, useMemo } from 'react';
+import { type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { memo, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import DropColumnIndicator from '@/components/database/components/drag-and-drop/DropColumnIndicator';
 import { DatabaseViewActions } from '@/components/database/components/tabs/ViewActions';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { TabLabel, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+const TAB_DRAG_TYPE = 'database-view-tab';
+const TAB_DRAG_EDGES: Edge[] = ['left', 'right'];
 
 export interface DatabaseTabItemProps {
   viewId: string;
@@ -25,6 +32,8 @@ export interface DatabaseTabItemProps {
   onOpenDeleteModal: (id: string) => void;
   onOpenRenameModal: (id: string) => void;
   setTabRef: (id: string, el: HTMLElement | null) => void;
+  /** Drag instance of the tab bar group; undefined disables reordering for this tab. */
+  reorderInstanceId?: symbol;
 }
 
 export const DatabaseTabItem = memo(
@@ -40,8 +49,28 @@ export const DatabaseTabItem = memo(
     onOpenDeleteModal,
     onOpenRenameModal,
     setTabRef,
+    reorderInstanceId,
   }: DatabaseTabItemProps) => {
     const { t } = useTranslation();
+    const tabRef = useRef<HTMLElement | null>(null);
+
+    const { dragState, shouldSuppressClick } = useReorderableItem({
+      elementRef: tabRef,
+      id: viewId,
+      dragType: TAB_DRAG_TYPE,
+      instanceId: reorderInstanceId,
+      canDrag: Boolean(reorderInstanceId),
+      allowedEdges: TAB_DRAG_EDGES,
+    });
+
+    const setRefs = useCallback(
+      (el: HTMLElement | null) => {
+        tabRef.current = el;
+        setTabRef(viewId, el);
+      },
+      [setTabRef, viewId]
+    );
+
     const rawLayoutValue = view.get(YjsDatabaseKey.layout);
     const databaseLayout = Number(rawLayoutValue) as DatabaseViewLayout;
 
@@ -54,6 +83,8 @@ export const DatabaseTabItem = memo(
           return 'Board';
         case DatabaseViewLayout.Calendar:
           return 'Calendar';
+        case DatabaseViewLayout.Chart:
+          return 'Chart';
         default:
           return t('untitled');
       }
@@ -72,6 +103,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.Board
         : databaseLayout === DatabaseViewLayout.Calendar
         ? ViewLayout.Calendar
+        : databaseLayout === DatabaseViewLayout.Chart
+        ? ViewLayout.Chart
         : ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu
@@ -97,9 +130,15 @@ export const DatabaseTabItem = memo(
         value={viewId}
         id={`view-tab-${viewId}`}
         data-testid={`view-tab-${viewId}`}
-        className={'min-w-[80px] max-w-[200px]'}
-        ref={(el) => {
-          setTabRef(viewId, el);
+        className={cn('min-w-[80px] max-w-[200px]', dragState.type === 'dragging' && 'opacity-40')}
+        ref={setRefs}
+        onClickCapture={(e) => {
+          // Swallow the click that fires right after a drag so the dragged tab
+          // isn't (re-)selected on drop.
+          if (shouldSuppressClick()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
         }}
       >
         <TabLabel
@@ -164,6 +203,7 @@ export const DatabaseTabItem = memo(
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        {dragState.type === 'over' ? <DropColumnIndicator edge={dragState.closestEdge} /> : null}
       </TabsTrigger>
     );
   }

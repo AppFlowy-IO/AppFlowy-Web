@@ -38,8 +38,8 @@ function GridVirtualColumn({
     () =>
       [
         FieldType.Checkbox,
-        FieldType.AISummaries,
-        FieldType.AITranslations,
+        FieldType.Summary,
+        FieldType.Translate,
         FieldType.CreatedTime,
         FieldType.LastEditedTime,
       ].includes(fieldType as FieldType) || disableRelationRollupEdit,

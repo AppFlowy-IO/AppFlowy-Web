@@ -96,7 +96,7 @@ export interface DatabaseContextState {
   deletePage?: (viewId: string) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   loadViews?: () => Promise<View[]>;
   uploadFile?: (file: File) => Promise<string>;
   loadDatabasePrompts?: LoadDatabasePrompts;
@@ -299,6 +299,18 @@ export const useRow = (rowId: string) => {
 
 export const useRowData = (rowId: string) => {
   return useRow(rowId)?.get(YjsEditorKey.database_row) as YDatabaseRow;
+};
+
+/**
+ * Returns true once the row's collab content has been loaded into the local
+ * doc (i.e. the `database_row` YMap is present in the row's data_section).
+ * Useful for showing a loading indicator on rows that have no local
+ * IndexedDB cache yet while their first sync arrives.
+ */
+export const useIsRowLoaded = (rowId: string) => {
+  const dataSection = useRow(rowId);
+
+  return Boolean(dataSection?.has(YjsEditorKey.database_row));
 };
 
 /**

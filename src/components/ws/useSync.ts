@@ -15,7 +15,7 @@ import { useWorkspaceNotifications } from './sync/useWorkspaceNotifications';
 import { SyncContextType } from './sync/types';
 
 // Re-export types so existing consumer import paths continue to work
-export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './sync/types';
+export type { RegisterSyncContext, SyncContextType } from './sync/types';
 
 /**
  * Central orchestrator hook for real-time collaborative editing.
@@ -116,13 +116,6 @@ export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './s
  *   - `MoreActionsContent.handleDuplicateClick()` — before duplicating a page, a
  *     blocking loader is shown while this runs
  *
- * ### `lastUpdatedCollab: UpdateCollabInfo | null`
- *
- * Reactive state that updates every time a collab message is applied — whether the
- * message arrived via WebSocket or BroadcastChannel. Contains `{ objectId,
- * collabType, publishedAt }`. Exposed through `SyncInternalContext` for consumers
- * that need to react when *any* collab document changes.
- *
  * ## Message flow (incoming)
  *
  * ```
@@ -158,7 +151,7 @@ export const useSync = (
   eventEmitter: EventEmitter,
   workspaceId: string
 ): SyncContextType => {
-  const { sendMessage, lastMessage } = ws;
+  const { sendMessage, lastMessage, readyState } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
   const currentUser = useCurrentUserOptional();
 
@@ -199,18 +192,28 @@ export const useSync = (
   // WebSocket notifications and cross-tab BroadcastChannel relays.
   useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter);
 
+  // ── Batch sync utilities ─────────────────────────────────────────────
+  // flushAllSync: drain buffered local updates to WebSocket for every registered doc.
+  // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
+  // notifyLocalEdit: debounced HTTP full-sync fallback while WebSocket is reconnecting.
+  // notifyManifestSync: clears HTTP fallback markers after a WS manifest/state-vector exchange.
+  const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync } = useBatchSync(refs, {
+    workspaceId,
+    wsReadyState: readyState,
+  });
+
   // ── Sync context lifecycle ───────────────────────────────────────────
   // Provides registerSyncContext / unregisterSyncContext / scheduleDeferredCleanup.
   // Manages ref-counting so multiple components sharing the same Y.Doc don't
   // tear it down prematurely.
   const { registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup } =
-    useSyncContextLifecycle(refs, sendMessage, postMessage);
+    useSyncContextLifecycle(refs, sendMessage, postMessage, notifyLocalEdit, notifyManifestSync);
 
   // ── Incoming collab messages ─────────────────────────────────────────
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
   // sequential queue.  Handles version mismatch detection and triggers doc rebuild
   // (version-reset) when the server signals a new collab version.
-  const { lastUpdatedCollab, applyCollabMessage } = useCollabMessageHandler(
+  const { applyCollabMessage } = useCollabMessageHandler(
     refs,
     wsCollabMessage,
     bcCollabMessage,
@@ -218,11 +221,6 @@ export const useSync = (
     registerSyncContext,
     scheduleDeferredCleanup
   );
-
-  // ── Batch sync utilities ─────────────────────────────────────────────
-  // flushAllSync: drain buffered local updates to WebSocket for every registered doc.
-  // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
-  const { flushAllSync, syncAllToServer } = useBatchSync(refs);
 
   // ── User-initiated version revert ────────────────────────────────────
   // Tears down the current doc, calls the server revert API, rebuilds a fresh doc
@@ -238,5 +236,5 @@ export const useSync = (
     applyCollabMessage,
   });
 
-  return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
+  return { registerSyncContext, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };

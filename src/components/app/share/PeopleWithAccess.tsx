@@ -17,9 +17,10 @@ interface PeopleWithAccessProps {
   people: IPeopleWithAccessType[];
   isLoading: boolean;
   onPeopleChange: () => Promise<void>;
+  hasFullAccess: boolean;
 }
 
-export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: PeopleWithAccessProps) {
+export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading, hasFullAccess }: PeopleWithAccessProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
 
@@ -91,10 +92,6 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: 
     [onPeopleChange, currentWorkspaceId]
   );
 
-  // Check if current user has full access (can modify others)
-  const currentUserHasFullAccess =
-    people.find((p) => p.email === currentUser?.email)?.access_level === AccessLevel.FullAccess;
-
   // Check if current user is owner
   const currentUserIsOwner = people.find((p) => p.email === currentUser?.email)?.role === Role.Owner;
 
@@ -113,7 +110,7 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: 
               key={person.email}
               person={person}
               isYou={isYou}
-              currentUserHasFullAccess={currentUserHasFullAccess}
+              currentUserHasFullAccess={hasFullAccess}
               currentUserIsOwner={currentUserIsOwner}
               onAccessLevelChange={handleAccessLevelChange}
               onRemoveAccess={handleRemoveAccess}
