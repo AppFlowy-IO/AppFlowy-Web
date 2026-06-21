@@ -20,6 +20,7 @@ import {
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { waitForGridReady } from '../../support/database-ui-helpers';
+import { getActiveDatabaseViewId, withPublishedDatabaseView } from '../../support/publish-database-helpers';
 import { testLog } from '../../support/test-helpers';
 
 /**
@@ -124,9 +125,11 @@ test.describe('Published Database Rows Visibility (issue #8464)', () => {
     await expect(DatabaseGridSelectors.grid(page)).toContainText(testText, { timeout: 15000 });
     testLog.info('Row data persisted after reload');
 
+    const activeDatabaseViewId = await getActiveDatabaseViewId(page);
+
     // When: publishing the database page
     testLog.info('Publishing database page');
-    const publishedUrl = await publishCurrentPage(page);
+    const publishedUrl = withPublishedDatabaseView(await publishCurrentPage(page), activeDatabaseViewId);
 
     testLog.info(`Published URL: ${publishedUrl}`);
 
