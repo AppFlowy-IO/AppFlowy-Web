@@ -21,6 +21,7 @@ import {
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { addPropertyColumn } from '../../support/database-ui-helpers';
+import { getActiveDatabaseViewId, withPublishedDatabaseView } from '../../support/publish-database-helpers';
 import { testLog } from '../../support/test-helpers';
 
 test.describe('Person Cell in Published Pages', () => {
@@ -82,6 +83,7 @@ test.describe('Person Cell in Published Pages', () => {
     await addPropertyColumn(page, FieldType.Person);
     await expect(PersonSelectors.allPersonCells(page).first()).toBeAttached({ timeout: 15000 });
     testLog.info('Person field added');
+    const activeDatabaseViewId = await getActiveDatabaseViewId(page);
 
     // Step 4: Publishing the database
     testLog.info('[STEP 4] Publishing the database');
@@ -110,7 +112,7 @@ test.describe('Person Cell in Published Pages', () => {
     const namespace = (await ShareSelectors.publishNamespace(page).innerText()).trim();
     const publishName = await ShareSelectors.publishNameInput(page).inputValue();
     const origin = new URL(page.url()).origin;
-    const publishedUrl = `${origin}/${namespace}/${publishName.trim()}`;
+    const publishedUrl = withPublishedDatabaseView(`${origin}/${namespace}/${publishName.trim()}`, activeDatabaseViewId);
     testLog.info(`Published URL: ${publishedUrl}`);
 
     await page.keyboard.press('Escape');
@@ -185,6 +187,7 @@ test.describe('Person Cell in Published Pages', () => {
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 15000 });
 
     await addPropertyColumn(page, FieldType.Person);
+    const activeDatabaseViewId = await getActiveDatabaseViewId(page);
 
     const dlgCount = await page.locator('[role="dialog"]').count();
     if (dlgCount > 0) {
@@ -206,7 +209,7 @@ test.describe('Person Cell in Published Pages', () => {
     const namespace = (await ShareSelectors.publishNamespace(page).innerText()).trim();
     const publishName = await ShareSelectors.publishNameInput(page).inputValue();
     const origin = new URL(page.url()).origin;
-    const publishedUrl = `${origin}/${namespace}/${publishName.trim()}`;
+    const publishedUrl = withPublishedDatabaseView(`${origin}/${namespace}/${publishName.trim()}`, activeDatabaseViewId);
 
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);

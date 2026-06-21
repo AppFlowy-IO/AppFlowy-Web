@@ -29,6 +29,7 @@ export enum RelationFilterCondition {
 export interface DatabaseFixtureInfo {
   databaseId: string;
   pageId: string;
+  titlePageId?: string;
   viewId: string;
   rowIds: string[];
   primaryFieldId: string;
@@ -123,7 +124,8 @@ export async function getCurrentDatabaseInfo(page: Page): Promise<DatabaseFixtur
 
             return {
               databaseId: database.get('id') || doc.guid,
-              pageId: titlePageId || ctx.databasePageId || ctx.activeViewId,
+              pageId: ctx.databasePageId || titlePageId || ctx.activeViewId,
+              titlePageId: titlePageId || undefined,
               viewId: ctx.activeViewId,
               rowIds: view.get('row_orders').toArray().map((row: { id: string }) => row.id),
               primaryFieldId,

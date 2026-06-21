@@ -151,14 +151,14 @@ test.describe('Relation Desktop Parity BDD', () => {
     const sourceName = `rename-db-source-${suffix}`;
     const renamedTargetName = `rename-db-target-updated-${suffix}`;
     let relationFieldId = '';
-    let targetPageId = '';
+    let targetTitlePageId = '';
     let sourcePageId = '';
 
     await test.step('Given a relation field points to another database', async () => {
       await signInAndWaitForApp(page, request, generateRandomEmail());
       const target = await createNamedGridDatabase(page, targetName, ['Target Row']);
 
-      targetPageId = target.pageId;
+      targetTitlePageId = target.titlePageId || target.pageId;
       const source = await createNamedGridDatabase(page, sourceName, ['Source Row']);
 
       sourcePageId = source.pageId;
@@ -170,7 +170,7 @@ test.describe('Relation Desktop Parity BDD', () => {
     });
 
     await test.step('When the related database page is renamed', async () => {
-      await renameDatabasePageByPageIdDirect(page, targetPageId, renamedTargetName);
+      await renameDatabasePageByPageIdDirect(page, targetTitlePageId, renamedTargetName);
       await page.waitForTimeout(2500);
       await openGridDatabaseByPageId(page, sourcePageId);
     });
