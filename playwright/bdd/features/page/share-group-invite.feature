@@ -3,7 +3,7 @@ Feature: Share menu group invite
   Workspace owners can share a page with a workspace group from the share invite search.
 
   Scenario: Owner shares a page with a workspace group from invite search
-    Given I sign in as the Nathan workspace owner
+    Given I sign in as seeded spm0622 "owner 1"
     When I create a temporary share-menu document page
     And I create a temporary share-menu group
     And I open the share panel

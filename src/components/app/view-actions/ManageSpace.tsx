@@ -578,6 +578,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           width: MODAL_WIDTH,
           maxWidth: '92vw',
         },
+        'data-testid': 'manage-space-modal',
       }}
     >
       <Tabs
@@ -586,7 +587,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         className='min-h-0 max-w-full'
         style={{ width: CONTENT_WIDTH }}
       >
-        <TabsList className='border-b border-border-primary'>
+        <TabsList>
           <TabsTrigger value='general'>{t('space.permissionManager.generalTab')}</TabsTrigger>
           <TabsTrigger value='members'>{t('space.permissionManager.membersTab')}</TabsTrigger>
         </TabsList>
@@ -668,7 +669,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     icon={<Shield className='h-5 w-5 text-icon-primary' />}
                     title={t('space.permissionManager.owners')}
                     description={t('space.permissionManager.ownersDescription')}
-                    trailing={<span className='text-sm text-text-secondary'>{t('shareAction.fullAccess')}</span>}
+                    trailing={
+                      <div className='flex min-w-[120px] items-center justify-end gap-2 px-2'>
+                        <span className='text-sm text-text-secondary'>{t('shareAction.fullAccess')}</span>
+                        <ChevronDown className='h-4 w-4 opacity-0' aria-hidden />
+                      </div>
+                    }
                   />
 
                   <PermissionPrincipalRow
@@ -751,6 +757,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                         return (
                           <div
                             key={`${member.uid}-${member.source}`}
+                            data-testid={`space-member-row-${member.uid}`}
                             className='grid items-center gap-3 border-b border-border-primary py-3'
                             style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
                           >
