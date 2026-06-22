@@ -1117,6 +1117,122 @@ export enum SpacePermission {
   Private = 1,
 }
 
+export enum SpaceVisibility {
+  Default = 'default',
+  Open = 'open',
+  Closed = 'closed',
+  Private = 'private',
+}
+
+export enum SpaceMemberRole {
+  Owner = 'owner',
+  Member = 'member',
+}
+
+export enum SpaceInvitePolicy {
+  OwnersOnly = 'owners_only',
+  MembersAndOwners = 'members_and_owners',
+}
+
+export enum SpaceSidebarEditPolicy {
+  OwnersOnly = 'owners_only',
+  MembersAndOwners = 'members_and_owners',
+}
+
+export interface SpaceSecuritySettings {
+  disable_guests: boolean;
+  disable_public_links: boolean;
+  disable_export: boolean;
+}
+
+export interface SpacePermissionSettings {
+  visibility: SpaceVisibility;
+  owner_access_level: AccessLevel;
+  member_default_access_level: AccessLevel;
+  everyone_else_access_level?: AccessLevel | null;
+  invite_policy: SpaceInvitePolicy;
+  sidebar_edit_policy: SpaceSidebarEditPolicy;
+  invite_link_enabled: boolean;
+  security: SpaceSecuritySettings;
+}
+
+export interface SpacePermissionResponse {
+  space_id: string;
+  permission: SpacePermissionSettings;
+  current_user_access_level?: AccessLevel | null;
+  can_manage_space: boolean;
+  can_manage_members: boolean;
+  can_invite_members: boolean;
+  can_edit_sidebar: boolean;
+  explicit_member_count: number;
+}
+
+export interface SpaceMember {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+  source: string;
+}
+
+export interface WorkspaceGroupSpacePermission {
+  group_id: string;
+  name: string;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+  member_count: number;
+  source: string;
+}
+
+export interface SpaceMembers {
+  members: SpaceMember[];
+  groups: WorkspaceGroupSpacePermission[];
+}
+
+export interface AddSpaceMemberPayload {
+  uid: string;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+}
+
+export interface UpdateSpaceMemberPayload {
+  role?: SpaceMemberRole;
+  access_level?: AccessLevel;
+}
+
+export interface WorkspaceGroup {
+  group_id: string;
+  name: string;
+  member_count: number;
+}
+
+export interface WorkspaceGroups {
+  groups: WorkspaceGroup[];
+}
+
+export interface CreateWorkspaceGroupPayload {
+  name: string;
+}
+
+export interface UpdateWorkspaceGroupPayload {
+  name: string;
+}
+
+export interface WorkspaceGroupMember {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+}
+
+export interface WorkspaceGroupMembers {
+  members: WorkspaceGroupMember[];
+}
+
+export interface AddWorkspaceGroupMemberPayload {
+  uid: string;
+}
+
 /**
  * Represents the space info of a view.
  * Aligned with Desktop/Flutter `SpaceInfo` struct.
@@ -1298,6 +1414,7 @@ export enum Role {
 }
 
 export interface WorkspaceMember {
+  uid?: string;
   name: string;
   email: string;
   avatar_url: string;

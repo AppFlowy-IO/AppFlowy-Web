@@ -1,18 +1,55 @@
 import {
   AccessLevel,
+  AddSpaceMemberPayload,
+  AddWorkspaceGroupMemberPayload,
+  CreateWorkspaceGroupPayload,
   CreateWorkspacePayload,
   FolderView,
   GuestConversionCodeInfo,
   GuestInvitation,
   MentionablePerson,
   Role,
+  SpaceMember,
+  SpaceMembers,
+  SpacePermissionResponse,
+  SpacePermissionSettings,
+  UpdateSpaceMemberPayload,
+  UpdateWorkspaceGroupPayload,
   UpdateWorkspacePayload,
   UploadPublishNamespacePayload,
   Workspace,
+  WorkspaceGroup,
+  WorkspaceGroupMember,
+  WorkspaceGroupMembers,
+  WorkspaceGroups,
   WorkspaceMember,
 } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+
+const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
+
+function parseResponseWithExactUid(data: unknown) {
+  if (typeof data !== 'string') return data;
+
+  return JSON.parse(data.replace(UID_FIELD_REGEX, '"uid":"$1"')) as unknown;
+}
+
+function stringifyAddSpaceMemberPayload(payload: AddSpaceMemberPayload) {
+  if (!/^\d+$/.test(payload.uid)) {
+    throw new Error('Space member uid must be a numeric string');
+  }
+
+  return `{"uid":${payload.uid},"role":${JSON.stringify(payload.role)},"access_level":${payload.access_level}}`;
+}
+
+function stringifyAddWorkspaceGroupMemberPayload(payload: AddWorkspaceGroupMemberPayload) {
+  if (!/^\d+$/.test(payload.uid)) {
+    throw new Error('Workspace group member uid must be a numeric string');
+  }
+
+  return `{"uid":${payload.uid}}`;
+}
 
 interface AFWorkspace {
   workspace_id: string;
@@ -158,8 +195,149 @@ export async function getMembers(workspaceId: string, includePending = false) {
   return executeAPIRequest<WorkspaceMember[]>(() =>
     getAxios()?.get<APIResponse<WorkspaceMember[]>>(url, {
       params: includePending ? { include_pending: true } : undefined,
+      transformResponse: [parseResponseWithExactUid],
     })
   );
+}
+
+export async function getSpacePermission(workspaceId: string, spaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/permission`;
+
+  return executeAPIRequest<SpacePermissionResponse>(() =>
+    getAxios()?.get<APIResponse<SpacePermissionResponse>>(url)
+  );
+}
+
+export async function updateSpacePermission(
+  workspaceId: string,
+  spaceId: string,
+  permission: SpacePermissionSettings
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/permission`;
+
+  return executeAPIRequest<SpacePermissionResponse>(() =>
+    getAxios()?.patch<APIResponse<SpacePermissionResponse>>(url, permission)
+  );
+}
+
+export async function getSpaceMembers(workspaceId: string, spaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members`;
+
+  return executeAPIRequest<SpaceMembers>(() =>
+    getAxios()?.get<APIResponse<SpaceMembers>>(url, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function addSpaceMember(
+  workspaceId: string,
+  spaceId: string,
+  payload: AddSpaceMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members`;
+
+  return executeAPIRequest<SpaceMember>(() =>
+    getAxios()?.post<APIResponse<SpaceMember>>(url, stringifyAddSpaceMemberPayload(payload), {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function updateSpaceMember(
+  workspaceId: string,
+  spaceId: string,
+  uid: string,
+  payload: UpdateSpaceMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIRequest<SpaceMember>(() =>
+    getAxios()?.patch<APIResponse<SpaceMember>>(url, payload, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function removeSpaceMember(workspaceId: string, spaceId: string, uid: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function getWorkspaceGroups(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/groups`;
+
+  return executeAPIRequest<WorkspaceGroups>(() =>
+    getAxios()?.get<APIResponse<WorkspaceGroups>>(url)
+  );
+}
+
+export async function createWorkspaceGroup(
+  workspaceId: string,
+  payload: CreateWorkspaceGroupPayload
+) {
+  const url = `/api/workspace/${workspaceId}/groups`;
+
+  return executeAPIRequest<WorkspaceGroup>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroup>>(url, payload)
+  );
+}
+
+export async function updateWorkspaceGroup(
+  workspaceId: string,
+  groupId: string,
+  payload: UpdateWorkspaceGroupPayload
+) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroup>(() =>
+    getAxios()?.patch<APIResponse<WorkspaceGroup>>(url, payload)
+  );
+}
+
+export async function removeWorkspaceGroup(workspaceId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function getWorkspaceGroupMembers(workspaceId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}/members`;
+
+  return executeAPIRequest<WorkspaceGroupMembers>(() =>
+    getAxios()?.get<APIResponse<WorkspaceGroupMembers>>(url, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function addWorkspaceGroupMember(
+  workspaceId: string,
+  groupId: string,
+  payload: AddWorkspaceGroupMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}/members`;
+
+  return executeAPIRequest<WorkspaceGroupMember>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroupMember>>(
+      url,
+      stringifyAddWorkspaceGroupMemberPayload(payload),
+      {
+        transformResponse: [parseResponseWithExactUid],
+      }
+    )
+  );
+}
+
+export async function removeWorkspaceGroupMember(
+  workspaceId: string,
+  groupId: string,
+  uid: string
+) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
 }
 
 export async function removeMembers(workspaceId: string, emails: string[]) {
