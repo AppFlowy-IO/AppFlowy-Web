@@ -23,11 +23,7 @@ import {
   expandSpaceByName,
   insertLinkedDatabaseViaSlash,
 } from '../../../support/page-utils';
-import {
-  editFirstGridCell,
-  firstGridCellText,
-  insertInlineGridViaSlash,
-} from '../../../support/duplicate-test-helpers';
+import { editFirstGridCell, firstGridCellText, insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
 
 const spaceName = 'General';
 const sourceDatabaseName = 'Block Database';
@@ -162,8 +158,9 @@ async function renamePageByName(page: Page, currentName: string, newName: string
     await ModalSelectors.renameSaveButton(page).click({ force: true });
 
     if (
-      await PageSelectors.itemByName(page, newName)
-        .isVisible({ timeout: 10000 })
+      await expect(PageSelectors.itemByName(page, newName))
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
         .catch(() => false)
     ) {
       return;
@@ -207,9 +204,15 @@ async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void>
         await page.waitForTimeout(250);
 
         return (
-          (await BlockSelectors.hoverControls(page).isVisible().catch(() => false)) &&
-          (await BlockSelectors.addButton(page).isVisible().catch(() => false)) &&
-          (await BlockSelectors.dragHandle(page).isVisible().catch(() => false))
+          (await BlockSelectors.hoverControls(page)
+            .isVisible()
+            .catch(() => false)) &&
+          (await BlockSelectors.addButton(page)
+            .isVisible()
+            .catch(() => false)) &&
+          (await BlockSelectors.dragHandle(page)
+            .isVisible()
+            .catch(() => false))
         );
       },
       { timeout: 10000, message: 'Expected database block hover controls to become visible' }

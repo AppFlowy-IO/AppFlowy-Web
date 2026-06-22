@@ -93,6 +93,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       {
         label: t('document.menuName'),
         icon: <ViewIcon layout={ViewLayout.Document} size={'small'} />,
+        testId: 'add-document-button',
         onSelect: () => {
           void handleAddPage(ViewLayout.Document, t('menuAppHeader.defaultNewPageName'));
         },

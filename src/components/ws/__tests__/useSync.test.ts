@@ -927,6 +927,143 @@ describe('useSync public API', () => {
     }
   });
 
+  it('pauses background HTTP sync for 10 minutes after the server stays rate-limited', async () => {
+    jest.useFakeTimers();
+    // Pin jitter to 0 so withRetry waits exactly the server's Retry-After (1s).
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+    const rateLimited = Object.assign(new Error('Batch sync rate-limited (429)'), {
+      code: 429,
+      retryAfterSecs: 1,
+    });
+
+    mockedCollabFullSyncBatch.mockRejectedValue(rateLimited);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 0,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('dededede-2222-4222-8222-dededededede');
+      const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+      act(() => {
+        result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('dirty', true);
+      });
+
+      // First cycle fires after the 5s debounce.
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+
+      // withRetry honours Retry-After for its 3 in-cycle retries.
+      for (let i = 0; i < 3; i++) {
+        await act(async () => {
+          jest.advanceTimersByTime(1_000);
+          await flushPromises();
+        });
+      }
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(4);
+
+      // The loop is now paused: the regular 5s cadence must stay quiet.
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+        await flushPromises();
+      });
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(4);
+
+      // Editing during the pause marks the doc dirty but must NOT bypass it.
+      act(() => {
+        doc.getMap('root').set('dirty-again', true);
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+        await flushPromises();
+      });
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(4);
+
+      // After the 10-minute busy pause the loop resumes for the still-dirty doc.
+      await act(async () => {
+        jest.advanceTimersByTime(10 * 60 * 1000);
+        await flushPromises();
+      });
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(5);
+
+      unmount();
+      doc.destroy();
+    } finally {
+      randomSpy.mockRestore();
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps failed dirty docs after a rate-limit pause without another local edit', async () => {
+    jest.useFakeTimers();
+    // Pin jitter to 0 so withRetry waits exactly the server's Retry-After (1s).
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+    const rateLimited = Object.assign(new Error('Batch sync rate-limited (429)'), {
+      code: 429,
+      retryAfterSecs: 1,
+    });
+
+    mockedCollabFullSyncBatch.mockRejectedValue(rateLimited);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 0,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('efefefef-3333-4333-8333-efefefefefef');
+      const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+      act(() => {
+        result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('dirty', true);
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+
+      for (let i = 0; i < 3; i++) {
+        await act(async () => {
+          jest.advanceTimersByTime(1_000);
+          await flushPromises();
+        });
+      }
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(4);
+
+      await act(async () => {
+        jest.advanceTimersByTime(10 * 60 * 1000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(5);
+      expect(mockedCollabFullSyncBatch.mock.calls[4]?.[1]).toEqual([
+        expect.objectContaining({
+          objectId: doc.guid,
+          collabType: Types.Document,
+        }),
+      ]);
+
+      unmount();
+      doc.destroy();
+    } finally {
+      randomSpy.mockRestore();
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('keeps dirty docs for HTTP fallback when websocket opens before outbox drains and closes again', async () => {
     jest.useFakeTimers();
     mockedCollabFullSyncBatch.mockResolvedValue([]);

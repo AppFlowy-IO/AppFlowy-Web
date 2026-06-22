@@ -15,7 +15,9 @@ import {
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
+  useEnsureViewVisibleInOutline,
   useRevalidateSidebarOutline,
+  useSidebarSelectedViewId,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
@@ -64,7 +66,9 @@ export function Outline({ width }: { width: number }) {
   const loadViewChildren = useLoadViewChildren();
   const loadViewChildrenBatch = useLoadViewChildrenBatch();
   const markViewChildrenStale = useMarkViewChildrenStale();
+  const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
   const revalidateSidebarOutline = useRevalidateSidebarOutline();
+  const selectedViewId = useSidebarSelectedViewId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
   const spaceListRef = useRef<HTMLDivElement>(null);
@@ -108,6 +112,11 @@ export function Outline({ width }: { width: number }) {
   }, []);
 
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
+  const navigationHydrationInFlightRef = useRef<Set<string>>(new Set());
+  // Selected views that navigation hydration could not place in the outline
+  // (not found server-side, or access denied). Tracked so we don't re-fetch
+  // navigation on every subsequent `outline` change for an unresolvable id.
+  const navigationHydrationUnresolvedRef = useRef<Set<string>>(new Set());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
   const validatedExistingRestoreIdsRef = useRef<Set<string>>(new Set());
@@ -125,6 +134,50 @@ export function Outline({ width }: { width: number }) {
   }, [expandViewIds]);
 
   useEffect(() => {
+    if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
+    if (findView(outline, selectedViewId)) return;
+    if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
+    if (navigationHydrationUnresolvedRef.current.has(selectedViewId)) return;
+
+    navigationHydrationInFlightRef.current.add(selectedViewId);
+
+    void ensureViewVisibleInOutline(selectedViewId)
+      .then((ancestorIds) => {
+        if (ancestorIds.length === 0) {
+          // Either the view resolved at the sidebar root (it's now in the
+          // outline, so findView short-circuits on the next run) or it could
+          // not be resolved. Mark it so we don't re-fetch on every outline
+          // change while it stays selected.
+          navigationHydrationUnresolvedRef.current.add(selectedViewId);
+          return;
+        }
+
+        ancestorIds.forEach((id) => setOutlineExpands(id, true));
+        setExpandViewIds((prev) => {
+          const next = new Set(prev);
+
+          ancestorIds.forEach((id) => next.add(id));
+          return next.size === prev.length ? prev : Array.from(next);
+        });
+        setPendingAutoLoadIds((prev) => {
+          const filtered = prev.filter((id) => !ancestorIds.includes(id));
+
+          return filtered.length === prev.length ? prev : filtered;
+        });
+      })
+      .catch((error) => {
+        navigationHydrationUnresolvedRef.current.add(selectedViewId);
+        Log.warn('[Outline] [navigation-context] failed to hydrate selected view', {
+          viewId: selectedViewId,
+          error,
+        });
+      })
+      .finally(() => {
+        navigationHydrationInFlightRef.current.delete(selectedViewId);
+      });
+  }, [ensureViewVisibleInOutline, outline, selectedViewId]);
+
+  useEffect(() => {
     sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
     rescheduleSidebarRevalidationRef.current();
   }, [outline]);
@@ -135,6 +188,8 @@ export function Outline({ width }: { width: number }) {
     setExpandViewIds(restoredExpandedIds);
     setPendingAutoLoadIds(restoredExpandedIds);
     loadingViewIdsRef.current = new Set();
+    navigationHydrationInFlightRef.current = new Set();
+    navigationHydrationUnresolvedRef.current = new Set();
     autoLoadRetryAfterRef.current = new Map();
     validatingRestoreIdsRef.current = new Set();
     validatedExistingRestoreIdsRef.current = new Set();

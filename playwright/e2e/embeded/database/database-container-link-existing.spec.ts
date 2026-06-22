@@ -5,12 +5,7 @@
  * Migrated from: cypress/e2e/embeded/database/database-container-link-existing.cy.ts
  */
 import { test, expect } from '@playwright/test';
-import {
-  AddPageSelectors,
-  ModalSelectors,
-  PageSelectors,
-  ViewActionSelectors,
-} from '../../../support/selectors';
+import { AddPageSelectors, PageSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import {
@@ -18,6 +13,7 @@ import {
   ensurePageExpandedByViewId,
   createDocumentPageAndNavigate,
   insertLinkedDatabaseViaSlash,
+  renamePageByName,
 } from '../../../support/page-utils';
 
 test.describe('Database Container - Link Existing Database in Document', () => {
@@ -57,14 +53,7 @@ test.describe('Database Container - Link Existing Database in Document', () => {
     await expandSpaceByName(page, spaceName);
     await expect(PageSelectors.itemByName(page, dbName)).toBeVisible();
 
-    // Right-click to rename
-    const moreButton = PageSelectors.moreActionsButton(page, dbName);
-    await moreButton.click({ force: true });
-    await ViewActionSelectors.renameButton(page).click({ force: true });
-    await ModalSelectors.renameInput(page).clear();
-    await ModalSelectors.renameInput(page).fill(sourceName);
-    await ModalSelectors.renameSaveButton(page).click({ force: true });
-    await page.waitForTimeout(3000);
+    await renamePageByName(page, dbName, sourceName);
 
     // 2) Create a document page
     const docViewId = await createDocumentPageAndNavigate(page);
@@ -79,9 +68,7 @@ test.describe('Database Container - Link Existing Database in Document', () => {
 
     await ensurePageExpandedByViewId(page, docViewId);
 
-    const docPageItem = page
-      .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
-      .first();
+    const docPageItem = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`).first();
 
     // Get all child page names under the document
     const childNames = await docPageItem.getByTestId('page-name').allInnerTexts();

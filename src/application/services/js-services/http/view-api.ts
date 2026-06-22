@@ -21,6 +21,12 @@ export async function getView(workspaceId: string, viewId: string, depth: number
   return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
 }
 
+export async function getViewNavigation(workspaceId: string, viewId: string, depth: number = 0) {
+  const url = `/api/workspace/${workspaceId}/view/${viewId}/navigation?depth=${depth}`;
+
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
+}
+
 export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2) {
   if (viewIds.length === 0) return [];
 

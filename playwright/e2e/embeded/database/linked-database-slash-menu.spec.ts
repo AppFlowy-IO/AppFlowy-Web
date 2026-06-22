@@ -49,7 +49,7 @@ test.describe('Embedded Database - Slash Menu Creation', () => {
     // Create a new document at same level as database
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
-    await page.locator('[role="menuitem"]').first().click({ force: true });
+    await AddPageSelectors.addDocumentButton(page).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Handle the new page modal if it appears

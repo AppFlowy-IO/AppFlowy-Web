@@ -8,6 +8,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
+import { applyYDoc } from '@/application/ydoc/apply';
 import {
   findSlateEntryByBlockId,
   getBlockEntry,
@@ -239,6 +240,7 @@ export function SlashPanel({
     openPageModal,
     viewId: documentId,
     loadViewMeta,
+    loadView,
     getMoreAIContext,
     createDatabaseView,
     loadViews,
@@ -683,6 +685,22 @@ export function SlashPanel({
           referencedName,
         });
 
+        if (response.database_update?.length && loadView) {
+          try {
+            const databaseDoc = await loadView(response.view_id, false, false, {
+              databaseId: response.database_id || databaseId,
+            });
+
+            applyYDoc(databaseDoc, new Uint8Array(response.database_update));
+          } catch (error) {
+            Log.warn('[SlashPanel] failed to apply linked database update', {
+              viewId: response.view_id,
+              databaseId: response.database_id || databaseId,
+              error,
+            });
+          }
+        }
+
         turnInto(
           blockType,
           createDatabaseNodeData({
@@ -707,6 +725,7 @@ export function SlashPanel({
       blockTypeByLayout,
       turnInto,
       t,
+      loadView,
       loadViewMeta,
       loadDatabaseRelations,
     ]

@@ -1,5 +1,6 @@
 name: Build AppFlowy Web Docker Image
-run-name: Build AppFlowy Web ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_name || github.ref_name }} ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && 'latest' || github.event_name == 'push' && 'latest' || '' }}
+run-name: >-
+  Build AppFlowy Web appflowy/appflowy_web:${{ github.event_name == 'workflow_dispatch' && format('{0}{1}', github.event.inputs.tag_name, github.event.inputs.test == 'true' && '_test' || '') || github.ref_name }} ${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || github.event_name == 'push') && 'appflowy/appflowy_web:latest' || '' }}
 
 on:
   push:
@@ -80,6 +81,25 @@ jobs:
           echo "GIT_TAG=$T" >> $GITHUB_ENV
           echo "Tag: $T"
 
+      - name: Print Docker image tag
+        run: |
+          SHOULD_TAG_LATEST="${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || github.event_name == 'push') && 'true' || 'false' }}"
+          IMAGE_TAG="${IMAGE_NAME}:${GIT_TAG}-${{ matrix.job.arch }}"
+
+          echo "Docker image tag: ${IMAGE_TAG}"
+          {
+            echo "### Docker image tag"
+            echo ""
+            echo "- Image: \`${IMAGE_TAG}\`"
+            echo "- Platform: \`${{ matrix.job.platform }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$SHOULD_TAG_LATEST" == "true" ]]; then
+            LATEST_IMAGE_TAG="${IMAGE_NAME}:${LATEST_TAG}-${{ matrix.job.arch }}"
+            echo "Latest Docker image tag: ${LATEST_IMAGE_TAG}"
+            echo "- Latest image: \`${LATEST_IMAGE_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v4
@@ -97,7 +117,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=appflowy_web-${{ matrix.job.arch }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ env.GIT_TAG }}-${{ matrix.job.arch }}
-            ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || (github.event_name == 'push' && format('{0}:{1}-{2}', env.IMAGE_NAME, env.LATEST_TAG, matrix.job.arch)) || '' }}
+            ${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || github.event_name == 'push') && format('{0}:{1}-{2}', env.IMAGE_NAME, env.LATEST_TAG, matrix.job.arch) || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           build-args: |
@@ -110,6 +130,8 @@ jobs:
   appflowy_web_manifest:
     runs-on: ubuntu-22.04
     needs: [appflowy_web_image]
+    env:
+      IMAGE_NAME: ${{ secrets.DOCKER_HUB_USERNAME }}/appflowy_web
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -132,19 +154,49 @@ jobs:
           echo "GIT_TAG=$T" >> $GITHUB_ENV
           echo "Tag: $T"
 
+      - name: Print final Docker image names
+        run: |
+          SHOULD_TAG_LATEST="${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || github.event_name == 'push') && 'true' || 'false' }}"
+          SHOULD_BUILD_ARM64="${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.build_arm64 == 'true') || github.event_name == 'push') && 'true' || 'false' }}"
+          VERSION_IMAGE="${IMAGE_NAME}:${GIT_TAG}"
+
+          echo "Final Docker image: ${VERSION_IMAGE}"
+          {
+            echo "### Final Docker image names"
+            echo ""
+            echo "- \`${VERSION_IMAGE}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$SHOULD_TAG_LATEST" == "true" ]]; then
+            LATEST_IMAGE="${IMAGE_NAME}:${LATEST_TAG}"
+            echo "Final Docker image: ${LATEST_IMAGE}"
+            echo "- \`${LATEST_IMAGE}\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          {
+            echo ""
+            echo "### Source architecture tags"
+            echo ""
+            echo "- \`${IMAGE_NAME}:${GIT_TAG}-amd64\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$SHOULD_BUILD_ARM64" == "true" ]]; then
+            echo "- \`${IMAGE_NAME}:${GIT_TAG}-arm64v8\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Create and push manifest for appflowy_web:version
         uses: Noelware/docker-manifest-action@0.4.3
         with:
-          inputs: ${{ secrets.DOCKER_HUB_USERNAME }}/appflowy_web:${{ env.GIT_TAG }}
-          images: ${{ secrets.DOCKER_HUB_USERNAME }}/appflowy_web:${{ env.GIT_TAG }}-amd64${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.build_arm64 == 'true') || github.event_name == 'push') && format(',{0}/appflowy_web:{1}-arm64v8', secrets.DOCKER_HUB_USERNAME, env.GIT_TAG) || '' }}
+          inputs: ${{ env.IMAGE_NAME }}:${{ env.GIT_TAG }}
+          images: ${{ env.IMAGE_NAME }}:${{ env.GIT_TAG }}-amd64${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.build_arm64 == 'true') || github.event_name == 'push') && format(',{0}:{1}-arm64v8', env.IMAGE_NAME, env.GIT_TAG) || '' }}
           push: true
 
       - name: Create and push manifest for appflowy_web:latest
         if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || (github.event_name == 'push') }}
         uses: Noelware/docker-manifest-action@0.4.3
         with:
-          inputs: ${{ secrets.DOCKER_HUB_USERNAME }}/appflowy_web:${{ env.LATEST_TAG }}
-          images: ${{ secrets.DOCKER_HUB_USERNAME }}/appflowy_web:${{ env.LATEST_TAG }}-amd64${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.build_arm64 == 'true') || github.event_name == 'push') && format(',{0}/appflowy_web:{1}-arm64v8', secrets.DOCKER_HUB_USERNAME, env.LATEST_TAG) || '' }}
+          inputs: ${{ env.IMAGE_NAME }}:${{ env.LATEST_TAG }}
+          images: ${{ env.IMAGE_NAME }}:${{ env.LATEST_TAG }}-amd64${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.build_arm64 == 'true') || github.event_name == 'push') && format(',{0}:{1}-arm64v8', env.IMAGE_NAME, env.LATEST_TAG) || '' }}
           push: true
 
       - name: Logout from Docker Hub

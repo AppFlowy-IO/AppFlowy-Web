@@ -100,25 +100,31 @@ export function ProfilePanel() {
   if (!currentUser) return null;
 
   const initial = (name || currentUser.name || currentUser.email || '?').charAt(0).toUpperCase();
+  const avatar = profile?.avatar_url ?? currentUser.avatar ?? '';
+  const isInlineAvatar =
+    avatar.length > 0 &&
+    !avatar.startsWith('http://') &&
+    !avatar.startsWith('https://') &&
+    !avatar.startsWith('/') &&
+    !avatar.startsWith('data:') &&
+    !avatar.startsWith('blob:');
 
   return (
     <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
       <div className='border-b border-border-primary px-8 py-5'>
-        <h2 className='text-xl font-semibold text-text-primary'>
-          {t('settings.accountPage.profile.title')}
-        </h2>
+        <h2 className='text-xl font-semibold text-text-primary'>{t('settings.accountPage.profile.title')}</h2>
       </div>
       <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
         <div className='flex flex-col gap-6'>
           <div className='flex items-center gap-4'>
             <Avatar size='xl'>
-              <AvatarImage src={profile?.avatar_url ?? currentUser.avatar ?? ''} alt={name} />
-              <AvatarFallback name={name}>{initial}</AvatarFallback>
+              <AvatarImage src={isInlineAvatar ? '' : avatar} alt={name} />
+              <AvatarFallback name={name}>
+                {isInlineAvatar ? <span className='text-2xl'>{avatar}</span> : initial}
+              </AvatarFallback>
             </Avatar>
             <div className='flex flex-1 flex-col gap-1'>
-              <Label htmlFor='profile-display-name'>
-                {t('settings.accountPage.profile.displayName')}
-              </Label>
+              <Label htmlFor='profile-display-name'>{t('settings.accountPage.profile.displayName')}</Label>
               <Input
                 id='profile-display-name'
                 value={name}

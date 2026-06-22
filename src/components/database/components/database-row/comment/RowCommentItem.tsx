@@ -1,5 +1,6 @@
 import dayjs from 'dayjs';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { RowComment } from '@/application/row-comment.type';
@@ -21,6 +22,47 @@ import DeleteCommentConfirm from './DeleteCommentConfirm';
 import MemberAvatar, { getMemberDisplayName } from './MemberAvatar';
 import { useRowCommentDispatch, useRowCommentState } from './RowCommentContext';
 import RowCommentReactions from './RowCommentReactions';
+
+const DESKTOP_PERSON_MENTION_PATTERN = /@\[([^\]\n]+)\]\(([^)\s]+)\)/g;
+
+function renderCommentContent(content: string): ReactNode {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  DESKTOP_PERSON_MENTION_PATTERN.lastIndex = 0;
+
+  while ((match = DESKTOP_PERSON_MENTION_PATTERN.exec(content)) !== null) {
+    const [raw, name, personId] = match;
+
+    if (match.index > lastIndex) {
+      parts.push(content.slice(lastIndex, match.index));
+    }
+
+    parts.push(
+      <span
+        key={`${personId}-${match.index}`}
+        data-mention-id={personId}
+        className={'inline-flex max-w-full items-baseline align-baseline'}
+      >
+        <span className={'mr-0.5 text-text-tertiary'}>@</span>
+        <span className={'truncate text-text-secondary'}>{name}</span>
+      </span>
+    );
+
+    lastIndex = match.index + raw.length;
+  }
+
+  if (parts.length === 0) {
+    return content;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push(content.slice(lastIndex));
+  }
+
+  return parts;
+}
 
 function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment: RowComment; isFirst?: boolean; isLast?: boolean }) {
   const { t } = useTranslation();
@@ -59,6 +101,7 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
   const isParent = !comment.parentCommentId;
   const isReplying = replyingCommentId === comment.id;
   const wasEdited = comment.updatedAt > comment.createdAt;
+  const renderedContent = useMemo(() => renderCommentContent(comment.content), [comment.content]);
 
   const relativeTime = useMemo(() => {
     const now = dayjs();
@@ -147,7 +190,7 @@ function RowCommentItem({ comment, isFirst = false, isLast = false }: { comment:
               onCancel={handleCancelEdit}
             />
           ) : (
-            <p data-testid={'row-comment-content'} className={'whitespace-pre-wrap break-words text-sm text-text-primary'}>{comment.content}</p>
+            <p data-testid={'row-comment-content'} className={'whitespace-pre-wrap break-words text-sm text-text-primary'}>{renderedContent}</p>
           )}
 
           {/* Reactions */}

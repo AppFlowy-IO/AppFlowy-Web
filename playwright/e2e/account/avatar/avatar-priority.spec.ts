@@ -73,6 +73,22 @@ async function updateWorkspaceMemberAvatar(
   });
 }
 
+/** Helper: get current user's workspace member profile via API */
+async function getWorkspaceMemberProfile(
+  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
+  workspaceId: string
+) {
+  const accessToken = await getAccessToken(page);
+  return request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/workspace-profile`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    failOnStatusCode: false,
+  });
+}
+
 /** Helper: open workspace dropdown then account settings */
 async function openAccountSettings(page: import('@playwright/test').Page) {
   await WorkspaceSelectors.dropdownTrigger(page).click();
@@ -81,6 +97,15 @@ async function openAccountSettings(page: import('@playwright/test').Page) {
   await expect(settingsButton).toBeVisible();
   await settingsButton.click();
   await expect(page.getByTestId('settings-dialog')).toBeVisible();
+}
+
+/** Helper: open the Profile panel inside settings */
+async function openProfileSettings(page: import('@playwright/test').Page) {
+  await openAccountSettings(page);
+  const dialog = page.getByTestId('settings-dialog');
+  await dialog.getByTestId('settings-menu-profile').click();
+  await expect(dialog.getByTestId('profile-display-name-input')).toBeVisible();
+  return dialog;
 }
 
 test.describe('Avatar Priority', () => {
@@ -97,10 +122,7 @@ test.describe('Avatar Priority', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  test('should prioritize workspace avatar over user metadata avatar', async ({
-    page,
-    request,
-  }) => {
+  test('should prioritize workspace avatar over user metadata avatar', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
     const userMetadataAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=user-metadata';
     const workspaceAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=workspace';
@@ -118,23 +140,26 @@ test.describe('Avatar Priority', () => {
     const workspaceId = await getCurrentWorkspaceId(page);
     expect(workspaceId).not.toBeNull();
 
-    const workspaceResponse = await updateWorkspaceMemberAvatar(
-      page,
-      request,
-      workspaceId!,
-      workspaceAvatar
-    );
+    const workspaceResponse = await updateWorkspaceMemberAvatar(page, request, workspaceId!, workspaceAvatar);
     expect(workspaceResponse.status()).toBe(200);
 
-    await page.waitForTimeout(2000);
+    await expect
+      .poll(async () => {
+        const response = await getWorkspaceMemberProfile(page, request, workspaceId!);
+        if (response.status() !== 200) return null;
+        const body = await response.json();
+        return body?.data?.avatar_url ?? null;
+      })
+      .toBe(workspaceAvatar);
+
     await page.reload();
-    await page.waitForTimeout(3000);
+    await expect(page.locator('.appflowy-top-bar')).toBeVisible();
 
     testLog.info('Step 4: Verify workspace avatar is displayed (priority)');
-    await openAccountSettings(page);
+    const dialog = await openProfileSettings(page);
 
     // Workspace avatar should be displayed, not user metadata avatar
-    const avatarImage = page.locator('[data-testid="avatar-image"]');
+    const avatarImage = dialog.getByTestId('avatar-image');
     await expect(avatarImage).toBeAttached();
     await expect(avatarImage).toHaveAttribute('src', workspaceAvatar);
   });
