@@ -11,13 +11,15 @@ import {
   Role,
   SubscriptionInterval,
   SubscriptionPlan,
+  WorkspaceGroup,
+  WorkspaceGroupViewPermission,
 } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
-import { AccessService, BillingService } from '@/application/services/domains';
+import { AccessService, BillingService, WorkspaceService } from '@/application/services/domains';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -37,12 +39,13 @@ import { cn } from '@/lib/utils';
 import { isAppFlowyHosted } from '@/utils/subscription';
 
 import { EmailTag, InviteInput } from './InviteInput';
-import { PersonSuggestionItem } from './PersonSuggestionItem';
+import { InviteSuggestion, PersonSuggestionItem } from './PersonSuggestionItem';
 
 const EMAIL_DOMAINS = ['@gmail.com', '@outlook.com', '@yahoo.com'];
 
 interface InviteGuestProps {
   sharedPeople: IPeopleWithAccessType[];
+  sharedGroups: WorkspaceGroupViewPermission[];
   isLoadingPeople: boolean;
   mentionable: MentionablePerson[];
   isLoadingMentionable: boolean;
@@ -54,6 +57,7 @@ interface InviteGuestProps {
 
 export function InviteGuest({
   sharedPeople,
+  sharedGroups,
   isLoadingPeople,
   mentionable,
   isLoadingMentionable,
@@ -76,11 +80,36 @@ export function InviteGuest({
   const [accessLevelPopoverOpen, setAccessLevelPopoverOpen] = useState(false);
   const canNotInvite = !hasFullAccess;
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
-  // Combined loading state: show loading when either people or mentionable data is loading
-  const isLoading = isLoadingPeople || isLoadingMentionable;
+  const [workspaceGroups, setWorkspaceGroups] = useState<WorkspaceGroup[]>([]);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  // Combined loading state: show loading when people, mentionable, or group data is loading
+  const isLoading = isLoadingPeople || isLoadingMentionable || isLoadingGroups;
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
+
+  const loadWorkspaceGroups = useCallback(async () => {
+    if (!currentWorkspaceId || canNotInvite) {
+      setWorkspaceGroups([]);
+      return;
+    }
+
+    setIsLoadingGroups(true);
+    try {
+      const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
+
+      setWorkspaceGroups(result.groups);
+    } catch (error) {
+      console.error(error);
+      setWorkspaceGroups([]);
+    } finally {
+      setIsLoadingGroups(false);
+    }
+  }, [canNotInvite, currentWorkspaceId]);
+
+  useEffect(() => {
+    void loadWorkspaceGroups();
+  }, [loadWorkspaceGroups]);
 
   // Email suggestions based on search input
   const emailSuggestions = useMemo(() => {
@@ -134,7 +163,9 @@ export function InviteGuest({
 
     // Filter out already shared people
     const unsharedMentionable = mentionable.filter((person) => {
-      return !sharedEmails.has(person.email) && !emailTags.some((tag) => tag.email === person.email);
+      return (
+        !sharedEmails.has(person.email) && !emailTags.some((tag) => tag.kind !== 'group' && tag.email === person.email)
+      );
     });
 
     // Then filter by search query
@@ -146,22 +177,44 @@ export function InviteGuest({
     );
   }, [mentionable, searchValue, sharedPeople, emailTags]);
 
-  // Check if we have mentionable data available
-  const hasMentionableData = filteredMentionable.length > 0;
+  const filteredGroups = useMemo(() => {
+    const sharedGroupIds = new Set(sharedGroups.map((group) => group.group_id));
+    const selectedGroupIds = new Set(
+      emailTags
+        .map((tag) => (tag.kind === 'group' ? tag.groupId : null))
+        .filter((groupId): groupId is string => Boolean(groupId))
+    );
+    const addableGroups = workspaceGroups.filter(
+      (group) => !sharedGroupIds.has(group.group_id) && !selectedGroupIds.has(group.group_id)
+    );
+
+    if (!searchValue) return addableGroups;
+
+    const query = searchValue.toLowerCase();
+
+    return addableGroups.filter((group) => group.name.toLowerCase().includes(query));
+  }, [emailTags, searchValue, sharedGroups, workspaceGroups]);
+
+  // Check if we have people or group data available
+  const hasSuggestionData = filteredMentionable.length > 0 || filteredGroups.length > 0;
 
   // Check if data loading is complete
-  const isDataLoadingComplete = !isLoadingMentionable && !isLoadingPeople;
+  const isDataLoadingComplete = !isLoadingMentionable && !isLoadingPeople && !isLoadingGroups;
 
   // All suggestions (mentionable + email domains)
   const allSuggestions = useMemo(() => {
-    const suggestions: Array<{ type: 'user' | 'email'; data: MentionablePerson | string }> = [];
+    const suggestions: InviteSuggestion[] = [];
+
+    filteredGroups.forEach((group) => {
+      suggestions.push({ type: 'group', data: group });
+    });
 
     // Add filtered users
     filteredMentionable.forEach((person) => {
       suggestions.push({ type: 'user', data: person });
     });
 
-    if (filteredMentionable.length === 0) {
+    if (filteredGroups.length === 0 && filteredMentionable.length === 0) {
       // Add email suggestions
       emailSuggestions.forEach((email) => {
         suggestions.push({ type: 'email', data: email });
@@ -169,7 +222,7 @@ export function InviteGuest({
     }
 
     return suggestions;
-  }, [filteredMentionable, emailSuggestions]);
+  }, [filteredGroups, filteredMentionable, emailSuggestions]);
 
   useEffect(() => {
     hoveredIndexRef.current = hoveredIndex;
@@ -195,14 +248,14 @@ export function InviteGuest({
       if (open && isDataLoadingComplete) {
         const hasUserInput = searchValue.length > 0;
 
-        // If we have mentionable data, allow opening on focus
-        if (hasMentionableData) {
+        // If we have users or groups, allow opening on focus
+        if (hasSuggestionData) {
           setIsOpen(true);
           return;
         }
 
-        // If no mentionable data, only open if user has typed something
-        if (!hasMentionableData && hasUserInput && allSuggestions.length > 0) {
+        // If no people/group data, only open if user has typed something
+        if (!hasSuggestionData && hasUserInput && allSuggestions.length > 0) {
           setIsOpen(true);
           return;
         }
@@ -213,7 +266,7 @@ export function InviteGuest({
 
       setIsOpen(open);
     },
-    [isDataLoadingComplete, hasMentionableData, searchValue, allSuggestions.length]
+    [isDataLoadingComplete, hasSuggestionData, searchValue, allSuggestions.length]
   );
 
   // Handle input focus to potentially open popover
@@ -228,8 +281,8 @@ export function InviteGuest({
       return;
     }
 
-    // If we have mentionable data, open popover on focus
-    if (hasMentionableData) {
+    // If we have users or groups, open popover on focus
+    if (hasSuggestionData) {
       setIsOpen(true);
       return;
     }
@@ -244,7 +297,7 @@ export function InviteGuest({
 
     setIsOpen(false);
     // Otherwise, don't open on focus when data is empty
-  }, [isDataLoadingComplete, hasMentionableData, searchValue, allSuggestions.length, canNotInvite]);
+  }, [isDataLoadingComplete, hasSuggestionData, searchValue, allSuggestions.length, canNotInvite]);
 
   // Handle input change and potentially open popover
   const handleInputChange = useCallback(
@@ -259,49 +312,63 @@ export function InviteGuest({
       // After loading is complete, open popover if user has typed and we have suggestions
       if (value && !isOpen) {
         const willHaveEmailSuggestions = value && !value.includes('@');
-        const willHaveUserSuggestions = hasMentionableData;
+        const willHaveUserOrGroupSuggestions = hasSuggestionData;
 
-        if (willHaveEmailSuggestions || willHaveUserSuggestions) {
+        if (willHaveEmailSuggestions || willHaveUserOrGroupSuggestions) {
           setIsOpen(true);
           return;
         }
       }
 
-      if (!value && !hasMentionableData && isOpen) {
+      if (!value && !hasSuggestionData && isOpen) {
         setIsOpen(false);
       }
     },
-    [isDataLoadingComplete, hasMentionableData, isOpen]
+    [isDataLoadingComplete, hasSuggestionData, isOpen]
   );
 
-  const handleInvite = useCallback(
-    (emailOrUser: string | MentionablePerson) => {
-      const isNew = typeof emailOrUser === 'string';
-      const email = typeof emailOrUser === 'string' ? emailOrUser : emailOrUser.email;
-      const isGuest = typeof emailOrUser === 'string' ? true : emailOrUser.role === MentionPersonRole.Guest;
-
-      // Add email to tags instead of immediately inviting
+  const handleInvite = useCallback((emailOrUserOrGroup: string | MentionablePerson | WorkspaceGroup) => {
+    if (typeof emailOrUserOrGroup !== 'string' && 'group_id' in emailOrUserOrGroup) {
+      const group = emailOrUserOrGroup;
       const newTag: EmailTag = {
-        id: Date.now().toString(),
-        email: email,
-        new: isNew,
-        isGuest: isGuest,
-        avatar: typeof emailOrUser === 'string' ? '' : emailOrUser.avatar_url || '',
-        name: typeof emailOrUser === 'string' ? undefined : emailOrUser.name, // Include name if from mentionable list
+        id: `group:${group.group_id}`,
+        email: group.name,
+        avatar: '',
+        name: group.name,
+        kind: 'group',
+        groupId: group.group_id,
+        memberCount: group.member_count,
       };
 
-      // Check if email already exists in tags
-      const emailExists = emailTags.some((tag) => tag.email === email);
-
-      if (!emailExists) {
-        setEmailTags((prev) => [...prev, newTag]);
-      }
-
+      setEmailTags((prev) =>
+        prev.some((tag) => tag.kind === 'group' && tag.groupId === group.group_id) ? prev : [...prev, newTag]
+      );
       setSearchValue('');
       setIsOpen(false);
-    },
-    [emailTags]
-  );
+      return;
+    }
+
+    const emailOrUser = emailOrUserOrGroup;
+    const isNew = typeof emailOrUser === 'string';
+    const email = typeof emailOrUser === 'string' ? emailOrUser : emailOrUser.email;
+    const isGuest = typeof emailOrUser === 'string' ? true : emailOrUser.role === MentionPersonRole.Guest;
+
+    // Add email to tags instead of immediately inviting
+    const newTag: EmailTag = {
+      id: `user:${email}`,
+      email: email,
+      new: isNew,
+      isGuest: isGuest,
+      avatar: typeof emailOrUser === 'string' ? '' : emailOrUser.avatar_url || '',
+      name: typeof emailOrUser === 'string' ? undefined : emailOrUser.name, // Include name if from mentionable list
+      kind: 'user',
+    };
+
+    setEmailTags((prev) => (prev.some((tag) => tag.kind !== 'group' && tag.email === email) ? prev : [...prev, newTag]));
+
+    setSearchValue('');
+    setIsOpen(false);
+  }, []);
 
   const handleEmailTagsChange = useCallback((newTags: EmailTag[]) => {
     setEmailTags(newTags);
@@ -435,14 +502,23 @@ export function InviteGuest({
     if (!currentWorkspaceId) return;
     if (emailTags.length === 0) return;
 
+    const emails = emailTags.filter((tag) => tag.kind !== 'group').map((tag) => tag.email);
+    const groupIds = emailTags
+      .map((tag) => (tag.kind === 'group' ? tag.groupId : null))
+      .filter((groupId): groupId is string => Boolean(groupId));
+
+    if (emails.length === 0 && groupIds.length === 0) return;
+
     try {
       setInviteLoading(true);
-      await AccessService.sharePageTo(
-        currentWorkspaceId,
-        viewId,
-        emailTags.map((tag) => tag.email),
-        selectedAccessLevel
-      );
+      if (emails.length > 0) {
+        await AccessService.sharePageTo(currentWorkspaceId, viewId, emails, selectedAccessLevel);
+      }
+
+      if (groupIds.length > 0) {
+        await AccessService.sharePageToGroups(currentWorkspaceId, viewId, groupIds, selectedAccessLevel);
+      }
+
       notify.success(t('shareAction.inviteSuccess'));
       // eslint-disable-next-line
     } catch (error: any) {
@@ -472,6 +548,30 @@ export function InviteGuest({
     await onInviteSuccess();
   }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, selectedAccessLevel]);
 
+  const commitCurrentSearchValue = useCallback(
+    (preferSuggestion: boolean) => {
+      const trimmedValue = searchValueRef.current.trim();
+      const currentHovered = hoveredIndexRef.current;
+
+      if (preferSuggestion && currentHovered >= 0 && currentHovered < allSuggestions.length) {
+        const suggestion = allSuggestions[currentHovered];
+
+        if (suggestion.type !== 'email' || !trimmedValue.includes('@')) {
+          handleInvite(suggestion.data);
+          return true;
+        }
+      }
+
+      if (trimmedValue.includes('@')) {
+        handleInvite(trimmedValue);
+        return true;
+      }
+
+      return false;
+    },
+    [allSuggestions, handleInvite]
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       e.stopPropagation();
@@ -496,10 +596,15 @@ export function InviteGuest({
         } else if (searchValueRef.current === '' && emailTags.length > 0) {
           void handleSendInvites();
         }
+      } else if (e.key === ',') {
+        e.preventDefault();
+        commitCurrentSearchValue(true);
       } else if (e.key === 'ArrowDown') {
+        if (allSuggestions.length === 0) return;
         e.preventDefault();
         setHoveredIndex((prev) => (prev + 1) % allSuggestions.length);
       } else if (e.key === 'ArrowUp') {
+        if (allSuggestions.length === 0) return;
         e.preventDefault();
         setHoveredIndex((prev) => (prev <= 0 ? allSuggestions.length - 1 : prev - 1));
       } else if (e.key === 'Escape') {
@@ -507,7 +612,7 @@ export function InviteGuest({
         setIsOpen(false);
       }
     },
-    [allSuggestions, emailTags.length, handleInvite, searchValue, handleSendInvites]
+    [allSuggestions, commitCurrentSearchValue, emailTags.length, handleInvite, searchValue, handleSendInvites]
   );
 
   const renderContent = () => {
@@ -525,12 +630,13 @@ export function InviteGuest({
     // Different label logic based on data availability and search state
     let labelText;
 
-    if (!hasMentionableData) {
-      // No mentionable data available
-      labelText = searchValue ? t('shareAction.keepTypingEmail') : '';
+    if (!hasSuggestionData) {
+      // No user or group data available
+      labelText = searchValue ? t('shareAction.keepTypingEmailOrGroup') : '';
     } else {
-      // Have mentionable data
-      labelText = searchValue && !hasResults ? t('shareAction.keepTypingEmail') : t('shareAction.notInvitedToPage');
+      // Have users or groups
+      labelText =
+        searchValue && !hasResults ? t('shareAction.keepTypingEmailOrGroup') : t('shareAction.notInvitedToPage');
     }
 
     return (
@@ -546,7 +652,11 @@ export function InviteGuest({
             {allSuggestions.map((suggestion, index) => (
               <PersonSuggestionItem
                 key={`${suggestion.type}-${
-                  typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
+                  suggestion.type === 'email'
+                    ? suggestion.data
+                    : suggestion.type === 'group'
+                    ? suggestion.data.group_id
+                    : suggestion.data.email
                 }`}
                 suggestion={suggestion}
                 isHovered={index === hoveredIndex}
@@ -572,7 +682,12 @@ export function InviteGuest({
           emailTags={emailTags}
           onEmailTagsChange={handleEmailTagsChange}
           onKeyDown={handleKeyDown}
-          placeholder={t('shareAction.inviteByEmail')}
+          placeholder={t('shareAction.inviteByEmailOrGroup')}
+          getTagTooltip={(tag) =>
+            tag.kind === 'group'
+              ? t('shareAction.shareWithGroupTooltip', { group: tag.name || tag.email })
+              : t('shareAction.inviteAsGuestTooltip', { email: tag.email })
+          }
           multiple={true}
           disabled={isLoading}
           onClick={handleInputClick}

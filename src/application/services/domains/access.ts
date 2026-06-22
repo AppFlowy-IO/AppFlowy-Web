@@ -6,7 +6,10 @@ export {
   sendRequestAccess,
   getShareDetail,
   sharePageTo,
+  sharePageToGroup,
+  sharePageToGroups,
   revokeAccess,
+  revokeGroupAccess,
   turnIntoMember,
   getShareWithMe,
 } from '../js-services/http/access-api';

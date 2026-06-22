@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AccessLevel, IPeopleWithAccessType } from '@/application/types';
+import { AccessLevel, IPeopleWithAccessType, WorkspaceGroupViewPermission } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { AccessService } from '@/application/services/domains';
@@ -14,6 +14,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const outline = useAppOutline();
   const [people, setPeople] = useState<IPeopleWithAccessType[]>([]);
+  const [groups, setGroups] = useState<WorkspaceGroupViewPermission[]>([]);
   const [isLoadingPeople, setIsLoadingPeople] = useState(false);
   const [hasLoadedPeople, setHasLoadedPeople] = useState(false);
   const [loadedPeopleViewId, setLoadedPeopleViewId] = useState<string | null>(null);
@@ -35,12 +36,14 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
 
         if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
         setPeople(detail.shared_with);
+        setGroups(detail.groups ?? []);
         setHasLoadedPeople(true);
         setLoadedPeopleViewId(viewId);
       } catch (error) {
         if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
         console.error(error);
         setPeople([]);
+        setGroups([]);
         setHasLoadedPeople(false);
         setLoadedPeopleViewId(null);
       } finally {
@@ -66,6 +69,10 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     () => (loadedPeopleViewId === viewId ? people : []),
     [loadedPeopleViewId, people, viewId]
   );
+  const groupsForCurrentView = useMemo(
+    () => (loadedPeopleViewId === viewId ? groups : []),
+    [groups, loadedPeopleViewId, viewId]
+  );
   const currentUserAccessLevel = useMemo(() => {
     return (
       peopleForCurrentView.find((person) => person.email === currentUserEmail)?.access_level ?? outlineView?.access_level
@@ -80,6 +87,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
       outline: outline || [],
       viewId,
       sharedPeople: peopleForCurrentView,
+      sharedGroups: groupsForCurrentView,
       workspaceMemberCount: userWorkspaceInfo?.selectedWorkspace?.memberCount,
     });
   }, [
@@ -87,12 +95,14 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     loadedPeopleViewId,
     outline,
     peopleForCurrentView,
+    groupsForCurrentView,
     userWorkspaceInfo?.selectedWorkspace?.memberCount,
     viewId,
   ]);
 
   return {
     people: peopleForCurrentView,
+    groups: groupsForCurrentView,
     isLoadingPeople,
     loadPeople,
     currentUserAccessLevel,

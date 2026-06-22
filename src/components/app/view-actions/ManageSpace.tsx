@@ -1,5 +1,5 @@
 import type { TFunction } from 'i18next';
-import { ChevronDown, Globe2, LockKeyhole, Shield, UserPlus, Users } from 'lucide-react';
+import { ChevronDown, Globe2, LockKeyhole, Shield, Users } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import { WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
-  Role,
   SpaceInvitePolicy,
   SpaceMember,
   SpaceMemberRole,
@@ -19,6 +18,11 @@ import {
 } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { useAppOperations, useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import {
+  getWorkspaceMemberUid,
+  useAddableWorkspaceMembers,
+  WorkspaceMemberInlineSearch,
+} from '@/components/app/share/WorkspaceMemberInlineSearch';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -32,7 +36,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { SearchInput } from '@/components/ui/search-input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/utils/errors';
@@ -68,17 +71,13 @@ function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings 
   };
 }
 
-function normalizePermissionSettings(
-  permission: SpacePermissionSettings,
-  isPrivate: boolean
-): SpacePermissionSettings {
+function normalizePermissionSettings(permission: SpacePermissionSettings, isPrivate: boolean): SpacePermissionSettings {
   const fallback = defaultPermissionSettings(isPrivate);
 
   return {
     visibility: permission.visibility ?? fallback.visibility,
     owner_access_level: permission.owner_access_level ?? fallback.owner_access_level,
-    member_default_access_level:
-      permission.member_default_access_level ?? fallback.member_default_access_level,
+    member_default_access_level: permission.member_default_access_level ?? fallback.member_default_access_level,
     everyone_else_access_level:
       permission.everyone_else_access_level === undefined
         ? fallback.everyone_else_access_level
@@ -113,9 +112,7 @@ function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction):
 }
 
 function roleLabel(role: SpaceMemberRole, t: TFunction): string {
-  return role === SpaceMemberRole.Owner
-    ? t('space.permissionManager.owner')
-    : t('space.permissionManager.member');
+  return role === SpaceMemberRole.Owner ? t('space.permissionManager.owner') : t('space.permissionManager.member');
 }
 
 function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
@@ -144,19 +141,6 @@ function visibilityDescription(visibility: SpaceVisibility, t: TFunction): strin
     default:
       return t('space.permissionManager.openVisibilityDescription');
   }
-}
-
-function getWorkspaceMemberUid(member: WorkspaceMember): string | null {
-  const rawUid = (member as WorkspaceMember & { uid?: unknown }).uid;
-
-  if (typeof rawUid === 'number' && Number.isFinite(rawUid)) return String(rawUid);
-  if (typeof rawUid === 'string') {
-    const trimmed = rawUid.trim();
-
-    return trimmed ? trimmed : null;
-  }
-
-  return null;
 }
 
 function displayNameForMember(member: SpaceMember, t: TFunction): string {
@@ -207,11 +191,7 @@ function AccessDropdown({
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
         {options.map((option) => (
-          <DropdownMenuItem
-            key={option ?? 'none'}
-            onSelect={() => onChange(option)}
-            className='justify-between'
-          >
+          <DropdownMenuItem key={option ?? 'none'} onSelect={() => onChange(option)} className='justify-between'>
             {accessLabel(option, t)}
             {option === (value ?? null) && <DropdownMenuItemTick />}
           </DropdownMenuItem>
@@ -231,34 +211,19 @@ function VisibilityDropdown({
   onChange: (value: SpaceVisibility) => void;
 }) {
   const { t } = useTranslation();
-  const options = [
-    SpaceVisibility.Open,
-    SpaceVisibility.Closed,
-    SpaceVisibility.Private,
-    SpaceVisibility.Default,
-  ];
+  const options = [SpaceVisibility.Open, SpaceVisibility.Closed, SpaceVisibility.Private, SpaceVisibility.Default];
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          disabled={disabled}
-          className='min-w-[140px] justify-between'
-        >
+        <Button type='button' variant='outline' size='sm' disabled={disabled} className='min-w-[140px] justify-between'>
           {visibilityLabel(value, t)}
           <ChevronDown className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-[320px]'>
         {options.map((option) => (
-          <DropdownMenuItem
-            key={option}
-            onSelect={() => onChange(option)}
-            className='items-start justify-between gap-4'
-          >
+          <DropdownMenuItem key={option} onSelect={() => onChange(option)} className='items-start justify-between gap-4'>
             <div className='flex flex-col gap-0.5'>
               <span>{visibilityLabel(option, t)}</span>
               <span className='text-xs text-text-secondary'>{visibilityDescription(option, t)}</span>
@@ -301,10 +266,7 @@ function RoleDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-[320px]'>
-        <DropdownMenuItem
-          onSelect={() => onChange(SpaceMemberRole.Owner)}
-          className='items-start justify-between gap-4'
-        >
+        <DropdownMenuItem onSelect={() => onChange(SpaceMemberRole.Owner)} className='items-start justify-between gap-4'>
           <div className='flex flex-col gap-1'>
             <span>{t('space.permissionManager.owner')}</span>
             <span className='text-xs leading-5 text-text-secondary'>
@@ -326,11 +288,7 @@ function RoleDropdown({
           {value === SpaceMemberRole.Member && <DropdownMenuItemTick />}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant='destructive'
-          disabled={!canRemove}
-          onSelect={onRemove}
-        >
+        <DropdownMenuItem variant='destructive' disabled={!canRemove} onSelect={onRemove}>
           {t('space.permissionManager.remove')}
         </DropdownMenuItem>
         {!canRemove && (
@@ -368,8 +326,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [mutatingMemberUid, setMutatingMemberUid] = useState<string | null>(null);
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
-  const [addSearch, setAddSearch] = useState('');
-  const [showAddMembers, setShowAddMembers] = useState(false);
   const { updateSpace } = useAppOperations();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
@@ -382,8 +338,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setSpaceIconColor(view.extra?.space_icon_color || '');
     setPermissionSettings(defaultPermissionSettings(Boolean(view.is_private)));
     setMemberSearch('');
-    setAddSearch('');
-    setShowAddMembers(false);
     inputRef.current = null;
   }, [open, view, viewId]);
 
@@ -410,7 +364,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       try {
         const [permission, workspaceMemberList] = await Promise.all([
           WorkspaceService.getSpacePermission(workspaceId, viewId).catch(() => null),
-          WorkspaceService.getMembers(workspaceId),
+          WorkspaceService.getMembers(workspaceId, true),
         ]);
 
         if (cancelled) return;
@@ -442,24 +396,27 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     [memberSearch, spaceMembers, t]
   );
 
-  const explicitMemberUids = useMemo(
-    () => new Set(spaceMembers.map((member) => member.uid)),
+  const explicitMemberUids = useMemo(() => new Set(spaceMembers.map((member) => member.uid)), [spaceMembers]);
+  const explicitMemberEmails = useMemo(
+    () =>
+      new Set(
+        spaceMembers
+          .map((member) => member.email?.trim().toLowerCase())
+          .filter((email): email is string => Boolean(email))
+      ),
     [spaceMembers]
   );
 
-  const addableWorkspaceMembers = useMemo(() => {
-    const normalizedSearch = addSearch.trim().toLowerCase();
+  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
 
-    return workspaceMembers.filter((member) => {
-      const uid = getWorkspaceMemberUid(member);
-      const matchesSearch =
-        !normalizedSearch ||
-        member.name.toLowerCase().includes(normalizedSearch) ||
-        member.email.toLowerCase().includes(normalizedSearch);
-
-      return matchesSearch && (!uid || !explicitMemberUids.has(uid));
-    });
-  }, [addSearch, explicitMemberUids, workspaceMembers]);
+  const addableWorkspaceMembers = useAddableWorkspaceMembers({
+    workspaceMembers,
+    search: memberSearch,
+    excludedUids: explicitMemberUids,
+    excludedEmails: explicitMemberEmails,
+  });
+  const showCurrentSpaceMemberList =
+    !normalizedMemberSearch || visibleSpaceMembers.length > 0 || addableWorkspaceMembers.length === 0;
 
   const updatePermission = useCallback((patch: Partial<SpacePermissionSettings>) => {
     setPermissionSettings((current) => ({
@@ -505,11 +462,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         space_icon_color: spaceIconColor,
         space_permission: legacyPermissionFromVisibility(permissionSettings.visibility),
       });
-      const response = await WorkspaceService.updateSpacePermission(
-        workspaceId,
-        viewId,
-        permissionSettings
-      );
+      const response = await WorkspaceService.updateSpacePermission(workspaceId, viewId, permissionSettings);
 
       setPermissionSettings(normalizePermissionSettings(response.permission, Boolean(view?.is_private)));
       toast.success(t('space.success.updateSpace'));
@@ -545,8 +498,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           access_level: permissionSettings.member_default_access_level,
         });
         await refreshSpaceMembers();
-        setShowAddMembers(false);
-        setAddSearch('');
         toast.success(t('space.permissionManager.addSpaceMemberSuccess'));
       } catch (error) {
         toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
@@ -554,23 +505,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setAddingUid(null);
       }
     },
-    [
-      canInviteMembers,
-      permissionSettings.member_default_access_level,
-      refreshSpaceMembers,
-      t,
-      viewId,
-      workspaceId,
-    ]
+    [canInviteMembers, permissionSettings.member_default_access_level, refreshSpaceMembers, t, viewId, workspaceId]
   );
 
   const handleUpdateMemberRole = useCallback(
     async (member: SpaceMember, role: SpaceMemberRole) => {
       if (member.role === role || !canManageMembers || !workspaceId) return;
       const accessLevel =
-        role === SpaceMemberRole.Owner
-          ? AccessLevel.FullAccess
-          : permissionSettings.member_default_access_level;
+        role === SpaceMemberRole.Owner ? AccessLevel.FullAccess : permissionSettings.member_default_access_level;
 
       setMutatingMemberUid(member.uid);
       try {
@@ -594,14 +536,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setMutatingMemberUid(null);
       }
     },
-    [
-      canManageMembers,
-      permissionSettings.member_default_access_level,
-      refreshSpaceMembers,
-      t,
-      viewId,
-      workspaceId,
-    ]
+    [canManageMembers, permissionSettings.member_default_access_level, refreshSpaceMembers, t, viewId, workspaceId]
   );
 
   const handleRemoveMember = useCallback(
@@ -774,140 +709,80 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         <TabsContent value='members' className='min-h-0'>
           <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
             <div className='flex flex-col gap-4'>
-              <div className='flex items-center gap-2'>
-                <SearchInput
-                  value={memberSearch}
-                  onChange={(e) => setMemberSearch(e.target.value)}
-                  placeholder={t('space.permissionManager.searchMembers')}
-                  className='h-10 flex-1'
-                />
-                <Button
-                  type='button'
-                  size='lg'
-                  disabled={!canInviteMembers}
-                  onClick={() => setShowAddMembers((value) => !value)}
-                >
-                  <UserPlus className='h-5 w-5' />
-                  {t('space.permissionManager.addMembers')}
-                </Button>
-              </div>
+              <WorkspaceMemberInlineSearch
+                search={memberSearch}
+                onSearchChange={setMemberSearch}
+                addableMembers={addableWorkspaceMembers}
+                searchPlaceholder={t('space.permissionManager.searchMembers')}
+                addButtonLabel={t('space.permissionManager.addMembers')}
+                addResultLabel={t('space.permissionManager.notInSpace')}
+                addActionLabel={t('space.permissionManager.add')}
+                ownerBadgeLabel={t('space.permissionManager.workspaceOwner')}
+                unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
+                unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
+                addButtonDisabled={!canInviteMembers || Boolean(addingUid)}
+                addingUid={addingUid}
+                onAddMember={(member) => void handleAddMember(member)}
+              />
 
-              {showAddMembers && (
-                <div className='flex flex-col gap-2 rounded-400 border border-border-primary p-3'>
-                  <SearchInput
-                    value={addSearch}
-                    onChange={(e) => setAddSearch(e.target.value)}
-                    placeholder={t('space.permissionManager.searchWorkspaceMembers')}
-                    className='h-9'
-                  />
-                  <div className='max-h-[220px] overflow-y-auto'>
-                    {addableWorkspaceMembers.length === 0 ? (
-                      <div className='py-4 text-center text-sm text-text-secondary'>
-                        {t('space.permissionManager.noWorkspaceMembersToAdd')}
-                      </div>
-                    ) : (
-                      addableWorkspaceMembers.slice(0, 12).map((member) => {
-                        const uid = getWorkspaceMemberUid(member);
-                        const unavailable = !uid;
+              {showCurrentSpaceMemberList && (
+                <>
+                  <div
+                    className='grid items-center gap-3 border-b border-border-primary pb-2 text-sm font-medium text-text-secondary'
+                    style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
+                  >
+                    <span>{t('space.permissionManager.name')}</span>
+                    <span className='text-right'>{t('space.permissionManager.role')}</span>
+                  </div>
+
+                  {loadingMembers && spaceMembers.length === 0 ? (
+                    <div className='flex justify-center py-8'>
+                      <Progress />
+                    </div>
+                  ) : visibleSpaceMembers.length === 0 ? (
+                    <div className='py-8 text-center text-sm text-text-secondary'>
+                      {t('space.permissionManager.noSpaceMembersFound')}
+                    </div>
+                  ) : (
+                    <div className='flex flex-col'>
+                      {visibleSpaceMembers.map((member) => {
+                        const mutable = MUTABLE_MEMBER_SOURCES.has(member.source);
 
                         return (
                           <div
-                            key={`${member.email}-${uid ?? 'missing-uid'}`}
-                            className='flex items-center gap-3 rounded-300 px-2 py-2 hover:bg-fill-content-hover'
+                            key={`${member.uid}-${member.source}`}
+                            className='grid items-center gap-3 border-b border-border-primary py-3'
+                            style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
                           >
-                            <Avatar size='md'>
-                              <AvatarImage src={member.avatar_url} alt={member.name} />
-                              <AvatarFallback name={member.name}>
-                                {member.name.charAt(0).toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className='min-w-0 flex-1'>
-                              <div className='truncate text-sm font-medium text-text-primary'>
-                                {member.name}
-                                {member.role === Role.Owner && (
-                                  <span className='ml-2 rounded-200 bg-fill-content-hover px-1.5 py-0.5 text-xs text-text-secondary'>
-                                    {t('space.permissionManager.workspaceOwner')}
-                                  </span>
-                                )}
+                            <div className='flex min-w-0 items-center gap-3'>
+                              <Avatar size='md'>
+                                <AvatarFallback name={displayNameForMember(member, t)}>
+                                  {memberInitial(member, t)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className='min-w-0'>
+                                <div className='truncate font-medium text-text-primary'>
+                                  {displayNameForMember(member, t)}
+                                </div>
+                                <div className='truncate text-sm text-text-secondary'>{member.email || ''}</div>
                               </div>
-                              <div className='truncate text-xs text-text-secondary'>{member.email}</div>
                             </div>
-                            <Button
-                              type='button'
-                              size='sm'
-                              variant='outline'
-                              disabled={unavailable || addingUid === uid}
-                              loading={addingUid === uid}
-                              onClick={() => void handleAddMember(member)}
-                              title={unavailable ? t('space.permissionManager.workspaceMemberUidUnavailable') : undefined}
-                            >
-                              {t('space.permissionManager.add')}
-                            </Button>
+
+                            <div className='flex justify-end'>
+                              <RoleDropdown
+                                value={member.role}
+                                disabled={membersDisabled || mutatingMemberUid === member.uid}
+                                canRemove={mutable && canManageMembers}
+                                onChange={(role) => void handleUpdateMemberRole(member, role)}
+                                onRemove={() => void handleRemoveMember(member)}
+                              />
+                            </div>
                           </div>
                         );
-                      })
-                    )}
-                  </div>
-                  {workspaceMembers.some((member) => !getWorkspaceMemberUid(member)) && (
-                    <div className='text-xs text-text-tertiary'>
-                      {t('space.permissionManager.workspaceMemberUidUnavailableHint')}
+                      })}
                     </div>
                   )}
-                </div>
-              )}
-
-              <div
-                className='grid items-center gap-3 border-b border-border-primary pb-2 text-sm font-medium text-text-secondary'
-                style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
-              >
-                <span>{t('space.permissionManager.name')}</span>
-                <span className='text-right'>{t('space.permissionManager.role')}</span>
-              </div>
-
-              {loadingMembers && spaceMembers.length === 0 ? (
-                <div className='flex justify-center py-8'>
-                  <Progress />
-                </div>
-              ) : visibleSpaceMembers.length === 0 ? (
-                <div className='py-8 text-center text-sm text-text-secondary'>
-                  {t('space.permissionManager.noSpaceMembersFound')}
-                </div>
-              ) : (
-                <div className='flex flex-col'>
-                  {visibleSpaceMembers.map((member) => {
-                    const mutable = MUTABLE_MEMBER_SOURCES.has(member.source);
-
-                    return (
-                      <div
-                        key={`${member.uid}-${member.source}`}
-                        className='grid items-center gap-3 border-b border-border-primary py-3'
-                        style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
-                      >
-                        <div className='flex min-w-0 items-center gap-3'>
-                          <Avatar size='md'>
-                            <AvatarFallback name={displayNameForMember(member, t)}>
-                              {memberInitial(member, t)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className='min-w-0'>
-                            <div className='truncate font-medium text-text-primary'>{displayNameForMember(member, t)}</div>
-                            <div className='truncate text-sm text-text-secondary'>{member.email || ''}</div>
-                          </div>
-                        </div>
-
-                        <div className='flex justify-end'>
-                          <RoleDropdown
-                            value={member.role}
-                            disabled={membersDisabled || mutatingMemberUid === member.uid}
-                            canRemove={mutable && canManageMembers}
-                            onChange={(role) => void handleUpdateMemberRole(member, role)}
-                            onRemove={() => void handleRemoveMember(member)}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -931,15 +806,8 @@ function PermissionPrincipalRow({
   last?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 px-4 py-3',
-        !last && 'border-b border-border-primary'
-      )}
-    >
-      <div className='flex h-8 w-8 items-center justify-center rounded-300 bg-fill-content-hover'>
-        {icon}
-      </div>
+    <div className={cn('flex items-center gap-3 px-4 py-3', !last && 'border-b border-border-primary')}>
+      <div className='flex h-8 w-8 items-center justify-center rounded-300 bg-fill-content-hover'>{icon}</div>
       <div className='min-w-0 flex-1'>
         <div className='font-medium text-text-primary'>{title}</div>
         <div className='truncate text-sm text-text-secondary'>{description}</div>

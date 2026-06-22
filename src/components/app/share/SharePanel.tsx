@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
+import {
+  IPeopleWithAccessType,
+  MentionablePerson,
+  Role,
+  SubscriptionPlan,
+  WorkspaceGroupViewPermission,
+} from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
@@ -14,6 +20,7 @@ import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/sub
 function SharePanel({
   viewId,
   people,
+  groups,
   isLoadingPeople,
   onPeopleChange,
   hasFullAccess,
@@ -21,6 +28,7 @@ function SharePanel({
 }: {
   viewId: string;
   people: IPeopleWithAccessType[];
+  groups: WorkspaceGroupViewPermission[];
   isLoadingPeople: boolean;
   onPeopleChange: () => Promise<void>;
   hasFullAccess: boolean;
@@ -112,6 +120,7 @@ function SharePanel({
         <InviteGuest
           viewId={viewId}
           sharedPeople={people}
+          sharedGroups={groups}
           isLoadingPeople={isLoadingPeople}
           mentionable={mentionable}
           isLoadingMentionable={isLoadingMentionable}
@@ -123,6 +132,7 @@ function SharePanel({
         <PeopleWithAccess
           viewId={viewId}
           people={people}
+          groups={groups}
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
           hasFullAccess={hasFullAccess}

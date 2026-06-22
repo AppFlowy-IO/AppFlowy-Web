@@ -37,7 +37,7 @@ function ShareTabs({
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
   const currentUser = useCurrentUser();
-  const { people, isLoadingPeople, loadPeople, currentUserAccessLevel, hasFullAccess, sectionType } =
+  const { people, groups, isLoadingPeople, loadPeople, currentUserAccessLevel, hasFullAccess, sectionType } =
     useShareAccessDetails(viewId, opened);
 
   const options = useMemo(() => {
@@ -108,6 +108,7 @@ function ShareTabs({
               <SharePanel
                 viewId={viewId}
                 people={people}
+                groups={groups}
                 isLoadingPeople={isLoadingPeople}
                 onPeopleChange={loadPeople}
                 hasFullAccess={hasFullAccess}

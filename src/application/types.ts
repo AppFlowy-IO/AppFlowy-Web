@@ -1185,6 +1185,14 @@ export interface WorkspaceGroupSpacePermission {
   source: string;
 }
 
+export interface WorkspaceGroupViewPermission {
+  group_id: string;
+  name: string;
+  access_level: AccessLevel;
+  member_count: number;
+  source: string;
+}
+
 export interface SpaceMembers {
   members: SpaceMember[];
   groups: WorkspaceGroupSpacePermission[];

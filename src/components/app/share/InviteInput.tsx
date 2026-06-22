@@ -1,4 +1,5 @@
 import { cva } from 'class-variance-authority';
+import { Users } from 'lucide-react';
 import * as React from 'react';
 import { forwardRef, useEffect, useRef, useState } from 'react';
 
@@ -16,6 +17,9 @@ export interface EmailTag {
   name?: string; // Optional name field - if provided, display name instead of email
   new?: boolean; // Optional new field - if provided, display new tag
   isGuest?: boolean; // Optional guest field - if provided, display guest tag
+  kind?: 'user' | 'group';
+  groupId?: string;
+  memberCount?: number;
 }
 
 // Base input styles that apply to all variants and sizes
@@ -66,15 +70,16 @@ const tagInputVariants = cva('flex items-center gap-1', {
 interface EmailTagComponentProps {
   tag: EmailTag;
   onRemove: (id: string) => void;
+  getTooltipText?: (tag: EmailTag) => string;
 }
 
-const EmailTagComponent = ({ tag, onRemove }: EmailTagComponentProps) => {
+const EmailTagComponent = ({ tag, onRemove, getTooltipText }: EmailTagComponentProps) => {
   // Display name if available (from mentionable list), otherwise display email (manual input)
   const displayText = tag.name || tag.email;
   const avatarName = tag.name || tag.email;
 
   // Create tooltip text: "Invite John Doe (john@example.com) as a guest" or "Invite john@example.com as a guest"
-  const tooltipText = `Invite ${tag.email} as a guest`;
+  const tooltipText = getTooltipText?.(tag) ?? `Invite ${tag.email} as a guest`;
 
   return (
     <Tooltip delayDuration={500}>
@@ -88,7 +93,9 @@ const EmailTagComponent = ({ tag, onRemove }: EmailTagComponentProps) => {
             'flex h-[22px] min-w-[80px] max-w-[200px] flex-shrink-0 cursor-default items-center gap-1 whitespace-nowrap rounded-[6px] px-1 py-[1px]'
           )}
         >
-          {tag.avatar ? (
+          {tag.kind === 'group' ? (
+            <Users className='h-4 w-4 shrink-0 text-icon-secondary' />
+          ) : tag.avatar ? (
             <PersonAvatar size={16} avatarUrl={tag.avatar} name={avatarName} />
           ) : (
             <PersonIcon className='h-5 w-5' />
@@ -121,6 +128,7 @@ export interface InviteInputProps
   onInputChange?: (value: string) => void;
   multiple?: boolean;
   afterExtra?: React.ReactNode;
+  getTagTooltip?: (tag: EmailTag) => string;
 }
 
 const InviteInput = forwardRef<HTMLDivElement, InviteInputProps>(
@@ -134,6 +142,7 @@ const InviteInput = forwardRef<HTMLDivElement, InviteInputProps>(
       emailTags = [],
       onEmailTagsChange,
       afterExtra,
+      getTagTooltip,
       readOnly,
       ...props
     },
@@ -207,7 +216,7 @@ const InviteInput = forwardRef<HTMLDivElement, InviteInputProps>(
             <div className={'flex h-full min-w-full flex-nowrap items-center gap-1'}>
               {/* Render email tags */}
               {emailTags.map((tag) => (
-                <EmailTagComponent key={tag.id} tag={tag} onRemove={handleRemoveTag} />
+                <EmailTagComponent key={tag.id} tag={tag} onRemove={handleRemoveTag} getTooltipText={getTagTooltip} />
               ))}
 
               {/* Input field */}
@@ -256,5 +265,3 @@ const InviteInput = forwardRef<HTMLDivElement, InviteInputProps>(
 InviteInput.displayName = 'InviteInput';
 
 export { InviteInput };
-  
-

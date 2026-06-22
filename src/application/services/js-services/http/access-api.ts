@@ -8,6 +8,7 @@ import {
   Role,
   View,
   Workspace,
+  WorkspaceGroupViewPermission,
 } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, withRetry } from './core';
@@ -43,17 +44,13 @@ function afWorkspace2Workspace(workspace: AFWorkspace): Workspace {
 export async function getInvitation(invitationId: string) {
   const url = `/api/workspace/invite/${invitationId}`;
 
-  return executeAPIRequest<Invitation>(() =>
-    getAxios()?.get<APIResponse<Invitation>>(url)
-  );
+  return executeAPIRequest<Invitation>(() => getAxios()?.get<APIResponse<Invitation>>(url));
 }
 
 export async function acceptInvitation(invitationId: string) {
   const url = `/api/workspace/accept-invite/${invitationId}`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url)
-  );
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
 }
 
 export async function getRequestAccessInfo(requestId: string): Promise<GetRequestAccessInfoResponse> {
@@ -68,15 +65,17 @@ export async function getRequestAccessInfo(requestId: string): Promise<GetReques
     view: View;
     status: RequestAccessInfoStatus;
   }>(() =>
-    getAxios()?.get<APIResponse<{
-      request_id: string;
-      workspace: AFWorkspace;
-      requester: AFWebUser & {
-        email: string;
-      };
-      view: View;
-      status: RequestAccessInfoStatus;
-    }>>(url)
+    getAxios()?.get<
+      APIResponse<{
+        request_id: string;
+        workspace: AFWorkspace;
+        requester: AFWebUser & {
+          email: string;
+        };
+        view: View;
+        status: RequestAccessInfoStatus;
+      }>
+    >(url)
   );
 
   return {
@@ -106,21 +105,31 @@ export async function sendRequestAccess(workspaceId: string, viewId: string) {
   );
 }
 
-export async function getShareDetail(workspaceId: string, viewId: string, ancestorViewIds: string[], signal?: AbortSignal) {
+export async function getShareDetail(
+  workspaceId: string,
+  viewId: string,
+  ancestorViewIds: string[],
+  signal?: AbortSignal
+) {
   const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
 
-  return withRetry(() =>
-    executeAPIRequest<{
-      view_id: string;
-      shared_with: IPeopleWithAccessType[];
-    }>(() =>
-      getAxios()?.post<APIResponse<{
+  return withRetry(
+    () =>
+      executeAPIRequest<{
         view_id: string;
         shared_with: IPeopleWithAccessType[];
-      }>>(url, {
-        ancestor_view_ids: ancestorViewIds,
-      })
-    ),
+        groups?: WorkspaceGroupViewPermission[];
+      }>(() =>
+        getAxios()?.post<
+          APIResponse<{
+            view_id: string;
+            shared_with: IPeopleWithAccessType[];
+            groups?: WorkspaceGroupViewPermission[];
+          }>
+        >(url, {
+          ancestor_view_ids: ancestorViewIds,
+        })
+      ),
     { signal }
   );
 }
@@ -137,12 +146,35 @@ export async function sharePageTo(workspaceId: string, viewId: string, emails: s
   );
 }
 
+export async function sharePageToGroup(workspaceId: string, viewId: string, groupId: string, accessLevel?: AccessLevel) {
+  const url = `/api/workspace/${workspaceId}/views/${viewId}/group/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroupViewPermission>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroupViewPermission>>(url, {
+      access_level: accessLevel || AccessLevel.ReadOnly,
+    })
+  );
+}
+
+export async function sharePageToGroups(
+  workspaceId: string,
+  viewId: string,
+  groupIds: string[],
+  accessLevel?: AccessLevel
+) {
+  await Promise.all(groupIds.map((groupId) => sharePageToGroup(workspaceId, viewId, groupId, accessLevel)));
+}
+
+export async function revokeGroupAccess(workspaceId: string, viewId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/views/${viewId}/group/${groupId}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
 export async function revokeAccess(workspaceId: string, viewId: string, emails: string[]) {
   const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/revoke-access`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, { emails })
-  );
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { emails }));
 }
 
 export async function turnIntoMember(workspaceId: string, email: string) {
@@ -159,7 +191,5 @@ export async function turnIntoMember(workspaceId: string, email: string) {
 export async function getShareWithMe(workspaceId: string): Promise<View> {
   const url = `/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
 
-  return executeAPIRequest<View>(() =>
-    getAxios()?.get<APIResponse<View>>(url)
-  );
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
 }
