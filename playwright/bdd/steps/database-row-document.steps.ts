@@ -1,4 +1,4 @@
-import { expect, Locator, Page } from '@playwright/test';
+import { expect, Locator, Page, Route } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -30,6 +30,7 @@ interface DatabaseBlockState {
   parentId: string | null;
   viewIds: string[];
   databaseId: string | null;
+  isDuplicatePlaceholder: boolean;
 }
 
 interface RowInlineGridState {
@@ -37,6 +38,7 @@ interface RowInlineGridState {
   originalBlock?: DatabaseBlockState;
   duplicatedBlock?: DatabaseBlockState;
   originalCellText?: string;
+  originalEditedCellText?: string;
   duplicateCellText?: string;
 }
 
@@ -117,6 +119,7 @@ Given('a grid database is open for row-page inline grid duplication', async ({ p
   setupPageErrorHandling(page);
   rowInlineGridStateByPage.set(page, {
     originalCellText: `row-page-original-${uuidv4().slice(0, 6)}`,
+    originalEditedCellText: `row-page-original-edited-${uuidv4().slice(0, 6)}`,
     duplicateCellText: `row-page-duplicate-${uuidv4().slice(0, 6)}`,
   });
 
@@ -163,12 +166,40 @@ When('I create an inline grid in the row page', async ({ page }) => {
 });
 
 When('I duplicate the inline grid block in the row page', async ({ page }) => {
+  const state = getRowInlineGridState(page);
+  const rowPageViewId = getRowPageViewId(page);
+  const editor = editorForView(page, rowPageViewId);
+  const originalDatabaseId = state.originalBlock?.databaseId;
+
+  if (!originalDatabaseId) {
+    throw new Error('Expected original inline grid database id before duplication');
+  }
+
+  await Promise.all([
+    delayNextDatabaseBlobDiffRequest(page, 1500, [originalDatabaseId]),
+    delayNextPageDuplicateRequest(page, 3000),
+  ]);
+
+  await duplicateDatabaseBlockAt(page, editor, 0, { waitAfterMs: 0 });
+  await expect(databaseBlocks(editor)).toHaveCount(2, { timeout: 30000 });
+});
+
+Then('the duplicated inline grid shows a loading placeholder', async ({ page }) => {
   const rowPageViewId = getRowPageViewId(page);
   const editor = editorForView(page, rowPageViewId);
 
-  await duplicateDatabaseBlockAt(page, editor, 0);
-  await expect(databaseBlocks(editor)).toHaveCount(2, { timeout: 30000 });
-  getRowInlineGridState(page).duplicatedBlock = await waitForInlineGridDuplicateRewrite(page, rowPageViewId);
+  await expect(databaseBlocks(editor).nth(1).getByTestId('database-duplicate-placeholder')).toBeVisible({
+    timeout: 5000,
+  });
+  await expectDuplicatedInlineGridLoadingPlaceholder(page, rowPageViewId);
+});
+
+Then('the duplicated inline grid has a fresh database view id', async ({ page }) => {
+  const state = getRowInlineGridState(page);
+  const rowPageViewId = getRowPageViewId(page);
+
+  state.duplicatedBlock = await waitForDuplicatedInlineGridFreshIds(page, rowPageViewId);
+  expectDuplicatedBlockHasFreshIds(state);
 });
 
 When('I edit the duplicated inline grid', async ({ page }) => {
@@ -183,27 +214,62 @@ Then('the original row-page inline grid remains unchanged', async ({ page }) => 
   const state = getRowInlineGridState(page);
   const rowPageViewId = getRowPageViewId(page);
   const editor = editorForView(page, rowPageViewId);
+  const originalCellText = state.originalCellText ?? 'row-page-original';
+  const duplicateCellText = state.duplicateCellText ?? 'row-page-duplicate';
 
-  expect(state.duplicatedBlock?.viewIds[0]).toBeTruthy();
-  expect(state.duplicatedBlock?.databaseId).toBeTruthy();
-  expect(state.duplicatedBlock?.viewIds[0]).not.toBe(state.originalBlock?.viewIds[0]);
-  expect(state.duplicatedBlock?.databaseId).not.toBe(state.originalBlock?.databaseId);
+  expectDuplicatedBlockHasFreshIds(state);
 
   await expect
     .poll(async () => firstGridCellText(databaseBlocks(editor).first()), {
       timeout: 15000,
       message: 'Expected editing the duplicated inline grid not to modify the original inline grid',
     })
-    .toContain(state.originalCellText ?? 'row-page-original');
-  expect(await firstGridCellText(databaseBlocks(editor).first())).not.toContain(
-    state.duplicateCellText ?? 'row-page-duplicate'
-  );
+    .toContain(originalCellText);
+  expect(await firstGridCellText(databaseBlocks(editor).first())).not.toContain(duplicateCellText);
+
+  await expect
+    .poll(async () => firstGridCellText(databaseBlocks(editor).nth(1)), {
+      timeout: 15000,
+      message: 'Expected editing the duplicated inline grid to update the duplicated inline grid',
+    })
+    .toContain(duplicateCellText);
+});
+
+When('I edit the original inline grid', async ({ page }) => {
+  const rowPageViewId = getRowPageViewId(page);
+  const editor = editorForView(page, rowPageViewId);
+  const originalEditedCellText = getRowInlineGridState(page).originalEditedCellText ?? 'row-page-original-edited';
+
+  await editFirstGridCell(page, databaseBlocks(editor).first(), originalEditedCellText);
+});
+
+Then('the duplicated row-page inline grid remains unchanged', async ({ page }) => {
+  const state = getRowInlineGridState(page);
+  const rowPageViewId = getRowPageViewId(page);
+  const editor = editorForView(page, rowPageViewId);
+  const duplicateCellText = state.duplicateCellText ?? 'row-page-duplicate';
+  const originalEditedCellText = state.originalEditedCellText ?? 'row-page-original-edited';
+
+  expectDuplicatedBlockHasFreshIds(state);
+
+  await expect
+    .poll(async () => firstGridCellText(databaseBlocks(editor).first()), {
+      timeout: 15000,
+      message: 'Expected editing the original inline grid to update the original inline grid',
+    })
+    .toContain(originalEditedCellText);
+
+  await expect
+    .poll(async () => firstGridCellText(databaseBlocks(editor).nth(1)), {
+      timeout: 15000,
+      message: 'Expected editing the original inline grid not to modify the duplicated inline grid',
+    })
+    .toContain(duplicateCellText);
+  expect(await firstGridCellText(databaseBlocks(editor).nth(1))).not.toContain(originalEditedCellText);
 });
 
 async function addNewCard(page: Page, cardName: string) {
-  const todoColumn = BoardSelectors.boardContainer(page)
-    .locator('[data-column-id]')
-    .filter({ hasText: 'To Do' });
+  const todoColumn = BoardSelectors.boardContainer(page).locator('[data-column-id]').filter({ hasText: 'To Do' });
 
   await todoColumn.getByText('New').click({ force: true });
   await page.waitForTimeout(500);
@@ -275,6 +341,7 @@ async function getDatabaseBlockStates(page: Page, rowPageViewId: string): Promis
               view_id?: string;
               view_ids?: string[];
               database_id?: string;
+              is_database_duplicate_placeholder?: boolean;
             };
           }>;
         }
@@ -288,17 +355,14 @@ async function getDatabaseBlockStates(page: Page, rowPageViewId: string): Promis
       .map((node) => ({
         blockId: node.blockId,
         parentId: node.data?.parent_id ?? null,
-        viewIds: Array.isArray(node.data?.view_ids)
-          ? node.data.view_ids
-          : node.data?.view_id
-            ? [node.data.view_id]
-            : [],
+        viewIds: Array.isArray(node.data?.view_ids) ? node.data.view_ids : node.data?.view_id ? [node.data.view_id] : [],
         databaseId: node.data?.database_id ?? null,
+        isDuplicatePlaceholder: node.data?.is_database_duplicate_placeholder === true,
       }));
   }, rowPageViewId);
 }
 
-async function waitForInlineGridDuplicateRewrite(page: Page, rowPageViewId: string): Promise<DatabaseBlockState> {
+async function waitForDuplicatedInlineGridFreshIds(page: Page, rowPageViewId: string): Promise<DatabaseBlockState> {
   await expect
     .poll(
       async () => {
@@ -308,23 +372,104 @@ async function waitForInlineGridDuplicateRewrite(page: Page, rowPageViewId: stri
 
         return Boolean(
           original?.viewIds[0] &&
-            duplicated?.viewIds[0] &&
             original?.databaseId &&
+            duplicated?.viewIds[0] &&
             duplicated?.databaseId &&
-            original.parentId === rowPageViewId &&
             duplicated.parentId === rowPageViewId &&
-            original.viewIds[0] !== duplicated.viewIds[0] &&
-            original.databaseId !== duplicated.databaseId
+            !duplicated.isDuplicatePlaceholder &&
+            duplicated.viewIds[0] !== original.viewIds[0] &&
+            duplicated.databaseId !== original.databaseId
         );
       },
       {
         timeout: 30000,
-        message: 'Expected duplicated row-page inline grid block to be rewritten to fresh view/database ids',
+        message: 'Expected duplicated row-page inline grid placeholder to be replaced with fresh view/database ids',
       }
     )
     .toBe(true);
 
-  return (await getDatabaseBlockStates(page, rowPageViewId))[1];
+  return expectDuplicatedInlineGridHasFreshIds(page, rowPageViewId);
+}
+
+function expectDuplicatedBlockHasFreshIds(state: RowInlineGridState): void {
+  expect(state.duplicatedBlock?.viewIds[0]).toBeTruthy();
+  expect(state.duplicatedBlock?.databaseId).toBeTruthy();
+  expect(state.duplicatedBlock?.viewIds[0]).not.toBe(state.originalBlock?.viewIds[0]);
+  expect(state.duplicatedBlock?.databaseId).not.toBe(state.originalBlock?.databaseId);
+}
+
+async function expectDuplicatedInlineGridHasFreshIds(page: Page, rowPageViewId: string): Promise<DatabaseBlockState> {
+  const blocks = await getDatabaseBlockStates(page, rowPageViewId);
+  const original = blocks[0];
+  const duplicated = blocks[1];
+
+  expect(original?.viewIds[0]).toBeTruthy();
+  expect(original?.databaseId).toBeTruthy();
+  expect(duplicated?.parentId).toBe(rowPageViewId);
+  expect(duplicated?.isDuplicatePlaceholder).toBe(false);
+  expect(duplicated?.viewIds[0]).toBeTruthy();
+  expect(duplicated?.databaseId).toBeTruthy();
+  expect(duplicated?.viewIds[0]).not.toBe(original?.viewIds[0]);
+  expect(duplicated?.databaseId).not.toBe(original?.databaseId);
+
+  return duplicated as DatabaseBlockState;
+}
+
+async function expectDuplicatedInlineGridLoadingPlaceholder(page: Page, rowPageViewId: string): Promise<void> {
+  const blocks = await getDatabaseBlockStates(page, rowPageViewId);
+  const original = blocks[0];
+  const duplicated = blocks[1];
+
+  expect(original?.viewIds[0]).toBeTruthy();
+  expect(original?.databaseId).toBeTruthy();
+  expect(duplicated?.parentId).toBe(rowPageViewId);
+  expect(duplicated?.isDuplicatePlaceholder).toBe(true);
+  expect(duplicated?.viewIds).toEqual([]);
+  expect(duplicated?.databaseId).toBeNull();
+}
+
+async function delayNextPageDuplicateRequest(page: Page, delayMs: number): Promise<void> {
+  await page.route(
+    /\/api\/workspace\/[^/]+\/page-view\/[^/]+\/duplicate(?:\?|$)/,
+    async (route) => {
+      await page.waitForTimeout(delayMs);
+      await route.continue();
+    },
+    { times: 1 }
+  );
+}
+
+async function delayNextDatabaseBlobDiffRequest(
+  page: Page,
+  delayMs: number,
+  excludedDatabaseIds: string[] = []
+): Promise<void> {
+  const excludedDatabaseIdSet = new Set(excludedDatabaseIds);
+  const routePattern = /\/api\/workspace\/[^/]+\/database\/[^/]+\/blob\/diff(?:\?|$)/;
+  let handledDuplicatedRequest = false;
+  const getDatabaseIdFromBlobDiffUrl = (url: string): string | undefined => {
+    return url.match(/\/api\/workspace\/[^/]+\/database\/([^/]+)\/blob\/diff(?:\?|$)/)?.[1];
+  };
+  const handler = async (route: Route) => {
+    const databaseId = getDatabaseIdFromBlobDiffUrl(route.request().url());
+
+    if (databaseId && excludedDatabaseIdSet.has(databaseId)) {
+      await route.continue();
+      return;
+    }
+
+    if (handledDuplicatedRequest) {
+      await route.continue();
+      return;
+    }
+
+    handledDuplicatedRequest = true;
+    await page.waitForTimeout(delayMs);
+    await route.continue();
+    void page.unroute(routePattern, handler).catch(() => undefined);
+  };
+
+  await page.route(routePattern, handler);
 }
 
 async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void> {
@@ -358,7 +503,12 @@ async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void>
     .toBe(true);
 }
 
-async function duplicateDatabaseBlockAt(page: Page, editor: Locator, blockIndex: number): Promise<void> {
+async function duplicateDatabaseBlockAt(
+  page: Page,
+  editor: Locator,
+  blockIndex: number,
+  options: { waitAfterMs?: number } = {}
+): Promise<void> {
   const gridBlock = databaseBlocks(editor).nth(blockIndex);
 
   await expect(gridBlock).toBeVisible({ timeout: 15000 });
@@ -366,5 +516,8 @@ async function duplicateDatabaseBlockAt(page: Page, editor: Locator, blockIndex:
   await BlockSelectors.dragHandle(page).click({ force: true });
   await expect(BlockSelectors.controlsMenu(page)).toBeVisible({ timeout: 5000 });
   await BlockSelectors.controlsMenuAction(page, 'duplicate').click({ force: true });
-  await page.waitForTimeout(3000);
+
+  if (options.waitAfterMs !== 0) {
+    await page.waitForTimeout(options.waitAfterMs ?? 3000);
+  }
 }

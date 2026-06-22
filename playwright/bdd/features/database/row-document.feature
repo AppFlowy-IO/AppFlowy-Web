@@ -14,5 +14,9 @@ Feature: Database row document
     When I open the first row as a full row page
     And I create an inline grid in the row page
     And I duplicate the inline grid block in the row page
-    And I edit the duplicated inline grid
+    Then the duplicated inline grid shows a loading placeholder
+    Then the duplicated inline grid has a fresh database view id
+    When I edit the duplicated inline grid
     Then the original row-page inline grid remains unchanged
+    When I edit the original inline grid
+    Then the duplicated row-page inline grid remains unchanged
