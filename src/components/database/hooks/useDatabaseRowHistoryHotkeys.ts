@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { useDatabaseHistory } from '@/application/database-yjs';
 import { RowId } from '@/application/types';
@@ -18,12 +18,21 @@ export function useDatabaseRowHistoryHotkeys(
   const { enabled = true, ignoreInput = true, useLatest = false } = options;
   const { canRedo, canUndo, redo, undo } = useDatabaseHistory(useLatest ? undefined : rowId);
 
+  // Keep the live undo/redo state in a ref so the keydown listener is attached
+  // once and always reads fresh values, instead of re-subscribing whenever
+  // canUndo/canRedo flip (which also avoids a stale-closure fall-through bug).
+  const latest = useRef({ canRedo, canUndo, redo, undo });
+
+  latest.current = { canRedo, canUndo, redo, undo };
+
   useEffect(() => {
     if (!enabled || (!useLatest && !rowId)) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (ignoreInput && isInputElement()) return;
+
+      const { canRedo, canUndo, redo, undo } = latest.current;
 
       if (isRedoHotkey(event)) {
         if (!canRedo) return;
@@ -46,5 +55,5 @@ export function useDatabaseRowHistoryHotkeys(
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [canRedo, canUndo, enabled, ignoreInput, redo, rowId, undo, useLatest]);
+  }, [enabled, ignoreInput, rowId, useLatest]);
 }

@@ -1,4 +1,4 @@
-import React, { forwardRef, memo, useEffect, useState } from 'react';
+import React, { forwardRef, memo, useState } from 'react';
 
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { FieldId } from '@/application/types';
@@ -31,10 +31,14 @@ function TextCellEditing(
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
 
   const [inputValue, setInputValue] = useState<string>(defaultValue);
+  const [prevDefaultValue, setPrevDefaultValue] = useState<string>(defaultValue);
 
-  useEffect(() => {
+  // Reconcile external value changes (undo/redo, remote sync) during render
+  // instead of in an effect, avoiding an extra commit + paint of the stale value.
+  if (defaultValue !== prevDefaultValue) {
+    setPrevDefaultValue(defaultValue);
     setInputValue(defaultValue);
-  }, [defaultValue]);
+  }
 
   return (
     <TextareaAutosize
