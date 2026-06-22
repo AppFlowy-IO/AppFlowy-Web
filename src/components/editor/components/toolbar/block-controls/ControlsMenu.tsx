@@ -11,9 +11,8 @@ import { getAxios, executeAPIRequest, APIResponse } from '@/application/services
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { dataStringTOJson, getBlock } from '@/application/slate-yjs/utils/yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, View, YjsEditorKey } from '@/application/types';
+import { BlockType, View } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -104,23 +103,13 @@ function ControlsMenu({
   const duplicateDatabaseBlock = useCallback(
     async (sourceNode: DatabaseNode, duplicatedBlockId: string) => {
       const replaceDuplicatedBlockData = (nextData: ReturnType<typeof createDatabaseNodeData>) => {
-        const duplicatedBlock = getBlock(duplicatedBlockId, editor.sharedRoot);
+        const entry = findSlateEntryByBlockId(editor, duplicatedBlockId);
 
-        if (!duplicatedBlock) {
+        if (!entry) {
           throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
         }
 
-        const previousData = dataStringTOJson(
-          duplicatedBlock.get(YjsEditorKey.block_data)
-        );
-
-        duplicatedBlock.set(
-          YjsEditorKey.block_data,
-          JSON.stringify({
-            ...previousData,
-            ...nextData,
-          })
-        );
+        Transforms.setNodes(editor, { data: nextData }, { at: entry[1] });
       };
 
       const parentId = sourceNode.data.parent_id;

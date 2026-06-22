@@ -8,3 +8,11 @@ Feature: Database row document
     Then the card primary cell shows a row document icon
     When I switch the database to a new Grid view
     Then the grid primary cell shows a row document icon
+
+  Scenario: Duplicating an inline grid block in a row page creates an independent database
+    Given a grid database is open for row-page inline grid duplication
+    When I open the first row as a full row page
+    And I create an inline grid in the row page
+    And I duplicate the inline grid block in the row page
+    And I edit the duplicated inline grid
+    Then the original row-page inline grid remains unchanged

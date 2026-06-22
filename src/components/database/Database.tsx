@@ -17,6 +17,7 @@ import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
@@ -133,6 +134,7 @@ export interface Database2Props {
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   /**
    * Delete a page/view (move to trash).
    * This is used by database tab delete to sync with the sidebar.
@@ -821,6 +823,7 @@ function Database(props: Database2Props) {
       createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
+      duplicatePage: props.duplicatePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
@@ -861,6 +864,7 @@ function Database(props: Database2Props) {
       props.createDatabaseView,
       props.updatePage,
       props.deletePage,
+      props.duplicatePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
