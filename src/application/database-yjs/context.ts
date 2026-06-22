@@ -65,6 +65,7 @@ export interface DatabaseContextState {
   paddingStart?: number;
   paddingEnd?: number;
   isDocumentBlock?: boolean;
+  embeddedHeight?: number;
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
