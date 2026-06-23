@@ -1,11 +1,13 @@
 import { Plus, UserPlus } from 'lucide-react';
-import { useMemo, useRef } from 'react';
+import { type KeyboardEventHandler, useMemo, useRef } from 'react';
 
 import { Role, WorkspaceMember } from '@/application/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
+
+const EMPTY_EXCLUDED_ROLES: Role[] = [];
 
 export function getWorkspaceMemberUid(member: WorkspaceMember): string | null {
   const rawUid = (member as WorkspaceMember & { uid?: unknown }).uid;
@@ -42,7 +44,7 @@ export function useAddableWorkspaceMembers({
   search,
   excludedUids,
   excludedEmails,
-  excludedRoles = [],
+  excludedRoles = EMPTY_EXCLUDED_ROLES,
   excludePending = false,
 }: UseAddableWorkspaceMembersArgs): WorkspaceMember[] {
   const normalizedSearch = search.trim().toLowerCase();
@@ -84,6 +86,7 @@ interface WorkspaceMemberInlineSearchProps {
   addingUid?: string | null;
   maxResults?: number;
   inputClassName?: string;
+  onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   onAddMember: (member: WorkspaceMember) => void;
 }
 
@@ -103,6 +106,7 @@ export function WorkspaceMemberInlineSearch({
   addingUid = null,
   maxResults = 12,
   inputClassName = 'h-10 flex-1',
+  onInputKeyDown,
   onAddMember,
 }: WorkspaceMemberInlineSearchProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -119,6 +123,7 @@ export function WorkspaceMemberInlineSearch({
           className={inputClassName}
           inputRef={inputRef}
           disabled={inputDisabled}
+          onKeyDown={onInputKeyDown}
           data-testid='workspace-member-inline-search-input'
         />
         <Button type='button' size='lg' disabled={addButtonDisabled} onClick={() => inputRef.current?.focus()}>

@@ -127,6 +127,15 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
 }
 
 export async function createSpace(workspaceId: string, payload: CreateSpacePayload) {
+  if (payload.permission) {
+    const url = `/api/workspace/${workspaceId}/spaces`;
+    const { space_permission: _legacyPermission, ...structuredPayload } = payload;
+
+    return executeAPIRequest<{ view_id: string }>(() =>
+      getAxios()?.post<APIResponse<{ view_id: string }>>(url, structuredPayload)
+    ).then((data) => data.view_id);
+  }
+
   const url = `/api/workspace/${workspaceId}/space`;
 
   return executeAPIRequest<{ view_id: string }>(() =>

@@ -24,7 +24,7 @@ import {
   WorkspaceMemberInlineSearch,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -315,13 +315,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [permissionSettings, setPermissionSettings] = useState<SpacePermissionSettings>(
     defaultPermissionSettings(Boolean(view?.is_private))
   );
-  const [canManageSpace, setCanManageSpace] = useState(true);
-  const [canManageMembers, setCanManageMembers] = useState(true);
-  const [canInviteMembers, setCanInviteMembers] = useState(true);
+  const [canManageSpace, setCanManageSpace] = useState(false);
+  const [canManageMembers, setCanManageMembers] = useState(false);
+  const [canInviteMembers, setCanInviteMembers] = useState(false);
   const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const [spaceMembersLoaded, setSpaceMembersLoaded] = useState(false);
+  const [permissionLoaded, setPermissionLoaded] = useState(false);
+  const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [mutatingMemberUid, setMutatingMemberUid] = useState<string | null>(null);
   const [addingUid, setAddingUid] = useState<string | null>(null);
@@ -337,19 +340,31 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setSpaceIcon(view.extra?.space_icon || '');
     setSpaceIconColor(view.extra?.space_icon_color || '');
     setPermissionSettings(defaultPermissionSettings(Boolean(view.is_private)));
+    setCanManageSpace(false);
+    setCanManageMembers(false);
+    setCanInviteMembers(false);
+    setPermissionLoaded(false);
+    setPermissionLoadFailed(false);
+    setSpaceMembersLoaded(false);
+    setSpaceMembers([]);
+    setWorkspaceMembers([]);
     setMemberSearch('');
     inputRef.current = null;
   }, [open, view, viewId]);
 
-  const refreshSpaceMembers = useCallback(async () => {
-    if (!workspaceId || !viewId) return;
+  const refreshSpaceMembers = useCallback(async (): Promise<boolean> => {
+    if (!workspaceId || !viewId) return false;
     setLoadingMembers(true);
     try {
       const result = await WorkspaceService.getSpaceMembers(workspaceId, viewId);
 
       setSpaceMembers(result.members || []);
+      setSpaceMembersLoaded(true);
+      return true;
     } catch (error) {
+      setSpaceMembersLoaded(false);
       toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+      return false;
     } finally {
       setLoadingMembers(false);
     }
@@ -360,30 +375,60 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     let cancelled = false;
 
     setLoadingSettings(true);
+    setPermissionLoaded(false);
+    setPermissionLoadFailed(false);
     void (async () => {
+      let shouldLoadWorkspaceMembers = false;
+      let shouldLoadSpaceMembers = false;
+
       try {
-        const [permission, workspaceMemberList] = await Promise.all([
-          WorkspaceService.getSpacePermission(workspaceId, viewId).catch(() => null),
-          WorkspaceService.getMembers(workspaceId, true),
-        ]);
+        const permission = await WorkspaceService.getSpacePermission(workspaceId, viewId);
 
         if (cancelled) return;
-        if (permission) {
-          setPermissionSettings(normalizePermissionSettings(permission.permission, Boolean(view.is_private)));
-          setCanManageSpace(permission.can_manage_space);
-          setCanManageMembers(permission.can_manage_members);
-          setCanInviteMembers(permission.can_invite_members);
-        }
-
-        setWorkspaceMembers(workspaceMemberList);
-        if (permission?.can_manage_members ?? true) {
-          await refreshSpaceMembers();
-        }
+        setPermissionSettings(normalizePermissionSettings(permission.permission, Boolean(view.is_private)));
+        setCanManageSpace(permission.can_manage_space);
+        setCanManageMembers(permission.can_manage_members);
+        setCanInviteMembers(permission.can_invite_members);
+        setPermissionLoaded(true);
+        shouldLoadWorkspaceMembers = permission.can_manage_members || permission.can_invite_members;
+        shouldLoadSpaceMembers = permission.can_manage_members || permission.can_invite_members;
       } catch (error) {
-        if (!cancelled) toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
+        if (!cancelled) {
+          setCanManageSpace(false);
+          setCanManageMembers(false);
+          setCanInviteMembers(false);
+          setPermissionLoaded(false);
+          setPermissionLoadFailed(true);
+          setSpaceMembersLoaded(false);
+          setSpaceMembers([]);
+          setWorkspaceMembers([]);
+          toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
+        }
       } finally {
         if (!cancelled) setLoadingSettings(false);
       }
+
+      const loadWorkspaceMembers = async () => {
+        if (!shouldLoadWorkspaceMembers) return;
+        try {
+          const workspaceMemberList = await WorkspaceService.getMembers(workspaceId, true);
+
+          if (!cancelled) setWorkspaceMembers(workspaceMemberList);
+        } catch (error) {
+          if (!cancelled) toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+        }
+      };
+
+      const loadSpaceMembers = async () => {
+        if (shouldLoadSpaceMembers) {
+          await refreshSpaceMembers();
+        } else if (!cancelled) {
+          setSpaceMembersLoaded(false);
+          setSpaceMembers([]);
+        }
+      };
+
+      await Promise.all([loadWorkspaceMembers(), loadSpaceMembers()]);
     })();
 
     return () => {
@@ -446,6 +491,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleSave = useCallback(async () => {
     if (!updateSpace || !workspaceId) return;
+    if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canManageSpace) {
+      if (permissionLoadFailed) {
+        toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
+      }
+
+      return;
+    }
+
     const trimmedName = spaceName.trim();
 
     if (!trimmedName) {
@@ -473,8 +526,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setSaving(false);
     }
   }, [
+    canManageSpace,
+    loadingSettings,
     onClose,
     permissionSettings,
+    permissionLoaded,
+    permissionLoadFailed,
+    saving,
     spaceIcon,
     spaceIconColor,
     spaceName,
@@ -489,7 +547,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     async (workspaceMember: WorkspaceMember) => {
       const uid = getWorkspaceMemberUid(workspaceMember);
 
-      if (!uid || !canInviteMembers || !workspaceId) return;
+      if (
+        !uid ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        !spaceMembersLoaded ||
+        !canInviteMembers ||
+        !workspaceId
+      ) {
+        return;
+      }
+
       setAddingUid(uid);
       try {
         await WorkspaceService.addSpaceMember(workspaceId, viewId, {
@@ -505,12 +573,25 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setAddingUid(null);
       }
     },
-    [canInviteMembers, permissionSettings.member_default_access_level, refreshSpaceMembers, t, viewId, workspaceId]
+    [
+      canInviteMembers,
+      permissionLoadFailed,
+      permissionLoaded,
+      permissionSettings.member_default_access_level,
+      refreshSpaceMembers,
+      spaceMembersLoaded,
+      t,
+      viewId,
+      workspaceId,
+    ]
   );
 
   const handleUpdateMemberRole = useCallback(
     async (member: SpaceMember, role: SpaceMemberRole) => {
-      if (member.role === role || !canManageMembers || !workspaceId) return;
+      if (member.role === role || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) {
+        return;
+      }
+
       const accessLevel =
         role === SpaceMemberRole.Owner ? AccessLevel.FullAccess : permissionSettings.member_default_access_level;
 
@@ -536,12 +617,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setMutatingMemberUid(null);
       }
     },
-    [canManageMembers, permissionSettings.member_default_access_level, refreshSpaceMembers, t, viewId, workspaceId]
+    [
+      canManageMembers,
+      permissionLoadFailed,
+      permissionLoaded,
+      permissionSettings.member_default_access_level,
+      refreshSpaceMembers,
+      t,
+      viewId,
+      workspaceId,
+    ]
   );
 
   const handleRemoveMember = useCallback(
     async (member: SpaceMember) => {
-      if (!canManageMembers || !workspaceId) return;
+      if (!permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
       setMutatingMemberUid(member.uid);
       try {
         await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
@@ -553,13 +643,19 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setMutatingMemberUid(null);
       }
     },
-    [canManageMembers, refreshSpaceMembers, t, viewId, workspaceId]
+    [canManageMembers, permissionLoadFailed, permissionLoaded, refreshSpaceMembers, t, viewId, workspaceId]
   );
+
+  const handleMemberSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') event.stopPropagation();
+  }, []);
 
   if (!view) return null;
 
-  const settingsDisabled = loadingSettings || !canManageSpace;
-  const membersDisabled = loadingMembers || !canManageMembers;
+  const settingsDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
+  const membersDisabled =
+    loadingMembers || !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canManageMembers;
+  const addMembersDisabled = !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canInviteMembers;
 
   return (
     <NormalModal
@@ -572,6 +668,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[6%]' }}
       okLoading={saving}
       onOk={handleSave}
+      okButtonProps={{ disabled: settingsDisabled || saving }}
       overflowHidden
       PaperProps={{
         style: {
@@ -681,6 +778,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     icon={<Users className='h-5 w-5 text-icon-primary' />}
                     title={t('space.permissionManager.members')}
                     description={t('space.permissionManager.membersDescription')}
+                    testId='manage-space-members-default-access-row'
                     trailing={
                       <AccessDropdown
                         value={permissionSettings.member_default_access_level}
@@ -726,8 +824,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                 ownerBadgeLabel={t('space.permissionManager.workspaceOwner')}
                 unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
                 unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
-                addButtonDisabled={!canInviteMembers || Boolean(addingUid)}
+                inputDisabled={addMembersDisabled}
+                addButtonDisabled={addMembersDisabled || Boolean(addingUid)}
                 addingUid={addingUid}
+                onInputKeyDown={handleMemberSearchKeyDown}
                 onAddMember={(member) => void handleAddMember(member)}
               />
 
@@ -805,15 +905,20 @@ function PermissionPrincipalRow({
   description,
   trailing,
   last,
+  testId,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   trailing: React.ReactNode;
   last?: boolean;
+  testId?: string;
 }) {
   return (
-    <div className={cn('flex items-center gap-3 px-4 py-3', !last && 'border-b border-border-primary')}>
+    <div
+      className={cn('flex items-center gap-3 px-4 py-3', !last && 'border-b border-border-primary')}
+      data-testid={testId}
+    >
       <div className='flex h-8 w-8 items-center justify-center rounded-300 bg-fill-content-hover'>{icon}</div>
       <div className='min-w-0 flex-1'>
         <div className='font-medium text-text-primary'>{title}</div>

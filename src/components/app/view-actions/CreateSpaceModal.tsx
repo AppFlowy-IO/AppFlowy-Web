@@ -2,12 +2,38 @@ import { OutlinedInput } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SpacePermission } from '@/application/types';
+import {
+  AccessLevel,
+  SpaceInvitePolicy,
+  SpacePermissionSettings,
+  SpaceSidebarEditPolicy,
+  SpaceVisibility,
+} from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppOperations } from '@/components/app/app.hooks';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
+
+function createSpacePermissionSettings(visibility: SpaceVisibility): SpacePermissionSettings {
+  const everyoneElseAccessLevel =
+    visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private ? null : AccessLevel.ReadOnly;
+
+  return {
+    visibility,
+    owner_access_level: AccessLevel.FullAccess,
+    member_default_access_level: AccessLevel.ReadAndWrite,
+    everyone_else_access_level: everyoneElseAccessLevel,
+    invite_policy: SpaceInvitePolicy.OwnersOnly,
+    sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+    invite_link_enabled: false,
+    security: {
+      disable_guests: false,
+      disable_public_links: false,
+      disable_export: false,
+    },
+  };
+}
 
 function CreateSpaceModal({
   open,
@@ -21,7 +47,7 @@ function CreateSpaceModal({
   const [spaceName, setSpaceName] = React.useState<string>('');
   const [spaceIcon, setSpaceIcon] = React.useState<string>('');
   const [spaceIconColor, setSpaceIconColor] = React.useState<string>('');
-  const [spacePermission, setSpacePermission] = React.useState<SpacePermission>(SpacePermission.Public);
+  const [spaceVisibility, setSpaceVisibility] = React.useState<SpaceVisibility>(SpaceVisibility.Open);
   const [loading, setLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
   const { createSpace } = useAppOperations();
@@ -33,7 +59,7 @@ function CreateSpaceModal({
         name: spaceName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
-        space_permission: spacePermission,
+        permission: createSpacePermissionSettings(spaceVisibility),
       });
 
       onClose();
@@ -88,7 +114,7 @@ function CreateSpaceModal({
         <div className={'flex flex-col gap-2'}>
           <div className={'text-text-secondary'}>{t('space.spaceName')}</div>
           <OutlinedInput
-            data-testid="space-name-input"
+            data-testid='space-name-input'
             value={spaceName}
             fullWidth={true}
             onChange={(e) => setSpaceName(e.target.value)}
@@ -98,7 +124,7 @@ function CreateSpaceModal({
         </div>
         <div className={'flex flex-col gap-2'}>
           <div className={'text-text-secondary'}>{t('space.permission')}</div>
-          <SpacePermissionButton onSelected={setSpacePermission} value={spacePermission} />
+          <SpacePermissionButton onSelected={setSpaceVisibility} value={spaceVisibility} />
         </div>
       </div>
     </NormalModal>

@@ -1,7 +1,6 @@
 import dayjs from 'dayjs';
 import type { TFunction } from 'i18next';
-import { MoreHorizontal, Trash2, Users } from 'lucide-react';
-import type { FormEvent } from 'react';
+import { MoreHorizontal, Search, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -15,6 +14,7 @@ import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
   WorkspaceMemberInlineSearch,
+  workspaceMemberDisplayName,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -125,21 +125,21 @@ export function MembersPanel() {
   const [memberSearch, setMemberSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
   const [emailValue, setEmailValue] = useState('');
-  const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingGroupName, setEditingGroupName] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<WorkspaceGroup | null>(null);
   const [inviting, setInviting] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [loadingGroups, setLoadingGroups] = useState(false);
-  const [creatingGroup, setCreatingGroup] = useState(false);
   const [updatingGroupId, setUpdatingGroupId] = useState<string | null>(null);
   const [deletingGroupId, setDeletingGroupId] = useState<string | null>(null);
   const [removingEmail, setRemovingEmail] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showGroupSearch, setShowGroupSearch] = useState(false);
   const memberListRef = useRef<WorkspaceMember[]>([]);
+  const groupSearchInputRef = useRef<HTMLInputElement | null>(null);
   const removingRef = useRef(false);
 
   const isOwner = useMemo(() => {
@@ -226,6 +226,19 @@ export function MembersPanel() {
       cancelled = true;
     };
   }, [currentWorkspaceId, isOwner]);
+
+  useEffect(() => {
+    if (!showGroupSearch) return;
+
+    groupSearchInputRef.current?.focus();
+  }, [showGroupSearch]);
+
+  useEffect(() => {
+    if (groups.length > 0) return;
+
+    setGroupSearch('');
+    setShowGroupSearch(false);
+  }, [groups.length]);
 
   const refreshMembers = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -352,30 +365,6 @@ export function MembersPanel() {
       setGeneratingLink(false);
     }
   }, [currentWorkspaceId, generatingLink, t]);
-
-  const handleCreateGroup = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
-      if (!currentWorkspaceId || !isOwner) return;
-      const name = newGroupName.trim();
-
-      if (!name) return;
-
-      setCreatingGroup(true);
-      try {
-        await WorkspaceService.createWorkspaceGroup(currentWorkspaceId, { name });
-        toast.success(t('settings.appearance.people.createGroupSuccess'));
-        setNewGroupName('');
-        setShowCreateGroup(false);
-        await refreshGroups();
-      } catch (e) {
-        toast.error(getErrorMessage(e, t('settings.appearance.people.createGroupFailed')));
-      } finally {
-        setCreatingGroup(false);
-      }
-    },
-    [currentWorkspaceId, isOwner, newGroupName, refreshGroups, t]
-  );
 
   const startRenameGroup = useCallback((group: WorkspaceGroup) => {
     setEditingGroupId(group.group_id);
@@ -639,48 +628,37 @@ export function MembersPanel() {
                   </div>
                 ) : (
                   <>
-                    {showCreateGroup && (
-                      <form
-                        className='flex items-center gap-2 rounded-400 border border-border-primary p-3'
-                        onSubmit={(event) => void handleCreateGroup(event)}
-                      >
-                        <Input
-                          value={newGroupName}
-                          onChange={(e) => setNewGroupName(e.target.value)}
-                          placeholder={t('settings.appearance.people.groupNamePlaceholder')}
-                          autoFocus
-                          className='flex-1'
-                          data-testid='people-create-group-name-input'
-                        />
-                        <Button
-                          type='submit'
-                          disabled={!newGroupName.trim() || creatingGroup}
-                          loading={creatingGroup}
-                          data-testid='people-create-group-submit'
-                        >
-                          {t('settings.appearance.people.create')}
-                        </Button>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          onClick={() => {
-                            setShowCreateGroup(false);
-                            setNewGroupName('');
-                          }}
-                        >
-                          {t('button.cancel')}
-                        </Button>
-                      </form>
-                    )}
+                    {groups.length > 0 && (
+                      <div className='flex items-center justify-end'>
+                        {showGroupSearch ? (
+                          <SearchInput
+                            value={groupSearch}
+                            inputRef={groupSearchInputRef}
+                            onChange={(e) => setGroupSearch(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Escape') return;
 
-                    <div className='flex items-center justify-end'>
-                      <SearchInput
-                        value={groupSearch}
-                        onChange={(e) => setGroupSearch(e.target.value)}
-                        placeholder={t('settings.appearance.people.searchGroups')}
-                        className='h-9 w-[260px]'
-                      />
-                    </div>
+                              e.preventDefault();
+                              setGroupSearch('');
+                              setShowGroupSearch(false);
+                            }}
+                            placeholder={t('settings.appearance.people.searchGroupsByName')}
+                            className='h-9 w-[260px]'
+                          />
+                        ) : (
+                          <Button
+                            type='button'
+                            variant='ghost'
+                            size='icon-lg'
+                            onClick={() => setShowGroupSearch(true)}
+                            aria-label={t('settings.appearance.people.searchGroups')}
+                            data-testid='people-groups-open-search-button'
+                          >
+                            <Search className='h-5 w-5' />
+                          </Button>
+                        )}
+                      </div>
+                    )}
 
                     <div className='flex flex-col'>
                       <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium text-text-secondary'>
@@ -805,6 +783,15 @@ export function MembersPanel() {
           onWorkspaceMembersLoaded={handleWorkspaceMembersLoaded}
         />
       )}
+      {showCreateGroup && currentWorkspaceId && (
+        <CreateGroupModal
+          open
+          workspaceId={currentWorkspaceId}
+          workspaceMembers={members}
+          onClose={() => setShowCreateGroup(false)}
+          onCreated={refreshGroups}
+        />
+      )}
     </div>
   );
 }
@@ -817,6 +804,348 @@ interface GroupDetailModalProps {
   onGroupChanged: () => Promise<void>;
   onGroupDeleted: () => void;
   onWorkspaceMembersLoaded: (members: WorkspaceMember[]) => void;
+}
+
+interface CreateGroupModalProps {
+  open: boolean;
+  workspaceId: string;
+  workspaceMembers: WorkspaceMember[];
+  onClose: () => void;
+  onCreated: () => Promise<void>;
+}
+
+interface CreateGroupMemberPickerProps {
+  search: string;
+  selectedMembers: WorkspaceMember[];
+  addableMembers: WorkspaceMember[];
+  disabled?: boolean;
+  noMembersLabel: string;
+  searchPlaceholder: string;
+  noResultsLabel: string;
+  unavailableTitle: string;
+  removeMemberLabel: string;
+  onSearchChange: (value: string) => void;
+  onAddMember: (member: WorkspaceMember) => void;
+  onRemoveMember: (member: WorkspaceMember) => void;
+}
+
+function CreateGroupMemberPicker({
+  search,
+  selectedMembers,
+  addableMembers,
+  disabled = false,
+  noMembersLabel,
+  searchPlaceholder,
+  noResultsLabel,
+  unavailableTitle,
+  removeMemberLabel,
+  onSearchChange,
+  onAddMember,
+  onRemoveMember,
+}: CreateGroupMemberPickerProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const visibleMembers = addableMembers.slice(0, 8);
+  const hasSearch = search.trim().length > 0;
+
+  return (
+    <div className='flex flex-col'>
+      <div
+        className='rounded-300 bg-fill-content px-2 py-1'
+        onClick={() => inputRef.current?.focus()}
+        data-testid='create-group-member-picker'
+      >
+        {selectedMembers.map((member) => {
+          const displayName = workspaceMemberDisplayName(member);
+
+          return (
+            <div
+              key={getWorkspaceMemberUid(member) ?? member.email}
+              className='flex items-center gap-3 rounded-300 px-2 py-2'
+            >
+              <Avatar size='md'>
+                <AvatarImage src={member.avatar_url} alt={displayName} />
+                <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
+              </Avatar>
+              <div className='min-w-0 flex-1'>
+                <div className='truncate text-sm font-medium text-text-primary'>{displayName}</div>
+                {member.email !== displayName && (
+                  <div className='truncate text-xs text-text-secondary'>{member.email}</div>
+                )}
+              </div>
+              <button
+                type='button'
+                className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveMember(member);
+                }}
+                disabled={disabled}
+                aria-label={removeMemberLabel}
+              >
+                <X className='h-4 w-4' />
+              </button>
+            </div>
+          );
+        })}
+        <input
+          ref={inputRef}
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              onSearchChange('');
+              inputRef.current?.blur();
+              return;
+            }
+
+            if (e.key === 'Backspace' && !search && selectedMembers.length > 0) {
+              onRemoveMember(selectedMembers[selectedMembers.length - 1]);
+              return;
+            }
+
+            if (e.key === 'Enter') {
+              const firstAvailableMember = visibleMembers.find((member) => getWorkspaceMemberUid(member));
+
+              if (!firstAvailableMember) return;
+              e.preventDefault();
+              onAddMember(firstAvailableMember);
+            }
+          }}
+          disabled={disabled}
+          placeholder={selectedMembers.length === 0 ? noMembersLabel : searchPlaceholder}
+          className='h-10 w-full bg-transparent px-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed'
+          data-testid='create-group-member-search-input'
+        />
+      </div>
+
+      {hasSearch && (
+        <div className='mt-2 max-h-[240px] overflow-y-auto rounded-400 border border-border-primary bg-fill-content p-2 shadow-xl'>
+          {visibleMembers.length === 0 ? (
+            <div className='px-3 py-2 text-sm text-text-tertiary'>{noResultsLabel}</div>
+          ) : (
+            visibleMembers.map((member) => {
+              const uid = getWorkspaceMemberUid(member);
+              const displayName = workspaceMemberDisplayName(member);
+              const showEmail = Boolean(member.email && member.email !== displayName);
+
+              return (
+                <button
+                  key={`${member.email}-${uid ?? 'missing-uid'}`}
+                  type='button'
+                  className='flex w-full items-center gap-3 rounded-300 px-3 py-2 text-left hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none disabled:cursor-not-allowed disabled:opacity-50'
+                  onClick={() => onAddMember(member)}
+                  disabled={disabled || !uid}
+                  title={!uid ? unavailableTitle : undefined}
+                  data-testid='create-group-member-search-result'
+                >
+                  <Avatar size='md'>
+                    <AvatarImage src={member.avatar_url} alt={displayName} />
+                    <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
+                  </Avatar>
+                  <div className='min-w-0 flex-1 truncate text-sm text-text-primary'>
+                    <span className='font-semibold'>{displayName}</span>
+                    {showEmail && <span className='ml-1 text-text-secondary'>{member.email}</span>}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreateGroupModal({ open, workspaceId, workspaceMembers, onClose, onCreated }: CreateGroupModalProps) {
+  const { t } = useTranslation();
+  const [groupName, setGroupName] = useState('');
+  const [memberSearch, setMemberSearch] = useState('');
+  const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    setGroupName('');
+    setMemberSearch('');
+    setSelectedMembers([]);
+    setCreating(false);
+  }, [open]);
+
+  const selectedMemberUids = useMemo(
+    () => selectedMembers.map((member) => getWorkspaceMemberUid(member)).filter((uid): uid is string => Boolean(uid)),
+    [selectedMembers]
+  );
+  const selectedMemberUidSet = useMemo(() => new Set(selectedMemberUids), [selectedMemberUids]);
+  const selectedMemberEmailSet = useMemo(
+    () => new Set(selectedMembers.map((member) => member.email.trim().toLowerCase())),
+    [selectedMembers]
+  );
+  const addableWorkspaceMembers = useAddableWorkspaceMembers({
+    workspaceMembers,
+    search: memberSearch,
+    excludedUids: selectedMemberUidSet,
+    excludedEmails: selectedMemberEmailSet,
+    excludedRoles: GROUP_EXCLUDED_WORKSPACE_ROLES,
+    excludePending: true,
+  });
+
+  const handleAddMember = useCallback(
+    (member: WorkspaceMember) => {
+      const uid = getWorkspaceMemberUid(member);
+
+      if (!uid) {
+        toast.error(t('settings.appearance.people.workspaceMemberUidUnavailable'));
+        return;
+      }
+
+      setSelectedMembers((current) =>
+        current.some((currentMember) => getWorkspaceMemberUid(currentMember) === uid) ? current : [...current, member]
+      );
+      setMemberSearch('');
+    },
+    [t]
+  );
+
+  const handleRemoveSelectedMember = useCallback((member: WorkspaceMember) => {
+    const uid = getWorkspaceMemberUid(member);
+
+    setSelectedMembers((current) =>
+      current.filter((currentMember) =>
+        uid
+          ? getWorkspaceMemberUid(currentMember) !== uid
+          : currentMember.email.toLowerCase() !== member.email.toLowerCase()
+      )
+    );
+  }, []);
+
+  const handleCreateGroup = useCallback(async () => {
+    const name = groupName.trim();
+
+    if (!name || creating) return;
+    if (selectedMemberUids.length !== selectedMembers.length) {
+      toast.error(t('settings.appearance.people.workspaceMemberUidUnavailable'));
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const createdGroup = await WorkspaceService.createWorkspaceGroup(workspaceId, { name });
+      const addResults = await Promise.allSettled(
+        selectedMemberUids.map((uid) =>
+          WorkspaceService.addWorkspaceGroupMember(workspaceId, createdGroup.group_id, { uid })
+        )
+      );
+      const failedAddCount = addResults.filter((result) => result.status === 'rejected').length;
+
+      if (failedAddCount > 0) {
+        toast.error(t('settings.appearance.people.addGroupMemberFailed'));
+      } else {
+        toast.success(t('settings.appearance.people.createGroupSuccess'));
+      }
+
+      try {
+        await onCreated();
+      } catch (refreshError) {
+        toast.error(getErrorMessage(refreshError, t('settings.appearance.people.loadGroupsFailed')));
+      }
+
+      onClose();
+    } catch (e) {
+      toast.error(getErrorMessage(e, t('settings.appearance.people.createGroupFailed')));
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, groupName, onClose, onCreated, selectedMemberUids, selectedMembers.length, t, workspaceId]);
+
+  return (
+    <NormalModal
+      open={open}
+      onClose={onClose}
+      title=''
+      maxWidth={false}
+      PaperProps={{
+        className: 'w-[720px] max-w-[calc(100vw-32px)]',
+        'data-testid': 'create-group-modal',
+      }}
+      cancelButtonProps={{ style: { display: 'none' } }}
+      okButtonProps={{ style: { display: 'none' } }}
+    >
+      <div className='flex max-h-[76vh] min-h-[520px] flex-col gap-7 px-2 pb-2'>
+        <div className='flex flex-col items-center gap-4 pt-3 text-center'>
+          <Users className='h-12 w-12 text-icon-secondary' />
+          <div className='flex flex-col gap-2'>
+            <div className='text-2xl font-semibold text-text-primary'>
+              {t('settings.appearance.people.createNewGroup')}
+            </div>
+            <div className='text-base text-text-secondary'>{t('settings.appearance.people.createGroupDescription')}</div>
+          </div>
+        </div>
+
+        <div className='flex flex-col gap-5'>
+          <section className='flex flex-col gap-2'>
+            <div className='text-sm font-medium text-text-primary'>{t('settings.appearance.people.iconAndName')}</div>
+            <div className='flex items-center gap-2'>
+              <div className='flex h-12 w-12 shrink-0 items-center justify-center rounded-400 border border-border-primary bg-fill-content-hover text-icon-secondary'>
+                <Users className='h-7 w-7' />
+              </div>
+              <Input
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleCreateGroup();
+                  }
+                }}
+                placeholder={t('settings.appearance.people.createGroupNamePlaceholder')}
+                autoFocus
+                className='h-12 flex-1 text-base'
+                data-testid='people-create-group-name-input'
+              />
+            </div>
+          </section>
+
+          <section className='flex flex-col gap-3'>
+            <div className='text-sm font-medium text-text-primary'>{t('settings.appearance.people.membersTab')}</div>
+            <CreateGroupMemberPicker
+              search={memberSearch}
+              selectedMembers={selectedMembers}
+              addableMembers={addableWorkspaceMembers}
+              disabled={creating}
+              noMembersLabel={t('settings.appearance.people.noMembersYet')}
+              searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
+              noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
+              unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
+              removeMemberLabel={t('settings.appearance.people.removeFromGroup')}
+              onSearchChange={setMemberSearch}
+              onAddMember={handleAddMember}
+              onRemoveMember={handleRemoveSelectedMember}
+            />
+          </section>
+        </div>
+
+        <div className='flex flex-col gap-3'>
+          <Button
+            type='button'
+            size='lg'
+            disabled={!groupName.trim() || creating}
+            loading={creating}
+            onClick={() => void handleCreateGroup()}
+            data-testid='people-create-group-submit'
+            className='h-12 w-full text-base font-medium'
+          >
+            {creating && <Progress variant='inherit' />}
+            {t('settings.appearance.people.createGroupAction')}
+          </Button>
+          <Button type='button' variant='ghost' size='lg' onClick={onClose} disabled={creating} className='w-full'>
+            {t('button.cancel')}
+          </Button>
+        </div>
+      </div>
+    </NormalModal>
+  );
 }
 
 function GroupDetailModal({

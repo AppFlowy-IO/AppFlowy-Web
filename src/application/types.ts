@@ -1666,6 +1666,8 @@ export interface CreateSpacePayload {
   name?: string;
   space_icon?: string;
   space_icon_color?: string;
+  view_id?: string;
+  permission?: SpacePermissionSettings;
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
 }
 
