@@ -766,11 +766,11 @@ export function moveNode(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetPar
   return copiedBlockId;
 }
 
-export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock): string | null {
+export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock, dataOverride?: BlockData): string | null {
   try {
     const newBlock = createBlock(sharedRoot, {
       ty: sourceBlock.get(YjsEditorKey.block_type),
-      data: dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
+      data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
     });
 
     copyBlockText(sharedRoot, sourceBlock, newBlock);

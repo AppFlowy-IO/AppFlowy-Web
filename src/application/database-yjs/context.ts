@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOperationOptions,
   CreateRow,
   DatabaseRelations,
   DateFormat,
@@ -95,6 +96,7 @@ export interface DatabaseContextState {
   addPage?: (parentId: string, payload: import('@/application/types').CreatePagePayload) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;

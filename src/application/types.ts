@@ -290,6 +290,7 @@ export interface DatabaseNodeData extends BlockData {
   view_ids?: ViewId[];
   parent_id?: ViewId;
   database_id?: string;
+  is_database_duplicate_placeholder?: boolean;
 }
 
 export interface SubpageNodeData extends BlockData {
