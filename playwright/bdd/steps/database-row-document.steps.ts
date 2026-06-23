@@ -2,6 +2,7 @@ import { expect, Locator, Page, Route } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
+import { signUpAndLoginWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { signInAndCreateDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import {
   databaseBlocks,
@@ -10,6 +11,7 @@ import {
   firstGridCellText,
   insertInlineGridViaSlash,
 } from '../../support/duplicate-test-helpers';
+import { createDocumentPageAndNavigate } from '../../support/page-utils';
 import { closeRowDetailWithEscape, openRowDetail } from '../../support/row-detail-helpers';
 import {
   BlockSelectors,
@@ -34,6 +36,7 @@ interface DatabaseBlockState {
 }
 
 interface RowInlineGridState {
+  documentViewId?: string;
   rowPageViewId?: string;
   originalBlock?: DatabaseBlockState;
   duplicatedBlock?: DatabaseBlockState;
@@ -117,11 +120,7 @@ Then('the grid primary cell shows a row document icon', async ({ page }) => {
 
 Given('a grid database is open for row-page inline grid duplication', async ({ page, request }) => {
   setupPageErrorHandling(page);
-  rowInlineGridStateByPage.set(page, {
-    originalCellText: `row-page-original-${uuidv4().slice(0, 6)}`,
-    originalEditedCellText: `row-page-original-edited-${uuidv4().slice(0, 6)}`,
-    duplicateCellText: `row-page-duplicate-${uuidv4().slice(0, 6)}`,
-  });
+  initializeRowInlineGridState(page);
 
   await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Grid', {
     createWaitMs: 6000,
@@ -129,22 +128,43 @@ Given('a grid database is open for row-page inline grid duplication', async ({ p
   });
 });
 
-When('I open the first row as a full row page', async ({ page }) => {
-  await openRowDetail(page, 0);
-  await page.locator('.MuiDialogTitle-root').locator('button').first().click({ force: true });
+Given('a document is open for row-page inline grid duplication', async ({ page, request }) => {
+  setupPageErrorHandling(page);
+  const state = initializeRowInlineGridState(page);
+
+  await signUpAndLoginWithPasswordViaUi(page, request, generateRandomEmail());
+  await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
   await page.waitForTimeout(2000);
 
-  const editor = page.locator('[id^="editor-"]').first();
+  state.documentViewId = await createDocumentPageAndNavigate(page);
+});
 
-  await expect(editor).toBeVisible({ timeout: 15000 });
-  const editorId = await editor.getAttribute('id');
-  const rowPageViewId = editorId?.replace('editor-', '');
+When('I create a parent inline grid in the document', async ({ page }) => {
+  const docViewId = getDocumentViewId(page);
 
-  if (!rowPageViewId) {
-    throw new Error(`Expected mounted row document editor id, got ${String(editorId)}`);
-  }
+  await insertInlineGridViaSlash(page, docViewId);
 
-  getRowInlineGridState(page).rowPageViewId = rowPageViewId;
+  // Inserting an inline grid opens the new database in a ViewModal. Close it so the
+  // row-open step targets the document's inline grid rather than a row hidden behind
+  // the modal backdrop (page-level `grid-row-*` would otherwise match both).
+  await closeOpenDialogs(page);
+
+  const editor = editorForView(page, docViewId);
+
+  await expect(databaseBlocks(editor)).toHaveCount(1, { timeout: 30000 });
+  // The inline grid's first row must be hydrated before `openRowDetail` can hover it.
+  // Scope to the document's grid block (page-level would also match a modal grid).
+  await expect(databaseBlocks(editor).first().locator('[data-testid^="grid-row-"]').first()).toBeVisible({
+    timeout: 30000,
+  });
+});
+
+When('I open the first row as a full row page', async ({ page }) => {
+  await openFirstRowAsFullRowPage(page);
+});
+
+When('I open the first parent grid row as a full row page', async ({ page }) => {
+  await openFirstRowAsFullRowPage(page);
 });
 
 When('I create an inline grid in the row page', async ({ page }) => {
@@ -194,7 +214,7 @@ Then('the duplicated inline grid shows a loading placeholder', async ({ page }) 
   await expectDuplicatedInlineGridLoadingPlaceholder(page, rowPageViewId);
 });
 
-Then('the duplicated inline grid has a fresh database view id', async ({ page }) => {
+Then('the duplicated inline grid has fresh view and database ids', async ({ page }) => {
   const state = getRowInlineGridState(page);
   const rowPageViewId = getRowPageViewId(page);
 
@@ -307,6 +327,17 @@ function getCurrentCardName(page: Page) {
   return cardName;
 }
 
+function initializeRowInlineGridState(page: Page): RowInlineGridState {
+  const state: RowInlineGridState = {
+    originalCellText: `row-page-original-${uuidv4().slice(0, 6)}`,
+    originalEditedCellText: `row-page-original-edited-${uuidv4().slice(0, 6)}`,
+    duplicateCellText: `row-page-duplicate-${uuidv4().slice(0, 6)}`,
+  };
+
+  rowInlineGridStateByPage.set(page, state);
+  return state;
+}
+
 function getRowInlineGridState(page: Page): RowInlineGridState {
   const state = rowInlineGridStateByPage.get(page);
 
@@ -317,6 +348,34 @@ function getRowInlineGridState(page: Page): RowInlineGridState {
   return state;
 }
 
+function getDocumentViewId(page: Page): string {
+  const documentViewId = getRowInlineGridState(page).documentViewId;
+
+  if (!documentViewId) {
+    throw new Error('No document view id is available for this scenario');
+  }
+
+  return documentViewId;
+}
+
+async function openFirstRowAsFullRowPage(page: Page): Promise<void> {
+  await openRowDetail(page, 0);
+  await page.locator('.MuiDialogTitle-root').locator('button').first().click({ force: true });
+  await page.waitForTimeout(2000);
+
+  const editor = page.locator('[id^="editor-"]').first();
+
+  await expect(editor).toBeVisible({ timeout: 15000 });
+  const editorId = await editor.getAttribute('id');
+  const rowPageViewId = editorId?.replace('editor-', '');
+
+  if (!rowPageViewId) {
+    throw new Error(`Expected mounted row document editor id, got ${String(editorId)}`);
+  }
+
+  getRowInlineGridState(page).rowPageViewId = rowPageViewId;
+}
+
 function getRowPageViewId(page: Page): string {
   const rowPageViewId = getRowInlineGridState(page).rowPageViewId;
 
@@ -325,6 +384,15 @@ function getRowPageViewId(page: Page): string {
   }
 
   return rowPageViewId;
+}
+
+async function closeOpenDialogs(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 5 && (await page.locator('[role="dialog"]').count()) > 0; attempt++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+  }
+
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0, { timeout: 10000 });
 }
 
 async function getDatabaseBlockStates(page: Page, rowPageViewId: string): Promise<DatabaseBlockState[]> {

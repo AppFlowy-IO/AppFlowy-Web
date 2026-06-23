@@ -1,5 +1,6 @@
 Feature: Database row document
   Row document content should be reflected in the database primary cell.
+  Inline grids duplicated inside row pages should become independent databases.
 
   Scenario: Image link content shows the row document indicator
     Given a board database with a card is open
@@ -15,7 +16,23 @@ Feature: Database row document
     And I create an inline grid in the row page
     And I duplicate the inline grid block in the row page
     Then the duplicated inline grid shows a loading placeholder
-    Then the duplicated inline grid has a fresh database view id
+    And the duplicated inline grid has fresh view and database ids
+    When I edit the duplicated inline grid
+    Then the original row-page inline grid remains unchanged
+    When I edit the original inline grid
+    Then the duplicated row-page inline grid remains unchanged
+
+  # Same as above, but the outer database is itself an inline grid embedded in a
+  # document, reproducing the exact reported folder shape:
+  # document -> parent grid -> row page -> inline subgrid.
+  Scenario: Duplicating an inline grid block in the row page of a document-embedded grid creates an independent database
+    Given a document is open for row-page inline grid duplication
+    And I create a parent inline grid in the document
+    When I open the first parent grid row as a full row page
+    And I create an inline grid in the row page
+    And I duplicate the inline grid block in the row page
+    Then the duplicated inline grid shows a loading placeholder
+    And the duplicated inline grid has fresh view and database ids
     When I edit the duplicated inline grid
     Then the original row-page inline grid remains unchanged
     When I edit the original inline grid
