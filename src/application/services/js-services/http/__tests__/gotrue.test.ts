@@ -1,4 +1,7 @@
 const mockGrantClient = {
+  defaults: {
+    baseURL: '',
+  },
   interceptors: {
     request: {
       use: jest.fn(),
@@ -7,7 +10,10 @@ const mockGrantClient = {
   post: jest.fn(),
 };
 
-const mockAxiosCreate = jest.fn(() => mockGrantClient);
+const mockAxiosCreate = jest.fn((config?: { baseURL?: string }) => {
+  mockGrantClient.defaults.baseURL = config?.baseURL || '';
+  return mockGrantClient;
+});
 
 jest.mock('axios', () => ({
   __esModule: true,
@@ -36,7 +42,14 @@ jest.mock('@/utils/log', () => ({
 }));
 
 const { signInWithUrl } = require('../auth-api') as typeof import('../auth-api');
-const { initGrantService, signInOTP, signInWithPassword } = require('../gotrue') as typeof import('../gotrue');
+const {
+  initGrantService,
+  signInDiscord,
+  signInGithub,
+  signInGoogle,
+  signInOTP,
+  signInWithPassword,
+} = require('../gotrue') as typeof import('../gotrue');
 const { verifyToken } = require('../cloud-auth') as { verifyToken: jest.Mock };
 const { saveGoTrueAuth } = require('@/application/session/token') as { saveGoTrueAuth: jest.Mock };
 
@@ -182,6 +195,55 @@ describe('GoTrue login token completion', () => {
       }
     }
   );
+});
+
+describe('GoTrue provider redirects', () => {
+  const assign = jest.fn();
+  const originalLocation = window.location;
+
+  beforeAll(() => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        assign,
+      },
+    });
+  });
+
+  afterAll(() => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    initGrantService('http://localhost/gotrue');
+  });
+
+  it('navigates Google OAuth in the current tab', () => {
+    signInGoogle('http://localhost/auth/callback');
+
+    expect(assign).toHaveBeenCalledWith(
+      'http://localhost/gotrue/authorize?provider=google&redirect_to=http%3A%2F%2Flocalhost%2Fauth%2Fcallback'
+    );
+  });
+
+  it('navigates other OAuth providers in the current tab', () => {
+    signInGithub('http://localhost/auth/callback');
+    signInDiscord('http://localhost/auth/callback');
+
+    expect(assign).toHaveBeenNthCalledWith(
+      1,
+      'http://localhost/gotrue/authorize?provider=github&redirect_to=http%3A%2F%2Flocalhost%2Fauth%2Fcallback'
+    );
+    expect(assign).toHaveBeenNthCalledWith(
+      2,
+      'http://localhost/gotrue/authorize?provider=discord&redirect_to=http%3A%2F%2Flocalhost%2Fauth%2Fcallback'
+    );
+  });
 });
 
 function createToken(prefix: string) {
