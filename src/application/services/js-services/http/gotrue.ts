@@ -468,7 +468,7 @@ export function signInGoogle(authUrl: string) {
   const provider = 'google';
   const redirectTo = encodeURIComponent(authUrl);
   const baseURL = axiosInstance?.defaults.baseURL;
-  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
+  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}&prompt=consent`;
 
   Log.info('[Auth] signInGoogle: redirecting to Google OAuth');
   redirectToAuthProvider(url);
