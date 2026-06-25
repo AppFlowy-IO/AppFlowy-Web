@@ -1,6 +1,6 @@
 name: Build AppFlowy Web Docker Image
 run-name: >-
-  Build AppFlowy Web appflowy/appflowy_web:${{ github.event_name == 'workflow_dispatch' && format('{0}{1}', github.event.inputs.tag_name, github.event.inputs.test == 'true' && '_test' || '') || github.ref_name }} ${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || github.event_name == 'push') && 'appflowy/appflowy_web:latest' || '' }}
+  Build AppFlowy Web appflowy/appflowy_web:${{ github.event_name == 'workflow_dispatch' && format('{0}{1}', github.event.inputs.tag_name, github.event.inputs.test == 'true' && '_test' || '') || github.ref_name }} from ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.appflowy_web_branch || github.ref_name }} ${{ ((github.event_name == 'workflow_dispatch' && github.event.inputs.tag_latest == 'true' && github.event.inputs.test != 'true') || github.event_name == 'push') && 'appflowy/appflowy_web:latest' || '' }}
 
 on:
   push:
@@ -14,9 +14,8 @@ on:
         required: true
         type: string
       appflowy_web_branch:
-        description: 'Branch to build from AppFlowy-Web repo'
+        description: 'Optional AppFlowy-Web branch, tag, or SHA to build. Leave empty to use the branch selected in Run workflow.'
         required: false
-        default: 'main'
         type: string
       build_arm64:
         description: 'Also build ARM64 images (AMD64 always built)'
@@ -91,6 +90,7 @@ jobs:
             echo "### Docker image tag"
             echo ""
             echo "- Image: \`${IMAGE_TAG}\`"
+            echo "- Source ref: \`${{ github.event_name == 'workflow_dispatch' && github.event.inputs.appflowy_web_branch || github.ref_name }}\`"
             echo "- Platform: \`${{ matrix.job.platform }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -164,6 +164,7 @@ jobs:
           {
             echo "### Final Docker image names"
             echo ""
+            echo "- Source ref: \`${{ github.event_name == 'workflow_dispatch' && github.event.inputs.appflowy_web_branch || github.ref_name }}\`"
             echo "- \`${VERSION_IMAGE}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
