@@ -3681,6 +3681,14 @@
   "here": "here",
   "openInBrowser": "Open in browser",
   "openInApp": "Open in app",
+  "openInDesktopApp": {
+    "notInstalled": {
+      "title": "Couldn't open the AppFlowy desktop app",
+      "description": "Make sure the desktop app is installed, or keep using AppFlowy in your browser.",
+      "download": "Download",
+      "continueInBrowser": "Continue in browser"
+    }
+  },
   "comments": "Comments",
   "duplicateAsTemplate": "Duplicate as template",
   "embedVideo": "Embed video",
