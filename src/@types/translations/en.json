@@ -855,6 +855,10 @@
       "language": {
         "title": "Language"
       },
+      "openInDesktopApp": {
+        "title": "Open links in desktop app",
+        "description": "When enabled, opening AppFlowy invitations and shared links hands off to the desktop app if it's installed."
+      },
       "password": {
         "title": "Password",
         "description": "Your account password for signing in.",
