@@ -3,16 +3,18 @@ import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { ERROR_CODE } from '@/application/constants';
+import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
-import { WorkspaceService } from '@/application/services/domains';
-import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
+import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
-import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
+import { useDesktopHandoff } from '@/components/app/hooks/useDesktopHandoff';
+import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
+import { buildOpenPageLink } from '@/utils/open_desktop_app';
 
 export function AsGuest() {
   const { t } = useTranslation();
@@ -33,7 +35,24 @@ export function AsGuest() {
   const [error, setError] = useState<LandingPageError>();
 
   const isAuthenticated = useIsAuthenticatedOptional();
+  const currentUser = useCurrentUserOptional();
+  const { handoff } = useDesktopHandoff();
   const url = useMemo(() => window.location.href, []);
+
+  const openPage = useCallback(() => {
+    const goWeb = () => window.open(`/app/${workspace?.id}/${page?.view_id}`, '_self');
+
+    if (!workspace?.id || !page?.view_id) {
+      goWeb();
+      return;
+    }
+
+    // Open the shared page in the desktop app if the user prefers it; otherwise stay on the web.
+    handoff(
+      buildOpenPageLink({ workspaceId: workspace.id, viewId: page.view_id, email: currentUser?.email }),
+      { onStayInBrowser: goWeb }
+    );
+  }, [handoff, workspace?.id, page?.view_id, currentUser?.email]);
 
   // Redirect unauthenticated users to login, preserving the invitation URL
   useEffect(() => {
@@ -134,9 +153,7 @@ export function AsGuest() {
         </div>
       }
       primaryAction={{
-        onClick: () => {
-          window.open(`/app/${workspace?.id}/${page?.view_id}`, '_self');
-        },
+        onClick: openPage,
         label: loading ? (
           <span className='flex items-center gap-2'>
             <Progress />

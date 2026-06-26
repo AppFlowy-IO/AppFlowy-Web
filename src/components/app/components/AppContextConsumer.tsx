@@ -8,7 +8,7 @@ import { useOpenInDesktopApp } from '@/components/app/hooks/useOpenInDesktopApp'
 import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { openInDesktopApp } from '@/utils/open_desktop_app';
+import { buildOpenPageLink, openInDesktopApp } from '@/utils/open_desktop_app';
 
 const ViewModal = React.lazy(() => import('@/components/app/ViewModal'));
 
@@ -51,17 +51,6 @@ const landedOnSpecificPage =
   typeof window !== 'undefined' && /^\/app\/[^/]+\/[^/]+/.test(window.location.pathname);
 let didAttemptPreferenceHandoff = false;
 
-function buildOpenPageScheme(
-  workspaceId: string,
-  viewId: string,
-  email: string | null | undefined,
-  rowId: string | null
-): string {
-  return `appflowy-flutter://open-page?workspace_id=${workspaceId}&view_id=${viewId}&email=${encodeURIComponent(
-    email ?? ''
-  )}${rowId ? `&row_id=${rowId}` : ''}`;
-}
-
 function OpenClient() {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const viewId = useAppViewId();
@@ -96,7 +85,10 @@ function OpenClient() {
     }
 
     if (isTabVisible && currentUser && currentWorkspaceId && viewId && !hasOpenedRef.current) {
-      window.open(buildOpenPageScheme(currentWorkspaceId, viewId, currentUser.email, rowId), '_self');
+      window.open(
+        buildOpenPageLink({ workspaceId: currentWorkspaceId, viewId, email: currentUser.email, rowId }),
+        '_self'
+      );
       hasOpenedRef.current = true;
     }
   }, [currentWorkspaceId, viewId, currentUser, openClient, rowId, isTabVisible]);
@@ -109,7 +101,7 @@ function OpenClient() {
     if (!isTabVisible || !currentUser || !currentWorkspaceId || !viewId) return;
 
     didAttemptPreferenceHandoff = true;
-    openInDesktopApp(buildOpenPageScheme(currentWorkspaceId, viewId, currentUser.email, rowId));
+    openInDesktopApp(buildOpenPageLink({ workspaceId: currentWorkspaceId, viewId, email: currentUser.email, rowId }));
   }, [openClient, enabled, currentWorkspaceId, viewId, currentUser, rowId, isTabVisible]);
 
   return <></>;

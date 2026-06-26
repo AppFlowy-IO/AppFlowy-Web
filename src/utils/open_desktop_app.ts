@@ -18,6 +18,27 @@ import { desktopDownloadLink, openAppFlowySchema } from '@/utils/url';
  * succeeds.
  */
 
+/** Build the `open-page` deep link that opens a specific page/view in the desktop app. */
+export function buildOpenPageLink(opts: {
+  workspaceId: string;
+  viewId: string;
+  email?: string | null;
+  rowId?: string | null;
+}): string {
+  const { workspaceId, viewId, email, rowId } = opts;
+
+  return `appflowy-flutter://open-page?workspace_id=${workspaceId}&view_id=${viewId}&email=${encodeURIComponent(
+    email ?? ''
+  )}${rowId ? `&row_id=${rowId}` : ''}`;
+}
+
+/** Build the `invitation-callback` deep link that opens an invited workspace in the desktop app. */
+export function buildInvitationCallbackLink(opts: { workspaceId: string; email?: string | null }): string {
+  const { workspaceId, email } = opts;
+
+  return `appflowy-flutter://invitation-callback?workspace_id=${workspaceId}&email=${encodeURIComponent(email ?? '')}`;
+}
+
 const MISSING_FLAG_KEY = 'appflowy:desktop-app-missing-at';
 /** Re-probe roughly weekly in case the user installs the desktop app later. */
 const MISSING_TTL_MS = 7 * 24 * 60 * 60 * 1000;

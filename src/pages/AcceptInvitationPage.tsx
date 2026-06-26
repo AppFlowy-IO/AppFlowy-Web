@@ -16,6 +16,7 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { buildInvitationCallbackLink } from '@/utils/open_desktop_app';
 
 function AcceptInvitationPage() {
   const currentUser = useCurrentUser();
@@ -103,10 +104,9 @@ function AcceptInvitationPage() {
 
       // Hand off to the desktop app if the user prefers it; otherwise (or if the app isn't
       // installed) land on the web workspace.
-      handoff(
-        `appflowy-flutter://invitation-callback?workspace_id=${workspaceId}&email=${encodeURIComponent(currentUser?.email ?? '')}`,
-        { onStayInBrowser: goWeb }
-      );
+      handoff(buildInvitationCallbackLink({ workspaceId: workspaceId ?? '', email: currentUser?.email }), {
+        onStayInBrowser: goWeb,
+      });
       setHasJoined(true);
       // eslint-disable-next-line
     } catch (e: any) {
