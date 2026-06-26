@@ -4,9 +4,11 @@ import { useSearchParams } from 'react-router-dom';
 import { AIChatProvider } from '@/components/ai-chat/AIChatProvider';
 import { AppOverlayProvider } from '@/components/app/app-overlay/AppOverlayProvider';
 import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useOpenInDesktopApp } from '@/components/app/hooks/useOpenInDesktopApp';
 import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { openInDesktopApp } from '@/utils/open_desktop_app';
 
 const ViewModal = React.lazy(() => import('@/components/app/ViewModal'));
 
@@ -42,6 +44,24 @@ export const AppContextConsumer: React.FC<AppContextConsumerProps> = memo(
   }
 );
 
+// Captured once per full document load: whether the app was opened directly on a specific page URL
+// (i.e. a shared page link). Used so the preference-driven desktop handoff fires only for share
+// links opened from outside, not for internal client-side navigation.
+const landedOnSpecificPage =
+  typeof window !== 'undefined' && /^\/app\/[^/]+\/[^/]+/.test(window.location.pathname);
+let didAttemptPreferenceHandoff = false;
+
+function buildOpenPageScheme(
+  workspaceId: string,
+  viewId: string,
+  email: string | null | undefined,
+  rowId: string | null
+): string {
+  return `appflowy-flutter://open-page?workspace_id=${workspaceId}&view_id=${viewId}&email=${encodeURIComponent(
+    email ?? ''
+  )}${rowId ? `&row_id=${rowId}` : ''}`;
+}
+
 function OpenClient() {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const viewId = useAppViewId();
@@ -49,6 +69,7 @@ function OpenClient() {
   const openClient = searchParams.get('is_desktop') === 'true';
   const rowId = searchParams.get('r');
   const currentUser = useCurrentUser();
+  const { enabled } = useOpenInDesktopApp();
 
   const [isTabVisible, setIsTabVisible] = useState(true);
   const hasOpenedRef = useRef(false);
@@ -67,22 +88,29 @@ function OpenClient() {
     };
   }, []);
 
+  // Explicit ?is_desktop=true links (e.g. notification emails) always attempt the deep link.
   useEffect(() => {
     if (!openClient) {
       hasOpenedRef.current = false;
       return;
     }
 
-    if (isTabVisible && currentUser && !hasOpenedRef.current) {
-      window.open(
-        `appflowy-flutter://open-page?workspace_id=${currentWorkspaceId}&view_id=${viewId}&email=${currentUser.email}${
-          rowId ? `&row_id=${rowId}` : ''
-        }`,
-        '_self'
-      );
+    if (isTabVisible && currentUser && currentWorkspaceId && viewId && !hasOpenedRef.current) {
+      window.open(buildOpenPageScheme(currentWorkspaceId, viewId, currentUser.email, rowId), '_self');
       hasOpenedRef.current = true;
     }
   }, [currentWorkspaceId, viewId, currentUser, openClient, rowId, isTabVisible]);
+
+  // Preference-driven share-link handoff: when the user prefers the desktop app and this document
+  // was opened directly from a shared page link, attempt to open the page in the desktop app once.
+  // If the app isn't installed, openInDesktopApp keeps the user on the already-rendered web page.
+  useEffect(() => {
+    if (openClient || !enabled || !landedOnSpecificPage || didAttemptPreferenceHandoff) return;
+    if (!isTabVisible || !currentUser || !currentWorkspaceId || !viewId) return;
+
+    didAttemptPreferenceHandoff = true;
+    openInDesktopApp(buildOpenPageScheme(currentWorkspaceId, viewId, currentUser.email, rowId));
+  }, [openClient, enabled, currentWorkspaceId, viewId, currentUser, rowId, isTabVisible]);
 
   return <></>;
 }
