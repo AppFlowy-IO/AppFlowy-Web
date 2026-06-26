@@ -18,6 +18,15 @@ import { desktopDownloadLink, openAppFlowySchema } from '@/utils/url';
  * succeeds.
  */
 
+/**
+ * Whether a path points at a specific page (`/app/{workspace}/{view}`) — i.e. a shareable page
+ * link. Used to fire the preference-driven desktop handoff only when the app was opened directly
+ * from such a link, not on internal client-side navigation.
+ */
+export function isSpecificPagePath(pathname: string): boolean {
+  return /^\/app\/[^/]+\/[^/]+/.test(pathname);
+}
+
 /** Build the `open-page` deep link that opens a specific page/view in the desktop app. */
 export function buildOpenPageLink(opts: {
   workspaceId: string;

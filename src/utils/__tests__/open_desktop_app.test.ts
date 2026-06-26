@@ -1,7 +1,10 @@
 /// <reference types="jest" />
 import {
   attemptOpenDesktopApp,
+  buildInvitationCallbackLink,
+  buildOpenPageLink,
   isDesktopAppLikelyMissing,
+  isSpecificPagePath,
   openInDesktopApp,
 } from '../open_desktop_app';
 
@@ -34,6 +37,41 @@ describe('open_desktop_app — not installed handling', () => {
   afterEach(() => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
+  });
+
+  describe('isSpecificPagePath (share-link vs internal navigation)', () => {
+    it('is true only for /app/{workspace}/{view} page links', () => {
+      // Share-page links → handoff should fire
+      expect(isSpecificPagePath('/app/ws1/view1')).toBe(true);
+      expect(isSpecificPagePath('/app/ws1/view1/block1')).toBe(true);
+      expect(isSpecificPagePath('/app/ws1/view1?r=row1')).toBe(true);
+
+      // Not specific pages → handoff should NOT fire
+      expect(isSpecificPagePath('/app')).toBe(false);
+      expect(isSpecificPagePath('/app/ws1')).toBe(false);
+      expect(isSpecificPagePath('/login')).toBe(false);
+      expect(isSpecificPagePath('/')).toBe(false);
+    });
+  });
+
+  describe('deep-link builders', () => {
+    it('builds an open-page link with the shared view and optional row', () => {
+      expect(buildOpenPageLink({ workspaceId: 'ws1', viewId: 'v1', email: 'a@b.com' })).toBe(
+        'appflowy-flutter://open-page?workspace_id=ws1&view_id=v1&email=a%40b.com'
+      );
+      expect(
+        buildOpenPageLink({ workspaceId: 'ws1', viewId: 'v1', email: 'a@b.com', rowId: 'r1' })
+      ).toBe('appflowy-flutter://open-page?workspace_id=ws1&view_id=v1&email=a%40b.com&row_id=r1');
+    });
+
+    it('builds an invitation-callback link and tolerates a missing email', () => {
+      expect(buildInvitationCallbackLink({ workspaceId: 'ws1', email: 'a@b.com' })).toBe(
+        'appflowy-flutter://invitation-callback?workspace_id=ws1&email=a%40b.com'
+      );
+      expect(buildInvitationCallbackLink({ workspaceId: 'ws1' })).toBe(
+        'appflowy-flutter://invitation-callback?workspace_id=ws1&email='
+      );
+    });
   });
 
   describe('isDesktopAppLikelyMissing', () => {

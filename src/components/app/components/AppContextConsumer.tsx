@@ -8,7 +8,7 @@ import { useOpenInDesktopApp } from '@/components/app/hooks/useOpenInDesktopApp'
 import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { buildOpenPageLink, openInDesktopApp } from '@/utils/open_desktop_app';
+import { buildOpenPageLink, isSpecificPagePath, openInDesktopApp } from '@/utils/open_desktop_app';
 
 const ViewModal = React.lazy(() => import('@/components/app/ViewModal'));
 
@@ -48,7 +48,7 @@ export const AppContextConsumer: React.FC<AppContextConsumerProps> = memo(
 // (i.e. a shared page link). Used so the preference-driven desktop handoff fires only for share
 // links opened from outside, not for internal client-side navigation.
 const landedOnSpecificPage =
-  typeof window !== 'undefined' && /^\/app\/[^/]+\/[^/]+/.test(window.location.pathname);
+  typeof window !== 'undefined' && isSpecificPagePath(window.location.pathname);
 let didAttemptPreferenceHandoff = false;
 
 function OpenClient() {
