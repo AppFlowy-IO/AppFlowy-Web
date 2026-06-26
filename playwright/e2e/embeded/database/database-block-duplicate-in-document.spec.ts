@@ -10,6 +10,7 @@ import {
   AddPageSelectors,
   BlockSelectors,
   DatabaseGridSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   ViewActionSelectors,
@@ -22,11 +23,7 @@ import {
   expandSpaceByName,
   insertLinkedDatabaseViaSlash,
 } from '../../../support/page-utils';
-import {
-  editFirstGridCell,
-  firstGridCellText,
-  insertInlineGridViaSlash,
-} from '../../../support/duplicate-test-helpers';
+import { editFirstGridCell, firstGridCellText, insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
 
 const spaceName = 'General';
 const sourceDatabaseName = 'Block Database';
@@ -134,21 +131,47 @@ async function waitForLinkedDuplicateRewrite(page: Page, docViewId: string): Pro
 }
 
 function directChildPageItems(page: Page, parentViewId: string): Locator {
-  return PageSelectors.itemByViewId(page, parentViewId).locator(':scope > div:nth-child(2) > [data-testid="page-item"]');
+  return PageSelectors.itemByViewId(page, parentViewId).locator(itemDirectChildPageItems());
 }
 
 async function renamePageByName(page: Page, currentName: string, newName: string): Promise<void> {
   const pageItem = PageSelectors.itemByName(page, currentName);
   await expect(pageItem).toBeVisible({ timeout: 30000 });
-  await pageItem.hover({ force: true });
-  await page.waitForTimeout(500);
-  await PageSelectors.moreActionsButton(page, currentName).click({ force: true });
-  await expect(ViewActionSelectors.renameButton(page)).toBeVisible({ timeout: 10000 });
-  await ViewActionSelectors.renameButton(page).click({ force: true });
-  await expect(ModalSelectors.renameInput(page)).toBeVisible({ timeout: 10000 });
-  await ModalSelectors.renameInput(page).clear();
-  await ModalSelectors.renameInput(page).fill(newName);
-  await ModalSelectors.renameSaveButton(page).click({ force: true });
+
+  // On slow CI the rename-modal interaction is racy: the more-actions menu may
+  // not open, the fill can land before the input is ready, or the save click
+  // can be swallowed — leaving the page on its old name. Retry the whole
+  // open → fill → save chain until the sidebar reflects the new name.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await pageItem.hover({ force: true });
+    await page.waitForTimeout(500);
+    await PageSelectors.moreActionsButton(page, currentName).click({ force: true });
+    await expect(ViewActionSelectors.renameButton(page)).toBeVisible({ timeout: 10000 });
+    await ViewActionSelectors.renameButton(page).click({ force: true });
+
+    const renameInput = ModalSelectors.renameInput(page);
+    await expect(renameInput).toBeVisible({ timeout: 10000 });
+    await renameInput.clear();
+    await renameInput.fill(newName);
+    // Confirm the value actually landed before committing the rename.
+    await expect(renameInput).toHaveValue(newName, { timeout: 5000 });
+    await ModalSelectors.renameSaveButton(page).click({ force: true });
+
+    if (
+      await expect(PageSelectors.itemByName(page, newName))
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return;
+    }
+
+    // Rename didn't take effect; dismiss any leftover modal and retry.
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  // Surface a clear failure with the full timeout if every retry fell through.
   await expect(PageSelectors.itemByName(page, newName)).toBeVisible({ timeout: 30000 });
 }
 
@@ -181,9 +204,15 @@ async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void>
         await page.waitForTimeout(250);
 
         return (
-          (await BlockSelectors.hoverControls(page).isVisible().catch(() => false)) &&
-          (await BlockSelectors.addButton(page).isVisible().catch(() => false)) &&
-          (await BlockSelectors.dragHandle(page).isVisible().catch(() => false))
+          (await BlockSelectors.hoverControls(page)
+            .isVisible()
+            .catch(() => false)) &&
+          (await BlockSelectors.addButton(page)
+            .isVisible()
+            .catch(() => false)) &&
+          (await BlockSelectors.dragHandle(page)
+            .isVisible()
+            .catch(() => false))
         );
       },
       { timeout: 10000, message: 'Expected database block hover controls to become visible' }

@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
 import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import DatabaseViews from '@/components/database/DatabaseViews';
 
 type CapturedDatabaseTabsProps = {
@@ -11,6 +12,7 @@ type CapturedDatabaseTabsProps = {
   onBeforeViewAddedToDatabase?: () => void;
   onViewAddedToDatabase?: (viewId: string) => void;
   onAfterViewAddedToDatabase?: () => void;
+  onReorderTabs?: (result: ReorderResult) => void;
 };
 
 declare global {
@@ -56,6 +58,16 @@ jest.mock('@/components/database/fullcalendar', () => ({
 
 jest.mock('@/components/database/components/UnsupportedView', () => () => null);
 jest.mock('src/components/database/components/conditions/DatabaseConditions', () => () => null);
+jest.mock('sonner', () => ({
+  toast: {
+    error: jest.fn(),
+  },
+}));
+jest.mock('@/utils/log', () => ({
+  Log: {
+    error: jest.fn(),
+  },
+}));
 
 function createDatabaseDoc(
   databaseId: string,
@@ -90,10 +102,12 @@ function renderDatabaseViews({
   databaseId = 'db-1',
   visibleViewIds,
   activeViewId = visibleViewIds[0],
+  onReorderViews,
 }: {
   databaseId?: string;
   visibleViewIds: string[];
   activeViewId?: string;
+  onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
 }) {
   const doc = createDatabaseDoc(databaseId, [
     { viewId: visibleViewIds[0], name: 'Launch Review Log', createdAt: '300' },
@@ -116,6 +130,7 @@ function renderDatabaseViews({
         activeViewId={activeViewId}
         databasePageId={visibleViewIds[0]}
         visibleViewIds={visibleViewIds}
+        onReorderViews={onReorderViews}
       />
     </DatabaseContext.Provider>
   );
@@ -172,5 +187,37 @@ describe('DatabaseViews order', () => {
     });
 
     expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual([...visibleViewIds, newViewId]);
+  });
+
+  it('rolls back optimistic tab order when durable container reorder fails', async () => {
+    const databaseId = 'db-1';
+    const visibleViewIds = ['launch-review-log', 'grid', 'grid2'];
+    const nextIds = ['grid2', 'launch-review-log', 'grid'];
+    const onReorderViews = jest.fn().mockRejectedValue(new Error('move failed'));
+
+    renderDatabaseViews({ databaseId, visibleViewIds, onReorderViews });
+
+    await waitFor(() => {
+      expect(global.__databaseViewsOrderTestState?.latestTabsProps).toBeDefined();
+    });
+
+    act(() => {
+      global.__databaseViewsOrderTestState?.latestTabsProps?.onReorderTabs?.({
+        movedId: 'grid2',
+        prevId: null,
+        nextIds,
+        fromIndex: 2,
+        toIndex: 0,
+      });
+    });
+
+    expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(nextIds);
+
+    await waitFor(() => {
+      expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(visibleViewIds);
+    });
+
+    expect(onReorderViews).toHaveBeenCalledWith('grid2', null);
+    expect(JSON.parse(window.localStorage.getItem(`database_view_order:${databaseId}`) || '[]')).toEqual(visibleViewIds);
   });
 });

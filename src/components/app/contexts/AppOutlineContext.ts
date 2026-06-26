@@ -1,6 +1,7 @@
 import { createContext } from 'react';
 
 import { DatabaseRelations, MentionablePerson, UIVariant, View } from '@/application/types';
+import type { SidebarOutlineRevalidationResult } from '@/components/app/outline/sidebarRevalidation';
 
 /**
  * Outline / sidebar state context — changes on folder mutations, not on page navigation.
@@ -21,6 +22,7 @@ import { DatabaseRelations, MentionablePerson, UIVariant, View } from '@/applica
  * - `useLoadViewChildren(viewId)` — fetch children of a view
  * - `useLoadViewChildrenBatch(viewIds)` — fetch children of multiple views
  * - `useMarkViewChildrenStale(viewId)` — invalidate cached children
+ * - `useEnsureViewVisibleInOutline(viewId)` — hydrate missing parent/sibling context
  * - `useAppFavorites()` — memoized `{ loadFavoriteViews, favoriteViews }`
  * - `useAppRecent()` — memoized `{ loadRecentViews, recentViews }`
  * - `useAppTrash()` — memoized `{ loadTrash, trashList }`
@@ -47,6 +49,10 @@ export interface AppOutlineContextType {
   loadViewChildrenBatch?: (viewIds: string[]) => Promise<View[]>;
   /** Mark a view's cached children as stale so the next access re-fetches them. */
   markViewChildrenStale?: (viewId: string) => void;
+  /** Fetch server-authoritative parent/sibling context and merge it into the sidebar outline. */
+  ensureViewVisibleInOutline?: (viewId: string) => Promise<string[]>;
+  /** Revalidate the root sidebar outline and refresh currently expanded sidebar subtrees. */
+  revalidateSidebarOutline?: (expandedViewIds?: string[]) => Promise<SidebarOutlineRevalidationResult>;
   /** Fetch the user's favorite views. */
   loadFavoriteViews?: () => Promise<View[] | undefined>;
   /** Fetch the user's recently visited views. */

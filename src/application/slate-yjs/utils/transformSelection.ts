@@ -1,4 +1,4 @@
-import { Editor, Element as SlateElement, Operation, Point, Range, Text } from 'slate';
+import { Editor, Element as SlateElement, Operation, Point, Range, Text, Transforms } from 'slate';
 
 import { Log } from '@/utils/log';
 
@@ -89,6 +89,29 @@ export function isValidSelection(editor: Editor, selection: Range): boolean {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * Clamp or clear the current editor selection if it points outside the current
+ * Slate tree. This prevents slate-react from trying to resolve a stale offset
+ * into a DOM point after inline content is replaced.
+ */
+export function ensureValidSelection(editor: Editor): boolean {
+  const { selection } = editor;
+
+  if (!selection || isValidSelection(editor, selection)) {
+    return true;
+  }
+
+  const nearestSelection = findNearestValidSelection(editor, selection);
+
+  if (nearestSelection) {
+    Transforms.select(editor, nearestSelection);
+  } else {
+    Transforms.deselect(editor);
+  }
+
+  return false;
 }
 
 /**

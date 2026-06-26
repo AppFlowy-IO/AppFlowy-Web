@@ -16,7 +16,7 @@ import {
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
 import { getDatabaseIdFromExtra, getFirstChildView, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
-import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
@@ -26,22 +26,45 @@ import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
 
-export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
+/**
+ * Determine whether the editor should be read-only for the given view.
+ *
+ * `fallbackView` is the resolved view object the page hosts already have
+ * (e.g. AppPage's `outlineView ?? fallbackView`, ViewModal's `resolvedView`).
+ * It's checked first so that locked pages remain read-only even when the page
+ * is opened before the outline branch loads — in that case `findView(outline)`
+ * misses the view and a lock check against the outline alone would let edits
+ * through.
+ */
+export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
   const isMobile = getPlatform().isMobile;
 
   if (isMobile) return true; // Mobile has highest priority - always readonly
 
+  // Lock check uses the resolved view first, falling back to the outline so
+  // direct-URL loads (before outline arrives) still honor the lock.
+  if (fallbackView?.view_id === viewId && fallbackView.is_locked) return true;
+
   if (!outline) return false;
 
-  // Check if view exists in shareWithMe
-  const shareWithMeView = findViewInShareWithMe(outline, viewId);
+  // A locked page is read-only for everyone until it is unlocked. The outline
+  // includes the hidden "Shared with me" space, so findView also resolves views
+  // shared with the current user.
+  const view = findView(outline, viewId);
 
-  if (shareWithMeView?.access_level !== undefined) {
-    // If found in shareWithMe, check access level
-    return shareWithMeView.access_level <= AccessLevel.ReadAndComment;
+  if (view?.is_locked) return true;
+
+  // Resolve the effective shared access level, inheriting from the nearest
+  // ancestor inside the "Shared with me" space. This makes pages inside a
+  // View-only private space read-only even though the page itself carries no
+  // explicit access level.
+  const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+  if (sharedAccessLevel !== undefined) {
+    return sharedAccessLevel <= AccessLevel.ReadAndComment;
   }
 
-  // If not found in shareWithMe, default is false (editable)
+  // If not part of the shared-with-me space, default is false (editable)
   return false;
 }
 
@@ -89,9 +112,12 @@ export function useViewOperations() {
   });
 
   // Check if view should be readonly based on access permissions
-  const getViewReadOnlyStatusFromOutline = useCallback((viewId: string, outline?: View[]) => {
-    return getViewReadOnlyStatus(viewId, outline);
-  }, []);
+  const getViewReadOnlyStatusFromOutline = useCallback(
+    (viewId: string, outline?: View[], fallbackView?: View | null) => {
+      return getViewReadOnlyStatus(viewId, outline, fallbackView);
+    },
+    []
+  );
 
   /**
    * Load view document WITHOUT binding sync.

@@ -3,6 +3,7 @@ import {
   AddPageSelectors,
   BlockSelectors,
   HeaderSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   SlashCommandSelectors,
@@ -45,9 +46,7 @@ export function pageItemByExactText(page: Page, pageName: string, last: boolean 
 }
 
 export function directChildPageItems(page: Page, pageName: string, last: boolean = false): Locator {
-  return pageItemByExactText(page, pageName, last).locator(
-    ':scope > div:nth-child(2) > [data-testid="page-item"]:visible'
-  );
+  return pageItemByExactText(page, pageName, last).locator(itemDirectChildPageItems(true));
 }
 
 async function navigateToSidebarPageItem(
@@ -257,7 +256,7 @@ export async function createChildDocumentUnder(
   await parentItem.locator('> div').first().getByTestId('inline-add-page').first().click({ force: true });
   const popover = page.getByTestId('view-actions-popover');
   await expect(popover).toBeVisible({ timeout: 10000 });
-  await popover.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // The ViewModal dialog opens for the newly created child document.
@@ -284,11 +283,7 @@ export function databaseBlocks(editor: Locator): Locator {
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
   let slateEditor = editor.locator('[data-slate-editor="true"]').first();
 
-  if (
-    !(await slateEditor
-      .isVisible({ timeout: 3000 })
-      .catch(() => false))
-  ) {
+  if (!(await slateEditor.isVisible({ timeout: 3000 }).catch(() => false))) {
     slateEditor = page.locator('[data-slate-editor="true"]').first();
   }
 
@@ -313,6 +308,30 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
   const blockCount = await blocks.count();
   const slashPanel = SlashCommandSelectors.slashPanel(page);
 
+  // Type "/" and wait for the slash panel, retrying the keystroke on slow CI
+  // where the first "/" can race editor focus and silently fail to open the
+  // menu. Each retry strips the stray "/" and re-focuses before trying again.
+  const typeSlashUntilPanel = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.keyboard.type('/', { delay: 50 });
+
+      if (
+        await slashPanel
+          .first()
+          .isVisible({ timeout: 2500 })
+          .catch(() => false)
+      ) {
+        return;
+      }
+
+      await page.keyboard.press('Backspace').catch(() => undefined);
+      await page.waitForTimeout(300);
+      await focusEditorForSlash(page, editor);
+    }
+
+    await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  };
+
   if (line > 0 && blockCount > 0) {
     // Position cursor after the last database block by clicking below it,
     // pressing End to go to the end of the line, then Enter to create a
@@ -332,41 +351,12 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
-    await page.keyboard.type('/', { delay: 50 });
-
-    if (
-      !(await slashPanel
-        .first()
-        .isVisible()
-        .catch(() => false))
-    ) {
-      await page.waitForTimeout(300);
-      await page.keyboard.type('/', { delay: 50 });
-    }
-
-    await expect(slashPanel).toBeVisible({ timeout: 10000 });
-    return;
   } else {
     await focusEditorForSlash(page, editor);
+    await page.waitForTimeout(300);
   }
 
-  await page.waitForTimeout(300);
-  await page.keyboard.type('/', { delay: 50 });
-
-  if (
-    (await slashPanel.count()) === 0 ||
-    !(await slashPanel
-      .first()
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-    await focusEditorForSlash(page, editor);
-    await page.keyboard.type('/', { delay: 50 });
-  }
-
-  await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  await typeSlashUntilPanel();
 }
 
 export async function insertInlineGridViaSlash(page: Page, docViewId: string, line: number = 0): Promise<void> {
@@ -412,6 +402,8 @@ export async function insertLinkedGridViaSlash(
 ): Promise<void> {
   const editor = editorForView(page, docViewId);
   await expect(editor).toBeVisible({ timeout: 15000 });
+  const initialBlockCount = await databaseBlocks(editor).count();
+  let lastError: unknown;
 
   // The database picker loads its list from the cached outline at open time.
   // If the outline hasn't propagated the renamed database yet, the picker will
@@ -445,8 +437,17 @@ export async function insertLinkedGridViaSlash(
         return;
       }
     } catch (e) {
-      if (attempt === 2) throw e;
-      // Fall through to cleanup + retry below
+      lastError = e;
+      // Fall through to success detection + cleanup below
+    }
+
+    if ((await databaseBlocks(editor).count()) > initialBlockCount) {
+      return;
+    }
+
+    if (attempt === 2) {
+      if (lastError) throw lastError;
+      break;
     }
 
     // Picker didn't appear or database not found — close any open popovers and
@@ -552,16 +553,37 @@ export async function firstGridCellText(gridBlock: Locator): Promise<string> {
   return (await gridBlock.locator('[data-testid^="grid-cell-"]').first().innerText()).trim();
 }
 
-export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+async function selectFilterFieldForBlock(page: Page, gridBlock: Locator, fieldName: string): Promise<void> {
+  const fieldPattern = new RegExp(`^\\s*${escapeRegExp(fieldName)}\\s*$`);
 
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Name$/ })
-    .first()
-    .click({ force: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(gridBlock.getByTestId('database-grid')).toBeVisible({ timeout: 30000 });
+    await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+
+    const popoverContent = page.locator('[data-slot="popover-content"]').last();
+    await expect(popoverContent).toBeVisible({ timeout: 10000 });
+
+    const fieldItem = popoverContent.locator('[data-item-id]').filter({ hasText: fieldPattern }).first();
+
+    if (
+      await expect(fieldItem)
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      await fieldItem.click({ force: true });
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  throw new Error(`Filter field "${fieldName}" did not appear in the property picker`);
+}
+
+export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
+  await selectFilterFieldForBlock(page, gridBlock, 'Name');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
@@ -572,15 +594,7 @@ export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Loca
 }
 
 export async function addDoneCheckedFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
-
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Done$/ })
-    .first()
-    .click({ force: true });
+  await selectFilterFieldForBlock(page, gridBlock, 'Done');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });

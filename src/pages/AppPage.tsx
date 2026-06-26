@@ -454,11 +454,13 @@ function AppPage() {
 
   const requestInstance = getAxiosInstance();
 
-  // Check if view is in shareWithMe and determine readonly status
+  // Check if view is in shareWithMe and determine readonly status.
+  // `view` is the merged outline-or-fallback object, so the lock check honors
+  // pages opened by direct URL before the outline branch has loaded.
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
-    return getViewReadOnlyStatus(viewId, outline);
-  }, [viewId, outline]);
+    return getViewReadOnlyStatus(viewId, outline, view);
+  }, [viewId, outline, view]);
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
@@ -546,6 +548,7 @@ function AppPage() {
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}
         onWordCountChange={setWordCount}

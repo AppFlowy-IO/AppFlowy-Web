@@ -43,7 +43,7 @@ import {
   reorderRow,
   updateTableData,
 } from '@/application/slate-yjs/utils/simple-table-operations';
-import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
+import { ensureValidSelection, findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
   deepCopyBlock,
@@ -470,6 +470,30 @@ export const CustomEditor = {
   },
 
   toggleToggleList(editor: YjsEditor, blockId: string) {
+    ensureValidSelection(editor);
+
+    // The published view renders with a static Slate editor that has no Yjs
+    // shared root. Toggle the collapsed state directly on the Slate node so the
+    // block can still be expanded/collapsed in read-only mode.
+    if (!editor.sharedRoot) {
+      const entry = findSlateEntryByBlockId(editor, blockId);
+
+      if (!entry) {
+        Log.warn('Toggle list block not found', blockId);
+        return;
+      }
+
+      const [node, path] = entry;
+      const data = (node.data || {}) as ToggleListBlockData;
+
+      Transforms.setNodes(
+        editor,
+        { data: { ...data, collapsed: !data.collapsed } } as Partial<Element>,
+        { at: path }
+      );
+      return;
+    }
+
     const sharedRoot = getSharedRoot(editor);
     const data = dataStringTOJson(getBlock(blockId, sharedRoot).get(YjsEditorKey.block_data)) as ToggleListBlockData;
     const { selection } = editor;
@@ -900,9 +924,14 @@ export const CustomEditor = {
     ReactEditor.focus(editor);
   },
 
-  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string) {
+  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string, options?: { data?: BlockData }) {
     const sharedRoot = getSharedRoot(editor);
     const block = getBlock(blockId, sharedRoot);
+
+    if (!block) {
+      Log.warn('Block not found');
+      return;
+    }
 
     const parent = getParent(blockId, sharedRoot);
     const prevIndex = getBlockIndex(prevId || blockId, sharedRoot);
@@ -918,7 +947,7 @@ export const CustomEditor = {
       sharedRoot,
       [
         () => {
-          newBlockId = deepCopyBlock(sharedRoot, block);
+          newBlockId = deepCopyBlock(sharedRoot, block, options?.data);
 
           if (!newBlockId) {
             Log.warn('Copied block not found');

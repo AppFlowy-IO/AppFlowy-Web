@@ -13,6 +13,7 @@ import { PADDING_INLINE, useGridVirtualizer } from '@/components/database/compon
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
+import { getEmbeddedGridViewportStyle } from '@/components/database/layout';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 
@@ -39,7 +40,7 @@ const gridLoadingDots = (
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, resizeRows, onResizeRowEnd } = useGridContext();
   const { handleResizeStart, isResizing } = useColumnResize(columns);
-  const { isDocumentBlock, paddingEnd } = useDatabaseContext();
+  const { embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
 
   const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady } = useGridVirtualizer({
     data,
@@ -49,6 +50,12 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const rowItems = virtualizer.getVirtualItems();
   const columnItems = columnVirtualizer.getVirtualItems();
   const totalSize = columnVirtualizer.getTotalSize();
+  const gridContentHeight = virtualizer.getTotalSize();
+  const embeddedViewportStyle = getEmbeddedGridViewportStyle({
+    contentHeight: gridContentHeight,
+    embeddedHeight,
+    isDocumentBlock,
+  });
 
   const contextValue = useGridDnd(columns, virtualizer, columnVirtualizer);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
@@ -178,9 +185,12 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
         ref={parentRef}
         className={cn(
           'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar',
-          isDocumentBlock && 'min-h-0 flex-1'
+          isDocumentBlock && 'min-h-0',
+          isDocumentBlock && embeddedViewportStyle?.height === undefined && 'flex-1'
         )}
         style={{
+          height: embeddedViewportStyle?.height,
+          maxHeight: embeddedViewportStyle?.maxHeight,
           overflowY: 'auto',
           overflowX: 'auto',
           scrollBehavior: 'auto',
@@ -189,7 +199,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
       >
         <div
           style={{
-            height: virtualizer.getTotalSize(),
+            height: gridContentHeight,
             position: 'relative',
             opacity: isReady ? 1 : 0, // Hide content until parent offset is stable to prevent scroll jumps
           }}

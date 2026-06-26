@@ -2,8 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import { ViewService } from '@/application/services/domains';
-import { View, ViewLayout } from '@/application/types';
+import { Role, View, ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
@@ -16,10 +15,20 @@ import {
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
+  useEnsureViewVisibleInOutline,
+  useRevalidateSidebarOutline,
   useSidebarSelectedViewId,
+  useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
-import { resolveAncestorViewIds } from '@/components/app/hooks/resolveAncestorViewIds';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
+import {
+  createSidebarOutlineRevalidationScheduleState,
+  getSidebarOutlineRevalidationDelayMs,
+  limitSidebarOutlineExpandedViewIds,
+  nextSidebarOutlineRevalidationStateAfterFailure,
+  nextSidebarOutlineRevalidationStateAfterResult,
+} from '@/components/app/outline/sidebarRevalidation';
 import SpaceItem from '@/components/app/outline/SpaceItem';
 import { ShareWithMe } from '@/components/app/share-with-me';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
@@ -53,11 +62,29 @@ function collectSubtreeViewIds(rootView: View): string[] {
 export function Outline({ width }: { width: number }) {
   const outline = useAppOutline();
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const selectedViewId = useSidebarSelectedViewId();
   const loadedViewIds = useLoadedViewIds();
   const loadViewChildren = useLoadViewChildren();
   const loadViewChildrenBatch = useLoadViewChildrenBatch();
   const markViewChildrenStale = useMarkViewChildrenStale();
+  const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
+  const revalidateSidebarOutline = useRevalidateSidebarOutline();
+  const selectedViewId = useSidebarSelectedViewId();
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
+  const spaceListRef = useRef<HTMLDivElement>(null);
+  const visibleSpacesFromOutline = useMemo(
+    () => outline?.filter((view) => !view.extra?.is_hidden_space) ?? [],
+    [outline]
+  );
+  const { orderedItems: visibleSpaces, instanceId: spaceDragInstanceId } = useReorderableSidebarList({
+    items: visibleSpacesFromOutline,
+    parentId: currentWorkspaceId,
+    workspaceId: currentWorkspaceId,
+    dragType: 'space',
+    enabled: canReorderSpaces && visibleSpacesFromOutline.length > 1,
+    autoScrollElementRef: spaceListRef,
+    errorMessage: 'Failed to reorder spaces',
+  });
 
   const [menuProps, setMenuProps] = useState<
     | {
@@ -84,25 +111,76 @@ export function Outline({ width }: { width: number }) {
     if (!open) setImportTarget(undefined);
   }, []);
 
-  const revealedViewIdRef = useRef<string | undefined>(undefined);
-  // Latest outline, read by the async reveal walk below. Kept in a ref so the
-  // walk isn't torn down every time the outline updates (e.g. as it lazy-loads
-  // the very branch the walk is populating).
-  const outlineRef = useRef(outline);
-
-  useEffect(() => {
-    outlineRef.current = outline;
-  });
-
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
+  const navigationHydrationInFlightRef = useRef<Set<string>>(new Set());
+  // Selected views that navigation hydration could not place in the outline
+  // (not found server-side, or access denied). Tracked so we don't re-fetch
+  // navigation on every subsequent `outline` change for an unresolvable id.
+  const navigationHydrationUnresolvedRef = useRef<Set<string>>(new Set());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
   const validatedExistingRestoreIdsRef = useRef<Set<string>>(new Set());
   const [loadingRevision, setLoadingRevision] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const loadingViewIds = useMemo(() => loadingViewIdsRef.current, [loadingRevision]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(Object.keys(getOutlineExpands()));
-  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(Object.keys(getOutlineExpands()));
+  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(() => Object.keys(getOutlineExpands()));
+  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(() => Object.keys(getOutlineExpands()));
+  const expandViewIdsRef = useRef(expandViewIds);
+  const sidebarRevalidationStateRef = useRef(createSidebarOutlineRevalidationScheduleState());
+  const rescheduleSidebarRevalidationRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    expandViewIdsRef.current = expandViewIds;
+  }, [expandViewIds]);
+
+  useEffect(() => {
+    if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
+    if (findView(outline, selectedViewId)) return;
+    if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
+    if (navigationHydrationUnresolvedRef.current.has(selectedViewId)) return;
+
+    navigationHydrationInFlightRef.current.add(selectedViewId);
+
+    void ensureViewVisibleInOutline(selectedViewId)
+      .then((ancestorIds) => {
+        if (ancestorIds.length === 0) {
+          // Either the view resolved at the sidebar root (it's now in the
+          // outline, so findView short-circuits on the next run) or it could
+          // not be resolved. Mark it so we don't re-fetch on every outline
+          // change while it stays selected.
+          navigationHydrationUnresolvedRef.current.add(selectedViewId);
+          return;
+        }
+
+        ancestorIds.forEach((id) => setOutlineExpands(id, true));
+        setExpandViewIds((prev) => {
+          const next = new Set(prev);
+
+          ancestorIds.forEach((id) => next.add(id));
+          return next.size === prev.length ? prev : Array.from(next);
+        });
+        setPendingAutoLoadIds((prev) => {
+          const filtered = prev.filter((id) => !ancestorIds.includes(id));
+
+          return filtered.length === prev.length ? prev : filtered;
+        });
+      })
+      .catch((error) => {
+        navigationHydrationUnresolvedRef.current.add(selectedViewId);
+        Log.warn('[Outline] [navigation-context] failed to hydrate selected view', {
+          viewId: selectedViewId,
+          error,
+        });
+      })
+      .finally(() => {
+        navigationHydrationInFlightRef.current.delete(selectedViewId);
+      });
+  }, [ensureViewVisibleInOutline, outline, selectedViewId]);
+
+  useEffect(() => {
+    sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
+    rescheduleSidebarRevalidationRef.current();
+  }, [outline]);
 
   useEffect(() => {
     const restoredExpandedIds = Object.keys(getOutlineExpands());
@@ -110,82 +188,105 @@ export function Outline({ width }: { width: number }) {
     setExpandViewIds(restoredExpandedIds);
     setPendingAutoLoadIds(restoredExpandedIds);
     loadingViewIdsRef.current = new Set();
+    navigationHydrationInFlightRef.current = new Set();
+    navigationHydrationUnresolvedRef.current = new Set();
     autoLoadRetryAfterRef.current = new Map();
     validatingRestoreIdsRef.current = new Set();
     validatedExistingRestoreIdsRef.current = new Set();
-    revealedViewIdRef.current = undefined;
     setLoadingRevision((r) => r + 1);
   }, [currentWorkspaceId]);
 
-  // Expand the given ancestor ids and route them through the startup auto-load
-  // path. Expanding alone only flips the UI flag — queuing them in
-  // pendingAutoLoadIds is what makes the existing cascade fetch + merge each
-  // node's children top-down, so an unloaded branch actually renders.
-  const expandAncestors = useCallback((ancestorIds: string[]) => {
-    if (ancestorIds.length === 0) return;
-
-    // Persist expand state outside the state updaters below — updater functions
-    // must stay pure (React may invoke them more than once). setOutlineExpands
-    // is idempotent, so writing every ancestor (not only newly-added ones) is
-    // safe, and it mirrors how toggleExpandView persists expand state.
-    ancestorIds.forEach((id) => setOutlineExpands(id, true));
-
-    setExpandViewIds((prev) => {
-      const prevSet = new Set(prev);
-      const missing = ancestorIds.filter((id) => !prevSet.has(id));
-
-      return missing.length === 0 ? prev : [...prev, ...missing];
-    });
-
-    setPendingAutoLoadIds((prev) => {
-      const prevSet = new Set(prev);
-      const missing = ancestorIds.filter((id) => !prevSet.has(id));
-
-      return missing.length === 0 ? prev : [...prev, ...missing];
-    });
-  }, []);
-
-  // Reveal the active view in the sidebar by expanding its ancestor folders.
-  // This is what makes the tree open to the page you land on — e.g. the
-  // last-viewed page that `/app` auto-redirects to on load.
-  //
-  // Fast path: the whole ancestor chain is already in the loaded tree.
-  // Slow path: the view (or part of its branch) isn't in the shallow (depth=1)
-  // outline — walk parent_view_id from remote to resolve the chain, then expand
-  // + lazy-load down to it. If a node can't be resolved (deleted / no access),
-  // we leave the sidebar as-is rather than forcing it open.
-  //
-  // The ref gate keeps this to once per selected view: it runs on navigation,
-  // not on every outline change, so a folder the user manually collapses while
-  // staying on the same page won't snap back open.
   useEffect(() => {
-    if (!selectedViewId || !currentWorkspaceId) return;
-    if (revealedViewIdRef.current === selectedViewId) return;
+    if (!currentWorkspaceId || !revalidateSidebarOutline) return;
 
-    let cancelled = false;
+    let stopped = false;
+    let timer: number | undefined;
+    let inFlight = false;
 
-    void resolveAncestorViewIds({
-      selectedViewId,
-      workspaceId: currentWorkspaceId,
-      outline: outlineRef.current || [],
-      fetchView: (workspaceId, viewId) => ViewService.get(workspaceId, viewId),
-    }).then((ancestorIds) => {
-      if (cancelled) return;
+    const clearPendingTimer = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
 
-      // Mark revealed only once the walk finishes, so a transient unmount
-      // (e.g. StrictMode's mount → unmount → mount) doesn't cancel the only
-      // walk and then gate the retry. null means the chain couldn't be
-      // resolved — leave the sidebar as-is; an empty array means nothing to
-      // expand.
-      revealedViewIdRef.current = selectedViewId;
-      if (!ancestorIds) return;
-      expandAncestors(ancestorIds);
-    });
+    const scheduleNextTick = () => {
+      clearPendingTimer();
+      timer = window.setTimeout(() => {
+        void tick();
+      }, getSidebarOutlineRevalidationDelayMs(sidebarRevalidationStateRef.current));
+    };
+
+    const tick = async () => {
+      if (stopped || inFlight) return;
+
+      inFlight = true;
+      try {
+        const result = await revalidateSidebarOutline(limitSidebarOutlineExpandedViewIds(expandViewIdsRef.current));
+
+        sidebarRevalidationStateRef.current = nextSidebarOutlineRevalidationStateAfterResult(
+          sidebarRevalidationStateRef.current,
+          result
+        );
+      } catch (error) {
+        sidebarRevalidationStateRef.current = nextSidebarOutlineRevalidationStateAfterFailure(
+          sidebarRevalidationStateRef.current
+        );
+        Log.warn('[Outline] [periodic-revalidate] failed', {
+          workspaceId: currentWorkspaceId,
+          error,
+        });
+      } finally {
+        inFlight = false;
+        if (!stopped) {
+          scheduleNextTick();
+        }
+      }
+    };
+
+    const resetSchedule = () => {
+      sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
+    };
+
+    const rescheduleFromFastInterval = () => {
+      if (stopped) return;
+
+      resetSchedule();
+      scheduleNextTick();
+    };
+
+    const runNow = () => {
+      if (stopped) return;
+
+      resetSchedule();
+      clearPendingTimer();
+      if (!inFlight) {
+        void tick();
+      }
+    };
+
+    const runNowWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        runNow();
+      }
+    };
+
+    rescheduleSidebarRevalidationRef.current = rescheduleFromFastInterval;
+    document.addEventListener('visibilitychange', runNowWhenVisible);
+    window.addEventListener('online', runNow);
+
+    scheduleNextTick();
 
     return () => {
-      cancelled = true;
+      stopped = true;
+      clearPendingTimer();
+      document.removeEventListener('visibilitychange', runNowWhenVisible);
+      window.removeEventListener('online', runNow);
+      if (rescheduleSidebarRevalidationRef.current === rescheduleFromFastInterval) {
+        rescheduleSidebarRevalidationRef.current = () => undefined;
+      }
     };
-  }, [selectedViewId, currentWorkspaceId, expandAncestors]);
+  }, [currentWorkspaceId, revalidateSidebarOutline]);
 
   // Validate restored expanded IDs that are not in the current tree and prune only truly stale IDs.
   // This avoids keeping deleted/moved IDs forever, while preserving valid deep IDs.
@@ -252,7 +353,7 @@ export function Outline({ width }: { width: number }) {
   // Auto-load only the restored expanded ids from startup state.
   // Manual expand clicks should use single-view loading path only.
   const autoLoadState = useMemo(() => {
-    if (!outline || outline.length === 0 || !loadViewChildren) {
+    if (!outline || outline.length === 0 || (!loadViewChildrenBatch && !loadViewChildren)) {
       return {
         fetchableAutoLoadIds: [] as string[],
         nextRetryAt: null as number | null,
@@ -282,7 +383,7 @@ export function Outline({ width }: { width: number }) {
       fetchableAutoLoadIds,
       nextRetryAt,
     };
-  }, [pendingAutoLoadIds, outline, loadViewChildren, loadedViewIds, nowMs]);
+  }, [pendingAutoLoadIds, outline, loadViewChildren, loadViewChildrenBatch, loadedViewIds, nowMs]);
   const { fetchableAutoLoadIds, nextRetryAt } = autoLoadState;
 
   // Schedule a wake-up at nearest retry time so blocked ids can refetch.
@@ -302,7 +403,7 @@ export function Outline({ width }: { width: number }) {
   // Startup/outline restore: fetch expanded nodes that are currently in tree.
   // As deeper expanded nodes appear after parent fetches, this effect runs again.
   useEffect(() => {
-    if (fetchableAutoLoadIds.length === 0 || !loadViewChildren) return;
+    if (fetchableAutoLoadIds.length === 0) return;
 
     for (const id of fetchableAutoLoadIds) {
       loadingViewIdsRef.current.add(id);
@@ -311,7 +412,7 @@ export function Outline({ width }: { width: number }) {
 
     setLoadingRevision((r) => r + 1);
 
-    if (loadViewChildrenBatch && fetchableAutoLoadIds.length > 1) {
+    if (loadViewChildrenBatch) {
       void loadViewChildrenBatch(fetchableAutoLoadIds)
         .catch(() => {
           // No-op: retry scheduling is driven by retryAfter timestamps.
@@ -326,6 +427,8 @@ export function Outline({ width }: { width: number }) {
       return;
     }
 
+    if (!loadViewChildren) return;
+
     void Promise.allSettled(fetchableAutoLoadIds.map((id) => loadViewChildren(id))).then(() => {
       for (const id of fetchableAutoLoadIds) {
         loadingViewIdsRef.current.delete(id);
@@ -335,68 +438,73 @@ export function Outline({ width }: { width: number }) {
     });
   }, [fetchableAutoLoadIds, loadViewChildren, loadViewChildrenBatch]);
 
-  const toggleExpandView = useCallback((id: string, isExpanded: boolean) => {
-    const collapsedSubtreeIds = !isExpanded
-      ? (() => {
-          const rootView = findView(outline ?? [], id);
+  const toggleExpandView = useCallback(
+    (id: string, isExpanded: boolean) => {
+      const collapsedSubtreeIds = !isExpanded
+        ? (() => {
+            const rootView = findView(outline ?? [], id);
 
-          return rootView ? collectSubtreeViewIds(rootView) : [id];
-        })()
-      : [id];
-    const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
+            return rootView ? collectSubtreeViewIds(rootView) : [id];
+          })()
+        : [id];
+      const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
 
-    // Manual interaction should not be handled by startup auto-load path.
-    setPendingAutoLoadIds((prev) => {
-      const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
-
-      return next.length === prev.length ? prev : next;
-    });
-
-    if (isExpanded) {
-      setOutlineExpands(id, true);
-      setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-    } else {
-      collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
-      setExpandViewIds((prev) => {
+      // Manual interaction should not be handled by startup auto-load path.
+      setPendingAutoLoadIds((prev) => {
         const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
         return next.length === prev.length ? prev : next;
       });
-      Log.debug('[Outline] [manual-expand] collapse node', {
-        viewId: id,
-        collapsedSubtreeIds,
-      });
-      markViewChildrenStale?.(id);
-    }
 
-    // Lazy load children when expanding a view that hasn't been loaded yet
-    if (isExpanded && loadViewChildren) {
-      const alreadyLoaded = loadedViewIds?.has(id) ?? false;
+      if (isExpanded) {
+        sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
+        rescheduleSidebarRevalidationRef.current();
+        setOutlineExpands(id, true);
+        setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      } else {
+        collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
+        setExpandViewIds((prev) => {
+          const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
-      Log.debug('[Outline] [manual-expand] expand node', {
-        viewId: id,
-        alreadyLoaded,
-      });
+          return next.length === prev.length ? prev : next;
+        });
+        Log.debug('[Outline] [manual-expand] collapse node', {
+          viewId: id,
+          collapsedSubtreeIds,
+        });
+        markViewChildrenStale?.(id);
+      }
 
-      if (alreadyLoaded) return;
+      // Lazy load children when expanding a view that hasn't been loaded yet
+      if (isExpanded && loadViewChildren) {
+        const alreadyLoaded = loadedViewIds?.has(id) ?? false;
 
-      Log.debug('[Outline] [manual-expand] requesting single subtree', {
-        viewId: id,
-        depth: 1,
-      });
+        Log.debug('[Outline] [manual-expand] expand node', {
+          viewId: id,
+          alreadyLoaded,
+        });
 
-      // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
-      // before the first await. Adding here *before* the call would trip its
-      // in-flight dedup guard and silently skip the API request.
-      void loadViewChildren(id).finally(() => {
-        loadingViewIdsRef.current.delete(id);
+        if (alreadyLoaded) return;
+
+        Log.debug('[Outline] [manual-expand] requesting single subtree', {
+          viewId: id,
+          depth: 1,
+        });
+
+        // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
+        // before the first await. Adding here *before* the call would trip its
+        // in-flight dedup guard and silently skip the API request.
+        void loadViewChildren(id).finally(() => {
+          loadingViewIdsRef.current.delete(id);
+          setLoadingRevision((r) => r + 1);
+        });
+
+        // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
         setLoadingRevision((r) => r + 1);
-      });
-
-      // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
-      setLoadingRevision((r) => r + 1);
-    }
-  }, [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]);
+      }
+    },
+    [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]
+  );
   const { t } = useTranslation();
 
   const renderActions = useCallback(
@@ -481,7 +589,7 @@ export function Outline({ width }: { width: number }) {
 
   return (
     <>
-      <div className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
+      <div ref={spaceListRef} className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
         <Favorite />
         <ShareWithMe width={width - 20} />
         {!outline || outline.length === 0 ? (
@@ -493,21 +601,21 @@ export function Outline({ width }: { width: number }) {
             <DirectoryStructure />
           </div>
         ) : (
-          outline
-            .filter((view) => !view.extra?.is_hidden_space)
-            .map((view) => (
-              <SpaceItem
-                view={view}
-                key={view.view_id}
-                width={width - 20}
-                renderExtra={renderActions}
-                expandIds={expandViewIds}
-                toggleExpand={toggleExpandView}
-                onClickView={onClickView}
-                loadingViewIds={loadingViewIds}
-                loadedViewIds={loadedViewIds}
-              />
-            ))
+          visibleSpaces.map((view) => (
+            <SpaceItem
+              view={view}
+              key={view.view_id}
+              width={width - 20}
+              renderExtra={renderActions}
+              expandIds={expandViewIds}
+              toggleExpand={toggleExpandView}
+              onClickView={onClickView}
+              loadingViewIds={loadingViewIds}
+              loadedViewIds={loadedViewIds}
+              canReorder={canReorderSpaces && visibleSpaces.length > 1}
+              dragInstanceId={spaceDragInstanceId}
+            />
+          ))
         )}
       </div>
       {menuProps &&

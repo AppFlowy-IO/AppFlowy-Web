@@ -290,6 +290,7 @@ export interface DatabaseNodeData extends BlockData {
   view_ids?: ViewId[];
   parent_id?: ViewId;
   database_id?: string;
+  is_database_duplicate_placeholder?: boolean;
 }
 
 export interface SubpageNodeData extends BlockData {
@@ -1007,6 +1008,7 @@ export type AppendBreadcrumb = (view?: View) => void;
 export type CreateRow = (rowKey: string) => Promise<YDoc>;
 export interface LoadViewOptions {
   databaseId?: string | null;
+  forceFetch?: boolean;
 }
 
 export type LoadView = (
@@ -1201,6 +1203,8 @@ export interface View {
   has_children?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
+  is_locked?: boolean;
   last_edited_time?: string;
   favorited_at?: string;
   last_viewed_at?: string;
@@ -1299,6 +1303,8 @@ export interface WorkspaceMember {
   email: string;
   avatar_url: string;
   role: Role;
+  joined_at?: string | null;
+  is_pending_invitation?: boolean;
 }
 
 export interface GetRequestAccessInfoResponse {
@@ -1339,6 +1345,7 @@ export interface UpdatePagePayload {
     value: string;
   };
   extra?: Partial<ViewExtra>;
+  is_locked?: boolean;
 }
 
 export type ViewMetaCover = ViewCover;
@@ -1567,8 +1574,10 @@ export interface UpdateWorkspacePayload {
 
 export enum SettingMenuItem {
   ACCOUNT = 'ACCOUNT',
+  PROFILE = 'PROFILE',
   WORKSPACE = 'WORKSPACE',
   MEMBERS = 'MEMBERS',
+  MANAGE_DATA = 'MANAGE_DATA',
   SITES = 'SITES',
 }
 

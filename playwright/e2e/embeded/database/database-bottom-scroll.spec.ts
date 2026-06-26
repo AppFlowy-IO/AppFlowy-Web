@@ -5,12 +5,7 @@
  * Migrated from: cypress/e2e/embeded/database/database-bottom-scroll.cy.ts
  */
 import { test, expect } from '@playwright/test';
-import {
-  AddPageSelectors,
-  EditorSelectors,
-  ModalSelectors,
-  SlashCommandSelectors,
-} from '../../../support/selectors';
+import { AddPageSelectors, EditorSelectors, ModalSelectors, SlashCommandSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
@@ -48,7 +43,7 @@ test.describe('Embedded Database - Bottom Scroll Preservation', () => {
     // Create a new document
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
-    await page.locator('[role="menuitem"]').first().click({ force: true });
+    await AddPageSelectors.addDocumentButton(page).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Handle the new page modal if it appears

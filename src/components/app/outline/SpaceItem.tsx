@@ -1,10 +1,20 @@
 import { Tooltip } from '@mui/material';
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 
 import { View } from '@/application/types';
+import { canReorderWithinParent } from '@/application/view-utils';
 import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
+import AnimatedCollapse from '@/components/app/outline/AnimatedCollapse';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import ViewItem from '@/components/app/outline/ViewItem';
+import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
+import { cn } from '@/lib/utils';
+
+// Static, so hoisted out of render to avoid re-allocating the style object.
+const DROP_LINE_STYLE: React.CSSProperties = { left: 4 };
 
 function SpaceItem({
   view,
@@ -16,6 +26,8 @@ function SpaceItem({
   onClickSpace,
   loadingViewIds,
   loadedViewIds,
+  canReorder,
+  dragInstanceId,
 }: {
   view: View;
   width: number;
@@ -26,10 +38,34 @@ function SpaceItem({
   onClickSpace?: (viewId: string) => void;
   loadingViewIds?: Set<string>;
   loadedViewIds?: Set<string>;
+  canReorder?: boolean;
+  dragInstanceId?: symbol;
 }) {
   const [hovered, setHovered] = React.useState<boolean>(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const workspaceId = useCurrentWorkspaceIdOptional();
   const isExpanded = expandIds.includes(view.view_id);
   const isPrivate = view.is_private;
+
+  const { dragState, shouldSuppressClick } = useReorderableItem({
+    elementRef: rowRef,
+    id: view.view_id,
+    dragType: 'space',
+    instanceId: dragInstanceId,
+    canDrag: Boolean(canReorder),
+  });
+
+  // The space's direct children can be reordered within the space.
+  const spaceChildren = useMemo(() => view?.children ?? [], [view?.children]);
+  const { orderedItems: orderedChildren, instanceId: childDragInstanceId } = useReorderableSidebarList({
+    items: spaceChildren,
+    parentId: view.view_id,
+    workspaceId,
+    dragType: 'sidebar-view',
+    enabled: spaceChildren.length > 1,
+    errorMessage: 'Failed to reorder pages',
+  });
+
   const renderItem = useMemo(() => {
     if (!view) return null;
     const extra = view?.extra;
@@ -37,20 +73,24 @@ function SpaceItem({
 
     return (
       <div
+        ref={rowRef}
         data-testid={`space-${view.view_id}`}
         data-expanded={isExpanded}
         style={{
           width,
         }}
         onClick={() => {
+          if (shouldSuppressClick()) return;
+
           toggleExpand(view.view_id, !isExpanded);
           onClickSpace?.(view.view_id);
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className={
-          'flex min-h-[30px] w-full cursor-pointer select-none items-center gap-0.5 truncate rounded-[8px] px-1 py-0.5  text-sm hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none'
-        }
+        className={cn(
+          'relative flex min-h-[30px] w-full cursor-pointer select-none items-center gap-0.5 rounded-[8px] px-1 py-0.5 text-sm hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none',
+          dragState.type === 'dragging' && 'opacity-40'
+        )}
       >
         <SpaceIcon
           className={'icon mr-1.5 !h-5 !w-5 !min-w-5'}
@@ -60,7 +100,9 @@ function SpaceItem({
         />
         <Tooltip title={name} disableInteractive={true}>
           <div className={'flex flex-1 items-center justify-start gap-1 overflow-hidden text-sm'}>
-            <div data-testid="space-name" className={'truncate font-medium'}>{name}</div>
+            <div data-testid='space-name' className={'truncate font-medium'}>
+              {name}
+            </div>
 
             {isPrivate && (
               <div className={'min-h-5 min-w-5 text-base text-text-primary opacity-80'}>
@@ -70,31 +112,34 @@ function SpaceItem({
           </div>
         </Tooltip>
         {renderExtra && renderExtra({ hovered, view })}
+        {dragState.type === 'over' ? <DropRowLine edge={dragState.closestEdge} style={DROP_LINE_STYLE} /> : null}
       </div>
     );
-  }, [hovered, isExpanded, isPrivate, onClickSpace, renderExtra, toggleExpand, view, width]);
+  }, [
+    dragState,
+    hovered,
+    isExpanded,
+    isPrivate,
+    onClickSpace,
+    renderExtra,
+    shouldSuppressClick,
+    toggleExpand,
+    view,
+    width,
+  ]);
 
-  const isLoading = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
+  // Gate the open animation on actual child presence (not a loading flag) so the
+  // Collapse opens against real content and animates on the first expand.
+  const childrenPresent = orderedChildren.length > 0;
 
   const renderChildren = useMemo(() => {
+    // No loading shimmer here: a fixed-height placeholder spikes then collapses
+    // (a visible flicker). The content just slides in via AnimatedCollapse once
+    // it's ready.
     return (
-      <div
-        className={'flex transform flex-col gap-2 transition-all'}
-        style={{
-          display: isExpanded ? 'block' : 'none',
-        }}
-      >
-        {isLoading ? (
-          <div className={'flex flex-col'}>
-            {[96, 72, 88].map((w, i) => (
-              <div key={i} className={'flex min-h-[30px] items-center gap-1.5 py-1 px-0.5'} style={{ paddingLeft: '16px' }}>
-                <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
-                <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          view?.children?.map((child) => (
+      <AnimatedCollapse expanded={isExpanded && childrenPresent}>
+        <div className={'flex flex-col'}>
+          {orderedChildren.map((child) => (
             <ViewItem
               key={child.view_id}
               view={child}
@@ -103,14 +148,31 @@ function SpaceItem({
               expandIds={expandIds}
               toggleExpand={toggleExpand}
               onClickView={onClickView}
+              parentView={view}
               loadingViewIds={loadingViewIds}
               loadedViewIds={loadedViewIds}
+              reorderChildren
+              reorderInstanceId={childDragInstanceId}
+              canReorder={canReorderWithinParent(child, view)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      </AnimatedCollapse>
     );
-  }, [onClickView, isExpanded, isLoading, view?.children, width, renderExtra, expandIds, toggleExpand, loadingViewIds, loadedViewIds]);
+  }, [
+    onClickView,
+    isExpanded,
+    childrenPresent,
+    orderedChildren,
+    childDragInstanceId,
+    view,
+    width,
+    renderExtra,
+    expandIds,
+    toggleExpand,
+    loadingViewIds,
+    loadedViewIds,
+  ]);
 
   return (
     <div className={'flex h-fit w-full flex-col'} data-testid='space-item'>

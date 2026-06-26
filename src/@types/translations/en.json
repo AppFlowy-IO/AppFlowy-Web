@@ -153,6 +153,7 @@
   },
   "shareAction": {
     "buttonText": "Share",
+    "findAndReplace": "Find and replace",
     "workInProgress": "Coming soon",
     "markdown": "Markdown",
     "html": "HTML",
@@ -265,6 +266,7 @@
     "rename": "Rename",
     "delete": "Delete",
     "duplicate": "Duplicate",
+    "lockPage": "Lock page",
     "unfavorite": "Remove from Favorites",
     "favorite": "Add to Favorites",
     "openNewTab": "Open in a new tab",
@@ -818,9 +820,46 @@
         "removeHomePageSuccess": "Remove homepage successfully"
       }
     },
+    "manageData": {
+      "menuLabel": "Manage data",
+      "title": "Manage data",
+      "description": "Manage your AppFlowy workspace data",
+      "importWorkspace": {
+        "title": "Import your workspace",
+        "tooltip": "Import your workspace from an AppFlowy backup ZIP file",
+        "button": "Import",
+        "success": "Import started. We will send a confirmation email once the import is complete.",
+        "failed": "Failed to import workspace"
+      },
+      "backupWorkspace": {
+        "title": "Backup your workspace",
+        "tooltip": "Back up your AppFlowy workspace to a ZIP file",
+        "button": "Backup",
+        "started": "Backup started. We will send an email with a download link once the export is complete.",
+        "failed": "Failed to back up workspace"
+      }
+    },
     "accountPage": {
       "menuLabel": "My account",
+      "menuLabelAccountApp": "Account & App",
+      "menuLabelProfile": "Profile",
+      "profile": {
+        "title": "Profile",
+        "displayName": "Display name"
+      },
       "title": "My account",
+      "accountAndApp": "Account & App",
+      "dateTime": {
+        "title": "Date & Time Format"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "password": {
+        "title": "Password",
+        "description": "Your account password for signing in.",
+        "setupButton": "Setup password"
+      },
       "general": {
         "title": "Account name & profile image",
         "changeProfilePicture": "Change profile picture"
@@ -833,8 +872,16 @@
       },
       "login": {
         "title": "Account login",
+        "description": "Log out from your current session.",
         "loginLabel": "Log in",
         "logoutLabel": "Log out"
+      },
+      "deleteAccount": {
+        "title": "Delete account",
+        "description": "Permanently delete your account and remove access from all workspaces.",
+        "confirmDescription": "This will permanently delete your account, your data, and remove access from all workspaces. This action cannot be undone.",
+        "success": "Account deleted",
+        "failed": "Failed to delete account"
       }
     },
     "workspacePage": {
@@ -1520,6 +1567,18 @@
         "label": "Members",
         "user": "User",
         "role": "Role",
+        "email": "Email",
+        "pending": "Pending",
+        "joinedOn": "Joined on",
+        "invite": "Invite",
+        "inviteLinkTitle": "Invite link to add member",
+        "inviteLinkHintPrefix": "Click to copy link or",
+        "generateNewLink": "generate a new link",
+        "copyLink": "Copy link",
+        "inviteLinkGenerated": "Invite link generated",
+        "inviteByEmailTitle": "Invite member by email",
+        "inviteByEmailPlaceholder": "Invite by email",
+        "noMembers": "No members yet",
         "removeFromWorkspace": "Remove from Workspace",
         "removeFromWorkspaceSuccess": "Remove from workspace successfully",
         "removeFromWorkspaceFailed": "Remove from workspace failed",
@@ -2783,14 +2842,33 @@
   },
   "findAndReplace": {
     "find": "Find",
+    "findAndReplace": "Find & replace",
     "previousMatch": "Previous match",
     "nextMatch": "Next match",
     "close": "Close",
     "replace": "Replace",
     "replaceAll": "Replace all",
+    "all": "All",
     "noResult": "No results",
     "caseSensitive": "Case sensitive",
-    "searchMore": "Search to find more results"
+    "matchCase": "Match case",
+    "searchMore": "Search to find more results",
+    "findTextfieldHint": "Find text on page...",
+    "replaceTextfieldHint": "Replace with...",
+    "switchFindHint": "Switch to Find",
+    "switchFindAndReplaceHint": "Switch to Find & Replace",
+    "replacedMoreThanOneSuccessfully": "Replaced {} matches",
+    "replacedOneSuccessfully": "Replaced 1 match",
+    "noPermissionHint": "Replace is disabled while in read-only or locked mode",
+    "noMoreResultToast": "No more results found, looping around"
+  },
+  "lockPage": {
+    "lockPage": "Locked",
+    "reLockPage": "Re-lock",
+    "lockTooltip": "Page locked to prevent accidental editing. Click to unlock.",
+    "pageLockedToast": "Page locked. Editing is disabled until someone unlocks it.",
+    "pageUnlockedToast": "Page unlocked. Editing is enabled.",
+    "lockedOperationTooltip": "Page locked to prevent accidental editing."
   },
   "error": {
     "weAreSorry": "We're sorry",
@@ -3181,11 +3259,15 @@
       "retry": "Retry"
     },
     "importNotion": "Import from Notion",
+    "importWorkspace": "Import workspace",
+    "importFromAppFlowy": "Import from AppFlowy",
+    "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
     "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
+    "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
     },
@@ -3193,6 +3275,7 @@
     "addMessagesToPage": "Add messages to page",
     "addMessagesToPageDisabled": "No messages available",
     "accountSettings": "Account settings",
+    "settings": "Settings",
     "startWeekOn": "Start week on"
   },
   "globalComment": {
@@ -3815,7 +3898,7 @@
     "comingSoonToWeb": "Coming soon to the web 👋. You can use this feature right now on our desktop or mobile app."
   },
   "versionHistory": {
-    "versionHistory": "Page History",
+    "versionHistory": "Version history",
     "all": "All",
     "last7Days": "Last 7 days",
     "last30Days": "Last 30 days",

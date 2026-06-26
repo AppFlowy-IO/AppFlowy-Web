@@ -1,9 +1,47 @@
 import { View } from '@/application/types';
 
 /**
+ * Return `views` with duplicate view_ids removed (first occurrence wins),
+ * preserving order. Returns the SAME array reference when there are no
+ * duplicates, so callers relying on referential equality are unaffected.
+ *
+ * The backend folder data can contain a view listed twice under the same
+ * parent (observed on database containers); without this guard it renders as
+ * two identical sibling tabs. See {@link deduplicateOutlineChildren} for the
+ * full-tree variant used on the realtime-patch path.
+ */
+export function dedupeViewsByViewId(views: View[]): View[] {
+  if (views.length < 2) return views;
+
+  const seen = new Set<string>();
+  let hasDup = false;
+
+  for (const view of views) {
+    if (seen.has(view.view_id)) {
+      hasDup = true;
+      break;
+    }
+
+    seen.add(view.view_id);
+  }
+
+  if (!hasDup) return views;
+
+  seen.clear();
+  return views.filter((view) => {
+    if (seen.has(view.view_id)) return false;
+    seen.add(view.view_id);
+    return true;
+  });
+}
+
+/**
  * Immutably replaces a single view's children in the outline tree.
  * Returns the original array reference if the parentViewId is not found
  * (referential equality check to minimize re-renders).
+ *
+ * Server-provided `children` are deduplicated by view_id before merging so a
+ * duplicate child reference never materializes as two identical sibling rows.
  */
 export function mergeChildrenIntoOutline(
   outline: View[],
@@ -12,19 +50,20 @@ export function mergeChildrenIntoOutline(
   hasChildrenOverride?: boolean
 ): View[] {
   let changed = false;
+  const dedupedChildren = dedupeViewsByViewId(children);
 
   const next = outline.map((view) => {
     if (view.view_id === parentViewId) {
-      const nextHasChildren = hasChildrenOverride ?? (children.length > 0);
+      const nextHasChildren = hasChildrenOverride ?? (dedupedChildren.length > 0);
 
       // Only create a new object if children/has_children actually differ
-      if (view.children === children && view.has_children === nextHasChildren) return view;
+      if (view.children === dedupedChildren && view.has_children === nextHasChildren) return view;
       changed = true;
-      return { ...view, children, has_children: nextHasChildren };
+      return { ...view, children: dedupedChildren, has_children: nextHasChildren };
     }
 
     if (view.children && view.children.length > 0) {
-      const nextChildren = mergeChildrenIntoOutline(view.children, parentViewId, children, hasChildrenOverride);
+      const nextChildren = mergeChildrenIntoOutline(view.children, parentViewId, dedupedChildren, hasChildrenOverride);
 
       if (nextChildren !== view.children) {
         changed = true;

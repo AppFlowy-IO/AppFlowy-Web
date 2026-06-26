@@ -26,6 +26,9 @@ import { Log } from '@/utils/log';
 
 const RUST_NANOID_SAFE_ALPHABET = '_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DEFAULT_ID_LEN = 10;
+// UUID namespace OID (same as Rust's Uuid::NAMESPACE_OID)
+// Note: 6ba7b812 (not 6ba7b810 which is NAMESPACE_DNS)
+const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
 
 /**
  * Generate a deterministic page_id from document_id.
@@ -33,9 +36,8 @@ const DEFAULT_ID_LEN = 10;
  *
  * ```rust
  * pub fn page_id_from_document_id(document_id: &str) -> Option<String> {
- *   Uuid::parse_str(document_id)
- *     .ok()
- *     .map(|doc_id| Uuid::new_v5(&doc_id, PAGE.as_bytes()).to_string())
+ *   let doc_id = document_id_from_any_string(document_id);
+ *   Some(Uuid::new_v5(&doc_id, PAGE.as_bytes()).to_string())
  * }
  * ```
  *
@@ -43,15 +45,17 @@ const DEFAULT_ID_LEN = 10;
  * @returns The page_id as a UUID string
  */
 export function pageIdFromDocumentId(documentId: string): string {
-  if (!uuidValidate(documentId)) {
-    throw new Error('documentId must be a valid UUID string');
-  }
+  // If documentId is a valid UUID, use it directly as the namespace
+  // Otherwise, generate a deterministic UUID from the string (same as document_id_from_any_string)
+  const docUuid = uuidValidate(documentId) ? documentId : uuidv5(documentId, UUID_NAMESPACE_OID);
 
   // Generate page_id as UUID v5 with document_id as namespace and "page" as name
-  const pageId = uuidv5('page', documentId);
+  const pageId = uuidv5('page', docUuid);
 
   Log.debug('[pageIdFromDocumentId]', {
     documentId,
+    isValidUuid: uuidValidate(documentId),
+    docUuid,
     pageId,
   });
 
@@ -59,11 +63,9 @@ export function pageIdFromDocumentId(documentId: string): string {
 }
 
 function idFromDocumentId(documentId: string, role: string): string {
-  if (!uuidValidate(documentId)) {
-    throw new Error('documentId must be a valid UUID string');
-  }
+  const docUuid = uuidValidate(documentId) ? documentId : uuidv5(documentId, UUID_NAMESPACE_OID);
 
-  return uuidv5(role, documentId);
+  return uuidv5(role, docUuid);
 }
 
 function nanoidFromDocumentId(documentId: string, role: string): string {
@@ -551,6 +553,31 @@ export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targ
   targetText.applyDelta(sourceText.toDelta());
 }
 
+function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
+  const blockId = block.get(YjsEditorKey.block_id);
+  let textId = block.get(YjsEditorKey.block_external_id);
+
+  if (!textId) {
+    textId = blockId;
+    block.set(YjsEditorKey.block_external_id, textId);
+    block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
+  }
+
+  const textMap = getTextMap(sharedRoot);
+
+  if (!textMap.has(textId)) {
+    textMap.set(textId, new Y.Text());
+  }
+}
+
+function canTurnToBlockInPlace(type: BlockType, sourceChildren?: Y.Array<string>) {
+  if (isEmbedBlockTypes(type)) {
+    return false;
+  }
+
+  return !sourceChildren || sourceChildren.length === 0 || CONTAINER_BLOCK_TYPES.includes(type);
+}
+
 export function prepareBreakOperation(sharedRoot: YSharedRoot, block: YBlock, offset: number) {
   const yText = getText(block.get(YjsEditorKey.block_external_id), sharedRoot);
   const ops = yText.toDelta() as Op[];
@@ -680,6 +707,16 @@ export function turnToBlock<T extends BlockData>(
   type: BlockType,
   data: T
 ) {
+  const sourceChildren = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+  if (canTurnToBlockInPlace(type, sourceChildren)) {
+    ensureTextForBlock(sharedRoot, sourceBlock);
+    sourceBlock.set(YjsEditorKey.block_type, type);
+    sourceBlock.set(YjsEditorKey.block_data, JSON.stringify(data));
+    extendNextSiblingsToToggleHeading(sharedRoot, sourceBlock);
+    return sourceBlock.get(YjsEditorKey.block_id);
+  }
+
   const newBlock = createBlock(sharedRoot, {
     ty: type,
     data,
@@ -754,11 +791,11 @@ export function moveNode(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetPar
   return copiedBlockId;
 }
 
-export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock): string | null {
+export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock, dataOverride?: BlockData): string | null {
   try {
     const newBlock = createBlock(sharedRoot, {
       ty: sourceBlock.get(YjsEditorKey.block_type),
-      data: dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
+      data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
     });
 
     copyBlockText(sharedRoot, sourceBlock, newBlock);
