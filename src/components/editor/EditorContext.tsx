@@ -76,6 +76,8 @@ export interface EditorContextState {
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
   loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
@@ -121,6 +123,8 @@ export const EditorContextProvider = ({
   loadViewMeta,
   loadView,
   loadRowDocument,
+  checkIfRowDocumentExists,
+  createRowDocument,
   createRow,
   bindViewSync,
   readSummary,
@@ -204,6 +208,8 @@ export const EditorContextProvider = ({
       loadViewMeta,
       loadView,
       loadRowDocument,
+      checkIfRowDocumentExists,
+      createRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -244,6 +250,8 @@ export const EditorContextProvider = ({
       loadViewMeta,
       loadView,
       loadRowDocument,
+      checkIfRowDocumentExists,
+      createRowDocument,
       createRow,
       bindViewSync,
       readSummary,

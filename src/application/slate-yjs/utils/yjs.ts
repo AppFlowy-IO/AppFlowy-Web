@@ -26,7 +26,6 @@ import { Log } from '@/utils/log';
 
 const RUST_NANOID_SAFE_ALPHABET = '_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DEFAULT_ID_LEN = 10;
-const DEFAULT_DOCUMENT_INIT_CLIENT_ROLE = 'default-document-init-client';
 
 /**
  * Generate a deterministic page_id from document_id.
@@ -78,13 +77,6 @@ function nanoidFromDocumentId(documentId: string, role: string): string {
   }
 
   return id;
-}
-
-export function defaultDocumentInitClientId(documentId: string): number {
-  const uuid = idFromDocumentId(documentId, DEFAULT_DOCUMENT_INIT_CLIENT_ROLE).replace(/-/g, '');
-  const clientId = parseInt(uuid.slice(0, 8), 16);
-
-  return Math.max(clientId, 1);
 }
 
 export function getTextMap(sharedRoot: YSharedRoot) {
@@ -353,7 +345,6 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
     documentId,
     pageId,
     includeInitialParagraph,
-    initClientId: documentId ? defaultDocumentInitClientId(documentId) : undefined,
   });
   const meta = new Y.Map();
   const childrenMap = new Y.Map() as YChildrenMap;
@@ -405,19 +396,7 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
   childrenMap.set(pageId, pageChildren);
   textMap.set(pageId, new Y.Text());
 
-  const originalClientId = doc.clientID;
-
-  if (documentId) {
-    doc.clientID = defaultDocumentInitClientId(documentId);
-  }
-
-  try {
-    sharedRoot.set(YjsEditorKey.document, document);
-  } finally {
-    if (documentId) {
-      doc.clientID = originalClientId;
-    }
-  }
+  sharedRoot.set(YjsEditorKey.document, document);
 
   Log.debug('[initializeDocumentStructure] completed', {
     docGuid: doc.guid,

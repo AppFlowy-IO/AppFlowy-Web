@@ -2,12 +2,10 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import * as Y from 'yjs';
 
 import {
-  pageIdFromDocumentId,
-  defaultDocumentInitClientId,
-  initializeDocumentStructure,
   createEmptyDocument,
   deleteBlock,
-  getDocument,
+  initializeDocumentStructure,
+  pageIdFromDocumentId,
 } from '../utils/yjs';
 import { YjsEditorKey, BlockType, YSharedRoot } from '@/application/types';
 
@@ -37,10 +35,6 @@ describe('pageIdFromDocumentId', () => {
 
   it('should reject non-UUID document ids', () => {
     expect(() => pageIdFromDocumentId('vxWayiyi2Q')).toThrow('documentId must be a valid UUID string');
-  });
-
-  it('should generate deterministic initial Yjs client id from document id', () => {
-    expect(defaultDocumentInitClientId('6e91148b-e42a-56b1-b9a0-58fbaa31552d')).toBe(2957736978);
   });
 });
 
@@ -135,43 +129,13 @@ describe('initializeDocumentStructure', () => {
     expect(textMap.has('VbaxI-lEf5')).toBe(true);
   });
 
-  it('should merge edits from two independently initialized default documents', () => {
+  it('should not override the local Yjs client id when initializing document structure', () => {
     const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
-    const first = new Y.Doc();
-    const second = new Y.Doc();
-    const firstClientId = first.clientID;
-    const secondClientId = second.clientID;
+    const originalClientId = doc.clientID;
 
-    initializeDocumentStructure(first, true, documentId);
-    initializeDocumentStructure(second, true, documentId);
+    initializeDocumentStructure(doc, true, documentId);
 
-    expect(first.clientID).toBe(firstClientId);
-    expect(second.clientID).toBe(secondClientId);
-
-    const firstRoot = first.getMap(YjsEditorKey.data_section) as YSharedRoot;
-    const secondRoot = second.getMap(YjsEditorKey.data_section) as YSharedRoot;
-    const firstTextMap = getDocument(firstRoot).get(YjsEditorKey.meta).get(YjsEditorKey.text_map);
-    const secondTextMap = getDocument(secondRoot).get(YjsEditorKey.meta).get(YjsEditorKey.text_map);
-    const firstText = firstTextMap.get('VbaxI-lEf5') as Y.Text;
-    const secondText = secondTextMap.get('VbaxI-lEf5') as Y.Text;
-
-    firstText.insert(0, 'client one');
-    for (let i = 0; i < 25; i += 1) {
-      secondText.insert(secondText.length, ` b${i}`);
-    }
-
-    Y.applyUpdate(first, Y.encodeStateAsUpdate(second));
-    Y.applyUpdate(second, Y.encodeStateAsUpdate(first));
-    Y.applyUpdate(first, Y.encodeStateAsUpdate(second));
-
-    const firstFinalText = (firstTextMap.get('VbaxI-lEf5') as Y.Text).toString();
-    const secondFinalText = (secondTextMap.get('VbaxI-lEf5') as Y.Text).toString();
-
-    expect(firstFinalText).toBe(secondFinalText);
-    expect(firstFinalText).toContain('client one');
-    for (let i = 0; i < 25; i += 1) {
-      expect(firstFinalText).toContain(` b${i}`);
-    }
+    expect(doc.clientID).toBe(originalClientId);
   });
 
   it('should clean up document-scoped paragraph children and text ids when deleted', () => {
