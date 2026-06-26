@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   createBlock,
   createEmptyDocument,
+  deleteBlock,
   getBlock,
   getChildrenArray,
   getText,
@@ -78,11 +79,12 @@ describe('pageIdFromDocumentId', () => {
 
     // Should be a valid UUID format
     expect(pageId1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(pageId1).toBe('69d1e3fb-c2f3-5156-b8e3-636273bad252');
   });
 
   it('should generate different page_ids for different document_ids', () => {
     const documentId1 = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
-    const documentId2 = '7f02259c-f53b-67c2-c1b1-69gcbb42663e';
+    const documentId2 = '7f02259c-f53b-67c2-a1b1-69fcbb42663e';
 
     const pageId1 = pageIdFromDocumentId(documentId1);
     const pageId2 = pageIdFromDocumentId(documentId2);
@@ -169,6 +171,63 @@ describe('initializeDocumentStructure', () => {
     // Page ID should match what pageIdFromDocumentId returns
     const expectedPageId = pageIdFromDocumentId(documentId);
     expect(pageId).toBe(expectedPageId);
+  });
+
+  it('should use document-scoped initial paragraph ids when documentId is provided', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+    initializeDocumentStructure(doc, true, documentId);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+
+    expect(paragraphId).toBe('TdtM1tmgqJ');
+    expect(paragraphBlock.get(YjsEditorKey.block_children)).toBe('NyYr0DfnAu');
+    expect(paragraphBlock.get(YjsEditorKey.block_external_id)).toBe('VbaxI-lEf5');
+    expect(childrenMap.has('NyYr0DfnAu')).toBe(true);
+    expect(textMap.has('VbaxI-lEf5')).toBe(true);
+  });
+
+  it('should not override the local Yjs client id when initializing document structure', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+    const originalClientId = doc.clientID;
+
+    initializeDocumentStructure(doc, true, documentId);
+
+    expect(doc.clientID).toBe(originalClientId);
+  });
+
+  it('should clean up document-scoped paragraph children and text ids when deleted', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+
+    initializeDocumentStructure(doc, true, documentId);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+    const paragraphChildrenId = paragraphBlock.get(YjsEditorKey.block_children);
+    const paragraphTextId = paragraphBlock.get(YjsEditorKey.block_external_id);
+
+    deleteBlock(sharedRoot, paragraphId);
+
+    expect(blocks.has(paragraphId)).toBe(false);
+    expect(childrenMap.has(paragraphChildrenId)).toBe(false);
+    expect(textMap.has(paragraphTextId)).toBe(false);
+    expect(pageChildren.toArray()).toEqual([]);
   });
 
   it('should skip initialization if document already exists', () => {
