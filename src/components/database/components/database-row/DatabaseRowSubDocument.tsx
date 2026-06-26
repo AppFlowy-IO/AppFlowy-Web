@@ -651,6 +651,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             scheduleRetry();
           }
         })();
+
         return;
       }
 
