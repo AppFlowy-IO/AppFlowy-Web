@@ -21,6 +21,8 @@ export enum MetadataKey {
   TimeFormat = 'time_format',
   StartWeekOn = 'start_week_on',
   IconUrl = 'icon_url',
+  // Per-user, synced preference: when enabled, opening AppFlowy links hands off to the desktop app.
+  OpenInDesktopApp = 'open_in_desktop_app',
 }
 
 /**
@@ -33,6 +35,7 @@ export interface MetadataValues {
   [MetadataKey.TimeFormat]: TimeFormat;
   [MetadataKey.StartWeekOn]: number;
   [MetadataKey.IconUrl]: string;
+  [MetadataKey.OpenInDesktopApp]: boolean;
 }
 
 /**
@@ -45,6 +48,7 @@ export const MetadataDefaults: Partial<MetadataValues> = {
   [MetadataKey.TimeFormat]: TimeFormat.TwelveHour,
   [MetadataKey.StartWeekOn]: 0,
   [MetadataKey.IconUrl]: '',
+  [MetadataKey.OpenInDesktopApp]: false,
 };
 
 /**
@@ -82,6 +86,14 @@ export class UserMetadataBuilder {
    */
   setIconUrl(url: string): this {
     this.metadata[MetadataKey.IconUrl] = url;
+    return this;
+  }
+
+  /**
+   * Set the "open links in desktop app" preference
+   */
+  setOpenInDesktopApp(value: boolean): this {
+    this.metadata[MetadataKey.OpenInDesktopApp] = value;
     return this;
   }
 
