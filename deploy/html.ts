@@ -184,10 +184,10 @@ const argbToRgba = (color: string): string => {
     return color.replace('0x', '#');
   }
 
-  const r = parseInt(hex.slice(2, 4), 16);
-  const g = parseInt(hex.slice(4, 6), 16);
-  const b = parseInt(hex.slice(6, 8), 16);
-  const a = hasAlpha ? parseInt(hex.slice(0, 2), 16) / 255 : 1;
+  const r = Number.parseInt(hex.slice(2, 4), 16);
+  const g = Number.parseInt(hex.slice(4, 6), 16);
+  const b = Number.parseInt(hex.slice(6, 8), 16);
+  const a = hasAlpha ? Number.parseInt(hex.slice(0, 2), 16) / 255 : 1;
 
   return `rgba(${r}, ${g}, ${b}, ${a})`;
 };

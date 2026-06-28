@@ -1,4 +1,3 @@
-
 import { InlineFormat } from './types';
 
 import type { Element as HastElement, Text as HastText } from 'hast';
@@ -65,7 +64,7 @@ export function extractInlineFormatsFromHAST(node: HastElement, baseOffset = 0):
         if (styles['font-weight']) {
           const weight = styles['font-weight'];
 
-          if (weight === 'bold' || weight === 'bolder' || parseInt(weight) >= 700) {
+          if (weight === 'bold' || weight === 'bolder' || Number.parseInt(weight) >= 700) {
             newFormats.add('bold');
           }
         }

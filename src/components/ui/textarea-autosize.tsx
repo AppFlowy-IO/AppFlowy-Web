@@ -90,7 +90,9 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
       const styles = window.getComputedStyle(textarea);
 
       contentMirror.style.width = `${
-        textarea.getBoundingClientRect().width - parseInt(styles.paddingLeft) - parseInt(styles.paddingRight)
+        textarea.getBoundingClientRect().width -
+        Number.parseInt(styles.paddingLeft) -
+        Number.parseInt(styles.paddingRight)
       }px`;
       contentMirror.style.fontFamily = styles.fontFamily;
       contentMirror.style.fontSize = styles.fontSize;
@@ -127,9 +129,9 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
       const style = window.getComputedStyle(innerRef.current);
 
       return {
-        lineHeight: parseInt(style.lineHeight) || 20,
-        paddingTop: parseInt(style.paddingTop) || 0,
-        paddingBottom: parseInt(style.paddingBottom) || 0,
+        lineHeight: Number.parseInt(style.lineHeight) || 20,
+        paddingTop: Number.parseInt(style.paddingTop) || 0,
+        paddingBottom: Number.parseInt(style.paddingBottom) || 0,
       };
     }, []);
 

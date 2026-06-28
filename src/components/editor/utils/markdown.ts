@@ -265,7 +265,7 @@ const rules: Rule[] = [
     match: /^(\d+)\.\s/,
     format: BlockType.NumberedListBlock,
     filter: (editor, match) => {
-      const start = parseInt(match[1]);
+      const start = Number.parseInt(match[1]);
       const blockType = getNodeType(editor);
       const blockData = getBlockData(editor);
 
@@ -275,7 +275,7 @@ const rules: Rule[] = [
       );
     },
     transform: (editor, match) => {
-      const start = parseInt(match[1]);
+      const start = Number.parseInt(match[1]);
 
       const entry = getBlockEntry(editor);
 

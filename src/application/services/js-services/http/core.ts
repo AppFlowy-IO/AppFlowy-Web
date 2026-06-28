@@ -41,7 +41,7 @@ export function parseRetryAfterSecs(headers: Record<string, unknown> | undefined
   const raw = headers['retry-after'];
 
   if (typeof raw === 'string') {
-    const parsed = parseInt(raw.trim(), 10);
+    const parsed = Number.parseInt(raw.trim(), 10);
 
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
   }
@@ -123,15 +123,22 @@ export async function executeAPIRequest<TResponseData = unknown>(
     }
 
     // Get the actual URL that was requested
-    const requestUrl = response.request?.responseURL
-      || (response.config?.baseURL && response.config?.url
+    const requestUrl =
+      response.request?.responseURL ||
+      (response.config?.baseURL && response.config?.url
         ? `${response.config.baseURL}${response.config.url}`
-        : response.config?.url)
-      || 'unknown';
+        : response.config?.url) ||
+      'unknown';
 
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
 
-    Log.debug('[executeAPIRequest]', { method, url: requestUrl, response_data: response.data?.data, response_code: response.data?.code, response_message: response.data?.message });
+    Log.debug('[executeAPIRequest]', {
+      method,
+      url: requestUrl,
+      response_data: response.data?.data,
+      response_code: response.data?.code,
+      response_message: response.data?.message,
+    });
 
     if (!response.data) {
       console.error('[executeAPIRequest] No response data received', response);
@@ -266,7 +273,11 @@ export async function withRetry<T>(
         delay = Math.round(delays[attempt] * (1.0 + Math.random()));
       }
 
-      Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed (code=${normalized.code}, retryAfter=${normalized.retryAfterSecs ?? 'none'}), retrying in ${delay}ms`);
+      Log.debug(
+        `[withRetry] Attempt ${attempt + 1}/${delays.length} failed (code=${normalized.code}, retryAfter=${
+          normalized.retryAfterSecs ?? 'none'
+        }), retrying in ${delay}ms`
+      );
 
       // Wait for backoff, but abort early if signal fires
       await new Promise<void>((resolve) => {
@@ -277,10 +288,14 @@ export async function withRetry<T>(
 
         const timer = setTimeout(resolve, delay);
 
-        signal?.addEventListener('abort', () => {
-          clearTimeout(timer);
-          resolve();
-        }, { once: true });
+        signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true }
+        );
       });
     }
   }

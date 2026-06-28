@@ -74,7 +74,7 @@ export function useOutlinePopover ({
 
 export function useOutlineDrawer () {
   const [drawerWidth, setDrawerWidth] = React.useState(() => {
-    return parseInt(localStorage.getItem('outline_width') || '268', 10);
+    return Number.parseInt(localStorage.getItem('outline_width') || '268', 10);
   });
 
   const [drawerOpened, setDrawerOpened] = React.useState(() => {

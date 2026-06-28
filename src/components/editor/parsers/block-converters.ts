@@ -1,4 +1,3 @@
-
 import { BlockData, BlockType, HeadingBlockData, ImageBlockData, ImageType } from '@/application/types';
 
 import { extractInlineFormatsFromHAST, extractTextFromHAST } from './inline-converters';
@@ -177,7 +176,11 @@ function extractParagraphSegments(node: HastElement): ParagraphSegment[] {
     });
   };
 
-  const walkNode = (child: HastElement | { type: string; value?: string }, activeFormats: ActiveInlineFormat[], isRoot = false) => {
+  const walkNode = (
+    child: HastElement | { type: string; value?: string },
+    activeFormats: ActiveInlineFormat[],
+    isRoot = false
+  ) => {
     if (child.type === 'text') {
       appendText(child.value ?? '', activeFormats);
       return;
@@ -281,7 +284,7 @@ export function isParagraph(tagName: string): boolean {
  * Converts a heading element to ParsedBlock
  */
 export function parseHeading(node: HastElement): ParsedBlock {
-  const level = parseInt(node.tagName[1]) as 1 | 2 | 3 | 4 | 5 | 6;
+  const level = Number.parseInt(node.tagName[1]) as 1 | 2 | 3 | 4 | 5 | 6;
 
   return {
     type: BlockType.HeadingBlock,
@@ -331,7 +334,7 @@ export function parseBlockquote(node: HastElement): ParsedBlock {
 export function parseCodeBlock(node: HastElement): ParsedBlock | null {
   // Look for code element inside pre
   const codeElement = node.children.find((child) => {
-    return child.type === 'element' && (child).tagName === 'code';
+    return child.type === 'element' && child.tagName === 'code';
   }) as HastElement | undefined;
 
   // Only treat as code block if there's a code element
@@ -379,7 +382,7 @@ export function parseList(node: HastElement): ParsedBlock[] {
       if (elem.tagName === 'li') {
         // Check for checkbox (todo list)
         const input = elem.children.find((c) => {
-          return c.type === 'element' && (c).tagName === 'input';
+          return c.type === 'element' && c.tagName === 'input';
         }) as HastElement | undefined;
 
         if (input && input.properties?.type === 'checkbox') {
