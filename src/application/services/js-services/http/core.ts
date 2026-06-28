@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import dayjs from 'dayjs';
 
 import { AFCloudConfig } from '@/application/services/services.type';
@@ -11,6 +11,68 @@ let axiosInstance: AxiosInstance | null = null;
 
 export function getAxiosInstance() {
   return axiosInstance;
+}
+
+type EtagCacheConfig = Pick<InternalAxiosRequestConfig, 'data' | 'headers' | 'method' | 'params' | 'url'>;
+
+function stableSerialize(value: unknown): string {
+  if (value === undefined || value === null) return '';
+
+  const parsed = typeof value === 'string' ? tryParseJson(value) : value;
+
+  try {
+    return JSON.stringify(sortJsonKeys(parsed));
+  } catch {
+    return String(value);
+  }
+}
+
+function tryParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function sortJsonKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonKeys);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.keys(value)
+    .sort()
+    .reduce<Record<string, unknown>>((sorted, key) => {
+      sorted[key] = sortJsonKeys((value as Record<string, unknown>)[key]);
+      return sorted;
+    }, {});
+}
+
+function getEtagCacheKey(config: EtagCacheConfig): string | undefined {
+  const method = config.method?.toLowerCase() ?? 'get';
+  const url = config.url;
+
+  if (!url) return undefined;
+
+  if (method === 'get') {
+    const params = stableSerialize(config.params);
+
+    return params ? `GET ${url}?${params}` : `GET ${url}`;
+  }
+
+  return undefined;
+}
+
+function setIfNoneMatchHeader(config: InternalAxiosRequestConfig, etag: string) {
+  if (typeof config.headers?.set === 'function') {
+    config.headers.set('If-None-Match', etag);
+  } else {
+    Object.assign(config.headers, { 'If-None-Match': etag });
+  }
 }
 
 /**
@@ -384,25 +446,26 @@ export function initAPIService(config: AFCloudConfig) {
   // ---------------------------------------------------------------------------
   // ETag / 304 Not Modified caching
   //
-  // Stores ETags from server responses keyed by URL. On subsequent GET requests,
-  // sends If-None-Match so the server can return 304 (empty body) when the data
-  // hasn't changed. The browser's HTTP cache handles body storage — on 304, axios
-  // receives the cached body transparently.
+  // Stores ETags from server responses keyed by request identity. On subsequent
+  // cacheable requests, sends If-None-Match so the server can return 304 (empty body)
+  // when the data hasn't changed. The browser's HTTP cache handles body storage — on
+  // 304, axios receives the cached body transparently.
   //
   // For programmatic requests (axios.get), the browser doesn't always use its HTTP
-  // cache, so we also keep a lightweight JS response cache as fallback.
+  // cache, so we also keep a lightweight JS response cache as fallback. Query params
+  // are part of the key so GET endpoints with different targets cannot collide.
   // ---------------------------------------------------------------------------
   const etagStore = new Map<string, string>();
   const responseStore = new Map<string, unknown>();
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
-    if (config.method?.toLowerCase() === 'get' && config.url) {
-      const etag = etagStore.get(config.url);
+    const cacheKey = getEtagCacheKey(config);
 
-      if (etag) {
-        config.headers.set('If-None-Match', etag);
-      }
+    if (cacheKey) {
+      const etag = etagStore.get(cacheKey);
+
+      if (etag) setIfNoneMatchHeader(config, etag);
     }
 
     return config;
@@ -412,18 +475,19 @@ export function initAPIService(config: AFCloudConfig) {
   axiosInstance.interceptors.response.use(
     (response) => {
       const etag = response.headers?.['etag'];
+      const cacheKey = getEtagCacheKey(response.config);
 
-      if (etag && response.config.url) {
-        etagStore.set(response.config.url, etag);
-        responseStore.set(response.config.url, response.data);
+      if (etag && cacheKey) {
+        etagStore.set(cacheKey, etag);
+        responseStore.set(cacheKey, response.data);
       }
 
       return response;
     },
     (error) => {
       if (axios.isAxiosError(error) && error.response?.status === 304) {
-        const url = error.config?.url;
-        const cached = url ? responseStore.get(url) : undefined;
+        const cacheKey = error.config ? getEtagCacheKey(error.config) : undefined;
+        const cached = cacheKey ? responseStore.get(cacheKey) : undefined;
 
         if (cached) {
           // Return the cached response as if it were a 200

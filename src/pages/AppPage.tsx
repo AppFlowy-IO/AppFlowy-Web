@@ -2,7 +2,7 @@ import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, u
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import { MentionSearchRequest, UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
@@ -31,7 +31,7 @@ import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ViewService } from '@/application/services/domains';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import { Log } from '@/utils/log';
 
@@ -64,6 +64,16 @@ function AppPage() {
   const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
+  const searchMentions = useCallback(
+    (request: MentionSearchRequest) => {
+      if (!workspaceId) {
+        return Promise.reject(new Error('workspaceId is required'));
+      }
+
+      return WorkspaceService.searchMentions(workspaceId, request);
+    },
+    [workspaceId]
+  );
 
   const currentUser = useCurrentUser();
 
@@ -512,6 +522,7 @@ function AppPage() {
           variant={UIVariant.App}
           getSubscriptions={operations.getSubscriptions}
           getMentionUser={getMentionUser}
+          searchMentions={searchMentions}
           eventEmitter={eventEmitter}
           getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
           loadDatabaseRelations={loadDatabaseRelations}
@@ -557,6 +568,7 @@ function AppPage() {
         scheduleDeferredCleanup={scheduleDeferredCleanup}
         getSubscriptions={operations.getSubscriptions}
         getMentionUser={getMentionUser}
+        searchMentions={searchMentions}
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
@@ -600,6 +612,7 @@ function AppPage() {
     aiEnabled,
     operations,
     getMentionUser,
+    searchMentions,
     eventEmitter,
     loadDatabaseRelations,
   ]);

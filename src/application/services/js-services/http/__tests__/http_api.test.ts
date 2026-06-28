@@ -51,7 +51,12 @@ describe('http_api client (unit)', () => {
   beforeEach(() => {
     jest.resetModules();
     mockAxiosCreate.mockClear();
+    mockAxiosInstance.interceptors.request.use.mockReset();
+    mockAxiosInstance.interceptors.response.use.mockReset();
     mockAxiosInstance.get.mockReset();
+    mockAxiosInstance.post.mockReset();
+    mockAxiosInstance.put.mockReset();
+    mockAxiosInstance.delete.mockReset();
   });
 
   it('initializes axios instance once with provided config', async () => {
@@ -152,5 +157,89 @@ describe('http_api client (unit)', () => {
     await expect(module.getAuthProviders()).resolves.toEqual([AuthProvider.PASSWORD]);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it('uses params-scoped ETag caching for access-details v2 GET requests', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    const requestInterceptor = mockAxiosInstance.interceptors.request.use.mock.calls[1][0] as (config: any) => any;
+    const etagResponseInterceptor = mockAxiosInstance.interceptors.response.use.mock.calls[1];
+    const responseSuccess = etagResponseInterceptor[0] as (response: any) => any;
+    const responseError = etagResponseInterceptor[1] as (error: any) => any;
+    const url = '/api/sharing/workspace/workspace-1/access-details/v2';
+    const params = {
+      page_id: 'page-1',
+      type: 'page',
+    };
+    const cachedData = {
+      code: 0,
+      data: {
+        shared_with: [],
+      },
+      message: 'ok',
+    };
+
+    responseSuccess({
+      headers: {
+        etag: 'W/"access-details-v2:test"',
+      },
+      config: {
+        method: 'get',
+        url,
+        params,
+      },
+      data: cachedData,
+    });
+
+    const headers = {
+      set: jest.fn(),
+    };
+
+    requestInterceptor({
+      method: 'get',
+      url,
+      params,
+      headers,
+    });
+
+    expect(headers.set).toHaveBeenCalledWith('If-None-Match', 'W/"access-details-v2:test"');
+
+    const cachedResponse = await responseError({
+      isAxiosError: true,
+      config: {
+        method: 'get',
+        url,
+        params,
+      },
+      response: {
+        status: 304,
+        data: undefined,
+      },
+    });
+
+    expect(cachedResponse.status).toBe(200);
+    expect(cachedResponse.data).toEqual(cachedData);
+  });
+
+  it('does not attach ETags to mutation POST requests', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    const requestInterceptor = mockAxiosInstance.interceptors.request.use.mock.calls[1][0] as (config: any) => any;
+    const headers = {
+      set: jest.fn(),
+    };
+
+    requestInterceptor({
+      method: 'post',
+      url: '/api/sharing/workspace/workspace-1/view/page-1',
+      data: {
+        emails: ['user@appflowy.io'],
+      },
+      headers,
+    });
+
+    expect(headers.set).not.toHaveBeenCalled();
   });
 });

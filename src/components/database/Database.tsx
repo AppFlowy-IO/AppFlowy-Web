@@ -27,6 +27,7 @@ import {
   LoadView,
   LoadViewMeta,
   RowId,
+  SearchMentions,
   UIVariant,
   UpdatePagePayload,
   View,
@@ -120,6 +121,7 @@ export interface Database2Props {
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  searchMentions?: SearchMentions;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   embeddedHeight?: number;
   /**
@@ -187,6 +189,7 @@ function Database(props: Database2Props) {
     addPage,
     openPageModal,
     loadDatabaseRelations,
+    searchMentions,
     loadViews,
     generateAISummaryForRow,
     generateAITranslateForRow,
@@ -828,6 +831,7 @@ function Database(props: Database2Props) {
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
+      searchMentions,
       loadViews: loadViews ? loadViewsForContext : undefined,
       variant: props.variant,
       calendarViewTypeMap,
@@ -870,6 +874,7 @@ function Database(props: Database2Props) {
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
+      searchMentions,
       loadViews,
       loadViewsForContext,
       props.variant,

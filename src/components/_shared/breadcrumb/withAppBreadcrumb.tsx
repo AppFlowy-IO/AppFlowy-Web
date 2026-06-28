@@ -29,11 +29,10 @@ export function withAppBreadcrumb (Component: React.ComponentType<BreadcrumbProp
       if (!currentWorkspaceId || !currentUser || !crumbs || isTrash) return;
       const loadShareDetail = async () => {
         const viewId = crumbs[crumbs.length - 1].view_id;
-        const ancestorViewIds = crumbs.map((crumb) => crumb.view_id);
 
         try {
           setLoading(true);
-          const res = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds);
+          const res = await AccessService.getShareDetail(currentWorkspaceId, viewId);
           const shared = res.shared_with.some((item) => item.email !== currentUser.email);
 
           setIsShared(shared);

@@ -107,8 +107,13 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
     const renderCursors = () => {
       const states = awareness?.getStates() as Map<number, AwarenessState>;
       const cursors: Cursor[] = [];
+      const localClientId = awareness?.clientID;
 
       states?.forEach((state, clientId) => {
+        if (clientId === localClientId) {
+          return;
+        }
+
         if (!state.user) {
           return;
         }

@@ -7,26 +7,35 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 export function MentionPerson({ personId, person_name }: { type: MentionType; personId: string; person_name?: string }) {
   const [isDeleted, setIsDeleted] = useState(false);
   const { t } = useTranslation();
-  const [name, setName] = useState(person_name);
+  const fallbackName = person_name?.trim() || personId;
+  const [name, setName] = useState(fallbackName);
   const { getMentionUser } = useEditorContext();
 
   useEffect(() => {
+    if (!getMentionUser) {
+      setIsDeleted(false);
+      setName(fallbackName);
+      return;
+    }
+
     const fetchUser = async () => {
       try {
-        const user = await getMentionUser?.(personId);
+        const user = await getMentionUser(personId);
 
         if (user) {
           setName(user.name);
+          setIsDeleted(false);
         } else {
           setIsDeleted(true);
         }
       } catch (error) {
-        setName(person_name || 'Anonymous');
+        setIsDeleted(false);
+        setName(fallbackName);
       }
     };
 
     void fetchUser();
-  }, [getMentionUser, personId, person_name]);
+  }, [fallbackName, getMentionUser, personId]);
 
   return (
     <span contentEditable={false} data-mention-id={personId} className='mention-person'>

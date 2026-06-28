@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 
 import { PersonItem } from './PersonItem';
+import { isInheritedWorkspaceAccess, ShareSectionType } from './shareSectionType';
 
 interface PeopleWithAccessProps {
   viewId: string;
@@ -18,9 +19,17 @@ interface PeopleWithAccessProps {
   isLoading: boolean;
   onPeopleChange: () => Promise<void>;
   hasFullAccess: boolean;
+  sectionType: ShareSectionType;
 }
 
-export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading, hasFullAccess }: PeopleWithAccessProps) {
+export function PeopleWithAccess({
+  viewId,
+  people,
+  onPeopleChange,
+  isLoading,
+  hasFullAccess,
+  sectionType,
+}: PeopleWithAccessProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
 
@@ -110,6 +119,7 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading, ha
               key={person.email}
               person={person}
               isYou={isYou}
+              isInheritedWorkspaceAccess={isInheritedWorkspaceAccess(sectionType, person)}
               currentUserHasFullAccess={hasFullAccess}
               currentUserIsOwner={currentUserIsOwner}
               onAccessLevelChange={handleAccessLevelChange}

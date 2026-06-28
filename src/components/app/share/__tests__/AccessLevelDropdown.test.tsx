@@ -111,4 +111,16 @@ describe('AccessLevelDropdown', () => {
     expect(screen.getByText('Full access')).toBeTruthy();
     expect(screen.queryByText('Remove access')).toBeNull();
   });
+
+  it('keeps non-modifiable edit rows as static labels', () => {
+    renderAccessLevelDropdown({
+      canModify: false,
+      currentUserHasFullAccess: false,
+      person: createPerson({ access_level: AccessLevel.ReadAndWrite }),
+    });
+
+    expect(screen.queryByRole('button', { name: 'Can edit' })).toBeNull();
+    expect(screen.getByText('Can edit')).toBeTruthy();
+    expect(screen.queryByText('Remove access')).toBeNull();
+  });
 });

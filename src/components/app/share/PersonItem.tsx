@@ -15,6 +15,7 @@ import { PersonAvatar } from './PersonAvatar';
 interface PersonItemProps {
   person: IPeopleWithAccessType;
   isYou: boolean;
+  isInheritedWorkspaceAccess: boolean;
   currentUserHasFullAccess: boolean;
   currentUserIsOwner: boolean;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
@@ -25,6 +26,7 @@ interface PersonItemProps {
 export function PersonItem({
   person,
   isYou,
+  isInheritedWorkspaceAccess,
   currentUserHasFullAccess,
   currentUserIsOwner,
   onAccessLevelChange,
@@ -32,7 +34,7 @@ export function PersonItem({
   onTurnIntoMember,
 }: PersonItemProps) {
   const { t } = useTranslation();
-  const canModifyThisPerson = currentUserHasFullAccess || isYou;
+  const canModifyThisPerson = !isInheritedWorkspaceAccess && (currentUserHasFullAccess || isYou);
 
   const [turnIntoMemberLoading, setTurnIntoMemberLoading] = useState<boolean>(false);
   // Show "Turn into Member" button if:
