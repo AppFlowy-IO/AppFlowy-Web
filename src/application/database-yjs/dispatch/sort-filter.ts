@@ -19,7 +19,7 @@ import * as Y from 'yjs';
 import { useDatabaseFields, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { FilterType, SortCondition } from '@/application/database-yjs/database.type';
 import { FilterDraft, flattenFilterTree, getDefaultFilterCondition, groupByConsecutiveOperator } from '@/application/database-yjs/filter';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
+import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
 

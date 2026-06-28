@@ -4,6 +4,7 @@ import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
+import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import {
   useDatabase,
   useDatabaseContext,
@@ -37,13 +38,12 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
-import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
+import { executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
 import { getOptionsFromRow } from '@/application/database-yjs/row';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   DatabaseViewLayout,
   DateFormat,
@@ -779,7 +779,8 @@ export function useCalculateFieldDispatch(fieldId: string) {
               item.set(YjsDatabaseKey.calculation_value, newValue);
             },
           ],
-          'calculateFieldDispatch'
+          'calculateFieldDispatch',
+          { type: 'database.calculate-field-value', policy: 'skip' }
         );
       }
     },
@@ -1499,7 +1500,7 @@ export function useClearCellsWithFieldDispatch() {
                 return;
               }
 
-              rowDoc.transact(() => {
+              runDatabaseRowAction(rowDoc, { type: 'row.clear-field-cell', rowId, fieldId }, () => {
                 const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                 const row = rowSharedRoot.get(YjsEditorKey.database_row);
                 const cells = row.get(YjsDatabaseKey.cells);
@@ -1663,7 +1664,7 @@ export function useDuplicatePropertyDispatch() {
           return;
         }
 
-        rowDoc.transact(() => {
+        runDatabaseRowAction(rowDoc, { type: 'row.duplicate-field-cell', rowId, fieldId }, () => {
           const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
           const rowData = rowSharedRoot.get(YjsEditorKey.database_row);
 
@@ -1715,7 +1716,7 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         return;
       }
 
-      rowDoc.transact(() => {
+      runDatabaseRowAction(rowDoc, { type: 'row.update-meta', rowId }, () => {
         if (value === undefined) {
           meta.delete(keyId);
         } else {
@@ -2361,7 +2362,7 @@ export function useSwitchPropertyType() {
                 return;
               }
 
-              rowDoc.transact(() => {
+              runDatabaseRowAction(rowDoc, { type: 'row.switch-field-type-cell', rowId: row, fieldId }, () => {
                 const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                 const row = rowSharedRoot.get(YjsEditorKey.database_row);
                 const cells = row.get(YjsDatabaseKey.cells);

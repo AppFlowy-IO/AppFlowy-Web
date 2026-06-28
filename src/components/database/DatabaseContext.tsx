@@ -2,6 +2,11 @@ import { useEffect } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
+import {
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseAction,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
 
 interface DatabaseContextProviderProps {
   children: React.ReactNode;
@@ -14,9 +19,7 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
   // standalone database pages without an editor can still use yjs-inject-helpers.
   useEffect(() => {
     const isE2ETest =
-      import.meta.env.DEV ||
-      import.meta.env.MODE === 'test' ||
-      (typeof window !== 'undefined' && 'Cypress' in window);
+      import.meta.env.DEV || import.meta.env.MODE === 'test' || (typeof window !== 'undefined' && 'Cypress' in window);
 
     if (!isE2ETest) return;
     if (value.isDatabaseRowPage) return;
@@ -30,17 +33,28 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
       __TEST_DATABASE_DOC__?: unknown;
       __TEST_DATABASE_VIEW_ID__?: string;
       __TEST_DATABASE_CONTEXT__?: DatabaseContextState;
+      __TEST_DATABASE_HISTORY__?: {
+        getOrCreateDatabaseHistoryManager: typeof getOrCreateDatabaseHistoryManager;
+        runDatabaseAction: typeof runDatabaseAction;
+        runDatabaseRowAction: typeof runDatabaseRowAction;
+      };
       Y?: typeof Y;
     };
     const previousTestContext = {
       databaseDoc: testWindow.__TEST_DATABASE_DOC__,
       viewId: testWindow.__TEST_DATABASE_VIEW_ID__,
       context: testWindow.__TEST_DATABASE_CONTEXT__,
+      history: testWindow.__TEST_DATABASE_HISTORY__,
     };
 
     testWindow.__TEST_DATABASE_DOC__ = value.databaseDoc;
     testWindow.__TEST_DATABASE_VIEW_ID__ = value.activeViewId;
     testWindow.__TEST_DATABASE_CONTEXT__ = value;
+    testWindow.__TEST_DATABASE_HISTORY__ = {
+      getOrCreateDatabaseHistoryManager,
+      runDatabaseAction,
+      runDatabaseRowAction,
+    };
     testWindow.Y = Y;
 
     return () => {
@@ -49,10 +63,12 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
           testWindow.__TEST_DATABASE_DOC__ = previousTestContext.databaseDoc;
           testWindow.__TEST_DATABASE_VIEW_ID__ = previousTestContext.viewId;
           testWindow.__TEST_DATABASE_CONTEXT__ = previousTestContext.context;
+          testWindow.__TEST_DATABASE_HISTORY__ = previousTestContext.history;
         } else {
           delete testWindow.__TEST_DATABASE_DOC__;
           delete testWindow.__TEST_DATABASE_VIEW_ID__;
           delete testWindow.__TEST_DATABASE_CONTEXT__;
+          delete testWindow.__TEST_DATABASE_HISTORY__;
         }
       }
 
