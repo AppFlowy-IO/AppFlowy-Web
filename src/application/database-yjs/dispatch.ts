@@ -228,6 +228,36 @@ function generateGroupByField(field: YDatabaseField) {
   return group;
 }
 
+function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
+  let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
+
+  if (!layoutSettings) {
+    layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+    view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+  }
+
+  let layoutSetting = layoutSettings.get('1');
+
+  if (!layoutSetting) {
+    layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
+    layoutSettings.set('1', layoutSetting);
+  }
+
+  if (layoutSetting.get(YjsDatabaseKey.hide_ungrouped_column) === undefined) {
+    layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, false);
+  }
+
+  if (layoutSetting.get(YjsDatabaseKey.collapse_hidden_groups) === undefined) {
+    layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, true);
+  }
+
+  if (layoutSetting.get(YjsDatabaseKey.show_color_columns) === undefined) {
+    layoutSetting.set(YjsDatabaseKey.show_color_columns, true);
+  }
+
+  return layoutSetting;
+}
+
 export function useGroupByFieldDispatch() {
   const view = useDatabaseView();
   const database = useDatabase();
@@ -428,10 +458,11 @@ export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: str
               throw new Error('Group columns not found');
             }
 
-            const index = columns.toArray().findIndex((column) => column.id === columnId);
-            const column = columns.toArray().find((column) => column.id === columnId);
+            const columnsArray = columns.toArray();
+            const index = columnsArray.findIndex((column) => column.id === columnId);
+            const column = index === -1 ? undefined : columnsArray[index];
 
-            if (index === -1 || !column) {
+            if (!column) {
               throw new Error(`Column with id ${columnId} not found in group ${groupId}`);
             }
 
@@ -470,19 +501,7 @@ export function useToggleCollapsedHiddenGroupColumnDispatch() {
               throw new Error(`Unable to toggle collapsed hidden group column`);
             }
 
-            // Get or create the layout settings for the view
-            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
-
-            if (!layoutSettings) {
-              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
-            }
-
-            let layoutSetting = layoutSettings.get('1');
-
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
-              layoutSettings.set('1', layoutSetting);
-            }
+            const layoutSetting = getOrCreateBoardLayoutSetting(view);
 
             layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, collapsed);
           },
@@ -508,24 +527,38 @@ export function useToggleHideUnGrouped() {
               throw new Error(`Unable to toggle hide ungrouped column`);
             }
 
-            // Get or create the layout settings for the view
-            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
-
-            if (!layoutSettings) {
-              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
-            }
-
-            let layoutSetting = layoutSettings.get('1');
-
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
-              layoutSettings.set('1', layoutSetting);
-            }
+            const layoutSetting = getOrCreateBoardLayoutSetting(view);
 
             layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, hide);
           },
         ],
         'toggleHideUnGrouped'
+      );
+    },
+    [sharedRoot, view]
+  );
+}
+
+export function useToggleShowColorColumns() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (show: boolean) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            if (!view) {
+              throw new Error(`Unable to toggle color columns`);
+            }
+
+            const layoutSetting = getOrCreateBoardLayoutSetting(view);
+
+            layoutSetting.set(YjsDatabaseKey.show_color_columns, show);
+          },
+        ],
+        'toggleShowColorColumns'
       );
     },
     [sharedRoot, view]
@@ -1756,6 +1789,7 @@ function generateBoardLayoutSettings() {
 
   layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, false);
   layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, true);
+  layoutSetting.set(YjsDatabaseKey.show_color_columns, true);
   layoutSettings.set('1', layoutSetting);
   return layoutSettings;
 }

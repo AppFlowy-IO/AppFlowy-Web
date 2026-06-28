@@ -162,9 +162,9 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
         ref={ref}
         data-card-id={dataCardId}
         className={cn(
-          'board-card relative flex flex-col overflow-hidden rounded-[6px] text-xs shadow-card',
+          'board-card relative flex flex-col overflow-hidden rounded-[6px] text-xs',
           navigateToRow && 'cursor-pointer hover:bg-fill-content-hover',
-          selected && 'ring-1 ring-border-theme-thick',
+          selected && 'board-card-selected',
           className
         )}
       >

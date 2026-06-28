@@ -1,7 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
-import { PADDING_END } from '@/application/database-yjs';
 import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
 import { Card } from '@/components/database/components/board/card';
 import { cn } from '@/lib/utils';
@@ -17,9 +16,10 @@ export interface RenderCard {
 }
 
 const CARD_LIST_MAX_HEIGHT = 2000;
+const CARD_LIST_ESTIMATED_ITEM_HEIGHT = 50;
 
 const CARD_LIST_STYLE = {
-  maxHeight: CARD_LIST_MAX_HEIGHT,
+  maxHeight: `min(100%, ${CARD_LIST_MAX_HEIGHT}px)`,
   overflowY: 'auto',
 } as const;
 
@@ -72,21 +72,22 @@ function CardList({
     scrollMargin: 0, // Always 0 for Board - items are positioned relative to column top
     overscan: 5,
     getScrollElement,
-    estimateSize: () => 36,
+    estimateSize: () => CARD_LIST_ESTIMATED_ITEM_HEIGHT,
     paddingStart: 0,
-    paddingEnd: PADDING_END,
+    paddingEnd: 0,
     getItemKey: (index) => data[index].id || String(index),
   });
 
   const virtualItems = virtualizer.getVirtualItems();
+  const totalSize = virtualizer.getTotalSize();
   const viewportHeight = Math.min(
     parentRef.current?.clientHeight || CARD_LIST_MAX_HEIGHT,
     CARD_LIST_MAX_HEIGHT
   );
   const scrollTop = parentRef.current?.scrollTop ?? 0;
-  const renderStart = Math.max(0, scrollTop - 5 * 36);
-  const renderEnd = scrollTop + viewportHeight + 5 * 36;
-  const maxRenderedItems = Math.ceil(viewportHeight / 36) + 12;
+  const renderStart = Math.max(0, scrollTop - 5 * CARD_LIST_ESTIMATED_ITEM_HEIGHT);
+  const renderEnd = scrollTop + viewportHeight + 5 * CARD_LIST_ESTIMATED_ITEM_HEIGHT;
+  const maxRenderedItems = Math.ceil(viewportHeight / CARD_LIST_ESTIMATED_ITEM_HEIGHT) + 12;
   const items = virtualItems.length > maxRenderedItems
     ? virtualItems
       .filter((item) => item.end >= renderStart && item.start <= renderEnd)
@@ -96,12 +97,15 @@ function CardList({
   return (
     <div
       ref={parentRef}
-      className='appflowy-custom-scroller w-full min-h-0 flex-1'
-      style={CARD_LIST_STYLE}
+      className='appflowy-custom-scroller min-h-0 w-full flex-[0_1_auto]'
+      style={{
+        ...CARD_LIST_STYLE,
+        height: totalSize,
+      }}
     >
       <div
         style={{
-          height: virtualizer.getTotalSize(),
+          height: totalSize,
           width: '100%',
           position: 'relative',
         }}
@@ -121,7 +125,7 @@ function CardList({
                 top: 0,
                 left: 0,
                 transform: `translateY(${virtualRow.start - virtualizer.options.scrollMargin}px)`,
-                paddingTop: virtualRow.index === 0 ? 10 : undefined,
+                paddingTop: virtualRow.index === 0 ? 4 : undefined,
               }}
             >
               <Card

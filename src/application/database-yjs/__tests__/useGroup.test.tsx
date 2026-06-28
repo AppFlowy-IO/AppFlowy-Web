@@ -14,11 +14,13 @@ function createDatabaseDoc({
   groupId,
   groupColumns,
   viewId,
+  fieldType = FieldType.SingleSelect,
 }: {
   fieldId: string;
   groupId: string;
   groupColumns: unknown[];
   viewId: string;
+  fieldType?: FieldType;
 }): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -32,13 +34,13 @@ function createDatabaseDoc({
   const columns = new Y.Array();
 
   field.set(YjsDatabaseKey.id, fieldId);
-  field.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+  field.set(YjsDatabaseKey.type, fieldType);
   fields.set(fieldId, field);
 
   columns.push(groupColumns);
   group.set(YjsDatabaseKey.id, groupId);
   group.set(YjsDatabaseKey.field_id, fieldId);
-  group.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+  group.set(YjsDatabaseKey.type, fieldType);
   group.set(YjsDatabaseKey.groups, columns);
   groups.push([group]);
 
