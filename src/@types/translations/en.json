@@ -3691,6 +3691,12 @@
       "description": "Make sure the desktop app is installed, or keep using AppFlowy in your browser.",
       "download": "Download",
       "continueInBrowser": "Continue in browser"
+    },
+    "prompt": {
+      "title": "Open in the AppFlowy desktop app?",
+      "description": "You can change this anytime in Settings.",
+      "open": "Open in app",
+      "stay": "Stay in browser"
     }
   },
   "comments": "Comments",

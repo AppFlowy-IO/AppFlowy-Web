@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 
 import { useOpenInDesktopApp } from '@/components/app/hooks/useOpenInDesktopApp';
-import { openInDesktopApp } from '@/utils/open_desktop_app';
+import { openInDesktopApp, promptOpenInDesktopApp } from '@/utils/open_desktop_app';
 
 interface HandoffOptions {
   /**
@@ -13,28 +13,45 @@ interface HandoffOptions {
 }
 
 /**
- * Preference-gated handoff to the desktop app. When the user's "open links in desktop app"
- * preference is enabled, attempts to open `scheme` in the desktop app (with the not-installed
- * handling in `openInDesktopApp`); otherwise stays on the web.
+ * Preference-gated handoff to the desktop app:
+ * - preference ON  → attempt to open `scheme` in the desktop app (with not-installed handling);
+ * - preference UNSET (never chosen) → show a one-time prompt; the choice is remembered;
+ * - preference OFF → stay on the web.
  */
 export function useDesktopHandoff() {
-  const { enabled } = useOpenInDesktopApp();
+  const { enabled, isSet, setEnabled } = useOpenInDesktopApp();
 
   const handoff = useCallback(
     (scheme: string, options: HandoffOptions = {}): boolean => {
-      if (!enabled) {
-        options.onStayInBrowser?.();
+      if (enabled) {
+        openInDesktopApp(scheme, {
+          // App opened — nothing to do on the web side.
+          onContinueInBrowser: options.onStayInBrowser,
+        });
+        return true;
+      }
+
+      // Never asked: prompt once, and remember the choice so we don't ask again.
+      if (!isSet) {
+        promptOpenInDesktopApp({
+          onOpen: () => {
+            void setEnabled(true);
+            openInDesktopApp(scheme, { onContinueInBrowser: options.onStayInBrowser });
+          },
+          onStayInBrowser: () => {
+            void setEnabled(false);
+            options.onStayInBrowser?.();
+          },
+        });
         return false;
       }
 
-      openInDesktopApp(scheme, {
-        // App opened — nothing to do on the web side.
-        onContinueInBrowser: options.onStayInBrowser,
-      });
-      return true;
+      // Explicitly disabled — stay on the web.
+      options.onStayInBrowser?.();
+      return false;
     },
-    [enabled]
+    [enabled, isSet, setEnabled]
   );
 
-  return { enabled, handoff };
+  return { enabled, isSet, handoff };
 }

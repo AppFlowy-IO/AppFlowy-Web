@@ -4,11 +4,11 @@ import { useSearchParams } from 'react-router-dom';
 import { AIChatProvider } from '@/components/ai-chat/AIChatProvider';
 import { AppOverlayProvider } from '@/components/app/app-overlay/AppOverlayProvider';
 import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useOpenInDesktopApp } from '@/components/app/hooks/useOpenInDesktopApp';
+import { useDesktopHandoff } from '@/components/app/hooks/useDesktopHandoff';
 import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { buildOpenPageLink, isSpecificPagePath, openInDesktopApp } from '@/utils/open_desktop_app';
+import { buildOpenPageLink, isSpecificPagePath } from '@/utils/open_desktop_app';
 
 const ViewModal = React.lazy(() => import('@/components/app/ViewModal'));
 
@@ -58,7 +58,7 @@ function OpenClient() {
   const openClient = searchParams.get('is_desktop') === 'true';
   const rowId = searchParams.get('r');
   const currentUser = useCurrentUser();
-  const { enabled } = useOpenInDesktopApp();
+  const { handoff } = useDesktopHandoff();
 
   const [isTabVisible, setIsTabVisible] = useState(true);
   const hasOpenedRef = useRef(false);
@@ -93,16 +93,16 @@ function OpenClient() {
     }
   }, [currentWorkspaceId, viewId, currentUser, openClient, rowId, isTabVisible]);
 
-  // Preference-driven share-link handoff: when the user prefers the desktop app and this document
-  // was opened directly from a shared page link, attempt to open the page in the desktop app once.
-  // If the app isn't installed, openInDesktopApp keeps the user on the already-rendered web page.
+  // Share-link handoff: when this document was opened directly from a shared page link, route it
+  // through the preference-gated handoff once. Preference on → opens the desktop app; unset → shows
+  // the first-time prompt; off → stays on the already-rendered web page.
   useEffect(() => {
-    if (openClient || !enabled || !landedOnSpecificPage || didAttemptPreferenceHandoff) return;
+    if (openClient || !landedOnSpecificPage || didAttemptPreferenceHandoff) return;
     if (!isTabVisible || !currentUser || !currentWorkspaceId || !viewId) return;
 
     didAttemptPreferenceHandoff = true;
-    openInDesktopApp(buildOpenPageLink({ workspaceId: currentWorkspaceId, viewId, email: currentUser.email, rowId }));
-  }, [openClient, enabled, currentWorkspaceId, viewId, currentUser, rowId, isTabVisible]);
+    handoff(buildOpenPageLink({ workspaceId: currentWorkspaceId, viewId, email: currentUser.email, rowId }));
+  }, [handoff, openClient, currentWorkspaceId, viewId, currentUser, rowId, isTabVisible]);
 
   return <></>;
 }

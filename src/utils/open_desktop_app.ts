@@ -185,6 +185,27 @@ export function notifyDesktopAppNotInstalled(): void {
   });
 }
 
+/**
+ * Notion-style first-time prompt, shown when the user has not yet chosen whether AppFlowy links
+ * should open in the desktop app. The choice is remembered by the caller, so this is asked once.
+ */
+export function promptOpenInDesktopApp(options: { onOpen: () => void; onStayInBrowser?: () => void }): void {
+  const t = i18nInstance.t.bind(i18nInstance);
+
+  toast(t('openInDesktopApp.prompt.title'), {
+    description: t('openInDesktopApp.prompt.description'),
+    duration: 12000,
+    action: {
+      label: t('openInDesktopApp.prompt.open'),
+      onClick: () => options.onOpen(),
+    },
+    cancel: {
+      label: t('openInDesktopApp.prompt.stay'),
+      onClick: () => options.onStayInBrowser?.(),
+    },
+  });
+}
+
 interface OpenInDesktopOptions {
   /** Attempt even if the app was previously detected missing on this device (e.g. a button press). */
   force?: boolean;
