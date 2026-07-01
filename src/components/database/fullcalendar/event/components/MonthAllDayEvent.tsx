@@ -2,6 +2,8 @@ import { EventApi, EventContentArg } from '@fullcalendar/core';
 import { useCallback } from 'react';
 
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import { EventPropertiesList } from './EventPropertiesList';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -12,6 +14,7 @@ interface MonthAllDayEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
 export function MonthAllDayEvent({
@@ -21,6 +24,7 @@ export function MonthAllDayEvent({
   showLeftIndicator = true,
   className,
   rowId,
+  showFields,
 }: MonthAllDayEventProps) {
   const isEventStart = eventInfo.isStart;
   const isEventEnd = eventInfo.isEnd;
@@ -113,8 +117,9 @@ export function MonthAllDayEvent({
         <div className='event-inner flex h-full max-h-full w-full flex-1 flex-col justify-center overflow-hidden'>
           <div className='flex h-full items-center gap-1 truncate'>
             <EventIconButton rowId={rowId} />
-            <span className='min-w-[28px] flex-1 truncate'>{getDisplayContent()}</span>
+            <span className='min-w-[28px] flex-1 truncate font-semibold'>{getDisplayContent()}</span>
           </div>
+          <EventPropertiesList rowId={rowId} showFields={showFields} />
         </div>
       </div>
     </div>

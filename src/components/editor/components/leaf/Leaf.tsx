@@ -62,7 +62,7 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
 
   if (leaf.code && !(leaf.formula || leaf.mention || leaf.reference)) {
     newChildren = (
-      <span className={cn('bg-border-primary font-medium', style['color'] ? undefined : 'text-[#EB5757]')}>
+      <span className={cn('bg-border-primary font-medium font-mono', style['color'] ? undefined : 'text-[#EB5757]')}>
         {newChildren}
       </span>
     );
