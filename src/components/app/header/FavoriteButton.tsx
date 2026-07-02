@@ -9,10 +9,6 @@ import { ReactComponent as StarIcon } from '@/assets/icons/star.svg';
 import { useAppFavorites, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
 
-// Matches the desktop behavior: a newly favorited view is auto-pinned only
-// while there are fewer than this many pinned favorites.
-const MAX_AUTO_PINNED_FAVORITES = 3;
-
 export function FavoriteButton({ viewId }: { viewId: string }) {
   const { t } = useTranslation();
   const workspaceId = useCurrentWorkspaceId();
@@ -36,7 +32,6 @@ export function FavoriteButton({ viewId }: { viewId: string }) {
   // rather than memoized (see rerender-simple-expression-in-memo).
   const serverFavorite = !!favoriteViews?.some((view) => view.view_id === viewId);
   const isFavorite = optimisticFavorite ?? serverFavorite;
-  const pinnedCount = favoriteViews?.filter((view) => view.extra?.is_pinned).length ?? 0;
 
   const handleToggle = useCallback(async () => {
     // Don't toggle against unknown state: undefined favorites would read as
@@ -47,7 +42,7 @@ export function FavoriteButton({ viewId }: { viewId: string }) {
     setSubmitting(true);
     setOptimisticFavorite(next);
     try {
-      await PageService.favorite(workspaceId, viewId, next, next && pinnedCount < MAX_AUTO_PINNED_FAVORITES);
+      await PageService.favorite(workspaceId, viewId, next, next);
       // Refresh only the favorites list — favoriting doesn't change the outline
       // tree, so a full outline reload would be wasted work.
       await loadFavoriteViews?.();
@@ -60,7 +55,7 @@ export function FavoriteButton({ viewId }: { viewId: string }) {
       setOptimisticFavorite(null);
       setSubmitting(false);
     }
-  }, [workspaceId, favoritesLoaded, isFavorite, viewId, pinnedCount, loadFavoriteViews, t]);
+  }, [workspaceId, favoritesLoaded, isFavorite, viewId, loadFavoriteViews, t]);
 
   return (
     <Tooltip title={isFavorite ? t('disclosureAction.unfavorite') : t('disclosureAction.favorite')}>

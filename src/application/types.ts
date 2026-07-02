@@ -1203,6 +1203,10 @@ export interface View {
   has_children?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether this view is currently in the user's favorites. Synced via the folder. */
+  is_favorite?: boolean;
+  /** Favorite-section pin state returned by the favorites endpoint. */
+  is_pinned?: boolean;
   /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
   is_locked?: boolean;
   last_edited_time?: string;
