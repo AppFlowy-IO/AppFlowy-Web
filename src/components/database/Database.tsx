@@ -27,6 +27,7 @@ import {
   LoadView,
   LoadViewMeta,
   RowId,
+  RowDocumentSourcePayload,
   UIVariant,
   UpdatePagePayload,
   View,
@@ -74,7 +75,7 @@ export interface Database2Props {
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   duplicateRowDocument?: (
     databaseId: string,
     sourceRowId: string,

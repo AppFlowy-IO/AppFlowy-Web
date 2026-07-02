@@ -1,5 +1,5 @@
 import { AppOutlineResponse } from '@/application/services/services.type';
-import { View } from '@/application/types';
+import { CreateOrphanedViewPayload, View } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
@@ -149,7 +149,7 @@ export async function getAppTrash(workspaceId: string) {
   );
 }
 
-export async function createOrphanedView(workspaceId: string, payload: { document_id: string }): Promise<Uint8Array> {
+export async function createOrphanedView(workspaceId: string, payload: CreateOrphanedViewPayload): Promise<Uint8Array> {
   const url = `/api/workspace/${workspaceId}/orphaned-view`;
 
   // Server returns doc_state as Vec<u8> which is JSON encoded as number[]

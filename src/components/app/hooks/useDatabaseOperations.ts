@@ -11,6 +11,7 @@ import {
   DatabasePromptRow,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  RowDocumentSourcePayload,
   Types,
   YDatabase,
   YDoc,
@@ -332,15 +333,18 @@ export function useDatabaseOperations(
 
   // Create a row document on the server (orphaned view)
   const createRowDocument = useCallback(
-    async (documentId: string): Promise<Uint8Array | null> => {
+    async (documentId: string, source?: RowDocumentSourcePayload): Promise<Uint8Array | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[createRowDocument] service or workspaceId not available');
         return null;
       }
 
       try {
-        Log.debug('[createRowDocument] creating', { documentId });
-        const docState = await ViewService.createOrphaned(currentWorkspaceId, { document_id: documentId });
+        Log.debug('[createRowDocument] creating', { documentId, source });
+        const docState = await ViewService.createOrphaned(currentWorkspaceId, {
+          document_id: documentId,
+          row_document_source: source,
+        });
 
         return docState;
       } catch (e) {

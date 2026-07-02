@@ -1348,6 +1348,17 @@ export interface UpdatePagePayload {
   is_locked?: boolean;
 }
 
+export interface RowDocumentSourcePayload {
+  database_id: string;
+  database_view_id: string;
+  row_id: string;
+}
+
+export interface CreateOrphanedViewPayload {
+  document_id: string;
+  row_document_source?: RowDocumentSourcePayload;
+}
+
 export type ViewMetaCover = ViewCover;
 
 export interface ViewMetaProps {
@@ -1396,7 +1407,7 @@ export interface ViewComponentProps {
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   duplicateRowDocument?: (
     databaseId: string,
     sourceRowId: string,
