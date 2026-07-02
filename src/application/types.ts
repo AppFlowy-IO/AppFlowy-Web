@@ -1203,6 +1203,10 @@ export interface View {
   has_children?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether this view is currently in the user's favorites. Synced via the folder. */
+  is_favorite?: boolean;
+  /** Favorite-section pin state returned by the favorites endpoint. */
+  is_pinned?: boolean;
   /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
   is_locked?: boolean;
   last_edited_time?: string;
@@ -1348,6 +1352,17 @@ export interface UpdatePagePayload {
   is_locked?: boolean;
 }
 
+export interface RowDocumentSourcePayload {
+  database_id: string;
+  database_view_id: string;
+  row_id: string;
+}
+
+export interface CreateOrphanedViewPayload {
+  document_id: string;
+  row_document_source?: RowDocumentSourcePayload;
+}
+
 export type ViewMetaCover = ViewCover;
 
 export interface ViewMetaProps {
@@ -1396,7 +1411,7 @@ export interface ViewComponentProps {
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   duplicateRowDocument?: (
     databaseId: string,
     sourceRowId: string,
