@@ -1057,6 +1057,8 @@ export const collab = $root.collab = (() => {
          * @property {number|null} [flags] Update flags
          * @property {Uint8Array|null} [payload] Update payload
          * @property {string|null} [version] Update version
+         * @property {Uint8Array|null} [beforeStateVector] Update beforeStateVector
+         * @property {Uint8Array|null} [afterStateVector] Update afterStateVector
          */
 
         /**
@@ -1109,6 +1111,22 @@ export const collab = $root.collab = (() => {
         Update.prototype.version = "";
 
         /**
+         * Update beforeStateVector.
+         * @member {Uint8Array} beforeStateVector
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.beforeStateVector = $util.newBuffer([]);
+
+        /**
+         * Update afterStateVector.
+         * @member {Uint8Array} afterStateVector
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.afterStateVector = $util.newBuffer([]);
+
+        /**
          * Creates a new Update instance using the specified properties.
          * @function create
          * @memberof collab.Update
@@ -1140,6 +1158,10 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.payload);
             if (message.version != null && Object.hasOwnProperty.call(message, "version"))
                 writer.uint32(/* id 4, wireType 2 =*/34).string(message.version);
+            if (message.beforeStateVector != null && Object.hasOwnProperty.call(message, "beforeStateVector"))
+                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.beforeStateVector);
+            if (message.afterStateVector != null && Object.hasOwnProperty.call(message, "afterStateVector"))
+                writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.afterStateVector);
             return writer;
         };
 
@@ -1192,6 +1214,14 @@ export const collab = $root.collab = (() => {
                         message.version = reader.string();
                         break;
                     }
+                case 5: {
+                        message.beforeStateVector = reader.bytes();
+                        break;
+                    }
+                case 6: {
+                        message.afterStateVector = reader.bytes();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -1241,6 +1271,12 @@ export const collab = $root.collab = (() => {
             if (message.version != null && message.hasOwnProperty("version"))
                 if (!$util.isString(message.version))
                     return "version: string expected";
+            if (message.beforeStateVector != null && message.hasOwnProperty("beforeStateVector"))
+                if (!(message.beforeStateVector && typeof message.beforeStateVector.length === "number" || $util.isString(message.beforeStateVector)))
+                    return "beforeStateVector: buffer expected";
+            if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
+                if (!(message.afterStateVector && typeof message.afterStateVector.length === "number" || $util.isString(message.afterStateVector)))
+                    return "afterStateVector: buffer expected";
             return null;
         };
 
@@ -1270,6 +1306,16 @@ export const collab = $root.collab = (() => {
                     message.payload = object.payload;
             if (object.version != null)
                 message.version = String(object.version);
+            if (object.beforeStateVector != null)
+                if (typeof object.beforeStateVector === "string")
+                    $util.base64.decode(object.beforeStateVector, message.beforeStateVector = $util.newBuffer($util.base64.length(object.beforeStateVector)), 0);
+                else if (object.beforeStateVector.length >= 0)
+                    message.beforeStateVector = object.beforeStateVector;
+            if (object.afterStateVector != null)
+                if (typeof object.afterStateVector === "string")
+                    $util.base64.decode(object.afterStateVector, message.afterStateVector = $util.newBuffer($util.base64.length(object.afterStateVector)), 0);
+                else if (object.afterStateVector.length >= 0)
+                    message.afterStateVector = object.afterStateVector;
             return message;
         };
 
@@ -1297,6 +1343,20 @@ export const collab = $root.collab = (() => {
                         object.payload = $util.newBuffer(object.payload);
                 }
                 object.version = "";
+                if (options.bytes === String)
+                    object.beforeStateVector = "";
+                else {
+                    object.beforeStateVector = [];
+                    if (options.bytes !== Array)
+                        object.beforeStateVector = $util.newBuffer(object.beforeStateVector);
+                }
+                if (options.bytes === String)
+                    object.afterStateVector = "";
+                else {
+                    object.afterStateVector = [];
+                    if (options.bytes !== Array)
+                        object.afterStateVector = $util.newBuffer(object.afterStateVector);
+                }
             }
             if (message.messageId != null && message.hasOwnProperty("messageId"))
                 object.messageId = $root.collab.Rid.toObject(message.messageId, options);
@@ -1306,6 +1366,10 @@ export const collab = $root.collab = (() => {
                 object.payload = options.bytes === String ? $util.base64.encode(message.payload, 0, message.payload.length) : options.bytes === Array ? Array.prototype.slice.call(message.payload) : message.payload;
             if (message.version != null && message.hasOwnProperty("version"))
                 object.version = message.version;
+            if (message.beforeStateVector != null && message.hasOwnProperty("beforeStateVector"))
+                object.beforeStateVector = options.bytes === String ? $util.base64.encode(message.beforeStateVector, 0, message.beforeStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.beforeStateVector) : message.beforeStateVector;
+            if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
+                object.afterStateVector = options.bytes === String ? $util.base64.encode(message.afterStateVector, 0, message.afterStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.afterStateVector) : message.afterStateVector;
             return object;
         };
 

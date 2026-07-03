@@ -11,6 +11,8 @@ interface MockSyncOutboxRecord {
   version?: string | null;
   payload: Uint8Array;
   createdAt: number;
+  beforeStateVector?: Uint8Array;
+  afterStateVector?: Uint8Array;
 }
 
 let mockRecords: MockSyncOutboxRecord[] = [];
@@ -196,6 +198,86 @@ describe('sync outbox live send', () => {
     await flushPromises();
 
     expect(send).toHaveBeenCalledTimes(2);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('attaches the before/after state vectors to an immediately sent update', async () => {
+    const send = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      isReady: () => true,
+    });
+
+    const beforeStateVector = new Uint8Array([1, 2, 3]);
+    const afterStateVector = new Uint8Array([4, 5, 6]);
+
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('draft'),
+      beforeStateVector,
+      afterStateVector,
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const update = send.mock.calls[0][0].collabMessage.update;
+
+    expect(update.beforeStateVector).toBe(beforeStateVector);
+    expect(update.afterStateVector).toBe(afterStateVector);
+  });
+
+  it('spans the merged drain vectors from the first record before to the last record after', async () => {
+    let ready = false;
+    const send = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      isReady: () => ready,
+    });
+
+    const firstBefore = new Uint8Array([10]);
+    const firstAfter = new Uint8Array([11]);
+    const lastBefore = new Uint8Array([20]);
+    const lastAfter = new Uint8Array([21]);
+
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('old'),
+      beforeStateVector: firstBefore,
+      afterStateVector: firstAfter,
+    });
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('new'),
+      beforeStateVector: lastBefore,
+      afterStateVector: lastAfter,
+    });
+    await flushPromises();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(2);
+
+    ready = true;
+    startDrainAll();
+    await flushPromises();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const update = send.mock.calls[0][0].collabMessage.update;
+
+    // Merged payload covers first->last, so before = first record's before,
+    // after = last record's after.
+    expect(update.beforeStateVector).toBe(firstBefore);
+    expect(update.afterStateVector).toBe(lastAfter);
     expect(mockRecords).toHaveLength(0);
   });
 

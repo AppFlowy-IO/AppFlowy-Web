@@ -225,6 +225,8 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
             flags: FLAGS_LIB0V1,
             payload: record.payload,
             version: record.version ?? undefined,
+            beforeStateVector: record.beforeStateVector,
+            afterStateVector: record.afterStateVector,
           } as collab.IUpdate,
         },
       };
@@ -490,7 +492,9 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string):
   return Array.from(ids);
 }
 
-function buildUpdateMessage(record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version'>): messages.IMessage {
+function buildUpdateMessage(
+  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector' | 'afterStateVector'>,
+): messages.IMessage {
   return {
     collabMessage: {
       objectId: record.objectId,
@@ -499,6 +503,8 @@ function buildUpdateMessage(record: Pick<SyncOutboxRecord, 'objectId' | 'collabT
         flags: FLAGS_LIB0V1,
         payload: record.payload,
         version: record.version ?? undefined,
+        beforeStateVector: record.beforeStateVector,
+        afterStateVector: record.afterStateVector,
       } as collab.IUpdate,
     },
   };
@@ -580,11 +586,20 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
     if (records.length === 0) return;
 
+    // Records are sorted by id (insertion order), so first/last bound the batch.
+    const firstRecord = records[0];
+    const lastRecord = records[records.length - 1];
+
     const merged = records.length === 1
-      ? records[0].payload
+      ? firstRecord.payload
       : Y.mergeUpdates(records.map((r) => r.payload));
-    const collabType = records[records.length - 1].collabType as Types;
-    const version = records[records.length - 1].version;
+    const collabType = lastRecord.collabType as Types;
+    const version = lastRecord.version;
+    // The merged payload spans from the first queued edit to the last, so its
+    // causal `before` is the first record's before-vector and its `after` is the
+    // last record's after-vector.
+    const beforeStateVector = firstRecord.beforeStateVector;
+    const afterStateVector = lastRecord.afterStateVector;
 
     const message: messages.IMessage = {
       collabMessage: {
@@ -594,6 +609,8 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
           flags: FLAGS_LIB0V1,
           payload: merged,
           version: version ?? undefined,
+          beforeStateVector,
+          afterStateVector,
         } as collab.IUpdate,
       },
     };

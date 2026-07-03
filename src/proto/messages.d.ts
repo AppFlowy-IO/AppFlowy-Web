@@ -454,6 +454,12 @@ export namespace collab {
 
         /** Update version */
         version?: (string|null);
+
+        /** Update beforeStateVector */
+        beforeStateVector?: (Uint8Array|null);
+
+        /** Update afterStateVector */
+        afterStateVector?: (Uint8Array|null);
     }
 
     /**
@@ -480,6 +486,12 @@ export namespace collab {
 
         /** Update version. */
         public version: string;
+
+        /** Update beforeStateVector. */
+        public beforeStateVector: Uint8Array;
+
+        /** Update afterStateVector. */
+        public afterStateVector: Uint8Array;
 
         /**
          * Creates a new Update instance using the specified properties.

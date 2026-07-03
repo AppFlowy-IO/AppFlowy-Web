@@ -84,7 +84,9 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
     version: doc.version,
     bytes: update.byteLength,
   });
-  // send the update containing new data back to the server
+  // send the update containing new data back to the server. This is a
+  // manifest-style diff, so the causal `before` vector is the server's own
+  // advertised state (what it told us it has) and `after` is our full state.
   emit({
     collabMessage: {
       objectId: doc.guid,
@@ -92,7 +94,9 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       update: {
         flags: UpdateFlags.Lib0v1,
         payload: update,
-        version: doc.version
+        version: doc.version,
+        beforeStateVector: stateVector,
+        afterStateVector: Y.encodeStateVector(doc),
       },
     },
   });
@@ -193,16 +197,26 @@ export const initSync = (ctx: SyncContext) => {
 
   ctx.discardPendingUpdates = () => deleteOutboxByObjectId(doc.guid);
 
-  const onUpdate = (update: Uint8Array, origin: string) => {
+  const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
     if (origin === 'remote') {
       return; // Ignore remote updates
     }
+
+    // Causal metadata for server-side missing-update detection. Yjs computes
+    // both state maps on the transaction (beforeState at start, afterState
+    // before the 'update' event fires), so we encode those directly rather than
+    // re-deriving from the doc (which would re-walk the store). Both use lib0 v1
+    // encoding to match the server.
+    const beforeStateVector = Y.encodeStateVector(transaction.beforeState);
+    const afterStateVector = Y.encodeStateVector(transaction.afterState);
 
     enqueueOutboxUpdate({
       objectId: doc.guid,
       collabType,
       version: doc.version ?? null,
       payload: update,
+      beforeStateVector,
+      afterStateVector,
     });
     ctx.onLocalUpdate?.(doc.guid);
   };
