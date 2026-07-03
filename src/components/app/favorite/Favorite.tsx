@@ -1,11 +1,11 @@
 import { Collapse } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
 import dayjs from 'dayjs';
-import { groupBy, sortBy } from 'lodash-es';
+import { groupBy, orderBy, sortBy } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { UIVariant, ViewLayout } from '@/application/types';
+import { UIVariant, View, ViewLayout } from '@/application/types';
 import { ReactComponent as FavoritedIcon } from '@/assets/icons/filled_star.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import OutlineItem from '@/components/_shared/outline/OutlineItem';
@@ -29,6 +29,20 @@ enum FavoriteGroup {
   yesterday = 'yesterday',
   thisWeek = 'thisWeek',
   Others = 'Others',
+}
+
+function favoriteTimestampMs(view: View): number {
+  if (!view.favorited_at) {
+    return 0;
+  }
+
+  const timestamp = Date.parse(view.favorited_at);
+
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function isPinnedFavorite(view: View): boolean {
+  return view.is_pinned ?? view.extra?.is_pinned ?? true;
 }
 
 export function Favorite() {
@@ -64,18 +78,26 @@ export function Favorite() {
     return favoriteViews.filter((view) => view.layout !== ViewLayout.AIChat);
   }, [aiEnabled, favoriteViews]);
 
-  const { pinViews, unpinViews } = useMemo(() => {
+  const sortedFavoriteViews = useMemo(() => {
     if (visibleFavoriteViews.length === 0) {
+      return [];
+    }
+
+    return orderBy(visibleFavoriteViews, [(view) => favoriteTimestampMs(view), (view) => view.view_id], ['desc', 'asc']);
+  }, [visibleFavoriteViews]);
+
+  const { pinViews, unpinViews } = useMemo(() => {
+    if (sortedFavoriteViews.length === 0) {
       return { pinViews: [], unpinViews: [] };
     }
 
-    return groupBy(visibleFavoriteViews, (view) => (view.extra?.is_pinned ? 'pinViews' : 'unpinViews'));
-  }, [visibleFavoriteViews]);
+    return groupBy(sortedFavoriteViews, (view) => (isPinnedFavorite(view) ? 'pinViews' : 'unpinViews'));
+  }, [sortedFavoriteViews]);
 
   const groupByViewsWithDay = useMemo(() => {
-    if (visibleFavoriteViews.length === 0) return {};
+    if (sortedFavoriteViews.length === 0) return {};
 
-    return groupBy(visibleFavoriteViews, (view) => {
+    return groupBy(sortedFavoriteViews, (view) => {
       if (!view.favorited_at) {
         return FavoriteGroup.Others;
       }
@@ -95,17 +117,17 @@ export function Favorite() {
       if (thisWeek) return FavoriteGroup.thisWeek;
       return FavoriteGroup.Others;
     });
-  }, [visibleFavoriteViews]);
+  }, [sortedFavoriteViews]);
 
   const groupByViews = useMemo(() => {
     return sortBy(Object.entries(groupByViewsWithDay), ([key]) => {
       return key === FavoriteGroup.today
         ? 0
         : key === FavoriteGroup.yesterday
-          ? 1
-          : key === FavoriteGroup.thisWeek
-            ? 2
-            : 3;
+        ? 1
+        : key === FavoriteGroup.thisWeek
+        ? 2
+        : 3;
     }).map(([key, value]) => {
       const timeLabel: Record<string, string> = {
         [FavoriteGroup.today]: t('calendar.navigation.today'),

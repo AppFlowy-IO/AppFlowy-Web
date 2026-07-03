@@ -24,6 +24,7 @@ import {
   Subscription,
   MentionablePerson,
   DatabaseRelations,
+  RowDocumentSourcePayload,
   YDoc,
 } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -77,7 +78,7 @@ export interface EditorContextState {
   loadView?: LoadView;
   loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;

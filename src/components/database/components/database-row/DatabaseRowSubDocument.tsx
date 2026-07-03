@@ -25,6 +25,7 @@ import {
   YDatabaseRow,
   YDoc,
   YDocWithMeta,
+  RowDocumentSourcePayload,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
@@ -124,6 +125,20 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const createRowDocument = context?.createRowDocument;
   const checkIfRowDocumentExists = context?.checkIfRowDocumentExists;
   const bindViewSync = context?.bindViewSync;
+  const rowDocumentSource = useMemo<RowDocumentSourcePayload | undefined>(() => {
+    const databaseId = (database?.get(YjsDatabaseKey.id) as string | undefined) || context?.databaseDoc?.guid;
+    const databaseViewId = context?.activeViewId || context?.databasePageId;
+
+    if (!databaseId || !databaseViewId) {
+      return undefined;
+    }
+
+    return {
+      database_id: databaseId,
+      database_view_id: databaseViewId,
+      row_id: rowId,
+    };
+  }, [context?.activeViewId, context?.databaseDoc, context?.databasePageId, database, rowId]);
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const editorRef = useRef<YjsEditor | null>(null);
   const lastIsEmptyRef = useRef<boolean | null>(null);
@@ -412,7 +427,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         try {
           Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId, requireServerReady });
-          docState = await createRowDocument(documentId);
+          docState = await createRowDocument(documentId, rowDocumentSource);
           Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
             documentId,
             docStateSize: docState?.length ?? 0,
@@ -452,7 +467,15 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         setLoading(false);
       }
     },
-    [createRowDocument, handleOpenDocument, hasLocalDocContent, loadRowDocument, openDocumentWithState, rowId]
+    [
+      createRowDocument,
+      handleOpenDocument,
+      hasLocalDocContent,
+      loadRowDocument,
+      openDocumentWithState,
+      rowDocumentSource,
+      rowId,
+    ]
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
@@ -477,7 +500,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             rowId,
             documentId,
           });
-          await createRowDocument(documentId);
+          await createRowDocument(documentId, rowDocumentSource);
         }
 
         if (pendingNonEmptyRef.current) {
@@ -507,6 +530,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     createRowDocument,
     documentId,
     isDocumentEmpty,
+    rowDocumentSource,
     updateRowMeta,
     rowId,
   ]);
@@ -682,7 +706,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
                   rowId,
                   documentId,
                 });
-                await createRowDocument(documentId);
+                await createRowDocument(documentId, rowDocumentSource);
               } catch {
                 // Ignore; we'll retry loading below.
               }
@@ -722,6 +746,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     isDocumentEmptyResolved,
     hasLocalDocContent,
     createRowDocument,
+    rowDocumentSource,
     rowId,
     doc,
   ]);
@@ -823,7 +848,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     // Only create orphaned view if document doesn't exist
     if (createRowDocument) {
       try {
-        await createRowDocument(documentId);
+        await createRowDocument(documentId, rowDocumentSource);
         rowDocEnsuredRef.current = true;
         return true;
       } catch {
@@ -833,7 +858,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     }
 
     return false;
-  }, [checkIfRowDocumentExists, createRowDocument, documentId]);
+  }, [checkIfRowDocumentExists, createRowDocument, documentId, rowDocumentSource]);
 
   useEffect(() => {
     if (!doc) return;

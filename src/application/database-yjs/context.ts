@@ -16,6 +16,7 @@ import {
   LoadView,
   LoadViewMeta,
   RowId,
+  RowDocumentSourcePayload,
   Subscription,
   TestDatabasePromptConfig,
   TimeFormat,
@@ -84,7 +85,7 @@ export interface DatabaseContextState {
    * Only available in app mode - not provided in publish mode.
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
   duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;

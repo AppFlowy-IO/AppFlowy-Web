@@ -5,6 +5,7 @@ import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
@@ -15,6 +16,7 @@ import {
   LoadDatabasePrompts,
   LoadView,
   LoadViewMeta,
+  RowDocumentSourcePayload,
   Subscription,
   TestDatabasePromptConfig,
   TextCount,
@@ -113,7 +115,7 @@ export interface AppOperationsContextType {
 
   // ── Database operations ────────────────────────────────────────────
   /** Create an orphaned view (e.g. for inline database within a document). */
-  createOrphanedView?: (payload: { document_id: string }) => Promise<Uint8Array>;
+  createOrphanedView?: (payload: CreateOrphanedViewPayload) => Promise<Uint8Array>;
   /** Load AI prompt templates for a database. */
   loadDatabasePrompts?: LoadDatabasePrompts;
   /** Test an AI prompt config against a database. */
@@ -123,7 +125,7 @@ export interface AppOperationsContextType {
   /** Load an existing row document. */
   loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
   /** Create a new row document (returns encoded initial state). */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
   duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   /** Resolve a database ID to its primary view ID. */
