@@ -12,7 +12,6 @@ interface MockSyncOutboxRecord {
   payload: Uint8Array;
   createdAt: number;
   beforeStateVector?: Uint8Array;
-  afterStateVector?: Uint8Array;
 }
 
 let mockRecords: MockSyncOutboxRecord[] = [];
@@ -201,7 +200,7 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(0);
   });
 
-  it('attaches the before/after state vectors to an immediately sent update', async () => {
+  it('attaches the before state vector to an immediately sent update (and no after)', async () => {
     const send = jest.fn();
 
     configureDrain({
@@ -212,7 +211,6 @@ describe('sync outbox live send', () => {
     });
 
     const beforeStateVector = new Uint8Array([1, 2, 3]);
-    const afterStateVector = new Uint8Array([4, 5, 6]);
 
     enqueueOutboxUpdate({
       objectId,
@@ -220,17 +218,16 @@ describe('sync outbox live send', () => {
       version: null,
       payload: makeUpdate('draft'),
       beforeStateVector,
-      afterStateVector,
     });
 
     expect(send).toHaveBeenCalledTimes(1);
     const update = send.mock.calls[0][0].collabMessage.update;
 
     expect(update.beforeStateVector).toBe(beforeStateVector);
-    expect(update.afterStateVector).toBe(afterStateVector);
+    expect(update.afterStateVector).toBeUndefined();
   });
 
-  it('spans the merged drain vectors from the first record before to the last record after', async () => {
+  it('takes the merged drain before vector from the first record (and sends no after)', async () => {
     let ready = false;
     const send = jest.fn();
 
@@ -242,9 +239,7 @@ describe('sync outbox live send', () => {
     });
 
     const firstBefore = new Uint8Array([10]);
-    const firstAfter = new Uint8Array([11]);
     const lastBefore = new Uint8Array([20]);
-    const lastAfter = new Uint8Array([21]);
 
     enqueueOutboxUpdate({
       objectId,
@@ -252,7 +247,6 @@ describe('sync outbox live send', () => {
       version: null,
       payload: makeUpdate('old'),
       beforeStateVector: firstBefore,
-      afterStateVector: firstAfter,
     });
     enqueueOutboxUpdate({
       objectId,
@@ -260,7 +254,6 @@ describe('sync outbox live send', () => {
       version: null,
       payload: makeUpdate('new'),
       beforeStateVector: lastBefore,
-      afterStateVector: lastAfter,
     });
     await flushPromises();
 
@@ -274,10 +267,9 @@ describe('sync outbox live send', () => {
     expect(send).toHaveBeenCalledTimes(1);
     const update = send.mock.calls[0][0].collabMessage.update;
 
-    // Merged payload covers first->last, so before = first record's before,
-    // after = last record's after.
+    // Merged payload covers first->last, so before = the first record's before.
     expect(update.beforeStateVector).toBe(firstBefore);
-    expect(update.afterStateVector).toBe(lastAfter);
+    expect(update.afterStateVector).toBeUndefined();
     expect(mockRecords).toHaveLength(0);
   });
 

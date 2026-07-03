@@ -226,7 +226,6 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
             payload: record.payload,
             version: record.version ?? undefined,
             beforeStateVector: record.beforeStateVector,
-            afterStateVector: record.afterStateVector,
           } as collab.IUpdate,
         },
       };
@@ -493,7 +492,7 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string):
 }
 
 function buildUpdateMessage(
-  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector' | 'afterStateVector'>,
+  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector'>,
 ): messages.IMessage {
   return {
     collabMessage: {
@@ -504,7 +503,6 @@ function buildUpdateMessage(
         payload: record.payload,
         version: record.version ?? undefined,
         beforeStateVector: record.beforeStateVector,
-        afterStateVector: record.afterStateVector,
       } as collab.IUpdate,
     },
   };
@@ -596,10 +594,8 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     const collabType = lastRecord.collabType as Types;
     const version = lastRecord.version;
     // The merged payload spans from the first queued edit to the last, so its
-    // causal `before` is the first record's before-vector and its `after` is the
-    // last record's after-vector.
+    // causal `before` is the first record's before-vector.
     const beforeStateVector = firstRecord.beforeStateVector;
-    const afterStateVector = lastRecord.afterStateVector;
 
     const message: messages.IMessage = {
       collabMessage: {
@@ -610,7 +606,6 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
           payload: merged,
           version: version ?? undefined,
           beforeStateVector,
-          afterStateVector,
         } as collab.IUpdate,
       },
     };

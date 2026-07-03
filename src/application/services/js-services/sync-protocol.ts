@@ -86,7 +86,8 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   });
   // send the update containing new data back to the server. This is a
   // manifest-style diff, so the causal `before` vector is the server's own
-  // advertised state (what it told us it has) and `after` is our full state.
+  // advertised state (what it told us it has). No after vector — the server
+  // derives its own post-update state and never trusts a client-provided one.
   emit({
     collabMessage: {
       objectId: doc.guid,
@@ -96,7 +97,6 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
         payload: update,
         version: doc.version,
         beforeStateVector: stateVector,
-        afterStateVector: Y.encodeStateVector(doc),
       },
     },
   });
@@ -202,13 +202,12 @@ export const initSync = (ctx: SyncContext) => {
       return; // Ignore remote updates
     }
 
-    // Causal metadata for server-side missing-update detection. Yjs computes
-    // both state maps on the transaction (beforeState at start, afterState
-    // before the 'update' event fires), so we encode those directly rather than
-    // re-deriving from the doc (which would re-walk the store). Both use lib0 v1
-    // encoding to match the server.
+    // Causal metadata for server-side missing-update detection: the state vector
+    // before this edit. Yjs already computed `transaction.beforeState`, so we just
+    // encode it (lib0 v1, to match the server). We deliberately do NOT send an
+    // after vector — the server never trusts a client-provided one (it derives the
+    // post-update state from the update bytes itself), so it would be wasted work.
     const beforeStateVector = Y.encodeStateVector(transaction.beforeState);
-    const afterStateVector = Y.encodeStateVector(transaction.afterState);
 
     enqueueOutboxUpdate({
       objectId: doc.guid,
@@ -216,7 +215,6 @@ export const initSync = (ctx: SyncContext) => {
       version: doc.version ?? null,
       payload: update,
       beforeStateVector,
-      afterStateVector,
     });
     ctx.onLocalUpdate?.(doc.guid);
   };
