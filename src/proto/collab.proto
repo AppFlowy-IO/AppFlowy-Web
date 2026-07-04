@@ -65,6 +65,18 @@ message Update {
 
   // Collab version this update is related to.
   string version = 4;
+
+  // Yjs Doc state vector (lib0 v1 encoding) as known to the sender BEFORE it
+  // generated this update. The server uses it to detect missing updates: if the
+  // server's state does not cover this vector, an earlier update was lost.
+  // Empty/absent falls back to the legacy path (server derives a lower bound
+  // from the update bytes).
+  bytes before_state_vector = 5;
+
+  // Yjs Doc state vector (lib0 v1 encoding) as known to the sender AFTER it
+  // generated this update. Advisory only — the server never trusts a
+  // client-provided after vector; it derives its own from the update bytes.
+  bytes after_state_vector = 6;
 }
 
 /**

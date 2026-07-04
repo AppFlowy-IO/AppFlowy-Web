@@ -1,9 +1,8 @@
-import EventEmitter from 'events';
-
 import { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { RegisterSyncContext } from '@/components/ws/useSync';
 
 // Internal context for synchronization layer
@@ -15,7 +14,7 @@ import { RegisterSyncContext } from '@/components/ws/useSync';
 export interface SyncInternalContextType {
   registerSyncContext: (params: RegisterSyncContext) => SyncContext;
   revertCollabVersion: (viewId: string, version: string) => Promise<void>;
-  eventEmitter: EventEmitter;
+  eventEmitter: AppEventEmitter;
   awarenessMap: Record<string, Awareness>;
   /**
    * Flush all pending updates for all registered sync contexts.

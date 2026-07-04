@@ -9,6 +9,12 @@ export interface SyncOutboxRecord {
   version?: string | null;
   payload: Uint8Array;
   createdAt: number;
+  // Yjs state vector (lib0 v1) of the doc state before this local edit, so the
+  // server can detect missing updates. Optional: older rows written before this
+  // field existed drain without it (legacy server path). Not indexed, so no
+  // schema version bump is needed. We intentionally don't store an after vector —
+  // the server derives the post-update state itself and never trusts a client one.
+  beforeStateVector?: Uint8Array;
 }
 
 export type SyncOutboxTable = {

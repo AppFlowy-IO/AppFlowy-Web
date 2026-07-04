@@ -2,9 +2,8 @@
  * Publish Database Views Test
  *
  * When a database has multiple views (Grid, Board, etc.) and one view is
- * published, all sibling database views should appear in both:
- *   1. The published page sidebar (outline)
- *   2. The database tab bar on the published page
+ * published, the database container should appear in the published page
+ * sidebar and all sibling database views should appear in the database tab bar.
  */
 import { test, expect, Page } from '@playwright/test';
 import {
@@ -18,6 +17,7 @@ import {
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { waitForGridReady } from '../../support/database-ui-helpers';
+import { getActiveDatabaseViewId, withPublishedDatabaseView } from '../../support/publish-database-helpers';
 import { testLog } from '../../support/test-helpers';
 
 async function publishCurrentPage(page: Page): Promise<string> {
@@ -140,9 +140,11 @@ test.describe('Publish Database with Multiple Views', () => {
     await expect(DatabaseGridSelectors.grid(page)).toContainText(testText, { timeout: 15000 });
     testLog.info('Row data persisted');
 
+    const activeDatabaseViewId = await getActiveDatabaseViewId(page);
+
     // When: publishing the database page
     testLog.info('Publishing database page');
-    const publishedUrl = await publishCurrentPage(page);
+    const publishedUrl = withPublishedDatabaseView(await publishCurrentPage(page), activeDatabaseViewId);
 
     testLog.info(`Published URL: ${publishedUrl}`);
 
@@ -177,40 +179,19 @@ test.describe('Publish Database with Multiple Views', () => {
     expect(tabTexts.some(t => t.includes('Board'))).toBeTruthy();
     testLog.info('Both Grid and Board tabs visible');
 
-    // And: expand the sidebar tree to reveal database view children
-    // First expand General space
-    const generalExpand = freshPage.locator('[data-testid="outline-toggle-expand"]').first();
-
-    if (await generalExpand.isVisible()) {
-      await generalExpand.click();
-      await freshPage.waitForTimeout(1000);
-    }
-
-    // Then expand the database container
-    const containerExpand = freshPage.locator('[data-testid="outline-toggle-expand"]').first();
-
-    if (await containerExpand.isVisible()) {
-      await containerExpand.click();
-      await freshPage.waitForTimeout(1000);
-    }
-
-    // And: the sidebar shows the same 2 database views
+    // And: the sidebar keeps the database as a single container page.
     const outlineItems = freshPage.locator('[data-testid^="outline-item-"]');
     const outlineTexts = await outlineItems.allTextContents();
 
     testLog.info(`Outline item texts: ${JSON.stringify(outlineTexts)}`);
-    const sidebarDbViews = outlineTexts.filter(
-      t => t.includes('Grid') || t.includes('Board')
-    );
+    expect(outlineTexts.some(t => t.includes('New Database'))).toBeTruthy();
+    testLog.info('Sidebar shows the database container');
 
-    expect(sidebarDbViews.length).toBe(2);
-    testLog.info(`Sidebar and tab bar both show 2 database views`);
+    // When: clicking the Board tab
+    testLog.info('Clicking Board tab');
+    const boardTab = viewTabs.filter({ hasText: 'Board' }).first();
 
-    // When: clicking the Board view in the sidebar
-    testLog.info('Clicking Board in sidebar');
-    const boardOutlineItem = outlineItems.filter({ hasText: 'Board' }).first();
-
-    await boardOutlineItem.click({ force: true });
+    await boardTab.click({ force: true });
     await freshPage.waitForTimeout(2000);
 
     // Then: the database tab bar switches to the Board tab
@@ -219,22 +200,22 @@ test.describe('Publish Database with Multiple Views', () => {
     );
 
     await expect(activeTab).toContainText('Board', { timeout: 5000 });
-    testLog.info('Board tab is now active after sidebar click');
+    testLog.info('Board tab is now active after tab click');
 
     // And: the URL has the ?v= parameter
     expect(freshPage.url()).toContain('v=');
     testLog.info('URL updated with v= parameter');
 
-    // When: clicking the Grid view in the sidebar
-    testLog.info('Clicking Grid in sidebar');
-    const gridOutlineItem = outlineItems.filter({ hasText: 'Grid' }).first();
+    // When: clicking the Grid tab
+    testLog.info('Clicking Grid tab');
+    const publishedGridTab = viewTabs.filter({ hasText: 'Grid' }).first();
 
-    await gridOutlineItem.click({ force: true });
+    await publishedGridTab.click({ force: true });
     await freshPage.waitForTimeout(2000);
 
     // Then: the tab bar switches back to Grid
     await expect(activeTab).toContainText('Grid', { timeout: 5000 });
-    testLog.info('Grid tab is now active after sidebar click');
+    testLog.info('Grid tab is now active after tab click');
 
     await freshContext.close();
   });

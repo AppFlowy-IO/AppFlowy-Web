@@ -48,7 +48,7 @@ export async function favoritePageView(
   workspaceId: string,
   viewId: string,
   isFavorite: boolean,
-  isPinned: boolean = false
+  isPinned: boolean = true
 ): Promise<void> {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/favorite`;
 

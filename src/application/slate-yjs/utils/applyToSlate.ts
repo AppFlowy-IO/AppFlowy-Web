@@ -76,6 +76,7 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
 function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapEvent<unknown>) {
   const { target } = event;
   const block = target as YBlock;
+  const newType = block.get(YjsEditorKey.block_type);
   const newData = dataStringTOJson(block.get(YjsEditorKey.block_data));
   const entry = findSlateEntryByBlockId(editor, blockId);
 
@@ -89,10 +90,29 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   }
 
   const [node, path] = entry;
-  const oldData = node.data as Record<string, unknown>;
+  const oldType = node.type;
+  const oldData = (node.data ?? {}) as Record<string, unknown>;
+  const newProperties: Partial<Element> = {};
+  const oldProperties: Partial<Element> = {};
 
-  Log.debug(`✅ Updating block data for blockId: ${blockId}`, {
+  if (oldType !== newType) {
+    newProperties.type = newType;
+    oldProperties.type = oldType;
+  }
+
+  if (!isEqual(oldData, newData)) {
+    newProperties.data = newData;
+    oldProperties.data = oldData;
+  }
+
+  if (Object.keys(newProperties).length === 0) {
+    return [];
+  }
+
+  Log.debug(`✅ Updating block for blockId: ${blockId}`, {
     path,
+    oldType,
+    newType,
     oldDataKeys: Object.keys(oldData),
     newDataKeys: Object.keys(newData),
   });
@@ -100,12 +120,8 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   editor.apply({
     type: 'set_node',
     path,
-    newProperties: {
-      data: newData,
-    },
-    properties: {
-      data: oldData,
-    },
+    newProperties,
+    properties: oldProperties,
   });
 }
 

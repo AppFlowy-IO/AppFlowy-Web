@@ -24,6 +24,8 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
+const RUST_NANOID_SAFE_ALPHABET = '_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const DEFAULT_ID_LEN = 10;
 // UUID namespace OID (same as Rust's Uuid::NAMESPACE_OID)
 // Note: 6ba7b812 (not 6ba7b810 which is NAMESPACE_DNS)
 const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
@@ -45,9 +47,7 @@ const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
 export function pageIdFromDocumentId(documentId: string): string {
   // If documentId is a valid UUID, use it directly as the namespace
   // Otherwise, generate a deterministic UUID from the string (same as document_id_from_any_string)
-  const docUuid = uuidValidate(documentId)
-    ? documentId
-    : uuidv5(documentId, UUID_NAMESPACE_OID);
+  const docUuid = uuidValidate(documentId) ? documentId : uuidv5(documentId, UUID_NAMESPACE_OID);
 
   // Generate page_id as UUID v5 with document_id as namespace and "page" as name
   const pageId = uuidv5('page', docUuid);
@@ -60,6 +60,25 @@ export function pageIdFromDocumentId(documentId: string): string {
   });
 
   return pageId;
+}
+
+function idFromDocumentId(documentId: string, role: string): string {
+  const docUuid = uuidValidate(documentId) ? documentId : uuidv5(documentId, UUID_NAMESPACE_OID);
+
+  return uuidv5(role, docUuid);
+}
+
+function nanoidFromDocumentId(documentId: string, role: string): string {
+  const uuid = idFromDocumentId(documentId, role).replace(/-/g, '');
+  let id = '';
+
+  for (let i = 0; i < DEFAULT_ID_LEN; i += 1) {
+    const byte = parseInt(uuid.slice(i * 2, i * 2 + 2), 16);
+
+    id += RUST_NANOID_SAFE_ALPHABET[byte & 0x3f];
+  }
+
+  return id;
 }
 
 export function getTextMap(sharedRoot: YSharedRoot) {
@@ -357,21 +376,23 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
   if (includeInitialParagraph) {
     // Create an empty paragraph block as child of page
     // The Slate editor requires at least one text block to render properly
-    const paragraphId = nanoid(8);
+    const paragraphId = documentId ? nanoidFromDocumentId(documentId, 'block') : nanoid(8);
+    const paragraphChildrenId = documentId ? nanoidFromDocumentId(documentId, 'children') : paragraphId;
+    const paragraphTextId = documentId ? nanoidFromDocumentId(documentId, 'text') : paragraphId;
     const paragraphBlock = new Y.Map();
 
     paragraphBlock.set(YjsEditorKey.block_id, paragraphId);
     paragraphBlock.set(YjsEditorKey.block_type, BlockType.Paragraph);
-    paragraphBlock.set(YjsEditorKey.block_children, paragraphId);
-    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphId);
+    paragraphBlock.set(YjsEditorKey.block_children, paragraphChildrenId);
+    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphTextId);
     paragraphBlock.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
     paragraphBlock.set(YjsEditorKey.block_data, '{}');
     paragraphBlock.set(YjsEditorKey.block_parent, pageId);
     blocks.set(paragraphId, paragraphBlock);
 
     pageChildren.push([paragraphId]);
-    childrenMap.set(paragraphId, new Y.Array());
-    textMap.set(paragraphId, new Y.Text());
+    childrenMap.set(paragraphChildrenId, new Y.Array());
+    textMap.set(paragraphTextId, new Y.Text());
   }
 
   childrenMap.set(pageId, pageChildren);
@@ -450,6 +471,8 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   const meta = document.get(YjsEditorKey.meta) as YMeta;
   const childrenMap = meta.get(YjsEditorKey.children_map) as YChildrenMap;
   const textMap = meta.get(YjsEditorKey.text_map) as YTextMap;
+  const blockChildrenId = block.get(YjsEditorKey.block_children);
+  const blockExternalId = block.get(YjsEditorKey.block_external_id);
 
   const parent = getBlock(parentId, sharedRoot);
 
@@ -467,8 +490,8 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   }
 
   blocks.delete(blockId);
-  childrenMap.delete(blockId);
-  textMap.delete(blockId);
+  childrenMap.delete(blockChildrenId);
+  textMap.delete(blockExternalId);
 
   // delete parent if it's empty column block
   if (parentType === BlockType.ColumnBlock && afterDeletedLength === 0) {
@@ -528,6 +551,31 @@ export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targ
   }
 
   targetText.applyDelta(sourceText.toDelta());
+}
+
+function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
+  const blockId = block.get(YjsEditorKey.block_id);
+  let textId = block.get(YjsEditorKey.block_external_id);
+
+  if (!textId) {
+    textId = blockId;
+    block.set(YjsEditorKey.block_external_id, textId);
+    block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
+  }
+
+  const textMap = getTextMap(sharedRoot);
+
+  if (!textMap.has(textId)) {
+    textMap.set(textId, new Y.Text());
+  }
+}
+
+function canTurnToBlockInPlace(type: BlockType, sourceChildren?: Y.Array<string>) {
+  if (isEmbedBlockTypes(type)) {
+    return false;
+  }
+
+  return !sourceChildren || sourceChildren.length === 0 || CONTAINER_BLOCK_TYPES.includes(type);
 }
 
 export function prepareBreakOperation(sharedRoot: YSharedRoot, block: YBlock, offset: number) {
@@ -659,6 +707,16 @@ export function turnToBlock<T extends BlockData>(
   type: BlockType,
   data: T
 ) {
+  const sourceChildren = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+  if (canTurnToBlockInPlace(type, sourceChildren)) {
+    ensureTextForBlock(sharedRoot, sourceBlock);
+    sourceBlock.set(YjsEditorKey.block_type, type);
+    sourceBlock.set(YjsEditorKey.block_data, JSON.stringify(data));
+    extendNextSiblingsToToggleHeading(sharedRoot, sourceBlock);
+    return sourceBlock.get(YjsEditorKey.block_id);
+  }
+
   const newBlock = createBlock(sharedRoot, {
     ty: type,
     data,
@@ -733,11 +791,11 @@ export function moveNode(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetPar
   return copiedBlockId;
 }
 
-export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock): string | null {
+export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock, dataOverride?: BlockData): string | null {
   try {
     const newBlock = createBlock(sharedRoot, {
       ty: sourceBlock.get(YjsEditorKey.block_type),
-      data: dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
+      data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
     });
 
     copyBlockText(sharedRoot, sourceBlock, newBlock);

@@ -29,6 +29,8 @@ type PrefetchOptions = {
    * sorted views need row data for the full view, not only recent changes.
    */
   forceFullSync?: boolean;
+  /** Allow the next caller to reuse this entry after it settles. */
+  reuseSettled?: boolean;
   /** Called immediately after seeds are cached (before IndexedDB persist). */
   onSeedsReady?: () => void;
 };
@@ -37,6 +39,7 @@ type SharedPrefetchEntry = {
   priorityRowIds: Set<string>;
   onSeedsReadyCallbacks: Set<() => void>;
   seedsReady: boolean;
+  reuseSettled?: boolean;
   settled?: boolean;
   clearWhenSettled?: boolean;
   promise?: Promise<database_blob.DatabaseBlobDiffResponse>;
@@ -89,6 +92,10 @@ function retryDelayMs(retryAfterSecs?: number | null): number {
 }
 
 function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOptions) {
+  if (options?.reuseSettled) {
+    entry.reuseSettled = true;
+  }
+
   options?.priorityRowIds?.forEach((rowId) => entry.priorityRowIds.add(rowId));
 
   if (!options?.onSeedsReady) return;
@@ -906,9 +913,15 @@ export async function prefetchDatabaseBlobDiff(
 
   if (existingEntry?.promise) {
     const canReuseSettledFullSeed = Boolean(options?.forceFullSync && existingEntry.settled && existingEntry.seedsReady);
+    const canReuseSettledSeed = Boolean(existingEntry.reuseSettled && existingEntry.settled && existingEntry.seedsReady);
 
-    if (!existingEntry.settled || canReuseSettledFullSeed) {
+    if (!existingEntry.settled || canReuseSettledFullSeed || canReuseSettledSeed) {
       applyPrefetchOptions(existingEntry, options);
+
+      if (canReuseSettledSeed && !options?.reuseSettled) {
+        existingEntry.reuseSettled = false;
+      }
+
       return existingEntry.promise;
     }
   }

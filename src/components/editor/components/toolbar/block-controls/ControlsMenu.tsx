@@ -11,16 +11,18 @@ import { getAxios, executeAPIRequest, APIResponse } from '@/application/services
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { dataStringTOJson, getBlock } from '@/application/slate-yjs/utils/yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, View, YjsEditorKey } from '@/application/types';
+import { BlockType, View } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
-import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
+import {
+  createDatabaseDuplicatePlaceholderData,
+  createDatabaseNodeData,
+} from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import CalloutTextColor from '@/components/editor/components/toolbar/block-controls/CalloutTextColor';
 import {
   OutlineCollapseControl,
@@ -42,9 +44,145 @@ import {
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}&_t=${Date.now()}`;
 
-  return executeAPIRequest<View>(() =>
-    getAxios()?.get<APIResponse<View>>(url)
-  );
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
+}
+
+const DUPLICATED_DATABASE_METADATA_ATTEMPTS = 20;
+const DUPLICATED_DATABASE_METADATA_INTERVAL_MS = 300;
+
+interface FreshDatabaseView {
+  viewId: string;
+  databaseId: string;
+}
+
+interface FreshDuplicatedContainer {
+  container: View;
+  primaryViewId: string;
+  databaseId: string;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function pollForDuplicateMetadata<T>(loadMetadata: () => Promise<T | undefined>): Promise<T | undefined> {
+  for (let attempt = 0; attempt < DUPLICATED_DATABASE_METADATA_ATTEMPTS; attempt++) {
+    const metadata = await loadMetadata();
+
+    if (metadata) {
+      return metadata;
+    }
+
+    if (attempt < DUPLICATED_DATABASE_METADATA_ATTEMPTS - 1) {
+      await sleep(DUPLICATED_DATABASE_METADATA_INTERVAL_MS);
+    }
+  }
+
+  return undefined;
+}
+
+async function findFreshDatabaseViewInContainer(params: {
+  workspaceId: string;
+  sourceContainerId: string;
+  beforeChildIds: Set<string>;
+  sourceDatabaseId: string;
+}): Promise<FreshDatabaseView | undefined> {
+  return pollForDuplicateMetadata(async () => {
+    ViewService.invalidateCache(params.workspaceId, params.sourceContainerId);
+    const afterContainer = await getViewNoCache(params.workspaceId, params.sourceContainerId, 2);
+    const candidate = (afterContainer.children ?? []).find((child) => !params.beforeChildIds.has(child.view_id));
+
+    if (!candidate) {
+      return undefined;
+    }
+
+    ViewService.invalidateCache(params.workspaceId, candidate.view_id);
+    const candidateView = await getViewNoCache(params.workspaceId, candidate.view_id, 1);
+    const candidateDatabaseId = getDatabaseIdFromExtra(candidateView);
+
+    // The deep copy must yield a fresh database; keep polling until the new
+    // child view reports a database id distinct from the source.
+    if (!candidateDatabaseId || candidateDatabaseId === params.sourceDatabaseId) {
+      return undefined;
+    }
+
+    return {
+      viewId: candidate.view_id,
+      databaseId: candidateDatabaseId,
+    };
+  });
+}
+
+async function findFreshDuplicatedContainer(params: {
+  workspaceId: string;
+  parentId: string;
+  beforeParentView: View;
+  sourceContainerId: string;
+  sourceContainerView: View;
+  sourceViewId: string;
+  sourceDatabaseId: string;
+  duplicateCopySuffix: string;
+}): Promise<FreshDuplicatedContainer | undefined> {
+  return pollForDuplicateMetadata(async () => {
+    ViewService.invalidateCache(params.workspaceId, params.parentId);
+    const afterParentView = await getViewNoCache(params.workspaceId, params.parentId, 2);
+
+    const candidate = findDuplicatedContainerChild({
+      beforeChildren: params.beforeParentView.children,
+      afterChildren: afterParentView.children,
+      sourceContainerId: params.sourceContainerId,
+      duplicatedName: `${params.sourceContainerView.name}${params.duplicateCopySuffix}`,
+    });
+
+    if (!candidate) {
+      return undefined;
+    }
+
+    ViewService.invalidateCache(params.workspaceId, candidate.view_id);
+    const candidateContainer = await getViewNoCache(params.workspaceId, candidate.view_id, 2);
+    const candidatePrimaryViewId = candidateContainer.children?.[0]?.view_id;
+    const candidateDatabaseId = getDatabaseIdFromExtra(candidateContainer);
+
+    // Inline duplication must produce a brand-new container with a new child view
+    // and a new database_id. Keep polling until the fresh duplicate is visible.
+    if (
+      !candidatePrimaryViewId ||
+      !candidateDatabaseId ||
+      candidatePrimaryViewId === params.sourceViewId ||
+      candidateDatabaseId === params.sourceDatabaseId
+    ) {
+      return undefined;
+    }
+
+    return {
+      container: candidateContainer,
+      primaryViewId: candidatePrimaryViewId,
+      databaseId: candidateDatabaseId,
+    };
+  });
+}
+
+function waitForDatabaseBlobSeeds(workspaceId: string, databaseId: string): Promise<void> {
+  const timeoutMs = 10000;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      window.clearTimeout(timeoutId);
+      resolve();
+    };
+
+    const timeoutId = window.setTimeout(finish, timeoutMs);
+
+    void prefetchDatabaseBlobDiff(workspaceId, databaseId, {
+      reuseSettled: true,
+      onSeedsReady: finish,
+    })
+      .then(finish)
+      .catch(finish);
+  });
 }
 
 const popoverProps: Partial<PopoverProps> = {
@@ -101,34 +239,27 @@ function ControlsMenu({
   const { t } = useTranslation();
   const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
 
-  const duplicateDatabaseBlock = useCallback(
-    async (sourceNode: DatabaseNode, duplicatedBlockId: string) => {
-      const replaceDuplicatedBlockData = (nextData: ReturnType<typeof createDatabaseNodeData>) => {
-        const duplicatedBlock = getBlock(duplicatedBlockId, editor.sharedRoot);
+  const setDatabaseBlockData = useCallback(
+    (blockId: string, nextData: DatabaseNode['data']) => {
+      const entry = findSlateEntryByBlockId(editor, blockId);
 
-        if (!duplicatedBlock) {
-          throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
-        }
+      if (!entry) {
+        throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
+      }
 
-        const previousData = dataStringTOJson(
-          duplicatedBlock.get(YjsEditorKey.block_data)
-        );
+      Transforms.setNodes(editor, { data: nextData }, { at: entry[1] });
+    },
+    [editor, t]
+  );
 
-        duplicatedBlock.set(
-          YjsEditorKey.block_data,
-          JSON.stringify({
-            ...previousData,
-            ...nextData,
-          })
-        );
-      };
-
+  const resolveDuplicatedDatabaseBlockData = useCallback(
+    async (sourceNode: DatabaseNode): Promise<DatabaseNode['data']> => {
       const parentId = sourceNode.data.parent_id;
       const sourceViewIds = sourceNode.data.view_ids?.length
         ? sourceNode.data.view_ids
         : sourceNode.data.view_id
-          ? [sourceNode.data.view_id]
-          : [];
+        ? [sourceNode.data.view_id]
+        : [];
       const databaseId = sourceNode.data.database_id;
 
       if (!parentId || sourceViewIds.length === 0 || !databaseId) {
@@ -148,9 +279,7 @@ function ControlsMenu({
       const isLinkedDuplicate = firstSourceView.parent_view_id === parentId;
 
       if (isLinkedDuplicate) {
-        const sourceViews = await Promise.all(
-          sourceViewIds.map((id) => loadViewMeta(id).catch(() => null))
-        );
+        const sourceViews = await Promise.all(sourceViewIds.map((id) => loadViewMeta(id).catch(() => null)));
 
         const duplicatedViewIds = await Promise.all(
           sourceViewIds.map(async (_, i) => {
@@ -173,21 +302,17 @@ function ControlsMenu({
           })
         );
 
-        replaceDuplicatedBlockData(
-          createDatabaseNodeData({
-            parentId,
-            viewIds: duplicatedViewIds,
-            databaseId,
-          })
-        );
-
-        return;
+        return createDatabaseNodeData({
+          parentId,
+          viewIds: duplicatedViewIds,
+          databaseId,
+        });
       }
 
       if (!workspaceId || !duplicatePage) {
-        // duplicatePage is not available in all editor contexts (e.g. row sub-documents).
+        // duplicatePage is not available in every editor context.
         // Fall back to the shallow block copy without database-specific rewiring.
-        return;
+        return sourceNode.data;
       }
 
       const sourceContainerId = firstSourceView.parent_view_id;
@@ -199,107 +324,118 @@ function ControlsMenu({
       ViewService.invalidateCache(workspaceId, sourceContainerId);
       ViewService.invalidateCache(workspaceId, parentId);
 
-      const [sourceContainerView, beforeParentView] = await Promise.all([
+      const duplicateBlobPreSync = async () => {
+        await prefetchDatabaseBlobDiff(workspaceId, databaseId, {
+          forceFullSync: true,
+        });
+      };
+
+      // Fetch both views concurrently (single round trip). The source container is
+      // a folder view in both cases, so it must resolve; `parentId` is a regular
+      // folder view only when the grid is embedded in a normal document — inside a
+      // database row page it is an orphan row-document the view API 404s on. Probe
+      // it, tolerating failure, to choose the discovery strategy below.
+      const [sourceContainerResult, parentResult] = await Promise.allSettled([
         getView(workspaceId, sourceContainerId, 2),
         getView(workspaceId, parentId, 2),
       ]);
 
+      if (sourceContainerResult.status === 'rejected') {
+        throw sourceContainerResult.reason;
+      }
+
+      const sourceContainerView = sourceContainerResult.value;
+      const beforeParentView: View | null = parentResult.status === 'fulfilled' ? parentResult.value : null;
+
+      // Row-page case: parentId is an orphan row document the folder API can't see.
+      // Duplicate the child database view directly — the server deep-copies the
+      // embedded database and registers the new view under the same container — then
+      // discover the new view by diffing the (resolvable) source container's children.
+      if (!beforeParentView) {
+        const beforeContainerChildIds = new Set((sourceContainerView.children ?? []).map((c) => c.view_id));
+
+        await duplicatePage(sourceViewIds[0], {
+          includeChildren: true,
+          suffix: duplicateCopySuffix,
+          source: 0,
+          afterPreSync: duplicateBlobPreSync,
+        });
+
+        const rowPageDuplicate = await findFreshDatabaseViewInContainer({
+          workspaceId,
+          sourceContainerId,
+          beforeChildIds: beforeContainerChildIds,
+          sourceDatabaseId: databaseId,
+        });
+
+        if (!rowPageDuplicate) {
+          throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
+        }
+
+        await waitForDatabaseBlobSeeds(workspaceId, rowPageDuplicate.databaseId);
+
+        return createDatabaseNodeData({
+          parentId,
+          viewIds: [rowPageDuplicate.viewId],
+          databaseId: rowPageDuplicate.databaseId,
+        });
+      }
+
+      // Normal-document case (unchanged): duplicate the container under the document
+      // and find the freshly created container by diffing the document's children.
       await duplicatePage(sourceContainerId, {
         parentViewId: parentId,
         includeChildren: true,
         suffix: duplicateCopySuffix,
         source: 0,
-        afterPreSync: async () => {
-          await prefetchDatabaseBlobDiff(workspaceId, databaseId, {
-            forceFullSync: true,
-          });
-        },
+        afterPreSync: duplicateBlobPreSync,
       });
-
-      let duplicatedContainerView;
-      let duplicatedContainer;
-      let newPrimaryViewId: string | undefined;
-      let newDatabaseId: string | undefined;
 
       // The folder duplicate call is async with respect to sidebar/view metadata updates.
       // Poll the refreshed parent view instead of assuming the new child is visible immediately.
       // Use cache-busting (_t param) and depth=2 to ensure fresh, complete children lists.
-      for (let attempt = 0; attempt < 20; attempt++) {
-        ViewService.invalidateCache(workspaceId, parentId);
-        const afterParentView = await getViewNoCache(workspaceId, parentId, 2);
+      const duplicatedContainer = await findFreshDuplicatedContainer({
+        workspaceId,
+        parentId,
+        beforeParentView,
+        sourceContainerId,
+        sourceContainerView,
+        sourceViewId: sourceViewIds[0],
+        sourceDatabaseId: databaseId,
+        duplicateCopySuffix,
+      });
 
-        const candidate = findDuplicatedContainerChild({
-          beforeChildren: beforeParentView.children,
-          afterChildren: afterParentView.children,
-          sourceContainerId,
-          duplicatedName: `${sourceContainerView.name}${duplicateCopySuffix}`,
-        });
-
-        if (!candidate) {
-          await new Promise((resolve) => window.setTimeout(resolve, 300));
-          continue;
-        }
-
-        ViewService.invalidateCache(workspaceId, candidate.view_id);
-        const candidateContainer = await getViewNoCache(workspaceId, candidate.view_id, 2);
-        const candidatePrimaryViewId = candidateContainer.children?.[0]?.view_id;
-        const candidateDatabaseId = getDatabaseIdFromExtra(candidateContainer);
-
-        // Inline duplication must produce a brand-new container with a new child view
-        // and a new database_id. Keep polling until the fresh duplicate is visible.
-        if (
-          candidatePrimaryViewId &&
-          candidateDatabaseId &&
-          (candidatePrimaryViewId !== sourceViewIds[0] || candidateDatabaseId !== databaseId)
-        ) {
-          duplicatedContainerView = candidate;
-          duplicatedContainer = candidateContainer;
-          newPrimaryViewId = candidatePrimaryViewId;
-          newDatabaseId = candidateDatabaseId;
-          break;
-        }
-
-        await new Promise((resolve) => window.setTimeout(resolve, 300));
-      }
-
-      if (!duplicatedContainerView || !duplicatedContainer || !newPrimaryViewId || !newDatabaseId) {
+      if (!duplicatedContainer) {
         throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
       }
+
+      await waitForDatabaseBlobSeeds(workspaceId, duplicatedContainer.databaseId);
 
       // Map source view IDs to their index positions within the source container,
       // then select the same positions from the duplicated container. This preserves
       // the block's tab subset (e.g., if the block only shows tabs B and C out of
       // A, B, C, the duplicate will also show only B' and C').
-      const duplicatedChildIds = duplicatedContainer.children?.map((c) => c.view_id) ?? [];
+      const duplicatedChildIds = duplicatedContainer.container.children?.map((c) => c.view_id) ?? [];
       const sourceContainerChildIds = sourceContainerView.children?.map((c) => c.view_id) ?? [];
       const mappedViewIds = sourceViewIds
         .map((id) => sourceContainerChildIds.indexOf(id))
         .filter((i) => i >= 0 && i < duplicatedChildIds.length)
         .map((i) => duplicatedChildIds[i]);
 
-      const allDuplicatedViewIds = mappedViewIds.length > 0
-        ? mappedViewIds
-        : duplicatedChildIds.length > 0
+      const allDuplicatedViewIds =
+        mappedViewIds.length > 0
+          ? mappedViewIds
+          : duplicatedChildIds.length > 0
           ? duplicatedChildIds.slice(0, sourceViewIds.length)
-          : [newPrimaryViewId];
+          : [duplicatedContainer.primaryViewId];
 
-      replaceDuplicatedBlockData(
-        createDatabaseNodeData({
-          parentId,
-          viewIds: allDuplicatedViewIds,
-          databaseId: newDatabaseId,
-        })
-      );
+      return createDatabaseNodeData({
+        parentId,
+        viewIds: allDuplicatedViewIds,
+        databaseId: duplicatedContainer.databaseId,
+      });
     },
-    [
-      createDatabaseView,
-      duplicateCopySuffix,
-      duplicatePage,
-      editor,
-      loadViewMeta,
-      t,
-      workspaceId,
-    ]
+    [createDatabaseView, duplicateCopySuffix, duplicatePage, loadViewMeta, t, workspaceId]
   );
 
   const duplicateSelectedBlocks = useCallback(async () => {
@@ -315,10 +451,14 @@ function ControlsMenu({
       }
 
       const [selectedNode] = entry;
+      const isDatabaseBlock = isDatabaseBlockType(selectedNode.type as BlockType);
       const newBlockId = CustomEditor.duplicateBlock(
         editor,
         blockId,
-        index === 0 ? prevId : newBlockIds[index - 1]
+        index === 0 ? prevId : newBlockIds[index - 1],
+        isDatabaseBlock
+          ? { data: createDatabaseDuplicatePlaceholderData((selectedNode as DatabaseNode).data.parent_id) }
+          : undefined
       );
 
       if (!newBlockId) {
@@ -327,21 +467,20 @@ function ControlsMenu({
 
       newBlockIds.push(newBlockId);
 
-      if (!isDatabaseBlockType(selectedNode.type as BlockType)) {
-        continue;
-      }
+      if (isDatabaseBlock) {
+        hasDatabaseBlock = true;
 
-      hasDatabaseBlock = true;
+        try {
+          const nextDatabaseBlockData = await resolveDuplicatedDatabaseBlockData(selectedNode as DatabaseNode);
 
-      try {
-        await duplicateDatabaseBlock(selectedNode as DatabaseNode, newBlockId);
-      } catch (error) {
-        // Roll back ALL previously duplicated blocks, not just the current one
-        for (const id of newBlockIds) {
-          CustomEditor.deleteBlock(editor, id);
+          setDatabaseBlockData(newBlockId, nextDatabaseBlockData);
+        } catch (error) {
+          for (const id of newBlockIds) {
+            CustomEditor.deleteBlock(editor, id);
+          }
+
+          throw error;
         }
-
-        throw error;
       }
     }
 
@@ -359,7 +498,7 @@ function ControlsMenu({
     if (entry) {
       selectPathStartSafely(editor, entry[1]);
     }
-  }, [duplicateDatabaseBlock, editor, selectedBlockIds, t]);
+  }, [editor, resolveDuplicatedDatabaseBlockData, selectedBlockIds, setDatabaseBlockData, t]);
 
   const options = useMemo(() => {
     return [
@@ -434,9 +573,7 @@ function ControlsMenu({
                 onClose();
                 Promise.resolve(option.onClick()).catch((error) => {
                   notify.error(
-                    error instanceof Error
-                      ? error.message
-                      : t('document.plugins.subPage.errors.failedDuplicatePage')
+                    error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage')
                   );
                 });
               }}

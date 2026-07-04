@@ -3,18 +3,21 @@ import EventEmitter from 'events';
 import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState } from 'react';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateRow,
   DatabaseRelations,
   DateFormat,
+  DuplicatePageOperationOptions,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
   LoadView,
   LoadViewMeta,
   MentionSearchContext,
+  RowDocumentSourcePayload,
   RowId,
   SearchMentions,
   Subscription,
@@ -30,7 +33,6 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -67,6 +69,7 @@ export interface DatabaseContextState {
   paddingStart?: number;
   paddingEnd?: number;
   isDocumentBlock?: boolean;
+  embeddedHeight?: number;
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
@@ -84,7 +87,7 @@ export interface DatabaseContextState {
    * Only available in app mode - not provided in publish mode.
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
   duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
@@ -96,6 +99,7 @@ export interface DatabaseContextState {
   addPage?: (parentId: string, payload: import('@/application/types').CreatePagePayload) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;

@@ -11,6 +11,7 @@ import {
 } from '@/application/services/js-services/http/publish-api';
 import {
   CreateDatabaseViewPayload,
+  CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreateSpacePayload,
@@ -458,7 +459,7 @@ export function usePageOperations({
 
   // Create orphaned view
   const createOrphanedViewOp = useCallback(
-    async (payload: { document_id: string }) => {
+    async (payload: CreateOrphanedViewPayload) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }

@@ -352,6 +352,14 @@ function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
   });
 }
 
+function folderOutlinePatchMayAffectFavorites(patch: JsonPatchOperation[]): boolean {
+  return patch.some((op) => {
+    const path = op.path ?? '';
+
+    return path === '/outline' || path.endsWith('/is_favorite') || path.endsWith('/extra');
+  });
+}
+
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -370,6 +378,7 @@ export function useWorkspaceData() {
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
+  const favoriteViewsLoadedRef = useRef(false);
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
@@ -415,6 +424,33 @@ export function useWorkspaceData() {
 
     return mergedOutline;
   }, []);
+
+  const refreshFavoriteViewsForWorkspace = useCallback(async (workspaceId: string) => {
+    try {
+      const res = await ViewService.getFavorites(workspaceId);
+
+      if (!res) {
+        throw new Error('Favorite views not found');
+      }
+
+      favoriteViewsLoadedRef.current = true;
+      setFavoriteViews(res);
+      return res;
+    } catch (e) {
+      console.error('Favorite views not found');
+    }
+  }, []);
+
+  const refreshLoadedFavoriteViewsInBackground = useCallback(
+    (workspaceId: string) => {
+      if (!favoriteViewsLoadedRef.current) {
+        return;
+      }
+
+      void refreshFavoriteViewsForWorkspace(workspaceId);
+    },
+    [refreshFavoriteViewsForWorkspace]
+  );
 
   // Load application outline
   const updateLastFolderRid = useCallback((next: FolderRid | null) => {
@@ -1190,6 +1226,7 @@ export function useWorkspaceData() {
       if (!payload?.outlineDiffJson) {
         Log.debug('[Outline] [FolderOutlineChanged] No diff JSON, reloading outline');
         refreshTrashListInBackground();
+        refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
         void loadOutline(currentWorkspaceId, false);
         return;
       }
@@ -1229,6 +1266,9 @@ export function useWorkspaceData() {
       }
 
       refreshTrashListInBackground();
+      if (folderOutlinePatchMayAffectFavorites(patch)) {
+        refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+      }
 
       Log.debug('[Outline] [FolderOutlineChanged] parsed patch', patch);
 
@@ -1320,6 +1360,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
+    refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
@@ -1352,8 +1393,12 @@ export function useWorkspaceData() {
           if (!payload.viewJson) break;
           try {
             const updatedView = JSON.parse(payload.viewJson) as View;
+            const previousView = findView(nextOutline, updatedView.view_id);
 
             nextOutline = updateViewInOutline(nextOutline, updatedView);
+            if (previousView?.is_favorite !== updatedView.is_favorite) {
+              refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+            }
           } catch (error) {
             Log.warn('[Outline] [FolderViewChanged] Failed to parse view_json for fields changed', error);
             void loadOutline(currentWorkspaceId, false);
@@ -1459,6 +1504,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
+    refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     stableOutlineRef,
     updateLastFolderRid,
@@ -1467,19 +1513,8 @@ export function useWorkspaceData() {
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {
     if (!currentWorkspaceId) return;
-    try {
-      const res = await ViewService.getFavorites(currentWorkspaceId);
-
-      if (!res) {
-        throw new Error('Favorite views not found');
-      }
-
-      setFavoriteViews(res);
-      return res;
-    } catch (e) {
-      console.error('Favorite views not found');
-    }
-  }, [currentWorkspaceId]);
+    return refreshFavoriteViewsForWorkspace(currentWorkspaceId);
+  }, [currentWorkspaceId, refreshFavoriteViewsForWorkspace]);
 
   // Load recent views
   const loadRecentViews = useCallback(async () => {
@@ -1652,6 +1687,7 @@ export function useWorkspaceData() {
     // `undefined` (the unloaded state) also lets lazy consumers — e.g. the
     // header FavoriteButton — detect the stale state and refetch for the new
     // workspace instead of rendering the previous workspace's favorites.
+    favoriteViewsLoadedRef.current = false;
     setFavoriteViews(undefined);
     setRecentViews(undefined);
     // Clear database relations cache when switching workspaces to prevent

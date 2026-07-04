@@ -21,10 +21,12 @@ import {
   CreatePageResponse,
   CreateRow,
   DatabaseRelations,
+  DuplicatePageOperationOptions,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadView,
   LoadViewMeta,
+  RowDocumentSourcePayload,
   RowId,
   SearchMentions,
   UIVariant,
@@ -74,7 +76,7 @@ export interface Database2Props {
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   duplicateRowDocument?: (
     databaseId: string,
     sourceRowId: string,
@@ -135,6 +137,7 @@ export interface Database2Props {
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   /**
    * Delete a page/view (move to trash).
    * This is used by database tab delete to sync with the sidebar.
@@ -206,6 +209,7 @@ function Database(props: Database2Props) {
   const localCachePrimedRef = useRef(false);
   const syncedRowKeysRef = useRef<Set<string>>(new Set());
   const batchPreloadDoneRef = useRef(false);
+  const preloadGenerationRef = useRef(0);
   // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
   const seedsGateRef = useRef(createDeferredGate());
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
@@ -382,12 +386,16 @@ function Database(props: Database2Props) {
     [getDatabaseId]
   );
 
-  const runBatchPreload = useCallback(() => {
+  const runBatchPreload = useCallback((expectedGeneration = preloadGenerationRef.current) => {
+    if (preloadGenerationRef.current !== expectedGeneration) return;
     if (batchPreloadDoneRef.current) return;
+
     batchPreloadDoneRef.current = true;
+    const generation = expectedGeneration;
     const gate = seedsGateRef.current;
     const databaseId = getDatabaseId();
     const priorityRowIds = getPriorityRowIds();
+    const isCurrentGeneration = () => preloadGenerationRef.current === generation;
 
     if (priorityRowIds.length === 0) {
       gate.resolve();
@@ -431,6 +439,11 @@ function Database(props: Database2Props) {
       })
     )
       .then((results) => {
+        if (!isCurrentGeneration()) {
+          gate.resolve();
+          return;
+        }
+
         const newEntries: Record<string, YDoc> = {};
         const syncKeys: string[] = [];
 
@@ -445,10 +458,15 @@ function Database(props: Database2Props) {
 
         if (count > 0) {
           // Single setState to add all preloaded rows at once
-          setRowMap((prev) => ({ ...prev, ...newEntries }));
+          setRowMap((prev) => {
+            if (!isCurrentGeneration()) return prev;
+            return { ...prev, ...newEntries };
+          });
 
           // Defer sync binding — rows are hydrated from seeds, sync can wait
           requestAnimationFrame(() => {
+            if (!isCurrentGeneration()) return;
+
             syncKeys.forEach((rowKey) => registerRowSync(rowKey));
           });
         }
@@ -464,6 +482,9 @@ function Database(props: Database2Props) {
   }, [getDatabaseId, getPriorityRowIds, registerRowSync]);
 
   const ensureBlobPrefetch = useCallback(() => {
+    const generation = preloadGenerationRef.current;
+    const isCurrentGeneration = () => preloadGenerationRef.current === generation;
+
     // Skip blob prefetch in read-only mode (publish view)
     // The publish API doesn't support blob/diff endpoint
     if (readOnly) {
@@ -500,17 +521,23 @@ function Database(props: Database2Props) {
       priorityRowIds,
       forceFullSync,
       onSeedsReady: () => {
+        if (!isCurrentGeneration()) return;
+
         // Seeds are cached — filter/sort can now build ephemeral docs from them
         // without waiting for IndexedDB persist.
         setSeedsReady(true);
         // Also kick off batch preload for visible rows (heavy IndexedDB path).
-        runBatchPreload();
+        runBatchPreload(generation);
       },
     })
       .then(() => {
+        if (!isCurrentGeneration()) return;
+
         setBlobPrefetchComplete(true);
       })
       .catch(() => {
+        if (!isCurrentGeneration()) return;
+
         prefetchPromisesRef.current.delete(prefetchKey);
         seedsGateRef.current.resolve(); // Unblock ensureRow on failure
         setBlobPrefetchComplete(true);
@@ -538,14 +565,21 @@ function Database(props: Database2Props) {
         throw new Error('createRow function is not provided');
       }
 
+      const generation = preloadGenerationRef.current;
+      const isCurrentGeneration = () => preloadGenerationRef.current === generation;
       const [rowKeyDatabaseId, rowId] = rowKey.split('_rows_');
       const currentDatabaseId = getDatabaseId();
 
       const rowDoc = await createRow(rowKey);
 
+      if (!isCurrentGeneration()) {
+        return rowDoc;
+      }
+
       // Add the new row doc to rowMap so grouping logic can see it immediately
       if (rowId && rowDoc) {
         setRowMap((prev) => {
+          if (!isCurrentGeneration()) return prev;
           if (prev[rowId]) return prev;
           return { ...prev, [rowId]: rowDoc };
         });
@@ -565,6 +599,9 @@ function Database(props: Database2Props) {
     async (rowId: string) => {
       if (!createRow || !rowId) return;
 
+      const generation = preloadGenerationRef.current;
+      const isCurrentGeneration = () => preloadGenerationRef.current === generation;
+
       // Fast path: row already loaded (e.g. by batch preload or previous call).
       // Check before awaiting the gate to avoid blocking on already-available rows.
       const existing = rowMapRef.current[rowId];
@@ -580,6 +617,8 @@ function Database(props: Database2Props) {
       // Wait for batch preload to finish — it loads visible rows from seeds
       // in parallel. After it completes, the row may now be in rowMap.
       await seedsGateRef.current.promise;
+
+      if (!isCurrentGeneration()) return;
 
       const existingAfterGate = rowMapRef.current[rowId];
 
@@ -598,6 +637,8 @@ function Database(props: Database2Props) {
       }
 
       const promise = (async () => {
+        if (!isCurrentGeneration()) return undefined;
+
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
         const cachedRowDoc = getCachedRowDoc(rowKey);
@@ -611,6 +652,8 @@ function Database(props: Database2Props) {
         try {
           const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
+          if (!isCurrentGeneration()) return undefined;
+
           // Bind sync for this row - only visible rows call ensureRow
           // Non-visible rows rely on blob diff cached data
           registerRowSync(rowKey);
@@ -622,6 +665,8 @@ function Database(props: Database2Props) {
 
           return rowDoc;
         } catch {
+          if (!isCurrentGeneration()) return undefined;
+
           if (!localCachePrimedRef.current) {
             localCachePrimedRef.current = true;
             void ensureBlobPrefetch();
@@ -636,8 +681,11 @@ function Database(props: Database2Props) {
       try {
         const rowDoc = await promise;
 
+        if (!isCurrentGeneration()) return undefined;
+
         if (rowDoc) {
           setRowMap((prev) => {
+            if (!isCurrentGeneration()) return prev;
             if (prev[rowId]) return prev;
             return { ...prev, [rowId]: rowDoc };
           });
@@ -645,7 +693,9 @@ function Database(props: Database2Props) {
 
         return rowDoc;
       } finally {
-        pendingRowDocsRef.current.delete(rowId);
+        if (pendingRowDocsRef.current.get(rowId) === promise) {
+          pendingRowDocsRef.current.delete(rowId);
+        }
       }
     },
     // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
@@ -656,7 +706,10 @@ function Database(props: Database2Props) {
 
   useEffect(() => {
     const initialRowMap = props.initialRowMap ?? {};
+    const previousGate = seedsGateRef.current;
 
+    preloadGenerationRef.current += 1;
+    previousGate.resolve();
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
     prefetchPromisesRef.current.clear();
@@ -806,6 +859,7 @@ function Database(props: Database2Props) {
       paddingStart: props.paddingStart,
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
+      embeddedHeight,
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
@@ -824,6 +878,7 @@ function Database(props: Database2Props) {
       createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
+      duplicatePage: props.duplicatePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
@@ -847,6 +902,7 @@ function Database(props: Database2Props) {
       props.paddingStart,
       props.paddingEnd,
       _isDocumentBlock,
+      embeddedHeight,
       handleOpenRow,
       loadView,
       bindViewSync,
@@ -865,6 +921,7 @@ function Database(props: Database2Props) {
       props.createDatabaseView,
       props.updatePage,
       props.deletePage,
+      props.duplicatePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
