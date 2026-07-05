@@ -345,7 +345,9 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
   useEffect(() => {
     if (!hasConditions || !seedsReady || !peekRowDocFromSeed || store.seedHydrateActive) return;
 
-    const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
+    const rowOrdersData = (view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
+      (row) => !row.is_deleted
+    );
 
     if (!rowOrdersData) return;
 
@@ -442,7 +444,9 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
   useEffect(() => {
     if (!hasConditions || !blobPrefetchComplete) return;
 
-    const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
+    const rowOrdersData = (view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
+      (row) => !row.is_deleted
+    );
 
     if (!rowOrdersData) return;
 

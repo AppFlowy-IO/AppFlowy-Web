@@ -1,46 +1,72 @@
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
+import { getRowDocumentSourceFromView } from '@/application/row-document/lifecycle';
+import { ViewService } from '@/application/services/domains';
 import { ReactComponent as RefPageIcon } from '@/assets/icons/ref_page.svg';
+import { notify } from '@/components/_shared/notify';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
 interface MentionDatabaseProps {
   databaseId?: string;
   databaseViewId?: string;
   rowId?: string;
+  rowDocumentId?: string;
   title?: string;
 }
 
-function MentionDatabase({ databaseId, databaseViewId, rowId, title }: MentionDatabaseProps) {
-  const { navigateToView, getViewIdFromDatabaseId } = useEditorContext();
-  // Keyed by databaseId so a stale fetch result is never applied to a
-  // different database's mention.
-  const [fetchedView, setFetchedView] = useState<{ databaseId: string; viewId?: string } | null>(null);
+function MentionDatabase({ databaseId, databaseViewId, rowId, rowDocumentId, title }: MentionDatabaseProps) {
+  const { navigateToView, getViewIdFromDatabaseId, workspaceId } = useEditorContext();
+  const { t } = useTranslation();
+  // Keyed by the fallback inputs so a stale fetch result is never applied to
+  // a different mention's ids.
+  const fallbackKey = `${databaseId ?? ''}:${rowDocumentId ?? ''}`;
+  const [fetchedView, setFetchedView] = useState<{ key: string; viewId?: string } | null>(null);
   const resolvedViewId =
-    databaseViewId || (fetchedView && fetchedView.databaseId === databaseId ? fetchedView.viewId : undefined);
+    databaseViewId || (fetchedView && fetchedView.key === fallbackKey ? fetchedView.viewId : undefined);
   const content = title || rowId || databaseId || 'Database';
   const canNavigate = Boolean(resolvedViewId);
 
   useEffect(() => {
-    if (databaseViewId || !databaseId || !getViewIdFromDatabaseId) return;
+    if (databaseViewId || (!databaseId && !rowDocumentId)) return;
 
     let cancelled = false;
 
-    void getViewIdFromDatabaseId(databaseId)
-      .then((viewId) => {
-        if (!cancelled) {
-          setFetchedView({ databaseId, viewId: viewId ?? undefined });
+    const resolve = async () => {
+      let viewId: string | undefined;
+
+      if (databaseId && getViewIdFromDatabaseId) {
+        try {
+          viewId = (await getViewIdFromDatabaseId(databaseId)) ?? undefined;
+        } catch {
+          // fall through to the row-document fallback
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setFetchedView({ databaseId, viewId: undefined });
+      }
+
+      // Desktop-parity fallback: mentions written without a database view id
+      // can still resolve through the materialized row-document view, whose
+      // extra carries the source database_view_id.
+      if (!viewId && rowDocumentId && workspaceId) {
+        try {
+          const view = await ViewService.get(workspaceId, rowDocumentId);
+
+          viewId = getRowDocumentSourceFromView(view)?.database_view_id;
+        } catch {
+          // leave unresolved; the chip renders non-clickable
         }
-      });
+      }
+
+      if (!cancelled) {
+        setFetchedView({ key: fallbackKey, viewId });
+      }
+    };
+
+    void resolve();
 
     return () => {
       cancelled = true;
     };
-  }, [databaseId, databaseViewId, getViewIdFromDatabaseId]);
+  }, [databaseId, databaseViewId, fallbackKey, getViewIdFromDatabaseId, rowDocumentId, workspaceId]);
 
   const handleClick = useCallback(
     (event: MouseEvent<HTMLSpanElement>) => {
@@ -48,10 +74,12 @@ function MentionDatabase({ databaseId, databaseViewId, rowId, title }: MentionDa
       if (!resolvedViewId) return;
 
       setTimeout(() => {
-        void navigateToView?.(resolvedViewId, rowId);
+        void Promise.resolve(navigateToView?.(resolvedViewId, rowId)).catch(() => {
+          notify.error(t('chat.openPagePreviewFailedToast'));
+        });
       }, 0);
     },
-    [navigateToView, resolvedViewId, rowId]
+    [navigateToView, resolvedViewId, rowId, t]
   );
 
   return (

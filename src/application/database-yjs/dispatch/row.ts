@@ -36,10 +36,18 @@ import { createSelectOptionCell } from '@/application/database-yjs/fields/select
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
+import { PageService } from '@/application/services/domains';
+import {
+  ensureRowDocumentView,
+  rowDocumentExists,
+  rowDocumentIdFromRowId,
+  syncRowDocumentViewName,
+} from '@/application/row-document/lifecycle';
 import { applyRelationReciprocalInserts } from './relation';
+import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
-import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/database-yjs/selector';
+import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
 import { executeOperationWithAllViews } from './utils';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
@@ -291,6 +299,154 @@ export function useBulkDeleteRowDispatch() {
       });
     },
     [sharedRoot, database]
+  );
+}
+
+export function useSoftDeleteRowsDispatch() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (rowIds: string[]) => {
+      softDeleteRowsInDatabase(sharedRoot, database, rowIds);
+    },
+    [sharedRoot, database]
+  );
+}
+
+function readPrimaryCellText(rowDoc: Y.Doc, database: ReturnType<typeof useDatabase>): string {
+  const primaryFieldId = getPrimaryFieldId(database);
+
+  if (!primaryFieldId) return '';
+
+  const row = rowDoc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+  const data = row?.get(YjsDatabaseKey.cells)?.get(primaryFieldId)?.get(YjsDatabaseKey.data);
+
+  return typeof data === 'string' ? data : '';
+}
+
+/**
+ * Trash-aware row deletion mirroring desktop semantics:
+ * - rows whose document has content are tombstoned (restorable) and their
+ *   row-document view is moved to trash;
+ * - rows without document content are hard-deleted with no trash entry.
+ *
+ * The tombstone is applied synchronously so the UI updates immediately; the
+ * trash HTTP calls run afterwards and never resurrect the row on failure.
+ */
+export function useTrashAwareDeleteRowsDispatch() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const context = useDatabaseContext();
+  const { rowMap, ensureRow, workspaceId, activeViewId, databasePageId } = context;
+
+  return useCallback(
+    async (rowIds: string[]) => {
+      const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
+      const databaseViewId = activeViewId || databasePageId;
+      const softTargets: { rowId: string; documentId: string; title: string }[] = [];
+      const hardCandidates: { rowId: string; documentId: string; rowDoc?: Y.Doc }[] = [];
+
+      for (const rowId of rowIds) {
+        let rowDoc = rowMap?.[rowId];
+
+        if (!rowDoc && ensureRow) {
+          try {
+            rowDoc = (await ensureRow(rowId)) ?? undefined;
+          } catch (e) {
+            Log.warn('[useTrashAwareDeleteRowsDispatch] ensureRow failed', { rowId, error: e });
+          }
+        }
+
+        const metaMap = rowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.meta) as
+          | Y.Map<unknown>
+          | undefined;
+        const meta = metaMap ? getMetaJSON(rowId, metaMap) : null;
+        const documentId = meta?.documentId || rowDocumentIdFromRowId(rowId);
+
+        // Desktop: row_has_document = !is_document_empty.
+        if (meta?.isEmptyDocument === false && rowDoc) {
+          softTargets.push({
+            rowId,
+            documentId,
+            title: readPrimaryCellText(rowDoc, database),
+          });
+        } else {
+          hardCandidates.push({ rowId, documentId, rowDoc });
+        }
+      }
+
+      // Desktop's existing_row_document_metadata_candidates: a row whose meta
+      // says empty is still trashed when its row document was materialized on
+      // the server (e.g. content typed then cleared, or stale meta).
+      if (hardCandidates.length > 0 && workspaceId) {
+        const promoted = await Promise.all(
+          hardCandidates.map(async (candidate) => ({
+            candidate,
+            exists: await rowDocumentExists(workspaceId, candidate.documentId),
+          }))
+        );
+
+        promoted.forEach(({ candidate, exists }) => {
+          if (exists) {
+            softTargets.push({
+              rowId: candidate.rowId,
+              documentId: candidate.documentId,
+              title: candidate.rowDoc ? readPrimaryCellText(candidate.rowDoc, database) : '',
+            });
+          }
+        });
+      }
+
+      const softRowIds = new Set(softTargets.map((target) => target.rowId));
+      const hardTargets = hardCandidates.map(({ rowId }) => rowId).filter((rowId) => !softRowIds.has(rowId));
+
+      if (softTargets.length > 0) {
+        softDeleteRowsInDatabase(
+          sharedRoot,
+          database,
+          softTargets.map((target) => target.rowId)
+        );
+
+        if (workspaceId && databaseId && databaseViewId) {
+          void (async () => {
+            for (const { rowId, documentId, title } of softTargets) {
+              try {
+                await ensureRowDocumentView(workspaceId, documentId, {
+                  database_id: databaseId,
+                  database_view_id: databaseViewId,
+                  row_id: rowId,
+                });
+                const name = title.trim();
+
+                if (name) {
+                  await syncRowDocumentViewName(workspaceId, documentId, name);
+                }
+
+                await PageService.moveToTrash(workspaceId, documentId);
+              } catch (e) {
+                Log.error('[useTrashAwareDeleteRowsDispatch] move row page to trash failed', {
+                  rowId,
+                  documentId,
+                  error: e,
+                });
+              }
+            }
+          })();
+        } else {
+          Log.error('[useTrashAwareDeleteRowsDispatch] missing ids for trash call', {
+            workspaceId,
+            databaseId,
+            databaseViewId,
+          });
+        }
+      }
+
+      if (hardTargets.length > 0) {
+        removeRowsFromDatabase(sharedRoot, database, hardTargets);
+      }
+    },
+    [activeViewId, database, databasePageId, ensureRow, rowMap, sharedRoot, workspaceId]
   );
 }
 

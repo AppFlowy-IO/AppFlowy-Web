@@ -30,7 +30,7 @@ import {
 } from '@/application/types';
 
 // Import from sibling dispatch files
-import { useBulkDeleteRowDispatch } from './row';
+import { useTrashAwareDeleteRowsDispatch } from './row';
 import { useDeleteSelectOption } from './type-option';
 
 /**
@@ -207,7 +207,7 @@ export function useReorderGroupColumnDispatch(groupId: string) {
 export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, fieldId: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const deleteRows = useBulkDeleteRowDispatch();
+  const deleteRows = useTrashAwareDeleteRowsDispatch();
   const deleteSelectOption = useDeleteSelectOption(fieldId);
   const fieldType = useFieldType(fieldId);
   const deleteGroupColumn = useCallback(() => {
@@ -262,7 +262,7 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
 
       // If rowIds are provided, delete the rows
       if (rowIds && rowIds.length > 0) {
-        deleteRows(rowIds);
+        void deleteRows(rowIds);
       }
     },
     [isSelectField, deleteGroupColumn, deleteSelectOption, columnId, deleteRows]

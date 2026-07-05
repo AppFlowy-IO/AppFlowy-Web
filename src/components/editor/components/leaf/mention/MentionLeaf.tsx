@@ -28,6 +28,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     database_view_id,
     row_id,
     database_row_id,
+    row_document_id,
   } = mention;
   const databaseRowId = row_id || database_row_id;
   const rawDatabaseTitle = mention.data?.title;
@@ -45,6 +46,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
           databaseId={database_id}
           databaseViewId={database_view_id || page_id}
           rowId={databaseRowId}
+          rowDocumentId={row_document_id}
           title={databaseTitle}
         />
       );
@@ -79,6 +81,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     database_id,
     database_view_id,
     databaseRowId,
+    row_document_id,
     databaseTitle,
   ]);
 

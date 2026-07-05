@@ -1322,12 +1322,28 @@ export interface ViewCover {
  * This is the union of all extra types that can be stored in a view's extra field.
  * The extra field is a JSON blob that may contain any combination of these properties.
  */
+/**
+ * Source ids of the database row a row-document view was materialized from.
+ * Mirrors the server's `{"row_document":{"source":{...}}}` extra JSON written
+ * by POST /orphaned-view with `row_document_source`.
+ */
+export interface RowDocumentSourceExtra {
+  database_id?: string;
+  database_view_id?: string;
+  row_id?: string;
+}
+
 export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
   /** Whether this view is pinned. */
   is_pinned?: boolean;
 
   /** The view's cover image/color configuration. */
   cover?: ViewCover;
+
+  /** Present on materialized row-document (row page) views. */
+  row_document?: {
+    source?: RowDocumentSourceExtra;
+  };
 }
 
 export interface View {

@@ -29,6 +29,7 @@ import { ReactComponent as DateIcon } from '@/assets/icons/date.svg';
 import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
+import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as ReminderIcon } from '@/assets/icons/reminder_clock.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
@@ -221,7 +222,9 @@ function MentionResultIcon({ item, title }: { item: MentionSearchResultItem; tit
       return <MentionPersonAvatar item={item} title={title} />;
     case MentionTargetKind.Database:
     case MentionTargetKind.DatabaseRow:
-      return <DocumentIcon className={className} />;
+      // Desktop parity: database and database-row results render inline in
+      // the Pages section with a grid icon.
+      return <GridIcon className={className} />;
     case MentionTargetKind.Date:
       return <DateIcon className={className} />;
     case MentionTargetKind.Reminder:
@@ -260,6 +263,7 @@ function MentionResultButton({
       color={'inherit'}
       size={'small'}
       data-option-index={index}
+      data-option-kind={item.kind}
       startIcon={<MentionResultIcon item={item} title={title} />}
       className={`min-h-[40px] scroll-m-2 justify-start rounded-[8px] bg-fill-content px-3 text-text-primary hover:bg-fill-content-hover ${
         selected ? 'bg-fill-content-hover' : ''

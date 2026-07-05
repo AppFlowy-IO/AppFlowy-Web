@@ -258,7 +258,11 @@ Then('the mention panel does not show a links section', async ({ page }) => {
 });
 
 Then('the mention panel does not show database rows', async ({ page }) => {
+  // Desktop parity: rows render inline in the Pages section (no "Database
+  // rows" heading exists anymore), so absence is asserted on row RESULT
+  // buttons via their data-option-kind.
   await expect(mentionPanel(page).getByText('Database rows', { exact: true })).toHaveCount(0);
+  await expect(mentionPanel(page).locator('[data-option-kind="database_row"]')).toHaveCount(0);
 });
 
 Then('the mention panel shows the fixture member', async ({ page }) => {
@@ -294,9 +298,14 @@ Then('the browser sent a database-row mention search request', async ({ page }) 
 
 Then('the mention panel shows the fixture database row', async ({ page }) => {
   const resultSection = mentionPanel(page).locator('[data-option-category="result"]');
+  const rowResult = resultSection
+    .locator('[data-option-kind="database_row"]')
+    .filter({ hasText: new RegExp(requireRowKeyword(getState(page))) });
 
-  await expect(resultSection.getByText('Database rows', { exact: true })).toBeVisible({ timeout: 30000 });
-  await expect(resultSection.getByRole('button', { name: new RegExp(requireRowKeyword(getState(page))) })).toBeVisible();
+  // Desktop parity: the row renders inline in the Pages section — there is no
+  // separate "Database rows" heading.
+  await expect(rowResult.first()).toBeVisible({ timeout: 30000 });
+  await expect(resultSection.getByText('Database rows', { exact: true })).toHaveCount(0);
 });
 
 async function ensureMemberJoinedOwnerWorkspace(request: APIRequestContext, state: MentionFixtureState): Promise<void> {

@@ -314,10 +314,12 @@ function collectDatabaseRowIds(database: YDatabase, loadedRowIds: RowId[] = []) 
   const viewIds = Object.keys(views?.toJSON() ?? {});
 
   for (const viewId of viewIds) {
-    const rowOrders = views.get(viewId)?.get(YjsDatabaseKey.row_orders)?.toArray() as Array<{ id?: string }> | undefined;
+    const rowOrders = views.get(viewId)?.get(YjsDatabaseKey.row_orders)?.toArray() as
+      | Array<{ id?: string; is_deleted?: boolean }>
+      | undefined;
 
     rowOrders?.forEach((row) => {
-      if (row.id) rowIds.add(row.id);
+      if (row.id && !row.is_deleted) rowIds.add(row.id);
     });
   }
 

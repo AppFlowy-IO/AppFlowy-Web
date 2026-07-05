@@ -8,13 +8,19 @@ import dayjs from 'dayjs';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { View } from '@/application/types';
+import {
+  removeRowsFromDatabase,
+  restoreSoftDeletedRowsInDatabase,
+} from '@/application/database-yjs/dispatch/row-lifecycle';
+import { getRowDocumentSourceFromView } from '@/application/row-document/lifecycle';
+import { RowDocumentSourcePayload, View, YDatabase, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as RestoreIcon } from '@/assets/icons/restore.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
 import { useAppOperations, useAppTrash, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { Log } from '@/utils/log';
 
 function TrashPage() {
   const { t } = useTranslation();
@@ -25,27 +31,87 @@ function TrashPage() {
   const deleteView = useMemo(() => {
     return trashList?.find((view) => view.view_id === deleteViewId);
   }, [deleteViewId, trashList]);
-  const { deleteTrash, restorePage } = useAppOperations();
+  const { deleteTrash, restorePage, loadView, bindViewSync } = useAppOperations();
+
+  // Applies a row-lifecycle mutation (restore / permanent delete) to the
+  // database collab a trashed row page belongs to. The collab is loaded with
+  // sync bound so the change reaches the server through the normal outbox.
+  const withDatabaseCollab = useCallback(
+    async (
+      source: RowDocumentSourcePayload,
+      mutate: (sharedRoot: YSharedRoot, database: YDatabase, rowIds: string[]) => void
+    ) => {
+      const doc = await loadView(source.database_view_id, false, false, { databaseId: source.database_id });
+
+      bindViewSync?.(doc);
+      const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+      const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+
+      if (!database) {
+        throw new Error('Database not found for trashed row page');
+      }
+
+      mutate(sharedRoot, database, [source.row_id]);
+    },
+    [bindViewSync, loadView]
+  );
+
+  const rowDocumentEntries = useCallback(
+    (viewId?: string) => {
+      const entries = viewId ? trashList?.filter((view) => view.view_id === viewId) : trashList;
+
+      return (entries ?? [])
+        .map((view) => getRowDocumentSourceFromView(view))
+        .filter((source): source is RowDocumentSourcePayload => source !== null);
+    },
+    [trashList]
+  );
 
   const handleRestore = useCallback(
     async (viewId?: string) => {
       if (!currentWorkspaceId) return;
       try {
+        const rowSources = rowDocumentEntries(viewId);
+
         await restorePage?.(viewId);
+        // Restoring a row page also clears the row's soft-delete tombstone so
+        // it reappears in every database view.
+        for (const source of rowSources) {
+          try {
+            await withDatabaseCollab(source, restoreSoftDeletedRowsInDatabase);
+          } catch (e) {
+            Log.error('[TrashPage] failed to restore row for row page', { source, error: e });
+          }
+        }
+
         void loadTrash?.(currentWorkspaceId);
         // eslint-disable-next-line
       } catch (e: any) {
         notify.error(`Failed to restore page: ${e.message}`);
       }
     },
-    [restorePage, loadTrash, currentWorkspaceId]
+    [restorePage, loadTrash, currentWorkspaceId, rowDocumentEntries, withDatabaseCollab]
   );
 
   const handleDelete = useCallback(
     async (viewId?: string) => {
       if (!currentWorkspaceId) return;
       try {
+        const rowSources = rowDocumentEntries(viewId);
+
         await deleteTrash?.(viewId);
+        // Permanently deleting a row page removes the row from the database
+        // collab entirely (the folder trash entry is already gone).
+        for (const source of rowSources) {
+          try {
+            await withDatabaseCollab(source, (sharedRoot, database, rowIds) =>
+              removeRowsFromDatabase(sharedRoot, database, rowIds)
+            );
+          } catch (e) {
+            Log.error('[TrashPage] failed to remove row for row page', { source, error: e });
+          }
+        }
+
         setDeleteViewId(undefined);
         void loadTrash?.(currentWorkspaceId);
         // eslint-disable-next-line
@@ -53,7 +119,7 @@ function TrashPage() {
         notify.error(`Failed to delete page: ${e.message}`);
       }
     },
-    [deleteTrash, loadTrash, currentWorkspaceId]
+    [deleteTrash, loadTrash, currentWorkspaceId, rowDocumentEntries, withDatabaseCollab]
   );
 
   useEffect(() => {

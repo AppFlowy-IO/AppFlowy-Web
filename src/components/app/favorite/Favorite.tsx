@@ -5,13 +5,26 @@ import { groupBy, orderBy, sortBy } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useNavigate } from 'react-router-dom';
+
+import { getRowDocumentSourceFromView } from '@/application/row-document/lifecycle';
+import { ViewService } from '@/application/services/domains';
 import { UIVariant, View, ViewLayout } from '@/application/types';
+import { isDatabaseContainer } from '@/application/view-utils';
+import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import { Log } from '@/utils/log';
 import { ReactComponent as FavoritedIcon } from '@/assets/icons/filled_star.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import OutlineItem from '@/components/_shared/outline/OutlineItem';
 import { Popover } from '@/components/_shared/popover';
 import RecentListSkeleton from '@/components/_shared/skeleton/RecentListSkeleton';
-import { useAIEnabled, useAppFavorites, useToView, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+import {
+  useAIEnabled,
+  useAppFavorites,
+  useCurrentWorkspaceIdOptional,
+  useToView,
+  useSidebarSelectedViewId,
+} from '@/components/app/app.hooks';
 
 const popoverOrigin: Partial<PopoverProps> = {
   transformOrigin: {
@@ -47,7 +60,47 @@ function isPinnedFavorite(view: View): boolean {
 
 export function Favorite() {
   const { favoriteViews, loadFavoriteViews } = useAppFavorites();
-  const navigateToView = useToView();
+  const toView = useToView();
+  const navigate = useNavigate();
+  const workspaceId = useCurrentWorkspaceIdOptional();
+  // Row-page favorites (row-document views) open the containing database view
+  // with the row expanded (?r=) instead of the orphan view id itself. The app
+  // routes database rows as /app/{ws}/{container}?v={view}&r={row}, so resolve
+  // the concrete view's container first — concrete child-view routes don't
+  // reliably render when the database collab is already open elsewhere.
+  const navigateToView = React.useCallback(
+    async (targetViewId: string) => {
+      const view = favoriteViews?.find((item) => item.view_id === targetViewId);
+      const rowDocumentSource = getRowDocumentSourceFromView(view);
+
+      if (rowDocumentSource) {
+        const { database_view_id, row_id } = rowDocumentSource;
+
+        if (workspaceId && database_view_id && row_id) {
+          try {
+            const concreteView = await ViewService.get(workspaceId, database_view_id);
+            const parentId = concreteView?.parent_view_id;
+            const parent = parentId && parentId !== database_view_id ? await ViewService.get(workspaceId, parentId) : null;
+
+            if (parent && isDatabaseContainer(parent)) {
+              navigate(
+                `/app/${workspaceId}/${parent.view_id}?${DATABASE_TAB_VIEW_ID_QUERY_PARAM}=${database_view_id}&r=${row_id}`
+              );
+              return;
+            }
+          } catch (e) {
+            Log.debug('[Favorite] failed to resolve container for row-page favorite', { targetViewId, error: e });
+          }
+        }
+
+        await toView?.(database_view_id, row_id);
+        return;
+      }
+
+      await toView?.(targetViewId);
+    },
+    [favoriteViews, navigate, toView, workspaceId]
+  );
   const viewId = useSidebarSelectedViewId();
   const aiEnabled = useAIEnabled();
   const { t } = useTranslation();

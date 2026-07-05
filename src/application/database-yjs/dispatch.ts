@@ -1318,7 +1318,12 @@ function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
 // resolver picks this file (dispatch.ts) over dispatch/index.ts when both
 // exist as siblings, while TS picks the folder. Without this re-export the
 // two paths resolve to different implementations and silently drift.
-export { useDuplicateRowDispatch, useNewRowDispatch } from './dispatch/row';
+export {
+  useDuplicateRowDispatch,
+  useNewRowDispatch,
+  useSoftDeleteRowsDispatch,
+  useTrashAwareDeleteRowsDispatch,
+} from './dispatch/row';
 
 export function useClearSortingDispatch() {
   const sharedRoot = useSharedRoot();

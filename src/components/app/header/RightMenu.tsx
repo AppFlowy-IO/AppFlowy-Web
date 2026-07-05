@@ -1,10 +1,13 @@
 import { Divider, Tooltip } from '@mui/material';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 
+import { ensureRowDocumentView, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
+import { useActiveRowPage } from '@/application/row-document/row-page-state';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
-import { useAppOutline, useAppView, useAppViewId } from '@/components/app/app.hooks';
+import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { openOrDownload } from '@/utils/open_schema';
 
@@ -19,6 +22,10 @@ function RightMenu() {
   const routeViewId = useAppViewId();
   const outline = useAppOutline();
   const routeView = useAppView(routeViewId);
+  const workspaceId = useCurrentWorkspaceId();
+  const [searchParams] = useSearchParams();
+  const rowPageRowId = searchParams.get('r');
+  const activeRowPage = useActiveRowPage();
   const actionViewId = useMemo(() => {
     if (!routeViewId || !routeView?.parent_view_id) {
       return routeViewId;
@@ -29,11 +36,32 @@ function RightMenu() {
     return parentView && isDatabaseContainer(parentView) ? parentView.view_id : routeViewId;
   }, [outline, routeView?.parent_view_id, routeViewId]);
 
+  // On a full-page row (?r=), the favorite action targets the row document,
+  // not the containing database.
+  const rowPage = rowPageRowId && activeRowPage?.rowId === rowPageRowId ? activeRowPage : null;
+  const prepareRowDocumentForFavorite = useCallback(async () => {
+    if (!rowPage?.documentId || !workspaceId) return;
+
+    if (rowPage.source) {
+      await ensureRowDocumentView(workspaceId, rowPage.documentId, rowPage.source);
+    }
+
+    const name = rowPage.title.trim();
+
+    if (name) {
+      await syncRowDocumentViewName(workspaceId, rowPage.documentId, name);
+    }
+  }, [rowPage, workspaceId]);
+
+  const favoriteViewId = rowPage?.documentId || actionViewId;
+
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
       {actionViewId && <ShareButton viewId={actionViewId} />}
-      {actionViewId && <FavoriteButton viewId={actionViewId} />}
+      {favoriteViewId && (
+        <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
+      )}
       {actionViewId && <MoreActions viewId={actionViewId} />}
 
       <Divider orientation={'vertical'} className={'mx-2'} flexItem />

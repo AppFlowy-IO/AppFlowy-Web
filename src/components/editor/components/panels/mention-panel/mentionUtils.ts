@@ -78,7 +78,13 @@ export function normalizeMentionSearchSectionsForPicker(
   const normalizedSections: MentionSearchSection[] = [];
 
   sections.forEach((section) => {
-    if (section.kind === MentionSearchSectionKind.Databases) {
+    // Databases AND database rows render inline in the Pages section (desktop
+    // parity: the separate "Database rows" heading was removed) — each item
+    // keeps its own kind, which drives its icon and insert behavior.
+    if (
+      section.kind === MentionSearchSectionKind.Databases ||
+      section.kind === MentionSearchSectionKind.DatabaseRows
+    ) {
       if (section.items.length === 0) return;
 
       databaseSection = databaseSection

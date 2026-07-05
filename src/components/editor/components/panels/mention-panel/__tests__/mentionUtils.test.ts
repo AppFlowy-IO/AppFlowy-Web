@@ -533,6 +533,83 @@ describe('mention panel API mapping', () => {
     expect(sections[1].items[1].kind).toBe(MentionTargetKind.Database);
   });
 
+  it('normalizes database row sections into pages for desktop picker parity', () => {
+    const sections = normalizeMentionSearchSectionsForPicker([
+      {
+        kind: MentionSearchSectionKind.Pages,
+        title: 'Pages',
+        has_more: false,
+        status: 'ready',
+        items: [
+          {
+            kind: MentionTargetKind.Page,
+            object_id: 'page-1',
+            title: 'Project Tracker',
+            mention: {
+              type: MentionTargetKind.Page,
+              page_id: 'page-1',
+            },
+          },
+        ],
+      },
+      {
+        kind: MentionSearchSectionKind.DatabaseRows,
+        title: 'Database rows',
+        has_more: false,
+        status: 'ready',
+        items: [
+          {
+            kind: MentionTargetKind.DatabaseRow,
+            object_id: 'row-1',
+            title: 'Roadmap row',
+            mention: {
+              type: MentionTargetKind.DatabaseRow,
+              database_id: 'database-1',
+              row_id: 'row-1',
+            },
+          },
+        ],
+      },
+    ]);
+
+    // Desktop parity: no separate "Database rows" heading — rows render inline
+    // in the Pages section, keeping their own item kind (drives the grid icon).
+    expect(sections.map((section) => section.kind)).toEqual([MentionSearchSectionKind.Pages]);
+    expect(sections[0].items.map((item) => item.title)).toEqual(['Project Tracker', 'Roadmap row']);
+    expect(sections[0].items[1].kind).toBe(MentionTargetKind.DatabaseRow);
+  });
+
+  it('synthesizes a pages section when only database rows are returned', () => {
+    const sections = normalizeMentionSearchSectionsForPicker(
+      [
+        {
+          kind: MentionSearchSectionKind.DatabaseRows,
+          title: 'Database rows',
+          has_more: false,
+          status: 'ready',
+          items: [
+            {
+              kind: MentionTargetKind.DatabaseRow,
+              object_id: 'row-1',
+              title: 'Roadmap row',
+              mention: {
+                type: MentionTargetKind.DatabaseRow,
+                database_id: 'database-1',
+                row_id: 'row-1',
+              },
+            },
+          ],
+        },
+      ],
+      'Pages'
+    );
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0].kind).toBe(MentionSearchSectionKind.Pages);
+    expect(sections[0].title).toBe('Pages');
+    expect(sections[0].items[0].kind).toBe(MentionTargetKind.DatabaseRow);
+  });
+
   it('does not cache typed row-capable searches until a row section is present', () => {
     const requests = buildMentionSearchRequests({
       query: 'hr',
