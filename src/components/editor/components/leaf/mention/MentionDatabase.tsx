@@ -1,32 +1,24 @@
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 
-import { Mention } from '@/application/types';
 import { ReactComponent as RefPageIcon } from '@/assets/icons/ref_page.svg';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
-function getDisplayText(mention: Mention) {
-  const title = mention.data?.title;
-
-  if (typeof title === 'string' && title.length > 0) {
-    return title;
-  }
-
-  return mention.row_id ?? mention.database_row_id ?? mention.database_id ?? 'Database';
+interface MentionDatabaseProps {
+  databaseId?: string;
+  databaseViewId?: string;
+  rowId?: string;
+  title?: string;
 }
 
-function MentionDatabase({ mention }: { mention: Mention }) {
+function MentionDatabase({ databaseId, databaseViewId, rowId, title }: MentionDatabaseProps) {
   const { navigateToView, getViewIdFromDatabaseId } = useEditorContext();
-  const databaseId = mention.database_id;
-  const databaseViewId = mention.database_view_id || mention.page_id;
-  const [resolvedViewId, setResolvedViewId] = useState<string | undefined>(databaseViewId);
-  const content = getDisplayText(mention);
-  const isRowMention = Boolean(mention.row_id || mention.database_row_id);
-  const targetRowId = isRowMention ? mention.row_id ?? mention.database_row_id : undefined;
+  // Keyed by databaseId so a stale fetch result is never applied to a
+  // different database's mention.
+  const [fetchedView, setFetchedView] = useState<{ databaseId: string; viewId?: string } | null>(null);
+  const resolvedViewId =
+    databaseViewId || (fetchedView && fetchedView.databaseId === databaseId ? fetchedView.viewId : undefined);
+  const content = title || rowId || databaseId || 'Database';
   const canNavigate = Boolean(resolvedViewId);
-
-  useEffect(() => {
-    setResolvedViewId(databaseViewId);
-  }, [databaseId, databaseViewId]);
 
   useEffect(() => {
     if (databaseViewId || !databaseId || !getViewIdFromDatabaseId) return;
@@ -36,12 +28,12 @@ function MentionDatabase({ mention }: { mention: Mention }) {
     void getViewIdFromDatabaseId(databaseId)
       .then((viewId) => {
         if (!cancelled) {
-          setResolvedViewId(viewId ?? undefined);
+          setFetchedView({ databaseId, viewId: viewId ?? undefined });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setResolvedViewId(undefined);
+          setFetchedView({ databaseId, viewId: undefined });
         }
       });
 
@@ -56,10 +48,10 @@ function MentionDatabase({ mention }: { mention: Mention }) {
       if (!resolvedViewId) return;
 
       setTimeout(() => {
-        void navigateToView?.(resolvedViewId, targetRowId);
+        void navigateToView?.(resolvedViewId, rowId);
       }, 0);
     },
-    [navigateToView, resolvedViewId, targetRowId]
+    [navigateToView, resolvedViewId, rowId]
   );
 
   return (
@@ -67,7 +59,7 @@ function MentionDatabase({ mention }: { mention: Mention }) {
       onClick={handleClick}
       className={`mention-inline select-none pr-1 underline ${canNavigate ? 'cursor-pointer' : 'cursor-default'}`}
       contentEditable={false}
-      data-mention-id={targetRowId ?? databaseId}
+      data-mention-id={rowId ?? databaseId}
     >
       <span className={'mention-icon'}>
         <RefPageIcon className={'h-[1.25em] w-[1.25em] text-text-primary'} />

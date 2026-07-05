@@ -13,20 +13,41 @@ import { MentionPerson } from '@/components/editor/components/leaf/mention/Menti
 export function MentionLeaf({ mention, text, children }: { mention: Mention; text: Text; children: ReactNode }) {
   const editor = useSlateStatic();
   const readonly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
-  const { type, date, page_id, reminder_id, reminder_option, block_id, url, person_id, person_name, include_time } =
-    mention;
+  const {
+    type,
+    date,
+    page_id,
+    reminder_id,
+    reminder_option,
+    block_id,
+    url,
+    person_id,
+    person_name,
+    include_time,
+    database_id,
+    database_view_id,
+    row_id,
+    database_row_id,
+  } = mention;
+  const databaseRowId = row_id || database_row_id;
+  const rawDatabaseTitle = mention.data?.title;
+  const databaseTitle =
+    typeof rawDatabaseTitle === 'string' && rawDatabaseTitle.length > 0 ? rawDatabaseTitle : undefined;
 
   const reminder = useMemo(() => {
     return reminder_id ? { id: reminder_id ?? '', option: reminder_option ?? '' } : undefined;
   }, [reminder_id, reminder_option]);
 
   const content = useMemo(() => {
-    if (
-      type === MentionType.PageRef &&
-      mention.database_id &&
-      (mention.row_id || mention.database_row_id)
-    ) {
-      return <MentionDatabase mention={mention} />;
+    if (type === MentionType.PageRef && database_id && databaseRowId) {
+      return (
+        <MentionDatabase
+          databaseId={database_id}
+          databaseViewId={database_view_id || page_id}
+          rowId={databaseRowId}
+          title={databaseTitle}
+        />
+      );
     }
 
     if ([MentionType.PageRef, MentionType.childPage].includes(type) && page_id) {
@@ -44,7 +65,22 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     if (type === MentionType.Person && person_id) {
       return <MentionPerson type={type} personId={person_id} person_name={person_name} />;
     }
-  }, [type, page_id, date, text, block_id, reminder, url, person_id, person_name, include_time, mention]);
+  }, [
+    type,
+    page_id,
+    date,
+    text,
+    block_id,
+    reminder,
+    url,
+    person_id,
+    person_name,
+    include_time,
+    database_id,
+    database_view_id,
+    databaseRowId,
+    databaseTitle,
+  ]);
 
   // check if the mention is selected
   const { isSelected, select, isCursorBefore } = useLeafSelected(text);

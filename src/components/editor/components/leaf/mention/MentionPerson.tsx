@@ -18,9 +18,13 @@ export function MentionPerson({ personId, person_name }: { type: MentionType; pe
       return;
     }
 
+    let cancelled = false;
+
     const fetchUser = async () => {
       try {
         const user = await getMentionUser(personId);
+
+        if (cancelled) return;
 
         if (user) {
           setName(user.name);
@@ -29,12 +33,18 @@ export function MentionPerson({ personId, person_name }: { type: MentionType; pe
           setIsDeleted(true);
         }
       } catch (error) {
+        if (cancelled) return;
+
         setIsDeleted(false);
         setName(fallbackName);
       }
     };
 
     void fetchUser();
+
+    return () => {
+      cancelled = true;
+    };
   }, [fallbackName, getMentionUser, personId]);
 
   return (

@@ -64,10 +64,6 @@ interface Option {
   index: number;
 }
 
-function createMentionOptions(resultsLength: number) {
-  return Array.from({ length: resultsLength }, (_, index) => ({ index }));
-}
-
 const MENTION_SEARCH_LIMIT = 20;
 const DATABASE_ROW_SEARCH_RETRY_DELAY_MS = 500;
 const PAGE_RESULT_COLLAPSE_LIMIT = 4;
@@ -399,10 +395,7 @@ export function MentionPanel() {
   const [localFallbackViews, setLocalFallbackViews] = useState<View[]>([]);
   const mentionSearchRequestIdRef = useRef(0);
   const hasMentionSearchQuery = Boolean(searchText?.trim());
-  const mentionInclude = useMemo(
-    () => (activePanel === PanelType.PageReference ? PAGE_REFERENCE_INCLUDE : DEFAULT_MENTION_INCLUDE),
-    [activePanel]
-  );
+  const mentionInclude = activePanel === PanelType.PageReference ? PAGE_REFERENCE_INCLUDE : DEFAULT_MENTION_INCLUDE;
   const mentionSearchRequest = useMemo(
     () => ({
       query: searchText ?? '',
@@ -421,12 +414,13 @@ export function MentionPanel() {
       }),
     [currentUser?.uuid, mentionSearchRequests, workspaceId]
   );
+  const mentionableFallbackViews = useMemo(() => getMentionablePageViews(localFallbackViews), [localFallbackViews]);
   const localFallbackMentionSections = useMemo(() => {
     if (!useLocalMentionFallback) return [];
 
     const query = searchText?.trim().toLowerCase() ?? '';
     const includeDates = activePanel === PanelType.Mention;
-    const pageItems = getMentionablePageViews(localFallbackViews)
+    const pageItems = mentionableFallbackViews
       .filter((view) => !query || (view.name ?? '').toLowerCase().includes(query))
       .map(viewToPageMentionItem);
     const dateItems = includeDates ? getDateMentionItems(t, query) : [];
@@ -453,7 +447,7 @@ export function MentionPanel() {
     }
 
     return sections;
-  }, [activePanel, localFallbackViews, searchText, t, useLocalMentionFallback]);
+  }, [activePanel, mentionableFallbackViews, searchText, t, useLocalMentionFallback]);
   const sourceMentionSections = useLocalMentionFallback ? localFallbackMentionSections : mentionSections;
   const pickerMentionSections = useMemo(
     () => normalizeMentionSearchSectionsForPicker(sourceMentionSections),
@@ -501,13 +495,29 @@ export function MentionPanel() {
       setMentionSearchLoading(false);
 
       if (mentionSearchRetryLaterRemainingMs(mentionSearchCacheKey) === 0) {
+        // Tracks whether our own refresh callback applied the results. When a
+        // refresh for this key is already in flight, startMentionSearchRefresh
+        // joins it without invoking our callback, so we re-read the cache once
+        // the shared refresh settles.
+        let applied = false;
+
         void startMentionSearchRefresh(mentionSearchCacheKey, async () => {
           const sections = await fetchMentionSections();
 
           cacheMentionSections(sections);
 
           if (isCurrentRequest()) {
+            applied = true;
             setMentionSections(sections);
+            setMentionSearchFailed(false);
+          }
+        }).then(() => {
+          if (applied || !isCurrentRequest()) return;
+
+          const refreshedSections = getCachedMentionSections(mentionSearchCacheKey);
+
+          if (refreshedSections) {
+            setMentionSections(refreshedSections);
             setMentionSearchFailed(false);
           }
         }).catch((error) => {
@@ -929,9 +939,8 @@ export function MentionPanel() {
     [editor, handleAddMention, mentionContext?.row_id, mentionContext?.view_id, notifyPersonMention, viewId]
   );
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open) return;
+  const handlePanelKeyDown = useCallback(
+    (e: KeyboardEvent) => {
       const { key } = e;
 
       switch (key) {
@@ -960,34 +969,23 @@ export function MentionPanel() {
         case 'ArrowDown': {
           e.stopPropagation();
           e.preventDefault();
-          const options = createMentionOptions(mentionPanelOptions.length);
+          const optionCount = mentionPanelOptions.length;
 
-          if (options.length === 0) break;
+          if (optionCount === 0) break;
 
-          if (!selectedOptionRef.current) {
-            if (e.key === 'ArrowDown') {
-              setSelectedOption(options[0]);
-            } else {
-              setSelectedOption(options[options.length - 1]);
-            }
+          const current = selectedOptionRef.current;
 
-            break;
-          }
-
-          const { index } = selectedOptionRef.current;
-          const currentIndex = options.findIndex((option) => option.index === index);
-
-          if (currentIndex === -1) {
-            setSelectedOption(e.key === 'ArrowDown' ? options[0] : options[options.length - 1]);
+          if (!current || current.index < 0 || current.index >= optionCount) {
+            setSelectedOption({ index: key === 'ArrowDown' ? 0 : optionCount - 1 });
             break;
           }
 
           const nextIndex =
-            e.key === 'ArrowDown'
-              ? (currentIndex + 1) % options.length
-              : (currentIndex - 1 + options.length) % options.length;
+            key === 'ArrowDown'
+              ? (current.index + 1) % optionCount
+              : (current.index - 1 + optionCount) % optionCount;
 
-          setSelectedOption(options[nextIndex]);
+          setSelectedOption({ index: nextIndex });
 
           break;
         }
@@ -995,16 +993,27 @@ export function MentionPanel() {
         default:
           break;
       }
-    };
+    },
+    [closePanel, handleAddPage, handleSelectedSearchResult, mentionPanelOptions]
+  );
+  const handlePanelKeyDownRef = useRef(handlePanelKeyDown);
+
+  useEffect(() => {
+    handlePanelKeyDownRef.current = handlePanelKeyDown;
+  }, [handlePanelKeyDown]);
+
+  useEffect(() => {
+    if (!open) return;
 
     const slateDom = ReactEditor.toDOMNode(editor, editor);
+    const handleKeyDown = (e: KeyboardEvent) => handlePanelKeyDownRef.current(e);
 
     slateDom.addEventListener('keydown', handleKeyDown);
 
     return () => {
       slateDom.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closePanel, editor, handleAddPage, handleSelectedSearchResult, mentionPanelOptions, open, selectedOptionRef]);
+  }, [editor, open]);
   const [transformOrigin, setTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
 
   useEffect(() => {

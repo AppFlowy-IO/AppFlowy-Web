@@ -14,6 +14,21 @@ interface MentionSearchCacheEntry {
 
 const mentionSearchCache = new Map<string, MentionSearchCacheEntry>();
 
+function setMentionSearchCacheEntry(key: string, entry: MentionSearchCacheEntry) {
+  if (mentionSearchCache.has(key)) {
+    // Re-insert so Map iteration order tracks recency (LRU eviction).
+    mentionSearchCache.delete(key);
+  } else if (mentionSearchCache.size >= MENTION_SEARCH_CACHE_LIMIT) {
+    const oldestKey = mentionSearchCache.keys().next().value;
+
+    if (oldestKey !== undefined) {
+      mentionSearchCache.delete(oldestKey);
+    }
+  }
+
+  mentionSearchCache.set(key, entry);
+}
+
 export function getCachedMentionSections(key: string): MentionSearchSection[] | undefined {
   const entry = mentionSearchCache.get(key);
 
@@ -21,17 +36,9 @@ export function getCachedMentionSections(key: string): MentionSearchSection[] | 
 }
 
 export function setCachedMentionSections(key: string, sections: MentionSearchSection[]) {
-  if (!mentionSearchCache.has(key) && mentionSearchCache.size >= MENTION_SEARCH_CACHE_LIMIT) {
-    const oldestKey = mentionSearchCache.keys().next().value;
-
-    if (oldestKey) {
-      mentionSearchCache.delete(oldestKey);
-    }
-  }
-
   const previous = mentionSearchCache.get(key);
 
-  mentionSearchCache.set(key, {
+  setMentionSearchCacheEntry(key, {
     ...previous,
     sections,
     cachedAt: Date.now(),
@@ -56,7 +63,7 @@ export function mentionSearchRetryLaterDelayMs(error?: APIError): number {
 export function markMentionSearchRetryLater(key: string, error?: APIError) {
   const previous = mentionSearchCache.get(key);
 
-  mentionSearchCache.set(key, {
+  setMentionSearchCacheEntry(key, {
     sections: previous?.sections ?? [],
     cachedAt: previous?.cachedAt,
     refreshPromise: previous?.refreshPromise,
@@ -98,7 +105,7 @@ export function startMentionSearchRefresh(key: string, refresh: () => Promise<vo
   });
   const previous = mentionSearchCache.get(key);
 
-  mentionSearchCache.set(key, {
+  setMentionSearchCacheEntry(key, {
     sections: previous?.sections ?? [],
     cachedAt: previous?.cachedAt,
     retryLaterUntil: previous?.retryLaterUntil,
