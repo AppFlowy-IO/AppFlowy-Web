@@ -441,8 +441,8 @@ describe('mention panel API mapping', () => {
       {
         sections: [
           {
-            kind: MentionSearchSectionKind.DatabaseRows,
-            title: 'Database rows',
+            kind: MentionSearchSectionKind.Pages,
+            title: 'Pages',
             has_more: false,
             status: 'ready',
             items: [
@@ -463,7 +463,7 @@ describe('mention panel API mapping', () => {
     ]);
 
     expect(response.sections.map((section) => section.kind)).toEqual([
-      MentionSearchSectionKind.DatabaseRows,
+      MentionSearchSectionKind.Pages,
       MentionSearchSectionKind.Links,
     ]);
   });
@@ -647,8 +647,8 @@ describe('mention panel API mapping', () => {
         requests,
         [
           {
-            kind: MentionSearchSectionKind.DatabaseRows,
-            title: 'Database rows',
+            kind: MentionSearchSectionKind.Pages,
+            title: 'Pages',
             has_more: false,
             status: 'ready',
             items: [

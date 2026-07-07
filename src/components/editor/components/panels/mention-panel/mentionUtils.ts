@@ -414,7 +414,7 @@ export function shouldCacheMentionSearchSections(
     return true;
   }
 
-  return sections.some((section) => section.kind === MentionSearchSectionKind.DatabaseRows && section.items.length > 0);
+  return sections.some((section) => section.items.some((item) => item.kind === MentionTargetKind.DatabaseRow));
 }
 
 export function mergeMentionSearchResponses(responses: MentionSearchResponse[]): MentionSearchResponse {
