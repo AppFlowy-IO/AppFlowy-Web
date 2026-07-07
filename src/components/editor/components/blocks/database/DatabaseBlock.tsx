@@ -158,7 +158,16 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
           idsToCheck.add(parentId);
         }
 
-        const isInTrash = trashItems?.some((item) => idsToCheck.has(item.view_id));
+        // The view API omits trashed ancestors, so on a fresh mount the child view of
+        // a trashed container reports no parent and idsToCheck can't name the trashed
+        // container. The trash entries carry the container's DatabaseViewExtra, so also
+        // match by the block's database_id: if this database's container is in the
+        // trash, the block can't render regardless of which id was used to reach it.
+        const isInTrash = trashItems?.some(
+          (item) =>
+            idsToCheck.has(item.view_id) ||
+            (!!databaseId && item.extra?.is_database_container === true && item.extra?.database_id === databaseId)
+        );
 
         if (cancelled) return;
 

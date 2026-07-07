@@ -227,7 +227,7 @@ describe('GoTrue provider redirects', () => {
     signInGoogle('http://localhost/auth/callback');
 
     expect(assign).toHaveBeenCalledWith(
-      'http://localhost/gotrue/authorize?provider=google&redirect_to=http%3A%2F%2Flocalhost%2Fauth%2Fcallback'
+      'http://localhost/gotrue/authorize?provider=google&redirect_to=http%3A%2F%2Flocalhost%2Fauth%2Fcallback&prompt=consent'
     );
   });
 
