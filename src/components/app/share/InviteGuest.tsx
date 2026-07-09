@@ -50,6 +50,7 @@ interface InviteGuestProps {
   onInviteSuccess: () => Promise<void>;
   viewId: string;
   hasFullAccess: boolean;
+  canGrantFullAccess: boolean;
 }
 
 export function InviteGuest({
@@ -61,6 +62,7 @@ export function InviteGuest({
   onInviteSuccess,
   viewId,
   hasFullAccess,
+  canGrantFullAccess,
 }: InviteGuestProps) {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
@@ -81,6 +83,12 @@ export function InviteGuest({
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
+
+  useEffect(() => {
+    if (!canGrantFullAccess && selectedAccessLevel === AccessLevel.FullAccess) {
+      setSelectedAccessLevel(AccessLevel.ReadOnly);
+    }
+  }, [canGrantFullAccess, selectedAccessLevel]);
 
   // Email suggestions based on search input
   const emailSuggestions = useMemo(() => {
@@ -380,24 +388,34 @@ export function InviteGuest({
             </div>
             {selectedAccessLevel === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
           </div>
-          <div
-            onMouseDown={(e) => e.preventDefault()}
-            className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
-            onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
-          >
-            <div className='flex items-center gap-2'>
-              <CrownIcon className='h-4 w-4' />
-              <div className='flex flex-col'>
-                <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
-                <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+          {canGrantFullAccess && (
+            <div
+              onMouseDown={(e) => e.preventDefault()}
+              className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+              onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
+            >
+              <div className='flex items-center gap-2'>
+                <CrownIcon className='h-4 w-4' />
+                <div className='flex flex-col'>
+                  <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                  <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+                </div>
               </div>
+              {selectedAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
             </div>
-            {selectedAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
-          </div>
+          )}
         </PopoverContent>
       </Popover>
     );
-  }, [emailTags.length, accessLevelPopoverOpen, getAccessLevelText, selectedAccessLevel, t, handleAccessLevelSelect]);
+  }, [
+    emailTags.length,
+    accessLevelPopoverOpen,
+    getAccessLevelText,
+    selectedAccessLevel,
+    t,
+    canGrantFullAccess,
+    handleAccessLevelSelect,
+  ]);
 
   const handleUpgrade = useCallback(async () => {
     if (!currentWorkspaceId) return;

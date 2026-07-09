@@ -78,6 +78,7 @@ function renderAccessLevelDropdown(overrides: Partial<ComponentProps<typeof Acce
   const props: ComponentProps<typeof AccessLevelDropdown> = {
     canModify: true,
     currentUserHasFullAccess: true,
+    currentUserCanGrantFullAccess: false,
     isYou: false,
     onAccessLevelChange: async () => undefined,
     onRemoveAccess: async () => undefined,
@@ -89,7 +90,7 @@ function renderAccessLevelDropdown(overrides: Partial<ComponentProps<typeof Acce
 }
 
 describe('AccessLevelDropdown', () => {
-  it('keeps full-access collaborators editable for users who can modify access', () => {
+  it('lets non-owner full-access users downgrade or remove access without granting full access', () => {
     renderAccessLevelDropdown();
 
     const trigger = screen.getByRole('button', { name: 'Full access' });
@@ -97,8 +98,20 @@ describe('AccessLevelDropdown', () => {
     expect(trigger.disabled).toBe(false);
     expect(screen.getByText('Can view')).toBeTruthy();
     expect(screen.getByText('Can edit')).toBeTruthy();
-    expect(screen.getAllByText('Full access')).toHaveLength(2);
+    expect(screen.getAllByText('Full access')).toHaveLength(1);
+    expect(screen.queryByText('Can edit and share with others')).toBeNull();
     expect(screen.getByText('Remove access')).toBeTruthy();
+  });
+
+  it('shows full-access grants for workspace owners', () => {
+    renderAccessLevelDropdown({
+      currentUserCanGrantFullAccess: true,
+      person: createPerson({ access_level: AccessLevel.ReadAndWrite }),
+    });
+
+    expect(screen.getByRole('button', { name: 'Can edit' }).disabled).toBe(false);
+    expect(screen.getByText('Full access')).toBeTruthy();
+    expect(screen.getByText('Can edit and share with others')).toBeTruthy();
   });
 
   it('keeps non-modifiable full-access rows as static labels', () => {

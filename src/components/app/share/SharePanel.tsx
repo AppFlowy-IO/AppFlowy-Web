@@ -118,6 +118,7 @@ function SharePanel({
           mentionableError={mentionableError}
           onInviteSuccess={refreshPeople}
           hasFullAccess={hasFullAccess}
+          canGrantFullAccess={isOwner}
         />
         {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
         <PeopleWithAccess
@@ -126,6 +127,7 @@ function SharePanel({
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
           hasFullAccess={hasFullAccess}
+          canGrantFullAccess={isOwner}
         />
         <GeneralAccess sectionType={sectionType} />
         <CopyLink />

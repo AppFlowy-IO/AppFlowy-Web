@@ -3,9 +3,9 @@ import {
   AFWebUser,
   GetRequestAccessInfoResponse,
   Invitation,
-  IPeopleWithAccessType,
   RequestAccessInfoStatus,
   Role,
+  ShareAccessDetails,
   View,
   Workspace,
 } from '@/application/types';
@@ -106,23 +106,54 @@ export async function sendRequestAccess(workspaceId: string, viewId: string) {
   );
 }
 
-export async function getShareDetail(workspaceId: string, viewId: string, ancestorViewIds: string[], signal?: AbortSignal) {
+async function getLegacyShareDetail(
+  workspaceId: string,
+  viewId: string,
+  ancestorViewIds: string[],
+  signal?: AbortSignal
+): Promise<ShareAccessDetails> {
   const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
 
-  return withRetry(() =>
-    executeAPIRequest<{
-      view_id: string;
-      shared_with: IPeopleWithAccessType[];
-    }>(() =>
-      getAxios()?.post<APIResponse<{
-        view_id: string;
-        shared_with: IPeopleWithAccessType[];
-      }>>(url, {
-        ancestor_view_ids: ancestorViewIds,
-      })
-    ),
+  return withRetry(
+    () =>
+      executeAPIRequest<ShareAccessDetails>(() =>
+        getAxios()?.post<APIResponse<ShareAccessDetails>>(
+          url,
+          {
+            ancestor_view_ids: ancestorViewIds,
+          },
+          { signal }
+        )
+      ),
     { signal }
   );
+}
+
+export async function getShareDetail(
+  workspaceId: string,
+  viewId: string,
+  ancestorViewIds: string[],
+  signal?: AbortSignal
+) {
+  const params = new URLSearchParams({
+    type: 'page',
+    page_id: viewId,
+  });
+  const url = `/api/sharing/workspace/${workspaceId}/access-details/v2?${params.toString()}`;
+
+  try {
+    return await withRetry(
+      () =>
+        executeAPIRequest<ShareAccessDetails>(() =>
+          getAxios()?.get<APIResponse<ShareAccessDetails>>(url, { signal })
+        ),
+      { signal }
+    );
+  } catch (error) {
+    if (signal?.aborted) throw error;
+
+    return getLegacyShareDetail(workspaceId, viewId, ancestorViewIds, signal);
+  }
 }
 
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {

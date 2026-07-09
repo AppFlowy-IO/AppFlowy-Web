@@ -1691,6 +1691,27 @@ export interface IPeopleWithAccessType {
   pending_invitation: boolean;
 }
 
+export interface ObjectPermission {
+  object_id?: string;
+  object_type?: string;
+  access_level?: AccessLevel;
+  visible?: boolean;
+  object_creator?: boolean;
+  ancestor_creator?: boolean;
+  parent_private_view_id?: string | null;
+  governing_view_id?: string | null;
+}
+
+export interface ShareAccessDetails {
+  view_id?: string;
+  target?: {
+    type: string;
+    page_id?: string;
+  };
+  current_user_permission?: ObjectPermission | null;
+  shared_with: IPeopleWithAccessType[];
+}
+
 export enum AccessLevel {
   ReadOnly = 10,
   ReadAndComment = 20,

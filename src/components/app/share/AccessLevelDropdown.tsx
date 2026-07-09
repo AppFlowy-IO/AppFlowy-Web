@@ -23,6 +23,7 @@ interface AccessLevelDropdownProps {
   person: IPeopleWithAccessType;
   canModify: boolean;
   currentUserHasFullAccess: boolean;
+  currentUserCanGrantFullAccess?: boolean;
   isYou: boolean;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
   onRemoveAccess: (email: string) => Promise<void>;
@@ -32,6 +33,7 @@ export function AccessLevelDropdown({
   person,
   canModify,
   currentUserHasFullAccess,
+  currentUserCanGrantFullAccess = false,
   isYou,
   onAccessLevelChange,
   onRemoveAccess,
@@ -162,32 +164,34 @@ export function AccessLevelDropdown({
                 {!loading && person.access_level === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
                 {loading === 'edit' && <Progress variant='primary' />}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={loading === 'full'}
-                onSelect={async (e) => {
-                  e.preventDefault();
-                  setLoading('full');
-                  try {
-                    await onAccessLevelChange(person.email, AccessLevel.FullAccess);
-                    setOpen(false);
-                    notify.success(t('shareAction.changeAccessSuccess', { email: person.email }));
-                  } catch (error) {
-                    notify.error(t('shareAction.changeAccessError'));
-                  } finally {
-                    setLoading(null);
-                  }
-                }}
-              >
-                <div className='flex items-center gap-2'>
-                  <CrownIcon />
-                  <div className='flex flex-col'>
-                    <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
-                    <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+              {currentUserCanGrantFullAccess && (
+                <DropdownMenuItem
+                  disabled={loading === 'full'}
+                  onSelect={async (e) => {
+                    e.preventDefault();
+                    setLoading('full');
+                    try {
+                      await onAccessLevelChange(person.email, AccessLevel.FullAccess);
+                      setOpen(false);
+                      notify.success(t('shareAction.changeAccessSuccess', { email: person.email }));
+                    } catch (error) {
+                      notify.error(t('shareAction.changeAccessError'));
+                    } finally {
+                      setLoading(null);
+                    }
+                  }}
+                >
+                  <div className='flex items-center gap-2'>
+                    <CrownIcon />
+                    <div className='flex flex-col'>
+                      <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                      <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+                    </div>
                   </div>
-                </div>
-                {!loading && person.access_level === AccessLevel.FullAccess && <DropdownMenuItemTick />}
-                {loading === 'full' && <Progress variant='primary' />}
-              </DropdownMenuItem>
+                  {!loading && person.access_level === AccessLevel.FullAccess && <DropdownMenuItemTick />}
+                  {loading === 'full' && <Progress variant='primary' />}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               {renderRemoveAccess()}
             </>

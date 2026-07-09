@@ -17,6 +17,7 @@ interface PersonItemProps {
   isYou: boolean;
   currentUserHasFullAccess: boolean;
   currentUserIsOwner: boolean;
+  currentUserCanGrantFullAccess: boolean;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
   onRemoveAccess: (email: string) => Promise<void>;
   onTurnIntoMember?: (email: string) => Promise<void>;
@@ -27,6 +28,7 @@ export function PersonItem({
   isYou,
   currentUserHasFullAccess,
   currentUserIsOwner,
+  currentUserCanGrantFullAccess,
   onAccessLevelChange,
   onRemoveAccess,
   onTurnIntoMember,
@@ -116,6 +118,7 @@ export function PersonItem({
         person={person}
         canModify={canModifyThisPerson}
         currentUserHasFullAccess={currentUserHasFullAccess}
+        currentUserCanGrantFullAccess={currentUserCanGrantFullAccess}
         isYou={isYou}
         onAccessLevelChange={onAccessLevelChange}
         onRemoveAccess={onRemoveAccess}
