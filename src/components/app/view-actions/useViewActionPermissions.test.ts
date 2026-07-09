@@ -1,5 +1,6 @@
 import { AccessLevel, Role } from '@/application/types';
 import {
+  canUsePageHistoryAction,
   canUseViewMutationActions,
   resolveCurrentUserActionAccessLevel,
 } from '@/components/app/view-actions/viewActionPermission';
@@ -79,6 +80,42 @@ describe('canUseViewMutationActions', () => {
         },
       })
     ).toBe(false);
+  });
+});
+
+describe('canUsePageHistoryAction', () => {
+  it('allows read-write and stronger page access to use page history', () => {
+    expect(
+      canUsePageHistoryAction({
+        currentUserPermission: {
+          access_level: AccessLevel.ReadAndWrite,
+        },
+      })
+    ).toBe(true);
+
+    expect(
+      canUsePageHistoryAction({
+        currentUserPermission: {
+          access_level: AccessLevel.FullAccess,
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('denies read-only page access even when the user is a creator', () => {
+    expect(
+      canUsePageHistoryAction({
+        currentUserPermission: {
+          access_level: AccessLevel.ReadOnly,
+          object_creator: true,
+          ancestor_creator: true,
+        },
+      })
+    ).toBe(false);
+  });
+
+  it('denies page history before permission has loaded', () => {
+    expect(canUsePageHistoryAction({})).toBe(false);
   });
 });
 

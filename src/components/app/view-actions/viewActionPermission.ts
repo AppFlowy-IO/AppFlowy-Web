@@ -16,6 +16,14 @@ export function canUseViewMutationActions({
   return false;
 }
 
+export function canUsePageHistoryAction({ currentUserPermission }: { currentUserPermission?: ObjectPermission | null }) {
+  if (currentUserPermission?.access_level !== undefined) {
+    return currentUserPermission.access_level >= AccessLevel.ReadAndWrite;
+  }
+
+  return false;
+}
+
 export function resolveCurrentUserActionAccessLevel({
   currentUserEmail,
   currentUserPermission,

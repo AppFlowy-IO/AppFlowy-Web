@@ -100,9 +100,8 @@ export function PeopleWithAccess({
     [onPeopleChange, currentWorkspaceId]
   );
 
-  // Check if current user is owner
-  const currentUserIsOwner =
-    canGrantFullAccess || people.find((p) => p.email === currentUser?.email)?.role === Role.Owner;
+  const currentUserRole = people.find((p) => p.email === currentUser?.email)?.role;
+  const currentUserIsOwner = currentUserRole === Role.Owner;
 
   return (
     <div className='w-full px-2 pt-4'>
@@ -121,7 +120,7 @@ export function PeopleWithAccess({
               isYou={isYou}
               currentUserHasFullAccess={hasFullAccess}
               currentUserIsOwner={currentUserIsOwner}
-              currentUserCanGrantFullAccess={currentUserIsOwner}
+              currentUserCanGrantFullAccess={canGrantFullAccess}
               onAccessLevelChange={handleAccessLevelChange}
               onRemoveAccess={handleRemoveAccess}
               onTurnIntoMember={handleTurnIntoMember}

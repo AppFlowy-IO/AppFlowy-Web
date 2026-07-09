@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -31,6 +31,53 @@ import MoreActionsContent from './MoreActionsContent';
 
 const DocumentHistoryModal = lazy(() => import('@/components/document/history/DocumentHistoryModal'));
 
+function PermissionedMoreActionsContent({
+  chatOptions,
+  handleClose,
+  isDocument,
+  onDeleted,
+  onFindAndReplace,
+  onOpenHistory,
+  showHistory,
+  view,
+  viewId,
+}: {
+  chatOptions: ReactNode;
+  handleClose: () => void;
+  isDocument: boolean;
+  onDeleted?: () => void;
+  onFindAndReplace: () => void;
+  onOpenHistory: () => void;
+  showHistory: boolean;
+  view: ReturnType<typeof useAppView>;
+  viewId: string;
+}) {
+  const { canManageViewActions, canUsePageHistory, isLoadingViewActionPermissions } = useViewActionPermissions(
+    view,
+    true
+  );
+
+  return (
+    <>
+      <DropdownMenuGroup>{chatOptions}</DropdownMenuGroup>
+
+      <MoreActionsContent
+        itemClicked={handleClose}
+        onDeleted={onDeleted}
+        viewId={viewId}
+        canManageActions={canManageViewActions}
+        canUsePageHistory={canUsePageHistory}
+        isLoadingActions={isLoadingViewActionPermissions}
+        onOpenHistory={showHistory ? onOpenHistory : undefined}
+        onFindAndReplace={isDocument ? onFindAndReplace : undefined}
+      />
+      <DropdownMenuSeparator />
+
+      <DocumentInfo viewId={viewId} />
+    </>
+  );
+}
+
 function MoreActions({
   viewId,
   onDeleted,
@@ -50,7 +97,6 @@ function MoreActions({
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const view = useAppView(viewId);
-  const { canManageViewActions, isLoadingViewActionPermissions } = useViewActionPermissions(view, open);
   const { t } = useTranslation();
 
   const handleClose = useCallback(() => {
@@ -139,22 +185,19 @@ function MoreActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent {...menuContentProps}>
-          <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
-
-          <MoreActionsContent
-            itemClicked={() => {
-              handleClose();
-            }}
-            onDeleted={onDeleted}
-            viewId={viewId}
-            canManageActions={canManageViewActions}
-            isLoadingActions={isLoadingViewActionPermissions}
-            onOpenHistory={showHistory ? handleOpenHistory : undefined}
-            onFindAndReplace={isDocument ? handleFindAndReplace : undefined}
-          />
-          <DropdownMenuSeparator />
-
-          <DocumentInfo viewId={viewId} />
+          {open && (
+            <PermissionedMoreActionsContent
+              chatOptions={ChatOptions}
+              handleClose={handleClose}
+              isDocument={isDocument}
+              onDeleted={onDeleted}
+              onFindAndReplace={handleFindAndReplace}
+              onOpenHistory={handleOpenHistory}
+              showHistory={showHistory}
+              view={view}
+              viewId={viewId}
+            />
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {showHistory && historyOpen && (

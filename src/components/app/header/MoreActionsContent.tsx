@@ -34,6 +34,7 @@ function MoreActionsContent({
   onOpenHistory,
   onFindAndReplace,
   canManageActions = true,
+  canUsePageHistory = true,
   isLoadingActions = false,
 }: {
   itemClicked?: () => void;
@@ -42,6 +43,7 @@ function MoreActionsContent({
   onOpenHistory?: () => void;
   onFindAndReplace?: () => void;
   canManageActions?: boolean;
+  canUsePageHistory?: boolean;
   isLoadingActions?: boolean;
 }) {
   const { t } = useTranslation();
@@ -217,7 +219,7 @@ function MoreActionsContent({
         </DropdownMenuItem>
       )}
 
-      {canManageActions && isDocument && onOpenHistory && (
+      {canUsePageHistory && isDocument && onOpenHistory && (
         <DropdownMenuItem
           data-testid='more-page-version-history'
           onSelect={(event) => {

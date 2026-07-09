@@ -34,7 +34,7 @@ export function PersonItem({
   onTurnIntoMember,
 }: PersonItemProps) {
   const { t } = useTranslation();
-  const canModifyThisPerson = currentUserHasFullAccess || isYou;
+  const canModifyThisPerson = currentUserHasFullAccess && !isYou && person.role !== Role.Owner;
 
   const [turnIntoMemberLoading, setTurnIntoMemberLoading] = useState<boolean>(false);
   // Show "Turn into Member" button if:

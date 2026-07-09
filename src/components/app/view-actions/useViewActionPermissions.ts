@@ -5,6 +5,7 @@ import { ObjectPermission, View } from '@/application/types';
 import { findAncestors, findSharedAccessLevel } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import {
+  canUsePageHistoryAction,
   canUseViewMutationActions,
   resolveCurrentUserActionAccessLevel,
 } from '@/components/app/view-actions/viewActionPermission';
@@ -92,9 +93,15 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
         currentUserPermission,
       })
     : false;
+  const canUsePageHistory = hasLoadedViewActionPermissions
+    ? canUsePageHistoryAction({
+        currentUserPermission,
+      })
+    : false;
 
   return {
     canManageViewActions,
+    canUsePageHistory,
     isLoadingViewActionPermissions,
   };
 }
