@@ -52,10 +52,14 @@ function PermissionedMoreActionsContent({
   view: ReturnType<typeof useAppView>;
   viewId: string;
 }) {
-  const { canManageViewActions, canUsePageHistory, isLoadingViewActionPermissions } = useViewActionPermissions(
-    view,
-    true
-  );
+  const {
+    canCreateViewActions,
+    canManageViewActions,
+    canUsePageHistory,
+    hasLoadedViewActionPermissions,
+    isLoadingViewActionPermissions,
+  } = useViewActionPermissions(view, true);
+  const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   return (
     <>
@@ -65,9 +69,10 @@ function PermissionedMoreActionsContent({
         itemClicked={handleClose}
         onDeleted={onDeleted}
         viewId={viewId}
+        canDuplicateActions={canCreateViewActions}
         canManageActions={canManageViewActions}
         canUsePageHistory={canUsePageHistory}
-        isLoadingActions={isLoadingViewActionPermissions}
+        isLoadingActions={isResolvingViewActionPermissions}
         onOpenHistory={showHistory ? onOpenHistory : undefined}
         onFindAndReplace={isDocument ? onFindAndReplace : undefined}
       />

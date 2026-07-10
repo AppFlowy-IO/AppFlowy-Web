@@ -1563,6 +1563,23 @@ export interface CreateSpacePayload {
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
 }
 
+export interface CreateSpaceInitialPagePayload extends Omit<CreatePagePayload, 'prev_view_id'> {
+  page_data?: unknown;
+  view_id?: string;
+  prev_view_id?: string | null;
+}
+
+export interface CreateSpaceWithInitialPagePayload extends CreateSpacePayload {
+  initial_page: CreateSpaceInitialPagePayload;
+}
+
+export interface CreateSpaceWithInitialPageResponse {
+  space: {
+    view_id: string;
+  };
+  page: CreatePageResponse;
+}
+
 export interface UpdateSpacePayload extends CreateSpacePayload {
   view_id: string;
 }

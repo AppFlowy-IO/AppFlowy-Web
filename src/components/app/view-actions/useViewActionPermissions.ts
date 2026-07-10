@@ -5,6 +5,7 @@ import { ObjectPermission, View } from '@/application/types';
 import { findAncestors, findSharedAccessLevel } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import {
+  canUseChildViewCreationActions,
   canUsePageHistoryAction,
   canUseViewMutationActions,
   resolveCurrentUserActionAccessLevel,
@@ -78,7 +79,7 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
         if (controller.signal.aborted || seq !== requestSeq.current) return;
         console.error(error);
         setCurrentUserPermission(null);
-        setLoadedViewId(null);
+        setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
       });
 
@@ -87,7 +88,8 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
     };
   }, [currentUser?.email, opened, viewId, workspaceId]);
 
-  const hasLoadedViewActionPermissions = loadedViewId === viewId;
+  const canLoadViewActionPermissions = Boolean(opened && workspaceId && viewId);
+  const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
   const canManageViewActions = hasLoadedViewActionPermissions
     ? canUseViewMutationActions({
         currentUserPermission,
@@ -98,10 +100,17 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
         currentUserPermission,
       })
     : false;
+  const canCreateViewActions = hasLoadedViewActionPermissions
+    ? canUseChildViewCreationActions({
+        currentUserPermission,
+      })
+    : false;
 
   return {
+    canCreateViewActions,
     canManageViewActions,
     canUsePageHistory,
+    hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
   };
 }

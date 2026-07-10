@@ -5,7 +5,24 @@ import AddPageActions from '@/components/app/view-actions/AddPageActions';
 import MorePageActions from '@/components/app/view-actions/MorePageActions';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
+
+function PermissionLoadingItem({ testId }: { testId: string }) {
+  return (
+    <DropdownMenuGroup>
+      <DropdownMenuItem data-testid={testId} disabled>
+        <Progress variant='primary' />
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
+  );
+}
 
 function ViewActionsPopover({
   popoverType,
@@ -26,10 +43,9 @@ function ViewActionsPopover({
   // dropdown closes.
   onImportClick?: (view: View) => void;
 } & React.ComponentProps<typeof DropdownMenu>) {
-  const { canManageViewActions, isLoadingViewActionPermissions } = useViewActionPermissions(
-    view,
-    Boolean(open && popoverType?.type === 'more')
-  );
+  const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
+    useViewActionPermissions(view, Boolean(open && popoverType));
+  const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   const onClose = useCallback(() => {
     onOpenChange?.(false);
@@ -39,6 +55,12 @@ function ViewActionsPopover({
     if (!popoverType || !view) return null;
 
     if (popoverType.type === 'add') {
+      if (isResolvingViewActionPermissions) {
+        return <PermissionLoadingItem testId='add-page-permission-loading' />;
+      }
+
+      if (!canCreateViewActions) return null;
+
       return <AddPageActions view={view} onImportClick={onImportClick} />;
     }
 
@@ -47,8 +69,9 @@ function ViewActionsPopover({
         <MoreSpaceActions
           onClose={onClose}
           view={view}
+          canDuplicateActions={canCreateViewActions}
           canManageActions={canManageViewActions}
-          isLoadingActions={isLoadingViewActionPermissions}
+          isLoadingActions={isResolvingViewActionPermissions}
         />
       );
     } else {
@@ -56,12 +79,21 @@ function ViewActionsPopover({
         <MorePageActions
           view={view}
           onClose={onClose}
+          canDuplicateActions={canCreateViewActions}
           canManageActions={canManageViewActions}
-          isLoadingActions={isLoadingViewActionPermissions}
+          isLoadingActions={isResolvingViewActionPermissions}
         />
       );
     }
-  }, [canManageViewActions, isLoadingViewActionPermissions, onClose, popoverType, view, onImportClick]);
+  }, [
+    canCreateViewActions,
+    canManageViewActions,
+    isResolvingViewActionPermissions,
+    onClose,
+    popoverType,
+    view,
+    onImportClick,
+  ]);
 
   return (
     <DropdownMenu open={open} onOpenChange={onOpenChange}>

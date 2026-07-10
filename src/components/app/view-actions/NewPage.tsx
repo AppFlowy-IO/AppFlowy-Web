@@ -70,12 +70,16 @@ function NewPage() {
 
   return (
     <>
-      <div data-testid="new-page-button" onClick={() => setOpen(true)} className={cn(dropdownMenuItemVariants(), 'w-full')}>
+      <div
+        data-testid='new-page-button'
+        onClick={() => setOpen(true)}
+        className={cn(dropdownMenuItemVariants(), 'w-full')}
+      >
         <Add />
         {t('newPageText')}
       </div>
       <NormalModal
-        data-testid="new-page-modal"
+        data-testid='new-page-modal'
         okText={t('button.add')}
         title={t('publish.duplicateTitle')}
         open={open}
@@ -114,7 +118,13 @@ function NewPage() {
       <CreateSpaceModal
         open={createSpaceOpen}
         onClose={() => setCreateSpaceOpen(false)}
-        onCreated={(spaceId: string) => {
+        initialPage={{ layout: ViewLayout.Document }}
+        onCreated={(spaceId: string, initialPageId?: string) => {
+          if (initialPageId) {
+            openPageModal?.(initialPageId);
+            onClose();
+            return;
+          }
           void handleAddPage(spaceId);
         }}
       />

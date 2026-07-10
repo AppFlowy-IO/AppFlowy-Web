@@ -5,10 +5,6 @@ export function canUseViewMutationActions({
 }: {
   currentUserPermission?: ObjectPermission | null;
 }) {
-  if (currentUserPermission?.object_creator || currentUserPermission?.ancestor_creator) {
-    return true;
-  }
-
   if (currentUserPermission?.access_level !== undefined) {
     return currentUserPermission.access_level >= AccessLevel.FullAccess;
   }
@@ -17,6 +13,18 @@ export function canUseViewMutationActions({
 }
 
 export function canUsePageHistoryAction({ currentUserPermission }: { currentUserPermission?: ObjectPermission | null }) {
+  if (currentUserPermission?.access_level !== undefined) {
+    return currentUserPermission.access_level >= AccessLevel.ReadAndWrite;
+  }
+
+  return false;
+}
+
+export function canUseChildViewCreationActions({
+  currentUserPermission,
+}: {
+  currentUserPermission?: ObjectPermission | null;
+}) {
   if (currentUserPermission?.access_level !== undefined) {
     return currentUserPermission.access_level >= AccessLevel.ReadAndWrite;
   }

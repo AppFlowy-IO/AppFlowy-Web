@@ -1,5 +1,6 @@
 import { AccessLevel, Role } from '@/application/types';
 import {
+  canUseChildViewCreationActions,
   canUsePageHistoryAction,
   canUseViewMutationActions,
   resolveCurrentUserActionAccessLevel,
@@ -22,7 +23,7 @@ describe('canUseViewMutationActions', () => {
     ).toBe(false);
   });
 
-  it('allows the object creator even without full access', () => {
+  it('denies the object creator when the resolved access level is read-only', () => {
     expect(
       canUseViewMutationActions({
         currentUserPermission: {
@@ -30,10 +31,10 @@ describe('canUseViewMutationActions', () => {
           object_creator: true,
         },
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('allows the ancestor creator for inherited private-space permissions', () => {
+  it('denies the ancestor creator when the resolved access level is read-only', () => {
     expect(
       canUseViewMutationActions({
         currentUserPermission: {
@@ -41,7 +42,7 @@ describe('canUseViewMutationActions', () => {
           ancestor_creator: true,
         },
       })
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('allows full access from the resolved current user permission', () => {
@@ -116,6 +117,38 @@ describe('canUsePageHistoryAction', () => {
 
   it('denies page history before permission has loaded', () => {
     expect(canUsePageHistoryAction({})).toBe(false);
+  });
+});
+
+describe('canUseChildViewCreationActions', () => {
+  it('allows read-write and stronger page access to create child views', () => {
+    expect(
+      canUseChildViewCreationActions({
+        currentUserPermission: {
+          access_level: AccessLevel.ReadAndWrite,
+        },
+      })
+    ).toBe(true);
+
+    expect(
+      canUseChildViewCreationActions({
+        currentUserPermission: {
+          access_level: AccessLevel.FullAccess,
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('denies read-only page access and unloaded permissions', () => {
+    expect(
+      canUseChildViewCreationActions({
+        currentUserPermission: {
+          access_level: AccessLevel.ReadOnly,
+        },
+      })
+    ).toBe(false);
+
+    expect(canUseChildViewCreationActions({})).toBe(false);
   });
 });
 

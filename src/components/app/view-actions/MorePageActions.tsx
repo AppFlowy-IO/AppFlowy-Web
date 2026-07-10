@@ -16,11 +16,13 @@ import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/co
 function MorePageActions({
   view,
   onClose,
+  canDuplicateActions,
   canManageActions,
   isLoadingActions,
 }: {
   view: View;
   onClose?: () => void;
+  canDuplicateActions: boolean;
   canManageActions: boolean;
   isLoadingActions: boolean;
 }) {
@@ -112,6 +114,7 @@ function MorePageActions({
       <MoreActionsContent
         itemClicked={onClose}
         viewId={view.view_id}
+        canDuplicateActions={canDuplicateActions}
         canManageActions={canManageActions}
         isLoadingActions={isLoadingActions}
       />

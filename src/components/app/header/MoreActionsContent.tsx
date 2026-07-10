@@ -33,6 +33,7 @@ function MoreActionsContent({
   viewId,
   onOpenHistory,
   onFindAndReplace,
+  canDuplicateActions = true,
   canManageActions = true,
   canUsePageHistory = true,
   isLoadingActions = false,
@@ -42,6 +43,7 @@ function MoreActionsContent({
   viewId: string;
   onOpenHistory?: () => void;
   onFindAndReplace?: () => void;
+  canDuplicateActions?: boolean;
   canManageActions?: boolean;
   canUsePageHistory?: boolean;
   isLoadingActions?: boolean;
@@ -156,14 +158,16 @@ function MoreActionsContent({
           <DropdownMenuSeparator />
         </>
       )}
-      <DropdownMenuItem
-        data-testid={'more-page-duplicate'}
-        className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
-        onSelect={handleDuplicateClick}
-      >
-        <DuplicateIcon />
-        {t('button.duplicate')}
-      </DropdownMenuItem>
+      {canDuplicateActions && (
+        <DropdownMenuItem
+          data-testid={'more-page-duplicate'}
+          className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
+          onSelect={handleDuplicateClick}
+        >
+          <DuplicateIcon />
+          {t('button.duplicate')}
+        </DropdownMenuItem>
+      )}
       {isLoadingActions && (
         <DropdownMenuItem data-testid='more-actions-permission-loading' disabled>
           <Progress variant='primary' />
