@@ -2,7 +2,7 @@ import { OutlinedInput } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SpacePermission } from '@/application/types';
+import { CreatePagePayload, SpacePermission } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppOperations } from '@/components/app/app.hooks';
@@ -13,10 +13,12 @@ function CreateSpaceModal({
   open,
   onClose,
   onCreated,
+  initialPage,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated?: (spaceId: string) => void;
+  onCreated?: (spaceId: string, initialPageId?: string) => void;
+  initialPage?: CreatePagePayload;
 }) {
   const [spaceName, setSpaceName] = React.useState<string>('');
   const [spaceIcon, setSpaceIcon] = React.useState<string>('');
@@ -24,17 +26,32 @@ function CreateSpaceModal({
   const [spacePermission, setSpacePermission] = React.useState<SpacePermission>(SpacePermission.Public);
   const [loading, setLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
-  const { createSpace } = useAppOperations();
+  const { createSpace, createSpaceWithInitialPage } = useAppOperations();
   const handleOk = async () => {
-    if (!createSpace) return;
+    if (!createSpace && !(initialPage && createSpaceWithInitialPage)) return;
     setLoading(true);
     try {
-      const spaceId = await createSpace({
+      const spacePayload = {
         name: spaceName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
         space_permission: spacePermission,
-      });
+      };
+
+      if (initialPage) {
+        if (!createSpaceWithInitialPage) return;
+        const result = await createSpaceWithInitialPage({
+          ...spacePayload,
+          initial_page: initialPage,
+        });
+
+        onClose();
+        onCreated && onCreated(result.space.view_id, result.page.view_id);
+        return;
+      }
+
+      if (!createSpace) return;
+      const spaceId = await createSpace(spacePayload);
 
       onClose();
 
@@ -88,7 +105,7 @@ function CreateSpaceModal({
         <div className={'flex flex-col gap-2'}>
           <div className={'text-text-secondary'}>{t('space.spaceName')}</div>
           <OutlinedInput
-            data-testid="space-name-input"
+            data-testid='space-name-input'
             value={spaceName}
             fullWidth={true}
             onChange={(e) => setSpaceName(e.target.value)}

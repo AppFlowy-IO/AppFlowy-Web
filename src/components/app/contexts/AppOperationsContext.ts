@@ -11,6 +11,8 @@ import {
   CreatePageResponse,
   CreateRow,
   CreateSpacePayload,
+  CreateSpaceWithInitialPagePayload,
+  CreateSpaceWithInitialPageResponse,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
@@ -88,6 +90,10 @@ export interface AppOperationsContextType {
   // ── Space operations ───────────────────────────────────────────────
   /** Create a new workspace space (top-level folder). */
   createSpace?: (payload: CreateSpacePayload) => Promise<string>;
+  /** Create a new workspace space and first page atomically. */
+  createSpaceWithInitialPage?: (
+    payload: CreateSpaceWithInitialPagePayload
+  ) => Promise<CreateSpaceWithInitialPageResponse>;
   /** Update space properties. */
   updateSpace?: (payload: UpdateSpacePayload) => Promise<void>;
   /** Create a new database view (Grid/Board/Calendar tab) within an existing database. */
@@ -127,7 +133,12 @@ export interface AppOperationsContextType {
   /** Create a new row document (returns encoded initial state). */
   createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
-  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
+  duplicateRowDocument?: (
+    databaseId: string,
+    sourceRowId: string,
+    newRowId: string,
+    clientDocStateB64?: string
+  ) => Promise<void>;
   /** Resolve a database ID to its primary view ID. */
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 
