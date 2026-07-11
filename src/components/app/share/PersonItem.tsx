@@ -18,6 +18,7 @@ interface PersonItemProps {
   isInheritedWorkspaceAccess: boolean;
   currentUserHasFullAccess: boolean;
   currentUserIsOwner: boolean;
+  currentUserCanGrantFullAccess: boolean;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
   onRemoveAccess: (email: string) => Promise<void>;
   onTurnIntoMember?: (email: string) => Promise<void>;
@@ -29,12 +30,14 @@ export function PersonItem({
   isInheritedWorkspaceAccess,
   currentUserHasFullAccess,
   currentUserIsOwner,
+  currentUserCanGrantFullAccess,
   onAccessLevelChange,
   onRemoveAccess,
   onTurnIntoMember,
 }: PersonItemProps) {
   const { t } = useTranslation();
-  const canModifyThisPerson = !isInheritedWorkspaceAccess && (currentUserHasFullAccess || isYou);
+  const canModifyThisPerson =
+    !isInheritedWorkspaceAccess && currentUserHasFullAccess && !isYou && person.role !== Role.Owner;
 
   const [turnIntoMemberLoading, setTurnIntoMemberLoading] = useState<boolean>(false);
   // Show "Turn into Member" button if:
@@ -118,6 +121,7 @@ export function PersonItem({
         person={person}
         canModify={canModifyThisPerson}
         currentUserHasFullAccess={currentUserHasFullAccess}
+        currentUserCanGrantFullAccess={currentUserCanGrantFullAccess}
         isYou={isYou}
         onAccessLevelChange={onAccessLevelChange}
         onRemoveAccess={onRemoveAccess}

@@ -50,6 +50,7 @@ interface InviteGuestProps {
   onInviteSuccess: () => Promise<void>;
   viewId: string;
   hasFullAccess: boolean;
+  canGrantFullAccess: boolean;
 }
 
 export function InviteGuest({
@@ -61,6 +62,7 @@ export function InviteGuest({
   onInviteSuccess,
   viewId,
   hasFullAccess,
+  canGrantFullAccess,
 }: InviteGuestProps) {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
@@ -81,6 +83,11 @@ export function InviteGuest({
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
+
+  // Clamp during render: a selection made before permissions resolved must
+  // never let a user submit a level they cannot grant.
+  const effectiveAccessLevel =
+    !canGrantFullAccess && selectedAccessLevel === AccessLevel.FullAccess ? AccessLevel.ReadOnly : selectedAccessLevel;
 
   // Email suggestions based on search input
   const emailSuggestions = useMemo(() => {
@@ -340,7 +347,7 @@ export function InviteGuest({
             size='sm'
             className='relative top-[-0.5px] h-6 px-2'
           >
-            {getAccessLevelText(selectedAccessLevel)}
+            {getAccessLevelText(effectiveAccessLevel)}
             <ArrowDownIcon className='h-3 w-3 text-icon-secondary' />
           </Button>
         </PopoverTrigger>
@@ -364,7 +371,7 @@ export function InviteGuest({
                 <div className='text-xs text-text-tertiary'>{t('shareAction.canViewDescription')}</div>
               </div>
             </div>
-            {selectedAccessLevel === AccessLevel.ReadOnly && <DropdownMenuItemTick />}
+            {effectiveAccessLevel === AccessLevel.ReadOnly && <DropdownMenuItemTick />}
           </div>
           <div
             onMouseDown={(e) => e.preventDefault()}
@@ -378,26 +385,36 @@ export function InviteGuest({
                 <div className='text-xs text-text-tertiary'>{t('shareAction.canEditDescription')}</div>
               </div>
             </div>
-            {selectedAccessLevel === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
+            {effectiveAccessLevel === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
           </div>
-          <div
-            onMouseDown={(e) => e.preventDefault()}
-            className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
-            onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
-          >
-            <div className='flex items-center gap-2'>
-              <CrownIcon className='h-4 w-4' />
-              <div className='flex flex-col'>
-                <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
-                <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+          {canGrantFullAccess && (
+            <div
+              onMouseDown={(e) => e.preventDefault()}
+              className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+              onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
+            >
+              <div className='flex items-center gap-2'>
+                <CrownIcon className='h-4 w-4' />
+                <div className='flex flex-col'>
+                  <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                  <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+                </div>
               </div>
+              {effectiveAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
             </div>
-            {selectedAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
-          </div>
+          )}
         </PopoverContent>
       </Popover>
     );
-  }, [emailTags.length, accessLevelPopoverOpen, getAccessLevelText, selectedAccessLevel, t, handleAccessLevelSelect]);
+  }, [
+    emailTags.length,
+    accessLevelPopoverOpen,
+    getAccessLevelText,
+    effectiveAccessLevel,
+    t,
+    canGrantFullAccess,
+    handleAccessLevelSelect,
+  ]);
 
   const handleUpgrade = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -441,7 +458,7 @@ export function InviteGuest({
         currentWorkspaceId,
         viewId,
         emailTags.map((tag) => tag.email),
-        selectedAccessLevel
+        effectiveAccessLevel
       );
       notify.success(t('shareAction.inviteSuccess'));
       // eslint-disable-next-line
@@ -470,7 +487,7 @@ export function InviteGuest({
 
     // Notify parent component to refresh the people list
     await onInviteSuccess();
-  }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, selectedAccessLevel]);
+  }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, effectiveAccessLevel]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

@@ -11,7 +11,10 @@ import { AppOperationsContext, AppOperationsContextType } from '@/components/app
 import { AppOutlineContext, AppOutlineContextType } from '@/components/app/contexts/AppOutlineContext';
 import { AppSyncContext, AppSyncContextType } from '@/components/app/contexts/AppSyncContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
-import { DATABASE_TAB_VIEW_ID_QUERY_PARAM, resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import {
+  DATABASE_TAB_VIEW_ID_QUERY_PARAM,
+  resolveSidebarSelectedViewId,
+} from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -148,9 +151,23 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Initialize page operations
   const {
-    addPage, deletePage: rawDeletePage, duplicatePage, updatePage, updatePageIcon, updatePageName,
-    movePage, deleteTrash, restorePage, createSpace, updateSpace,
-    createDatabaseView, uploadFile, getSubscriptions, publish, unpublish,
+    addPage,
+    deletePage: rawDeletePage,
+    duplicatePage,
+    updatePage,
+    updatePageIcon,
+    updatePageName,
+    movePage,
+    deleteTrash,
+    restorePage,
+    createSpace,
+    createSpaceWithInitialPage,
+    updateSpace,
+    createDatabaseView,
+    uploadFile,
+    getSubscriptions,
+    publish,
+    unpublish,
     createOrphanedView,
   } = usePageOperations({
     outlineRef: stableOutlineRef,
@@ -224,9 +241,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
     const cacheKey = `${currentWorkspaceId}:${viewId}`;
     const cached = routeViewExistsCacheRef.current.get(cacheKey);
-    const cacheExpired = cached
-      ? Date.now() - cached.checkedAt >= ROUTE_VIEW_EXISTS_REVALIDATE_MS
-      : true;
+    const cacheExpired = cached ? Date.now() - cached.checkedAt >= ROUTE_VIEW_EXISTS_REVALIDATE_MS : true;
 
     // Cache policy: both true and false are periodically revalidated.
     // A false entry may be stale if the view was created or synced after
@@ -463,9 +478,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Initialize database operations
   const {
-    generateAISummaryForRow, generateAITranslateForRow,
-    loadDatabasePrompts, testDatabasePromptConfig,
-    checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
+    generateAISummaryForRow,
+    generateAITranslateForRow,
+    loadDatabasePrompts,
+    testDatabasePromptConfig,
+    checkIfRowDocumentExists,
+    loadRowDocument,
+    createRowDocument,
+    duplicateRowDocument,
   } = useDatabaseOperations(enhancedLoadView, createRow, syncContext.syncAllToServer);
 
   // ── Focused context values ──────────────────────────────────────────────────
@@ -484,7 +504,17 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       openPageModalViewId: openModalViewId,
       openPageModal,
     }),
-    [viewId, breadcrumbs, appendBreadcrumb, rendered, onRendered, viewNotFound, viewHasBeenDeleted, openModalViewId, openPageModal]
+    [
+      viewId,
+      breadcrumbs,
+      appendBreadcrumb,
+      rendered,
+      onRendered,
+      viewNotFound,
+      viewHasBeenDeleted,
+      openModalViewId,
+      openPageModal,
+    ]
   );
 
   // Outline state — MEDIUM change frequency (outline, favorites, recent, trash)
@@ -510,10 +540,24 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       loadMentionableUsers,
     }),
     [
-      outline, favoriteViews, recentViews, trashList, loadedViewIds,
-      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale, ensureViewVisibleInOutline, revalidateSidebarOutline,
-      loadFavoriteViews, loadRecentViews, loadTrash, loadViews,
-      refreshOutline, loadDatabaseRelations, getMentionUser, loadMentionableUsers,
+      outline,
+      favoriteViews,
+      recentViews,
+      trashList,
+      loadedViewIds,
+      loadViewChildren,
+      loadViewChildrenBatch,
+      markViewChildrenStale,
+      ensureViewVisibleInOutline,
+      revalidateSidebarOutline,
+      loadFavoriteViews,
+      loadRecentViews,
+      loadTrash,
+      loadViews,
+      refreshOutline,
+      loadDatabaseRelations,
+      getMentionUser,
+      loadMentionableUsers,
     ]
   );
 
@@ -535,6 +579,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       deleteTrash,
       restorePage,
       createSpace,
+      createSpaceWithInitialPage,
       updateSpace,
       createDatabaseView,
       uploadFile,
@@ -560,16 +605,44 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       onChangeWorkspace: authContext.onChangeWorkspace,
     }),
     [
-      enhancedToView, loadViewMeta, enhancedLoadView, createRow, bindViewSync,
-      addPage, enhancedDeletePage, duplicatePage, updatePage, updatePageIcon, updatePageName,
-      movePage, deleteTrash, restorePage, createSpace, updateSpace,
-      createDatabaseView, uploadFile, getSubscriptions, publish, unpublish, createOrphanedView,
-      generateAISummaryForRow, generateAITranslateForRow,
-      loadDatabasePrompts, testDatabasePromptConfig,
+      enhancedToView,
+      loadViewMeta,
+      enhancedLoadView,
+      createRow,
+      bindViewSync,
+      addPage,
+      enhancedDeletePage,
+      duplicatePage,
+      updatePage,
+      updatePageIcon,
+      updatePageName,
+      movePage,
+      deleteTrash,
+      restorePage,
+      createSpace,
+      createSpaceWithInitialPage,
+      updateSpace,
+      createDatabaseView,
+      uploadFile,
+      getSubscriptions,
+      publish,
+      unpublish,
+      createOrphanedView,
+      generateAISummaryForRow,
+      generateAITranslateForRow,
+      loadDatabasePrompts,
+      testDatabasePromptConfig,
       openPageModal,
-      checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
-      getViewIdFromDatabaseId, getWordCount, setWordCount,
-      getCollabHistory, previewCollabVersion, revertCollabVersion,
+      checkIfRowDocumentExists,
+      loadRowDocument,
+      createRowDocument,
+      duplicateRowDocument,
+      getViewIdFromDatabaseId,
+      getWordCount,
+      setWordCount,
+      getCollabHistory,
+      previewCollabVersion,
+      revertCollabVersion,
       authContext.onChangeWorkspace,
     ]
   );

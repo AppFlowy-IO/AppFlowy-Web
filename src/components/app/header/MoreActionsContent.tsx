@@ -23,6 +23,7 @@ import {
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 
 const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
@@ -32,12 +33,20 @@ function MoreActionsContent({
   viewId,
   onOpenHistory,
   onFindAndReplace,
+  canDuplicateActions = true,
+  canManageActions = true,
+  canUsePageHistory = true,
+  isLoadingActions = false,
 }: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
   onOpenHistory?: () => void;
   onFindAndReplace?: () => void;
+  canDuplicateActions?: boolean;
+  canManageActions?: boolean;
+  canUsePageHistory?: boolean;
+  isLoadingActions?: boolean;
 }) {
   const { t } = useTranslation();
   const { openDeleteModal, showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
@@ -133,7 +142,7 @@ function MoreActionsContent({
   return (
     <DropdownMenuGroup>
       <div ref={containerRef} />
-      {isDocument && (
+      {canManageActions && isDocument && (
         <>
           <DropdownMenuItem
             data-testid={'more-page-lock'}
@@ -149,15 +158,23 @@ function MoreActionsContent({
           <DropdownMenuSeparator />
         </>
       )}
-      <DropdownMenuItem
-        data-testid={'more-page-duplicate'}
-        className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
-        onSelect={handleDuplicateClick}
-      >
-        <DuplicateIcon />
-        {t('button.duplicate')}
-      </DropdownMenuItem>
-      {container && (
+      {canDuplicateActions && (
+        <DropdownMenuItem
+          data-testid={'more-page-duplicate'}
+          className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
+          onSelect={handleDuplicateClick}
+        >
+          <DuplicateIcon />
+          {t('button.duplicate')}
+        </DropdownMenuItem>
+      )}
+      {isLoadingActions && (
+        <DropdownMenuItem data-testid='more-actions-permission-loading' disabled>
+          <Progress variant='primary' />
+          {t('loading')}
+        </DropdownMenuItem>
+      )}
+      {canManageActions && container && (
         <MovePagePopover
           viewId={viewId}
           onMoved={itemClicked}
@@ -193,18 +210,20 @@ function MoreActionsContent({
         </DropdownMenuItem>
       )}
 
-      <DropdownMenuItem
-        data-testid='view-action-delete'
-        variant={'destructive'}
-        onSelect={() => {
-          openDeleteModal(viewId);
-        }}
-      >
-        <DeleteIcon />
-        {t('button.delete')}
-      </DropdownMenuItem>
+      {canManageActions && (
+        <DropdownMenuItem
+          data-testid='view-action-delete'
+          variant={'destructive'}
+          onSelect={() => {
+            openDeleteModal(viewId);
+          }}
+        >
+          <DeleteIcon />
+          {t('button.delete')}
+        </DropdownMenuItem>
+      )}
 
-      {isDocument && onOpenHistory && (
+      {canUsePageHistory && isDocument && onOpenHistory && (
         <DropdownMenuItem
           data-testid='more-page-version-history'
           onSelect={(event) => {

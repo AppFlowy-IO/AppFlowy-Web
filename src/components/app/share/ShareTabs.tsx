@@ -111,6 +111,7 @@ function ShareTabs({
                 isLoadingPeople={isLoadingPeople}
                 onPeopleChange={loadPeople}
                 hasFullAccess={hasFullAccess}
+                currentUserAccessLevel={currentUserAccessLevel}
                 sectionType={sectionType}
               />
             ) : option.value === TabKey.PUBLISH ? (

@@ -1,16 +1,21 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
-import { Role, ViewLayout } from '@/application/types';
+import { ViewLayout } from '@/application/types';
 import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
-import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { AIService } from '@/application/services/domains';
-import { useAIEnabled, useAppOutline, useAppView, useCurrentWorkspaceId, useEventEmitter, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import {
+  useAIEnabled,
+  useAppView,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  usePageHistoryEnabled,
+} from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -25,6 +30,58 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import MoreActionsContent from './MoreActionsContent';
 
 const DocumentHistoryModal = lazy(() => import('@/components/document/history/DocumentHistoryModal'));
+
+function PermissionedMoreActionsContent({
+  chatOptions,
+  handleClose,
+  isDocument,
+  onDeleted,
+  onFindAndReplace,
+  onOpenHistory,
+  showHistory,
+  view,
+  viewId,
+}: {
+  chatOptions: ReactNode;
+  handleClose: () => void;
+  isDocument: boolean;
+  onDeleted?: () => void;
+  onFindAndReplace: () => void;
+  onOpenHistory: () => void;
+  showHistory: boolean;
+  view: ReturnType<typeof useAppView>;
+  viewId: string;
+}) {
+  const {
+    canCreateViewActions,
+    canManageViewActions,
+    canUsePageHistory,
+    hasLoadedViewActionPermissions,
+    isLoadingViewActionPermissions,
+  } = useViewActionPermissions(view, true);
+  const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
+
+  return (
+    <>
+      <DropdownMenuGroup>{chatOptions}</DropdownMenuGroup>
+
+      <MoreActionsContent
+        itemClicked={handleClose}
+        onDeleted={onDeleted}
+        viewId={viewId}
+        canDuplicateActions={canCreateViewActions}
+        canManageActions={canManageViewActions}
+        canUsePageHistory={canUsePageHistory}
+        isLoadingActions={isResolvingViewActionPermissions}
+        onOpenHistory={showHistory ? onOpenHistory : undefined}
+        onFindAndReplace={isDocument ? onFindAndReplace : undefined}
+      />
+      <DropdownMenuSeparator />
+
+      <DocumentInfo viewId={viewId} />
+    </>
+  );
+}
 
 function MoreActions({
   viewId,
@@ -43,7 +100,6 @@ function MoreActions({
   const [hasMessages, setHasMessages] = useState(false);
   const [open, setOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const outline = useAppOutline();
 
   const view = useAppView(viewId);
   const { t } = useTranslation();
@@ -70,10 +126,6 @@ function MoreActions({
   useEffect(() => {
     void handleFetchChatMessages();
   }, [handleFetchChatMessages]);
-
-  const userWorkspaceInfo = useUserWorkspaceInfo();
-
-  const role = userWorkspaceInfo?.selectedWorkspace.role;
 
   const ChatOptions = useMemo(() => {
     return aiEnabled && view?.layout === ViewLayout.AIChat ? (
@@ -125,10 +177,6 @@ function MoreActions({
     }
   }, [showHistory, historyOpen]);
 
-  const shareWithMeView = useMemo(() => {
-    return findViewInShareWithMe(outline || [], viewId);
-  }, [outline, viewId]);
-
   if (aiEnabled && view?.layout === ViewLayout.AIChat && selectionMode) {
     return null;
   }
@@ -142,43 +190,19 @@ function MoreActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent {...menuContentProps}>
-          <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
-
-          {role === Role.Guest || shareWithMeView ? (
-            // Guests and shared-with-me viewers don't get the editing actions
-            // in MoreActionsContent, but Find still works in read-only mode
-            // (the panel disables Replace itself), so surface it here.
-            isDocument && (
-              <>
-                <DropdownMenuItem
-                  data-testid={'more-page-find-and-replace'}
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    handleFindAndReplace();
-                  }}
-                >
-                  <SearchIcon />
-                  {t('shareAction.findAndReplace')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            )
-          ) : (
-            <>
-              <MoreActionsContent
-                itemClicked={() => {
-                  handleClose();
-                }}
-                onDeleted={onDeleted}
-                viewId={viewId}
-                onOpenHistory={showHistory ? handleOpenHistory : undefined}
-                onFindAndReplace={isDocument ? handleFindAndReplace : undefined}
-              />
-              <DropdownMenuSeparator />
-            </>
+          {open && (
+            <PermissionedMoreActionsContent
+              chatOptions={ChatOptions}
+              handleClose={handleClose}
+              isDocument={isDocument}
+              onDeleted={onDeleted}
+              onFindAndReplace={handleFindAndReplace}
+              onOpenHistory={handleOpenHistory}
+              showHistory={showHistory}
+              view={view}
+              viewId={viewId}
+            />
           )}
-
-          <DocumentInfo viewId={viewId} />
         </DropdownMenuContent>
       </DropdownMenu>
       {showHistory && historyOpen && (
