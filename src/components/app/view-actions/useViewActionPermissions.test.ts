@@ -1,9 +1,8 @@
-import { AccessLevel, Role } from '@/application/types';
+import { AccessLevel } from '@/application/types';
 import {
   canUseChildViewCreationActions,
   canUsePageHistoryAction,
   canUseViewMutationActions,
-  resolveCurrentUserActionAccessLevel,
 } from '@/components/app/view-actions/viewActionPermission';
 
 describe('canUseViewMutationActions', () => {
@@ -149,36 +148,5 @@ describe('canUseChildViewCreationActions', () => {
     ).toBe(false);
 
     expect(canUseChildViewCreationActions({})).toBe(false);
-  });
-});
-
-describe('resolveCurrentUserActionAccessLevel', () => {
-  it('falls back from v2 current user permission to legacy shared rows and outline access', () => {
-    expect(
-      resolveCurrentUserActionAccessLevel({
-        currentUserEmail: 'eva@appflowy.io',
-        currentUserPermission: null,
-        outlineAccessLevel: AccessLevel.ReadOnly,
-        sharedPeople: [
-          {
-            email: 'eva@appflowy.io',
-            name: 'Eva',
-            access_level: AccessLevel.FullAccess,
-            role: Role.Guest,
-            avatar_url: '',
-            pending_invitation: false,
-          },
-        ],
-      })
-    ).toBe(AccessLevel.FullAccess);
-
-    expect(
-      resolveCurrentUserActionAccessLevel({
-        currentUserEmail: 'missing@appflowy.io',
-        currentUserPermission: null,
-        outlineAccessLevel: AccessLevel.ReadOnly,
-        sharedPeople: [],
-      })
-    ).toBe(AccessLevel.ReadOnly);
   });
 });

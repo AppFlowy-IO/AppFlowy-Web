@@ -4,11 +4,11 @@ import { AccessService } from '@/application/services/domains';
 import { ObjectPermission, View } from '@/application/types';
 import { findAncestors, findSharedAccessLevel } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { resolveCurrentUserAccessLevel } from '@/components/app/share/shareAccessLevel';
 import {
   canUseChildViewCreationActions,
   canUsePageHistoryAction,
   canUseViewMutationActions,
-  resolveCurrentUserActionAccessLevel,
 } from '@/components/app/view-actions/viewActionPermission';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
@@ -57,7 +57,7 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
     void AccessService.getShareDetail(workspaceId, viewId, ancestorViewIds, controller.signal)
       .then((detail) => {
         if (controller.signal.aborted || seq !== requestSeq.current) return;
-        const accessLevel = resolveCurrentUserActionAccessLevel({
+        const accessLevel = resolveCurrentUserAccessLevel({
           currentUserEmail: currentUser?.email,
           currentUserPermission: detail.current_user_permission ?? null,
           outlineAccessLevel: outlineAccessLevelRef.current,

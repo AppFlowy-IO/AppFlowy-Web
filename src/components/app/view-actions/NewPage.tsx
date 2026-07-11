@@ -13,6 +13,8 @@ import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
+const CREATE_SPACE_INITIAL_PAGE = { layout: ViewLayout.Document };
+
 function NewPage() {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState<boolean>(false);
@@ -118,13 +120,14 @@ function NewPage() {
       <CreateSpaceModal
         open={createSpaceOpen}
         onClose={() => setCreateSpaceOpen(false)}
-        initialPage={{ layout: ViewLayout.Document }}
+        initialPage={CREATE_SPACE_INITIAL_PAGE}
         onCreated={(spaceId: string, initialPageId?: string) => {
           if (initialPageId) {
             openPageModal?.(initialPageId);
             onClose();
             return;
           }
+
           void handleAddPage(spaceId);
         }}
       />
