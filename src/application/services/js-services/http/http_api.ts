@@ -178,6 +178,7 @@ export {
   approveRequestAccess,
   sendRequestAccess,
   getShareDetail,
+  invalidateShareDetailCache,
   sharePageTo,
   revokeAccess,
   turnIntoMember,

@@ -82,6 +82,7 @@ export interface APIResponse<T = unknown> {
   code: number;
   data?: T;
   message: string;
+  retry_after_secs?: number;
 }
 
 /**
@@ -90,6 +91,8 @@ export interface APIResponse<T = unknown> {
 export interface APIError {
   code: number;
   message: string;
+  /** HTTP response status when the error came from the transport layer. */
+  httpStatus?: number;
   /** Server-suggested retry delay parsed from the HTTP Retry-After header (seconds). */
   retryAfterSecs?: number;
 }
@@ -133,6 +136,7 @@ export function handleAPIError(error: unknown): APIError {
     return {
       code: errorData?.code ?? error.response.status,
       message: errorData?.message || error.message || 'Request failed',
+      httpStatus: error.response.status,
       retryAfterSecs,
     };
   }
@@ -149,6 +153,7 @@ export function handleAPIError(error: unknown): APIError {
     return {
       code: apiError.code,
       message: apiError.message || 'Request failed',
+      httpStatus: apiError.httpStatus,
       retryAfterSecs: apiError.retryAfterSecs,
     };
   }
@@ -212,6 +217,7 @@ export async function executeAPIRequest<TResponseData = unknown>(
     return Promise.reject({
       code: response.data.code,
       message: response.data.message || 'Request failed',
+      retryAfterSecs: response.data.retry_after_secs,
     });
   } catch (error) {
     return Promise.reject(handleAPIError(error));
@@ -260,6 +266,7 @@ export async function executeAPIVoidRequest(
         return Promise.reject({
           code: data.code,
           message: data.message || 'Request failed',
+          retryAfterSecs: data.retry_after_secs,
         });
       }
 
@@ -310,7 +317,17 @@ export async function withRetry<T>(
       // handleAPIError handles AxiosError (string codes like "ERR_NETWORK"),
       // raw Error, and unknown shapes — always returns { code, message }.
       const normalized = handleAPIError(error);
-      const isRetryable = normalized.code === -1 || normalized.code >= 500 || normalized.code === 429;
+      // AppFlowy application error codes (for example 1012 for permission
+      // denied) share this numeric field with HTTP statuses. Only the actual
+      // HTTP 5xx range is retryable; treating every value above 500 as a
+      // transport failure makes permanent denials wait through all backoffs.
+      const httpStatus =
+        normalized.httpStatus ??
+        (normalized.code >= 100 && normalized.code <= 599 ? normalized.code : undefined);
+      const isRetryable =
+        normalized.code === -1 ||
+        httpStatus === 429 ||
+        (httpStatus !== undefined && httpStatus >= 500 && httpStatus <= 599);
 
       if (!isRetryable) break;
 

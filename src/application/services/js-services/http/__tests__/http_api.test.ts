@@ -11,6 +11,7 @@ const mockAxiosInstance = {
 };
 
 const mockAxiosCreate = jest.fn(() => mockAxiosInstance);
+const mockGetTokenParsed = jest.fn(() => null as { user?: { id?: string } } | null);
 
 jest.mock('axios', () => ({
   __esModule: true,
@@ -28,7 +29,7 @@ jest.mock('@/application/services/js-services/http/gotrue', () => ({
 }));
 
 jest.mock('@/application/session/token', () => ({
-  getTokenParsed: jest.fn(() => null),
+  getTokenParsed: () => mockGetTokenParsed(),
   invalidToken: jest.fn(),
 }));
 
@@ -50,6 +51,7 @@ const baseConfig = {
 describe('http_api client (unit)', () => {
   beforeEach(() => {
     jest.resetModules();
+    localStorage.clear();
     mockAxiosCreate.mockClear();
     mockAxiosInstance.interceptors.request.use.mockReset();
     mockAxiosInstance.interceptors.response.use.mockReset();
@@ -57,6 +59,8 @@ describe('http_api client (unit)', () => {
     mockAxiosInstance.post.mockReset();
     mockAxiosInstance.put.mockReset();
     mockAxiosInstance.delete.mockReset();
+    mockGetTokenParsed.mockReset();
+    mockGetTokenParsed.mockReturnValue(null);
   });
 
   it('initializes axios instance once with provided config', async () => {
@@ -157,6 +161,133 @@ describe('http_api client (unit)', () => {
     await expect(module.getAuthProviders()).resolves.toEqual([AuthProvider.PASSWORD]);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it('does not call the legacy access-details endpoint after a v2 permission error', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        code: 1012,
+        message: 'Not enough permissions',
+      },
+    });
+
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).rejects.toMatchObject({
+      code: 1012,
+    });
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
+    expect(mockAxiosInstance.post).not.toHaveBeenCalled();
+  });
+
+  it('does not retry AppFlowy permission codes as HTTP server errors', async () => {
+    const { withRetry } = await import('../core');
+    const request = jest.fn().mockRejectedValue({ code: 1012, message: 'Not enough permissions' });
+
+    await expect(withRetry(request, { delays: [0, 0, 0] })).rejects.toMatchObject({ code: 1012 });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries an HTTP 429 carrying an AppFlowy application code', async () => {
+    const { withRetry } = await import('../core');
+    const request = jest
+      .fn()
+      .mockRejectedValueOnce({
+        isAxiosError: true,
+        message: 'Busy',
+        response: {
+          status: 429,
+          data: { code: 1079, message: 'Busy' },
+          headers: {},
+        },
+      })
+      .mockResolvedValueOnce('ok');
+
+    await expect(withRetry(request, { delays: [0] })).resolves.toBe('ok');
+    expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to legacy access details when v2 is unsupported', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+    const legacyDetails = { shared_with: [{ email: 'guest@appflowy.io' }] };
+
+    mockAxiosInstance.get.mockRejectedValueOnce({
+      isAxiosError: true,
+      message: 'Not found',
+      response: {
+        status: 404,
+        data: { message: 'Not found' },
+        headers: {},
+      },
+    });
+    mockAxiosInstance.post.mockResolvedValueOnce({ data: { code: 0, data: legacyDetails } });
+
+    await expect(module.getShareDetail('workspace-1', 'page-1', ['parent-1'])).resolves.toEqual(legacyDetails);
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+      '/api/sharing/workspace/workspace-1/view/page-1/access-details',
+      { ancestor_view_ids: ['parent-1'] }
+    );
+  });
+
+  it('fetches fresh access details after workspace cache invalidation', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+    const staleDetails = {
+      shared_with: [{ email: 'removed@appflowy.io' }],
+    };
+    const freshDetails = { shared_with: [] };
+
+    mockAxiosInstance.get
+      .mockResolvedValueOnce({ data: { code: 0, data: staleDetails } })
+      .mockResolvedValueOnce({ data: { code: 0, data: freshDetails } });
+
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).resolves.toEqual(staleDetails);
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).resolves.toEqual(staleDetails);
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
+
+    module.invalidateShareDetailCache('workspace-1');
+
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).resolves.toEqual(freshDetails);
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not reuse access details across an in-app account switch', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+    const firstUserDetails = { shared_with: [{ email: 'first-user@appflowy.io' }] };
+    const secondUserDetails = { shared_with: [{ email: 'second-user@appflowy.io' }] };
+
+    mockAxiosInstance.get
+      .mockResolvedValueOnce({ data: { code: 0, data: firstUserDetails } })
+      .mockResolvedValueOnce({ data: { code: 0, data: secondUserDetails } });
+
+    mockGetTokenParsed.mockReturnValueOnce({ user: { id: 'user-1' } });
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).resolves.toEqual(firstUserDetails);
+
+    mockGetTokenParsed.mockReturnValueOnce({ user: { id: 'user-2' } });
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).resolves.toEqual(secondUserDetails);
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the server retry hint on access-details errors', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        code: 1079,
+        message: 'Access details are refreshing',
+        retry_after_secs: 3,
+      },
+    });
+
+    await expect(module.getShareDetail('workspace-1', 'page-1', [])).rejects.toMatchObject({
+      code: 1079,
+      retryAfterSecs: 3,
+    });
+    expect(mockAxiosInstance.post).not.toHaveBeenCalled();
   });
 
   it('uses params-scoped ETag caching for access-details v2 GET requests', async () => {

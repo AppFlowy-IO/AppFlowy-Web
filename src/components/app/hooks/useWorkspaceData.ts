@@ -1220,6 +1220,10 @@ export function useWorkspaceData() {
     const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
 
+      // The access-details service keeps a short-lived resolved-promise cache.
+      // Notifications can come from another tab or client, so invalidate it
+      // before any consumer reacts to the changed outline.
+      AccessService.invalidateShareDetailCache(currentWorkspaceId);
       void loadOutline(currentWorkspaceId, false);
 
       const changedViewId = payload?.viewId;

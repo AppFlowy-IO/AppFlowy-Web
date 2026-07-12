@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
+import { AccessService } from '@/application/services/domains';
 import { AccessLevel, IPeopleWithAccessType, Role } from '@/application/types';
 import { useEventEmitter, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { AccessService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -18,6 +18,7 @@ interface PeopleWithAccessProps {
   people: IPeopleWithAccessType[];
   isLoading: boolean;
   onPeopleChange: () => Promise<void>;
+  onPersonRemoved: (email: string) => void;
   hasFullAccess: boolean;
   canGrantFullAccess: boolean;
   sectionType: ShareSectionType;
@@ -27,6 +28,7 @@ export function PeopleWithAccess({
   viewId,
   people,
   onPeopleChange,
+  onPersonRemoved,
   isLoading,
   hasFullAccess,
   canGrantFullAccess,
@@ -79,7 +81,10 @@ export function PeopleWithAccess({
 
       await AccessService.revokeAccess(currentWorkspaceId, viewId, [personEmail]);
 
-      // Refresh the people list after removal
+      // The mutation response is authoritative for this direct row. The share
+      // hook keeps a revocation tombstone while related access is revalidated,
+      // so every overlapping response is filtered consistently.
+      onPersonRemoved(personEmail);
       await onPeopleChange();
 
       // Wait for outline refresh to complete before navigating
@@ -89,7 +94,7 @@ export function PeopleWithAccess({
         navigate('/app');
       }
     },
-    [onPeopleChange, currentWorkspaceId, viewId, navigate, currentUser?.email, eventEmitter]
+    [onPeopleChange, onPersonRemoved, currentWorkspaceId, viewId, navigate, currentUser?.email, eventEmitter]
   );
 
   const handleTurnIntoMember = useCallback(

@@ -32,6 +32,7 @@ jest.mock('lodash-es', () => ({
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getShareWithMe: jest.fn(),
+    invalidateShareDetailCache: jest.fn(),
   },
   ViewService: {
     get: jest.fn(),
@@ -147,6 +148,29 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       ViewService.get(activeWorkspaceId, viewId)
     );
     (ViewService.getTrash as jest.Mock).mockResolvedValue([]);
+  });
+
+  it('invalidates cached access details for every remote share change', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('space-id')];
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+    const { result, unmount } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+    (AccessService.invalidateShareDetailCache as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: 'shared-view-id',
+        emails: ['other-user@appflowy.io'],
+      });
+    });
+
+    expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
+    unmount();
   });
 
   it('hydrates missing selected view path from navigation context', async () => {
