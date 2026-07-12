@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FC, type ReactN
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
-import { ViewService } from '@/application/services/domains';
-import { LoadViewOptions, TextCount, View } from '@/application/types';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
+import { AccessService, ViewService } from '@/application/services/domains';
+import { LoadViewOptions, TextCount, Types, View, ViewLayout } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
@@ -30,6 +32,14 @@ interface AppBusinessLayerProps {
 
 const ROUTE_VIEW_EXISTS_CACHE_MAX = 200;
 const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
+
+// Open-time permission probes share one short-lived cache so rapid navigation
+// between the same pages does not refire identical permission GETs.
+const PERMISSION_PROBE_TTL_MS = 10000;
+const PERMISSION_PROBE_CACHE_MAX = 200;
+
+type PermissionProbeVerdict = 'allowed' | 'denied' | 'unknown';
+const permissionProbeCache = new Map<string, { probedAt: number; promise: Promise<PermissionProbeVerdict> }>();
 const ROUTE_NOT_FOUND_MESSAGE_PATTERN = /\b(not\s*found|record\s*not\s*found|view\s*not\s*found|page\s*not\s*found)\b/i;
 
 type RouteViewExistsCacheEntry = {
@@ -303,6 +313,90 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   const viewNotFound = Boolean(viewId && !viewHasBeenDeleted && routeViewExists === false);
 
+  // Open-time permission gate: local-first rendering serves cached pages
+  // without consulting the server, so a user whose access was revoked could
+  // otherwise keep reading a page from IndexedDB indefinitely. Probe the
+  // object-permission API in the background on navigation; on a definitive
+  // denial show the no-access page and purge the local copies.
+  //
+  // The denied view id (not a boolean) is stored so `viewNoAccess` derives
+  // during render — navigating away never flashes the no-access screen on
+  // the next page while waiting for an effect to reset a flag.
+  const [noAccessViewId, setNoAccessViewId] = useState<string | null>(null);
+  const viewNoAccess = Boolean(viewId && noAccessViewId === viewId);
+
+  useEffect(() => {
+    if (!viewId || !currentWorkspaceId || viewHasBeenDeleted) return;
+
+    let cancelled = false;
+    const workspaceId = currentWorkspaceId;
+    const cacheKey = `${workspaceId}:${viewId}`;
+    const cached = permissionProbeCache.get(cacheKey);
+    let probe =
+      cached && Date.now() - cached.probedAt < PERMISSION_PROBE_TTL_MS ? cached.promise : undefined;
+
+    if (!probe) {
+      const routeView = findView(stableOutlineRef.current ?? [], viewId);
+      const collabType =
+        routeView && routeView.layout !== ViewLayout.Document ? Types.Database : Types.Document;
+
+      probe = AccessService.getObjectPermission(workspaceId, viewId, collabType)
+        .then((permission): PermissionProbeVerdict =>
+          permission?.can_read === false ? 'denied' : 'allowed'
+        )
+        .catch((error: unknown): PermissionProbeVerdict => {
+          // Only a definitive permission denial counts. Transient/network/404
+          // errors must not evict local data (a brand-new page can briefly 404
+          // here before the server projects its permission records).
+          const code = (error as { code?: number } | null)?.code;
+
+          return code === ERROR_CODE.NOT_HAS_PERMISSION || code === 403 ? 'denied' : 'unknown';
+        });
+      if (permissionProbeCache.size >= PERMISSION_PROBE_CACHE_MAX) {
+        const oldestKey = permissionProbeCache.keys().next().value;
+
+        if (oldestKey !== undefined) permissionProbeCache.delete(oldestKey);
+      }
+
+      permissionProbeCache.set(cacheKey, { probedAt: Date.now(), promise: probe });
+    }
+
+    void probe.then((verdict) => {
+      if (verdict === 'denied') {
+        // Evict even if this navigation was superseded — revoked content must
+        // not stay readable from the local caches.
+        ViewService.invalidateCache(workspaceId, viewId);
+        void deleteCollabDB(viewId, { destroyDoc: true });
+        if (!cancelled) setNoAccessViewId(viewId);
+      } else if (verdict === 'allowed' && !cancelled) {
+        setNoAccessViewId((prev) => (prev === viewId ? null : prev));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewId, currentWorkspaceId, viewHasBeenDeleted, stableOutlineRef]);
+
+  // Push path: a share-change notification proved we lost access to a view
+  // (useWorkspaceData already evicted its local cache). Record the denial so
+  // the page swaps to the no-access screen if it is (or becomes) current.
+  useEffect(() => {
+    const handleViewAccessRevoked = (payload?: { viewId?: string | null }) => {
+      const revokedViewId = payload?.viewId;
+
+      if (!revokedViewId) return;
+      if (currentWorkspaceId) permissionProbeCache.delete(`${currentWorkspaceId}:${revokedViewId}`);
+      setNoAccessViewId(revokedViewId);
+    };
+
+    syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+
+    return () => {
+      syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+    };
+  }, [syncContext.eventEmitter, currentWorkspaceId]);
+
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {
     if (!outline || !breadcrumbViewId) return [];
@@ -500,6 +594,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       rendered,
       onRendered,
       notFound: viewNotFound,
+      viewNoAccess,
       viewHasBeenDeleted,
       openPageModalViewId: openModalViewId,
       openPageModal,
@@ -511,6 +606,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       rendered,
       onRendered,
       viewNotFound,
+      viewNoAccess,
       viewHasBeenDeleted,
       openModalViewId,
       openPageModal,

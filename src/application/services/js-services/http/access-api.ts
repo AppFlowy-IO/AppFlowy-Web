@@ -6,6 +6,7 @@ import {
   RequestAccessInfoStatus,
   Role,
   ShareAccessDetails,
+  Types,
   View,
   Workspace,
 } from '@/application/types';
@@ -162,8 +163,11 @@ async function fetchShareDetail(
     const url = `/api/sharing/workspace/${workspaceId}/access-details/v2?${params.toString()}`;
 
     try {
-      return await withRetry(() =>
-        executeAPIRequest<ShareAccessDetails>(() => getAxios()?.get<APIResponse<ShareAccessDetails>>(url))
+      // No withRetry here: the shared axios interceptor already retries GETs on
+      // transient failures, and stacking a second retry ladder keeps the share
+      // panel blocked for many seconds before the legacy fallback below runs.
+      return await executeAPIRequest<ShareAccessDetails>(() =>
+        getAxios()?.get<APIResponse<ShareAccessDetails>>(url)
       );
     } catch (error) {
       const code = getErrorCode(error);
@@ -207,6 +211,31 @@ export async function getShareDetail(
   });
 
   return promise;
+}
+
+/** Effective permission of the current user on a single collab object. */
+export interface CollabObjectPermission {
+  object_id?: string;
+  access_level?: AccessLevel | null;
+  governing_view_id?: string | null;
+  can_read?: boolean;
+  can_write?: boolean;
+  can_comment?: boolean;
+  can_share?: boolean;
+}
+
+export async function getObjectPermission(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types = Types.Document
+) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+
+  return executeAPIRequest<CollabObjectPermission>(() =>
+    getAxios()?.get<APIResponse<CollabObjectPermission>>(url, {
+      params: { collab_type: collabType },
+    })
+  );
 }
 
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {

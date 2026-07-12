@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
@@ -24,6 +25,8 @@ import {
 import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
+
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -257,6 +260,18 @@ const AUTHORITATIVE_VIEW_REFRESH_ERROR_CODES = new Set<number>([
   410,
 ]);
 
+// Errors that prove the current user can no longer read a view. Deliberately
+// excludes auth errors (401 / not-logged-in): a token blip must not wipe the
+// local copy of a page the user still has access to.
+const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
+  ERROR_CODE.RECORD_NOT_FOUND,
+  ERROR_CODE.RECORD_DELETED,
+  ERROR_CODE.NOT_HAS_PERMISSION,
+  403,
+  404,
+  410,
+]);
+
 function getRefreshErrorCode(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
 
@@ -364,6 +379,7 @@ function folderOutlinePatchMayAffectFavorites(patch: JsonPatchOperation[]): bool
 export function useWorkspaceData() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { eventEmitter } = useSyncInternal();
+  const currentUserEmail = useCurrentUserOptional()?.email;
   const navigate = useNavigate();
 
   const [outline, setOutline] = useState<View[]>();
@@ -1201,10 +1217,34 @@ export function useWorkspaceData() {
   );
 
   useEffect(() => {
-    const handleShareViewsChanged = () => {
+    const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
 
       void loadOutline(currentWorkspaceId, false);
+
+      const changedViewId = payload?.viewId;
+      const normalizedCurrentEmail = currentUserEmail?.toLowerCase();
+      const affectsCurrentUser =
+        normalizedCurrentEmail !== undefined &&
+        payload?.emails?.some((email) => email?.toLowerCase() === normalizedCurrentEmail);
+
+      if (!changedViewId || !affectsCurrentUser) return;
+
+      // The notification fires for grants and revokes alike, so probe the
+      // server. If this user lost read access, evict the locally cached
+      // collab so the page cannot keep rendering from IndexedDB, and tell
+      // the app shell in case the page is currently on screen.
+      const workspaceId = currentWorkspaceId;
+
+      void ViewService.getNavigation(workspaceId, changedViewId, 0).catch((error: unknown) => {
+        const code = getRefreshErrorCode(error);
+
+        if (code === undefined || !ACCESS_REVOKED_PROBE_ERROR_CODES.has(code)) return;
+
+        ViewService.invalidateCache(workspaceId, changedViewId);
+        void deleteCollabDB(changedViewId, { destroyDoc: true });
+        eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
+      });
     };
 
     if (eventEmitter) {
@@ -1216,7 +1256,7 @@ export function useWorkspaceData() {
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
       }
     };
-  }, [currentWorkspaceId, eventEmitter, loadOutline]);
+  }, [currentWorkspaceId, currentUserEmail, eventEmitter, loadOutline]);
 
   useEffect(() => {
     const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {
