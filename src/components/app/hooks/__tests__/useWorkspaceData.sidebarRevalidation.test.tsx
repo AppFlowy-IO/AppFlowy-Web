@@ -5,11 +5,13 @@ import { type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
-import { Role, View, ViewLayout } from '@/application/types';
+import { Role, User, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
 import { MAX_SIDEBAR_OUTLINE_REVALIDATION_EXPANDED_IDS } from '@/components/app/outline/sidebarRevalidation';
+import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { useWorkspaceData } from '../useWorkspaceData';
 
@@ -51,6 +53,10 @@ jest.mock('@/application/services/domains', () => ({
   },
 }));
 
+jest.mock('@/application/db', () => ({
+  deleteCollabDB: jest.fn(),
+}));
+
 const workspaceId = 'workspace-id';
 
 const createView = (viewId: string, overrides: Partial<View> = {}): View => ({
@@ -66,7 +72,11 @@ const createView = (viewId: string, overrides: Partial<View> = {}): View => ({
   ...overrides,
 });
 
-function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => workspaceId) {
+function createWrapper(
+  eventEmitter: EventEmitter,
+  getWorkspaceId = () => workspaceId,
+  currentUserEmail = 'current-user@appflowy.io'
+) {
   const authContext: AuthInternalContextType = {
     currentWorkspaceId: getWorkspaceId(),
     isAuthenticated: true,
@@ -92,6 +102,17 @@ function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => worksp
     syncAllToServer: jest.fn(),
     webSocket: {},
   } as unknown as SyncInternalContextType;
+  const currentUser = {
+    email: currentUserEmail,
+    uid: 'user-id',
+    uuid: 'user-uuid',
+  } as User;
+  const appConfigContext = {
+    currentUser,
+    isAuthenticated: true,
+    openLoginModal: jest.fn(),
+    updateCurrentUser: jest.fn(),
+  };
 
   return function Wrapper({ children }: { children: ReactNode }) {
     const activeWorkspaceId = getWorkspaceId();
@@ -110,11 +131,13 @@ function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => worksp
     };
 
     return (
-      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <AuthInternalContext.Provider value={activeAuthContext}>
-          <SyncInternalContext.Provider value={syncContext}>{children}</SyncInternalContext.Provider>
-        </AuthInternalContext.Provider>
-      </MemoryRouter>
+      <AFConfigContext.Provider value={appConfigContext}>
+        <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+          <AuthInternalContext.Provider value={activeAuthContext}>
+            <SyncInternalContext.Provider value={syncContext}>{children}</SyncInternalContext.Provider>
+          </AuthInternalContext.Provider>
+        </MemoryRouter>
+      </AFConfigContext.Provider>
     );
   };
 }
@@ -148,6 +171,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       ViewService.get(activeWorkspaceId, viewId)
     );
     (ViewService.getTrash as jest.Mock).mockResolvedValue([]);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('invalidates cached access details for every remote share change', async () => {
@@ -171,6 +195,160 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
     unmount();
+  });
+
+  it('evicts a disk-only canonical database collab when the current user loses access', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      extra: {
+        database_id: 'database-collab-id',
+        is_database_container: true,
+        is_space: false,
+      },
+    });
+    const shallowOutline = [createView('space-id', { extra: { is_space: true } })];
+    const revokedListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, revokedListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowOutline, folderRid: '1-1' });
+    (ViewService.getCachedFromDisk as jest.Mock).mockResolvedValueOnce(databaseView);
+    (ViewService.getNavigation as jest.Mock).mockRejectedValueOnce({
+      code: ERROR_CODE.NOT_HAS_PERMISSION,
+      message: 'no permission',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowOutline));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: databaseView.view_id,
+        emails: ['CURRENT-USER@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
+      expect(deleteCollabDB).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+    });
+    expect(ViewService.getCachedFromDisk).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
+    expect(revokedListener).toHaveBeenCalledWith({ viewId: databaseView.view_id });
+  });
+
+  it('announces restored access after a successful share-change probe', async () => {
+    const eventEmitter = new EventEmitter();
+    const sharedView = createView('shared-view-id');
+    const restoredListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, restoredListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [sharedView], folderRid: '1-1' });
+    (ViewService.getNavigation as jest.Mock).mockResolvedValueOnce(sharedView);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([sharedView]));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(restoredListener).toHaveBeenCalledWith({ viewId: sharedView.view_id });
+    });
+    expect(deleteCollabDB).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older grant response after a newer revocation', async () => {
+    const eventEmitter = new EventEmitter();
+    const sharedView = createView('shared-view-id');
+    const olderGrant = createDeferred<View>();
+    const restoredListener = jest.fn();
+    const revokedListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, restoredListener);
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, revokedListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [sharedView], folderRid: '1-1' });
+    (ViewService.getNavigation as jest.Mock)
+      .mockReturnValueOnce(olderGrant.promise)
+      .mockRejectedValueOnce({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'no permission' });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([sharedView]));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => expect(revokedListener).toHaveBeenCalledWith({ viewId: sharedView.view_id }));
+
+    await act(async () => {
+      olderGrant.resolve(sharedView);
+      await olderGrant.promise;
+    });
+
+    expect(restoredListener).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older revoke response after a newer grant', async () => {
+    const eventEmitter = new EventEmitter();
+    const sharedView = createView('shared-view-id');
+    const olderRevoke = createDeferred<View>();
+    const restoredListener = jest.fn();
+    const revokedListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, restoredListener);
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, revokedListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [sharedView], folderRid: '1-1' });
+    (ViewService.getNavigation as jest.Mock)
+      .mockReturnValueOnce(olderRevoke.promise)
+      .mockResolvedValueOnce(sharedView);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([sharedView]));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => expect(restoredListener).toHaveBeenCalledWith({ viewId: sharedView.view_id }));
+
+    await act(async () => {
+      olderRevoke.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'no permission' });
+      await olderRevoke.promise.catch(() => undefined);
+    });
+
+    expect(revokedListener).not.toHaveBeenCalled();
+    expect(deleteCollabDB).not.toHaveBeenCalled();
   });
 
   it('hydrates missing selected view path from navigation context', async () => {

@@ -399,6 +399,7 @@ export function useWorkspaceData() {
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
   const trashRequestSeqRef = useRef(0);
+  const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
@@ -1217,20 +1218,51 @@ export function useWorkspaceData() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+
     const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
-
-      // The access-details service keeps a short-lived resolved-promise cache.
-      // Notifications can come from another tab or client, so invalidate it
-      // before any consumer reacts to the changed outline.
-      AccessService.invalidateShareDetailCache(currentWorkspaceId);
-      void loadOutline(currentWorkspaceId, false);
 
       const changedViewId = payload?.viewId;
       const normalizedCurrentEmail = currentUserEmail?.toLowerCase();
       const affectsCurrentUser =
         normalizedCurrentEmail !== undefined &&
         payload?.emails?.some((email) => email?.toLowerCase() === normalizedCurrentEmail);
+      const shouldProbeAccess = Boolean(changedViewId && affectsCurrentUser);
+      const cachedNavigation =
+        shouldProbeAccess && changedViewId ? ViewService.getCached(currentWorkspaceId, changedViewId) : undefined;
+      const changedView =
+        shouldProbeAccess && changedViewId
+          ? findView(stableOutlineRef.current, changedViewId) ??
+            (cachedNavigation ? findView([cachedNavigation], changedViewId) : null)
+          : null;
+
+      // A lazy/depth-truncated outline may not contain the route metadata, and
+      // its memory cache may already have expired. Start the disk lookup before
+      // loadOutline can replace or invalidate anything; only await it if a
+      // definitive denial requires local collab eviction.
+      const diskCachedNavigationPromise =
+        shouldProbeAccess && changedViewId && !changedView
+          ? ViewService.getCachedFromDisk(currentWorkspaceId, changedViewId).catch((error) => {
+              Log.warn('[Outline] failed to read cached view metadata after share change', {
+                workspaceId: currentWorkspaceId,
+                viewId: changedViewId,
+                error,
+              });
+              return undefined;
+            })
+          : undefined;
+
+      // Database folder/view UUIDs are metadata identifiers. Their Y.Doc and
+      // IndexedDB collab are stored under the backing database UUID instead.
+      // Capture it before loadOutline can remove a newly revoked view.
+      const cachedDatabaseId = changedView?.extra?.database_id;
+
+      // The access-details service keeps a short-lived resolved-promise cache.
+      // Notifications can come from another tab or client, so invalidate it
+      // before any consumer reacts to the changed outline.
+      AccessService.invalidateShareDetailCache(currentWorkspaceId);
+      void loadOutline(currentWorkspaceId, false);
 
       if (!changedViewId || !affectsCurrentUser) return;
 
@@ -1239,16 +1271,42 @@ export function useWorkspaceData() {
       // collab so the page cannot keep rendering from IndexedDB, and tell
       // the app shell in case the page is currently on screen.
       const workspaceId = currentWorkspaceId;
+      const probeKey = `${normalizedCurrentEmail}:${workspaceId}:${changedViewId}`;
+      const probeGeneration = (shareAccessProbeGenerationsRef.current.get(probeKey) ?? 0) + 1;
+      const isCurrentProbe = () =>
+        !cancelled && shareAccessProbeGenerationsRef.current.get(probeKey) === probeGeneration;
 
-      void ViewService.getNavigation(workspaceId, changedViewId, 0).catch((error: unknown) => {
-        const code = getRefreshErrorCode(error);
+      shareAccessProbeGenerationsRef.current.set(probeKey, probeGeneration);
 
-        if (code === undefined || !ACCESS_REVOKED_PROBE_ERROR_CODES.has(code)) return;
+      void ViewService.getNavigation(workspaceId, changedViewId, 0)
+        .then(() => {
+          if (!isCurrentProbe()) return;
+          eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: changedViewId });
+        })
+        .catch(async (error: unknown) => {
+          if (!isCurrentProbe()) return;
 
-        ViewService.invalidateCache(workspaceId, changedViewId);
-        void deleteCollabDB(changedViewId, { destroyDoc: true });
-        eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
-      });
+          const code = getRefreshErrorCode(error);
+
+          if (code === undefined || !ACCESS_REVOKED_PROBE_ERROR_CODES.has(code)) return;
+
+          const diskCachedNavigation = await diskCachedNavigationPromise;
+
+          if (!isCurrentProbe()) return;
+
+          const diskChangedView = diskCachedNavigation
+            ? findView([diskCachedNavigation], changedViewId)
+            : null;
+          const databaseId = cachedDatabaseId ?? diskChangedView?.extra?.database_id;
+
+          ViewService.invalidateCache(workspaceId, changedViewId);
+          const collabIds = new Set([changedViewId, databaseId].filter((id): id is string => Boolean(id)));
+
+          collabIds.forEach((collabId) => {
+            void deleteCollabDB(collabId, { destroyDoc: true });
+          });
+          eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
+        });
     };
 
     if (eventEmitter) {
@@ -1256,11 +1314,12 @@ export function useWorkspaceData() {
     }
 
     return () => {
+      cancelled = true;
       if (eventEmitter) {
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
       }
     };
-  }, [currentWorkspaceId, currentUserEmail, eventEmitter, loadOutline]);
+  }, [currentWorkspaceId, currentUserEmail, eventEmitter, loadOutline, stableOutlineRef]);
 
   useEffect(() => {
     const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {

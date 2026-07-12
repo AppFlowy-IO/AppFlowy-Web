@@ -70,6 +70,7 @@ export const APP_EVENTS = {
   SECTION_CHANGED: 'section-changed',                     // Workspace sections updated (recent views, etc.)
   SHARE_VIEWS_CHANGED: 'share-views-changed',             // View sharing settings changed
   VIEW_ACCESS_REVOKED: 'view-access-revoked',             // Current user lost access to a view; local cache evicted
+  VIEW_ACCESS_RESTORED: 'view-access-restored',           // Current user regained access to a view; permission gate reset
   MENTIONABLE_PERSON_LIST_CHANGED: 'mentionable-person-list-changed', // Team member changes
   SERVER_LIMIT_CHANGED: 'server-limit-changed',           // Billing/feature limits updated
   WORKSPACE_MEMBER_PROFILE_CHANGED: 'workspace-member-profile-changed', // Workspace member profile updated

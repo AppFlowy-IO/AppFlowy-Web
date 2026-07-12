@@ -24,6 +24,7 @@ function RightMenu() {
   const routeView = useAppView(routeViewId);
   const workspaceId = useCurrentWorkspaceId();
   const [searchParams] = useSearchParams();
+  const hasRowPageRoute = searchParams.has('r');
   const rowPageRowId = searchParams.get('r');
   const activeRowPage = useActiveRowPage();
   const actionViewId = useMemo(() => {
@@ -53,7 +54,9 @@ function RightMenu() {
     }
   }, [rowPage, workspaceId]);
 
-  const favoriteViewId = rowPage?.documentId || actionViewId;
+  // While a row route is loading, do not fall back to the containing database:
+  // a click in that window would favorite the wrong object.
+  const favoriteViewId = hasRowPageRoute ? rowPage?.documentId : actionViewId;
 
   return (
     <div className={'flex items-center gap-2'}>
