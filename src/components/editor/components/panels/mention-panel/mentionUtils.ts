@@ -407,14 +407,17 @@ function requestIncludesDatabaseRows(request: MentionSearchRequest): boolean {
 
 export function shouldCacheMentionSearchSections(
   requests: MentionSearchRequest[],
-  sections: MentionSearchSection[],
+  databaseRowResponse: MentionSearchResponse | undefined,
   hasQuery: boolean
 ) {
   if (!hasQuery || !requests.some(requestIncludesDatabaseRows)) {
     return true;
   }
 
-  return sections.some((section) => section.items.some((item) => item.kind === MentionTargetKind.DatabaseRow));
+  // A fulfilled, non-partial row response is authoritative even when it has
+  // no items. Missing or partial responses must not overwrite a previously
+  // complete cache entry.
+  return databaseRowResponse !== undefined && databaseRowResponse.partial !== true;
 }
 
 export function mergeMentionSearchResponses(responses: MentionSearchResponse[]): MentionSearchResponse {

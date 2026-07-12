@@ -20,7 +20,6 @@ import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
 import { useAppOperations, useAppTrash, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { Log } from '@/utils/log';
 
 function TrashPage() {
   const { t } = useTranslation();
@@ -73,17 +72,14 @@ function TrashPage() {
       try {
         const rowSources = rowDocumentEntries(viewId);
 
-        await restorePage?.(viewId);
         // Restoring a row page also clears the row's soft-delete tombstone so
-        // it reappears in every database view.
+        // it reappears in every database view. Apply this first so a collab
+        // load/mutation failure leaves the row page in Trash for retry.
         for (const source of rowSources) {
-          try {
-            await withDatabaseCollab(source, restoreSoftDeletedRowsInDatabase);
-          } catch (e) {
-            Log.error('[TrashPage] failed to restore row for row page', { source, error: e });
-          }
+          await withDatabaseCollab(source, restoreSoftDeletedRowsInDatabase);
         }
 
+        await restorePage?.(viewId);
         void loadTrash?.(currentWorkspaceId);
         // eslint-disable-next-line
       } catch (e: any) {
@@ -99,19 +95,16 @@ function TrashPage() {
       try {
         const rowSources = rowDocumentEntries(viewId);
 
-        await deleteTrash?.(viewId);
         // Permanently deleting a row page removes the row from the database
-        // collab entirely (the folder trash entry is already gone).
+        // collab entirely. Apply this first so the Trash entry remains if the
+        // source database cannot be loaded or mutated.
         for (const source of rowSources) {
-          try {
-            await withDatabaseCollab(source, (sharedRoot, database, rowIds) =>
-              removeRowsFromDatabase(sharedRoot, database, rowIds)
-            );
-          } catch (e) {
-            Log.error('[TrashPage] failed to remove row for row page', { source, error: e });
-          }
+          await withDatabaseCollab(source, (sharedRoot, database, rowIds) =>
+            removeRowsFromDatabase(sharedRoot, database, rowIds)
+          );
         }
 
+        await deleteTrash?.(viewId);
         setDeleteViewId(undefined);
         void loadTrash?.(currentWorkspaceId);
         // eslint-disable-next-line

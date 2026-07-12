@@ -94,6 +94,11 @@ interface MentionPanelResultSection {
   options: MentionPanelResultOption[];
 }
 
+interface MentionSectionsFetchResult {
+  sections: MentionSearchSection[];
+  databaseRowResponse?: MentionSearchResponse;
+}
+
 const DEFAULT_MENTION_INCLUDE = [
   MentionTargetKind.Person,
   MentionTargetKind.Page,
@@ -506,13 +511,13 @@ export function MentionPanel() {
         let applied = false;
 
         void startMentionSearchRefresh(mentionSearchCacheKey, async () => {
-          const sections = await fetchMentionSections();
+          const result = await fetchMentionSections();
 
-          cacheMentionSections(sections);
+          cacheMentionSections(result);
 
           if (isCurrentRequest()) {
             applied = true;
-            setMentionSections(sections);
+            setMentionSections(result.sections);
             setMentionSearchFailed(false);
           }
         }).then(() => {
@@ -547,9 +552,15 @@ export function MentionPanel() {
       return !cancelled && mentionSearchRequestIdRef.current === requestId;
     }
 
-    function cacheMentionSections(sections: MentionSearchSection[]) {
-      if (shouldCacheMentionSearchSections(mentionSearchRequests, sections, hasMentionSearchQuery)) {
-        setCachedMentionSections(mentionSearchCacheKey, sections);
+    function cacheMentionSections(result: MentionSectionsFetchResult) {
+      if (
+        shouldCacheMentionSearchSections(
+          mentionSearchRequests,
+          result.databaseRowResponse,
+          hasMentionSearchQuery
+        )
+      ) {
+        setCachedMentionSections(mentionSearchCacheKey, result.sections);
       }
     }
 
@@ -560,12 +571,18 @@ export function MentionPanel() {
           response: await searchMentionsFn(request),
         }))
       );
-      const responses: MentionSearchResponse[] = [];
+      const fulfilledResponses: Array<{ request: MentionSearchRequest; response: MentionSearchResponse }> = [];
+      let databaseRowResponse: MentionSearchResponse | undefined;
       let blockingError: unknown;
 
       settledResponses.forEach((result, index) => {
         if (result.status === 'fulfilled') {
-          responses.push(result.value.response);
+          fulfilledResponses.push(result.value);
+
+          if (isDatabaseRowOnlyRequest(result.value.request)) {
+            databaseRowResponse = result.value.response;
+          }
+
           return;
         }
 
@@ -588,11 +605,13 @@ export function MentionPanel() {
         throw blockingError;
       }
 
-      const initialSections = mergeMentionSearchResponses(responses).sections ?? [];
+      const initialSections = mergeMentionSearchResponses(
+        fulfilledResponses.map(({ response }) => response)
+      ).sections ?? [];
       let sections = initialSections;
       const shouldCacheInitialSections = shouldCacheMentionSearchSections(
         mentionSearchRequests,
-        initialSections,
+        databaseRowResponse,
         hasMentionSearchQuery
       );
 
@@ -602,12 +621,18 @@ export function MentionPanel() {
         if (rowRequest) {
           await delay(DATABASE_ROW_SEARCH_RETRY_DELAY_MS);
 
-          if (!isCurrentRequest()) return sections;
+          if (!isCurrentRequest()) {
+            return { sections, databaseRowResponse } satisfies MentionSectionsFetchResult;
+          }
 
           try {
             const rowRetryResponse = await searchMentionsFn(rowRequest);
+            const nonRowResponses = fulfilledResponses
+              .filter(({ request }) => request !== rowRequest)
+              .map(({ response }) => response);
 
-            sections = mergeMentionSearchResponses([...responses, rowRetryResponse]).sections ?? [];
+            databaseRowResponse = rowRetryResponse;
+            sections = mergeMentionSearchResponses([...nonRowResponses, rowRetryResponse]).sections ?? [];
           } catch (error) {
             if (isMentionSearchRetryLater(error)) {
               markMentionSearchRetryLater(mentionSearchCacheKey, error);
@@ -618,7 +643,7 @@ export function MentionPanel() {
         }
       }
 
-      return sections;
+      return { sections, databaseRowResponse } satisfies MentionSectionsFetchResult;
     }
 
     function scheduleSearch(delayMs: number) {
@@ -628,11 +653,11 @@ export function MentionPanel() {
 
     function runSearch() {
       void fetchMentionSections()
-        .then((sections) => {
+        .then((result) => {
           if (!isCurrentRequest()) return;
 
-          cacheMentionSections(sections);
-          setMentionSections(sections);
+          cacheMentionSections(result);
+          setMentionSections(result.sections);
           setMentionSearchFailed(false);
           setMentionSearchDeferred(false);
         })

@@ -610,62 +610,47 @@ describe('mention panel API mapping', () => {
     expect(sections[0].items[0].kind).toBe(MentionTargetKind.DatabaseRow);
   });
 
-  it('does not cache typed row-capable searches until a row section is present', () => {
+  it('caches a successful empty database-row search response', () => {
     const requests = buildMentionSearchRequests({
       query: 'hr',
       include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
       context: { view_id: 'document-1' },
     });
+    const emptyRowResponse = {
+      sections: [
+        {
+          kind: MentionSearchSectionKind.DatabaseRows,
+          title: 'Database rows',
+          has_more: false,
+          status: 'ready',
+          items: [],
+        },
+      ],
+    };
 
-    expect(
-      shouldCacheMentionSearchSections(
-        requests,
-        [
-          {
-            kind: MentionSearchSectionKind.Pages,
-            title: 'Pages',
-            has_more: false,
-            status: 'ready',
-            items: [
-              {
-                kind: MentionTargetKind.Page,
-                title: 'HR handbook',
-                mention: {
-                  type: MentionTargetKind.Page,
-                  page_id: 'page-1',
-                },
-              },
-            ],
-          },
-        ],
-        true
-      )
-    ).toBe(false);
+    expect(shouldCacheMentionSearchSections(requests, emptyRowResponse, true)).toBe(true);
+  });
 
-    expect(
-      shouldCacheMentionSearchSections(
-        requests,
-        [
-          {
-            kind: MentionSearchSectionKind.Pages,
-            title: 'Pages',
-            has_more: false,
-            status: 'ready',
-            items: [
-              {
-                kind: MentionTargetKind.DatabaseRow,
-                title: 'HR',
-                mention: {
-                  type: MentionTargetKind.DatabaseRow,
-                  database_id: 'database-1',
-                  row_id: 'row-1',
-                },
-              },
-            ],
-          },
-        ],
-        true
-      )
-    ).toBe(true);
+  it('does not cache a missing or partial database-row search response', () => {
+    const requests = buildMentionSearchRequests({
+      query: 'hr',
+      include: [MentionTargetKind.Page, MentionTargetKind.DatabaseRow],
+      context: { view_id: 'document-1' },
+    });
+    const partialRowResponse = {
+      sections: [
+        {
+          kind: MentionSearchSectionKind.DatabaseRows,
+          title: 'Database rows',
+          has_more: false,
+          status: 'ready',
+          items: [],
+        },
+      ],
+      partial: true,
+    };
+
+    expect(shouldCacheMentionSearchSections(requests, undefined, true)).toBe(false);
+    expect(shouldCacheMentionSearchSections(requests, partialRowResponse, true)).toBe(false);
   });
 });

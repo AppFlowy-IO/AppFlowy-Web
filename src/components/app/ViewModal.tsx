@@ -1,6 +1,6 @@
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import { TransitionProps } from '@mui/material/transitions';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -96,6 +96,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
   const [notFound, setNotFound] = useState(false);
   const [syncBound, setSyncBound] = useState(false);
+  const loadRequestRevisionRef = useRef(0);
 
   // Fallback view metadata fetched from server (used when view not in outline yet).
   // Stores the full View (including children/extra) so getFirstChildView can
@@ -162,14 +163,19 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // Load document
   const loadPageDoc = useCallback(
     async (targetViewId: string) => {
+      const requestRevision = loadRequestRevisionRef.current + 1;
+
+      loadRequestRevisionRef.current = requestRevision;
       setNotFound(false);
       setDoc(undefined);
       setSyncBound(false);
       try {
         const loadedDoc = await loadView(targetViewId, false, true);
 
+        if (loadRequestRevisionRef.current !== requestRevision) return;
         setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
+        if (loadRequestRevisionRef.current !== requestRevision) return;
         setNotFound(true);
         console.error('[ViewModal] Failed to load document:', e);
       }
@@ -228,11 +234,33 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [resolvedView, effectiveOutlineView, workspaceId]);
 
   const handleClose = useCallback(() => {
+    loadRequestRevisionRef.current += 1;
     setDoc(undefined);
     setSyncBound(false);
     setFallbackMeta(null);
     onClose();
   }, [onClose]);
+
+  // AppBusinessLayer can close this modal directly when permission is
+  // revoked, bypassing handleClose. Clear the retained Y.Doc before paint so
+  // revoked content cannot remain mounted during the exit transition or flash
+  // when the same target is reopened.
+  useLayoutEffect(() => {
+    if (open) return;
+
+    loadRequestRevisionRef.current += 1;
+    setDoc(undefined);
+    setSyncBound(false);
+    setFallbackMeta(null);
+    setNotFound(false);
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      loadRequestRevisionRef.current += 1;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!doc || !bindViewSync || syncBound) return;
@@ -366,7 +394,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if (!open || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
@@ -410,6 +438,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     );
   }, [
     doc,
+    open,
     viewMeta,
     View,
     requestInstance,

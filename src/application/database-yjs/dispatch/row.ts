@@ -338,11 +338,11 @@ export function useTrashAwareDeleteRowsDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const context = useDatabaseContext();
-  const { rowMap, ensureRow, workspaceId, activeViewId, databasePageId } = context;
+  const { rowMap, ensureRow, workspaceId, activeViewId, databasePageId, databaseDoc } = context;
 
   return useCallback(
     async (rowIds: string[]) => {
-      const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
+      const databaseId = (database?.get(YjsDatabaseKey.id) as string | undefined) || databaseDoc.guid;
       const databaseViewId = activeViewId || databasePageId;
       const softTargets: { rowId: string; documentId: string; title: string }[] = [];
       const hardCandidates: { rowId: string; documentId: string; rowDoc?: Y.Doc }[] = [];
@@ -446,7 +446,7 @@ export function useTrashAwareDeleteRowsDispatch() {
         removeRowsFromDatabase(sharedRoot, database, hardTargets);
       }
     },
-    [activeViewId, database, databasePageId, ensureRow, rowMap, sharedRoot, workspaceId]
+    [activeViewId, database, databaseDoc.guid, databasePageId, ensureRow, rowMap, sharedRoot, workspaceId]
   );
 }
 

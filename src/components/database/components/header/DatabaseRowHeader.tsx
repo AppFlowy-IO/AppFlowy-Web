@@ -23,6 +23,11 @@ import {
   YjsDatabaseKey,
 } from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
+import {
+  createRowDocumentViewNameBaseline,
+  normalizeRowDocumentViewName,
+  shouldSyncRowDocumentViewName,
+} from '@/components/database/components/header/rowDocumentViewName';
 import Title from '@/components/database/components/header/Title';
 import { getScrollParent } from '@/components/global-comment/utils';
 import ViewCoverActions from '@/components/view-meta/ViewCoverActions';
@@ -185,24 +190,25 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
 
   // Keep the row-document view name in sync with the primary cell so
   // favorites/trash entries show the row title. Baseline on first run:
-  // only pushes when the title changes afterwards (explicit actions like
-  // favorite/delete push the name themselves).
-  const lastSyncedTitleRef = useRef<string | null>(null);
+  // an existing title is already current (explicit actions like favorite/delete
+  // push it themselves), while an initially blank title must sync its first value.
+  const titleSyncBaselineRef = useRef(createRowDocumentViewNameBaseline(documentId, title));
 
   useEffect(() => {
-    if (readOnly || !hasDocument || !documentId || !workspaceId) return;
+    const name = normalizeRowDocumentViewName(title);
+    const baseline = titleSyncBaselineRef.current;
 
-    const name = title.trim();
-
-    if (!name || lastSyncedTitleRef.current === name) return;
-
-    if (lastSyncedTitleRef.current === null) {
-      lastSyncedTitleRef.current = name;
+    if (baseline.documentId !== documentId) {
+      titleSyncBaselineRef.current = createRowDocumentViewNameBaseline(documentId, name);
       return;
     }
 
+    if (readOnly || !hasDocument || !documentId || !workspaceId) return;
+
+    if (!shouldSyncRowDocumentViewName(baseline.title, name)) return;
+
     const timer = window.setTimeout(() => {
-      lastSyncedTitleRef.current = name;
+      titleSyncBaselineRef.current = createRowDocumentViewNameBaseline(documentId, name);
       void syncRowDocumentViewName(workspaceId, documentId, name);
     }, 500);
 
