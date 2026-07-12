@@ -131,9 +131,9 @@ export function parseGoTrueError(errorData: {
 
   // Try to get code from explicit field
   if (errorData.code) {
-    code = typeof errorData.code === 'number' ? errorData.code : parseInt(errorData.code);
+    code = typeof errorData.code === 'number' ? errorData.code : Number.parseInt(errorData.code);
   } else if (errorData.errorCode) {
-    code = parseInt(errorData.errorCode);
+    code = Number.parseInt(errorData.errorCode);
   } else if (errorData.status) {
     code = errorData.status;
   }
@@ -143,7 +143,7 @@ export function parseGoTrueError(errorData: {
     const codeMatch = errorMessage.match(/^(\d{3}):/);
 
     if (codeMatch) {
-      code = parseInt(codeMatch[1]);
+      code = Number.parseInt(codeMatch[1]);
     }
   }
 

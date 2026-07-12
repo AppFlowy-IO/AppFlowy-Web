@@ -14,9 +14,9 @@ export class EnhancedBigStats {
    * Create a new statistics calculator instance
    * @param data - Array of number strings
    */
-  constructor (data: string[] = []) {
+  constructor(data: string[] = []) {
     this.validateData(data);
-    this.data = data.map(str => new Big(str));
+    this.data = data.map((str) => new Big(str));
   }
 
   /**
@@ -25,7 +25,7 @@ export class EnhancedBigStats {
    * @param format - Optional number format to apply to the output
    * @returns Expanded decimal string without scientific notation, or null if parsing fails
    */
-  static parse (input: string | number, format?: NumberFormat): string | null {
+  static parse(input: string | number, format?: NumberFormat): string | null {
     if (!input || (typeof input !== 'string' && typeof input !== 'number')) {
       return null;
     }
@@ -51,7 +51,7 @@ export class EnhancedBigStats {
       if (scientificMatch) {
         // Input is in scientific notation
         const base = scientificMatch[1];
-        const exponent = parseInt(scientificMatch[2], 10);
+        const exponent = Number.parseInt(scientificMatch[2], 10);
 
         // Create Big instance from scientific notation
         bigNumber = new Big(`${base}e${exponent}`);
@@ -117,7 +117,7 @@ export class EnhancedBigStats {
    * @param format - The number format to use
    * @returns Formatted string representation
    */
-  static formatValue (numberValue: string | Big | number, format: NumberFormat = NumberFormat.Num): string {
+  static formatValue(numberValue: string | Big | number, format: NumberFormat = NumberFormat.Num): string {
     // Convert input to string for processing
     const valueStr = numberValue.toString();
 
@@ -130,16 +130,13 @@ export class EnhancedBigStats {
 
     try {
       // Check if the value is an integer (no decimal point or all zeros after decimal)
-      const isInteger = !valueStr.includes('.') ||
-        new Big(valueStr).mod(1).eq(0);
+      const isInteger = !valueStr.includes('.') || new Big(valueStr).mod(1).eq(0);
 
       if (isInteger) {
         try {
           // For integers, try to use BigInt for maximum precision
           // Remove any decimal part that is all zeros
-          const cleanedInt = valueStr.includes('.')
-            ? valueStr.slice(0, valueStr.indexOf('.'))
-            : valueStr;
+          const cleanedInt = valueStr.includes('.') ? valueStr.slice(0, valueStr.indexOf('.')) : valueStr;
 
           return formatter(BigInt(cleanedInt));
         } catch (e) {
@@ -163,7 +160,7 @@ export class EnhancedBigStats {
    * @param b - Second number string
    * @returns Comparison result: -1 if a < b, 1 if a > b, 0 if equal
    */
-  static compare (a: string, b: string): number {
+  static compare(a: string, b: string): number {
     const numA = new Big(a);
     const numB = new Big(b);
 
@@ -177,7 +174,7 @@ export class EnhancedBigStats {
    * @param data - Data to be validated
    * @private
    */
-  private validateData (data: string[]): void {
+  private validateData(data: string[]): void {
     if (!Array.isArray(data)) {
       throw new Error('Data must be an array');
     }
@@ -197,7 +194,7 @@ export class EnhancedBigStats {
    * Calculate sum of the data
    * @returns Total sum
    */
-  sum (): Big {
+  sum(): Big {
     if (this.data.length === 0) return new Big(0);
 
     return this.data.reduce((acc, val) => acc.plus(val), new Big(0));
@@ -207,7 +204,7 @@ export class EnhancedBigStats {
    * Calculate average of the data
    * @returns Average value
    */
-  average (): Big {
+  average(): Big {
     if (this.data.length === 0) {
       throw new Error('Cannot calculate average of empty dataset');
     }
@@ -221,7 +218,7 @@ export class EnhancedBigStats {
    * Find maximum value in the data
    * @returns Maximum value
    */
-  max (): Big {
+  max(): Big {
     if (this.data.length === 0) {
       throw new Error('Cannot find maximum of empty dataset');
     }
@@ -233,7 +230,7 @@ export class EnhancedBigStats {
    * Find minimum value in the data
    * @returns Minimum value
    */
-  min (): Big {
+  min(): Big {
     if (this.data.length === 0) {
       throw new Error('Cannot find minimum of empty dataset');
     }
@@ -245,7 +242,7 @@ export class EnhancedBigStats {
    * Calculate median of the data
    * @returns Median value
    */
-  median (): Big {
+  median(): Big {
     if (this.data.length === 0) {
       throw new Error('Cannot calculate median of empty dataset');
     }
@@ -275,13 +272,13 @@ export class EnhancedBigStats {
    * Calculate variance of the data
    * @returns Variance
    */
-  variance (): Big {
+  variance(): Big {
     if (this.data.length <= 1) {
       throw new Error('Need at least two data points to calculate variance');
     }
 
     const avg = this.average();
-    const squaredDiffs = this.data.map(val => {
+    const squaredDiffs = this.data.map((val) => {
       const diff = val.minus(avg);
 
       return diff.times(diff);
@@ -296,7 +293,7 @@ export class EnhancedBigStats {
    * Calculate standard deviation of the data
    * @returns Standard deviation
    */
-  standardDeviation (): Big {
+  standardDeviation(): Big {
     const variance = this.variance();
 
     // Initial guess
@@ -316,7 +313,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use for formatted values
    * @returns All statistical values with both raw and formatted representations
    */
-  getStats (decimalPlaces: number = 4, format: NumberFormat = NumberFormat.Num): {
+  getStats(decimalPlaces: number = 4, format: NumberFormat = NumberFormat.Num): {
     count: number;
     sum: { raw: string; formatted: string };
     average: { raw: string; formatted: string };
@@ -374,14 +371,18 @@ export class EnhancedBigStats {
           raw: range.toString(),
           formatted: EnhancedBigStats.formatValue(range, format),
         },
-        variance: variance ? {
-          raw: variance.toString(),
-          formatted: EnhancedBigStats.formatValue(variance, format),
-        } : null,
-        standardDeviation: standardDeviation ? {
-          raw: standardDeviation.toString(),
-          formatted: EnhancedBigStats.formatValue(standardDeviation, format),
-        } : null,
+        variance: variance
+          ? {
+              raw: variance.toString(),
+              formatted: EnhancedBigStats.formatValue(variance, format),
+            }
+          : null,
+        standardDeviation: standardDeviation
+          ? {
+              raw: standardDeviation.toString(),
+              formatted: EnhancedBigStats.formatValue(standardDeviation, format),
+            }
+          : null,
       };
     } finally {
       // Restore original precision setting
@@ -395,7 +396,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Formatted string representation of the statistic
    */
-  formatStat (statMethod: () => Big, format: NumberFormat): string {
+  formatStat(statMethod: () => Big, format: NumberFormat): string {
     try {
       const value = statMethod.call(this);
 
@@ -410,7 +411,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Formatted sum
    */
-  formattedSum (format: NumberFormat = NumberFormat.Num): string {
+  formattedSum(format: NumberFormat = NumberFormat.Num): string {
     return this.formatStat(() => this.sum(), format);
   }
 
@@ -419,7 +420,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Formatted average
    */
-  formattedAverage (format: NumberFormat = NumberFormat.Num): string {
+  formattedAverage(format: NumberFormat = NumberFormat.Num): string {
     return this.formatStat(() => this.average(), format);
   }
 
@@ -428,7 +429,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Formatted median
    */
-  formattedMedian (format: NumberFormat = NumberFormat.Num): string {
+  formattedMedian(format: NumberFormat = NumberFormat.Num): string {
     return this.formatStat(() => this.median(), format);
   }
 
@@ -437,7 +438,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Formatted minimum
    */
-  formattedMin (format: NumberFormat = NumberFormat.Num): string {
+  formattedMin(format: NumberFormat = NumberFormat.Num): string {
     return this.formatStat(() => this.min(), format);
   }
 
@@ -446,7 +447,7 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Formatted maximum
    */
-  formattedMax (format: NumberFormat = NumberFormat.Num): string {
+  formattedMax(format: NumberFormat = NumberFormat.Num): string {
     return this.formatStat(() => this.max(), format);
   }
 
@@ -454,7 +455,7 @@ export class EnhancedBigStats {
    * Add a new data point
    * @param value - Number string to be added
    */
-  addDataPoint (value: string): void {
+  addDataPoint(value: string): void {
     try {
       const bigValue = new Big(value);
 
@@ -469,7 +470,7 @@ export class EnhancedBigStats {
    * @param input - User input string to parse and add
    * @returns Boolean indicating if the addition was successful
    */
-  addParsedDataPoint (input: string): boolean {
+  addParsedDataPoint(input: string): boolean {
     const parsedValue = EnhancedBigStats.parse(input);
 
     if (parsedValue === null) {
@@ -487,7 +488,7 @@ export class EnhancedBigStats {
   /**
    * Clear the dataset
    */
-  clearData (): void {
+  clearData(): void {
     this.data = [];
   }
 
@@ -495,9 +496,9 @@ export class EnhancedBigStats {
    * Set a new dataset
    * @param data - New dataset
    */
-  setData (data: string[]): void {
+  setData(data: string[]): void {
     this.validateData(data);
-    this.data = data.map(str => new Big(str));
+    this.data = data.map((str) => new Big(str));
   }
 
   /**
@@ -505,7 +506,7 @@ export class EnhancedBigStats {
    * @param inputs - Array of user input strings
    * @returns Number of successfully parsed values
    */
-  setParsedData (inputs: string[]): number {
+  setParsedData(inputs: string[]): number {
     if (!Array.isArray(inputs)) {
       return 0;
     }
@@ -533,7 +534,7 @@ export class EnhancedBigStats {
    * Get the raw data as Big instances
    * @returns Array of Big numbers
    */
-  getRawData (): Big[] {
+  getRawData(): Big[] {
     return [...this.data];
   }
 
@@ -542,10 +543,9 @@ export class EnhancedBigStats {
    * @param format - Number format to use
    * @returns Array of formatted values
    */
-  getFormattedData (format: NumberFormat = NumberFormat.Num): string[] {
-    return this.data.map(value => EnhancedBigStats.formatValue(value, format));
+  getFormattedData(format: NumberFormat = NumberFormat.Num): string[] {
+    return this.data.map((value) => EnhancedBigStats.formatValue(value, format));
   }
-
 }
 
 export default EnhancedBigStats;

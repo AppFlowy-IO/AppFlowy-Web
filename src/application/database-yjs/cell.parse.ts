@@ -20,13 +20,13 @@ export function parseYDatabaseCommonCellToCell(cell: YDatabaseCell): Cell {
   return {
     createdAt: Number(cell.get(YjsDatabaseKey.created_at)),
     lastModified: Number(cell.get(YjsDatabaseKey.last_modified)),
-    fieldType: parseInt(cell.get(YjsDatabaseKey.field_type)) as FieldType,
+    fieldType: Number.parseInt(cell.get(YjsDatabaseKey.field_type)) as FieldType,
     data: cell.get(YjsDatabaseKey.data),
   };
 }
 
 export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseField): Cell {
-  const cellType = parseInt(cell.get(YjsDatabaseKey.field_type));
+  const cellType = Number.parseInt(cell.get(YjsDatabaseKey.field_type));
   const sourceType = Number(
     cell.get(YjsDatabaseKey.source_field_type) ?? cellType
   ) as FieldType;

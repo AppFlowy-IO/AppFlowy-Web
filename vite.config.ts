@@ -177,7 +177,7 @@ export default defineConfig({
   clearScreen: false,
   server: {
     host: '0.0.0.0', // Listen on all network interfaces (both IPv4 and IPv6)
-    port: process.env.PORT ? parseInt(process.env.PORT) : 3000,
+    port: process.env.PORT ? Number.parseInt(process.env.PORT) : 3000,
     strictPort: true,
     watch: {
       ignored: ['node_modules'],

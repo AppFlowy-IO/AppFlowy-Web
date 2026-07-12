@@ -71,19 +71,19 @@ export function getFieldDateTimeFormats(typeOption: YMapFieldTypeOption | undefi
   const dateFormat =
     parsedDateFormat === undefined || Number.isNaN(parsedDateFormat)
       ? fallbackDateFormat ?? DateFormat.Local
-      : parsedDateFormat as DateFormat;
+      : (parsedDateFormat as DateFormat);
   const timeFormat =
     parsedTimeFormat === undefined || Number.isNaN(parsedTimeFormat)
       ? fallbackTimeFormat ?? TimeFormat.TwelveHour
-      : parsedTimeFormat as TimeFormat;
+      : (parsedTimeFormat as TimeFormat);
 
   return {
     dateFormat,
     timeFormat,
-  }
+  };
 }
 
-export function getDateCellStr({ cell, field, currentUser }: { cell: DateTimeCell; field: YDatabaseField, currentUser?: User }) {
+export function getDateCellStr({ cell, field, currentUser }: { cell: DateTimeCell; field: YDatabaseField; currentUser?: User }) {
   const typeOptionMap = field.get(YjsDatabaseKey.type_option);
   const typeOption = typeOptionMap?.get(String(cell.fieldType));
 
@@ -105,10 +105,10 @@ export function getDateCellStr({ cell, field, currentUser }: { cell: DateTimeCel
   const endDateTime =
     endTimestamp && isRange
       ? getDateTimeStr({
-        timeStamp: endTimestamp,
-        includeTime,
-        typeOptionValue,
-      })
+          timeStamp: endTimestamp,
+          includeTime,
+          typeOptionValue,
+        })
       : null;
 
   return [startDateTime, endDateTime].filter(Boolean).join(` ${RIGHTWARDS_ARROW} `);
@@ -123,9 +123,9 @@ export function isDate(input: string) {
 export function safeParseTimestamp(input: string) {
   if (/^\d+$/.test(input)) {
     if (input.length >= 9 && input.length <= 10) {
-      return dayjs.unix(parseInt(input, 10));
+      return dayjs.unix(Number.parseInt(input, 10));
     } else if (input.length >= 12 && input.length <= 13) {
-      return dayjs(parseInt(input, 10));
+      return dayjs(Number.parseInt(input, 10));
     }
   }
 

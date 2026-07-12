@@ -273,7 +273,7 @@ function decodeEntities(value: string): string {
   return value.replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z]+);/g, (match, entity: string) => {
     if (entity[0] === '#') {
       const isHex = entity[1] === 'x' || entity[1] === 'X';
-      const code = isHex ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+      const code = isHex ? Number.parseInt(entity.slice(2), 16) : Number.parseInt(entity.slice(1), 10);
 
       return Number.isFinite(code) ? String.fromCodePoint(code) : match;
     }

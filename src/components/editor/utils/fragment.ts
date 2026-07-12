@@ -93,7 +93,7 @@ function deserializeNode(node: Node, parentBlock: YBlock, sharedRoot: YSharedRoo
           element.textContent = textContent.replace(/^(-)?\[(x| )?\]\s/, '');
         } else if (/^\d+\.\s/.test(textContent)) {
           blockType = BlockType.NumberedListBlock;
-          (blockData as NumberedListBlockData).number = parseInt(textContent.split('.')[0]);
+          (blockData as NumberedListBlockData).number = Number.parseInt(textContent.split('.')[0]);
           element.textContent = textContent.replace(/^\d+\.\s/, '');
         } else if (/^- /.test(textContent)) {
           blockType = BlockType.BulletedListBlock;
