@@ -1,5 +1,5 @@
 import Popover from '@mui/material/Popover';
-import React, { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
@@ -8,6 +8,7 @@ import { ReactComponent as ChatAIPageIcon } from '@/assets/icons/chat_ai_page.sv
 import { ReactComponent as HomeAIChatIcon } from '@/assets/icons/m_home_ai_chat_icon.svg';
 import { ReactComponent as ToolbarLinkIcon } from '@/assets/icons/m_toolbar_link.svg';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useToView } from '@/components/app/app.hooks';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,8 @@ export interface SearchOverviewSource {
   targetViewId: string;
   targetRowId?: string | null;
   ragId: string;
+  ownerViewId?: string;
+  ownerDatabaseId?: string;
   view?: View;
 }
 
@@ -29,7 +32,7 @@ interface SearchAIOverviewProps {
     content: string;
     highlights?: string;
   } | null;
-  onAskAI: (sourceIds?: string[]) => void;
+  onAskAI: (sources?: AIChatRagSource[]) => void;
   onClose: () => void;
 }
 
@@ -83,7 +86,7 @@ function HighlightedSummary({
               {part}
             </mark>
           ) : (
-            <React.Fragment key={`${part}-${index}`}>{part}</React.Fragment>
+            <Fragment key={`${part}-${index}`}>{part}</Fragment>
           )
         )}
         {showReference && (
@@ -250,7 +253,15 @@ export function SearchAIOverview({
           'mt-3 inline-flex h-8 w-36 items-center justify-center gap-1.5 rounded-[16px] border border-border-primary px-3 py-1.5 text-sm font-medium leading-[22px] text-text-primary',
           'hover:bg-fill-content-hover disabled:cursor-default disabled:opacity-60'
         )}
-        onClick={() => onAskAI(sources.map((source) => source.ragId))}
+        onClick={() =>
+          onAskAI(
+            sources.map((source) => ({
+              ragId: source.ragId,
+              ownerViewId: source.ownerViewId,
+              ownerDatabaseId: source.ownerDatabaseId,
+            }))
+          )
+        }
       >
         <ChatAIPageIcon className='h-5 w-5 shrink-0 text-icon-primary' />
         {t('commandPalette.aiAskFollowUp', { defaultValue: 'Ask follow-up' })}

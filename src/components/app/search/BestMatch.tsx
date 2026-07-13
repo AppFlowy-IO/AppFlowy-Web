@@ -1,17 +1,19 @@
 import { debounce } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { View } from '@/application/types';
-import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { SearchService, ViewService } from '@/application/services/domains';
 import type {
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
   SearchSummary,
 } from '@/application/services/domains/search';
+import { View } from '@/application/types';
+import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
+import { isSpaceView } from '@/components/ai-chat/rag-scope';
+import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { SearchAIOverview, SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
@@ -103,18 +105,18 @@ function BestMatch({
   onClose: () => void;
   searchValue: string;
   askingAI: boolean;
-  onAskAI: (query: string, sourceIds?: string[]) => void;
+  onAskAI: (query: string, sources?: AIChatRagSource[]) => void;
 }) {
-  const [items, setItems] = React.useState<SearchViewListItem[] | undefined>(undefined);
-  const [searchResults, setSearchResults] = React.useState<SearchDocumentResponseItem[]>([]);
-  const [summary, setSummary] = React.useState<SearchSummary | null>(null);
-  const [hasMore, setHasMore] = React.useState(false);
-  const [nextOffset, setNextOffset] = React.useState<number | null>(null);
+  const [items, setItems] = useState<SearchViewListItem[] | undefined>(undefined);
+  const [searchResults, setSearchResults] = useState<SearchDocumentResponseItem[]>([]);
+  const [summary, setSummary] = useState<SearchSummary | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const { t } = useTranslation();
   const outline = useAppOutline();
-  const [loading, setLoading] = React.useState<boolean>(false);
-  const [summaryLoading, setSummaryLoading] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const searchSeqRef = useRef(0);
@@ -135,7 +137,7 @@ function BestMatch({
         const view = resolvedViews[index];
         const rowId = item.database_row_id || undefined;
 
-        if (!view || view.extra?.is_space) continue;
+        if (!view || isSpaceView(view)) continue;
 
         const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
         const contentPreview = previewLines(item.content || item.preview);
@@ -309,6 +311,8 @@ function BestMatch({
         targetViewId,
         targetRowId,
         ragId: sourceId,
+        ownerViewId: view?.view_id || result?.database_view_id || undefined,
+        ownerDatabaseId: result?.database_id || undefined,
         view,
         name: view?.name?.trim() || t('menuAppHeader.defaultNewPageName'),
       });
@@ -336,7 +340,7 @@ function BestMatch({
             sources={overviewSources}
             summary={summary}
             onClose={onClose}
-            onAskAI={(sourceIds) => onAskAI(searchValue, sourceIds)}
+            onAskAI={(sources) => onAskAI(searchValue, sources)}
           />
         ) : undefined
       }

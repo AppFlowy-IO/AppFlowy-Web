@@ -38,30 +38,30 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
 
         if (layout === ViewLayout.AIChat && currentWorkspaceId) {
-          const initialSettings = buildInitialAIChatSettings({ parent: view });
+          try {
+            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+              import('@/components/chat/request'),
+              import('@/application/services/js-services/http'),
+            ]);
+            const axiosInstance = getAxiosInstance();
 
-          if (Object.keys(initialSettings).length > 0) {
-            try {
-              const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
-                import('@/components/chat/request'),
-                import('@/application/services/js-services/http'),
-              ]);
-              const axiosInstance = getAxiosInstance();
-
-              if (!axiosInstance) {
-                throw new Error('Missing axios instance');
-              }
-
-              const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
-
-              await request.updateChatSettings(initialSettings);
-            } catch {
-              toast.error(
-                t('search.updateAIChatSettingsFailed', {
-                  defaultValue: 'AI chat was created, but the context could not be attached',
-                })
-              );
+            if (!axiosInstance) {
+              throw new Error('Missing axios instance');
             }
+
+            const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
+            const scopedParent = await request.fetchCompleteView(view.view_id);
+            const initialSettings = buildInitialAIChatSettings({ parent: scopedParent });
+
+            if (Object.keys(initialSettings).length > 0) {
+              await request.updateChatSettings(initialSettings);
+            }
+          } catch {
+            toast.error(
+              t('search.updateAIChatSettingsFailed', {
+                defaultValue: 'AI chat was created, but the context could not be attached',
+              })
+            );
           }
         }
 
