@@ -30,6 +30,13 @@ function isAppFlowySource(source: ChatMessageMetadata): boolean {
   return source.source !== 'web' && source.source !== 'local_file';
 }
 
+export function getAppFlowySourceTarget(source: ChatMessageMetadata): { viewId: string; rowId?: string } {
+  return {
+    viewId: source.database_view_id || source.id,
+    rowId: source.database_row_id || undefined,
+  };
+}
+
 function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
   const { getView } = useViewLoader();
   const { onOpenView } = useChatContext();
@@ -38,7 +45,14 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
   const [viewNames, setViewNames] = useState<Record<string, string>>({});
 
   const appflowySourceIds = useMemo(
-    () => Array.from(new Set(sources.filter(isAppFlowySource).map((source) => source.id))),
+    () =>
+      Array.from(
+        new Set(
+          sources
+            .filter((source) => isAppFlowySource(source) && !source.title?.trim())
+            .map((source) => getAppFlowySourceTarget(source).viewId)
+        )
+      ),
     [sources]
   );
 
@@ -86,8 +100,13 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
         <div className={'flex flex-wrap items-start gap-2'}>
           {sources.map((source) => {
             const webUrl = getSafeWebSourceUrl(source);
-            const label = viewNames[source.id] || getMessageSourceLabel(source) || t('chat.view.placeholder');
-            const key = `${source.source}:${source.id}`;
+            const appflowyTarget = isAppFlowySource(source) ? getAppFlowySourceTarget(source) : undefined;
+            const sourceLabel = getMessageSourceLabel(source);
+            const label =
+              (source.title?.trim() ? sourceLabel : appflowyTarget && viewNames[appflowyTarget.viewId]) ||
+              sourceLabel ||
+              t('chat.view.placeholder');
+            const key = `${source.source}:${source.id}:${source.database_row_id || ''}`;
             const content = (
               <>
                 {source.source === 'web' ? <ExternalLink className={'h-4 w-4'} /> : <DocumentIcon />}
@@ -106,7 +125,17 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
                     </Button>
                   ) : (
                     <Button
-                      onClick={isAppFlowySource(source) ? () => onOpenView?.(source.id) : undefined}
+                      onClick={
+                        appflowyTarget
+                          ? () => {
+                              if (appflowyTarget.rowId) {
+                                onOpenView?.(appflowyTarget.viewId, appflowyTarget.rowId);
+                              } else {
+                                onOpenView?.(appflowyTarget.viewId);
+                              }
+                            }
+                          : undefined
+                      }
                       disabled={!isAppFlowySource(source)}
                       variant={'ghost'}
                       className={'max-w-[160px] overflow-hidden'}

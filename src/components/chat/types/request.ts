@@ -87,6 +87,10 @@ export interface ChatMessageMetadata {
   title?: string;
   // Stable request-scoped identifier used for inline citations such as [W1].
   citation_id?: string;
+  // Optional database routing metadata for opening cited row search results.
+  database_id?: string;
+  database_view_id?: string;
+  database_row_id?: string;
 }
 
 export interface SendQuestionPayload {

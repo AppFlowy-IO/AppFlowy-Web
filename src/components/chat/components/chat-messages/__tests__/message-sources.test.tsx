@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 import MessageSources, {
+  getAppFlowySourceTarget,
   getMessageSourceLabel,
   getSafeWebSourceUrl,
 } from '@/components/chat/components/chat-messages/message-sources';
@@ -100,5 +101,28 @@ describe('message sources', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Loaded roadmap' })).not.toBeNull());
     fireEvent.click(screen.getByRole('button', { name: 'Loaded roadmap' }));
     expect(mockOpenView).toHaveBeenCalledWith('page-id');
+  });
+
+  it('opens cited database rows through their owning database view', async () => {
+    const source = {
+      id: 'row-document-id',
+      name: 'Roadmap row',
+      source: 'appflowy',
+      title: 'Roadmap row',
+      database_id: 'database-id',
+      database_view_id: 'database-view-id',
+      database_row_id: 'database-row-id',
+    };
+
+    expect(getAppFlowySourceTarget(source)).toEqual({
+      viewId: 'database-view-id',
+      rowId: 'database-row-id',
+    });
+
+    render(<MessageSources sources={[source]} />);
+
+    expect(mockGetView).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Roadmap row' }));
+    expect(mockOpenView).toHaveBeenCalledWith('database-view-id', 'database-row-id');
   });
 });
