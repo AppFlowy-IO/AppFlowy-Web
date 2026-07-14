@@ -17,7 +17,7 @@ function view(overrides: Partial<View>): View {
 }
 
 describe('AI chat initial settings', () => {
-  it('uses only document descendants for chats created under a workspace root', () => {
+  it('uses only an explicitly requested source for chats created under a workspace root', () => {
     const child = view({ view_id: 'doc-1' });
     const parent = view({
       view_id: 'space-id',
@@ -39,6 +39,25 @@ describe('AI chat initial settings', () => {
     });
   });
 
+  it('does not add a space or any of its children by default', () => {
+    const parent = view({
+      view_id: 'space-id',
+      extra: { is_space: true },
+      children: [
+        view({
+          view_id: 'doc-1',
+          children: [view({ view_id: 'nested-doc' })],
+        }),
+        view({ view_id: 'doc-2' }),
+      ],
+    });
+
+    expect(buildInitialAIChatSettings({ parent })).toEqual({
+      full_workspace: false,
+      rag_ids: [],
+    });
+  });
+
   it('filters explicit source context to the parent page subtree', () => {
     const parent = view({
       view_id: 'page-id',
@@ -56,18 +75,29 @@ describe('AI chat initial settings', () => {
     });
   });
 
-  it('uses the parent page subtree when no explicit sources are supplied', () => {
+  it('uses only the parent page document children when no explicit sources are supplied', () => {
     expect(
       buildInitialAIChatSettings({
         parent: view({
           view_id: 'page-id',
-          children: [view({ view_id: 'child-id' })],
+          children: [
+            view({
+              view_id: 'child-id',
+              children: [view({ view_id: 'nested-child-id' })],
+            }),
+            view({ view_id: 'second-child-id' }),
+            view({
+              view_id: 'database-id',
+              layout: ViewLayout.Grid,
+              children: [view({ view_id: 'database-child-id' })],
+            }),
+          ],
         }),
         query: 'summarize this',
       })
     ).toEqual({
       full_workspace: false,
-      rag_ids: ['page-id', 'child-id'],
+      rag_ids: ['child-id', 'second-child-id'],
       metadata: { initial_prompt: 'summarize this' },
     });
   });

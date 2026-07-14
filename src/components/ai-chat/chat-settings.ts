@@ -1,8 +1,7 @@
-import { View } from '@/application/types';
+import { View, ViewLayout } from '@/application/types';
 import {
   AIChatRagSource,
   collectScopedOwnerIds,
-  collectScopedRagIds,
   createRagSourceOwners,
   isRagSourceOwnerInScope,
   isSpaceView,
@@ -26,7 +25,12 @@ export function buildInitialAIChatSettings({
   sourceIds?: string[];
   sources?: AIChatRagSource[];
 }): Partial<Pick<ChatSettings, 'rag_ids' | 'metadata' | 'full_workspace'>> {
-  const scopedIds = parent ? collectScopedRagIds([parent]) : [];
+  const defaultRagIds =
+    parent && !isSpaceView(parent)
+      ? parent.children
+          .filter((child) => child.layout === ViewLayout.Document && !isSpaceView(child))
+          .map((child) => child.view_id)
+      : [];
   const requestedSources: AIChatRagSource[] | null = sources?.length
     ? sources
     : sourceIds?.length
@@ -43,7 +47,7 @@ export function buildInitialAIChatSettings({
     : [];
   const ragIds = requestedSources
     ? Array.from(new Set(validSources.map((source) => source.ragId).filter(Boolean)))
-    : scopedIds;
+    : defaultRagIds;
   const sourceOwners = createRagSourceOwners(validSources.filter((source) => source.ragId !== source.ownerViewId));
   const metadata = {
     ...(query ? { initial_prompt: query } : {}),
