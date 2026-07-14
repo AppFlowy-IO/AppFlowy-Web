@@ -106,7 +106,9 @@ describe('RelatedViews persistence', () => {
   it('flushes a pending selection on unmount and retains opaque RAG sources', () => {
     const { unmount } = render(<RelatedViews />);
 
+    expect(screen.getByTestId('chat-input-related-views').textContent).toContain('1');
     fireEvent.click(screen.getByText('Toggle source'));
+    expect(screen.getByTestId('chat-input-related-views').textContent).toContain('2');
     expect(updateChatSettings).not.toHaveBeenCalled();
 
     unmount();

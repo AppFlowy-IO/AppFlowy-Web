@@ -6,6 +6,7 @@ import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
+import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import {
   useAIEnabled,
   useAppOperations,
@@ -50,7 +51,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
             }
 
             const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
-            const scopedParent = await request.fetchCompleteView(view.view_id);
+            const scopedParent = isSpaceView(view) ? view : await request.getView(view.view_id);
             const initialSettings = buildInitialAIChatSettings({ parent: scopedParent });
 
             if (Object.keys(initialSettings).length > 0) {

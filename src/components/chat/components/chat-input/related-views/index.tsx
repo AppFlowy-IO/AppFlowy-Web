@@ -55,9 +55,9 @@ export function RelatedViews() {
     return searchViews(scopedRoots, searchValue);
   }, [scopedRoots, searchValue]);
 
-  const { getSelected, getCheckStatus, toggleNode, getInitialExpand } = useCheckboxTree(viewIds, scopedRoots);
+  const { selected, getCheckStatus, toggleNode, getInitialExpand } = useCheckboxTree(viewIds, scopedRoots);
 
-  const length = getSelected().length;
+  const sourceCount = selected.size + preservedRagIds.length;
 
   const handleToggle = useMemo(() => {
     const scopedIds = new Set(selectableViewIds);
@@ -123,7 +123,7 @@ export function RelatedViews() {
           data-testid='chat-input-related-views'
         >
           <DocIcon className='h-5 w-5 text-icon-secondary' />
-          {length}
+          {sourceCount}
           {viewsLoading ? <LoadingDots size={12} /> : <ChevronDown className='h-5 w-3' />}
         </Button>
       </PopoverTrigger>

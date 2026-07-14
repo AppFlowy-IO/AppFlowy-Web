@@ -352,6 +352,37 @@ describe('ChatRequest', () => {
       expect(result).toEqual(mockSettings);
     });
 
+    it('decodes the chat ID sentinel as an empty RAG scope', async () => {
+      mockAxiosInstance.get.mockResolvedValue({
+        data: {
+          code: 0,
+          data: {
+            name: 'Empty scope',
+            rag_ids: [chatId],
+            metadata: {},
+            full_workspace: false,
+            web_search_enabled: false,
+          },
+        },
+      });
+
+      await expect(chatRequest.getChatSettings()).resolves.toMatchObject({ rag_ids: [] });
+    });
+
+    it.each([['doc-id'], [chatId, 'doc-id']])('does not decode real RAG IDs: %p', async (...ragIds: string[]) => {
+      const settings = {
+        name: 'Selected sources',
+        rag_ids: ragIds,
+        metadata: {},
+        full_workspace: false,
+        web_search_enabled: false,
+      };
+
+      mockAxiosInstance.get.mockResolvedValue({ data: { code: 0, data: settings } });
+
+      await expect(chatRequest.getChatSettings()).resolves.toEqual(settings);
+    });
+
     it('should reject when workspaceId missing', async () => {
       const request = new ChatRequest(undefined, chatId, mockAxiosInstance);
       await expect(request.getChatSettings()).rejects.toBe('workspaceId or chatId is not defined');
@@ -385,6 +416,36 @@ describe('ChatRequest', () => {
       });
 
       expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), { rag_ids: ['new-doc-1', 'new-doc-2'] });
+    });
+
+    it('encodes an empty scoped RAG list with the chat ID sentinel', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { code: 0 } });
+
+      await chatRequest.updateChatSettings({ full_workspace: false, rag_ids: [] });
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), {
+        full_workspace: false,
+        rag_ids: [chatId],
+      });
+    });
+
+    it('encodes an empty RAG list when full_workspace is omitted', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { code: 0 } });
+
+      await chatRequest.updateChatSettings({ rag_ids: [] });
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), { rag_ids: [chatId] });
+    });
+
+    it('keeps an empty RAG list for explicit full-workspace context', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { code: 0 } });
+
+      await chatRequest.updateChatSettings({ full_workspace: true, rag_ids: [] });
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), {
+        full_workspace: true,
+        rag_ids: [],
+      });
     });
   });
 

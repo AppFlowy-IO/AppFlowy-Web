@@ -41,6 +41,21 @@ function isChatMessageMetadata(value: unknown): value is ChatMessageMetadata {
   return typeof source.id === 'string' && typeof source.name === 'string' && typeof source.source === 'string';
 }
 
+function encodeEmptyRagScope(params: UpdateChatSettingsParams, chatId: string): UpdateChatSettingsParams {
+  if (params.full_workspace === true || params.rag_ids?.length !== 0) return params;
+
+  // The AI search service treats an empty object filter as workspace-wide.
+  // A chat view is not a document source, so its ID safely represents an
+  // intentionally empty scope without exposing any workspace documents.
+  return { ...params, rag_ids: [chatId] };
+}
+
+function decodeEmptyRagScope(settings: ChatSettings, chatId: string): ChatSettings {
+  if (settings.rag_ids.length !== 1 || settings.rag_ids[0] !== chatId) return settings;
+
+  return { ...settings, rag_ids: [] };
+}
+
 function collectTruncatedViewIds(root: View): string[] {
   const ids: string[] = [];
   const stack = [{ view: root, depth: 0 }];
@@ -730,7 +745,7 @@ export class ChatRequest {
     }>(url);
 
     if (response?.data.code === 0 && response.data.data) {
-      return response.data.data;
+      return decodeEmptyRagScope(response.data.data, this.chatId);
     }
 
     return Promise.reject(response?.data?.message || 'Failed to fetch chat settings');
@@ -745,7 +760,7 @@ export class ChatRequest {
     const response = await this.axiosInstance.post<{
       code: number;
       message?: string;
-    }>(url, params);
+    }>(url, encodeEmptyRagScope(params, this.chatId));
 
     if (response?.data.code === 0) {
       return;

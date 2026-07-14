@@ -6,7 +6,7 @@ import AddPageActions from '@/components/app/view-actions/AddPageActions';
 import type { ReactNode } from 'react';
 
 const mockAddPage = jest.fn();
-const mockFetchCompleteView = jest.fn();
+const mockGetView = jest.fn();
 const mockUpdateChatSettings = jest.fn();
 const mockToView = jest.fn();
 const mockOpenPageModal = jest.fn();
@@ -38,7 +38,7 @@ jest.mock('@/components/chat/request', () => ({
   ChatRequest: function MockChatRequest(...args: unknown[]) {
     mockChatRequest(...args);
     return {
-      fetchCompleteView: mockFetchCompleteView,
+      getView: mockGetView,
       updateChatSettings: mockUpdateChatSettings,
     };
   },
@@ -111,8 +111,6 @@ describe('AddPageActions AI chat context', () => {
       children: [view({ view_id: 'space-child-1' }), view({ view_id: 'space-child-2' })],
     });
 
-    mockFetchCompleteView.mockResolvedValue(space);
-
     render(<AddPageActions view={space} />);
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
 
@@ -128,7 +126,7 @@ describe('AddPageActions AI chat context', () => {
       name: 'menuAppHeader.defaultNewPageName',
       prev_view_id: 'space-child-2',
     });
-    expect(mockFetchCompleteView).toHaveBeenCalledWith('space-id');
+    expect(mockGetView).not.toHaveBeenCalled();
     expect(mockToView).toHaveBeenCalledWith('chat-id');
   });
 
@@ -148,7 +146,7 @@ describe('AddPageActions AI chat context', () => {
       children: [directDocument, directDatabase, secondDirectDocument],
     });
 
-    mockFetchCompleteView.mockResolvedValue(page);
+    mockGetView.mockResolvedValue(page);
 
     render(<AddPageActions view={page} />);
     fireEvent.click(screen.getByTestId('add-ai-chat-button'));
@@ -170,7 +168,7 @@ describe('AddPageActions AI chat context', () => {
       name: 'menuAppHeader.defaultNewPageName',
       prev_view_id: 'second-direct-document-id',
     });
-    expect(mockFetchCompleteView).toHaveBeenCalledWith('page-id');
+    expect(mockGetView).toHaveBeenCalledWith('page-id');
     expect(mockToView).toHaveBeenCalledWith('chat-id');
   });
 });
