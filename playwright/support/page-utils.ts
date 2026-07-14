@@ -145,16 +145,18 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
   const pageEl = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first();
   await expect(pageEl).toBeVisible({ timeout: 10000 });
 
-  const collapseToggle = pageEl.locator('[data-testid="outline-toggle-collapse"]');
-  const isExpanded = (await collapseToggle.count()) > 0;
+  // Scope toggles to this page's row. Descendant rows stay mounted inside the
+  // MUI Collapse even while hidden and can have their own expand toggles.
+  const pageRow = pageEl.locator(`:scope > [data-testid="page-${viewId}"]`);
+  const collapseToggle = pageRow.locator('[data-testid="outline-toggle-collapse"]');
 
-  if (!isExpanded) {
-    const expandToggle = pageEl.locator('[data-testid="outline-toggle-expand"]');
-    if ((await expandToggle.count()) > 0) {
-      await expandToggle.first().click({ force: true });
-      await page.waitForTimeout(500);
-    }
-  }
+  if (await collapseToggle.isVisible().catch(() => false)) return;
+
+  const expandToggle = pageRow.locator('[data-testid="outline-toggle-expand"]');
+
+  await expect(expandToggle).toBeVisible({ timeout: 10000 });
+  await expandToggle.click();
+  await expect(collapseToggle).toBeVisible({ timeout: 5000 });
 }
 
 /**

@@ -219,8 +219,19 @@ export async function openGridDatabaseByName(page: Page, pageName: string): Prom
 export async function openGridDatabaseByPageId(page: Page, pageId: string): Promise<DatabaseFixtureInfo> {
   const pageItem = PageSelectors.itemByViewId(page, pageId);
 
-  await expect(pageItem).toBeVisible({ timeout: 20000 });
-  await pageItem.click({ force: true });
+  await expect(pageItem).toBeAttached({ timeout: 20000 });
+
+  // Database routes use the nested grid view ID. With deeper outline prefetching,
+  // that grid row can be present inside a collapsed database container. Click the
+  // nearest visible page row; database containers route to their first child grid.
+  const navigationItem = pageItem
+    .locator('xpath=ancestor-or-self::div[@data-testid="page-item"]')
+    .filter({ visible: true })
+    .last();
+  const navigationRow = navigationItem.locator(':scope > [data-testid^="page-"]');
+
+  await expect(navigationRow).toBeVisible({ timeout: 20000 });
+  await navigationRow.click();
   await waitForActiveDatabasePage(page, pageId);
   await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30000 });
   await waitForDatabaseTestContext(page);

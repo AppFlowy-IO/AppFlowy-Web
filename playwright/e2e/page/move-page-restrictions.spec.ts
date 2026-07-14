@@ -14,6 +14,7 @@ import { test, expect } from '@playwright/test';
 import {
   AddPageSelectors,
   EditorSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   SlashCommandSelectors,
@@ -197,7 +198,6 @@ test.describe('Move Page Restrictions', () => {
     // 1) Create a document page first
     testLog.step(1, 'Create document page');
     const docViewId = await createDocumentPageAndNavigate(page);
-    await page.waitForTimeout(1000);
 
     // 2) Insert NEW grid via slash menu (creates container)
     testLog.step(2, 'Insert new grid via slash menu');
@@ -205,41 +205,49 @@ test.describe('Move Page Restrictions', () => {
     await expect(editor).toBeVisible({ timeout: 15000 });
     await editor.click({ force: true });
     await page.keyboard.type('/');
-    await page.waitForTimeout(500);
 
     await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible();
     await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid'))
       .first()
       .click({ force: true });
-    await page.waitForTimeout(3000);
+
+    // Creating an embedded database opens its ViewModal. Close it explicitly
+    // before interacting with the sidebar; a forced sidebar click while the
+    // modal is still mounted only dismisses the modal and does not expand the
+    // document row.
+    const newDatabaseDialog = page.locator('[role="dialog"]').filter({
+      has: page.getByText('New Database', { exact: true }),
+    });
+
+    await expect(newDatabaseDialog).toBeVisible({ timeout: 15000 });
+    await page.keyboard.press('Escape');
+    await expect(newDatabaseDialog).toBeHidden({ timeout: 10000 });
 
     // 3) Expand the document to see the database container in sidebar
     // After inserting a grid, the sidebar may take time to create the container child.
-    // Retry expansion until children appear (the expand toggle won't exist until children load).
+    // With a deep initial outline fetch, that child can already exist in the DOM
+    // inside a collapsed MUI container, so retry until it is actually visible.
     testLog.step(3, 'Expand document and find database container');
     await expandSpaceByName(page, spaceName);
 
     const docItem = page
       .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
       .first();
-    const childPageItems = docItem.locator('[data-testid="page-item"]');
+    const childPageItems = docItem.locator(itemDirectChildPageItems());
 
-    for (let attempt = 0; attempt < 20; attempt++) {
+    await expect(async () => {
       await ensurePageExpandedByViewId(page, docViewId);
-      if ((await childPageItems.count()) > 0) break;
-      await page.waitForTimeout(1500);
-    }
-
-    await expect(childPageItems.first()).toBeVisible({ timeout: 10000 });
+      await expect(childPageItems.first()).toBeVisible({ timeout: 1000 });
+    }).toPass({ timeout: 30000, intervals: [500, 1000] });
 
     // 4) Find the database container and open More Actions
     testLog.step(4, 'Open More Actions for database container');
     const dbContainerItem = childPageItems.first();
-    await dbContainerItem.hover({ force: true });
-    await page.waitForTimeout(500);
+    const moreActionsButton = dbContainerItem.getByTestId('page-more-actions').first();
 
-    await dbContainerItem.getByTestId('page-more-actions').first().click({ force: true });
-    await page.waitForTimeout(500);
+    await dbContainerItem.hover();
+    await expect(moreActionsButton).toBeVisible();
+    await moreActionsButton.click();
 
     // 5) Verify Move to is NOT disabled for database containers
     testLog.step(5, 'Verify Move to is enabled for database container');

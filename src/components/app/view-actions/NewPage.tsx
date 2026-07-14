@@ -105,6 +105,7 @@ function NewPage() {
               {t('publish.addTo')}
               {` ${t('web.or')} `}
               <Button
+                data-testid='new-page-create-space-button'
                 onClick={() => {
                   setCreateSpaceOpen(true);
                 }}
