@@ -379,6 +379,9 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
       await dialog.waitFor({ state: 'visible', timeout: 2000 }).catch(() => undefined);
       if (await dialog.isVisible().catch(() => false)) {
         await page.keyboard.press('Escape');
+        if (await dialog.isVisible().catch(() => false)) {
+          await page.mouse.click(10, 10);
+        }
         await expect(dialog).toBeHidden({ timeout: 5000 });
       }
 
