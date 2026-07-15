@@ -370,15 +370,18 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
       await openSlashMenuInEditor(page, editor, line);
       await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
 
-      const dialog = page.locator('[role="dialog"]');
+      await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
+
+      // The database ViewModal can mount shortly after the embedded grid. Wait
+      // for that delayed render before closing it so sidebar interactions are
+      // not blocked by the modal backdrop.
+      const dialog = page.locator('[role="dialog"]').last();
+      await dialog.waitFor({ state: 'visible', timeout: 2000 }).catch(() => undefined);
       if (await dialog.isVisible().catch(() => false)) {
         await page.keyboard.press('Escape');
-        await expect(dialog)
-          .not.toBeVisible({ timeout: 5000 })
-          .catch(() => undefined);
+        await expect(dialog).toBeHidden({ timeout: 5000 });
       }
 
-      await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
       await page.waitForTimeout(1500);
       return;
     } catch (e) {

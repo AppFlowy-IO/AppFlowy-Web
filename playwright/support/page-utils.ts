@@ -154,7 +154,10 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
 
   const expandToggle = pageRow.locator('[data-testid="outline-toggle-expand"]');
 
-  await expect(expandToggle).toBeVisible({ timeout: 10000 });
+  // A newly created document has no toggle until it receives children.
+  // Preserve the helper's no-op behavior for those childless pages.
+  if (!(await expandToggle.isVisible().catch(() => false))) return;
+
   await expandToggle.click();
   await expect(collapseToggle).toBeVisible({ timeout: 5000 });
 }
