@@ -1,13 +1,16 @@
 // Code: Chat main component
 import { AnimatePresence, motion } from 'framer-motion';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 
 import { ChatInput } from '@/components/chat/components/chat-input';
 import { ChatMessages } from '@/components/chat/components/chat-messages';
 import { ModelSelectorContext } from '@/components/chat/contexts/model-selector-context';
 import { EditorProvider } from '@/components/chat/provider/editor-provider';
 import { MessageAnimationProvider } from '@/components/chat/provider/message-animation-provider';
-import { MessagesHandlerProvider, useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
+import {
+  MessagesHandlerProvider,
+  useMessagesHandlerContext,
+} from '@/components/chat/provider/messages-handler-provider';
 import { ChatMessagesProvider } from '@/components/chat/provider/messages-provider';
 import { PromptModalProvider } from '@/components/chat/provider/prompt-modal-provider';
 import { ResponseFormatProvider } from '@/components/chat/provider/response-format-provider';
@@ -21,25 +24,24 @@ import { ChatContext, useChatContext } from './context';
 
 // Component to bridge ModelSelector with MessagesHandler
 function ChatContentWithModelSync({ currentUser, selectionMode }: { currentUser?: User; selectionMode?: boolean }) {
-  const { selectedModelName, setSelectedModelName } = useMessagesHandlerContext();
+  const { chatSettings, selectedModelName, setSelectedModelName, updateChatSettings } = useMessagesHandlerContext();
   const { requestInstance, chatId } = useChatContext();
+  const savedModelRef = useRef<string>();
+
+  savedModelRef.current = chatSettings?.metadata?.ai_model as string | undefined;
   const modelRequestInstance = useMemo(
     () => ({
       getModelList: () => requestInstance.getModelList(),
-      getCurrentModel: async () => {
-        const settings = await requestInstance.getChatSettings();
-
-        return settings.metadata?.ai_model as string | undefined || '';
-      },
+      getCurrentModel: async () => savedModelRef.current || '',
       setCurrentModel: async (modelName: string) => {
-        await requestInstance.updateChatSettings({
+        await updateChatSettings({
           metadata: {
-            ai_model: modelName
-          }
+            ai_model: modelName,
+          },
         });
       },
     }),
-    [requestInstance]
+    [requestInstance, updateChatSettings]
   );
   const modelSelectorValue = useMemo(
     () => ({
@@ -53,17 +55,10 @@ function ChatContentWithModelSync({ currentUser, selectionMode }: { currentUser?
 
   return (
     <ModelSelectorContext.Provider value={modelSelectorValue}>
-      <div className={'w-full relative h-full flex flex-col'}>
+      <div className={'relative flex h-full w-full flex-col'}>
         <ChatMessages currentUser={currentUser} />
-        <motion.div
-          layout
-          className={cn(
-            'w-full relative flex pb-6 justify-center max-sm:hidden',
-          )}
-        >
-          <AnimatePresence mode='wait'>
-            {!selectionMode && <ChatInput />}
-          </AnimatePresence>
+        <motion.div layout className={cn('relative flex w-full justify-center pb-6 max-sm:hidden')}>
+          <AnimatePresence mode='wait'>{!selectionMode && <ChatInput />}</AnimatePresence>
         </motion.div>
       </div>
     </ModelSelectorContext.Provider>
@@ -126,14 +121,11 @@ function Main(props: ChatProps) {
 
   return (
     <ChatContext.Provider value={chatContextValue}>
-      <ChatMessagesProvider>
+      <ChatMessagesProvider key={`${workspaceId}:${chatId}`}>
         <MessageAnimationProvider>
           <SuggestionsProvider>
             <EditorProvider>
-              <ViewLoaderProvider
-                getView={getView}
-                fetchViews={fetchViews}
-              >
+              <ViewLoaderProvider getView={getView} fetchViews={fetchViews}>
                 <SelectionModeProvider>
                   <ResponseFormatProvider>
                     <PromptModalProvider

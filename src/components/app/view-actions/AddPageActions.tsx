@@ -6,6 +6,7 @@ import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
+import { isSpaceView } from '@/components/ai-chat/rag-scope';
 import {
   useAIEnabled,
   useAppOperations,
@@ -38,30 +39,30 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
 
         if (layout === ViewLayout.AIChat && currentWorkspaceId) {
-          const initialSettings = buildInitialAIChatSettings({ parent: view });
+          try {
+            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+              import('@/components/chat/request'),
+              import('@/application/services/js-services/http'),
+            ]);
+            const axiosInstance = getAxiosInstance();
 
-          if (Object.keys(initialSettings).length > 0) {
-            try {
-              const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
-                import('@/components/chat/request'),
-                import('@/application/services/js-services/http'),
-              ]);
-              const axiosInstance = getAxiosInstance();
-
-              if (!axiosInstance) {
-                throw new Error('Missing axios instance');
-              }
-
-              const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
-
-              await request.updateChatSettings(initialSettings);
-            } catch {
-              toast.error(
-                t('search.updateAIChatSettingsFailed', {
-                  defaultValue: 'AI chat was created, but the context could not be attached',
-                })
-              );
+            if (!axiosInstance) {
+              throw new Error('Missing axios instance');
             }
+
+            const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
+            const scopedParent = isSpaceView(view) ? view : await request.getView(view.view_id);
+            const initialSettings = buildInitialAIChatSettings({ parent: scopedParent });
+
+            if (Object.keys(initialSettings).length > 0) {
+              await request.updateChatSettings(initialSettings);
+            }
+          } catch {
+            toast.error(
+              t('search.updateAIChatSettingsFailed', {
+                defaultValue: 'AI chat was created, but the context could not be attached',
+              })
+            );
           }
         }
 

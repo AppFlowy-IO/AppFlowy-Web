@@ -3,14 +3,13 @@ import React, { useEffect, useMemo } from 'react';
 
 import { getUserIconUrl } from '@/application/user-metadata';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
-import { useAppOperations, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId, useToView } from '@/components/app/app.hooks';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
 import { Chat, ChatRequest } from '@/components/chat';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import { getPlatform } from '@/utils/platform';
 import { downloadPage } from '@/utils/url';
-
 
 export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
@@ -30,6 +29,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
   const [openMobilePrompt, setOpenMobilePrompt] = React.useState(isMobile);
 
   const { updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppOperations();
+  const toView = useToView();
 
   const {
     selectionMode,
@@ -40,6 +40,18 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
     onCloseView,
     drawerOpen,
   } = useAIChatContext();
+
+  const handleOpenSource = React.useCallback(
+    (viewId: string, rowId?: string) => {
+      if (rowId) {
+        void toView(viewId, rowId);
+        return;
+      }
+
+      onOpenView(viewId);
+    },
+    [onOpenView, toView]
+  );
 
   const requestInstance = useMemo(() => {
     if (!workspaceId) return;
@@ -93,7 +105,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
 
   return (
     <div
-      data-testid="ai-chat-container"
+      data-testid='ai-chat-container'
       style={{
         height: 'calc(100vh - 48px)',
       }}
@@ -110,7 +122,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
           onCloseSelectionMode={handleCloseSelectionMode}
           openingViewId={(drawerOpen && openViewId) || undefined}
           onCloseView={onCloseView}
-          onOpenView={onOpenView}
+          onOpenView={handleOpenSource}
           loadDatabasePrompts={loadDatabasePrompts}
           testDatabasePromptConfig={testDatabasePromptConfig}
         />

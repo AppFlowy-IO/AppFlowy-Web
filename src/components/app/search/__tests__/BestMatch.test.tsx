@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, jest } from '@jest/globals';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 import { ViewLayout } from '@/application/types';
 import type { View } from '@/application/types';
@@ -13,6 +13,11 @@ const mockSearchWorkspaceDocumentPage = jest.fn();
 const mockGenerateSearchSummary = jest.fn();
 const mockGetView = jest.fn();
 let mockAppOutline: View[] = [];
+let mockOverviewSources: Array<{
+  ragId: string;
+  ownerViewId?: string;
+  ownerDatabaseId?: string;
+}> = [];
 const mockT = (key: string, options?: { defaultValue?: string }) => options?.defaultValue ?? key;
 
 jest.mock('react-i18next', () => ({
@@ -38,7 +43,10 @@ jest.mock('@/application/services/domains', () => ({
 }));
 
 jest.mock('@/components/app/search/SearchAIOverview', () => ({
-  SearchAIOverview: () => <div data-testid='ai-overview' />,
+  SearchAIOverview: ({ sources }: { sources: typeof mockOverviewSources }) => {
+    mockOverviewSources = sources;
+    return <div data-testid='ai-overview' />;
+  },
 }));
 
 jest.mock('@/components/app/search/ViewList', () => ({
@@ -75,6 +83,7 @@ describe('BestMatch', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockAppOutline = [];
+    mockOverviewSources = [];
     mockUseAIEnabled.mockReturnValue(true);
     mockSearchWorkspaceDocumentPage.mockResolvedValue({
       has_more: false,
@@ -121,5 +130,46 @@ describe('BestMatch', () => {
 
     expect(await screen.findByText('Annie OKRs')).toBeTruthy();
     expect(mockGetView).toHaveBeenCalledWith('workspace-id', 'deep-view-id');
+  });
+
+  it('derives database row ownership for the AI follow-up source', async () => {
+    const databaseView = createView({
+      view_id: 'database-view-id',
+      name: 'Projects',
+      layout: ViewLayout.Grid,
+      extra: { database_id: 'database-id' },
+    });
+
+    mockAppOutline = [databaseView];
+    mockSearchWorkspaceDocumentPage.mockResolvedValue({
+      has_more: false,
+      items: [
+        {
+          object_id: 'row-id',
+          workspace_id: 'workspace-id',
+          score: 1,
+          content: 'Launch project',
+          database_row_id: 'row-id',
+          database_view_id: 'database-view-id',
+          database_id: 'database-id',
+        },
+      ],
+      next_offset: null,
+    });
+    mockGenerateSearchSummary.mockResolvedValue({
+      summaries: [{ content: 'Launch summary', sources: ['row-id'] }],
+    });
+
+    renderBestMatch('launch');
+
+    await waitFor(() =>
+      expect(mockOverviewSources).toEqual([
+        expect.objectContaining({
+          ragId: 'row-id',
+          ownerViewId: 'database-view-id',
+          ownerDatabaseId: 'database-id',
+        }),
+      ])
+    );
   });
 });

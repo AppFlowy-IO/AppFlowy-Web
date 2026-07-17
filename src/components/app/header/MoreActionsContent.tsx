@@ -89,7 +89,7 @@ function MoreActionsContent({
         source: 0,
       });
       void refreshOutline?.();
-      // The shallow outline (depth=2) doesn't include children beyond space level.
+      // The bounded outline (depth=6) may not include deeply nested children.
       // Reload the parent view's children so the new duplicate appears in the sidebar.
       if (parentViewId) {
         ViewService.invalidateCache(workspaceId, parentViewId);

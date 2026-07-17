@@ -1201,6 +1201,8 @@ export interface View {
   extra: ViewExtra | null;
   children: View[];
   has_children?: boolean;
+  /** Authoritative space marker returned by newer folder-view APIs. */
+  is_space?: boolean;
   is_published: boolean;
   is_private: boolean;
   /** Whether this view is currently in the user's favorites. Synced via the folder. */
