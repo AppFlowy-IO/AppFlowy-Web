@@ -9,7 +9,7 @@ import {
 } from '@/application/database-yjs';
 import { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { YDoc, YjsEditorKey } from '@/application/types';
+import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
 import { cn } from '@/lib/utils';
@@ -42,6 +42,7 @@ function RelationItems({
 
   const [docGuid, setDocGuid] = useState<string | null>(null);
   const [databaseDoc, setDatabaseDoc] = useState<YDoc | null>(null);
+  const [relatedField, setRelatedField] = useState<YDatabaseField | undefined>();
 
   const [rowIds, setRowIds] = useState([] as string[]);
 
@@ -152,14 +153,17 @@ function RelationItems({
       const fieldId = getPrimaryFieldId(database);
 
       setRelatedFieldId(fieldId);
+      setRelatedField(fieldId ? database?.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined);
       setNoAccess(!fieldId);
     };
 
     observerEvent();
 
-    sharedRoot.observe(observerEvent);
+    // The primary field can change type without replacing the database map.
+    // Observe deeply so a primary-field reassignment also refreshes this link.
+    sharedRoot.observeDeep(observerEvent);
     return () => {
-      sharedRoot.unobserve(observerEvent);
+      sharedRoot.unobserveDeep(observerEvent);
     };
   }, [databaseDoc]);
 
@@ -201,7 +205,7 @@ function RelationItems({
                 relatedViewId ? 'cursor-pointer hover:text-text-action' : ''
               }`}
             >
-              <RelationPrimaryValue fieldId={relatedFieldId} rowDoc={rowDoc} />
+              <RelationPrimaryValue field={relatedField} fieldId={relatedFieldId} rowDoc={rowDoc} />
             </div>
           );
         })

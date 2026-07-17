@@ -4,6 +4,7 @@ import { every, filter, some } from 'lodash-es';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import {
   getConditionCellData,
+  getConditionRelationRowIds,
   getConditionCellText,
   getConditionDateCell,
   getRowConditionSnapshot,
@@ -620,11 +621,13 @@ export function filterBy(
 
       if (!snapshot) return false;
 
-      const cellData = getConditionCellData(snapshot, fieldId);
+      const cellData = getConditionCellData(snapshot, fieldId, field);
 
       if (fieldType === FieldType.Relation) {
+        const relationCellData = getConditionRelationRowIds(snapshot, fieldId);
+
         if (relationRowIds !== null && relationRowIds !== undefined) {
-          return relationFilterCheck(cellData, relationRowIds, condition);
+          return relationFilterCheck(relationCellData, relationRowIds, condition);
         }
 
         // Empty content on the new relation conditions (IsEmpty / IsNotEmpty /
@@ -639,7 +642,7 @@ export function filterBy(
             condition === RelationFilterCondition.RelationContains ||
             condition === RelationFilterCondition.RelationDoesNotContain)
         ) {
-          return relationFilterCheck(cellData, [], condition);
+          return relationFilterCheck(relationCellData, [], condition);
         }
 
         const cellText = options?.getRelationCellText?.(rowId, fieldId) ?? '';
@@ -674,7 +677,7 @@ export function filterBy(
         case FieldType.Checklist:
           return checklistFilterCheck(cellData as string, content, condition);
         case FieldType.DateTime:
-          return dateFilterCheck(getConditionDateCell(snapshot, fieldId), filterValue as DateFilter);
+          return dateFilterCheck(getConditionDateCell(snapshot, fieldId, field), filterValue as DateFilter);
         case FieldType.CreatedTime: {
           const data = snapshot.row.get(YjsDatabaseKey.created_at);
 

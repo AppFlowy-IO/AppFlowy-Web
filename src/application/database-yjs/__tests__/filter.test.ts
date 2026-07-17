@@ -1230,6 +1230,39 @@ describe('desktop grid filter parity', () => {
     ]);
   });
 
+  it('re-evaluates filters with lazily converted cell data after a field type switch', () => {
+    const { makeDataFilter, makeFilters } = buildFilterHarness();
+    const field = fixture.fields.get(fixture.fieldIds.multiSelect);
+
+    expect(field).toBeDefined();
+
+    // Populate the condition cache while the cells and field are MultiSelect.
+    expect(
+      applyFilters(
+        makeFilters([
+          makeDataFilter(
+            fixture.fieldIds.multiSelect,
+            FieldType.MultiSelect,
+            SelectOptionFilterCondition.OptionContains,
+            fixture.multiSelectOptions[0].id
+          ),
+        ])
+      )
+    ).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[2]]);
+
+    // Desktop changes only the field schema. The cells keep MultiSelect data,
+    // which must be decoded as Checklist data for the new filter.
+    field?.set(YjsDatabaseKey.type, FieldType.Checklist);
+
+    expect(
+      applyFilters(
+        makeFilters([
+          makeDataFilter(fixture.fieldIds.multiSelect, FieldType.Checklist, ChecklistFilterCondition.IsComplete),
+        ])
+      )
+    ).toEqual([fixture.rowIds[2]]);
+  });
+
   it('filters select option conditions', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
 
@@ -1354,6 +1387,19 @@ describe('desktop grid filter parity', () => {
     expect(row0RelationCell && 'toJSON' in row0RelationCell ? row0RelationCell.toJSON() : row0RelationCell).toEqual([
       fixture.rowIds[1],
     ]);
+
+    // A schema-only Media -> Relation conversion can leave a Y.Array payload
+    // that is not relation data. It must still count as an empty relation.
+    const foreignRow = fixture.rowMetas[fixture.rowIds[1]]
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database_row) as YDatabaseRow;
+    const foreignCell = new Y.Map() as YDatabaseCell;
+    const foreignData = new Y.Array<string>();
+
+    foreignData.push(['{"id":"file-a"}']);
+    foreignCell.set(YjsDatabaseKey.field_type, FieldType.Media);
+    foreignCell.set(YjsDatabaseKey.data, foreignData);
+    foreignRow.get(YjsDatabaseKey.cells).set(fixture.fieldIds.relation, foreignCell);
 
     const { makeDataFilter, makeFilters } = buildFilterHarness();
     const emptyContent = JSON.stringify([]);

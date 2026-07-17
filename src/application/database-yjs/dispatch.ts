@@ -4,6 +4,9 @@ import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
+import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
+import { normalizeLegacyCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   useDatabase,
   useDatabaseContext,
@@ -29,7 +32,15 @@ import {
 } from '@/application/database-yjs/database.type';
 import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
-import { getFieldName, NumberFormat, parseSelectOptionTypeOptions, SelectOption, SelectOptionColor, SelectTypeOption } from '@/application/database-yjs/fields';
+import {
+  getFieldName,
+  NumberFormat,
+  parseChecklistData,
+  parseSelectOptionTypeOptions,
+  SelectOption,
+  SelectOptionColor,
+  SelectTypeOption,
+} from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
@@ -39,6 +50,7 @@ import { createDateTimeField } from '@/application/database-yjs/fields/text/util
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import { getOptionsFromRow } from '@/application/database-yjs/row';
+import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import { deleteCollabDB } from '@/application/db';
@@ -48,6 +60,7 @@ import {
   DatabaseViewLayout,
   DateFormat,
   FieldId,
+  RowId,
   TimeFormat,
   UpdatePagePayload,
   View,
@@ -74,6 +87,7 @@ import {
   YDatabaseSort,
   YDatabaseSorts,
   YDatabaseView,
+  YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
   YMapFieldTypeOption,
@@ -613,6 +627,10 @@ export function useMoveCardDispatch() {
 
             const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
+            if (!field) {
+              throw new Error(`Field not found`);
+            }
+
             const fieldType = Number(field.get(YjsDatabaseKey.type));
 
             const rowDoc = rowMap?.[rowId];
@@ -638,7 +656,7 @@ export function useMoveCardDispatch() {
 
               cells.set(fieldId, cell);
             } else {
-              const cellData = cell.get(YjsDatabaseKey.data);
+              const cellData = parseYDatabaseCellToCell(cell, field).data;
               let newCellData = cellData;
 
               if (isSelectOptionField) {
@@ -658,6 +676,9 @@ export function useMoveCardDispatch() {
               }
 
               cell.set(YjsDatabaseKey.data, newCellData);
+              setCellStoredType(cell, fieldType);
+              cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+              row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -884,10 +905,7 @@ export function useUpdatePropertyNameDispatch(fieldId: string) {
 }
 
 function createField(type: FieldType, fieldId: string) {
-  const createSimpleField = (
-    fieldType: FieldType,
-    initTypeOption?: (typeOption: YMapFieldTypeOption) => void
-  ) => {
+  const createSimpleField = (fieldType: FieldType, initTypeOption?: (typeOption: YMapFieldTypeOption) => void) => {
     const field = new Y.Map() as YDatabaseField;
     const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
     const typeOption = new Y.Map() as YMapFieldTypeOption;
@@ -1249,7 +1267,7 @@ export function useCreateCalendarEvent() {
         }
 
         return fieldOrders.toArray().some((fieldOrder) => fieldOrder.id === calendarSetting.fieldId);
-      }
+      };
 
       let finalFieldId = calendarSetting?.fieldId;
 
@@ -1289,28 +1307,6 @@ export function useCreateCalendarEvent() {
     },
     [newRowDispatch, currentView, defaultTimeSetting, enhanceCalendarLayoutByFieldExists, calendarSetting]
   );
-}
-
-function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
-  const cell = new Y.Map() as YDatabaseCell;
-
-  referenceCell?.forEach((value, key) => {
-    let newValue = value;
-
-    if (typeof value === 'bigint') {
-      newValue = value.toString();
-    } else if (value instanceof Y.Array) {
-      newValue = value.clone();
-    }
-
-    cell.set(key, newValue);
-  });
-
-  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-  cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-  cell.set(YjsDatabaseKey.field_type, fieldType);
-
-  return cell;
 }
 
 // Re-export from the extracted dispatch module.
@@ -1557,18 +1553,19 @@ export function useDuplicatePropertyDispatch() {
 
             if (fieldTypeOptionMap) {
               const newFieldTypeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
-              const fieldTypeOption = fieldTypeOptionMap.get(String(fieldType));
 
-              if (fieldTypeOption) {
+              fieldTypeOptionMap.forEach((fieldTypeOption, typeOptionKey) => {
                 const newFieldTypeOption = new Y.Map() as YMapFieldTypeOption;
+                const typeOptionFieldType = Number(typeOptionKey) as FieldType;
+                const sourceFieldTypeOption = fieldTypeOption as YMapFieldTypeOption;
 
-                fieldTypeOption.forEach((value, key) => {
+                sourceFieldTypeOption.forEach((value, key) => {
                   // Reciprocal metadata is owned by the original field. Copying it
                   // would let a deletion of the duplicate orphan or remove the
                   // original's reciprocal in the related database, so the duplicate
                   // starts as a plain one-way relation.
                   if (
-                    fieldType === FieldType.Relation &&
+                    typeOptionFieldType === FieldType.Relation &&
                     (key === YjsDatabaseKey.is_two_way ||
                       key === YjsDatabaseKey.reciprocal_field_id ||
                       key === YjsDatabaseKey.reciprocal_field_name)
@@ -1584,8 +1581,13 @@ export function useDuplicatePropertyDispatch() {
                     newFieldTypeOption.set(key, value);
                   }
                 });
-                newFieldTypeOptionMap.set(String(fieldType), newFieldTypeOption);
-              }
+
+                if (typeOptionFieldType === FieldType.Relation) {
+                  newFieldTypeOption.set(YjsDatabaseKey.is_two_way, false);
+                }
+
+                newFieldTypeOptionMap.set(typeOptionKey, newFieldTypeOption);
+              });
 
               newField.set(YjsDatabaseKey.type_option, newFieldTypeOptionMap);
             }
@@ -1673,7 +1675,7 @@ export function useDuplicatePropertyDispatch() {
           const fieldType = Number(field.get(YjsDatabaseKey.type));
 
           const cell = cells.get(fieldId);
-          const newCell = cloneCell(fieldType, cell);
+          const newCell = cloneDatabaseCell(fieldType, cell);
 
           cells.set(newId, newCell);
 
@@ -1817,64 +1819,61 @@ function useEnhanceCalendarLayoutByFieldExists() {
 
   const sharedRoot = useSharedRoot();
 
-  return useCallback((fieldOrders: YDatabaseFieldOrders) => {
-    // find date field in all views
-    let dateField: YDatabaseField | undefined;
+  return useCallback(
+    (fieldOrders: YDatabaseFieldOrders) => {
+      // find date field in all views
+      let dateField: YDatabaseField | undefined;
 
-    fieldOrders.forEach((fieldOrder) => {
-      const field = fields?.get(fieldOrder.id);
+      fieldOrders.forEach((fieldOrder) => {
+        const field = fields?.get(fieldOrder.id);
 
-      if (
-        !dateField &&
-        [FieldType.DateTime].includes(
-          Number(field?.get(YjsDatabaseKey.type))
-        )
-      ) {
-        dateField = field;
+        if (!dateField && [FieldType.DateTime].includes(Number(field?.get(YjsDatabaseKey.type)))) {
+          dateField = field;
+        }
+      });
+
+      // if no date field, create a new one
+      if (!dateField) {
+        const fieldId = nanoid(6);
+
+        dateField = createField(FieldType.DateTime, fieldId);
+
+        const typeOptionMap = generateDateTimeFieldTypeOptions();
+
+        dateField.set(YjsDatabaseKey.type_option, typeOptionMap);
+        fields.set(fieldId, dateField);
+
+        executeOperationWithAllViews(
+          sharedRoot,
+          database,
+          (view) => {
+            const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+            const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+            if (!fieldSettings) {
+              throw new Error(`Field settings not found`);
+            }
+
+            fieldOrders.push([
+              {
+                id: fieldId,
+              },
+            ]);
+
+            const setting = new Y.Map() as YDatabaseFieldSetting;
+
+            setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+            setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
+            fieldSettings.set(fieldId, setting);
+          },
+          'newDateTimeField'
+        );
       }
-    });
 
-    // if no date field, create a new one
-    if (!dateField) {
-      const fieldId = nanoid(6);
-
-      dateField = createField(FieldType.DateTime, fieldId);
-
-      const typeOptionMap = generateDateTimeFieldTypeOptions();
-
-      dateField.set(YjsDatabaseKey.type_option, typeOptionMap);
-      fields.set(fieldId, dateField);
-
-      executeOperationWithAllViews(
-        sharedRoot,
-        database,
-        (view) => {
-          const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
-          const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
-
-          if (!fieldSettings) {
-            throw new Error(`Field settings not found`);
-          }
-
-          fieldOrders.push([
-            {
-              id: fieldId,
-            },
-          ]);
-
-          const setting = new Y.Map() as YDatabaseFieldSetting;
-
-          setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
-          setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
-          fieldSettings.set(fieldId, setting);
-        },
-        'newDateTimeField'
-      );
-    }
-
-    return dateField;
-  }, [database, fields, sharedRoot])
-
+      return dateField;
+    },
+    [database, fields, sharedRoot]
+  );
 }
 
 /**
@@ -2063,7 +2062,6 @@ export function useUpdateDatabaseLayout(viewId: string) {
               const layoutSettings = generateCalendarLayoutSettings(fieldId, defaultTimeSetting);
 
               view.set(YjsDatabaseKey.layout_settings, layoutSettings);
-
             }
 
             view.set(YjsDatabaseKey.layout, layout);
@@ -2159,11 +2157,107 @@ function generateDateTimeFieldTypeOptions() {
   return typeOptionMap;
 }
 
+const FIELD_SWITCH_ROW_LOAD_CONCURRENCY = 8;
+const fieldSwitchRequestVersions = new WeakMap<YDatabase, Map<FieldId, number>>();
+
+function beginFieldSwitchRequest(database: YDatabase, fieldId: FieldId): number {
+  let versions = fieldSwitchRequestVersions.get(database);
+
+  if (!versions) {
+    versions = new Map();
+    fieldSwitchRequestVersions.set(database, versions);
+  }
+
+  const version = (versions.get(fieldId) ?? 0) + 1;
+
+  versions.set(fieldId, version);
+  return version;
+}
+
+function isCurrentFieldSwitchRequest(database: YDatabase, fieldId: FieldId, version: number): boolean {
+  return fieldSwitchRequestVersions.get(database)?.get(fieldId) === version;
+}
+
+function getFieldSwitchDatabaseRow(rowDoc?: YDoc): YDatabaseRow | undefined {
+  return rowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+}
+
+function collectDatabaseRowIds(database: YDatabase, loadedRows: Record<RowId, YDoc>): RowId[] {
+  const rowIds = new Set<RowId>(Object.keys(loadedRows));
+  const views = database.get(YjsDatabaseKey.views);
+
+  views?.forEach((view) => {
+    const rowOrders = view.get(YjsDatabaseKey.row_orders)?.toArray() as Array<{ id?: RowId }> | undefined;
+
+    rowOrders?.forEach(({ id }) => {
+      if (id) rowIds.add(id);
+    });
+  });
+
+  return Array.from(rowIds);
+}
+
+function fieldSwitchRequiresEveryRow(sourceType: FieldType, targetType: FieldType): boolean {
+  if (sourceType === targetType) return false;
+
+  if (sourceType === FieldType.CreatedTime || sourceType === FieldType.LastEditedTime) {
+    return true;
+  }
+
+  return (
+    (targetType === FieldType.SingleSelect || targetType === FieldType.MultiSelect) &&
+    (sourceType === FieldType.RichText || sourceType === FieldType.Checklist)
+  );
+}
+
+async function loadFieldSwitchRowDocs({
+  rowMap,
+  rowIds,
+  ensureRow,
+}: {
+  rowMap: Record<RowId, YDoc>;
+  rowIds: RowId[];
+  ensureRow?: (rowId: RowId) => Promise<YDoc | undefined> | void;
+}): Promise<Record<RowId, YDoc>> {
+  const rowDocs = { ...rowMap };
+  const missingRowIds = rowIds.filter((rowId) => !getFieldSwitchDatabaseRow(rowDocs[rowId]));
+
+  if (missingRowIds.length === 0) return rowDocs;
+  if (!ensureRow) throw new Error('Cannot switch field type before every database row is available');
+
+  for (let index = 0; index < missingRowIds.length; index += FIELD_SWITCH_ROW_LOAD_CONCURRENCY) {
+    const batch = missingRowIds.slice(index, index + FIELD_SWITCH_ROW_LOAD_CONCURRENCY);
+    const loaded = await Promise.all(
+      batch.map(async (rowId) => {
+        const openedRowDoc = await ensureRow(rowId);
+
+        if (!openedRowDoc) {
+          throw new Error(`Database row ${rowId} could not be opened for the field-type switch`);
+        }
+
+        const rowDoc = await waitForDatabaseRowHydration(openedRowDoc);
+
+        if (!rowDoc) {
+          throw new Error(`Database row ${rowId} did not hydrate before the field-type switch`);
+        }
+
+        return [rowId, rowDoc] as const;
+      })
+    );
+
+    loaded.forEach(([rowId, rowDoc]) => {
+      rowDocs[rowId] = rowDoc;
+    });
+  }
+
+  return rowDocs;
+}
+
 export function useSwitchPropertyType() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
-  const { databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync } = useDatabaseContext();
+  const { databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync, ensureRow } = useDatabaseContext();
 
   return useCallback(
     (fieldId: string, fieldType: FieldType) => {
@@ -2171,278 +2265,346 @@ export function useSwitchPropertyType() {
         throw new Error(`Row docs not found`);
       }
 
-      const rows = Object.keys(rowMap);
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-      // Capture the relation option before the switch so we can clean up the
-      // reciprocal field in the related database when leaving Relation. After
-      // the switch, the type_option for Relation may be cleared/replaced and
-      // the reciprocal pointer is no longer reachable from this field.
-      const fieldBefore = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-      const oldFieldTypeBefore = fieldBefore ? Number(fieldBefore.get(YjsDatabaseKey.type)) : null;
-      const relationOptionToCleanUp =
-        fieldBefore && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
-          ? parseRelationTypeOption(fieldBefore)
-          : null;
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
 
-      executeOperations(
-        sharedRoot,
-        [
-          () => {
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const sourceType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+      const requestVersion = beginFieldSwitchRequest(database, fieldId);
 
-            if (!field) {
-              throw new Error(`Field not found`);
-            }
+      if (sourceType === fieldType) return Promise.resolve();
 
-            const oldFieldType = Number(field.get(YjsDatabaseKey.type));
+      const rowIds = collectDatabaseRowIds(database, rowMap);
 
-            let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+      const performSwitch = (resolvedRowMap: Record<RowId, YDoc>) => {
+        const rows = Object.keys(resolvedRowMap);
 
-            // Check if the field type is supported for type options
-            if (
-              [
-                FieldType.Number,
-                FieldType.SingleSelect,
-                FieldType.MultiSelect,
-                FieldType.Checklist,
-                FieldType.Checkbox,
-                FieldType.URL,
-                FieldType.DateTime,
-                FieldType.CreatedTime,
-                FieldType.LastEditedTime,
-                FieldType.Media,
-                FieldType.Translate,
-                FieldType.Rollup,
-              ].includes(fieldType)
-            ) {
-              // Ensure the type option map is created
-              if (!typeOptionMap) {
-                typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+        // Capture the relation option before the switch so we can clean up the
+        // reciprocal field in the related database when leaving Relation. After
+        // the switch, the type_option for Relation may be cleared/replaced and
+        // the reciprocal pointer is no longer reachable from this field.
+        const fieldBefore = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+        const oldFieldTypeBefore = fieldBefore ? Number(fieldBefore.get(YjsDatabaseKey.type)) : null;
+        const relationOptionToCleanUp =
+          fieldBefore && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
+            ? parseRelationTypeOption(fieldBefore)
+            : null;
 
-                field.set(YjsDatabaseKey.type_option, typeOptionMap);
+        executeOperations(
+          sharedRoot,
+          [
+            () => {
+              const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+              if (!field) {
+                throw new Error(`Field not found`);
               }
 
-              const typeOption = typeOptionMap.get(String(fieldType));
+              const oldFieldType = Number(field.get(YjsDatabaseKey.type));
 
-              // Check if the type option is created, if not, create it with default values
-              // Otherwise, just ignore it
-              if (typeOption === undefined || Array.from(typeOption.keys()).length === 0) {
-                const newTypeOption = new Y.Map() as YMapFieldTypeOption;
+              let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
 
-                // Set default values for the type option
-                if ([FieldType.CreatedTime, FieldType.LastEditedTime, FieldType.DateTime].includes(fieldType)) {
-                  // to DateTime
-                  if (oldFieldType !== FieldType.DateTime) {
-                    newTypeOption.set(YjsDatabaseKey.include_time, true);
+              // Check if the field type is supported for type options
+              if (
+                [
+                  FieldType.Number,
+                  FieldType.SingleSelect,
+                  FieldType.MultiSelect,
+                  FieldType.Checklist,
+                  FieldType.Checkbox,
+                  FieldType.URL,
+                  FieldType.DateTime,
+                  FieldType.CreatedTime,
+                  FieldType.LastEditedTime,
+                  FieldType.Media,
+                  FieldType.Translate,
+                  FieldType.Rollup,
+                ].includes(fieldType)
+              ) {
+                // Ensure the type option map is created
+                if (!typeOptionMap) {
+                  typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+                  field.set(YjsDatabaseKey.type_option, typeOptionMap);
+                }
+
+                const typeOption = typeOptionMap.get(String(fieldType));
+
+                // Check if the type option is created, if not, create it with default values
+                // Otherwise, just ignore it
+                if (typeOption === undefined || Array.from(typeOption.keys()).length === 0) {
+                  const newTypeOption = new Y.Map() as YMapFieldTypeOption;
+
+                  // Set default values for the type option
+                  if ([FieldType.CreatedTime, FieldType.LastEditedTime, FieldType.DateTime].includes(fieldType)) {
+                    // to DateTime
+                    if (oldFieldType !== FieldType.DateTime) {
+                      newTypeOption.set(YjsDatabaseKey.include_time, true);
+                    }
+                  } else if (fieldType === FieldType.Number) {
+                    // to Number
+                    newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
+                  } else if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
+                    newTypeOption.set(YjsDatabaseKey.content, JSON.stringify({ disable_color: false, options: [] }));
+                  } else if (fieldType === FieldType.URL) {
+                    newTypeOption.set(YjsDatabaseKey.content, '');
+                  } else if (fieldType === FieldType.Translate) {
+                    newTypeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
+                  } else if (fieldType === FieldType.Media) {
+                    const content = JSON.stringify({
+                      hide_file_names: true,
+                    });
+
+                    newTypeOption.set(YjsDatabaseKey.content, content);
+                  } else if (fieldType === FieldType.Rollup) {
+                    newTypeOption.set(YjsDatabaseKey.relation_field_id, '');
+                    newTypeOption.set(YjsDatabaseKey.target_field_id, '');
+                    newTypeOption.set(YjsDatabaseKey.calculation_type, CalculationType.Count);
+                    newTypeOption.set(YjsDatabaseKey.show_as, RollupDisplayMode.Calculated);
+                    newTypeOption.set(YjsDatabaseKey.condition_value, '');
                   }
-                } else if (fieldType === FieldType.Number) {
-                  // to Number
-                  newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
-                } else if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
-                  // to Select
-                  const rows = Object.keys(rowMap);
-                  let content = '';
+
+                  typeOptionMap.set(String(fieldType), newTypeOption);
+                }
+
+                // Desktop transforms the target type option on every switch,
+                // including when an older target entry already exists.
+                if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
+                  const targetTypeOption = typeOptionMap.get(String(fieldType));
+                  const target = parseSelectOptionTypeOptions(field, fieldType);
+                  let options = [...(target.options ?? [])];
 
                   switch (oldFieldType) {
-                    // From SingleSelect or MultiSelect to Select, keep the content
                     case FieldType.SingleSelect:
-                    case FieldType.MultiSelect: {
-                      const oldTypeOption = typeOptionMap.get(String(oldFieldType));
-
-                      if (oldTypeOption) {
-                        content = oldTypeOption.get(YjsDatabaseKey.content) || '';
-                      }
-
+                    case FieldType.MultiSelect:
+                      options = [...(parseSelectOptionTypeOptions(field, oldFieldType).options ?? [])];
                       break;
-                    }
 
-                    // From other types to Select, generate options from rows
                     case FieldType.Checkbox:
-                    case FieldType.RichText:
-                    case FieldType.Number:
-                    case FieldType.URL: {
-                      const options = new Set<string>();
-
-                      // If the old field type is Checkbox, add Yes/No options
-                      if (oldFieldType === FieldType.Checkbox) {
-                        options.add('Yes');
-                        options.add('No');
-                      } else {
-                        rows.forEach((rowId) => {
-                          const rowDoc = rowMap[rowId];
-
-                          if (!rowDoc) {
-                            return;
-                          }
-
-                          getOptionsFromRow(rowDoc, fieldId).forEach((option) => {
-                            options.add(option);
-                          });
+                      if (!options.some((option) => option.name === 'Yes')) {
+                        options.push({
+                          id: nanoid(6),
+                          name: 'Yes',
+                          color: SelectOptionColor.OptionColor7,
                         });
                       }
 
-                      content = JSON.stringify({
-                        disable_color: false,
-                        options: Array.from(options).map((name, index) => {
-                          return {
-                            id: name,
-                            name,
-                            color: Object.values(SelectOptionColor)[index % 10],
-                          };
-                        }),
+                      if (!options.some((option) => option.name === 'No')) {
+                        options.push({
+                          id: nanoid(6),
+                          name: 'No',
+                          color: SelectOptionColor.OptionColor5,
+                        });
+                      }
+
+                      break;
+
+                    case FieldType.RichText:
+                      if (options.length === 0) {
+                        const names = new Set<string>();
+
+                        Object.keys(resolvedRowMap).forEach((rowId) => {
+                          const rowDoc = resolvedRowMap[rowId];
+
+                          if (!rowDoc) return;
+                          getOptionsFromRow(rowDoc, fieldId).forEach((name) => names.add(name));
+                        });
+
+                        options = Array.from(names).map((name, index) => ({
+                          id: nanoid(6),
+                          name,
+                          color: Object.values(SelectOptionColor)[index % 10],
+                        }));
+                      }
+
+                      break;
+
+                    case FieldType.Checklist: {
+                      const generated = new Map<string, SelectOption>();
+
+                      Object.keys(resolvedRowMap).forEach((rowId) => {
+                        const row = resolvedRowMap[rowId]
+                          ?.getMap(YjsEditorKey.data_section)
+                          .get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+                        const data = row?.get(YjsDatabaseKey.cells)?.get(fieldId)?.get(YjsDatabaseKey.data);
+                        const checklist = typeof data === 'string' ? parseChecklistData(data) : null;
+
+                        checklist?.options?.forEach((option) => {
+                          if (option.name && !generated.has(option.name)) {
+                            generated.set(option.name, option);
+                          }
+                        });
                       });
 
+                      options.push(...generated.values());
                       break;
                     }
                   }
 
-                  // Set the content for the type option
-                  newTypeOption.set(YjsDatabaseKey.content, content);
-                } else if (fieldType === FieldType.URL) {
-                  newTypeOption.set(YjsDatabaseKey.content, '');
-                } else if (fieldType === FieldType.Translate) {
-                  newTypeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
-                } else if (fieldType === FieldType.Media) {
-                  const content = JSON.stringify({
-                    hide_file_names: true,
-                  });
-
-                  newTypeOption.set(YjsDatabaseKey.content, content);
-                } else if (fieldType === FieldType.Rollup) {
-                  newTypeOption.set(YjsDatabaseKey.relation_field_id, '');
-                  newTypeOption.set(YjsDatabaseKey.target_field_id, '');
-                  newTypeOption.set(YjsDatabaseKey.calculation_type, CalculationType.Count);
-                  newTypeOption.set(YjsDatabaseKey.show_as, RollupDisplayMode.Calculated);
-                  newTypeOption.set(YjsDatabaseKey.condition_value, '');
-                }
-
-                typeOptionMap.set(String(fieldType), newTypeOption);
-              }
-            }
-
-            // When leaving Relation, drop reciprocal metadata from the preserved
-            // Relation type_option entry. The reciprocal field in the related
-            // database is being deleted in the post-switch cleanup; without
-            // clearing this, a later switch back to Relation would skip
-            // reciprocal recreation (because reciprocal_field_id is already set)
-            // and silently break two-way sync.
-            if (oldFieldType === FieldType.Relation && fieldType !== FieldType.Relation) {
-              const relationTypeOption = typeOptionMap?.get(String(FieldType.Relation));
-
-              if (relationTypeOption) {
-                relationTypeOption.delete(YjsDatabaseKey.reciprocal_field_id);
-                relationTypeOption.delete(YjsDatabaseKey.reciprocal_field_name);
-                relationTypeOption.set(YjsDatabaseKey.is_two_way, false);
-              }
-            }
-
-            field.set(YjsDatabaseKey.type, fieldType);
-
-            const lastModified = field.get(YjsDatabaseKey.last_modified);
-            const createdAt = field.get(YjsDatabaseKey.created_at);
-            const currentName = field.get(YjsDatabaseKey.name);
-            const oldDefaultName = getFieldName(oldFieldType);
-            const isNewField =
-              createdAt !== undefined &&
-              lastModified !== undefined &&
-              String(createdAt) === String(lastModified);
-
-            // Only auto-rename for untouched default fields (desktop parity).
-            if (isNewField && (!currentName || currentName === oldDefaultName)) {
-              field.set(YjsDatabaseKey.name, getFieldName(fieldType));
-            }
-
-            field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-
-            rows.forEach((row) => {
-              const rowDoc = rowMap?.[row];
-
-              if (!rowDoc) {
-                return;
-              }
-
-              rowDoc.transact(() => {
-                const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-                const row = rowSharedRoot.get(YjsEditorKey.database_row);
-                const cells = row.get(YjsDatabaseKey.cells);
-                const cell = cells.get(fieldId);
-
-                // Created/LastEditedTime fields have no cell data of their own —
-                // the timestamp lives on the row meta. Materialize it into the
-                // cell so the value survives the switch (desktop parity:
-                // switch_to_field_type writes row.created_at / row.modified_at
-                // into the cell before transforming).
-                if (oldFieldType === FieldType.CreatedTime || oldFieldType === FieldType.LastEditedTime) {
-                  const timestamp =
-                    oldFieldType === FieldType.CreatedTime
-                      ? row.get(YjsDatabaseKey.created_at)
-                      : row.get(YjsDatabaseKey.last_modified);
-                  const materialized = cell ?? (new Y.Map() as YDatabaseCell);
-
-                  if (!cell) {
-                    cells.set(fieldId, materialized);
-                  }
-
-                  materialized.set(YjsDatabaseKey.source_field_type, String(oldFieldType));
-                  materialized.set(YjsDatabaseKey.field_type, fieldType);
-                  materialized.set(
-                    YjsDatabaseKey.data,
-                    timestamp !== undefined && timestamp !== null ? String(timestamp) : ''
+                  targetTypeOption?.set(
+                    YjsDatabaseKey.content,
+                    JSON.stringify({
+                      ...target,
+                      disable_color: 'disable_color' in target ? target.disable_color : false,
+                      options,
+                    })
                   );
-                  materialized.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+                }
+              }
 
+              // When leaving Relation, drop reciprocal metadata from the preserved
+              // Relation type_option entry. The reciprocal field in the related
+              // database is being deleted in the post-switch cleanup; without
+              // clearing this, a later switch back to Relation would skip
+              // reciprocal recreation (because reciprocal_field_id is already set)
+              // and silently break two-way sync.
+              if (oldFieldType === FieldType.Relation && fieldType !== FieldType.Relation) {
+                const relationTypeOption = typeOptionMap?.get(String(FieldType.Relation));
+
+                if (relationTypeOption) {
+                  relationTypeOption.delete(YjsDatabaseKey.reciprocal_field_id);
+                  relationTypeOption.delete(YjsDatabaseKey.reciprocal_field_name);
+                  relationTypeOption.set(YjsDatabaseKey.is_two_way, false);
+                }
+              }
+
+              field.set(YjsDatabaseKey.type, fieldType);
+
+              const lastModified = field.get(YjsDatabaseKey.last_modified);
+              const createdAt = field.get(YjsDatabaseKey.created_at);
+              const currentName = field.get(YjsDatabaseKey.name);
+              const oldDefaultName = getFieldName(oldFieldType);
+              const isNewField =
+                createdAt !== undefined && lastModified !== undefined && String(createdAt) === String(lastModified);
+
+              // Only auto-rename for untouched default fields (desktop parity).
+              if (isNewField && (!currentName || currentName === oldDefaultName)) {
+                field.set(YjsDatabaseKey.name, getFieldName(fieldType));
+              }
+
+              field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+              rows.forEach((row) => {
+                const rowDoc = resolvedRowMap[row];
+
+                if (!rowDoc) {
                   return;
                 }
 
-                // Update each cell lazily: preserve existing data, record source type, update target type only.
-                if (cell) {
-                  const data = cell.get(YjsDatabaseKey.data);
-                  const oldCellType = Number(cell.get(YjsDatabaseKey.field_type));
+                rowDoc.transact(() => {
+                  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+                  const row = rowSharedRoot.get(YjsEditorKey.database_row);
 
-                  // Preserve the TRUE origin type across chained conversions
-                  // (mirrors desktop, where a cell's written-at type is never
-                  // overwritten by a switch). The data is still in the origin
-                  // type's format, so the origin is the existing source_field_type
-                  // if present, otherwise the cell's current type.
-                  const existingSource = cell.get(YjsDatabaseKey.source_field_type);
-                  const originType = existingSource !== undefined ? Number(existingSource) : oldCellType;
+                  if (!row) return;
 
-                  if (originType === fieldType) {
-                    // Switched back to the type the data was written at — the
-                    // cell is native again, so drop the source marker.
-                    cell.delete(YjsDatabaseKey.source_field_type);
-                  } else if (existingSource === undefined) {
-                    // First divergence from the written-at type: record the origin.
-                    cell.set(YjsDatabaseKey.source_field_type, String(oldCellType));
+                  const cells = row.get(YjsDatabaseKey.cells);
+                  const cell = cells.get(fieldId);
+
+                  // Created/LastEditedTime fields have no cell data of their own —
+                  // the timestamp lives on the row meta. Materialize it into the
+                  // cell so the value survives the switch (desktop parity:
+                  // switch_to_field_type writes row.created_at / row.modified_at
+                  // into the cell before transforming).
+                  if (oldFieldType === FieldType.CreatedTime || oldFieldType === FieldType.LastEditedTime) {
+                    const timestamp =
+                      oldFieldType === FieldType.CreatedTime
+                        ? row.get(YjsDatabaseKey.created_at)
+                        : row.get(YjsDatabaseKey.last_modified);
+                    const materialized = cell ?? (new Y.Map() as YDatabaseCell);
+
+                    if (!cell) {
+                      cells.set(fieldId, materialized);
+                    }
+
+                    // Desktop keeps the cell type aligned with the raw payload's
+                    // encoding. The field carries the new presentation type.
+                    materialized.set(YjsDatabaseKey.field_type, oldFieldType);
+                    materialized.delete(YjsDatabaseKey.source_field_type);
+                    materialized.set(
+                      YjsDatabaseKey.data,
+                      timestamp !== undefined && timestamp !== null ? String(timestamp) : ''
+                    );
+                    materialized.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+                    return;
                   }
-                  // else: keep the already-recorded origin (do NOT overwrite it
-                  // with the intermediate hop — that is what hid the values).
 
-                  // Move the cell to the new type without mutating data.
-                  cell.set(YjsDatabaseKey.field_type, fieldType);
-                  cell.set(YjsDatabaseKey.data, data instanceof Y.Array ? data.clone() : data);
-                  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-                  row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-                }
+                  // New switches follow Desktop's model and leave ordinary cells
+                  // untouched. Older Web cells stored the true data format in
+                  // source_field_type; normalize only that legacy metadata so
+                  // Desktop can decode it through cell.field_type as well.
+                  if (cell) {
+                    normalizeLegacyCellFieldType(cell);
+                  }
+                });
               });
-            });
-          },
-        ],
-        'switchPropertyType'
-      );
+            },
+          ],
+          'switchPropertyType'
+        );
 
-      if (relationOptionToCleanUp) {
-        void deleteReciprocalRelationField({
-          sourceDatabase: database,
-          sourceDatabaseDoc: databaseDoc,
-          relationOption: relationOptionToCleanUp,
-          loadView,
-          getViewIdFromDatabaseId,
-          bindViewSync,
-        });
+        if (relationOptionToCleanUp) {
+          void deleteReciprocalRelationField({
+            sourceDatabase: database,
+            sourceDatabaseDoc: databaseDoc,
+            relationOption: relationOptionToCleanUp,
+            loadView,
+            getViewIdFromDatabaseId,
+            bindViewSync,
+          });
+        }
+      };
+
+      const requiresEveryRow = fieldSwitchRequiresEveryRow(sourceType, fieldType);
+      const everyRowIsLoaded = rowIds.every((rowId) => Boolean(getFieldSwitchDatabaseRow(rowMap[rowId])));
+
+      if (!requiresEveryRow || everyRowIsLoaded) {
+        performSwitch(rowMap);
+        return Promise.resolve();
       }
+
+      // These conversions derive schema/cell data from every row. Change the
+      // field only after off-screen row collabs hydrate, so a partial rowMap
+      // cannot make Desktop and Web persist different results.
+      const loadRowsAndSwitch = async () => {
+        let resolvedRowMap = rowMap;
+        let rowSetIsStable = false;
+
+        while (!rowSetIsStable) {
+          const latestRowIds = collectDatabaseRowIds(database, resolvedRowMap);
+
+          resolvedRowMap = await loadFieldSwitchRowDocs({
+            rowMap: resolvedRowMap,
+            rowIds: latestRowIds,
+            ensureRow,
+          });
+
+          if (!isCurrentFieldSwitchRequest(database, fieldId, requestVersion)) {
+            throw new Error('Field-type switch was superseded by a newer request');
+          }
+
+          // No await occurs between this stability check and performSwitch, so
+          // another Yjs event cannot insert an unprocessed row before commit.
+          const stableRowIds = collectDatabaseRowIds(database, resolvedRowMap);
+
+          rowSetIsStable = stableRowIds.every((rowId) => Boolean(getFieldSwitchDatabaseRow(resolvedRowMap[rowId])));
+        }
+
+        performSwitch(resolvedRowMap);
+      };
+
+      return loadRowsAndSwitch().catch((error: unknown) => {
+          Log.warn('[useSwitchPropertyType] Field type was not changed', {
+            fieldId,
+            fieldType,
+            error,
+          });
+          throw error;
+      });
     },
-    [bindViewSync, database, databaseDoc, getViewIdFromDatabaseId, loadView, sharedRoot, rowMap]
+    [bindViewSync, database, databaseDoc, ensureRow, getViewIdFromDatabaseId, loadView, sharedRoot, rowMap]
   );
 }
 

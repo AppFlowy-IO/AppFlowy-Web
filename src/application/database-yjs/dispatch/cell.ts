@@ -10,6 +10,7 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 import * as Y from 'yjs';
 
+import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
@@ -152,7 +153,7 @@ function writeCellToRow({
   row: YDatabaseRow;
   cells: YDatabaseCells;
   fieldId: string;
-  fieldType: number;
+  fieldType: FieldType;
   data: CellUpdateData;
   dateOpts?: DateCellOptions;
 }) {
@@ -163,7 +164,7 @@ function writeCellToRow({
       const newCell = new Y.Map() as YDatabaseCell;
 
       newCell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-      newCell.set(YjsDatabaseKey.field_type, fieldType);
+      setCellStoredType(newCell, fieldType);
       newCell.set(YjsDatabaseKey.data, data);
       newCell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
@@ -185,12 +186,7 @@ function writeCellToRow({
         });
       }
 
-      cell.set(YjsDatabaseKey.field_type, fieldType);
-      // The data is now written in the current field type's format, so any
-      // lingering source-type marker from an earlier conversion is stale.
-      // Clearing it makes the cell native again (mirrors desktop, where a real
-      // write updates the cell's written-at type).
-      cell.delete(YjsDatabaseKey.source_field_type);
+      setCellStoredType(cell, fieldType);
       cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     }
 
@@ -231,7 +227,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           row: target.row,
           cells: target.cells,
           fieldId,
-          fieldType: Number(field.get(YjsDatabaseKey.type)),
+          fieldType: Number(field.get(YjsDatabaseKey.type)) as FieldType,
           data,
           dateOpts,
         });
@@ -269,13 +265,14 @@ export function useUpdateStartEndTimeCell() {
 
           if (!cell) {
             cell = new Y.Map() as YDatabaseCell;
-            cell.set(YjsDatabaseKey.field_type, FieldType.DateTime);
+            setCellStoredType(cell, FieldType.DateTime);
 
             cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
             writableTarget.cells.set(fieldId, cell);
           }
 
           cell.set(YjsDatabaseKey.data, startTimestamp);
+          setCellStoredType(cell, FieldType.DateTime);
           cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
           updateDateCell(cell, {

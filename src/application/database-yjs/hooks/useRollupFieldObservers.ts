@@ -4,25 +4,13 @@ import { useEffect } from 'react';
 import { useDatabase, useDatabaseContext, useDatabaseFields, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { parseRelationTypeOption, parseRollupTypeOption } from '@/application/database-yjs/fields';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { invalidateRelationCell } from '@/application/database-yjs/relation/cache';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { YDatabaseCell, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 const ROLLUP_OBSERVER_POOL_SIZE = 4;
-
-function getRelationRowIdsFromCell(cell?: YDatabaseCell): string[] {
-  if (!cell) return [];
-  const data = cell.get(YjsDatabaseKey.data);
-
-  if (!data) return [];
-  if (typeof data === 'object' && 'toJSON' in data) {
-    const ids = (data as { toJSON: () => unknown }).toJSON();
-
-    return Array.isArray(ids) ? (ids as string[]) : [];
-  }
-
-  return Array.isArray(data) ? (data as string[]) : [];
-}
 
 /**
  * Hook that sets up observers for rollup fields used in sorts/filters.
@@ -44,7 +32,8 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
   useEffect(() => {
     if (!rows || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId) return;
 
-    // Find rollup fields used in sorts/filters
+    // Find relation and rollup fields used in sorts/filters.
+    const relationFieldIds = new Set<string>();
     const rollupFieldIds = new Set<string>();
 
     sorts?.forEach((sort) => {
@@ -52,6 +41,10 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
 
       if (!fieldId) return;
       const field = fields.get(fieldId);
+
+      if (field && Number(field.get(YjsDatabaseKey.type)) === FieldType.Relation) {
+        relationFieldIds.add(fieldId);
+      }
 
       if (field && Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
         rollupFieldIds.add(fieldId);
@@ -64,12 +57,16 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
       if (!fieldId) return;
       const field = fields.get(fieldId);
 
+      if (field && Number(field.get(YjsDatabaseKey.type)) === FieldType.Relation) {
+        relationFieldIds.add(fieldId);
+      }
+
       if (field && Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
         rollupFieldIds.add(fieldId);
       }
     });
 
-    if (rollupFieldIds.size === 0) return;
+    if (relationFieldIds.size === 0 && rollupFieldIds.size === 0) return;
 
     let cancelled = false;
     const observers: Array<{ doc: YDoc; handler: () => void }> = [];
@@ -134,6 +131,52 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
     const setup = async () => {
       const tasks: Array<() => Promise<void>> = [];
 
+      for (const relationFieldId of relationFieldIds) {
+        if (cancelled) return;
+        const relationField = fields.get(relationFieldId);
+        const relationOption = relationField ? parseRelationTypeOption(relationField) : null;
+
+        if (!relationOption?.database_id) continue;
+        const relatedDoc = await getRelatedDoc(relationOption.database_id);
+
+        if (!relatedDoc) continue;
+
+        const invalidateRelatedRelationValues = () => {
+          Object.keys(rows).forEach((rowId) => {
+            invalidateRelationCell(`${rowId}:${relationFieldId}`);
+          });
+          debouncedChange();
+        };
+
+        relatedDoc.getMap(YjsEditorKey.data_section).observeDeep(invalidateRelatedRelationValues);
+        observers.push({ doc: relatedDoc, handler: invalidateRelatedRelationValues });
+
+        for (const [rowId, rowDoc] of Object.entries(rows)) {
+          if (cancelled) return;
+          const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
+            | YDatabaseRow
+            | undefined;
+          const relationCell = row?.get(YjsDatabaseKey.cells)?.get(relationFieldId);
+          const relatedRowIds = getRelationRowIdsFromCell(relationCell);
+
+          relatedRowIds.forEach((relatedRowId) => {
+            tasks.push(async () => {
+              if (cancelled) return;
+              const relatedRowDoc = await getRowDoc(getRowKey(relatedDoc.guid, relatedRowId));
+
+              if (!relatedRowDoc) return;
+              const handler = () => {
+                invalidateRelationCell(`${rowId}:${relationFieldId}`);
+                debouncedChange();
+              };
+
+              relatedRowDoc.getMap(YjsEditorKey.data_section).observeDeep(handler);
+              observers.push({ doc: relatedRowDoc, handler });
+            });
+          });
+        }
+      }
+
       for (const rollupFieldId of rollupFieldIds) {
         if (cancelled) return;
         const rollupField = fields.get(rollupFieldId);
@@ -153,6 +196,15 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
 
         if (!relatedDoc) continue;
         const docGuid = relatedDoc.guid;
+        const invalidateRelatedRollupValues = () => {
+          Object.keys(rows).forEach((rowId) => {
+            invalidateRollupCell(`${rowId}:${rollupFieldId}`);
+          });
+          debouncedChange();
+        };
+
+        relatedDoc.getMap(YjsEditorKey.data_section).observeDeep(invalidateRelatedRollupValues);
+        observers.push({ doc: relatedDoc, handler: invalidateRelatedRollupValues });
 
         for (const [rowId, rowDoc] of Object.entries(rows)) {
           if (cancelled) return;

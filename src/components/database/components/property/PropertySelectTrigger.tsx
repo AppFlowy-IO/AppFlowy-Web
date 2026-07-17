@@ -16,6 +16,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 const properties = [
   FieldType.RichText,
@@ -59,10 +60,15 @@ export function PropertySelectTrigger({
     [aiEnabled]
   );
 
-  const handleSelect = (property: FieldType) => {
+  const handleSelect = async (property: FieldType) => {
     if (disabled) return;
     if (!aiEnabled && isAIFieldType(property)) return;
-    switchType(fieldId, property);
+
+    try {
+      await switchType(fieldId, property);
+    } catch (error) {
+      Log.warn('[PropertySelectTrigger] Failed to switch field type', { fieldId, property, error });
+    }
   };
 
   const propertyTooltip: {
@@ -124,7 +130,7 @@ export function PropertySelectTrigger({
                             return;
                           }
 
-                          handleSelect(property);
+                          void handleSelect(property);
                           if ([FieldType.Translate].includes(property)) {
                             e.preventDefault();
                             setOpen(false);
