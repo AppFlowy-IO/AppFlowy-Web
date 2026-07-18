@@ -130,7 +130,11 @@ function MoreActionsContent({
     const next = !view.is_locked;
 
     try {
-      await PageService.update(workspaceId, viewId, { name: view.name, is_locked: next });
+      await PageService.update(workspaceId, viewId, {
+        name: view.name,
+        icon: view.icon ?? undefined,
+        is_locked: next,
+      });
       void refreshOutline?.();
       toast.success(next ? t('lockPage.pageLockedToast') : t('lockPage.pageUnlockedToast'));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

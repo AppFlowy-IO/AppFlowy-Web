@@ -107,6 +107,19 @@ test.describe('Lock Page', () => {
     await expect(bodyEditor(page)).toHaveAttribute('contenteditable', 'false', { timeout: 10000 });
   });
 
+  test('locking preserves the page icon', async ({ page, request }) => {
+    await setup(page, request, testEmail);
+
+    const pageTitle = page.getByRole('heading', { level: 1, name: /Getting started/ });
+    await expect(pageTitle).toContainText('🌟');
+
+    await toggleLock(page, true);
+    await expect(pageTitle).toContainText('🌟');
+
+    await page.reload();
+    await expect(pageTitle).toContainText('🌟');
+  });
+
   test('the locked badge exposes an explanatory tooltip', async ({ page, request }) => {
     await setup(page, request, testEmail);
     await toggleLock(page, true);
