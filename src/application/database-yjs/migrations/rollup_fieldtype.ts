@@ -18,6 +18,7 @@ import {
 } from '@/application/types';
 
 const ROLLUP_SCHEMA_VERSION = 2;
+const ROW_MIGRATION_CONCURRENCY = 8;
 
 export const DATABASE_SCHEMA_VERSION = 3;
 
@@ -186,14 +187,23 @@ export async function migrateDatabaseFieldTypes(
 
   if (loadRow && rowIds.length > 0) {
     migratedEveryRow = true;
-    for (const rowId of rowIds) {
-      const rowKey = getRowKey(rowKeyPrefix, rowId);
-      const rowDoc = await loadRow(rowKey);
+    let nextRowIndex = 0;
+    const workerCount = Math.min(ROW_MIGRATION_CONCURRENCY, rowIds.length);
 
-      const migrated = await migrateRowCells(rowDoc, fieldTypeById, migrateRollupFieldType, migrateLegacyCellType);
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (nextRowIndex < rowIds.length) {
+          const rowId = rowIds[nextRowIndex];
 
-      migratedEveryRow = migratedEveryRow && migrated;
-    }
+          nextRowIndex += 1;
+          const rowKey = getRowKey(rowKeyPrefix, rowId);
+          const rowDoc = await loadRow(rowKey);
+          const migrated = await migrateRowCells(rowDoc, fieldTypeById, migrateRollupFieldType, migrateLegacyCellType);
+
+          if (!migrated) migratedEveryRow = false;
+        }
+      })
+    );
   }
 
   // Do not mark a row migration complete when row docs were unavailable. A

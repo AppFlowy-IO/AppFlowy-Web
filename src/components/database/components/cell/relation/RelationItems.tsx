@@ -9,6 +9,7 @@ import {
 } from '@/application/database-yjs';
 import { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
@@ -160,11 +161,8 @@ function RelationItems({
     observerEvent();
 
     // The primary field can change type without replacing the database map.
-    // Observe deeply so a primary-field reassignment also refreshes this link.
-    sharedRoot.observeDeep(observerEvent);
-    return () => {
-      sharedRoot.unobserveDeep(observerEvent);
-    };
+    // Share the deep observer across rendered relation cells for this database.
+    return subscribeSharedYjsDeep(sharedRoot, observerEvent);
   }, [databaseDoc]);
 
   return (

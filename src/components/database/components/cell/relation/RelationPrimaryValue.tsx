@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { FieldType } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { decodeCellToText } from '@/application/database-yjs/decode';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import {
   FieldId,
   YDatabaseCell,
@@ -33,10 +34,7 @@ export function RelationPrimaryValue({
     };
 
     onRowChange();
-    data?.observeDeep(onRowChange);
-    return () => {
-      data?.unobserveDeep(onRowChange);
-    };
+    return subscribeSharedYjsDeep(data, onRowChange);
   }, [rowDoc]);
 
   useEffect(() => {
@@ -75,11 +73,13 @@ export function RelationPrimaryValue({
 
     observeHandler();
 
-    primaryCell?.observeDeep(observeHandler);
-    field?.observeDeep(observeHandler);
+    const observerCleanups: Array<() => void> = [];
+
+    if (primaryCell) observerCleanups.push(subscribeSharedYjsDeep(primaryCell, observeHandler));
+    if (field) observerCleanups.push(subscribeSharedYjsDeep(field, observeHandler));
+
     return () => {
-      primaryCell?.unobserveDeep(observeHandler);
-      field?.unobserveDeep(observeHandler);
+      observerCleanups.forEach((cleanup) => cleanup());
     };
   }, [row, fieldId, field]);
 

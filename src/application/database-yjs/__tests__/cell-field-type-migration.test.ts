@@ -144,6 +144,34 @@ describe('legacy Web cell field-type migration', () => {
     expect(metas.get(YjsDatabaseKey.schema_version)).toBe(DATABASE_SCHEMA_VERSION);
   });
 
+  it('loads row documents concurrently with a bounded migration pool', async () => {
+    const { databaseId, fieldId, rowId, doc, metas } = createMigrationFixture();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [fieldId]: {
+        data: 'option-id',
+        fieldType: FieldType.RichText,
+        sourceType: FieldType.SingleSelect,
+      },
+    });
+    const rowIds = Array.from({ length: 24 }, (_, index) => `row-${index}`);
+    let activeLoads = 0;
+    let maxActiveLoads = 0;
+    const loadRow = jest.fn(async () => {
+      activeLoads += 1;
+      maxActiveLoads = Math.max(maxActiveLoads, activeLoads);
+      await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      activeLoads -= 1;
+      return rowDoc;
+    });
+
+    await expect(migrateDatabaseFieldTypes(doc, { loadRow, rowIds })).resolves.toBe(true);
+
+    expect(loadRow).toHaveBeenCalledTimes(rowIds.length);
+    expect(maxActiveLoads).toBeGreaterThan(1);
+    expect(maxActiveLoads).toBeLessThanOrEqual(8);
+    expect(metas.get(YjsDatabaseKey.schema_version)).toBe(DATABASE_SCHEMA_VERSION);
+  });
+
   it('normalizes legacy metadata synced by an older Web client after the row is loaded', () => {
     const { databaseId, fieldId, rowId } = createMigrationFixture(DATABASE_SCHEMA_VERSION);
     const rowDoc = createRowDoc(rowId, databaseId, {

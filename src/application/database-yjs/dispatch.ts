@@ -49,7 +49,6 @@ import { createSelectOptionCell } from '@/application/database-yjs/fields/select
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
-import { getOptionsFromRow } from '@/application/database-yjs/row';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
@@ -2182,6 +2181,13 @@ function getFieldSwitchDatabaseRow(rowDoc?: YDoc): YDatabaseRow | undefined {
   return rowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 }
 
+function getFieldSwitchCellData(rowDoc: YDoc, fieldId: FieldId, field: YDatabaseField): unknown {
+  const row = getFieldSwitchDatabaseRow(rowDoc);
+  const cell = row?.get(YjsDatabaseKey.cells)?.get(fieldId);
+
+  return cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
+}
+
 function collectDatabaseRowIds(database: YDatabase, loadedRows: Record<RowId, YDoc>): RowId[] {
   const rowIds = new Set<RowId>(Object.keys(loadedRows));
   const views = database.get(YjsDatabaseKey.views);
@@ -2402,21 +2408,28 @@ export function useSwitchPropertyType() {
                       break;
 
                     case FieldType.RichText:
-                      if (options.length === 0) {
-                        const names = new Set<string>();
+                      {
+                        const names = new Set(options.map((option) => option.name));
 
                         Object.keys(resolvedRowMap).forEach((rowId) => {
                           const rowDoc = resolvedRowMap[rowId];
 
                           if (!rowDoc) return;
-                          getOptionsFromRow(rowDoc, fieldId).forEach((name) => names.add(name));
-                        });
+                          const data = getFieldSwitchCellData(rowDoc, fieldId, field);
 
-                        options = Array.from(names).map((name, index) => ({
-                          id: nanoid(6),
-                          name,
-                          color: Object.values(SelectOptionColor)[index % 10],
-                        }));
+                          if (typeof data !== 'string') return;
+                          data.split(',').forEach((item) => {
+                            const name = item.trim();
+
+                            if (!name || names.has(name)) return;
+                            names.add(name);
+                            options.push({
+                              id: nanoid(6),
+                              name,
+                              color: Object.values(SelectOptionColor)[options.length % 10],
+                            });
+                          });
+                        });
                       }
 
                       break;
@@ -2425,10 +2438,10 @@ export function useSwitchPropertyType() {
                       const generated = new Map<string, SelectOption>();
 
                       Object.keys(resolvedRowMap).forEach((rowId) => {
-                        const row = resolvedRowMap[rowId]
-                          ?.getMap(YjsEditorKey.data_section)
-                          .get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
-                        const data = row?.get(YjsDatabaseKey.cells)?.get(fieldId)?.get(YjsDatabaseKey.data);
+                        const rowDoc = resolvedRowMap[rowId];
+
+                        if (!rowDoc) return;
+                        const data = getFieldSwitchCellData(rowDoc, fieldId, field);
                         const checklist = typeof data === 'string' ? parseChecklistData(data) : null;
 
                         checklist?.options?.forEach((option) => {
@@ -2438,7 +2451,13 @@ export function useSwitchPropertyType() {
                         });
                       });
 
-                      options.push(...generated.values());
+                      const names = new Set(options.map((option) => option.name));
+
+                      generated.forEach((option, name) => {
+                        if (names.has(name)) return;
+                        names.add(name);
+                        options.push(option);
+                      });
                       break;
                     }
                   }

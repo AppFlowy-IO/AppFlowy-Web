@@ -43,6 +43,7 @@ import {
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
 import {
   DatabaseViewLayout,
@@ -1813,45 +1814,44 @@ function useRollupCellValue({
     if (relatedRowIds.length === 0) return;
 
     let cancelled = false;
-    const observers: Array<{ doc: YDoc; handler: () => void }> = [];
+    const observerCleanups: Array<() => void> = [];
 
     void (async () => {
       if (!loadView || !createRow) return;
       const viewId = await getViewIdFromDatabaseId?.(relationOption.database_id);
 
-      if (!viewId) return;
+      if (cancelled || !viewId) return;
       const relatedDoc = await loadView(viewId);
 
-      if (!relatedDoc) return;
+      if (cancelled || !relatedDoc) return;
       const docGuid = relatedDoc.guid;
       const handleRelatedSchemaChange = () => {
         invalidateRollupCell(cellId);
         void readRollupCell(rollupContext);
       };
 
-      relatedDoc.getMap(YjsEditorKey.data_section).observeDeep(handleRelatedSchemaChange);
-      observers.push({ doc: relatedDoc, handler: handleRelatedSchemaChange });
+      observerCleanups.push(
+        subscribeSharedYjsDeep(relatedDoc.getMap(YjsEditorKey.data_section), handleRelatedSchemaChange)
+      );
 
       for (const relatedRowId of relatedRowIds) {
         if (cancelled) return;
         const rowDoc = await createRow(getRowKey(docGuid, relatedRowId));
 
+        if (cancelled) return;
         if (!rowDoc) continue;
         const handler = () => {
           invalidateRollupCell(cellId);
           void readRollupCell(rollupContext);
         };
 
-        rowDoc.getMap(YjsEditorKey.data_section).observeDeep(handler);
-        observers.push({ doc: rowDoc, handler });
+        observerCleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), handler));
       }
     })();
 
     return () => {
       cancelled = true;
-      observers.forEach(({ doc, handler }) => {
-        doc.getMap(YjsEditorKey.data_section).unobserveDeep(handler);
-      });
+      observerCleanups.forEach((cleanup) => cleanup());
     };
   }, [
     rollupContext,

@@ -280,6 +280,66 @@ describe('Bug B (fixed) — field-type conversion preserves select values', () =
     expect(getCellDataText(cell, field)).toBe('Yes');
   });
 
+  it('merges edited RichText values into a preserved select option set', () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const field = getField(databaseDoc);
+    const cell = getCell(rowDoc);
+
+    act(() => {
+      void switchType(fieldId, FieldType.RichText);
+    });
+    act(() => {
+      cell.set(YjsDatabaseKey.data, 'New option');
+      cell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+    });
+    act(() => {
+      void switchType(fieldId, FieldType.MultiSelect);
+    });
+
+    const options = parseSelectOptionTypeOptions(field).options;
+
+    expect(options.slice(0, OPTIONS.length)).toEqual(OPTIONS);
+    expect(options.filter(({ name }) => name === 'New option')).toHaveLength(1);
+    expect(getCellDataText(cell, field)).toBe('New option');
+  });
+
+  it('merges Checklist values without duplicating preserved select options', () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const field = getField(databaseDoc);
+    const cell = getCell(rowDoc);
+    const existingTask = {
+      id: 'existing-task',
+      name: 'Task',
+      color: SelectOptionColor.OptionColor1,
+    };
+    const checklistData = JSON.stringify({
+      options: [
+        { id: 'check-task', name: 'Task', color: SelectOptionColor.OptionColor2 },
+        { id: 'check-new', name: 'New task', color: SelectOptionColor.OptionColor3 },
+      ],
+      selected_option_ids: ['check-task', 'check-new'],
+    });
+
+    act(() => {
+      field
+        .get(YjsDatabaseKey.type_option)
+        .get(String(FieldType.MultiSelect))
+        .set(YjsDatabaseKey.content, JSON.stringify({ disable_color: false, options: [existingTask] }));
+      field.set(YjsDatabaseKey.type, FieldType.Checklist);
+      cell.set(YjsDatabaseKey.field_type, FieldType.Checklist);
+      cell.set(YjsDatabaseKey.data, checklistData);
+    });
+    act(() => {
+      void switchType(fieldId, FieldType.MultiSelect);
+    });
+
+    const options = parseSelectOptionTypeOptions(field).options;
+
+    expect(options.filter(({ name }) => name === 'Task')).toEqual([existingTask]);
+    expect(options.filter(({ name }) => name === 'New task')).toHaveLength(1);
+    expect(getCellDataText(cell, field)).toBe('Task,New task');
+  });
+
   it('includes off-screen rows added while RichText-to-select hydration is pending', async () => {
     const databaseDoc = createDatabaseDoc();
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
