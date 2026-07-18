@@ -1,12 +1,7 @@
 import dayjs, { Dayjs } from 'dayjs';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  useDatabaseContext,
-  useDatabaseFields,
-  useRowMap,
-  useRowOrdersSelector,
-} from '@/application/database-yjs';
+import { useDatabaseContext, useDatabaseFields, useRowMap, useRowOrdersSelector } from '@/application/database-yjs';
 import {
   ChartAggregationType,
   ChartDataItem,
@@ -14,11 +9,20 @@ import {
   isDateGroupableFieldType,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
-import { getCellData } from '@/application/database-yjs/const';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
 import { safeParseTimestamp } from '@/application/database-yjs/fields/date/utils';
-import { YjsDatabaseKey, YjsEditorKey, YDatabaseField, YDatabaseFields, YDatabaseRow, RowId, YDoc } from '@/application/types';
+import {
+  YjsDatabaseKey,
+  YjsEditorKey,
+  YDatabaseField,
+  YDatabaseFields,
+  YDatabaseRow,
+  RowId,
+  YDoc,
+} from '@/application/types';
 
 import { useChartColors, UseChartColorsReturn } from './useChartColors';
 
@@ -49,9 +53,7 @@ function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
 
     case DateGroupCondition.Week: {
       // Week of year (ISO-style): start on Monday
-      const monday = date.day() === 0
-        ? date.subtract(6, 'day')
-        : date.subtract(date.day() - 1, 'day');
+      const monday = date.day() === 0 ? date.subtract(6, 'day') : date.subtract(date.day() - 1, 'day');
       const key = monday.format('YYYY-MM-DD');
 
       return { label: `Week of ${key}`, groupKey: key, sortKey: key };
@@ -94,17 +96,18 @@ function bucketDate(date: Dayjs, condition: DateGroupCondition): GroupValue {
  */
 function getCellGroupValue(
   rowId: string,
-  fieldId: string,
-  fieldType: FieldType,
+  field: YDatabaseField,
   rowMetas: Record<RowId, YDoc>,
   dateCondition: DateGroupCondition
 ): GroupValue[] {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
   const rowDoc = rowMetas[rowId];
   const dataSection = rowDoc?.getMap(YjsEditorKey.data_section);
   const databaseRow = dataSection?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
   const cells = databaseRow?.get(YjsDatabaseKey.cells);
   const cell = cells?.get(fieldId);
-  const data = cell?.get(YjsDatabaseKey.data);
+  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
 
   switch (fieldType) {
     case FieldType.SingleSelect: {
@@ -117,7 +120,10 @@ function getCellGroupValue(
 
     case FieldType.MultiSelect: {
       if (typeof data === 'string' && data.length > 0) {
-        return data.split(',').filter(Boolean).map((id) => ({ label: id, groupKey: id }));
+        return data
+          .split(',')
+          .filter(Boolean)
+          .map((id) => ({ label: id, groupKey: id }));
       }
 
       return [];
@@ -145,9 +151,10 @@ function getCellGroupValue(
       } else {
         // YDatabaseRow has overloaded `.get` per key, so the lookup must use
         // a literal `YjsDatabaseKey` member rather than a computed variable.
-        const v = fieldType === FieldType.CreatedTime
-          ? databaseRow?.get(YjsDatabaseKey.created_at)
-          : databaseRow?.get(YjsDatabaseKey.last_modified);
+        const v =
+          fieldType === FieldType.CreatedTime
+            ? databaseRow?.get(YjsDatabaseKey.created_at)
+            : databaseRow?.get(YjsDatabaseKey.last_modified);
 
         raw = v !== undefined && v !== null ? String(v) : undefined;
       }
@@ -172,13 +179,11 @@ function getCellGroupValue(
  * yields 0/1, and date-typed fields yield "days since epoch" so Min/Max/Avg
  * make sense on a human scale.
  */
-function getCellNumericValue(
-  rowId: string,
-  fieldId: string,
-  fieldType: FieldType | null,
-  rowMetas: Record<RowId, YDoc>
-): number | null {
-  const data = getCellData(rowId, fieldId, rowMetas);
+function getCellNumericValue(rowId: string, field: YDatabaseField, rowMetas: Record<RowId, YDoc>): number | null {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+  const cell = getCell(rowId, fieldId, rowMetas);
+  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
 
   switch (fieldType) {
     case FieldType.Checkbox: {
@@ -211,10 +216,7 @@ function getCellNumericValue(
 /**
  * Compute aggregation on an array of values
  */
-function computeAggregation(
-  values: number[],
-  aggregationType: ChartAggregationType
-): number {
+function computeAggregation(values: number[], aggregationType: ChartAggregationType): number {
   if (values.length === 0) {
     return 0;
   }
@@ -308,7 +310,7 @@ function computeChartData({
 
   rowOrders.forEach((row) => {
     const rowId = row.id;
-    const groupValues = getCellGroupValue(rowId, resolvedXFieldId, fieldType, rowMetas, dateCondition);
+    const groupValues = getCellGroupValue(rowId, xAxisField, rowMetas, dateCondition);
 
     if (groupValues.length === 0) {
       emptyGroup.rowIds.push(rowId);
@@ -344,9 +346,6 @@ function computeChartData({
   }
 
   const yField = yFieldId && fields ? fields.get(yFieldId) : undefined;
-  const yFieldType = yField
-    ? (Number(yField.get(YjsDatabaseKey.type)) as FieldType)
-    : null;
 
   const data: ChartDataItem[] = [];
   let colorIndex = 0;
@@ -357,9 +356,11 @@ function computeChartData({
     if (aggregationType === ChartAggregationType.Count) {
       value = group.rowIds.length;
     } else if (yFieldId) {
-      const numericValues = group.rowIds
-        .map((rowId) => getCellNumericValue(rowId, yFieldId, yFieldType, rowMetas))
-        .filter((v): v is number => v !== null);
+      const numericValues = yField
+        ? group.rowIds
+            .map((rowId) => getCellNumericValue(rowId, yField, rowMetas))
+            .filter((v): v is number => v !== null)
+        : [];
 
       value = computeAggregation(numericValues, aggregationType);
     } else {
@@ -488,10 +489,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // Stable string representation of the row order. Yjs often returns a fresh
   // array reference even when the contents are unchanged, so we depend on the
   // joined ids in effects instead of the array identity.
-  const rowIdsKey = useMemo(
-    () => (rowOrders?.map((r) => r.id).join(',') ?? ''),
-    [rowOrders]
-  );
+  const rowIdsKey = useMemo(() => rowOrders?.map((r) => r.id).join(',') ?? '', [rowOrders]);
 
   const loadedRowIdsRef = useRef<Set<string>>(new Set());
   // Always start in the loading state. The effect below decides when to
@@ -603,15 +601,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     return groupableFields[0].id;
   }, [settings?.xFieldId, groupableFields, hasGroupableFields]);
 
-  const xAxisField = useMemo<YDatabaseField | null>(() => {
-    if (!resolvedXFieldId || !fields) return null;
-    return fields.get(resolvedXFieldId) ?? null;
-  }, [resolvedXFieldId, fields]);
-
-  const fieldType = useMemo<FieldType | null>(() => {
-    if (!xAxisField) return null;
-    return Number(xAxisField.get(YjsDatabaseKey.type)) as FieldType;
-  }, [xAxisField]);
+  const xAxisField = resolvedXFieldId && fields ? fields.get(resolvedXFieldId) ?? null : null;
+  const fieldType = xAxisField ? (Number(xAxisField.get(YjsDatabaseKey.type)) as FieldType) : null;
 
   const selectOptions = useMemo<SelectOption[]>(() => {
     if (!xAxisField) return [];
@@ -620,7 +611,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     }
 
     return parseSelectOptionTypeOptions(xAxisField)?.options ?? [];
-  }, [xAxisField, fieldType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [xAxisField, fieldType, fieldsClock]);
 
   const colors = useChartColors({ fieldType, selectOptions });
 
@@ -641,6 +633,10 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // widgets are wrapped in `React.memo(..., chartDataEqual)`, so re-renders
   // are skipped when the resulting bars are unchanged.
   const chartData = useMemo<ChartDataItem[]>(() => {
+    // Yjs mutates field maps in place, so their identity cannot invalidate this
+    // memo after a schema-only field-type switch.
+    void fieldsClock;
+
     if (!rowsLoaded) return EMPTY_CHART_DATA;
 
     return computeChartData({
@@ -663,6 +659,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     xAxisField,
     fieldType,
     fields,
+    fieldsClock,
     optionIdToName,
     colors,
   ]);

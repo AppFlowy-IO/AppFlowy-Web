@@ -1,3 +1,4 @@
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
@@ -6,12 +7,12 @@ import { EnhancedBigStats } from '@/application/database-yjs/fields/number/Enhan
 import { parseNumberTypeOptions } from '@/application/database-yjs/fields/number/parse';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
   YDatabase,
-  YDatabaseCell,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRow,
@@ -165,10 +166,7 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-async function loadRelatedDoc(
-  viewId: string,
-  loadView?: (viewId: string) => Promise<YDoc | null>
-) {
+async function loadRelatedDoc(viewId: string, loadView?: (viewId: string) => Promise<YDoc | null>) {
   if (!loadView) return null;
   const cached = relatedDocCache.get(viewId);
 
@@ -184,20 +182,6 @@ async function loadRelatedDoc(
 
   touchRelatedDocCache(viewId, promise);
   return promise;
-}
-
-function getRelationRowIds(cell?: YDatabaseCell): RowId[] {
-  if (!cell) return [];
-  const data = cell.get(YjsDatabaseKey.data);
-
-  if (!data) return [];
-  if (typeof data === 'object' && 'toJSON' in data) {
-    const ids = (data as { toJSON: () => unknown }).toJSON();
-
-    return Array.isArray(ids) ? (ids as RowId[]) : [];
-  }
-
-  return Array.isArray(data) ? (data as RowId[]) : [];
 }
 
 function isEmptyValue(value: string) {
@@ -324,7 +308,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   }
 
   const relationCell = row?.get(YjsDatabaseKey.cells)?.get(rollupOption.relation_field_id);
-  const relatedRowIds = getRelationRowIds(relationCell);
+  const relatedRowIds = getRelationRowIdsFromCell(relationCell);
 
   const showAs = (rollupOption.show_as ?? RollupDisplayMode.Calculated) as RollupDisplayMode;
   const calculationType = (rollupOption.calculation_type ?? CalculationType.Count) as CalculationType;
@@ -391,7 +375,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     if (!relatedRow) continue;
     const cell = relatedRow.get(YjsDatabaseKey.cells)?.get(rollupOption.target_field_id);
-    const rawData = cell?.get(YjsDatabaseKey.data);
+    const parsedData = cell ? parseYDatabaseCellToCell(cell, targetField).data : undefined;
 
     let text = '';
 
@@ -412,7 +396,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
     } else if (cell) {
       text = decodeCellToText(cell, targetField);
       if (targetFieldType === FieldType.DateTime) {
-        const ts = normalizeTimestamp(cell.get(YjsDatabaseKey.data));
+        const ts = normalizeTimestamp(parsedData);
 
         if (ts !== null) {
           timestampValues.push(ts);
@@ -424,7 +408,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
     nonEmptyFlags.push(!isEmptyValue(text));
 
     if (targetFieldType === FieldType.Number) {
-      const numeric = parseNumber(rawData ?? text);
+      const numeric = parseNumber(parsedData ?? text);
 
       if (numeric !== null) {
         numericValues.push(numeric);
@@ -433,15 +417,21 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     if (targetFieldType === FieldType.Checkbox) {
       const checkboxInput =
-        typeof rawData === 'string' || typeof rawData === 'number' || typeof rawData === 'boolean'
-          ? rawData
+        typeof parsedData === 'string' || typeof parsedData === 'number' || typeof parsedData === 'boolean'
+          ? parsedData
           : text;
 
       checkboxValues.push(parseCheckboxValue(checkboxInput));
     }
 
     if (targetFieldType === FieldType.SingleSelect || targetFieldType === FieldType.MultiSelect) {
-      const ids = typeof rawData === 'string' ? rawData.split(',').map((id) => id.trim()).filter(Boolean) : [];
+      const ids =
+        typeof parsedData === 'string'
+          ? parsedData
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean)
+          : [];
 
       selectValues.push(ids);
     }
@@ -628,10 +618,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
     }
 
     case CalculationType.CountValue: {
-      if (
-        ![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) ||
-        conditionValue.trim() === ''
-      ) {
+      if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) || conditionValue.trim() === '') {
         return { value: '' };
       }
 

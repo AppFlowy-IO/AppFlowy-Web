@@ -9,7 +9,8 @@ import {
 } from '@/application/database-yjs';
 import { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { YDoc, YjsEditorKey } from '@/application/types';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
+import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
 import { cn } from '@/lib/utils';
@@ -42,6 +43,7 @@ function RelationItems({
 
   const [docGuid, setDocGuid] = useState<string | null>(null);
   const [databaseDoc, setDatabaseDoc] = useState<YDoc | null>(null);
+  const [relatedField, setRelatedField] = useState<YDatabaseField | undefined>();
 
   const [rowIds, setRowIds] = useState([] as string[]);
 
@@ -152,15 +154,15 @@ function RelationItems({
       const fieldId = getPrimaryFieldId(database);
 
       setRelatedFieldId(fieldId);
+      setRelatedField(fieldId ? database?.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined);
       setNoAccess(!fieldId);
     };
 
     observerEvent();
 
-    sharedRoot.observe(observerEvent);
-    return () => {
-      sharedRoot.unobserve(observerEvent);
-    };
+    // The primary field can change type without replacing the database map.
+    // Share the deep observer across rendered relation cells for this database.
+    return subscribeSharedYjsDeep(sharedRoot, observerEvent);
   }, [databaseDoc]);
 
   return (
@@ -201,7 +203,7 @@ function RelationItems({
                 relatedViewId ? 'cursor-pointer hover:text-text-action' : ''
               }`}
             >
-              <RelationPrimaryValue fieldId={relatedFieldId} rowDoc={rowDoc} />
+              <RelationPrimaryValue field={relatedField} fieldId={relatedFieldId} rowDoc={rowDoc} />
             </div>
           );
         })

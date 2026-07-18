@@ -1,38 +1,28 @@
-import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
+import { getCellFieldTypeContext } from '@/application/database-yjs/cell.field-type';
+import { isCellDataTransformable, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { parseChecklistFlexible, parseSelectOptionTypeOptions, stringifyChecklist } from '@/application/database-yjs/fields';
+import {
+  parseChecklistFlexible,
+  parseSelectOptionTypeOptions,
+  stringifyChecklist,
+} from '@/application/database-yjs/fields';
 import { getDateCellStr } from '@/application/database-yjs/fields/date/utils';
 import { parseTimeStringToMs, parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
-import { User, YDatabaseCell, YDatabaseField, YjsDatabaseKey } from '@/application/types';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import { User, YDatabaseCell, YDatabaseField } from '@/application/types';
 
 /**
  * Decode a cell to a string representation for rendering/filtering/sorting,
  * using the cell's recorded source type when it differs from the field's current type.
  */
-export function decodeCellToText(
-  cell: YDatabaseCell,
-  field: YDatabaseField,
-  currentUser?: User
-): string {
-  const targetType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const sourceType = Number(cell.get(YjsDatabaseKey.source_field_type) ?? cell.get(YjsDatabaseKey.field_type)) as FieldType;
-  const data = cell.get(YjsDatabaseKey.data);
+export function decodeCellToText(cell: YDatabaseCell, field: YDatabaseField, currentUser?: User): string {
+  const { storedType, targetType } = getCellFieldTypeContext(cell, field);
 
-  // If types match and data is string/number, return raw string. Skip the
-  // fast-path for select/checklist: their cell data stores option IDs, but
-  // for rendering / filtering we need the option names.
-  const needsOptionResolution =
-    targetType === FieldType.SingleSelect ||
-    targetType === FieldType.MultiSelect ||
-    targetType === FieldType.Checklist;
+  if (storedType !== targetType && !isCellDataTransformable(storedType, targetType)) return '';
 
-  if (
-    sourceType === targetType &&
-    !needsOptionResolution &&
-    (typeof data === 'string' || typeof data === 'number')
-  ) {
-    return String(data);
-  }
+  const parsedCell = parseYDatabaseCellToCell(cell, field);
+  const data = parsedCell.data;
 
   switch (targetType) {
     case FieldType.Checkbox:
@@ -63,16 +53,6 @@ export function decodeCellToText(
     case FieldType.MultiSelect: {
       if (typeof data !== 'string') return '';
       const options = parseSelectOptionTypeOptions(field)?.options || [];
-      // If source was checklist, map selected IDs->names
-      const checklist = parseChecklistFlexible(data);
-
-      if (checklist && sourceType === FieldType.Checklist) {
-        const names = checklist.selectedOptionIds
-          ?.map((id) => options.find((opt) => opt.id === id || opt.name === id)?.name)
-          .filter(Boolean);
-
-        if (names?.length) return names.join(',');
-      }
 
       return data
         .split(',')
@@ -82,20 +62,11 @@ export function decodeCellToText(
     }
 
     case FieldType.DateTime: {
-      const dateCell = parseYDatabaseDateTimeCellToCell(cell);
-
-      return getDateCellStr({ cell: dateCell, field, currentUser });
+      return getDateCellStr({ cell: parsedCell as DateTimeCell, field, currentUser });
     }
 
-    case FieldType.Relation: {
-      if (data && typeof data === 'object' && 'toJSON' in data) {
-        const ids = (data as { toJSON: () => unknown }).toJSON();
-
-        return Array.isArray(ids) ? ids.join(',') : '';
-      }
-
-      return Array.isArray(data) ? data.join(',') : '';
-    }
+    case FieldType.Relation:
+      return getRelationRowIdsFromCell(cell).join(',');
 
     default:
       return typeof data === 'string' || typeof data === 'number' ? String(data) : '';
@@ -110,20 +81,15 @@ export function decodeCellForSort(
   field: YDatabaseField,
   currentUser?: User
 ): string | number | boolean {
-  const targetType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  const sourceType = Number(cell.get(YjsDatabaseKey.source_field_type) ?? cell.get(YjsDatabaseKey.field_type)) as FieldType;
-  const data = cell.get(YjsDatabaseKey.data);
+  const { storedType, targetType } = getCellFieldTypeContext(cell, field);
+
+  if (storedType !== targetType && !isCellDataTransformable(storedType, targetType)) return '';
+
+  const data = parseYDatabaseCellToCell(cell, field).data;
 
   switch (targetType) {
-    case FieldType.Relation: {
-      if (data && typeof data === 'object' && 'toJSON' in data) {
-        const ids = (data as { toJSON: () => unknown }).toJSON();
-
-        return Array.isArray(ids) ? ids.join(',') : '';
-      }
-
-      return Array.isArray(data) ? data.join(',') : '';
-    }
+    case FieldType.Relation:
+      return getRelationRowIdsFromCell(cell).join(',');
 
     case FieldType.Checkbox:
       if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
@@ -156,18 +122,6 @@ export function decodeCellForSort(
     case FieldType.MultiSelect: {
       if (typeof data !== 'string') return '';
       const options = parseSelectOptionTypeOptions(field)?.options || [];
-
-      // For checklist source, use selected names
-      if (sourceType === FieldType.Checklist) {
-        const checklist = parseChecklistFlexible(data);
-
-        if (checklist) {
-          return checklist.selectedOptionIds
-            ?.map((id) => options.find((opt) => opt.id === id || opt.name === id)?.name)
-            .filter(Boolean)
-            .join(',') ?? '';
-        }
-      }
 
       return data
         .split(',')
