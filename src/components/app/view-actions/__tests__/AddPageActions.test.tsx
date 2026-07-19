@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { View, ViewLayout } from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
@@ -65,12 +66,7 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
     onClick?: () => void;
     [key: string]: unknown;
   }) => (
-    <button
-      data-testid={props['data-testid'] as string | undefined}
-      disabled={disabled}
-      onClick={onClick}
-      type='button'
-    >
+    <button data-testid={props['data-testid'] as string | undefined} disabled={disabled} onClick={onClick} type='button'>
       {children}
     </button>
   ),
@@ -170,5 +166,19 @@ describe('AddPageActions AI chat context', () => {
     });
     expect(mockGetView).toHaveBeenCalledWith('page-id');
     expect(mockToView).toHaveBeenCalledWith('chat-id');
+  });
+
+  it('does not initialize or navigate to an AI chat when page creation fails', async () => {
+    mockAddPage.mockRejectedValueOnce(new Error('create failed'));
+
+    render(<AddPageActions view={view({ view_id: 'space-id', extra: { is_space: true } })} />);
+    fireEvent.click(screen.getByTestId('add-ai-chat-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('create failed'));
+
+    expect(mockChatRequest).not.toHaveBeenCalled();
+    expect(mockUpdateChatSettings).not.toHaveBeenCalled();
+    expect(mockToView).not.toHaveBeenCalled();
+    expect(mockOpenPageModal).not.toHaveBeenCalled();
   });
 });

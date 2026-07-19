@@ -25,14 +25,6 @@ export interface SearchDocumentPageResponse {
   has_more: boolean;
 }
 
-export interface SearchResult {
-  object_id: string;
-  content: string;
-  database_view_id?: string | null;
-  database_id?: string | null;
-  database_row_id?: string | null;
-}
-
 export interface SearchSummary {
   content: string;
   highlights?: string;
@@ -87,30 +79,10 @@ export async function searchWorkspace(workspaceId: string, query: string) {
   return payload.map((item) => item.object_id);
 }
 
-export async function generateSearchSummary(
-  workspaceId: string,
-  query: string,
-  searchResults: SearchDocumentResponseItem[]
-) {
+export async function generateSearchSummary(workspaceId: string, query: string) {
   const url = `/api/search/${workspaceId}/summary`;
-  const search_results: SearchResult[] = searchResults
-    .filter((item) => item.content)
-    .slice(0, SEARCH_RESULT_LIMIT)
-    .map((item) => ({
-      object_id: item.object_id,
-      content: item.content,
-      ...(item.database_view_id ? { database_view_id: item.database_view_id } : {}),
-      ...(item.database_id ? { database_id: item.database_id } : {}),
-      ...(item.database_row_id ? { database_row_id: item.database_row_id } : {}),
-    }));
-
-  if (search_results.length === 0) {
-    return { summaries: [] };
-  }
-
   const payload = {
     query,
-    search_results,
     only_context: true,
   };
   const headers = { 'x-request-time': Date.now().toString() };

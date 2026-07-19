@@ -22,6 +22,7 @@ describe('SearchAIOverview', () => {
     render(
       <SearchAIOverview
         askingAI={false}
+        canAskFollowUp={true}
         loading={false}
         query='revenue'
         summary={{ content: 'Revenue increased.' }}
@@ -49,5 +50,22 @@ describe('SearchAIOverview', () => {
         ownerDatabaseId: 'database-id',
       },
     ]);
+  });
+
+  it('does not offer a follow-up when cited sources cannot be routed safely', () => {
+    render(
+      <SearchAIOverview
+        askingAI={false}
+        canAskFollowUp={false}
+        loading={false}
+        query='revenue'
+        summary={{ content: 'Revenue increased.' }}
+        sources={[]}
+        onAskAI={jest.fn()}
+        onClose={jest.fn()}
+      />
+    );
+
+    expect(screen.queryByText('Ask follow-up')).toBeNull();
   });
 });
