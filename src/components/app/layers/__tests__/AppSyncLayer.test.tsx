@@ -5,15 +5,14 @@ import { APP_EVENTS } from '@/application/constants';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { AppSyncLayer } from '@/components/app/layers/AppSyncLayer';
-import { useAppflowyWebSocket, useBroadcastChannel, useSync } from '@/components/ws';
+import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import type { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import type { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import type { messages } from '@/proto/messages';
 
 jest.mock('@/components/ws', () => ({
-  useAppflowyWebSocket: jest.fn(),
-  useBroadcastChannel: jest.fn(),
   useSync: jest.fn(),
+  useWorkspaceRealtimeTransport: jest.fn(),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -44,18 +43,24 @@ jest.mock('@/application/db', () => ({
   },
 }));
 
-const mockUseAppflowyWebSocket = useAppflowyWebSocket as jest.Mock;
-const mockUseBroadcastChannel = useBroadcastChannel as jest.Mock;
 const mockUseSync = useSync as jest.Mock;
+const mockUseWorkspaceRealtimeTransport = useWorkspaceRealtimeTransport as jest.Mock;
 
 // Stable per-connection pieces, matching the real (memoized) hook behaviour:
 // these keep their identity across messages — only the container object and
 // lastMessage change when a message arrives.
 const stableWsSendMessage = jest.fn();
 const stableWsReconnect = jest.fn();
+const stableSendBestEffort = jest.fn();
 const stableBcValue: BroadcastChannelType = {
   lastBroadcastMessage: null,
   postMessage: jest.fn(),
+  postDurableMessage: jest.fn(),
+  subscribeProtocolMessages: jest.fn(),
+  postOutboxReady: jest.fn(),
+  subscribeOutboxReady: jest.fn(),
+  postTransportSignal: jest.fn(),
+  subscribeTransportSignals: jest.fn(),
 };
 const stableSyncValue = {
   registerSyncContext: jest.fn(),
@@ -129,9 +134,13 @@ describe('AppSyncLayer per-message churn', () => {
     consumerRenderCount = 0;
     websocketStatusEmits = 0;
     latestWebSocketReadyState = undefined;
-    mockUseBroadcastChannel.mockReturnValue(stableBcValue);
     mockUseSync.mockReturnValue(stableSyncValue);
-    mockUseAppflowyWebSocket.mockReturnValue(createWsValue(null));
+    mockUseWorkspaceRealtimeTransport.mockReturnValue({
+      webSocket: createWsValue(null),
+      broadcastChannel: stableBcValue,
+      canSendToServer: true,
+      sendBestEffort: stableSendBestEffort,
+    });
   });
 
   // Reproduces the fan-out bug: an incoming collab message produces a new
@@ -144,7 +153,12 @@ describe('AppSyncLayer per-message churn', () => {
 
     // Simulate a message arriving: same connection (stable functions and
     // readyState), new container identity with a new lastMessage.
-    mockUseAppflowyWebSocket.mockReturnValue(createWsValue({ collabMessage: {} } as unknown as messages.Message));
+    mockUseWorkspaceRealtimeTransport.mockReturnValue({
+      webSocket: createWsValue({ collabMessage: {} } as unknown as messages.Message),
+      broadcastChannel: stableBcValue,
+      canSendToServer: true,
+      sendBestEffort: stableSendBestEffort,
+    });
     rerenderLayer(rerender);
 
     expect(consumerRenderCount).toBe(rendersAfterMount);
@@ -157,7 +171,12 @@ describe('AppSyncLayer per-message churn', () => {
 
     const emitsAfterMount = websocketStatusEmits;
 
-    mockUseAppflowyWebSocket.mockReturnValue(createWsValue({ collabMessage: {} } as unknown as messages.Message));
+    mockUseWorkspaceRealtimeTransport.mockReturnValue({
+      webSocket: createWsValue({ collabMessage: {} } as unknown as messages.Message),
+      broadcastChannel: stableBcValue,
+      canSendToServer: true,
+      sendBestEffort: stableSendBestEffort,
+    });
     rerenderLayer(rerender);
 
     expect(websocketStatusEmits).toBe(emitsAfterMount);
@@ -168,7 +187,12 @@ describe('AppSyncLayer per-message churn', () => {
 
     const emitsAfterMount = websocketStatusEmits;
 
-    mockUseAppflowyWebSocket.mockReturnValue({ ...createWsValue(null), readyState: 3 });
+    mockUseWorkspaceRealtimeTransport.mockReturnValue({
+      webSocket: { ...createWsValue(null), readyState: 3 },
+      broadcastChannel: stableBcValue,
+      canSendToServer: true,
+      sendBestEffort: stableSendBestEffort,
+    });
     rerenderLayer(rerender);
 
     expect(websocketStatusEmits).toBe(emitsAfterMount + 1);

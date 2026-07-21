@@ -141,6 +141,32 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(0);
   });
 
+  it('notifies the socket owner only after the outbox row is durable', async () => {
+    const onPersisted = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      isReady: () => false,
+      onPersisted,
+    });
+
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('draft'),
+    });
+
+    expect(onPersisted).not.toHaveBeenCalled();
+
+    await flushPromises();
+
+    expect(onPersisted).toHaveBeenCalledWith(workspaceId, objectId);
+    expect(mockRecords).toHaveLength(1);
+  });
+
   it('drains queued records when startDrainAll runs after the transport becomes ready', async () => {
     let ready = false;
     const send = jest.fn();

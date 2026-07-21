@@ -27,12 +27,14 @@ interface DrainConfig {
   /**
    * Best-effort send used only when the durable IndexedDB enqueue fails
    * (quota exhausted, private-mode, upgrade blocked). Unlike `send` this
-   * SHOULD tolerate a closed socket by buffering in the WebSocket library's
-   * in-memory retry queue (e.g. react-use-websocket's `keep=true`), so the
-   * edit at least reaches the server after reconnect while this tab is alive.
+   * SHOULD tolerate the absence of a direct open socket by buffering on the
+   * owning socket or relaying to the elected socket owner, so the edit can
+   * still reach the server while this browser session is alive.
    */
   sendBestEffort?: OutboxSender;
   isReady: OutboxReady;
+  /** Notifies the elected socket owner after the IndexedDB row is durable. */
+  onPersisted?: (workspaceId: string, objectId: string) => void;
 }
 
 let drainConfig: DrainConfig | null = null;
@@ -134,6 +136,10 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
   let sentImmediately = false;
 
   const activeConfig = drainConfig;
+  const notifyPersisted =
+    activeConfig?.userId === enqueueUserId && activeConfig.workspaceId === enqueueWorkspaceId
+      ? activeConfig.onPersisted
+      : undefined;
 
   if (
     activeConfig &&
@@ -156,6 +162,16 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
 
   addPromise
     .then(async (id) => {
+      try {
+        notifyPersisted?.(enqueueWorkspaceId, record.objectId);
+      } catch (error) {
+        Log.warn('[outbox] durable-update notification failed', {
+          workspaceId: enqueueWorkspaceId,
+          objectId: record.objectId,
+          error,
+        });
+      }
+
       if (sentImmediately) {
         if (typeof id === 'number') {
           try {
@@ -194,11 +210,7 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
       // comparison would spuriously treat those rebuilds as session switches.
       const activeConfig = drainConfig;
 
-      if (
-        !activeConfig ||
-        activeConfig.userId !== enqueueUserId ||
-        activeConfig.workspaceId !== enqueueWorkspaceId
-      ) {
+      if (!activeConfig || activeConfig.userId !== enqueueUserId || activeConfig.workspaceId !== enqueueWorkspaceId) {
         Log.warn('[outbox] fallback skipped: session changed since enqueue', {
           objectId: record.objectId,
           enqueueUserId,
@@ -311,6 +323,11 @@ export function startDrainAll() {
   });
 }
 
+/** Wakes the configured transport for one object after another tab persists it. */
+export function startDrainObject(objectId: string) {
+  scheduleDrain(objectId);
+}
+
 interface WaitForDrainOptions {
   /** Max time to wait for drain completion before resolving. Default 5s. */
   timeoutMs?: number;
@@ -327,14 +344,12 @@ interface WaitForDrainOptions {
  * doc state through an alternate channel (HTTP batch) — the Yjs handshake
  * on reconnect will still reconcile any records left behind.
  */
-export async function waitForDrain(
-  objectIds?: string[],
-  opts?: WaitForDrainOptions,
-): Promise<boolean> {
+export async function waitForDrain(objectIds?: string[], opts?: WaitForDrainOptions): Promise<boolean> {
   const timeoutMs = opts?.timeoutMs ?? 5_000;
   const pollIntervalMs = opts?.pollIntervalMs ?? 150;
   const start = Date.now();
-  const ids = objectIds ?? (drainConfig ? await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId) : []);
+  const ids =
+    objectIds ?? (drainConfig ? await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId) : []);
 
   if (ids.length === 0) return true;
 
@@ -354,9 +369,7 @@ export async function waitForDrain(
     if (!userId || !workspaceId) return false;
 
     const remaining = await Promise.all(
-      ids.map((id) =>
-        db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).count(),
-      ),
+      ids.map((id) => db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).count())
     );
 
     if (remaining.every((count) => count === 0)) return true;
@@ -470,10 +483,7 @@ export async function deleteOutboxByObjectId(objectId: string): Promise<void> {
       return;
     }
 
-    await db.sync_outbox
-      .where('[userId+workspaceId+objectId]')
-      .equals([userId, workspaceId, objectId])
-      .delete();
+    await db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, objectId]).delete();
   } finally {
     suppressedObjects.delete(objectId);
   }
@@ -492,7 +502,7 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string):
 }
 
 function buildUpdateMessage(
-  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector'>,
+  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector'>
 ): messages.IMessage {
   return {
     collabMessage: {
@@ -552,12 +562,11 @@ async function drainObject(objectId: string): Promise<void> {
   }
 }
 
-// Note: we deliberately do NOT use `navigator.locks.request(..., { ifAvailable: true })`
-// to coordinate drains across tabs. That approach silently skipped the drain
-// body when another tab held the lock, stranding records until some later
-// trigger re-scheduled them. Each tab now drains its own schedule; duplicate
-// sends are harmless because Yjs updates are idempotent and the post-send
-// `bulkDelete` on already-deleted ids is a no-op.
+// Cross-tab ownership lives in AppSyncLayer: only the WebSocket leader exposes
+// an OPEN drain transport, and followers wake it after their IndexedDB add is
+// durable. Keeping locks out of this low-level loop avoids the old `ifAvailable`
+// failure mode that silently skipped work. Browsers without coordinated socket
+// ownership retain the safe idempotent duplicate-send fallback.
 
 async function drainObjectWhileReady(objectId: string): Promise<void> {
   // Snapshot the drain config at loop entry. If the user switches workspace
@@ -588,9 +597,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
     const firstRecord = records[0];
     const lastRecord = records[records.length - 1];
 
-    const merged = records.length === 1
-      ? firstRecord.payload
-      : Y.mergeUpdates(records.map((r) => r.payload));
+    const merged = records.length === 1 ? firstRecord.payload : Y.mergeUpdates(records.map((r) => r.payload));
     const collabType = lastRecord.collabType as Types;
     const version = lastRecord.version;
     // The merged payload spans from the first queued edit to the last, so its

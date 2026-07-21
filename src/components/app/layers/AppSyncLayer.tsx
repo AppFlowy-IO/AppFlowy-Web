@@ -9,7 +9,7 @@ import { CollabService, UserService } from '@/application/services/domains';
 import { getTokenParsed } from '@/application/session/token';
 import { clearDrainConfig, configureDrain, setCurrentSession, startDrainAll } from '@/application/sync-outbox';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
-import { useAppflowyWebSocket, useBroadcastChannel, useSync } from '@/components/ws';
+import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -51,15 +51,14 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     }
   }, [eventEmitter]);
 
-  // Initialize WebSocket connection - currentWorkspaceId and service are guaranteed to exist when this component renders
-  const webSocket = useAppflowyWebSocket({
+  // The auth layer mounts this component only after selecting a workspace.
+  // Transport ownership, failover, and cross-tab relaying stay encapsulated in
+  // one hook so this layer only coordinates application sync concerns.
+  const { webSocket, broadcastChannel, canSendToServer, sendBestEffort } = useWorkspaceRealtimeTransport({
     workspaceId: currentWorkspaceId!,
     clientId: CollabService.getClientId(),
     deviceId: CollabService.getDeviceId(),
   });
-
-  // Initialize broadcast channel for multi-tab communication
-  const broadcastChannel = useBroadcastChannel(`workspace:${currentWorkspaceId!}`);
 
   // Initialize sync context for collaborative editing
   const { registerSyncContext, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
@@ -104,7 +103,8 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // round-trip (matches the behaviour of the pre-outbox `emit` callback).
   const wsSendMessage = webSocket.sendMessage;
   const wsReadyState = webSocket.readyState;
-  const bcPostMessage = broadcastChannel.postMessage;
+  const bcPostDurableMessage = broadcastChannel.postDurableMessage;
+  const bcPostOutboxReady = broadcastChannel.postOutboxReady;
 
   // Live readyState for the drain send callback. The closure capture
   // `wsReadyState` reflects the value at render time, but a drain can run
@@ -149,7 +149,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       // refresh). The drain catches send failures and leaves outbox records
       // in place for retry.
       send: (message) => {
-        if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) {
+        if (!canSendToServer || wsReadyStateRef.current !== WS_READY_STATE_OPEN) {
           throw new Error('[outbox] WS not OPEN at send time');
         }
 
@@ -158,23 +158,32 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       // Sibling-tab fan-out — runs synchronously on every enqueue, regardless
       // of WS readiness, so local edits propagate across tabs even during a
       // reconnect.
-      broadcast: bcPostMessage,
-      // Best-effort fallback when the durable IDB enqueue fails. Uses
-      // `keep=true` so react-use-websocket buffers in-memory until reconnect;
-      // lost on refresh/crash, but better than silently dropping edits in
-      // the quota/private-mode/blocked-IDB failure mode.
-      sendBestEffort: (message) => wsSendMessage(message, true),
-      isReady: () => wsReadyStateRef.current === WS_READY_STATE_OPEN,
+      broadcast: bcPostDurableMessage,
+      // Best-effort fallback when the durable IDB enqueue fails. The transport
+      // buffers on the leader socket or forwards a follower update to the
+      // leader over BroadcastChannel.
+      sendBestEffort,
+      isReady: () => canSendToServer && wsReadyStateRef.current === WS_READY_STATE_OPEN,
+      onPersisted: bcPostOutboxReady,
     });
 
-    if (wsReadyState === WS_READY_STATE_OPEN) {
+    if (canSendToServer && wsReadyState === WS_READY_STATE_OPEN) {
       startDrainAll();
     }
 
     return () => {
       clearDrainConfig();
     };
-  }, [currentUserId, currentWorkspaceId, wsSendMessage, wsReadyState, bcPostMessage]);
+  }, [
+    currentUserId,
+    currentWorkspaceId,
+    wsSendMessage,
+    wsReadyState,
+    bcPostDurableMessage,
+    bcPostOutboxReady,
+    canSendToServer,
+    sendBestEffort,
+  ]);
 
   // Handle user profile change notifications
   // This provides automatic UI updates when user profile changes occur via WebSocket.
@@ -188,7 +197,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // 6. All components using currentUser automatically re-render with new data
   //
   // Multi-tab Support:
-  // - Active tab: WebSocket → useSync → this handler → database update
+  // - Leader tab: WebSocket → useSync → this handler → database update
   // - Other tabs: BroadcastChannel → useSync → this handler → database update
   // - Result: All tabs show updated profile simultaneously
   //
@@ -397,7 +406,15 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       syncAllToServer,
       scheduleDeferredCleanup,
     }),
-    [eventEmitter, registerSyncContext, revertCollabVersion, awarenessMap, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
+    [
+      eventEmitter,
+      registerSyncContext,
+      revertCollabVersion,
+      awarenessMap,
+      flushAllSync,
+      syncAllToServer,
+      scheduleDeferredCleanup,
+    ]
   );
 
   return <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>;
