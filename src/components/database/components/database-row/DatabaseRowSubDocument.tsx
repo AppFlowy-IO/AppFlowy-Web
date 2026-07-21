@@ -313,6 +313,18 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           sampleText,
         });
 
+        // loadRowDocument can resolve with an empty local doc when the server
+        // fetch failed (e.g. the row document doesn't exist yet). Binding to it
+        // would permanently show an empty area, so report failure and let the
+        // retry/create flow handle it.
+        if (!document) {
+          Log.warn('[DatabaseRowSubDocument] loaded doc has no document structure; will retry', {
+            rowId,
+            documentId,
+          });
+          return false;
+        }
+
         setDoc(doc);
         docReadyRef.current = true;
         rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
@@ -428,14 +440,25 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         try {
           Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId, requireServerReady });
           docState = await createRowDocument(documentId, rowDocumentSource);
-          Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
-            documentId,
-            docStateSize: docState?.length ?? 0,
-          });
         } catch (e) {
           Log.error('[DatabaseRowSubDocument] createRowDocument failed', e);
           return false;
         }
+
+        // createRowDocument swallows API errors and returns null (e.g. the server
+        // hasn't persisted a freshly created row yet). Treat that as a failure so
+        // the caller schedules a retry instead of binding to a structureless doc.
+        if (!docState) {
+          Log.warn('[DatabaseRowSubDocument] createRowDocument returned no doc state; will retry', {
+            documentId,
+          });
+          return false;
+        }
+
+        Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
+          documentId,
+          docStateSize: docState.length,
+        });
 
         // Use the server-created doc_state as the only source of default document structure.
         if (docState && docState.length > 0) {

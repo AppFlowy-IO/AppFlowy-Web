@@ -220,7 +220,13 @@ test.describe('Move Page Restrictions', () => {
     });
 
     await expect(newDatabaseDialog).toBeVisible({ timeout: 15000 });
+    // Escape can be swallowed by whatever is focused inside the modal (title
+    // input, embedded grid). Fall back to clicking the backdrop, mirroring
+    // duplicate-test-helpers' modal close pattern.
     await page.keyboard.press('Escape');
+    if (await newDatabaseDialog.isVisible().catch(() => false)) {
+      await page.mouse.click(10, 10);
+    }
     await expect(newDatabaseDialog).toBeHidden({ timeout: 10000 });
 
     // 3) Expand the document to see the database container in sidebar
