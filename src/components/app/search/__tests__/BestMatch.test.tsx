@@ -146,6 +146,14 @@ describe('BestMatch', () => {
     renderBestMatch('show my tasks');
 
     await waitFor(() => expect(mockGenerateSearchSummary).toHaveBeenCalledWith('workspace-id', 'show my tasks'));
+    await waitFor(() =>
+      expect(mockSearchWorkspaceDocumentPage).toHaveBeenCalledWith(
+        'workspace-id',
+        'show my tasks',
+        0,
+        expect.stringMatching(/^best-match-keyword:/)
+      )
+    );
     await waitFor(() => expect(mockGetMultipleViews).toHaveBeenCalledWith('workspace-id', ['row-id'], 0));
 
     expect(mockOverviewSources).toEqual([]);

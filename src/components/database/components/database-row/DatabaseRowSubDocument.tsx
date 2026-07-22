@@ -611,9 +611,22 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         retryLoadTimerRef.current = null;
 
-        // After max retries, create the document on the server. Do not initialize a local
-        // synced document here; the server doc_state is the source of the default structure.
-        if (!retryingEmptyDocument && retryCount >= MAX_RETRIES) {
+        if (retryCount >= MAX_RETRIES) {
+          // Empty documents already attempted server creation on every retry.
+          // Stop here so a permanently rejected row cannot keep issuing an
+          // orphan-creation request every two seconds while the modal is open.
+          if (retryingEmptyDocument) {
+            Log.warn('[DatabaseRowSubDocument] max retries reached; row document creation rejected', {
+              rowId,
+              documentId,
+              retryCount,
+            });
+            return;
+          }
+
+          // For non-empty documents, make one final create attempt after the
+          // bounded load retries. The server doc_state remains the only source
+          // of the default document structure.
           const localHasContent = await hasLocalDocContent(documentId);
 
           if (localHasContent) {
@@ -632,7 +645,11 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           const created = await handleCreateDocument(documentId, true);
 
           if (!created && !cancelled) {
-            scheduleRetry();
+            Log.warn('[DatabaseRowSubDocument] final row document creation attempt rejected', {
+              rowId,
+              documentId,
+              retryCount,
+            });
           }
 
           return;

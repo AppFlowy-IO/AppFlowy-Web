@@ -1,6 +1,6 @@
 import { executeAPIRequest, getAxios } from '@/application/services/js-services/http/core';
 
-import { generateSearchSummary } from '../misc-api';
+import { generateSearchSummary, searchWorkspaceDocumentPage } from '../misc-api';
 
 jest.mock('@/application/services/js-services/http/core', () => ({
   executeAPIRequest: jest.fn(),
@@ -41,5 +41,33 @@ describe('generateSearchSummary', () => {
     expect(payload).not.toHaveProperty('search_results');
     expect(payload).not.toHaveProperty('object_ids');
     expect(payload).not.toHaveProperty('retrieval_mode');
+  });
+});
+
+describe('searchWorkspaceDocumentPage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('forwards the caller stream id so keyword and summary retrieval stay isolated', async () => {
+    const get = jest.fn();
+
+    jest.mocked(getAxios).mockReturnValue({ get } as never);
+
+    await searchWorkspaceDocumentPage('workspace-id', 'show my tasks', 0, 'keyword-stream-id');
+
+    const request = jest.mocked(executeAPIRequest).mock.calls[0][0];
+
+    await request();
+
+    expect(get).toHaveBeenCalledWith(
+      '/api/search/workspace-id/page',
+      expect.objectContaining({
+        headers: {
+          'x-request-time': expect.any(String),
+          'x-request-stream-id': 'keyword-stream-id',
+        },
+      })
+    );
   });
 });

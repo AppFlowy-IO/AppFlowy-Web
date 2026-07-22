@@ -55,8 +55,18 @@ export async function searchWorkspaceDocuments(workspaceId: string, query: strin
   );
 }
 
-export async function searchWorkspaceDocumentPage(workspaceId: string, query: string, offset = 0) {
+export async function searchWorkspaceDocumentPage(
+  workspaceId: string,
+  query: string,
+  offset = 0,
+  requestStreamId?: string
+) {
   const url = `/api/search/${workspaceId}/page`;
+  const headers: Record<string, string> = { 'x-request-time': Date.now().toString() };
+
+  if (requestStreamId) {
+    headers['x-request-stream-id'] = requestStreamId;
+  }
 
   return executeAPIRequest<SearchDocumentPageResponse>(() =>
     getAxios()?.get<APIResponse<SearchDocumentPageResponse>>(url, {
@@ -68,7 +78,7 @@ export async function searchWorkspaceDocumentPage(workspaceId: string, query: st
         mode: 'keyword',
         score: SEARCH_SCORE_THRESHOLD,
       },
-      headers: { 'x-request-time': Date.now().toString() },
+      headers,
     })
   );
 }
