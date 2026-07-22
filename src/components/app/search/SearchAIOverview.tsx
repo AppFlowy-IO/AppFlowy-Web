@@ -25,6 +25,7 @@ export interface SearchOverviewSource {
 
 interface SearchAIOverviewProps {
   askingAI: boolean;
+  canAskFollowUp: boolean;
   loading: boolean;
   query: string;
   sources: SearchOverviewSource[];
@@ -205,6 +206,7 @@ function AskAIButton({ askingAI, query, onAskAI }: { askingAI: boolean; query: s
 
 export function SearchAIOverview({
   askingAI,
+  canAskFollowUp,
   loading,
   query,
   sources,
@@ -246,26 +248,28 @@ export function SearchAIOverview({
         sources={sources}
         onClose={onClose}
       />
-      <button
-        type='button'
-        disabled={askingAI}
-        className={cn(
-          'mt-3 inline-flex h-8 w-36 items-center justify-center gap-1.5 rounded-[16px] border border-border-primary px-3 py-1.5 text-sm font-medium leading-[22px] text-text-primary',
-          'hover:bg-fill-content-hover disabled:cursor-default disabled:opacity-60'
-        )}
-        onClick={() =>
-          onAskAI(
-            sources.map((source) => ({
-              ragId: source.ragId,
-              ownerViewId: source.ownerViewId,
-              ownerDatabaseId: source.ownerDatabaseId,
-            }))
-          )
-        }
-      >
-        <ChatAIPageIcon className='h-5 w-5 shrink-0 text-icon-primary' />
-        {t('commandPalette.aiAskFollowUp', { defaultValue: 'Ask follow-up' })}
-      </button>
+      {canAskFollowUp && (
+        <button
+          type='button'
+          disabled={askingAI}
+          className={cn(
+            'mt-3 inline-flex h-8 w-36 items-center justify-center gap-1.5 rounded-[16px] border border-border-primary px-3 py-1.5 text-sm font-medium leading-[22px] text-text-primary',
+            'hover:bg-fill-content-hover disabled:cursor-default disabled:opacity-60'
+          )}
+          onClick={() =>
+            onAskAI(
+              sources.map((source) => ({
+                ragId: source.ragId,
+                ownerViewId: source.ownerViewId,
+                ownerDatabaseId: source.ownerDatabaseId,
+              }))
+            )
+          }
+        >
+          <ChatAIPageIcon className='h-5 w-5 shrink-0 text-icon-primary' />
+          {t('commandPalette.aiAskFollowUp', { defaultValue: 'Ask follow-up' })}
+        </button>
+      )}
     </div>
   );
 }

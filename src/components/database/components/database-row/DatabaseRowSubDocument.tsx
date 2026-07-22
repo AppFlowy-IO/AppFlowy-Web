@@ -313,6 +313,18 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           sampleText,
         });
 
+        // loadRowDocument can resolve with an empty local doc when the server
+        // fetch failed (e.g. the row document doesn't exist yet). Binding to it
+        // would permanently show an empty area, so report failure and let the
+        // retry/create flow handle it.
+        if (!document) {
+          Log.warn('[DatabaseRowSubDocument] loaded doc has no document structure; will retry', {
+            rowId,
+            documentId,
+          });
+          return false;
+        }
+
         setDoc(doc);
         docReadyRef.current = true;
         rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
@@ -428,14 +440,25 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         try {
           Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId, requireServerReady });
           docState = await createRowDocument(documentId, rowDocumentSource);
-          Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
-            documentId,
-            docStateSize: docState?.length ?? 0,
-          });
         } catch (e) {
           Log.error('[DatabaseRowSubDocument] createRowDocument failed', e);
           return false;
         }
+
+        // createRowDocument swallows API errors and returns null (e.g. the server
+        // hasn't persisted a freshly created row yet). Treat that as a failure so
+        // the caller schedules a retry instead of binding to a structureless doc.
+        if (!docState) {
+          Log.warn('[DatabaseRowSubDocument] createRowDocument returned no doc state; will retry', {
+            documentId,
+          });
+          return false;
+        }
+
+        Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
+          documentId,
+          docStateSize: docState.length,
+        });
 
         // Use the server-created doc_state as the only source of default document structure.
         if (docState && docState.length > 0) {
@@ -570,7 +593,17 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         retryCount++;
 
-        const retried = await handleOpenDocument(documentId);
+        // A newly-created row can reach this component before its row collab has
+        // propagated to the server. In that case the initial create request is
+        // rejected because the server cannot resolve the row yet. Retrying a
+        // load first is both unnecessary (the meta already says the document is
+        // empty) and slow enough to keep the editor skeleton visible for the
+        // entire retry window, so retry creation directly after propagation has
+        // had another chance to complete.
+        const retryingEmptyDocument = isDocumentEmptyResolved === true;
+        const retried = retryingEmptyDocument
+          ? await handleCreateDocument(documentId, false)
+          : await handleOpenDocument(documentId);
 
         if (retried || cancelled) {
           return;
@@ -580,7 +613,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         // After max retries, create the document on the server. Do not initialize a local
         // synced document here; the server doc_state is the source of the default structure.
-        if (retryCount >= MAX_RETRIES) {
+        if (!retryingEmptyDocument && retryCount >= MAX_RETRIES) {
           const localHasContent = await hasLocalDocContent(documentId);
 
           if (localHasContent) {

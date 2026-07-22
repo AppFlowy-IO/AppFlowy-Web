@@ -418,7 +418,14 @@ export async function insertLinkedGridViaSlash(
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await openSlashMenuInEditor(page, editor, line);
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+      const linkedGridOption = page.getByTestId('slash-menu-linkedGrid');
+
+      await expect(linkedGridOption).toBeVisible({ timeout: 10000 });
+      await linkedGridOption.scrollIntoViewIfNeeded();
+      // Do not force this click. The slash menu scrolls the selected option into
+      // view, and a forced pointer click can land on the adjacent inline-grid
+      // option while that animation is still settling.
+      await linkedGridOption.click();
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
 
       const loadingText = page.getByText('Loading...');
@@ -438,17 +445,39 @@ export async function insertLinkedGridViaSlash(
 
       const matchCount = await popover.getByText(databaseName, { exact: false }).count();
       if (matchCount > 0) {
-        await popover.getByText(databaseName, { exact: false }).first().click({ force: true });
-        await page.waitForTimeout(2000);
+        const databaseOption = popover.getByText(databaseName, { exact: false }).first();
+
+        await databaseOption.scrollIntoViewIfNeeded();
+        const [response] = await Promise.all([
+          page.waitForResponse(
+            (candidate) =>
+              candidate.request().method() === 'POST' &&
+              new URL(candidate.url()).pathname.endsWith(`/page-view/${docViewId}/database-view`),
+            { timeout: 30000 }
+          ),
+          databaseOption.click(),
+        ]);
+
+        if (!response.ok()) {
+          throw new Error(`Linked database view creation failed with HTTP ${response.status()}`);
+        }
+
+        await expect(databaseBlocks(editor)).toHaveCount(initialBlockCount + 1, { timeout: 30000 });
         return;
       }
     } catch (e) {
       lastError = e;
-      // Fall through to success detection + cleanup below
+      // Fall through to state validation + cleanup below.
     }
 
-    if ((await databaseBlocks(editor).count()) > initialBlockCount) {
-      return;
+    const currentBlockCount = await databaseBlocks(editor).count();
+
+    if (currentBlockCount !== initialBlockCount) {
+      const cause = lastError instanceof Error ? `: ${lastError.message}` : '';
+
+      throw new Error(
+        `Linked grid insertion changed the database block count before a linked view was confirmed${cause}`
+      );
     }
 
     if (attempt === 2) {
