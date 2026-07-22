@@ -1,5 +1,6 @@
+import { EditorProvider } from '@appflowyinc/editor';
 import Popover from '@mui/material/Popover';
-import { Fragment, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
@@ -10,6 +11,7 @@ import { ReactComponent as ToolbarLinkIcon } from '@/assets/icons/m_toolbar_link
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useToView } from '@/components/app/app.hooks';
+import { AnswerMd } from '@/components/chat/components/chat-messages/answer-md';
 import { cn } from '@/lib/utils';
 
 export interface SearchOverviewSource {
@@ -37,70 +39,43 @@ interface SearchAIOverviewProps {
   onClose: () => void;
 }
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function HighlightedSummary({
+function MarkdownSummary({
   content,
-  highlights,
-  query,
   sources,
   onClose,
 }: {
   content: string;
-  highlights?: string;
-  query: string;
   sources: SearchOverviewSource[];
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-  const highlightText = (highlights || query).trim();
   const isLong = content.length > 520;
-  const parts = useMemo(() => {
-    if (!highlightText) return [content];
-
-    return content.split(new RegExp(`(${escapeRegExp(highlightText)})`, 'ig'));
-  }, [content, highlightText]);
   const showReference = sources.length > 0 && (!isLong || expanded);
 
   return (
     <>
       <div
-        className='whitespace-pre-wrap break-words text-sm leading-[22px] text-text-primary'
-        style={
-          !expanded && isLong
-            ? {
-                display: '-webkit-box',
-                WebkitBoxOrient: 'vertical',
-                WebkitLineClamp: 5,
-                overflow: 'hidden',
-              }
-            : undefined
-        }
+        className={cn(
+          'break-words text-sm leading-[22px] text-text-primary',
+          !expanded && isLong && 'max-h-[110px] overflow-hidden'
+        )}
       >
-        {parts.map((part, index) =>
-          highlightText && part.toLowerCase() === highlightText.toLowerCase() ? (
-            <mark key={`${part}-${index}`} className='bg-fill-theme-select px-0.5 text-text-primary'>
-              {part}
-            </mark>
-          ) : (
-            <Fragment key={`${part}-${index}`}>{part}</Fragment>
-          )
-        )}
-        {showReference && (
-          <button
-            type='button'
-            aria-label={t('commandPalette.aiOverviewSource', { defaultValue: 'Reference sources' })}
-            className='ml-1 inline-flex h-[15px] w-[21px] items-center justify-center rounded-[6px] bg-secondary align-middle text-icon-primary hover:bg-secondary'
-            onClick={(event) => setAnchorEl(event.currentTarget)}
-          >
-            <ToolbarLinkIcon className='h-2.5 w-2.5' />
-          </button>
-        )}
+        <EditorProvider>
+          <AnswerMd mdContent={content} />
+        </EditorProvider>
       </div>
+      {showReference && (
+        <button
+          type='button'
+          aria-label={t('commandPalette.aiOverviewSource', { defaultValue: 'Reference sources' })}
+          className='mt-1 inline-flex h-[15px] w-[21px] items-center justify-center rounded-[6px] bg-secondary align-middle text-icon-primary hover:bg-secondary'
+          onClick={(event) => setAnchorEl(event.currentTarget)}
+        >
+          <ToolbarLinkIcon className='h-2.5 w-2.5' />
+        </button>
+      )}
       {isLong && !expanded && (
         <button
           type='button'
@@ -241,13 +216,7 @@ export function SearchAIOverview({
         <AISearchingIcon className='h-5 w-5 shrink-0' />
         <span>{t('commandPalette.aiOverview', { defaultValue: 'AI overview' })}</span>
       </div>
-      <HighlightedSummary
-        content={summary.content}
-        highlights={summary.highlights}
-        query={query}
-        sources={sources}
-        onClose={onClose}
-      />
+      <MarkdownSummary content={summary.content} sources={sources} onClose={onClose} />
       {canAskFollowUp && (
         <button
           type='button'
