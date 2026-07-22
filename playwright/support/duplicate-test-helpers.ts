@@ -1,4 +1,5 @@
 import { expect, Locator, Page } from '@playwright/test';
+import * as Y from 'yjs';
 import {
   AddPageSelectors,
   BlockSelectors,
@@ -280,6 +281,83 @@ export function databaseBlocks(editor: Locator): Locator {
   return editor.locator(BlockSelectors.blockSelector('grid'));
 }
 
+async function getServerDocumentDatabaseBlockCount(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string
+): Promise<number> {
+  const [, workspaceId] = new URL(page.url()).pathname.split('/').filter(Boolean);
+
+  if (!workspaceId) return -1;
+
+  const token = await page.evaluate(() => localStorage.getItem('af_auth_token'));
+
+  if (!token) return -1;
+
+  let encodedCollab: number[] | null = null;
+
+  try {
+    const url = new URL(`/api/workspace/${workspaceId}/page-view/${docViewId}`, apiOrigin);
+
+    url.searchParams.set('_t', Date.now().toString());
+    const response = await page.request.get(url.toString(), {
+      failOnStatusCode: false,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Cache-Control': 'no-cache',
+      },
+    });
+
+    if (!response.ok()) return -1;
+
+    const payload = (await response.json()) as {
+      data?: { data?: { encoded_collab?: number[] } };
+    };
+
+    encodedCollab = payload.data?.data?.encoded_collab ?? null;
+  } catch {
+    return -1;
+  }
+
+  if (!encodedCollab) return -1;
+
+  const doc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(doc, new Uint8Array(encodedCollab));
+    const document = doc.getMap('data').get('document') as Y.Map<unknown> | undefined;
+    const blocks = document?.get('blocks') as Y.Map<Y.Map<unknown>> | undefined;
+    let count = 0;
+
+    blocks?.forEach((block) => {
+      if (block.get('ty') === 'grid') {
+        count++;
+      }
+    });
+
+    return count;
+  } catch {
+    return -1;
+  } finally {
+    doc.destroy();
+  }
+}
+
+async function waitForDocumentDatabaseBlocksOnServer(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string,
+  expectedCount: number
+): Promise<void> {
+  await expect
+    .poll(() => getServerDocumentDatabaseBlockCount(page, apiOrigin, docViewId), {
+      timeout: 30000,
+      intervals: [250, 500, 1000],
+      message: `Expected document ${docViewId} to persist ${expectedCount} database block(s) before duplication`,
+    })
+    .toBe(expectedCount);
+}
+
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
   let slateEditor = editor.locator('[data-slate-editor="true"]').first();
 
@@ -462,7 +540,11 @@ export async function insertLinkedGridViaSlash(
           throw new Error(`Linked database view creation failed with HTTP ${response.status()}`);
         }
 
-        await expect(databaseBlocks(editor)).toHaveCount(initialBlockCount + 1, { timeout: 30000 });
+        const expectedBlockCount = initialBlockCount + 1;
+        const apiOrigin = new URL(response.url()).origin;
+
+        await expect(databaseBlocks(editor)).toHaveCount(expectedBlockCount, { timeout: 30000 });
+        await waitForDocumentDatabaseBlocksOnServer(page, apiOrigin, docViewId, expectedBlockCount);
         return;
       }
     } catch (e) {

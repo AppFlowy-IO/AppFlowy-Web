@@ -120,6 +120,15 @@ function canLoadMoreSearchResults(page: SearchDocumentPageResponse, requestedOff
   return Boolean(page.has_more && typeof page.next_offset === 'number' && page.next_offset !== requestedOffset);
 }
 
+function createSearchStreamId(prefix: string): string {
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  return `${prefix}:${id}`;
+}
+
 function BestMatch({
   onClose,
   searchValue,
@@ -145,6 +154,7 @@ function BestMatch({
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const searchSeqRef = useRef(0);
+  const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
 
   const buildSearchItems = useCallback(
     async (results: SearchDocumentResponseItem[]) => {
@@ -219,7 +229,12 @@ function BestMatch({
         : null;
 
       try {
-        const page = await SearchService.searchWorkspaceDocumentPage(currentWorkspaceId, searchTerm, 0);
+        const page = await SearchService.searchWorkspaceDocumentPage(
+          currentWorkspaceId,
+          searchTerm,
+          0,
+          keywordSearchStreamId
+        );
 
         if (searchSeqRef.current !== searchSeq) return;
 
@@ -269,7 +284,7 @@ function BestMatch({
         }
       }
     },
-    [aiEnabled, buildSearchItems, currentWorkspaceId, outline]
+    [aiEnabled, buildSearchItems, currentWorkspaceId, keywordSearchStreamId, outline]
   );
 
   const handleLoadMore = useCallback(async () => {
@@ -280,7 +295,12 @@ function BestMatch({
     setLoadingMore(true);
 
     try {
-      const page = await SearchService.searchWorkspaceDocumentPage(currentWorkspaceId, searchValue, nextOffset);
+      const page = await SearchService.searchWorkspaceDocumentPage(
+        currentWorkspaceId,
+        searchValue,
+        nextOffset,
+        keywordSearchStreamId
+      );
 
       if (searchSeqRef.current !== searchSeq) return;
 
@@ -302,7 +322,17 @@ function BestMatch({
         setLoadingMore(false);
       }
     }
-  }, [buildSearchItems, currentWorkspaceId, hasMore, loading, loadingMore, nextOffset, searchResults, searchValue]);
+  }, [
+    buildSearchItems,
+    currentWorkspaceId,
+    hasMore,
+    keywordSearchStreamId,
+    loading,
+    loadingMore,
+    nextOffset,
+    searchResults,
+    searchValue,
+  ]);
 
   const debounceSearch = useMemo(() => {
     return debounce(handleSearch, 300);
