@@ -1,7 +1,8 @@
 import EventEmitter from 'events';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
+import { bindSyncContext } from '@/application/services/js-services/sync-protocol';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
@@ -13,6 +14,8 @@ import { useCollabVersionRevert } from './sync/useCollabVersionRevert';
 import { useSyncContextLifecycle } from './sync/useSyncContextLifecycle';
 import { useWorkspaceNotifications } from './sync/useWorkspaceNotifications';
 import { SyncContextType } from './sync/types';
+
+const WS_READY_STATE_OPEN = 1;
 
 // Re-export types so existing consumer import paths continue to work
 export type { RegisterSyncContext, SyncContextType } from './sync/types';
@@ -208,6 +211,29 @@ export const useSync = (
   // tear it down prematurely.
   const { registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup } =
     useSyncContextLifecycle(refs, sendMessage, postMessage, notifyLocalEdit, notifyManifestSync);
+
+  // A reopened socket has no knowledge of messages this tab missed while it
+  // was disconnected. Re-bind every live document so the server and client
+  // exchange current state vectors and reconcile their manifests. This is not
+  // a full registration: existing observers and owner ref-counts stay intact.
+  const previousReadyStateRef = useRef(readyState);
+  const hasOpenedRef = useRef(readyState === WS_READY_STATE_OPEN);
+
+  useEffect(() => {
+    const previousReadyState = previousReadyStateRef.current;
+
+    previousReadyStateRef.current = readyState;
+    if (readyState !== WS_READY_STATE_OPEN || previousReadyState === WS_READY_STATE_OPEN) return;
+
+    if (!hasOpenedRef.current) {
+      // initSync already emitted the initial bind, which the transport queues
+      // while connecting. Only later OPEN transitions need another bind.
+      hasOpenedRef.current = true;
+      return;
+    }
+
+    refs.registeredContexts.current.forEach((context) => bindSyncContext(context));
+  }, [readyState, refs]);
 
   // ── Incoming collab messages ─────────────────────────────────────────
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
