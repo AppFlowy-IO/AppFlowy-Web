@@ -14,7 +14,15 @@ import { openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
-import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  LoadRowDocumentOptions,
+  Types,
+  ViewLayout,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+  YSharedRoot,
+} from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 import * as Y from 'yjs';
@@ -33,6 +41,8 @@ export interface OpenViewOptions {
   databaseId?: string | null;
   forceFetch?: boolean;
 }
+
+const DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS = 6;
 
 // ============================================================================
 // Layout to CollabType Mapping
@@ -370,8 +380,13 @@ export function getDatabaseIdFromDoc(doc: YDoc): string | null {
  *
  * @param workspaceId - The workspace ID
  * @param documentId - The row sub-document ID
+ * @param options - Controls the bounded server fetch attempts
  */
-export async function openRowSubDocument(workspaceId: string, documentId: string): Promise<ViewLoaderResult> {
+export async function openRowSubDocument(
+  workspaceId: string,
+  documentId: string,
+  options: LoadRowDocumentOptions = {}
+): Promise<ViewLoaderResult> {
   const startedAt = Date.now();
 
   Log.debug('[ViewLoader] openRowSubDocument start', { workspaceId, documentId });
@@ -426,10 +441,10 @@ export async function openRowSubDocument(workspaceId: string, documentId: string
   // Retry with backoff — the server-side worker may need a moment to create
   // the document after a row duplication.
   if (!fromCache) {
-    const MAX_RETRIES = 6;
+    const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? DEFAULT_ROW_DOCUMENT_MAX_ATTEMPTS));
     let fetched = false;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         await fetchAndApply(workspaceId, documentId, doc);
         fetched = true;
@@ -438,11 +453,11 @@ export async function openRowSubDocument(workspaceId: string, documentId: string
         Log.debug('[ViewLoader] rowSubDoc fetch failed', {
           documentId,
           attempt,
-          maxRetries: MAX_RETRIES,
+          maxAttempts,
           error: e instanceof Error ? e.message : String(e),
         });
 
-        if (attempt < MAX_RETRIES) {
+        if (attempt < maxAttempts) {
           await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }

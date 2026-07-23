@@ -19,6 +19,7 @@ import { dataStringTOJson } from '@/application/slate-yjs/utils/yjs';
 import {
   BlockType,
   CollabOrigin,
+  LoadRowDocumentOptions,
   Types,
   YDatabaseCell,
   YDatabaseField,
@@ -264,7 +265,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   );
 
   const handleOpenDocument = useCallback(
-    async (documentId: string): Promise<boolean> => {
+    async (documentId: string, options?: LoadRowDocumentOptions): Promise<boolean> => {
       Log.debug('[DatabaseRowSubDocument] handleOpenDocument start', { rowId, documentId });
       setLoading(true);
       try {
@@ -276,7 +277,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return false;
         }
 
-        const doc = await loadRowDocument(documentId);
+        const doc = await loadRowDocument(documentId, options);
 
         if (!doc) {
           Log.debug('[DatabaseRowSubDocument] loadRowDocument returned null', { documentId });
@@ -747,22 +748,22 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             return;
           }
 
-          const success = await handleOpenDocument(documentId);
+          // A positive existence check means the collab object is already
+          // present. Do one read attempt, then repair its row-document
+          // registration and open the returned state instead of waiting
+          // through the duplication-oriented backoff loop.
+          const success = await handleOpenDocument(documentId, { maxAttempts: 1 });
 
           if (!success) {
-            if (createRowDocument) {
-              try {
-                Log.debug('[DatabaseRowSubDocument] createRowDocument after load failure', {
-                  rowId,
-                  documentId,
-                });
-                await createRowDocument(documentId, rowDocumentSource);
-              } catch {
-                // Ignore; we'll retry loading below.
-              }
-            }
+            Log.debug('[DatabaseRowSubDocument] repairing row document after load failure', {
+              rowId,
+              documentId,
+            });
+            const repaired = await handleCreateDocument(documentId, true);
 
-            scheduleRetry();
+            if (!repaired && !cancelled) {
+              scheduleRetry();
+            }
           }
 
           return;
@@ -795,8 +796,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     checkIfRowDocumentExists,
     isDocumentEmptyResolved,
     hasLocalDocContent,
-    createRowDocument,
-    rowDocumentSource,
     rowId,
     doc,
   ]);

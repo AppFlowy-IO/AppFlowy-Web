@@ -24,6 +24,7 @@ import {
   DatabaseRelations,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   RowId,
@@ -70,7 +71,7 @@ export interface Database2Props {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
