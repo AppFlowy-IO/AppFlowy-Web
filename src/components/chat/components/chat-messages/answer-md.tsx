@@ -1,17 +1,22 @@
-import { Editor, useEditor } from '@appflowyinc/editor';
+import { AppFlowyEditor, Editor, useEditor } from '@appflowyinc/editor';
 import { useEffect } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 import { useEditorContext } from '@/components/chat/provider/editor-provider';
 
-export function AnswerMd({ mdContent, id }: { mdContent: string; id: number }) {
-  const editor = useEditor();
+function RegisterMessageEditor({ editor, id }: { editor: AppFlowyEditor; id: number }) {
   const { setEditor: setMessageEditor } = useEditorContext();
 
   useEffect(() => {
     setMessageEditor(id, editor);
   }, [editor, id, setMessageEditor]);
+
+  return null;
+}
+
+export function AnswerMd({ mdContent, id }: { mdContent: string; id?: number }) {
+  const editor = useEditor();
 
   useEffect(() => {
     if (!mdContent) return;
@@ -24,14 +29,17 @@ export function AnswerMd({ mdContent, id }: { mdContent: string; id: number }) {
   }, [editor, mdContent]);
 
   return (
-    <ErrorBoundary
-      fallback={
-        <Alert variant={'destructive'}>
-          <AlertDescription>Failed to render content</AlertDescription>
-        </Alert>
-      }
-    >
-      <Editor readOnly />
-    </ErrorBoundary>
+    <>
+      {id !== undefined && <RegisterMessageEditor editor={editor} id={id} />}
+      <ErrorBoundary
+        fallback={
+          <Alert variant={'destructive'}>
+            <AlertDescription>Failed to render content</AlertDescription>
+          </Alert>
+        }
+      >
+        <Editor readOnly />
+      </ErrorBoundary>
+    </>
   );
 }

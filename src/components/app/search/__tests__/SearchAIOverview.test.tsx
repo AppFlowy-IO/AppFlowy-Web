@@ -2,6 +2,18 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { SearchAIOverview } from '@/components/app/search/SearchAIOverview';
 
+const mockAnswerMd = jest.fn(({ mdContent }: { mdContent: string }) => (
+  <div data-testid='ai-overview-markdown'>{mdContent}</div>
+));
+
+jest.mock('@appflowyinc/editor', () => ({
+  EditorProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
+jest.mock('@/components/chat/components/chat-messages/answer-md', () => ({
+  AnswerMd: (props: { mdContent: string }) => mockAnswerMd(props),
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (_key: string, options?: { defaultValue?: string }) => options?.defaultValue || _key }),
 }));
@@ -16,6 +28,30 @@ jest.mock('@/components/_shared/view-icon/PageIcon', () => ({
 }));
 
 describe('SearchAIOverview', () => {
+  beforeEach(() => {
+    mockAnswerMd.mockClear();
+  });
+
+  it('renders the complete overview with the shared Markdown editor', () => {
+    render(
+      <SearchAIOverview
+        askingAI={false}
+        canAskFollowUp={false}
+        loading={false}
+        query='revenue'
+        summary={{ content: '# Revenue\n\n**Increased.**' }}
+        sources={[]}
+        onAskAI={jest.fn()}
+        onClose={jest.fn()}
+      />
+    );
+
+    expect(mockAnswerMd).toHaveBeenCalledWith({
+      mdContent: '# Revenue\n\n**Increased.**',
+    });
+    expect(screen.getByTestId('ai-overview-markdown')).toBeTruthy();
+  });
+
   it('passes the raw row RAG ID together with its database owner', () => {
     const onAskAI = jest.fn();
 
