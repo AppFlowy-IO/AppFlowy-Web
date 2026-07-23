@@ -12,7 +12,7 @@ import {
   collabIndexedDBExists,
 } from '@/application/db';
 import * as httpApi from '@/application/services/js-services/http/http_api';
-import { handleMessage } from '@/application/services/js-services/sync-protocol';
+import { handleMessage, type SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, User, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -256,6 +256,122 @@ const resetCommonMocks = () => {
   mockedCollabFullSyncBatch.mockReset();
   mockedRevertCollabVersion.mockReset();
 };
+
+describe('useSync reconnect binding', () => {
+  beforeEach(() => {
+    jest.useRealTimers();
+    resetCommonMocks();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not bind registered documents twice when the websocket opens for the first time', () => {
+    const ws = {
+      ...createWs(),
+      readyState: WebSocket.CONNECTING,
+    } as AppflowyWebSocketType;
+    const bc = createBroadcastChannel();
+    const doc = createDoc('03030303-0303-4303-8303-030303030303');
+    const { result, rerender, unmount } = renderHook(() =>
+      useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId)
+    );
+    const sendMessage = ws.sendMessage as jest.Mock;
+    const postMessage = bc.postMessage as jest.Mock;
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      ws.readyState = WebSocket.OPEN;
+      rerender();
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('starts a fresh manifest exchange for every registered document when the websocket reopens', () => {
+    const ws = {
+      ...createWs(),
+      readyState: WebSocket.OPEN,
+    } as AppflowyWebSocketType;
+    const bc = createBroadcastChannel();
+    const docA = createDoc('01010101-0101-4101-8101-010101010101');
+    const docB = createDoc('02020202-0202-4202-8202-020202020202');
+
+    docA.getMap('root').set('value', 'a');
+    docB.getMap('root').set('value', 'b');
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+    let contextA: SyncContext | undefined;
+
+    act(() => {
+      contextA = result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
+      result.current.registerSyncContext({ doc: docB, collabType: Types.DatabaseRow });
+    });
+
+    contextA!.lastMessageId = { timestamp: 42, counter: 7 };
+    const sendMessage = ws.sendMessage as jest.Mock;
+    const postMessage = bc.postMessage as jest.Mock;
+
+    sendMessage.mockClear();
+    postMessage.mockClear();
+
+    act(() => {
+      ws.readyState = WebSocket.CLOSED;
+      rerender();
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      ws.readyState = WebSocket.OPEN;
+      rerender();
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(sendMessage.mock.calls.map(([message]) => message.collabMessage.objectId)).toEqual([docA.guid, docB.guid]);
+    expect(sendMessage.mock.calls[0][0]).toEqual({
+      collabMessage: {
+        objectId: docA.guid,
+        collabType: Types.Document,
+        syncRequest: {
+          stateVector: Y.encodeStateVector(docA),
+          lastMessageId: { timestamp: 42, counter: 7 },
+          version: docA.version,
+        },
+      },
+    });
+    expect(sendMessage.mock.calls[1][0]).toEqual({
+      collabMessage: {
+        objectId: docB.guid,
+        collabType: Types.DatabaseRow,
+        syncRequest: {
+          stateVector: Y.encodeStateVector(docB),
+          lastMessageId: { timestamp: 0, counter: 0 },
+          version: docB.version,
+        },
+      },
+    });
+
+    rerender();
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+
+    unmount();
+    docA.destroy();
+    docB.destroy();
+  });
+});
 
 describe('useSync deferred cleanup', () => {
   beforeEach(() => {

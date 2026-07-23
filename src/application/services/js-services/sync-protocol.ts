@@ -73,6 +73,52 @@ export enum UpdateFlags {
   Lib0v2 = 1,
 }
 
+/**
+ * Bind an existing sync context to the current realtime connection.
+ *
+ * The state-vector request starts a manifest exchange with the server. Unlike
+ * {@link initSync}, this function does not attach Y.Doc or awareness observers,
+ * so it is safe to call again whenever the WebSocket reopens.
+ */
+export const bindSyncContext = (ctx: SyncContext): void => {
+  const { doc, awareness, emit, collabType, lastMessageId } = ctx;
+
+  if (!doc) {
+    throw new Error('SyncContext must have a Y.Doc instance.');
+  }
+
+  Log.debug('[sync] binding context with manifest exchange', {
+    objectId: doc.guid,
+    collabType,
+    version: doc.version,
+  });
+  emit({
+    collabMessage: {
+      objectId: doc.guid,
+      collabType,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(doc),
+        lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
+        version: doc.version,
+      },
+    },
+  });
+
+  if (awareness) {
+    const allClients = Array.from(awareness.getStates().keys());
+
+    emit({
+      collabMessage: {
+        objectId: doc.guid,
+        collabType,
+        awarenessUpdate: {
+          payload: awarenessProtocol.encodeAwarenessUpdate(awareness, allClients),
+        },
+      },
+    });
+  }
+};
+
 const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void => {
   const { doc, emit } = ctx;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
@@ -176,7 +222,7 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
  */
 export const initSync = (ctx: SyncContext) => {
   ctx.doc = ctx.doc || ctx.awareness?.doc;
-  const { doc, awareness, emit, collabType, lastMessageId } = ctx;
+  const { doc, awareness, emit, collabType } = ctx;
 
   if (!doc) {
     throw new Error('SyncContext must have a Y.Doc instance.');
@@ -231,20 +277,6 @@ export const initSync = (ctx: SyncContext) => {
   doc.on('update', onUpdate);
   doc.on('destroy', onDestroy);
 
-  // emit initial sync request to the server
-  Log.debug('[Version] initSync sending initial syncRequest: objectId=%s, version=%s', ctx.doc.guid, ctx.doc.version);
-  emit({
-    collabMessage: {
-      objectId: ctx.doc.guid,
-      collabType: ctx.collabType,
-      syncRequest: {
-        stateVector: Y.encodeStateVector(ctx.doc),
-        lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
-        version: ctx.doc.version,
-      },
-    },
-  });
-
   if (awareness) {
     onAwarenessChange = ({ added, updated, removed }: AwarenessEvent, _: string) => {
       const changedClients = added.concat(updated).concat(removed);
@@ -262,20 +294,11 @@ export const initSync = (ctx: SyncContext) => {
     };
 
     awareness.on('change', onAwarenessChange);
-
-    const allClients = Array.from(awareness.getStates().keys());
-
-    // emit initial awareness update with all the clients
-    emit({
-      collabMessage: {
-        objectId: ctx.doc.guid,
-        collabType: ctx.collabType,
-        awarenessUpdate: {
-          payload: awarenessProtocol.encodeAwarenessUpdate(awareness, allClients),
-        },
-      },
-    });
   }
+
+  // Attach observers once, then bind the document to the current connection.
+  // Reconnects call bindSyncContext directly to avoid duplicate observers.
+  bindSyncContext(ctx);
 
   // Build a single cleanup function that tears down all observers.
   // Note: we deliberately do NOT delete outbox records here — cleanup only
