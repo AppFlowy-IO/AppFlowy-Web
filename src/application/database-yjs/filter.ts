@@ -730,6 +730,14 @@ export function textFilterCheck(data: string, content: string, condition: TextFi
 }
 
 export function numberFilterCheck(data: string, content: string, condition: number) {
+  const isEmptyCondition =
+    condition === NumberFilterCondition.NumberIsEmpty ||
+    condition === NumberFilterCondition.NumberIsNotEmpty;
+
+  if (!isEmptyCondition && content.trim() === '') {
+    return true;
+  }
+
   if (isNaN(Number(data)) || isNaN(Number(content)) || data === '' || content === '') {
     if (condition === NumberFilterCondition.NumberIsEmpty) {
       return data === '';

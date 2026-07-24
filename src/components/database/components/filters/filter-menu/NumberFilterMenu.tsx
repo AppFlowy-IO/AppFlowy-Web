@@ -1,24 +1,25 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NumberFilter, NumberFilterCondition, useReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
+import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { Input } from '@/components/ui/input';
 
 function NumberFilterMenu ({ filter }: { filter: NumberFilter }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const updateFilter = useUpdateFilter();
-  const [value, setValue] = useState<string>(filter.content);
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: filter.content,
+    filterId: filter.id,
+    fieldId: filter.fieldId,
+    updateFilter,
+  });
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue(e.target.value);
-    updateFilter({
-      filterId: filter.id,
-      fieldId: filter.fieldId,
-      content: e.target.value,
-    });
+    updateValue(e.target.value);
   };
 
   const conditions = useMemo(() => {
