@@ -16,6 +16,7 @@ import {
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   RowDocumentSourcePayload,
@@ -129,7 +130,7 @@ export interface AppOperationsContextType {
   /** Check whether a row document exists (for inline row detail). */
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   /** Load an existing row document. */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /** Create a new row document (returns encoded initial state). */
   createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */

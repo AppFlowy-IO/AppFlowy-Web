@@ -20,6 +20,7 @@ import {
   DuplicatePageOperationOptions,
   TextCount,
   LoadDatabasePrompts,
+  LoadRowDocument,
   TestDatabasePromptConfig,
   Subscription,
   MentionablePerson,
@@ -76,7 +77,7 @@ export interface EditorContextState {
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   createRow?: CreateRow;
