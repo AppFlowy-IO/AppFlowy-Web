@@ -175,6 +175,43 @@ describe('useRowOrdersSelector', () => {
     });
   });
 
+  it('keeps current rows visible when a blank filter is created', async () => {
+    const fixture = createDatabaseFixture();
+    const renderedOrders: Array<string[] | undefined> = [];
+    const { result } = renderHook(
+      () => {
+        const rows = useRowOrdersSelector();
+
+        renderedOrders.push(rows?.map((row) => row.id));
+        return rows;
+      },
+      {
+        wrapper: createWrapper(fixture),
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    const renderCountBeforeFilter = renderedOrders.length;
+
+    act(() => {
+      fixture.filters.push([createTextFilter('')]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    expect(renderedOrders.slice(renderCountBeforeFilter)).not.toContain(undefined);
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+  });
+
   it('updates unconditioned row order immediately when rows are added or removed', async () => {
     const fixture = createDatabaseFixture();
     const { result } = renderHook(() => useRowOrdersSelector(), {

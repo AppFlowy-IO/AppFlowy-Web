@@ -1613,15 +1613,10 @@ export function useRowOrdersSelector() {
     };
 
     const handleSortFilterChange = () => {
-      const conditionSignature = getConditionSignature(sorts, filters);
-      const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
-
-      if (conditionSignatureRef.current !== conditionStateKey) {
-        conditionSignatureRef.current = conditionStateKey;
-        filtersAppliedRef.current = false;
-        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
-      }
-
+      // Recompute immediately so a filter change does not replace already-loaded
+      // rows with the loading placeholder. onConditionsChange still publishes
+      // the loading state when row documents genuinely need hydration.
+      onConditionsChange();
       debouncedChange();
     };
 
