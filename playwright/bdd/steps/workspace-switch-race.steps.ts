@@ -149,8 +149,10 @@ When('I reload the source workspace while its outline response is delayed', asyn
 
 When('I switch to the target workspace', async ({ page }) => {
   const state = requireState(page);
+  const source = requireSource(state);
   const target = requireTarget(state);
 
+  await installSidebarMismatchObserver(page, target.name, source.spaceName);
   await WorkspaceSelectors.dropdownTrigger(page).click();
   await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible({ timeout: 15000 });
   await workspaceItemByName(page, target.name).click();
@@ -168,14 +170,11 @@ Then('the target workspace outline is visible', async ({ page }) => {
 
 When('the delayed source workspace outline response completes', async ({ page }) => {
   const state = requireState(page);
-  const source = requireSource(state);
-  const target = requireTarget(state);
 
   if (!state.releaseDelayedRequest || !state.delayedRequestCompleted) {
     throw new Error('The delayed source outline response was not configured');
   }
 
-  await installSidebarMismatchObserver(page, target.name, source.spaceName);
   state.releaseDelayedRequest();
   await state.delayedRequestCompleted;
   await page.waitForTimeout(1500);

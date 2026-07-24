@@ -368,6 +368,8 @@ export function useWorkspaceData() {
 
   const [outline, setOutline] = useState<View[]>();
   const stableOutlineRef = useRef<View[]>([]);
+  const stableOutlineWorkspaceIdRef = useRef(currentWorkspaceId);
+  const stableOutlineWorkspaceRevisionRef = useRef(0);
   // Global folder ordering can advance from lazy subtree fetches. Root polling
   // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
@@ -375,6 +377,11 @@ export function useWorkspaceData() {
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
+  // Root loads and periodic revalidation share one latest-request-wins sequence.
+  // Forced routing is tracked separately so a background refresh can supersede
+  // outline data without leaving a root workspace URL unresolved.
+  const rootOutlineRequestSeqRef = useRef(0);
+  const latestForcedOutlineRequestSeqRef = useRef(0);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
@@ -489,9 +496,31 @@ export function useWorkspaceData() {
     return currentWorkspaceIdRef.current !== workspaceId || workspaceRevisionRef.current !== workspaceRevision;
   }, []);
 
+  const isStaleRootOutlineRequest = useCallback(
+    (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
+      return isStaleWorkspaceRequest(workspaceId, workspaceRevision) || rootOutlineRequestSeqRef.current !== requestSeq;
+    },
+    [isStaleWorkspaceRequest]
+  );
+
+  const isStaleForcedOutlineNavigation = useCallback(
+    (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
+      return (
+        isStaleWorkspaceRequest(workspaceId, workspaceRevision) ||
+        latestForcedOutlineRequestSeqRef.current !== requestSeq
+      );
+    },
+    [isStaleWorkspaceRequest]
+  );
+
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
       const workspaceRevision = workspaceRevisionRef.current;
+      const requestSeq = ++rootOutlineRequestSeqRef.current;
+
+      if (force) {
+        latestForcedOutlineRequestSeqRef.current = requestSeq;
+      }
 
       try {
         // Parallelize API calls - both are independent and can run concurrently
@@ -529,18 +558,27 @@ export function useWorkspaceData() {
           outlineWithShareWithMe = [...res.outline, shareWithMeSpace];
         }
 
-        const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+        const shouldApplyOutline = rootOutlineRequestSeqRef.current === requestSeq;
+        const shouldNavigate = force && latestForcedOutlineRequestSeqRef.current === requestSeq;
 
-        updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
-
-        if (eventEmitter) {
-          eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
+        if (!shouldApplyOutline && !shouldNavigate) {
+          return;
         }
 
-        if (!force) return;
+        if (shouldApplyOutline) {
+          const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+
+          updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
+
+          if (eventEmitter) {
+            eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
+          }
+        }
+
+        if (!shouldNavigate) return;
 
         try {
-          if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
             return;
           }
 
@@ -574,14 +612,14 @@ export function useWorkspaceData() {
               try {
                 await ViewService.get(workspaceId, lastViewId);
 
-                if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+                if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
                   return;
                 }
 
                 navigate(`/app/${workspaceId}/${lastViewId}${search}`);
                 return;
               } catch {
-                if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+                if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
                   return;
                 }
 
@@ -618,7 +656,7 @@ export function useWorkspaceData() {
                 1
               );
 
-              if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+              if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
                 return;
               }
 
@@ -648,7 +686,7 @@ export function useWorkspaceData() {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
           return;
         }
 
@@ -672,7 +710,7 @@ export function useWorkspaceData() {
         if (e.code === ERROR_CODE.INVALID_FOLDER_VIEW) {
           Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
           setTimeout(() => {
-            if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+            if (!isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
               void loadOutline(workspaceId, force);
             }
           }, 3000);
@@ -687,6 +725,8 @@ export function useWorkspaceData() {
       userWorkspaceInfo?.userId,
       replaceOutlinePreservingChildren,
       isStaleWorkspaceRequest,
+      isStaleRootOutlineRequest,
+      isStaleForcedOutlineNavigation,
     ]
   );
 
@@ -1129,17 +1169,24 @@ export function useWorkspaceData() {
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
-      const res = await ViewService.getOutline(workspaceId);
+      const requestSeq = ++rootOutlineRequestSeqRef.current;
+      const res = await ViewService.getOutline(workspaceId).catch((error) => {
+        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+          return null;
+        }
 
-      if (!res) {
-        throw new Error('App outline not found');
-      }
+        throw error;
+      });
 
-      if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
-        Log.debug('[Outline] [periodic-revalidate] skipped stale workspace response', {
+      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+        Log.debug('[Outline] [periodic-revalidate] skipped stale root response', {
           workspaceId,
         });
         return 'unchanged';
+      }
+
+      if (!res) {
+        throw new Error('App outline not found');
       }
 
       const nextFolderRid = parseFolderRid(res.folderRid);
@@ -1191,7 +1238,7 @@ export function useWorkspaceData() {
       try {
         await loadViewChildrenBatch(refreshViewIds);
       } catch (error) {
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
           Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh error', {
             workspaceId,
             refreshViewIds,
@@ -1207,7 +1254,7 @@ export function useWorkspaceData() {
         throw error;
       }
 
-      if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
         Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh response', {
           workspaceId,
           refreshViewIds,
@@ -1221,7 +1268,7 @@ export function useWorkspaceData() {
     [
       currentWorkspaceId,
       eventEmitter,
-      isStaleWorkspaceRequest,
+      isStaleRootOutlineRequest,
       loadViewChildrenBatch,
       markCachedFolderSubtreesStale,
       replaceOutlinePreservingChildren,
@@ -1709,6 +1756,8 @@ export function useWorkspaceData() {
     lastFolderRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
     lastAppliedRootOutlineFingerprintRef.current = null;
+    stableOutlineWorkspaceIdRef.current = currentWorkspaceId;
+    stableOutlineWorkspaceRevisionRef.current = workspaceRevisionRef.current;
     stableOutlineRef.current = [];
     setOutline([]);
     loadedViewIdsRef.current = new Set();
@@ -1779,8 +1828,16 @@ export function useWorkspaceData() {
     void enhancedLoadDatabaseRelations();
   }, [enhancedLoadDatabaseRelations]);
 
+  // Workspace reset effects run after commit. Gate the returned outline during
+  // render so a workspace change can never expose the previous workspace state.
+  const currentWorkspaceOutline =
+    stableOutlineWorkspaceIdRef.current === currentWorkspaceId &&
+    stableOutlineWorkspaceRevisionRef.current === workspaceRevisionRef.current
+      ? outline
+      : undefined;
+
   return {
-    outline,
+    outline: currentWorkspaceOutline,
     favoriteViews,
     recentViews,
     trashList,
