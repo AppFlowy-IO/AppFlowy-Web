@@ -425,7 +425,7 @@ function Database(props: Database2Props) {
         try {
           const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
-          return { rowId, rowKey, rowDoc };
+          return { rowId, rowDoc };
         } catch {
           return null;
         }
@@ -433,25 +433,19 @@ function Database(props: Database2Props) {
     )
       .then((results) => {
         const newEntries: Record<string, YDoc> = {};
-        const syncKeys: string[] = [];
 
         for (const result of results) {
           if (result?.rowDoc && !rowMapRef.current[result.rowId]) {
             newEntries[result.rowId] = result.rowDoc;
-            syncKeys.push(result.rowKey);
           }
         }
 
         const count = Object.keys(newEntries).length;
 
         if (count > 0) {
-          // Single setState to add all preloaded rows at once
+          // Keep seed-only rows local. ensureRow attaches realtime only when a
+          // row is actually rendered, preserving the viewport boundary.
           setRowMap((prev) => ({ ...prev, ...newEntries }));
-
-          // Defer sync binding — rows are hydrated from seeds, sync can wait
-          requestAnimationFrame(() => {
-            syncKeys.forEach((rowKey) => registerRowSync(rowKey));
-          });
         }
 
         // Open the gate — ensureRow calls can now proceed
@@ -462,7 +456,7 @@ function Database(props: Database2Props) {
         // otherwise ensureRow calls would be permanently blocked.
         gate.resolve();
       });
-  }, [getDatabaseId, getPriorityRowIds, registerRowSync]);
+  }, [getDatabaseId, getPriorityRowIds]);
 
   const ensureBlobPrefetch = useCallback(() => {
     // Skip blob prefetch in read-only mode (publish view)
