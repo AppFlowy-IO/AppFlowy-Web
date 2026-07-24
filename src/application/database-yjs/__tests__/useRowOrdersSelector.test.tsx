@@ -179,6 +179,7 @@ describe('useRowOrdersSelector', () => {
 
   it('keeps current rows visible when a blank filter is created', async () => {
     const fixture = createDatabaseFixture();
+    const filterBySpy = jest.spyOn(databaseFilter, 'filterBy');
     const renderedOrders: Array<string[] | undefined> = [];
     const { result } = renderHook(
       () => {
@@ -196,14 +197,18 @@ describe('useRowOrdersSelector', () => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
     });
 
+    filterBySpy.mockClear();
     const renderCountBeforeFilter = renderedOrders.length;
+    const rowsBeforeFilter = result.current;
 
     act(() => {
       fixture.filters.push([createTextFilter('')]);
     });
 
+    expect(result.current).toBe(rowsBeforeFilter);
     expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
     expect(renderedOrders.slice(renderCountBeforeFilter)).not.toContain(undefined);
+    expect(filterBySpy).not.toHaveBeenCalled();
 
     act(() => {
       jest.advanceTimersByTime(250);
@@ -212,6 +217,9 @@ describe('useRowOrdersSelector', () => {
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
     });
+
+    expect(filterBySpy).not.toHaveBeenCalled();
+    filterBySpy.mockRestore();
   });
 
   it('computes each filter change once', async () => {
@@ -240,6 +248,27 @@ describe('useRowOrdersSelector', () => {
 
     expect(filterBySpy).toHaveBeenCalledTimes(1);
     filterBySpy.mockRestore();
+  });
+
+  it('applies conditions that do not require an input value', async () => {
+    const fixture = createDatabaseFixture();
+    const emptyFilter = createTextFilter('');
+
+    emptyFilter.set(YjsDatabaseKey.condition, TextFilterCondition.TextIsEmpty);
+
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([emptyFilter]);
+    });
+
+    expect(result.current).toEqual([]);
   });
 
   it('updates unconditioned row order immediately when rows are added or removed', async () => {

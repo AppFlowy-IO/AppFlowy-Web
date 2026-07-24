@@ -1602,6 +1602,28 @@ describe('desktop grid filter parity', () => {
     expect(result).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[3], fixture.rowIds[5]]);
   });
 
+  it('ignores blank input filters inside OR groups', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildFilterHarness();
+    const blankTextFilter = makeDataFilter(
+      fixture.fieldIds.text,
+      FieldType.RichText,
+      TextFilterCondition.TextContains,
+      ''
+    );
+    const checkboxFilter = makeDataFilter(
+      fixture.fieldIds.checkbox,
+      FieldType.Checkbox,
+      CheckboxFilterCondition.IsChecked
+    );
+    const orGroup = makeGroupFilter(FilterType.Or, [blankTextFilter, checkboxFilter]);
+
+    expect(applyFilters(makeFilters([orGroup]))).toEqual([
+      fixture.rowIds[0],
+      fixture.rowIds[1],
+      fixture.rowIds[5],
+    ]);
+  });
+
   it('applies nested filters with mixed group order', () => {
     const { makeDataFilter, makeGroupFilter, makeFilters } = buildFilterHarness();
     const checkboxFilter = makeDataFilter(
