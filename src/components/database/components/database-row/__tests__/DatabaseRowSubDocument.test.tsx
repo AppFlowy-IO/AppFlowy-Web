@@ -1,12 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import {
-  useDatabase,
-  useDatabaseContextOptional,
-  useRowData,
-  useRowMetaSelector,
-} from '@/application/database-yjs';
+import { useDatabase, useDatabaseContextOptional, useRowData, useRowMetaSelector } from '@/application/database-yjs';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { openCollabDB } from '@/application/db';
 import { getCachedRowSubDoc, getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
@@ -47,11 +42,13 @@ jest.mock('@/components/main/app.hooks', () => ({
 }));
 
 jest.mock('@/components/_shared/skeleton/EditorSkeleton', () => ({
-  EditorSkeleton: () => <div data-testid="editor-skeleton" />,
+  EditorSkeleton: () => <div data-testid='editor-skeleton' />,
 }));
 
 jest.mock('@/components/editor', () => ({
-  Editor: () => <div data-testid="row-document-editor" />,
+  Editor: ({ viewId, doc }: { viewId: string; doc: { guid: string } }) => (
+    <div data-testid='row-document-editor' data-view-id={viewId} data-doc-id={doc.guid} />
+  ),
 }));
 
 const mockUseDatabase = useDatabase as jest.MockedFunction<typeof useDatabase>;
@@ -60,9 +57,7 @@ const mockUseDatabaseContextOptional = useDatabaseContextOptional as jest.Mocked
 >;
 const mockUseRowData = useRowData as jest.MockedFunction<typeof useRowData>;
 const mockUseRowMetaSelector = useRowMetaSelector as jest.MockedFunction<typeof useRowMetaSelector>;
-const mockUseUpdateRowMetaDispatch = useUpdateRowMetaDispatch as jest.MockedFunction<
-  typeof useUpdateRowMetaDispatch
->;
+const mockUseUpdateRowMetaDispatch = useUpdateRowMetaDispatch as jest.MockedFunction<typeof useUpdateRowMetaDispatch>;
 const mockOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
 const mockGetCachedRowSubDoc = getCachedRowSubDoc as jest.MockedFunction<typeof getCachedRowSubDoc>;
 const mockGetOrCreateRowSubDoc = getOrCreateRowSubDoc as jest.MockedFunction<typeof getOrCreateRowSubDoc>;
@@ -79,46 +74,108 @@ function createRowDocumentState(documentId: string) {
   return Y.encodeStateAsUpdate(doc);
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
+
+async function flushAsyncWork() {
+  for (let index = 0; index < 10; index++) {
+    await Promise.resolve();
+  }
+}
+
+function configureRowDocumentTest({
+  documentIds,
+  cachedDocs,
+  loadRowDocument,
+  createRowDocument,
+  checkIfRowDocumentExists,
+}: {
+  documentIds: Record<string, string>;
+  cachedDocs: Map<string, YDoc>;
+  loadRowDocument: jest.Mock;
+  createRowDocument: jest.Mock;
+  checkIfRowDocumentExists: jest.Mock;
+}) {
+  const databaseDoc = new Y.Doc({ guid: 'database-id' }) as YDoc;
+  const database = databaseDoc.getMap('database') as YDatabase;
+  const fields = new Y.Map();
+  const rows = new Map<string, YDatabaseRow>();
+
+  database.set(YjsDatabaseKey.id, 'database-id');
+  database.set(YjsDatabaseKey.fields, fields);
+
+  for (const rowId of Object.keys(documentIds)) {
+    const rowDoc = new Y.Doc({ guid: rowId });
+    const row = rowDoc.getMap('row') as YDatabaseRow;
+
+    row.set(YjsDatabaseKey.cells, new Y.Map());
+    rows.set(rowId, row);
+  }
+
+  mockUseDatabase.mockReturnValue(database);
+  mockUseRowData.mockImplementation((rowId) => rows.get(rowId));
+  mockUseRowMetaSelector.mockImplementation((rowId) => ({
+    documentId: documentIds[rowId],
+    isEmptyDocument: false,
+  }));
+  mockUseUpdateRowMetaDispatch.mockReturnValue(jest.fn());
+  mockUseCurrentWorkspaceIdOptional.mockReturnValue('workspace-id');
+  mockUseCurrentUserOptional.mockReturnValue(undefined);
+  mockGetCachedRowSubDoc.mockImplementation((documentId) => cachedDocs.get(documentId));
+  mockGetOrCreateRowSubDoc.mockImplementation(async (documentId) => {
+    const doc = cachedDocs.get(documentId);
+
+    if (!doc) throw new Error(`Missing cached document ${documentId}`);
+    return doc;
+  });
+  mockOpenCollabDB.mockImplementation(async (documentId) => {
+    const doc = cachedDocs.get(documentId);
+
+    if (!doc) throw new Error(`Missing cached document ${documentId}`);
+    return doc;
+  });
+  mockUseDatabaseContextOptional.mockReturnValue({
+    activeViewId: 'database-view-id',
+    databaseDoc,
+    databasePageId: 'database-page-id',
+    loadRowDocument,
+    createRowDocument,
+    checkIfRowDocumentExists,
+    readOnly: false,
+    rowMap: null,
+    workspaceId: 'workspace-id',
+  });
+}
+
 describe('DatabaseRowSubDocument', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('repairs and opens an existing row document immediately after one failed page fetch', async () => {
     const rowId = 'row-id';
     const documentId = 'document-id';
-    const databaseDoc = new Y.Doc({ guid: 'database-id' }) as YDoc;
-    const database = databaseDoc.getMap('database') as YDatabase;
-    const fields = new Y.Map();
-    const rowDoc = new Y.Doc({ guid: rowId });
-    const row = rowDoc.getMap('row') as YDatabaseRow;
     const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
     const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
     const createRowDocument = jest.fn().mockResolvedValue(createRowDocumentState(documentId));
     const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
 
-    database.set(YjsDatabaseKey.id, 'database-id');
-    database.set(YjsDatabaseKey.fields, fields);
-    row.set(YjsDatabaseKey.cells, new Y.Map());
-
-    mockUseDatabase.mockReturnValue(database);
-    mockUseRowData.mockReturnValue(row);
-    mockUseRowMetaSelector.mockReturnValue({
-      documentId,
-      isEmptyDocument: false,
-    });
-    mockUseUpdateRowMetaDispatch.mockReturnValue(jest.fn());
-    mockUseCurrentWorkspaceIdOptional.mockReturnValue('workspace-id');
-    mockUseCurrentUserOptional.mockReturnValue(undefined);
-    mockGetCachedRowSubDoc.mockReturnValue(cachedDoc);
-    mockGetOrCreateRowSubDoc.mockResolvedValue(cachedDoc);
-    mockOpenCollabDB.mockResolvedValue(cachedDoc);
-    mockUseDatabaseContextOptional.mockReturnValue({
-      activeViewId: 'database-view-id',
-      databaseDoc,
-      databasePageId: 'database-page-id',
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
       loadRowDocument,
       createRowDocument,
       checkIfRowDocumentExists,
-      readOnly: false,
-      rowMap: null,
-      workspaceId: 'workspace-id',
     });
 
     render(<DatabaseRowSubDocument rowId={rowId} />);
@@ -134,5 +191,94 @@ describe('DatabaseRowSubDocument', () => {
       row_id: rowId,
     });
     expect(createRowDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the one-attempt load policy when repair fails and a retry is scheduled', async () => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+    const loadRowDocument = jest.fn().mockResolvedValue(cachedDoc);
+    const createRowDocument = jest.fn().mockResolvedValue(null);
+    const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+    });
+
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+
+    await act(flushAsyncWork);
+
+    expect(loadRowDocument).toHaveBeenNthCalledWith(1, documentId, { maxAttempts: 1 });
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(1);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(2000);
+      await flushAsyncWork();
+    });
+
+    expect(loadRowDocument).toHaveBeenNthCalledWith(2, documentId, { maxAttempts: 1 });
+  });
+
+  it('ignores a stale repair response after switching rows', async () => {
+    const firstRowId = 'row-a';
+    const secondRowId = 'row-b';
+    const firstDocumentId = 'document-a';
+    const secondDocumentId = 'document-b';
+    const firstCachedDoc = new Y.Doc({ guid: firstDocumentId }) as YDoc;
+    const secondCachedDoc = new Y.Doc({ guid: secondDocumentId }) as YDoc;
+    const cachedDocs = new Map([
+      [firstDocumentId, firstCachedDoc],
+      [secondDocumentId, secondCachedDoc],
+    ]);
+    const firstRepair = createDeferred<Uint8Array | null>();
+    const loadRowDocument = jest.fn((documentId: string) => Promise.resolve(cachedDocs.get(documentId) ?? null));
+    const createRowDocument = jest.fn((documentId: string) => {
+      if (documentId === firstDocumentId) return firstRepair.promise;
+      return Promise.resolve(createRowDocumentState(documentId));
+    });
+    const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
+
+    configureRowDocumentTest({
+      documentIds: {
+        [firstRowId]: firstDocumentId,
+        [secondRowId]: secondDocumentId,
+      },
+      cachedDocs,
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+    });
+
+    const { rerender } = render(<DatabaseRowSubDocument rowId={firstRowId} />);
+
+    await waitFor(() => expect(createRowDocument).toHaveBeenCalledWith(firstDocumentId, expect.any(Object)));
+
+    rerender(<DatabaseRowSubDocument rowId={secondRowId} />);
+
+    await waitFor(() => {
+      const editor = screen.getByTestId('row-document-editor');
+
+      expect(editor.getAttribute('data-view-id')).toBe(secondDocumentId);
+      expect(editor.getAttribute('data-doc-id')).toBe(secondDocumentId);
+    });
+
+    await act(async () => {
+      firstRepair.resolve(createRowDocumentState(firstDocumentId));
+      await flushAsyncWork();
+    });
+
+    const editor = screen.getByTestId('row-document-editor');
+
+    expect(editor.getAttribute('data-view-id')).toBe(secondDocumentId);
+    expect(editor.getAttribute('data-doc-id')).toBe(secondDocumentId);
+    expect(firstCachedDoc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.document)).toBe(false);
   });
 });
