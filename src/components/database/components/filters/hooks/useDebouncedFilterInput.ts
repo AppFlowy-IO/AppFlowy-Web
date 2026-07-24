@@ -1,5 +1,5 @@
 import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export const FILTER_INPUT_DEBOUNCE_MS = 500;
 
@@ -16,6 +16,8 @@ interface UseDebouncedFilterInputParams {
   updateFilter: UpdateFilterContent;
 }
 
+type FilterInputTarget = Pick<UseDebouncedFilterInputParams, 'filterId' | 'fieldId'>;
+
 export function useDebouncedFilterInput({
   content,
   filterId,
@@ -23,22 +25,27 @@ export function useDebouncedFilterInput({
   updateFilter,
 }: UseDebouncedFilterInputParams) {
   const [value, setValue] = useState(content);
+  const updateFilterRef = useRef(updateFilter);
+
+  useEffect(() => {
+    updateFilterRef.current = updateFilter;
+  }, [updateFilter]);
+
   const debouncedUpdate = useMemo(
     () =>
-      debounce((nextContent: string) => {
-        updateFilter({
-          filterId,
-          fieldId,
+      debounce((nextContent: string, target: FilterInputTarget) => {
+        updateFilterRef.current({
+          ...target,
           content: nextContent,
         });
       }, FILTER_INPUT_DEBOUNCE_MS),
-    [fieldId, filterId, updateFilter]
+    []
   );
 
   useEffect(() => {
     debouncedUpdate.cancel();
     setValue(content);
-  }, [content, debouncedUpdate]);
+  }, [content, debouncedUpdate, fieldId, filterId]);
 
   useEffect(() => {
     return () => {
@@ -49,9 +56,9 @@ export function useDebouncedFilterInput({
   const updateValue = useCallback(
     (nextValue: string) => {
       setValue(nextValue);
-      debouncedUpdate(nextValue);
+      debouncedUpdate(nextValue, { filterId, fieldId });
     },
-    [debouncedUpdate]
+    [debouncedUpdate, fieldId, filterId]
   );
 
   return {

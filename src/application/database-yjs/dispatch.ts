@@ -3629,8 +3629,12 @@ export function useUpdateFilter() {
               return;
             }
 
-            // Update field_id (always required)
-            filter.set(YjsDatabaseKey.field_id, fieldId);
+            // fieldId identifies the filter target; field changes use a separate
+            // rebuild path. Ignore delayed updates aimed at a previous field.
+            if (filter.get(YjsDatabaseKey.field_id) !== fieldId) {
+              Log.debug('[useUpdateFilter] Skipping stale filter update', { filterId, fieldId });
+              return;
+            }
 
             // Update condition if provided
             if (condition !== undefined) {

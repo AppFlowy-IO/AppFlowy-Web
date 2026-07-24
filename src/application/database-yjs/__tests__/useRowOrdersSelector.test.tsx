@@ -10,6 +10,8 @@ import {
   TextFilterCondition,
   useRowOrdersSelector,
 } from '@/application/database-yjs';
+import { useUpdateAdvancedFilter } from '@/application/database-yjs/dispatch';
+import * as databaseFilter from '@/application/database-yjs/filter';
 import {
   RowId,
   YDatabaseField,
@@ -212,6 +214,34 @@ describe('useRowOrdersSelector', () => {
     });
   });
 
+  it('computes each filter change once', async () => {
+    const fixture = createDatabaseFixture();
+    const filterBySpy = jest.spyOn(databaseFilter, 'filterBy');
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    filterBySpy.mockClear();
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    expect(filterBySpy).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(filterBySpy).toHaveBeenCalledTimes(1);
+    filterBySpy.mockRestore();
+  });
+
   it('updates unconditioned row order immediately when rows are added or removed', async () => {
     const fixture = createDatabaseFixture();
     const { result } = renderHook(() => useRowOrdersSelector(), {
@@ -391,5 +421,30 @@ describe('useRowOrdersSelector', () => {
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
     });
+  });
+});
+
+describe('useUpdateAdvancedFilter', () => {
+  it('ignores a delayed update targeting a previous field', () => {
+    const fixture = createDatabaseFixture();
+    const filter = createTextFilter('');
+
+    fixture.filters.push([filter]);
+
+    const { result } = renderHook(() => useUpdateAdvancedFilter(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    act(() => {
+      filter.set(YjsDatabaseKey.field_id, 'replacement-field');
+      result.current({
+        filterId: 'filter-id',
+        fieldId,
+        content: 'stale value',
+      });
+    });
+
+    expect(filter.get(YjsDatabaseKey.field_id)).toBe('replacement-field');
+    expect(filter.get(YjsDatabaseKey.content)).toBe('');
   });
 });

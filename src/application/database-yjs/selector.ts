@@ -1617,7 +1617,7 @@ export function useRowOrdersSelector() {
       // rows with the loading placeholder. onConditionsChange still publishes
       // the loading state when row documents genuinely need hydration.
       onConditionsChange();
-      debouncedChange();
+      setRollupWatchVersion((prev) => prev + 1);
     };
 
     const handleFieldChange = () => {

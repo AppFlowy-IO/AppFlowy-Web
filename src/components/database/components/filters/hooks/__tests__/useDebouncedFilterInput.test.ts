@@ -80,4 +80,80 @@ describe('useDebouncedFilterInput', () => {
       content: '42',
     });
   });
+
+  it('cancels a pending value when the filter target changes', () => {
+    const updateFilter = jest.fn();
+    const { result, rerender, unmount } = renderHook(
+      ({ fieldId }) =>
+        useDebouncedFilterInput({
+          content: '',
+          filterId: 'filter-1',
+          fieldId,
+          updateFilter,
+        }),
+      {
+        initialProps: {
+          fieldId: 'field-1',
+        },
+      }
+    );
+
+    act(() => {
+      result.current.updateValue('stale value');
+    });
+
+    rerender({
+      fieldId: 'field-2',
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(FILTER_INPUT_DEBOUNCE_MS);
+    });
+
+    expect(updateFilter).not.toHaveBeenCalled();
+
+    unmount();
+
+    expect(updateFilter).not.toHaveBeenCalled();
+  });
+
+  it('uses the latest update callback without restarting the debounce', () => {
+    const firstUpdateFilter = jest.fn();
+    const latestUpdateFilter = jest.fn();
+    const { result, rerender, unmount } = renderHook(
+      ({ updateFilter }) =>
+        useDebouncedFilterInput({
+          content: '',
+          filterId: 'filter-1',
+          fieldId: 'field-1',
+          updateFilter,
+        }),
+      {
+        initialProps: {
+          updateFilter: firstUpdateFilter,
+        },
+      }
+    );
+
+    act(() => {
+      result.current.updateValue('latest value');
+    });
+
+    rerender({
+      updateFilter: latestUpdateFilter,
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(FILTER_INPUT_DEBOUNCE_MS);
+    });
+
+    expect(firstUpdateFilter).not.toHaveBeenCalled();
+    expect(latestUpdateFilter).toHaveBeenCalledWith({
+      filterId: 'filter-1',
+      fieldId: 'field-1',
+      content: 'latest value',
+    });
+
+    unmount();
+  });
 });
