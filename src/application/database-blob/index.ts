@@ -39,6 +39,7 @@ type SharedPrefetchEntry = {
   priorityRowIds: Set<string>;
   onSeedsReadyCallbacks: Set<() => void>;
   seedsReady: boolean;
+  coversFullSnapshot: boolean;
   reuseSettled?: boolean;
   settled?: boolean;
   clearWhenSettled?: boolean;
@@ -76,6 +77,30 @@ function fullSharedPrefetchKey(workspaceId: string, databaseId: string) {
 
 function sharedPrefetchKeyForOptions(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
   return options?.forceFullSync ? fullSharedPrefetchKey(workspaceId, databaseId) : sharedPrefetchKey(workspaceId, databaseId);
+}
+
+function findSharedPrefetchEntry(
+  workspaceId: string,
+  databaseId: string,
+  options?: PrefetchOptions
+): { sharedKey: string; entry?: SharedPrefetchEntry } {
+  const requestedKey = sharedPrefetchKeyForOptions(workspaceId, databaseId, options);
+  const requestedEntry = sharedPrefetchEntries.get(requestedKey);
+
+  if (requestedEntry || !options?.forceFullSync) {
+    return { sharedKey: requestedKey, entry: requestedEntry };
+  }
+
+  // A cold delta request has no RID and therefore already asks the server for
+  // the complete snapshot. A later filtered/sorted view can reuse that work.
+  const deltaKey = sharedPrefetchKey(workspaceId, databaseId);
+  const deltaEntry = sharedPrefetchEntries.get(deltaKey);
+
+  if (deltaEntry?.coversFullSnapshot) {
+    return { sharedKey: deltaKey, entry: deltaEntry };
+  }
+
+  return { sharedKey: requestedKey };
 }
 
 function sharedPrefetchEntryMatchesDatabase(sharedKey: string, databaseId: string) {
@@ -830,12 +855,13 @@ async function persistDiffToIndexedDB(
 async function fetchReadyDiff(
   workspaceId: string,
   databaseId: string,
-  options?: {
+  options: {
+    cachedRid: DatabaseBlobRowRid | null;
     forceFullSync?: boolean;
     onPendingDiff?: (diff: database_blob.DatabaseBlobDiffResponse, attempt: number) => void;
   }
 ): Promise<FetchDiffResult> {
-  const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
+  const cachedRid = options.cachedRid;
   const request = database_blob.DatabaseBlobDiffRequest.create({
     maxKnownRid: cachedRid ? { timestamp: cachedRid.timestamp, seqNo: cachedRid.seqNo } : undefined,
     version: 1,
@@ -908,8 +934,7 @@ export async function prefetchDatabaseBlobDiff(
   databaseId: string,
   options?: PrefetchOptions
 ) {
-  const sharedKey = sharedPrefetchKeyForOptions(workspaceId, databaseId, options);
-  const existingEntry = sharedPrefetchEntries.get(sharedKey);
+  const { sharedKey, entry: existingEntry } = findSharedPrefetchEntry(workspaceId, databaseId, options);
 
   if (existingEntry?.promise) {
     const canReuseSettledFullSeed = Boolean(options?.forceFullSync && existingEntry.settled && existingEntry.seedsReady);
@@ -931,10 +956,12 @@ export async function prefetchDatabaseBlobDiff(
     sharedPrefetchEntries.delete(sharedKey);
   }
 
+  const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
   const entry: SharedPrefetchEntry = {
     priorityRowIds: new Set(),
     onSeedsReadyCallbacks: new Set(),
     seedsReady: false,
+    coversFullSnapshot: cachedRid === null,
   };
 
   applyPrefetchOptions(entry, options);
@@ -978,6 +1005,7 @@ export async function prefetchDatabaseBlobDiff(
 
   const promise = (async () => {
     const { diff, ready } = await fetchReadyDiff(workspaceId, databaseId, {
+      cachedRid,
       forceFullSync: options?.forceFullSync,
       onPendingDiff: handlePendingDiff,
     });
