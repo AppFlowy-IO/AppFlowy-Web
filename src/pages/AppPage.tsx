@@ -548,6 +548,7 @@ function AppPage() {
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}
         onWordCountChange={setWordCount}

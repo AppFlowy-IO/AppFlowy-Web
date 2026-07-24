@@ -141,6 +141,48 @@ describe('select option group tests', () => {
   });
 });
 
+describe('desktop-model lazy conversion grouping', () => {
+  const databaseId = 'db-group-lazy-conversion';
+
+  it('groups a preserved text cell through the current checkbox field type', () => {
+    const fieldId = 'converted-checkbox';
+    const field = createField(fieldId, FieldType.Checkbox);
+    const rows: Row[] = [{ id: 'row-a', height: 0 }];
+    const rowMetas: Record<RowId, YDoc> = {
+      'row-a': createRowDoc('row-a', databaseId, {
+        [fieldId]: createCell(FieldType.RichText, 'true'),
+      }),
+    };
+
+    const result = groupByCheckbox(rows, rowMetas, field);
+
+    expect(result?.get('Yes')?.map((row) => row.id)).toEqual(['row-a']);
+    expect(result?.get('No')).toEqual([]);
+  });
+
+  it('resolves a preserved text value through the current select options', () => {
+    const fieldId = 'converted-select';
+    const field = createField(fieldId, FieldType.MultiSelect, {
+      options: [
+        { id: 'opt-a', name: 'Alpha', color: 0 },
+        { id: 'opt-b', name: 'Beta', color: 0 },
+      ],
+      disable_color: false,
+    });
+    const rows: Row[] = [{ id: 'row-a', height: 0 }];
+    const rowMetas: Record<RowId, YDoc> = {
+      'row-a': createRowDoc('row-a', databaseId, {
+        [fieldId]: createCell(FieldType.RichText, 'Alpha'),
+      }),
+    };
+
+    const result = groupBySelectOption(rows, rowMetas, field);
+
+    expect(result?.get('opt-a')?.map((row) => row.id)).toEqual(['row-a']);
+    expect(result?.get(fieldId)).toEqual([]);
+  });
+});
+
 describe('group by field fallback', () => {
   it('returns undefined for unsupported field types', () => {
     const fields = new Y.Map() as YDatabaseFields;

@@ -1,5 +1,5 @@
 import { AppOutlineResponse } from '@/application/services/services.type';
-import { View } from '@/application/types';
+import { CreateOrphanedViewPayload, View } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
@@ -7,7 +7,7 @@ const MAX_WORKSPACE_VIEW_SUBTREES_GET_URL_BYTES = 4096;
 const WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE = 50;
 
 export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
-  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=2`;
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=6`;
 
   return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url)).then((data) => ({
     outline: Array.isArray(data.children) ? data.children : [],
@@ -149,7 +149,7 @@ export async function getAppTrash(workspaceId: string) {
   );
 }
 
-export async function createOrphanedView(workspaceId: string, payload: { document_id: string }): Promise<Uint8Array> {
+export async function createOrphanedView(workspaceId: string, payload: CreateOrphanedViewPayload): Promise<Uint8Array> {
   const url = `/api/workspace/${workspaceId}/orphaned-view`;
 
   // Server returns doc_state as Vec<u8> which is JSON encoded as number[]

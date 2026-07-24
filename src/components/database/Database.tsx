@@ -17,15 +17,18 @@ import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
   DatabaseRelations,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   RowId,
+  RowDocumentSourcePayload,
   UIVariant,
   UpdatePagePayload,
   View,
@@ -68,12 +71,12 @@ export interface Database2Props {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   duplicateRowDocument?: (
     databaseId: string,
     sourceRowId: string,
@@ -133,6 +136,7 @@ export interface Database2Props {
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   /**
    * Delete a page/view (move to trash).
    * This is used by database tab delete to sync with the sidebar.
@@ -421,7 +425,7 @@ function Database(props: Database2Props) {
         try {
           const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
-          return { rowId, rowKey, rowDoc };
+          return { rowId, rowDoc };
         } catch {
           return null;
         }
@@ -429,25 +433,19 @@ function Database(props: Database2Props) {
     )
       .then((results) => {
         const newEntries: Record<string, YDoc> = {};
-        const syncKeys: string[] = [];
 
         for (const result of results) {
           if (result?.rowDoc && !rowMapRef.current[result.rowId]) {
             newEntries[result.rowId] = result.rowDoc;
-            syncKeys.push(result.rowKey);
           }
         }
 
         const count = Object.keys(newEntries).length;
 
         if (count > 0) {
-          // Single setState to add all preloaded rows at once
+          // Keep seed-only rows local. ensureRow attaches realtime only when a
+          // row is actually rendered, preserving the viewport boundary.
           setRowMap((prev) => ({ ...prev, ...newEntries }));
-
-          // Defer sync binding — rows are hydrated from seeds, sync can wait
-          requestAnimationFrame(() => {
-            syncKeys.forEach((rowKey) => registerRowSync(rowKey));
-          });
         }
 
         // Open the gate — ensureRow calls can now proceed
@@ -458,7 +456,7 @@ function Database(props: Database2Props) {
         // otherwise ensureRow calls would be permanently blocked.
         gate.resolve();
       });
-  }, [getDatabaseId, getPriorityRowIds, registerRowSync]);
+  }, [getDatabaseId, getPriorityRowIds]);
 
   const ensureBlobPrefetch = useCallback(() => {
     // Skip blob prefetch in read-only mode (publish view)
@@ -803,6 +801,7 @@ function Database(props: Database2Props) {
       paddingStart: props.paddingStart,
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
+      embeddedHeight,
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
@@ -821,6 +820,7 @@ function Database(props: Database2Props) {
       createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
+      duplicatePage: props.duplicatePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
@@ -843,6 +843,7 @@ function Database(props: Database2Props) {
       props.paddingStart,
       props.paddingEnd,
       _isDocumentBlock,
+      embeddedHeight,
       handleOpenRow,
       loadView,
       bindViewSync,
@@ -861,6 +862,7 @@ function Database(props: Database2Props) {
       props.createDatabaseView,
       props.updatePage,
       props.deletePage,
+      props.duplicatePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
       loadDatabaseRelations,

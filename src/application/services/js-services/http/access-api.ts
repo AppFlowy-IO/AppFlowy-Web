@@ -3,9 +3,9 @@ import {
   AFWebUser,
   GetRequestAccessInfoResponse,
   Invitation,
-  IPeopleWithAccessType,
   RequestAccessInfoStatus,
   Role,
+  ShareAccessDetails,
   View,
   Workspace,
   WorkspaceGroupViewPermission,
@@ -105,55 +105,133 @@ export async function sendRequestAccess(workspaceId: string, viewId: string) {
   );
 }
 
+async function getLegacyShareDetail(
+  workspaceId: string,
+  viewId: string,
+  ancestorViewIds: string[]
+): Promise<ShareAccessDetails> {
+  const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
+
+  return withRetry(() =>
+    executeAPIRequest<ShareAccessDetails>(() =>
+      getAxios()?.post<APIResponse<ShareAccessDetails>>(url, {
+        ancestor_view_ids: ancestorViewIds,
+      })
+    )
+  );
+}
+
+// A server that answers 404/405 for the v2 endpoint won't start supporting it
+// mid-session, so remember the outcome instead of re-failing on every call.
+let shareDetailV2Unsupported = false;
+
+const SHARE_DETAIL_CACHE_TTL_MS = 10_000;
+const shareDetailCache = new Map<string, { promise: Promise<ShareAccessDetails>; cachedAt: number }>();
+
+function invalidateShareDetailCache(workspaceId: string) {
+  // Sharing changes on one view can alter effective permissions of its
+  // descendants, so drop every cached view in the workspace.
+  for (const key of shareDetailCache.keys()) {
+    if (key.startsWith(`${workspaceId}:`)) {
+      shareDetailCache.delete(key);
+    }
+  }
+}
+
+function getErrorCode(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    const code = (error as { code: unknown }).code;
+
+    if (typeof code === 'number') return code;
+  }
+
+  return undefined;
+}
+
+async function fetchShareDetail(
+  workspaceId: string,
+  viewId: string,
+  ancestorViewIds: string[]
+): Promise<ShareAccessDetails> {
+  if (!shareDetailV2Unsupported) {
+    const params = new URLSearchParams({
+      type: 'page',
+      page_id: viewId,
+    });
+    const url = `/api/sharing/workspace/${workspaceId}/access-details/v2?${params.toString()}`;
+
+    try {
+      return await withRetry(() =>
+        executeAPIRequest<ShareAccessDetails>(() => getAxios()?.get<APIResponse<ShareAccessDetails>>(url))
+      );
+    } catch (error) {
+      const code = getErrorCode(error);
+
+      if (code === 404 || code === 405) {
+        shareDetailV2Unsupported = true;
+      }
+    }
+  }
+
+  return getLegacyShareDetail(workspaceId, viewId, ancestorViewIds);
+}
+
 export async function getShareDetail(
   workspaceId: string,
   viewId: string,
   ancestorViewIds: string[],
   signal?: AbortSignal
 ) {
-  const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
+  if (signal?.aborted) {
+    return Promise.reject({ code: -1, message: 'Request aborted' });
+  }
 
-  return withRetry(
-    () =>
-      executeAPIRequest<{
-        view_id: string;
-        shared_with: IPeopleWithAccessType[];
-        groups?: WorkspaceGroupViewPermission[];
-      }>(() =>
-        getAxios()?.post<
-          APIResponse<{
-            view_id: string;
-            shared_with: IPeopleWithAccessType[];
-            groups?: WorkspaceGroupViewPermission[];
-          }>
-        >(url, {
-          ancestor_view_ids: ancestorViewIds,
-        })
-      ),
-    { signal }
-  );
+  const key = `${workspaceId}:${viewId}`;
+  const cached = shareDetailCache.get(key);
+
+  if (cached && Date.now() - cached.cachedAt < SHARE_DETAIL_CACHE_TTL_MS) {
+    return cached.promise;
+  }
+
+  // The in-flight promise is shared between callers (share panel, view action
+  // menus), so it is not tied to any single caller's abort signal — aborted
+  // callers simply ignore the settled result.
+  const promise = fetchShareDetail(workspaceId, viewId, ancestorViewIds);
+
+  shareDetailCache.set(key, { promise, cachedAt: Date.now() });
+  promise.catch(() => {
+    if (shareDetailCache.get(key)?.promise === promise) {
+      shareDetailCache.delete(key);
+    }
+  });
+
+  return promise;
 }
 
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {
   const url = `/api/sharing/workspace/${workspaceId}/view`;
 
-  return executeAPIVoidRequest(() =>
+  await executeAPIVoidRequest(() =>
     getAxios()?.put<APIResponse>(url, {
       view_id: viewId,
       emails,
       access_level: accessLevel || AccessLevel.ReadOnly,
     })
   );
+  invalidateShareDetailCache(workspaceId);
 }
 
 export async function sharePageToGroup(workspaceId: string, viewId: string, groupId: string, accessLevel?: AccessLevel) {
   const url = `/api/workspace/${workspaceId}/views/${viewId}/group/${groupId}`;
 
-  return executeAPIRequest<WorkspaceGroupViewPermission>(() =>
+  const permission = await executeAPIRequest<WorkspaceGroupViewPermission>(() =>
     getAxios()?.post<APIResponse<WorkspaceGroupViewPermission>>(url, {
       access_level: accessLevel || AccessLevel.ReadOnly,
     })
   );
+
+  invalidateShareDetailCache(workspaceId);
+  return permission;
 }
 
 export async function sharePageToGroups(
@@ -168,24 +246,27 @@ export async function sharePageToGroups(
 export async function revokeGroupAccess(workspaceId: string, viewId: string, groupId: string) {
   const url = `/api/workspace/${workspaceId}/views/${viewId}/group/${groupId}`;
 
-  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+  await executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+  invalidateShareDetailCache(workspaceId);
 }
 
 export async function revokeAccess(workspaceId: string, viewId: string, emails: string[]) {
   const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/revoke-access`;
 
-  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { emails }));
+  await executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { emails }));
+  invalidateShareDetailCache(workspaceId);
 }
 
 export async function turnIntoMember(workspaceId: string, email: string) {
   const url = `/api/workspace/${workspaceId}/member`;
 
-  return executeAPIVoidRequest(() =>
+  await executeAPIVoidRequest(() =>
     getAxios()?.put<APIResponse>(url, {
       email,
       role: Role.Member,
     })
   );
+  invalidateShareDetailCache(workspaceId);
 }
 
 export async function getShareWithMe(workspaceId: string): Promise<View> {

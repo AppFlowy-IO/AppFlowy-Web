@@ -8,11 +8,12 @@ import { AppAuthLayer } from '@/components/app/layers/AppAuthLayer';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 const mockNavigate = jest.fn();
+let mockWorkspaceId: string | undefined;
 
 jest.mock('react-router-dom', () => ({
   useLocation: () => ({ pathname: '/login' }),
   useNavigate: () => mockNavigate,
-  useParams: () => ({}),
+  useParams: () => ({ workspaceId: mockWorkspaceId }),
 }));
 
 jest.mock('@/application/session/token', () => ({
@@ -57,6 +58,7 @@ describe('AppAuthLayer workspace info loading', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWorkspaceId = undefined;
     mockGetServerInfo.mockResolvedValue({
       enable_page_history: true,
       ai_enabled: true,
@@ -121,6 +123,61 @@ describe('AppAuthLayer workspace info loading', () => {
       await staleWorkspaceInfo.promise;
     });
 
+    expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-new');
+  });
+
+  it('does not reopen the previous URL workspace while a manual switch settles', async () => {
+    const callOrder: string[] = [];
+    let latestAuthContext: AuthInternalContextType | null = null;
+
+    mockWorkspaceId = 'workspace-old';
+    mockNavigate.mockImplementation((path: string) => {
+      callOrder.push(`navigate:${path}`);
+      mockWorkspaceId = path.split('/')[2];
+    });
+    mockOpenWorkspace.mockImplementation(async (workspaceId: string) => {
+      callOrder.push(`open:${workspaceId}`);
+      return undefined as never;
+    });
+    mockGetWorkspaceInfo
+      .mockResolvedValueOnce(createWorkspaceInfo('workspace-old') as never)
+      .mockImplementationOnce(async () => {
+        callOrder.push('refresh-workspace-info');
+        return createWorkspaceInfo('workspace-new') as never;
+      });
+
+    function CaptureAuthContext() {
+      latestAuthContext = useContext(AuthInternalContext);
+
+      return (
+        <div data-testid='selected-workspace'>
+          {latestAuthContext?.userWorkspaceInfo?.selectedWorkspace.id ?? 'none'}
+        </div>
+      );
+    }
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <CaptureAuthContext />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+
+    await act(async () => {
+      await latestAuthContext!.onChangeWorkspace('workspace-new');
+    });
+
+    expect(callOrder).toEqual(['open:workspace-new', 'refresh-workspace-info', 'navigate:/app/workspace-new']);
+    expect(mockOpenWorkspace).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-new');
   });
 });

@@ -6,15 +6,18 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOperationOptions,
   CreateRow,
   DatabaseRelations,
   DateFormat,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   RowId,
+  RowDocumentSourcePayload,
   Subscription,
   TestDatabasePromptConfig,
   TimeFormat,
@@ -65,6 +68,7 @@ export interface DatabaseContextState {
   paddingStart?: number;
   paddingEnd?: number;
   isDocumentBlock?: boolean;
+  embeddedHeight?: number;
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
@@ -76,13 +80,13 @@ export interface DatabaseContextState {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
   duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
@@ -94,6 +98,7 @@ export interface DatabaseContextState {
   addPage?: (parentId: string, payload: import('@/application/types').CreatePagePayload) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;

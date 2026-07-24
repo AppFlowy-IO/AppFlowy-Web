@@ -9,7 +9,7 @@ import { Log } from '@/utils/log';
  * Title Update Flow & Echo Prevention Mechanism:
  * 
  * 1. USER INPUT → LOCAL UPDATE
- *    - User types → debounced update (300ms) → send to server
+ *    - User types → debounced update (3s) → send to server
  *    - User blurs/enters → immediate update → send to server
  *    - Cache sent values with timestamps for echo detection
  * 
@@ -136,7 +136,7 @@ function TitleEditable({
   }, [onUpdateName, scheduleCleanup]);
 
   const debouncedUpdate = useMemo(() => {
-    return debounce((value: string) => sendUpdate(value, false), 300);
+    return debounce((value: string) => sendUpdate(value, false), 3000);
   }, [sendUpdate]);
 
   const sendUpdateImmediately = useCallback((value: string) => {
@@ -335,6 +335,11 @@ function TitleEditable({
   // Cleanup timers
   useEffect(() => {
     return () => {
+      // Flush (not cancel) so a pending edit survives unmounting without a
+      // blur (e.g. navigating to another page); the 3s debounce window is
+      // long enough for users to leave mid-wait.
+      debouncedUpdate.flush();
+
       if (inputTimerRef.current) {
         clearTimeout(inputTimerRef.current);
       }
@@ -346,8 +351,6 @@ function TitleEditable({
       if (cleanupTimerRef.current) {
         clearTimeout(cleanupTimerRef.current);
       }
-
-      debouncedUpdate.cancel();
     };
   }, [debouncedUpdate]);
 

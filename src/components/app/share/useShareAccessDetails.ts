@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AccessLevel, IPeopleWithAccessType, WorkspaceGroupViewPermission } from '@/application/types';
+import { AccessLevel, IPeopleWithAccessType, ObjectPermission, WorkspaceGroupViewPermission } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { AccessService } from '@/application/services/domains';
+import { resolveCurrentUserAccessLevel } from '@/components/app/share/shareAccessLevel';
 import { resolveShareSectionType, ShareSectionType } from '@/components/app/share/shareSectionType';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
@@ -18,6 +19,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   const [isLoadingPeople, setIsLoadingPeople] = useState(false);
   const [hasLoadedPeople, setHasLoadedPeople] = useState(false);
   const [loadedPeopleViewId, setLoadedPeopleViewId] = useState<string | null>(null);
+  const [currentUserPermission, setCurrentUserPermission] = useState<ObjectPermission | null>(null);
   const loadPeopleRequestSeq = useRef(0);
 
   const loadPeople = useCallback(
@@ -37,6 +39,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
         setPeople(detail.shared_with);
         setGroups(detail.groups ?? []);
+        setCurrentUserPermission(detail.current_user_permission ?? null);
         setHasLoadedPeople(true);
         setLoadedPeopleViewId(viewId);
       } catch (error) {
@@ -44,6 +47,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         console.error(error);
         setPeople([]);
         setGroups([]);
+        setCurrentUserPermission(null);
         setHasLoadedPeople(false);
         setLoadedPeopleViewId(null);
       } finally {
@@ -73,11 +77,15 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     () => (loadedPeopleViewId === viewId ? groups : []),
     [groups, loadedPeopleViewId, viewId]
   );
+  const currentUserPermissionForCurrentView = loadedPeopleViewId === viewId ? currentUserPermission : null;
   const currentUserAccessLevel = useMemo(() => {
-    return (
-      peopleForCurrentView.find((person) => person.email === currentUserEmail)?.access_level ?? outlineView?.access_level
-    );
-  }, [currentUserEmail, outlineView?.access_level, peopleForCurrentView]);
+    return resolveCurrentUserAccessLevel({
+      currentUserEmail,
+      currentUserPermission: currentUserPermissionForCurrentView,
+      outlineAccessLevel: outlineView?.access_level,
+      sharedPeople: peopleForCurrentView,
+    });
+  }, [currentUserEmail, currentUserPermissionForCurrentView, outlineView?.access_level, peopleForCurrentView]);
   const sectionType = useMemo(() => {
     if (!hasLoadedPeople || loadedPeopleViewId !== viewId) {
       return ShareSectionType.Unknown;

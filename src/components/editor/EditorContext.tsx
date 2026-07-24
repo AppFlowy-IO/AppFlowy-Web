@@ -20,10 +20,12 @@ import {
   DuplicatePageOperationOptions,
   TextCount,
   LoadDatabasePrompts,
+  LoadRowDocument,
   TestDatabasePromptConfig,
   Subscription,
   MentionablePerson,
   DatabaseRelations,
+  RowDocumentSourcePayload,
   YDoc,
 } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -75,7 +77,9 @@ export interface EditorContextState {
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
@@ -121,6 +125,8 @@ export const EditorContextProvider = ({
   loadViewMeta,
   loadView,
   loadRowDocument,
+  checkIfRowDocumentExists,
+  createRowDocument,
   createRow,
   bindViewSync,
   readSummary,
@@ -204,6 +210,8 @@ export const EditorContextProvider = ({
       loadViewMeta,
       loadView,
       loadRowDocument,
+      checkIfRowDocumentExists,
+      createRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -244,6 +252,8 @@ export const EditorContextProvider = ({
       loadViewMeta,
       loadView,
       loadRowDocument,
+      checkIfRowDocumentExists,
+      createRowDocument,
       createRow,
       bindViewSync,
       readSummary,

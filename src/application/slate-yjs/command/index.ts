@@ -924,9 +924,14 @@ export const CustomEditor = {
     ReactEditor.focus(editor);
   },
 
-  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string) {
+  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string, options?: { data?: BlockData }) {
     const sharedRoot = getSharedRoot(editor);
     const block = getBlock(blockId, sharedRoot);
+
+    if (!block) {
+      Log.warn('Block not found');
+      return;
+    }
 
     const parent = getParent(blockId, sharedRoot);
     const prevIndex = getBlockIndex(prevId || blockId, sharedRoot);
@@ -942,7 +947,7 @@ export const CustomEditor = {
       sharedRoot,
       [
         () => {
-          newBlockId = deepCopyBlock(sharedRoot, block);
+          newBlockId = deepCopyBlock(sharedRoot, block, options?.data);
 
           if (!newBlockId) {
             Log.warn('Copied block not found');

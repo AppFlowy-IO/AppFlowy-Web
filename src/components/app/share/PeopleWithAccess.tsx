@@ -21,6 +21,7 @@ interface PeopleWithAccessProps {
   isLoading: boolean;
   onPeopleChange: () => Promise<void>;
   hasFullAccess: boolean;
+  canGrantFullAccess: boolean;
 }
 
 export function PeopleWithAccess({
@@ -30,6 +31,7 @@ export function PeopleWithAccess({
   onPeopleChange,
   isLoading,
   hasFullAccess,
+  canGrantFullAccess,
 }: PeopleWithAccessProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
@@ -120,8 +122,8 @@ export function PeopleWithAccess({
     [currentWorkspaceId, onPeopleChange, viewId]
   );
 
-  // Check if current user is owner
-  const currentUserIsOwner = people.find((p) => p.email === currentUser?.email)?.role === Role.Owner;
+  const currentUserRole = people.find((p) => p.email === currentUser?.email)?.role;
+  const currentUserIsOwner = currentUserRole === Role.Owner;
 
   return (
     <div className='w-full px-2 pt-4'>
@@ -140,6 +142,7 @@ export function PeopleWithAccess({
               isYou={isYou}
               currentUserHasFullAccess={hasFullAccess}
               currentUserIsOwner={currentUserIsOwner}
+              currentUserCanGrantFullAccess={canGrantFullAccess}
               onAccessLevelChange={handleAccessLevelChange}
               onRemoveAccess={handleRemoveAccess}
               onTurnIntoMember={handleTurnIntoMember}

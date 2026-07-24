@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import { installLegacyCellFieldTypeNormalizer } from '@/application/database-yjs/cell.field-type';
 import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -783,6 +784,8 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
 async function _createRowDocEntry(rowKey: string, rowObjectId: string): Promise<RowDocEntry> {
   const startedAt = Date.now();
   const { doc, provider } = await openRowCollabDBWithProvider(rowObjectId, { awaitSync: false });
+
+  installLegacyCellFieldTypeNormalizer(doc);
 
   // Check initial state immediately after opening
   const initialSharedRoot = doc.getMap(YjsEditorKey.data_section);

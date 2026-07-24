@@ -5,15 +5,14 @@ import { BillingService, FileService, PageService, PublishService, ViewService }
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
-import {
-  publishCollabs,
-  PublishCollabMetadata,
-} from '@/application/services/js-services/http/publish-api';
+import { publishCollabs, PublishCollabMetadata } from '@/application/services/js-services/http/publish-api';
 import {
   CreateDatabaseViewPayload,
+  CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreateSpacePayload,
+  CreateSpaceWithInitialPagePayload,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -292,6 +291,24 @@ export function usePageOperations({
     [currentWorkspaceId, loadOutline]
   );
 
+  const createSpaceWithInitialPage = useCallback(
+    async (payload: CreateSpaceWithInitialPagePayload) => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      try {
+        const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload);
+
+        void loadOutline?.(currentWorkspaceId, false);
+        return res;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, loadOutline]
+  );
+
   // Update space
   const updateSpace = useCallback(
     async (payload: UpdateSpacePayload) => {
@@ -369,9 +386,7 @@ export function usePageOperations({
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
       const isDatabaseLayout =
-        view.layout === ViewLayout.Grid ||
-        view.layout === ViewLayout.Board ||
-        view.layout === ViewLayout.Calendar;
+        view.layout === ViewLayout.Grid || view.layout === ViewLayout.Board || view.layout === ViewLayout.Calendar;
 
       if (isDatabaseLayout) {
         // Database views: gather data client-side and send via binary publish endpoint
@@ -382,7 +397,12 @@ export function usePageOperations({
         // reconnecting).
         void flushAllSync?.();
 
-        const slug = view.name.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'untitled';
+        const slug =
+          view.name
+            .replace(/[^a-zA-Z0-9-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 40) || 'untitled';
 
         const name = publishName || `${slug}-${viewId.slice(0, 8)}`;
 
@@ -396,7 +416,7 @@ export function usePageOperations({
           const parentView = findParentView(outlineRef.current, viewId);
 
           if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
-            resolvedVisibleViewIds = parentView.children.map(c => c.view_id);
+            resolvedVisibleViewIds = parentView.children.map((c) => c.view_id);
           }
         }
 
@@ -458,7 +478,7 @@ export function usePageOperations({
 
   // Create orphaned view
   const createOrphanedViewOp = useCallback(
-    async (payload: { document_id: string }) => {
+    async (payload: CreateOrphanedViewPayload) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
@@ -485,6 +505,7 @@ export function usePageOperations({
     deleteTrash,
     restorePage,
     createSpace,
+    createSpaceWithInitialPage,
     updateSpace,
     createDatabaseView,
     uploadFile,

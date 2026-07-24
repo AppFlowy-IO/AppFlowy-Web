@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -6,7 +6,6 @@ import { ReactComponent as CloudOffIcon } from '@/assets/icons/cloud_off.svg';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Log } from '@/utils/log';
 
 import { useEventEmitter } from './app.hooks';
 
@@ -26,7 +25,6 @@ function getStoredWebSocketReadyState(eventEmitter: AppEventEmitter) {
 
 export function ConnectBanner() {
   const eventEmitter = useEventEmitter();
-  const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
   const { t } = useTranslation();
 
   // Subscribe to WebSocket status via the event emitter, which caches the
@@ -60,57 +58,6 @@ export function ConnectBanner() {
   const isClosed = readyState === READY_STATE.CLOSED;
   const isOpen = readyState === READY_STATE.OPEN;
 
-  // Reset cooldown only when connection is fully re-established.
-  useEffect(() => {
-    if (isOpen) {
-      autoReconnectAttemptedRef.current = 0;
-    }
-  }, [isOpen]);
-
-  // Automatically trigger reconnect when the user returns to the page and the socket is closed.
-  // Allows multiple attempts with a 30-second cooldown between each.
-  useEffect(() => {
-    if (!isClosed || isLoading) return;
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-    const AUTO_RECONNECT_COOLDOWN_MS = 30000; // 30s cooldown between auto-reconnect attempts
-
-    const tryAutoReconnect = () => {
-      // Note: isClosed && !isLoading is guaranteed by the early return above.
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-      if (document.visibilityState !== 'visible') return;
-
-      const now = Date.now();
-      const lastAttemptTime = autoReconnectAttemptedRef.current;
-
-      // Enforce cooldown between attempts
-      if (lastAttemptTime > 0 && now - lastAttemptTime < AUTO_RECONNECT_COOLDOWN_MS) return;
-
-      autoReconnectAttemptedRef.current = now;
-
-      Log.debug('Trying to auto reconnect');
-      handleReconnect();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        tryAutoReconnect();
-      }
-    };
-
-    window.addEventListener('focus', tryAutoReconnect);
-    window.addEventListener('online', tryAutoReconnect);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    tryAutoReconnect();
-
-    return () => {
-      window.removeEventListener('focus', tryAutoReconnect);
-      window.removeEventListener('online', tryAutoReconnect);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [handleReconnect, isClosed, isLoading]);
-
   // Hide the banner when the connection is open and stable
   if (isOpen) {
     return (
@@ -127,20 +74,33 @@ export function ConnectBanner() {
   }
 
   return (
-    <div data-testid='connect-banner' className='absolute left-0 top-[48px] z-50 w-full bg-surface-container-layer-01 transition-all duration-300 ease-in-out'>
+    <div
+      data-testid='connect-banner'
+      className='absolute left-0 top-[48px] z-50 w-full bg-surface-container-layer-01 transition-all duration-300 ease-in-out'
+    >
       <div className='flex h-[52px] items-center px-4 py-3'>
         <div className='flex items-center space-x-2'>
           {isLoading && (
             <>
               <Progress variant={'primary'} />
-              <span data-testid='connect-banner-connecting' className='text-sm text-text-secondary'>{t('connecting')}</span>
+              <span data-testid='connect-banner-connecting' className='text-sm text-text-secondary'>
+                {t('connecting')}
+              </span>
             </>
           )}
           {isClosed && (
             <>
               <CloudOffIcon className='h-5 w-5 text-text-tertiary' />
-              <span data-testid='connect-banner-disconnected' className='text-sm text-text-secondary'>{t('disconnected')}</span>
-              <Button data-testid='connect-banner-reconnect' variant='outline' size='sm' className='ml-2' onClick={handleReconnect}>
+              <span data-testid='connect-banner-disconnected' className='text-sm text-text-secondary'>
+                {t('disconnected')}
+              </span>
+              <Button
+                data-testid='connect-banner-reconnect'
+                variant='outline'
+                size='sm'
+                className='ml-2'
+                onClick={handleReconnect}
+              >
                 {t('reconnect')}
               </Button>
             </>

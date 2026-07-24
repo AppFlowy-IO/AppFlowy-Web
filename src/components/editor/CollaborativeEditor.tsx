@@ -1,6 +1,6 @@
 import { debounce } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createEditor, Descendant, Editor, Element as SlateElement, Node } from 'slate';
+import { createEditor, Descendant, Editor, Element as SlateElement, Node, Operation } from 'slate';
 import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
@@ -52,6 +52,27 @@ type DatabaseBlockInfo = {
   parentId: string;
   viewIds: string[];
 };
+
+function isDatabaseBlockNode(node: Node): boolean {
+  return SlateElement.isElement(node) && DATABASE_BLOCK_TYPES.has((node as unknown as { type: BlockType }).type);
+}
+
+function isDatabaseBlockLifecycleOperation(editor: YjsEditor, op: Operation): boolean {
+  if (op.type === 'insert_node' || op.type === 'remove_node') {
+    return isDatabaseBlockNode(op.node);
+  }
+
+  if (op.type !== 'set_node') return false;
+  if (!('data' in op.properties) && !('data' in op.newProperties)) return false;
+
+  try {
+    const node = Node.get(editor, op.path);
+
+    return isDatabaseBlockNode(node);
+  } catch {
+    return false;
+  }
+}
 
 function CollaborativeEditor({
   doc,
@@ -142,17 +163,9 @@ function CollaborativeEditor({
       if (editor.interceptLocalChange) return;
 
       // Avoid scanning the whole document on every keystroke. Only react to operations that can
-      // affect database block presence (insert/remove).
+      // affect database block presence or database view references.
       const hasDatabaseBlockOps = editor.operations.some((op) => {
-        if (op.type !== 'insert_node' && op.type !== 'remove_node') return false;
-        if (!('node' in op)) return false;
-
-        const node = (op as { node: Node }).node;
-
-        return (
-          SlateElement.isElement(node) &&
-          DATABASE_BLOCK_TYPES.has((node as unknown as { type: BlockType }).type)
-        );
+        return isDatabaseBlockLifecycleOperation(editor, op);
       });
 
       if (!hasDatabaseBlockOps) return;

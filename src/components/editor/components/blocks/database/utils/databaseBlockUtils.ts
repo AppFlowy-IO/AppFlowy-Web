@@ -58,6 +58,18 @@ export function createDatabaseNodeData(params: {
   };
 }
 
+export function createDatabaseDuplicatePlaceholderData(parentId?: string): DatabaseNodeData {
+  return {
+    parent_id: parentId,
+    view_ids: [],
+    is_database_duplicate_placeholder: true,
+  };
+}
+
+export function isDatabaseDuplicatePlaceholder(data: DatabaseNodeData): boolean {
+  return data.is_database_duplicate_placeholder === true;
+}
+
 /**
  * Add a view ID to existing database node data (returns new data object).
  */

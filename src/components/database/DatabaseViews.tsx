@@ -14,7 +14,11 @@ import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
-import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
+import {
+  getDatabaseViewportStyle,
+  shouldAutoShrinkDatabaseViewport,
+  shouldUseFixedDatabaseViewport,
+} from '@/components/database/layout';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
@@ -366,6 +370,16 @@ function DatabaseViews({
     isDocumentBlock,
     variant,
   });
+  const shouldAutoShrinkViewport = shouldAutoShrinkDatabaseViewport({
+    embeddedHeight: fixedHeight,
+    isDocumentBlock,
+    layout: effectiveLayout,
+  });
+  const viewportStyle = getDatabaseViewportStyle({
+    embeddedHeight: fixedHeight,
+    isDocumentBlock,
+    layout: effectiveLayout,
+  });
   const databaseConditionsValue = useMemo(
     () => ({
       expanded: conditionsExpanded,
@@ -400,13 +414,21 @@ function DatabaseViews({
         <div
           className={cn(
             'relative flex w-full flex-col',
-            shouldUseFixedViewport ? 'h-full min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
+            shouldUseFixedViewport
+              ? shouldAutoShrinkViewport
+                ? 'min-h-0 overflow-hidden'
+                : 'h-full min-h-0 flex-1 overflow-hidden'
+              : 'overflow-visible'
           )}
-          style={fixedHeight !== undefined ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` } : undefined}
+          style={viewportStyle}
         >
           <div
-            className={cn('w-full', shouldUseFixedViewport && 'flex h-full min-h-0 flex-col')}
-            style={fixedHeight !== undefined ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` } : undefined}
+            className={cn(
+              'w-full',
+              shouldUseFixedViewport &&
+                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+            )}
+            style={viewportStyle}
           >
             <Suspense fallback={null}>
               <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>

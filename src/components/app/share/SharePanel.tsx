@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
+  AccessLevel,
   IPeopleWithAccessType,
   MentionablePerson,
   Role,
@@ -24,6 +25,7 @@ function SharePanel({
   isLoadingPeople,
   onPeopleChange,
   hasFullAccess,
+  currentUserAccessLevel,
   sectionType,
 }: {
   viewId: string;
@@ -32,6 +34,7 @@ function SharePanel({
   isLoadingPeople: boolean;
   onPeopleChange: () => Promise<void>;
   hasFullAccess: boolean;
+  currentUserAccessLevel?: AccessLevel;
   sectionType: ShareSectionType;
 }) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
@@ -43,10 +46,11 @@ function SharePanel({
   const [mentionableError, setMentionableError] = useState<string | null>(null);
   const isOwner = role === Role.Owner;
   const isMember = role === Role.Member;
+  const showInviteControls = currentUserAccessLevel !== undefined && currentUserAccessLevel !== AccessLevel.ReadOnly;
 
   // Load mentionable users
   const loadMentionableData = useCallback(async () => {
-    if (!loadMentionableUsers) return;
+    if (!showInviteControls || !loadMentionableUsers) return;
 
     setIsLoadingMentionable(true);
     setMentionableError(null);
@@ -63,12 +67,14 @@ function SharePanel({
     } finally {
       setIsLoadingMentionable(false);
     }
-  }, [loadMentionableUsers]);
+  }, [loadMentionableUsers, showInviteControls]);
 
   // Load mentionable data on component mount
   useEffect(() => {
+    if (!showInviteControls) return;
+
     void loadMentionableData();
-  }, [loadMentionableData]);
+  }, [loadMentionableData, showInviteControls]);
 
   // Refresh people list after invite or other changes
   const refreshPeople = useCallback(async () => {
@@ -104,7 +110,7 @@ function SharePanel({
   }, [getSubscriptions]);
 
   useEffect(() => {
-    if (!isHosted) {
+    if (!showInviteControls || !isHosted) {
       setActiveSubscriptionPlan(null);
       return;
     }
@@ -112,23 +118,28 @@ function SharePanel({
     if (isOwner || isMember) {
       void loadSubscription();
     }
-  }, [isHosted, isMember, isOwner, loadSubscription]);
+  }, [isHosted, isMember, isOwner, loadSubscription, showInviteControls]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch py-4'>
       <div className='flex flex-col items-start self-stretch px-2'>
-        <InviteGuest
-          viewId={viewId}
-          sharedPeople={people}
-          sharedGroups={groups}
-          isLoadingPeople={isLoadingPeople}
-          mentionable={mentionable}
-          isLoadingMentionable={isLoadingMentionable}
-          mentionableError={mentionableError}
-          onInviteSuccess={refreshPeople}
-          hasFullAccess={hasFullAccess}
-        />
-        {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
+        {showInviteControls && (
+          <>
+            <InviteGuest
+              viewId={viewId}
+              sharedPeople={people}
+              sharedGroups={groups}
+              isLoadingPeople={isLoadingPeople}
+              mentionable={mentionable}
+              isLoadingMentionable={isLoadingMentionable}
+              mentionableError={mentionableError}
+              onInviteSuccess={refreshPeople}
+              hasFullAccess={hasFullAccess}
+              canGrantFullAccess={hasFullAccess}
+            />
+            {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
+          </>
+        )}
         <PeopleWithAccess
           viewId={viewId}
           people={people}
@@ -136,6 +147,7 @@ function SharePanel({
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
           hasFullAccess={hasFullAccess}
+          canGrantFullAccess={hasFullAccess}
         />
         <GeneralAccess sectionType={sectionType} />
         <CopyLink />

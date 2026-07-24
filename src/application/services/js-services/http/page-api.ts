@@ -7,6 +7,8 @@ import {
   CreatePagePayload,
   CreatePageResponse,
   CreateSpacePayload,
+  CreateSpaceWithInitialPagePayload,
+  CreateSpaceWithInitialPageResponse,
   UpdatePagePayload,
   UpdateSpacePayload,
   ViewIconType,
@@ -48,7 +50,7 @@ export async function favoritePageView(
   workspaceId: string,
   viewId: string,
   isFavorite: boolean,
-  isPinned: boolean = false
+  isPinned: boolean = true
 ): Promise<void> {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/favorite`;
 
@@ -141,6 +143,14 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
   return executeAPIRequest<{ view_id: string }>(() =>
     getAxios()?.post<APIResponse<{ view_id: string }>>(url, payload)
   ).then((data) => data.view_id);
+}
+
+export async function createSpaceWithInitialPage(workspaceId: string, payload: CreateSpaceWithInitialPagePayload) {
+  const url = `/api/workspace/${workspaceId}/v2/space`;
+
+  return executeAPIRequest<CreateSpaceWithInitialPageResponse>(() =>
+    getAxios()?.post<APIResponse<CreateSpaceWithInitialPageResponse>>(url, payload)
+  );
 }
 
 export async function updateSpace(workspaceId: string, payload: UpdateSpacePayload) {

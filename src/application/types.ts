@@ -290,6 +290,7 @@ export interface DatabaseNodeData extends BlockData {
   view_ids?: ViewId[];
   parent_id?: ViewId;
   database_id?: string;
+  is_database_duplicate_placeholder?: boolean;
 }
 
 export interface SubpageNodeData extends BlockData {
@@ -1017,6 +1018,12 @@ export type LoadView = (
   options?: LoadViewOptions
 ) => Promise<YDoc>;
 
+export interface LoadRowDocumentOptions {
+  maxAttempts?: number;
+}
+
+export type LoadRowDocument = (documentId: string, options?: LoadRowDocumentOptions) => Promise<YDoc | null>;
+
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
 
 export type DatabaseRelations = Record<DatabaseId, ViewId>;
@@ -1324,8 +1331,14 @@ export interface View {
   extra: ViewExtra | null;
   children: View[];
   has_children?: boolean;
+  /** Authoritative space marker returned by newer folder-view APIs. */
+  is_space?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether this view is currently in the user's favorites. Synced via the folder. */
+  is_favorite?: boolean;
+  /** Favorite-section pin state returned by the favorites endpoint. */
+  is_pinned?: boolean;
   /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
   is_locked?: boolean;
   last_edited_time?: string;
@@ -1472,6 +1485,17 @@ export interface UpdatePagePayload {
   is_locked?: boolean;
 }
 
+export interface RowDocumentSourcePayload {
+  database_id: string;
+  database_view_id: string;
+  row_id: string;
+}
+
+export interface CreateOrphanedViewPayload {
+  document_id: string;
+  row_document_source?: RowDocumentSourcePayload;
+}
+
 export type ViewMetaCover = ViewCover;
 
 export interface ViewMetaProps {
@@ -1515,12 +1539,12 @@ export interface ViewComponentProps {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
   duplicateRowDocument?: (
     databaseId: string,
     sourceRowId: string,
@@ -1593,7 +1617,10 @@ export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
 
 export interface CreateDatabaseViewPayload {
   parent_view_id: string;
-  /** Insert the new database view after this sibling. When omitted the backend prepends. */
+  /**
+   * Insert the new database view after this sibling. When omitted, the
+   * backend appends the view to the end of the parent's children.
+   */
   prev_view_id?: string;
   database_id: string;
   layout: ViewLayout;
@@ -1669,6 +1696,23 @@ export interface CreateSpacePayload {
   view_id?: string;
   permission?: SpacePermissionSettings;
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
+}
+
+export interface CreateSpaceInitialPagePayload extends Omit<CreatePagePayload, 'prev_view_id'> {
+  page_data?: unknown;
+  view_id?: string;
+  prev_view_id?: string | null;
+}
+
+export interface CreateSpaceWithInitialPagePayload extends CreateSpacePayload {
+  initial_page: CreateSpaceInitialPagePayload;
+}
+
+export interface CreateSpaceWithInitialPageResponse {
+  space: {
+    view_id: string;
+  };
+  page: CreatePageResponse;
 }
 
 export interface UpdateSpacePayload extends CreateSpacePayload {
@@ -1797,6 +1841,28 @@ export interface IPeopleWithAccessType {
   role: Role;
   avatar_url: string;
   pending_invitation: boolean;
+}
+
+export interface ObjectPermission {
+  object_id?: string;
+  object_type?: string;
+  access_level?: AccessLevel;
+  visible?: boolean;
+  object_creator?: boolean;
+  ancestor_creator?: boolean;
+  parent_private_view_id?: string | null;
+  governing_view_id?: string | null;
+}
+
+export interface ShareAccessDetails {
+  view_id?: string;
+  target?: {
+    type: string;
+    page_id?: string;
+  };
+  current_user_permission?: ObjectPermission | null;
+  shared_with: IPeopleWithAccessType[];
+  groups?: WorkspaceGroupViewPermission[];
 }
 
 export enum AccessLevel {

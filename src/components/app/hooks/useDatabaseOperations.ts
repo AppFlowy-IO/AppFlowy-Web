@@ -11,6 +11,8 @@ import {
   DatabasePromptRow,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  LoadRowDocumentOptions,
+  RowDocumentSourcePayload,
   Types,
   YDatabase,
   YDoc,
@@ -296,14 +298,14 @@ export function useDatabaseOperations(
 
   // Load a row sub-document (document content inside a database row)
   const loadRowDocument = useCallback(
-    async (documentId: string): Promise<YDoc | null> => {
+    async (documentId: string, options?: LoadRowDocumentOptions): Promise<YDoc | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[loadRowDocument] workspaceId not available');
         return null;
       }
 
       try {
-        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId);
+        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId, options);
 
         // Set metadata for sync binding
         const docWithMeta = doc as YDoc & {
@@ -332,15 +334,18 @@ export function useDatabaseOperations(
 
   // Create a row document on the server (orphaned view)
   const createRowDocument = useCallback(
-    async (documentId: string): Promise<Uint8Array | null> => {
+    async (documentId: string, source?: RowDocumentSourcePayload): Promise<Uint8Array | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[createRowDocument] service or workspaceId not available');
         return null;
       }
 
       try {
-        Log.debug('[createRowDocument] creating', { documentId });
-        const docState = await ViewService.createOrphaned(currentWorkspaceId, { document_id: documentId });
+        Log.debug('[createRowDocument] creating', { documentId, source });
+        const docState = await ViewService.createOrphaned(currentWorkspaceId, {
+          document_id: documentId,
+          row_document_source: source,
+        });
 
         return docState;
       } catch (e) {

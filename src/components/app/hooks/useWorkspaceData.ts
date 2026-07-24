@@ -352,6 +352,14 @@ function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
   });
 }
 
+function folderOutlinePatchMayAffectFavorites(patch: JsonPatchOperation[]): boolean {
+  return patch.some((op) => {
+    const path = op.path ?? '';
+
+    return path === '/outline' || path.endsWith('/is_favorite') || path.endsWith('/extra');
+  });
+}
+
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -360,6 +368,8 @@ export function useWorkspaceData() {
 
   const [outline, setOutline] = useState<View[]>();
   const stableOutlineRef = useRef<View[]>([]);
+  const stableOutlineWorkspaceIdRef = useRef(currentWorkspaceId);
+  const stableOutlineWorkspaceRevisionRef = useRef(0);
   // Global folder ordering can advance from lazy subtree fetches. Root polling
   // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
@@ -367,9 +377,17 @@ export function useWorkspaceData() {
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
+  // Root loads and periodic revalidation share request IDs, but successful
+  // responses are superseded only after a newer response is accepted. Forced
+  // routing is tracked separately so a background refresh can supersede
+  // outline data without leaving a root workspace URL unresolved.
+  const rootOutlineRequestSeqRef = useRef(0);
+  const latestAcceptedRootOutlineRequestSeqRef = useRef(0);
+  const latestForcedOutlineRequestSeqRef = useRef(0);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
+  const favoriteViewsLoadedRef = useRef(false);
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
@@ -416,6 +434,33 @@ export function useWorkspaceData() {
     return mergedOutline;
   }, []);
 
+  const refreshFavoriteViewsForWorkspace = useCallback(async (workspaceId: string) => {
+    try {
+      const res = await ViewService.getFavorites(workspaceId);
+
+      if (!res) {
+        throw new Error('Favorite views not found');
+      }
+
+      favoriteViewsLoadedRef.current = true;
+      setFavoriteViews(res);
+      return res;
+    } catch (e) {
+      console.error('Favorite views not found');
+    }
+  }, []);
+
+  const refreshLoadedFavoriteViewsInBackground = useCallback(
+    (workspaceId: string) => {
+      if (!favoriteViewsLoadedRef.current) {
+        return;
+      }
+
+      void refreshFavoriteViewsForWorkspace(workspaceId);
+    },
+    [refreshFavoriteViewsForWorkspace]
+  );
+
   // Load application outline
   const updateLastFolderRid = useCallback((next: FolderRid | null) => {
     if (!next) return;
@@ -453,8 +498,42 @@ export function useWorkspaceData() {
     return currentWorkspaceIdRef.current !== workspaceId || workspaceRevisionRef.current !== workspaceRevision;
   }, []);
 
+  const isStaleRootOutlineRequest = useCallback(
+    (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
+      return (
+        isStaleWorkspaceRequest(workspaceId, workspaceRevision) ||
+        latestAcceptedRootOutlineRequestSeqRef.current > requestSeq
+      );
+    },
+    [isStaleWorkspaceRequest]
+  );
+
+  const isStaleRootOutlineFailure = useCallback(
+    (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
+      return isStaleWorkspaceRequest(workspaceId, workspaceRevision) || rootOutlineRequestSeqRef.current !== requestSeq;
+    },
+    [isStaleWorkspaceRequest]
+  );
+
+  const isStaleForcedOutlineNavigation = useCallback(
+    (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
+      return (
+        isStaleWorkspaceRequest(workspaceId, workspaceRevision) ||
+        latestForcedOutlineRequestSeqRef.current !== requestSeq
+      );
+    },
+    [isStaleWorkspaceRequest]
+  );
+
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
+      const workspaceRevision = workspaceRevisionRef.current;
+      const requestSeq = ++rootOutlineRequestSeqRef.current;
+
+      if (force) {
+        latestForcedOutlineRequestSeqRef.current = requestSeq;
+      }
+
       try {
         // Parallelize API calls - both are independent and can run concurrently
         const [res, shareWithMeResult] = await Promise.all([
@@ -464,6 +543,10 @@ export function useWorkspaceData() {
             return null;
           }),
         ]);
+
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return;
+        }
 
         if (!res) {
           throw new Error('App outline not found');
@@ -487,17 +570,31 @@ export function useWorkspaceData() {
           outlineWithShareWithMe = [...res.outline, shareWithMeSpace];
         }
 
-        const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+        const shouldApplyOutline = !isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq);
+        const shouldNavigate = force && latestForcedOutlineRequestSeqRef.current === requestSeq;
 
-        updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
-
-        if (eventEmitter) {
-          eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
+        if (!shouldApplyOutline && !shouldNavigate) {
+          return;
         }
 
-        if (!force) return;
+        if (shouldApplyOutline) {
+          latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
+          const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+
+          updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
+
+          if (eventEmitter) {
+            eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
+          }
+        }
+
+        if (!shouldNavigate) return;
 
         try {
+          if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+            return;
+          }
+
           const wId = window.location.pathname.split('/')[2];
           const pageId = window.location.pathname.split('/')[3];
           const search = window.location.search;
@@ -527,9 +624,18 @@ export function useWorkspaceData() {
             } else {
               try {
                 await ViewService.get(workspaceId, lastViewId);
+
+                if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+                  return;
+                }
+
                 navigate(`/app/${workspaceId}/${lastViewId}${search}`);
                 return;
               } catch {
+                if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+                  return;
+                }
+
                 if (lastViewKey) {
                   localStorage.removeItem(lastViewKey);
                 }
@@ -562,6 +668,11 @@ export function useWorkspaceData() {
                 spaces.map((space) => space.view_id),
                 1
               );
+
+              if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+                return;
+              }
+
               const spaceViewMap = new Map(spaceViews.map((spaceView) => [spaceView.view_id, spaceView]));
 
               for (const space of spaces) {
@@ -588,6 +699,10 @@ export function useWorkspaceData() {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
+        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+          return;
+        }
+
         Log.error('[Outline] App outline not found', e);
         if (e.code === ERROR_CODE.USER_UNAUTHORIZED || e.code === ERROR_CODE.NOT_LOGGED_IN) {
           invalidToken();
@@ -608,7 +723,9 @@ export function useWorkspaceData() {
         if (e.code === ERROR_CODE.INVALID_FOLDER_VIEW) {
           Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
           setTimeout(() => {
-            void loadOutline(workspaceId, force);
+            if (!isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+              void loadOutline(workspaceId, force);
+            }
           }, 3000);
           return;
         }
@@ -620,6 +737,10 @@ export function useWorkspaceData() {
       updateAppliedRootOutlineSnapshot,
       userWorkspaceInfo?.userId,
       replaceOutlinePreservingChildren,
+      isStaleWorkspaceRequest,
+      isStaleRootOutlineRequest,
+      isStaleRootOutlineFailure,
+      isStaleForcedOutlineNavigation,
     ]
   );
 
@@ -829,11 +950,15 @@ export function useWorkspaceData() {
   );
 
   const loadViewChildrenBatch = useCallback(
-    async (viewIds: string[]): Promise<View[]> => {
+    async (viewIds: string[], rootRequestSeq?: number): Promise<View[]> => {
       if (!currentWorkspaceId || viewIds.length === 0) return [];
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
+      const isStaleBatchRequest = () =>
+        rootRequestSeq === undefined
+          ? isStaleWorkspaceRequest(workspaceId, workspaceRevision)
+          : isStaleRootOutlineRequest(workspaceId, workspaceRevision, rootRequestSeq);
       const uniqueIds = Array.from(new Set(viewIds)).filter((viewId) => !loadingViewIdsRef.current.has(viewId));
 
       if (uniqueIds.length === 0) return [];
@@ -858,7 +983,7 @@ export function useWorkspaceData() {
 
         const views = await ViewService.getMultiple(workspaceId, uniqueIds, 1);
 
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleBatchRequest()) {
           return views;
         }
 
@@ -900,7 +1025,7 @@ export function useWorkspaceData() {
 
         return views;
       } catch (e) {
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleBatchRequest()) {
           return [];
         }
 
@@ -912,7 +1037,14 @@ export function useWorkspaceData() {
         }
       }
     },
-    [currentWorkspaceId, stableOutlineRef, eventEmitter, isStaleWorkspaceRequest, updateLastFolderRid]
+    [
+      currentWorkspaceId,
+      stableOutlineRef,
+      eventEmitter,
+      isStaleWorkspaceRequest,
+      isStaleRootOutlineRequest,
+      updateLastFolderRid,
+    ]
   );
 
   const markViewChildrenStale = useCallback(
@@ -1062,18 +1194,32 @@ export function useWorkspaceData() {
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
-      const res = await ViewService.getOutline(workspaceId);
+      const requestSeq = ++rootOutlineRequestSeqRef.current;
+      const outlineRequest = ViewService.getOutline(workspaceId);
+      let res: Awaited<typeof outlineRequest>;
+
+      try {
+        res = await outlineRequest;
+      } catch (error) {
+        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+          return 'unchanged';
+        }
+
+        throw error;
+      }
+
+      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+        Log.debug('[Outline] [periodic-revalidate] skipped stale root response', {
+          workspaceId,
+        });
+        return 'unchanged';
+      }
 
       if (!res) {
         throw new Error('App outline not found');
       }
 
-      if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
-        Log.debug('[Outline] [periodic-revalidate] skipped stale workspace response', {
-          workspaceId,
-        });
-        return 'unchanged';
-      }
+      latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
 
       const nextFolderRid = parseFolderRid(res.folderRid);
       const currentRid = lastAppliedRootOutlineRidRef.current;
@@ -1122,9 +1268,9 @@ export function useWorkspaceData() {
       }
 
       try {
-        await loadViewChildrenBatch(refreshViewIds);
+        await loadViewChildrenBatch(refreshViewIds, requestSeq);
       } catch (error) {
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
           Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh error', {
             workspaceId,
             refreshViewIds,
@@ -1140,7 +1286,7 @@ export function useWorkspaceData() {
         throw error;
       }
 
-      if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
         Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh response', {
           workspaceId,
           refreshViewIds,
@@ -1154,7 +1300,8 @@ export function useWorkspaceData() {
     [
       currentWorkspaceId,
       eventEmitter,
-      isStaleWorkspaceRequest,
+      isStaleRootOutlineFailure,
+      isStaleRootOutlineRequest,
       loadViewChildrenBatch,
       markCachedFolderSubtreesStale,
       replaceOutlinePreservingChildren,
@@ -1190,6 +1337,7 @@ export function useWorkspaceData() {
       if (!payload?.outlineDiffJson) {
         Log.debug('[Outline] [FolderOutlineChanged] No diff JSON, reloading outline');
         refreshTrashListInBackground();
+        refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
         void loadOutline(currentWorkspaceId, false);
         return;
       }
@@ -1229,6 +1377,9 @@ export function useWorkspaceData() {
       }
 
       refreshTrashListInBackground();
+      if (folderOutlinePatchMayAffectFavorites(patch)) {
+        refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+      }
 
       Log.debug('[Outline] [FolderOutlineChanged] parsed patch', patch);
 
@@ -1320,6 +1471,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
+    refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
@@ -1352,8 +1504,12 @@ export function useWorkspaceData() {
           if (!payload.viewJson) break;
           try {
             const updatedView = JSON.parse(payload.viewJson) as View;
+            const previousView = findView(nextOutline, updatedView.view_id);
 
             nextOutline = updateViewInOutline(nextOutline, updatedView);
+            if (previousView?.is_favorite !== updatedView.is_favorite) {
+              refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+            }
           } catch (error) {
             Log.warn('[Outline] [FolderViewChanged] Failed to parse view_json for fields changed', error);
             void loadOutline(currentWorkspaceId, false);
@@ -1459,6 +1615,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
+    refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     stableOutlineRef,
     updateLastFolderRid,
@@ -1467,19 +1624,8 @@ export function useWorkspaceData() {
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {
     if (!currentWorkspaceId) return;
-    try {
-      const res = await ViewService.getFavorites(currentWorkspaceId);
-
-      if (!res) {
-        throw new Error('Favorite views not found');
-      }
-
-      setFavoriteViews(res);
-      return res;
-    } catch (e) {
-      console.error('Favorite views not found');
-    }
-  }, [currentWorkspaceId]);
+    return refreshFavoriteViewsForWorkspace(currentWorkspaceId);
+  }, [currentWorkspaceId, refreshFavoriteViewsForWorkspace]);
 
   // Load recent views
   const loadRecentViews = useCallback(async () => {
@@ -1643,6 +1789,9 @@ export function useWorkspaceData() {
     lastFolderRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
     lastAppliedRootOutlineFingerprintRef.current = null;
+    stableOutlineWorkspaceIdRef.current = currentWorkspaceId;
+    stableOutlineWorkspaceRevisionRef.current = workspaceRevisionRef.current;
+    stableOutlineRef.current = [];
     setOutline([]);
     loadedViewIdsRef.current = new Set();
     setLoadedViewIdsRevision((r) => r + 1);
@@ -1652,6 +1801,7 @@ export function useWorkspaceData() {
     // `undefined` (the unloaded state) also lets lazy consumers — e.g. the
     // header FavoriteButton — detect the stale state and refetch for the new
     // workspace instead of rendering the previous workspace's favorites.
+    favoriteViewsLoadedRef.current = false;
     setFavoriteViews(undefined);
     setRecentViews(undefined);
     // Clear database relations cache when switching workspaces to prevent
@@ -1678,18 +1828,31 @@ export function useWorkspaceData() {
   // (`undefined → defined`) — that's already handled by the effect above.
   const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
   const prevSelectedWorkspaceIdRef = useRef<string | undefined>(selectedWorkspaceId);
+  const workspaceAwaitingSelectionRef = useRef<string | null>(null);
 
   useEffect(() => {
     const prev = prevSelectedWorkspaceIdRef.current;
 
+    if (!selectedWorkspaceId || !currentWorkspaceId) return;
+
+    if (selectedWorkspaceId !== currentWorkspaceId) {
+      // A stable selection with a new URL is the direct-link/auto-switch path.
+      // Record it for one follow-up load after the server selection catches up.
+      // The inverse direction is a manual switch and the workspace-change
+      // effect will load the target once its URL changes.
+      workspaceAwaitingSelectionRef.current =
+        !prev || selectedWorkspaceId === prev ? currentWorkspaceId : null;
+      prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
+      return;
+    }
+
+    const shouldReload = workspaceAwaitingSelectionRef.current === currentWorkspaceId;
+
+    workspaceAwaitingSelectionRef.current = null;
     prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
+    if (!shouldReload) return;
 
-    // Only reload when transitioning between two defined values (an actual
-    // workspace switch), not on the initial load where prev was undefined.
-    if (!prev || !selectedWorkspaceId || prev === selectedWorkspaceId) return;
-    if (!currentWorkspaceId) return;
-
-    void loadOutline(currentWorkspaceId, false);
+    void loadOutline(selectedWorkspaceId, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkspaceId, currentWorkspaceId]);
 
@@ -1698,8 +1861,16 @@ export function useWorkspaceData() {
     void enhancedLoadDatabaseRelations();
   }, [enhancedLoadDatabaseRelations]);
 
+  // Workspace reset effects run after commit. Gate the returned outline during
+  // render so a workspace change can never expose the previous workspace state.
+  const currentWorkspaceOutline =
+    stableOutlineWorkspaceIdRef.current === currentWorkspaceId &&
+    stableOutlineWorkspaceRevisionRef.current === workspaceRevisionRef.current
+      ? outline
+      : undefined;
+
   return {
-    outline,
+    outline: currentWorkspaceOutline,
     favoriteViews,
     recentViews,
     trashList,

@@ -25,6 +25,7 @@ jest.mock('@/components/chat/lib/utils', () => ({
 }));
 
 jest.mock('@/components/chat/lib/views', () => ({
+  ...jest.requireActual('@/components/chat/lib/views'),
   findView: jest.fn(),
 }));
 
@@ -145,10 +146,9 @@ describe('ChatRequest', () => {
 
       const result = await chatRequest.getChatMessages();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-        `/api/chat/${workspaceId}/${chatId}/message`,
-        { params: undefined }
-      );
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith(`/api/chat/${workspaceId}/${chatId}/message`, {
+        params: undefined,
+      });
       expect(result).toEqual(mockMessages);
     });
 
@@ -159,26 +159,19 @@ describe('ChatRequest', () => {
 
       await chatRequest.getChatMessages({ limit: 10, offset: 20 });
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-        expect.any(String),
-        { params: { limit: 10, offset: 20 } }
-      );
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith(expect.any(String), { params: { limit: 10, offset: 20 } });
     });
 
     it('should reject when workspaceId is not defined', async () => {
       const requestWithoutWorkspace = new ChatRequest(undefined, chatId, mockAxiosInstance);
 
-      await expect(requestWithoutWorkspace.getChatMessages()).rejects.toBe(
-        'workspaceId or chatId is not defined'
-      );
+      await expect(requestWithoutWorkspace.getChatMessages()).rejects.toBe('workspaceId or chatId is not defined');
     });
 
     it('should reject when chatId is not defined', async () => {
       const requestWithoutChat = new ChatRequest(workspaceId, undefined, mockAxiosInstance);
 
-      await expect(requestWithoutChat.getChatMessages()).rejects.toBe(
-        'workspaceId or chatId is not defined'
-      );
+      await expect(requestWithoutChat.getChatMessages()).rejects.toBe('workspaceId or chatId is not defined');
     });
 
     it('should reject when API returns error', async () => {
@@ -211,10 +204,10 @@ describe('ChatRequest', () => {
         message_type: 1,
       });
 
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        `/api/chat/${workspaceId}/${chatId}/message/question`,
-        { content: 'Test question', message_type: 1 }
-      );
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(`/api/chat/${workspaceId}/${chatId}/message/question`, {
+        content: 'Test question',
+        message_type: 1,
+      });
       expect(result).toEqual(mockResponse);
     });
 
@@ -223,17 +216,16 @@ describe('ChatRequest', () => {
         data: { code: 400, message: 'Bad request' },
       });
 
-      await expect(
-        chatRequest.submitQuestion({ content: '', message_type: 1 })
-      ).rejects.toEqual({ code: 400, message: 'Bad request' });
+      await expect(chatRequest.submitQuestion({ content: '', message_type: 1 })).rejects.toEqual({
+        code: 400,
+        message: 'Bad request',
+      });
     });
 
     it('should handle network errors', async () => {
       mockAxiosInstance.post.mockRejectedValue(new Error('Network error'));
 
-      await expect(
-        chatRequest.submitQuestion({ content: 'test', message_type: 1 })
-      ).rejects.toThrow('Network error');
+      await expect(chatRequest.submitQuestion({ content: 'test', message_type: 1 })).rejects.toThrow('Network error');
     });
   });
 
@@ -255,21 +247,16 @@ describe('ChatRequest', () => {
         meta_data: [],
       });
 
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        `/api/chat/${workspaceId}/${chatId}/message/answer`,
-        {
-          question_message_id: 123,
-          content: 'AI response',
-          meta_data: [],
-        }
-      );
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(`/api/chat/${workspaceId}/${chatId}/message/answer`, {
+        question_message_id: 123,
+        content: 'AI response',
+        meta_data: [],
+      });
       expect(result).toEqual(mockSavedAnswer);
     });
 
     it('should handle metadata in answer', async () => {
-      const metadata = [
-        { id: '1', source: 'doc1', name: 'Document 1' },
-      ];
+      const metadata = [{ id: '1', source: 'doc1', name: 'Document 1' }];
 
       mockAxiosInstance.post.mockResolvedValue({
         data: { code: 0, data: { message_id: 1 } },
@@ -333,9 +320,7 @@ describe('ChatRequest', () => {
 
       const result = await chatRequest.getSuggestions(123);
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-        `/api/chat/${workspaceId}/${chatId}/123/related_question`
-      );
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith(`/api/chat/${workspaceId}/${chatId}/123/related_question`);
       expect(result).toEqual(mockSuggestions);
     });
 
@@ -363,17 +348,44 @@ describe('ChatRequest', () => {
 
       const result = await chatRequest.getChatSettings();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-        `/api/chat/${workspaceId}/${chatId}/settings`
-      );
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith(`/api/chat/${workspaceId}/${chatId}/settings`);
       expect(result).toEqual(mockSettings);
+    });
+
+    it('decodes the chat ID sentinel as an empty RAG scope', async () => {
+      mockAxiosInstance.get.mockResolvedValue({
+        data: {
+          code: 0,
+          data: {
+            name: 'Empty scope',
+            rag_ids: [chatId],
+            metadata: {},
+            full_workspace: false,
+            web_search_enabled: false,
+          },
+        },
+      });
+
+      await expect(chatRequest.getChatSettings()).resolves.toMatchObject({ rag_ids: [] });
+    });
+
+    it.each([['doc-id'], [chatId, 'doc-id']])('does not decode real RAG IDs: %p', async (...ragIds: string[]) => {
+      const settings = {
+        name: 'Selected sources',
+        rag_ids: ragIds,
+        metadata: {},
+        full_workspace: false,
+        web_search_enabled: false,
+      };
+
+      mockAxiosInstance.get.mockResolvedValue({ data: { code: 0, data: settings } });
+
+      await expect(chatRequest.getChatSettings()).resolves.toEqual(settings);
     });
 
     it('should reject when workspaceId missing', async () => {
       const request = new ChatRequest(undefined, chatId, mockAxiosInstance);
-      await expect(request.getChatSettings()).rejects.toBe(
-        'workspaceId or chatId is not defined'
-      );
+      await expect(request.getChatSettings()).rejects.toBe('workspaceId or chatId is not defined');
     });
   });
 
@@ -388,10 +400,10 @@ describe('ChatRequest', () => {
         metadata: { ai_model: 'claude-3' },
       });
 
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        `/api/chat/${workspaceId}/${chatId}/settings`,
-        { name: 'New Name', metadata: { ai_model: 'claude-3' } }
-      );
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(`/api/chat/${workspaceId}/${chatId}/settings`, {
+        name: 'New Name',
+        metadata: { ai_model: 'claude-3' },
+      });
     });
 
     it('should update rag_ids', async () => {
@@ -403,10 +415,37 @@ describe('ChatRequest', () => {
         rag_ids: ['new-doc-1', 'new-doc-2'],
       });
 
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith(
-        expect.any(String),
-        { rag_ids: ['new-doc-1', 'new-doc-2'] }
-      );
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), { rag_ids: ['new-doc-1', 'new-doc-2'] });
+    });
+
+    it('encodes an empty scoped RAG list with the chat ID sentinel', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { code: 0 } });
+
+      await chatRequest.updateChatSettings({ full_workspace: false, rag_ids: [] });
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), {
+        full_workspace: false,
+        rag_ids: [chatId],
+      });
+    });
+
+    it('encodes an empty RAG list when full_workspace is omitted', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { code: 0 } });
+
+      await chatRequest.updateChatSettings({ rag_ids: [] });
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), { rag_ids: [chatId] });
+    });
+
+    it('keeps an empty RAG list for explicit full-workspace context', async () => {
+      mockAxiosInstance.post.mockResolvedValue({ data: { code: 0 } });
+
+      await chatRequest.updateChatSettings({ full_workspace: true, rag_ids: [] });
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith(expect.any(String), {
+        full_workspace: true,
+        rag_ids: [],
+      });
     });
   });
 
@@ -425,9 +464,7 @@ describe('ChatRequest', () => {
 
       const result = await chatRequest.getModelList();
 
-      expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-        `/api/ai/${workspaceId}/model/list`
-      );
+      expect(mockAxiosInstance.get).toHaveBeenCalledWith(`/api/ai/${workspaceId}/model/list`);
       expect(result).toEqual(mockModels);
     });
 
@@ -452,9 +489,7 @@ describe('ChatRequest', () => {
 
         const result = await chatRequest.fetchViews();
 
-        expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-          `/api/workspace/${workspaceId}/view/${workspaceId}?depth=10`
-        );
+        expect(mockAxiosInstance.get).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/view/${workspaceId}?depth=10`);
         expect(result).toEqual(mockFolder);
       });
 
@@ -489,10 +524,176 @@ describe('ChatRequest', () => {
 
         const result = await chatRequest.getView('view-1');
 
-        expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-          `/api/workspace/${workspaceId}/view/view-1?depth=1`
-        );
+        expect(mockAxiosInstance.get).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/view/view-1?depth=1`);
         expect(result).toEqual(mockView);
+      });
+    });
+
+    describe('fetchCompleteView', () => {
+      it('continues a subtree past the server depth boundary', async () => {
+        const root = {
+          view_id: 'parent-id',
+          name: 'Parent',
+          children: [
+            {
+              view_id: 'boundary-id',
+              name: 'Boundary',
+              has_children: true,
+              children: [],
+            },
+          ],
+        };
+        const continuation = {
+          view_id: 'boundary-id',
+          name: 'Boundary',
+          has_children: true,
+          children: [{ view_id: 'deep-id', name: 'Deep', has_children: false, children: [] }],
+        };
+
+        mockAxiosInstance.get
+          .mockResolvedValueOnce({ data: { code: 0, data: root } })
+          .mockResolvedValueOnce({ data: { code: 0, data: { views: [continuation] } } });
+
+        await expect(chatRequest.fetchCompleteView('parent-id')).resolves.toEqual({
+          ...root,
+          children: [continuation],
+        });
+        expect(mockAxiosInstance.get).toHaveBeenNthCalledWith(
+          1,
+          `/api/workspace/${workspaceId}/view/parent-id?depth=50`
+        );
+        expect(mockAxiosInstance.get).toHaveBeenNthCalledWith(
+          2,
+          `/api/workspace/${workspaceId}/views?depth=50&view_ids=boundary-id`
+        );
+      });
+
+      it('accepts a permission-filtered continuation as a visible terminal node', async () => {
+        const root = {
+          view_id: 'parent-id',
+          name: 'Parent',
+          children: [
+            {
+              view_id: 'private-boundary-id',
+              name: 'Shared boundary',
+              has_children: true,
+              children: [],
+            },
+          ],
+        };
+        const filteredContinuation = {
+          view_id: 'private-boundary-id',
+          name: 'Shared boundary',
+          has_children: true,
+          children: [],
+        };
+
+        mockAxiosInstance.get
+          .mockResolvedValueOnce({ data: { code: 0, data: root } })
+          .mockResolvedValueOnce({ data: { code: 0, data: { views: [filteredContinuation] } } });
+
+        await expect(chatRequest.fetchCompleteView('parent-id')).resolves.toEqual({
+          ...root,
+          children: [{ ...filteredContinuation, has_children: false }],
+        });
+        expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
+      });
+
+      it('continues an old-server depth boundary when has_children is omitted', async () => {
+        const boundary = { view_id: 'legacy-boundary-id', name: 'Legacy boundary', children: [] };
+        let root = boundary;
+
+        for (let depth = 49; depth >= 0; depth -= 1) {
+          root = { view_id: `legacy-${depth}`, name: `Legacy ${depth}`, children: [root] };
+        }
+
+        mockAxiosInstance.get
+          .mockResolvedValueOnce({ data: { code: 0, data: root } })
+          .mockRejectedValueOnce({ response: { status: 404 } })
+          .mockResolvedValueOnce({ data: { code: 0, data: boundary } });
+
+        const result = await chatRequest.fetchCompleteView('legacy-0');
+        let terminal = result;
+
+        for (let depth = 0; depth < 50; depth += 1) {
+          terminal = terminal.children[0];
+        }
+
+        expect(terminal).toEqual({ ...boundary, has_children: false });
+        expect(mockAxiosInstance.get).toHaveBeenNthCalledWith(
+          2,
+          `/api/workspace/${workspaceId}/views?depth=50&view_ids=legacy-boundary-id`
+        );
+        expect(mockAxiosInstance.get).toHaveBeenNthCalledWith(
+          3,
+          `/api/workspace/${workspaceId}/view/legacy-boundary-id?depth=50`
+        );
+      });
+
+      it('fails closed when the server omits a requested continuation', async () => {
+        const root = {
+          view_id: 'parent-id',
+          name: 'Parent',
+          children: [{ view_id: 'boundary-id', name: 'Boundary', has_children: true, children: [] }],
+        };
+
+        mockAxiosInstance.get
+          .mockResolvedValueOnce({ data: { code: 0, data: root } })
+          .mockResolvedValueOnce({ data: { code: 0, data: { views: [] } } });
+
+        await expect(chatRequest.fetchCompleteView('parent-id')).rejects.toThrow(
+          'Unable to load the complete view subtree'
+        );
+      });
+
+      it('deduplicates only in-flight requests and refetches completed scopes', async () => {
+        const root = {
+          view_id: 'parent-id',
+          name: 'Parent',
+          has_children: false,
+          children: [],
+        };
+
+        mockAxiosInstance.get.mockResolvedValue({ data: { code: 0, data: root } });
+
+        await chatRequest.fetchCompleteView('parent-id');
+        await chatRequest.fetchCompleteView('parent-id');
+
+        expect(mockAxiosInstance.get).toHaveBeenCalledTimes(2);
+      });
+
+      it('loads the current chat parent from its navigation path', async () => {
+        const navigation = {
+          view_id: workspaceId,
+          name: 'Workspace',
+          children: [
+            {
+              view_id: 'parent-id',
+              name: 'Parent',
+              children: [{ view_id: chatId, name: 'Chat', children: [] }],
+            },
+          ],
+        };
+        const parent = {
+          view_id: 'parent-id',
+          name: 'Parent',
+          has_children: false,
+          children: [],
+        };
+
+        mockAxiosInstance.get
+          .mockResolvedValueOnce({ data: { code: 0, data: navigation } })
+          .mockResolvedValueOnce({ data: { code: 0, data: parent } });
+
+        await expect(chatRequest.fetchCurrentChatParentScope()).resolves.toEqual(parent);
+        expect(mockAxiosInstance.get).toHaveBeenNthCalledWith(
+          1,
+          `/api/workspace/${workspaceId}/view/${chatId}/navigation?depth=0`
+        );
+        expect(mockAxiosInstance.get).toHaveBeenNthCalledWith(
+          2,
+          `/api/workspace/${workspaceId}/view/parent-id?depth=50`
+        );
       });
     });
 
@@ -511,10 +712,11 @@ describe('ChatRequest', () => {
 
         await chatRequest.updateViewName(view as any, 'New Name');
 
-        expect(mockAxiosInstance.patch).toHaveBeenCalledWith(
-          `/api/workspace/${workspaceId}/page-view/view-1`,
-          { name: 'New Name', icon: '📄', extra: {} }
-        );
+        expect(mockAxiosInstance.patch).toHaveBeenCalledWith(`/api/workspace/${workspaceId}/page-view/view-1`, {
+          name: 'New Name',
+          icon: '📄',
+          extra: {},
+        });
       });
     });
 
@@ -543,11 +745,7 @@ describe('ChatRequest', () => {
 
         const editorData = [{ type: 'paragraph', data: {}, children: [] }];
 
-        const result = await chatRequest.createViewWithContent(
-          'parent-view',
-          'New Document',
-          editorData
-        );
+        const result = await chatRequest.createViewWithContent('parent-view', 'New Document', editorData);
 
         expect(mockAxiosInstance.post).toHaveBeenCalledWith(
           `/api/workspace/${workspaceId}/page-view`,

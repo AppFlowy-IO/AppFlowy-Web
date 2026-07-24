@@ -1,13 +1,14 @@
 import { Dialog, InputBase } from '@mui/material';
-import React, { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { notify } from '@/components/_shared/notify';
-import { findAncestors } from '@/components/_shared/outline/utils';
 import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
+import { isSpaceView } from '@/components/ai-chat/rag-scope';
+import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import {
   useAIEnabled,
   useAppOperations,
@@ -19,17 +20,15 @@ import {
 } from '@/components/app/app.hooks';
 import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
+import { findAncestors } from '@/components/chat/lib/views';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
-function getAIChatParent(outline: View[] | undefined, currentViewId: string | undefined) {
+function getFallbackAIChatParent(outline: View[] | undefined) {
   if (!outline?.length) return;
 
-  const currentPath = currentViewId ? findAncestors(outline, currentViewId) : undefined;
-  const currentSpace = currentPath?.find((view) => view.extra?.is_space);
-
-  return currentSpace || outline.find((view) => view.extra?.is_space) || outline[0];
+  return outline.find(isSpaceView) || outline[0];
 }
 
 function getErrorMessage(error: unknown) {
@@ -39,10 +38,10 @@ function getErrorMessage(error: unknown) {
 }
 
 export function Search() {
-  const [open, setOpen] = React.useState<boolean>(false);
+  const [open, setOpen] = useState<boolean>(false);
   const { t } = useTranslation();
-  const [searchValue, setSearchValue] = React.useState<string>('');
-  const [askingAI, setAskingAI] = React.useState<boolean>(false);
+  const [searchValue, setSearchValue] = useState<string>('');
+  const [askingAI, setAskingAI] = useState<boolean>(false);
   const outline = useAppOutline();
   const currentViewId = useAppViewId();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -55,44 +54,58 @@ export function Search() {
   }, []);
 
   const handleAskAI = useCallback(
-    async (query: string, sourceIds?: string[]) => {
+    async (query: string, sources?: AIChatRagSource[]) => {
       if (!aiEnabled || !addPage || !currentWorkspaceId) return;
-
-      const parent = getAIChatParent(outline, currentViewId);
-
-      if (!parent) {
-        notify.error(t('search.createAIChatFailed', { defaultValue: 'Unable to create an AI chat here' }));
-        return;
-      }
 
       setAskingAI(true);
       try {
-        const created = await addPage(parent.view_id, {
+        const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+          import('@/components/chat/request'),
+          import('@/application/services/js-services/http'),
+        ]);
+        const axiosInstance = getAxiosInstance();
+
+        if (!axiosInstance) {
+          throw new Error('Missing axios instance');
+        }
+
+        const scopeRequest = new ChatRequest(currentWorkspaceId, currentViewId, axiosInstance);
+        let parentViewId: string | undefined;
+
+        if (currentViewId) {
+          const navigation = await scopeRequest.getViewNavigation(currentViewId);
+          const currentPath = findAncestors([navigation], currentViewId);
+
+          // Shared/private navigation can intentionally omit inaccessible space
+          // ancestors. In that case the visible navigation root is the only
+          // authoritative scope we can attach the new chat beneath.
+          parentViewId = currentPath?.find(isSpaceView)?.view_id || currentPath?.[0]?.view_id;
+        } else {
+          parentViewId = getFallbackAIChatParent(outline)?.view_id;
+        }
+
+        if (!parentViewId) {
+          notify.error(t('search.createAIChatFailed', { defaultValue: 'Unable to create an AI chat here' }));
+          return;
+        }
+
+        const scopedParent = await scopeRequest.fetchCompleteView(parentViewId, true);
+        const created = await addPage(scopedParent.view_id, {
           layout: ViewLayout.AIChat,
           name: query || t('chat.newChat', { defaultValue: 'New chat' }),
-          prev_view_id: parent.children?.[parent.children.length - 1]?.view_id,
+          prev_view_id: scopedParent.children?.[scopedParent.children.length - 1]?.view_id,
         });
-        const initialSettings = buildInitialAIChatSettings({ parent, query, sourceIds });
         let settingsError: unknown;
 
-        if (Object.keys(initialSettings).length > 0) {
-          try {
-            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
-              import('@/components/chat/request'),
-              import('@/application/services/js-services/http'),
-            ]);
-            const axiosInstance = getAxiosInstance();
+        try {
+          const request = new ChatRequest(currentWorkspaceId, created.view_id, axiosInstance);
+          const initialSettings = buildInitialAIChatSettings({ parent: scopedParent, query, sources });
 
-            if (!axiosInstance) {
-              throw new Error('Missing axios instance');
-            }
-
-            const request = new ChatRequest(currentWorkspaceId, created.view_id, axiosInstance);
-
+          if (Object.keys(initialSettings).length > 0) {
             await request.updateChatSettings(initialSettings);
-          } catch (error) {
-            settingsError = error;
           }
+        } catch (error) {
+          settingsError = error;
         }
 
         if (settingsError) {
@@ -133,7 +146,7 @@ export function Search() {
   }, [onKeyDown]);
 
   const { recentViews, loadRecentViews } = useAppRecent();
-  const [loadingRecentViews, setLoadingRecentViews] = React.useState<boolean>(false);
+  const [loadingRecentViews, setLoadingRecentViews] = useState<boolean>(false);
 
   useEffect(() => {
     if (!open) return;

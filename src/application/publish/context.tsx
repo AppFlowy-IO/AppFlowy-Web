@@ -11,7 +11,17 @@ import {
   createDocumentYjsRenderDocFromSnapshot,
 } from '@/application/publish-snapshot/document-yjs-render-bridge';
 import type { PublishedDocumentRaw, PublishedPageSnapshot, PublishedView } from '@/application/publish-snapshot/types';
-import { AppendBreadcrumb, CreateRow, LoadView, LoadViewMeta, View, ViewInfo, ViewLayout, YDoc } from '@/application/types';
+import {
+  AppendBreadcrumb,
+  CreateRow,
+  LoadRowDocument,
+  LoadView,
+  LoadViewMeta,
+  View,
+  ViewInfo,
+  ViewLayout,
+  YDoc,
+} from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { PublishService, RowService } from '@/application/services/domains';
@@ -102,7 +112,7 @@ export interface PublishContextType {
   loadViewMeta: LoadViewMeta;
   createRow?: CreateRow;
   loadView: LoadView;
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   outline?: View[];
   appendBreadcrumb?: AppendBreadcrumb;
   breadcrumbs: View[];

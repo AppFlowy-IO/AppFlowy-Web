@@ -1,11 +1,11 @@
 import { getCell } from '@/application/database-yjs/const';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   CheckboxFilterCondition,
   parseSelectOptionTypeOptions,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields';
-import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
 import { Row } from '@/application/database-yjs/selector';
@@ -95,7 +95,7 @@ export function groupByCheckbox(
     }
 
     const cell = getCell(row.id, fieldId, rowMetas);
-    const cellData = cell?.get(YjsDatabaseKey.data);
+    const cellData = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
     const checked = parseCheckboxValue(cellData as string);
     const groupName = checked ? 'Yes' : 'No';
 
@@ -171,21 +171,11 @@ export function groupBySelectOption(
     }
 
     const cell = getCell(row.id, fieldId, rowMetas);
-    const cellData = cell?.get(YjsDatabaseKey.data);
-    const sourceType = Number(
-      cell?.get(YjsDatabaseKey.source_field_type) ?? cell?.get(YjsDatabaseKey.field_type)
-    ) as FieldType;
+    const cellData = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
 
     let selectedIds: string[] = [];
 
-    if (sourceType === FieldType.Checklist && typeof cellData === 'string') {
-      const checklist = parseChecklistFlexible(cellData);
-
-      selectedIds =
-        checklist?.selectedOptionIds
-          ?.map((idOrName) => typeOption.options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
-          .filter((id): id is string => Boolean(id)) ?? [];
-    } else if (typeof cellData === 'string') {
+    if (typeof cellData === 'string') {
       selectedIds =
         cellData
           .split(',')

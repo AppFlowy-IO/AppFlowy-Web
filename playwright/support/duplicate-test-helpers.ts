@@ -1,4 +1,5 @@
 import { expect, Locator, Page } from '@playwright/test';
+import * as Y from 'yjs';
 import {
   AddPageSelectors,
   BlockSelectors,
@@ -280,6 +281,83 @@ export function databaseBlocks(editor: Locator): Locator {
   return editor.locator(BlockSelectors.blockSelector('grid'));
 }
 
+async function getServerDocumentDatabaseBlockCount(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string
+): Promise<number> {
+  const [, workspaceId] = new URL(page.url()).pathname.split('/').filter(Boolean);
+
+  if (!workspaceId) return -1;
+
+  const token = await page.evaluate(() => localStorage.getItem('af_auth_token'));
+
+  if (!token) return -1;
+
+  let encodedCollab: number[] | null = null;
+
+  try {
+    const url = new URL(`/api/workspace/${workspaceId}/page-view/${docViewId}`, apiOrigin);
+
+    url.searchParams.set('_t', Date.now().toString());
+    const response = await page.request.get(url.toString(), {
+      failOnStatusCode: false,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Cache-Control': 'no-cache',
+      },
+    });
+
+    if (!response.ok()) return -1;
+
+    const payload = (await response.json()) as {
+      data?: { data?: { encoded_collab?: number[] } };
+    };
+
+    encodedCollab = payload.data?.data?.encoded_collab ?? null;
+  } catch {
+    return -1;
+  }
+
+  if (!encodedCollab) return -1;
+
+  const doc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(doc, new Uint8Array(encodedCollab));
+    const document = doc.getMap('data').get('document') as Y.Map<unknown> | undefined;
+    const blocks = document?.get('blocks') as Y.Map<Y.Map<unknown>> | undefined;
+    let count = 0;
+
+    blocks?.forEach((block) => {
+      if (block.get('ty') === 'grid') {
+        count++;
+      }
+    });
+
+    return count;
+  } catch {
+    return -1;
+  } finally {
+    doc.destroy();
+  }
+}
+
+async function waitForDocumentDatabaseBlocksOnServer(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string,
+  expectedCount: number
+): Promise<void> {
+  await expect
+    .poll(() => getServerDocumentDatabaseBlockCount(page, apiOrigin, docViewId), {
+      timeout: 30000,
+      intervals: [250, 500, 1000],
+      message: `Expected document ${docViewId} to persist ${expectedCount} database block(s) before duplication`,
+    })
+    .toBe(expectedCount);
+}
+
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
   let slateEditor = editor.locator('[data-slate-editor="true"]').first();
 
@@ -370,15 +448,21 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
       await openSlashMenuInEditor(page, editor, line);
       await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
 
-      const dialog = page.locator('[role="dialog"]');
+      await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
+
+      // The database ViewModal can mount shortly after the embedded grid. Wait
+      // for that delayed render before closing it so sidebar interactions are
+      // not blocked by the modal backdrop.
+      const dialog = page.locator('[role="dialog"]').last();
+      await dialog.waitFor({ state: 'visible', timeout: 2000 }).catch(() => undefined);
       if (await dialog.isVisible().catch(() => false)) {
         await page.keyboard.press('Escape');
-        await expect(dialog)
-          .not.toBeVisible({ timeout: 5000 })
-          .catch(() => undefined);
+        if (await dialog.isVisible().catch(() => false)) {
+          await page.mouse.click(10, 10);
+        }
+        await expect(dialog).toBeHidden({ timeout: 5000 });
       }
 
-      await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
       await page.waitForTimeout(1500);
       return;
     } catch (e) {
@@ -412,7 +496,14 @@ export async function insertLinkedGridViaSlash(
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await openSlashMenuInEditor(page, editor, line);
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+      const linkedGridOption = page.getByTestId('slash-menu-linkedGrid');
+
+      await expect(linkedGridOption).toBeVisible({ timeout: 10000 });
+      await linkedGridOption.scrollIntoViewIfNeeded();
+      // Do not force this click. The slash menu scrolls the selected option into
+      // view, and a forced pointer click can land on the adjacent inline-grid
+      // option while that animation is still settling.
+      await linkedGridOption.click();
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
 
       const loadingText = page.getByText('Loading...');
@@ -432,17 +523,43 @@ export async function insertLinkedGridViaSlash(
 
       const matchCount = await popover.getByText(databaseName, { exact: false }).count();
       if (matchCount > 0) {
-        await popover.getByText(databaseName, { exact: false }).first().click({ force: true });
-        await page.waitForTimeout(2000);
+        const databaseOption = popover.getByText(databaseName, { exact: false }).first();
+
+        await databaseOption.scrollIntoViewIfNeeded();
+        const [response] = await Promise.all([
+          page.waitForResponse(
+            (candidate) =>
+              candidate.request().method() === 'POST' &&
+              new URL(candidate.url()).pathname.endsWith(`/page-view/${docViewId}/database-view`),
+            { timeout: 30000 }
+          ),
+          databaseOption.click(),
+        ]);
+
+        if (!response.ok()) {
+          throw new Error(`Linked database view creation failed with HTTP ${response.status()}`);
+        }
+
+        const expectedBlockCount = initialBlockCount + 1;
+        const apiOrigin = new URL(response.url()).origin;
+
+        await expect(databaseBlocks(editor)).toHaveCount(expectedBlockCount, { timeout: 30000 });
+        await waitForDocumentDatabaseBlocksOnServer(page, apiOrigin, docViewId, expectedBlockCount);
         return;
       }
     } catch (e) {
       lastError = e;
-      // Fall through to success detection + cleanup below
+      // Fall through to state validation + cleanup below.
     }
 
-    if ((await databaseBlocks(editor).count()) > initialBlockCount) {
-      return;
+    const currentBlockCount = await databaseBlocks(editor).count();
+
+    if (currentBlockCount !== initialBlockCount) {
+      const cause = lastError instanceof Error ? `: ${lastError.message}` : '';
+
+      throw new Error(
+        `Linked grid insertion changed the database block count before a linked view was confirmed${cause}`
+      );
     }
 
     if (attempt === 2) {

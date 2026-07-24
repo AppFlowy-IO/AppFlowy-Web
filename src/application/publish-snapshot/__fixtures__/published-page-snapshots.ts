@@ -18,7 +18,7 @@ export const publishedDocumentPayload: PublishedDocumentSnapshotPayload = {
   namespace: 'published-namespace',
   publishName: 'published-document',
   view: {
-    viewId: 'published-document-view-id',
+    viewId: '6e91148b-e42a-56b1-b9a0-58fbaa31552d',
     name: 'Published document',
     icon: {
       ty: ViewIconType.Icon,

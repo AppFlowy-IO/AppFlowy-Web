@@ -11,6 +11,7 @@ interface MockSyncOutboxRecord {
   version?: string | null;
   payload: Uint8Array;
   createdAt: number;
+  beforeStateVector?: Uint8Array;
 }
 
 let mockRecords: MockSyncOutboxRecord[] = [];
@@ -140,6 +141,32 @@ describe('sync outbox live send', () => {
     expect(mockRecords).toHaveLength(0);
   });
 
+  it('notifies the socket owner only after the outbox row is durable', async () => {
+    const onPersisted = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      isReady: () => false,
+      onPersisted,
+    });
+
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('draft'),
+    });
+
+    expect(onPersisted).not.toHaveBeenCalled();
+
+    await flushPromises();
+
+    expect(onPersisted).toHaveBeenCalledWith(workspaceId, objectId);
+    expect(mockRecords).toHaveLength(1);
+  });
+
   it('drains queued records when startDrainAll runs after the transport becomes ready', async () => {
     let ready = false;
     const send = jest.fn();
@@ -196,6 +223,79 @@ describe('sync outbox live send', () => {
     await flushPromises();
 
     expect(send).toHaveBeenCalledTimes(2);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('attaches the before state vector to an immediately sent update (and no after)', async () => {
+    const send = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      isReady: () => true,
+    });
+
+    const beforeStateVector = new Uint8Array([1, 2, 3]);
+
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('draft'),
+      beforeStateVector,
+    });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const update = send.mock.calls[0][0].collabMessage.update;
+
+    expect(update.beforeStateVector).toBe(beforeStateVector);
+    expect(update.afterStateVector).toBeUndefined();
+  });
+
+  it('takes the merged drain before vector from the first record (and sends no after)', async () => {
+    let ready = false;
+    const send = jest.fn();
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      isReady: () => ready,
+    });
+
+    const firstBefore = new Uint8Array([10]);
+    const lastBefore = new Uint8Array([20]);
+
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('old'),
+      beforeStateVector: firstBefore,
+    });
+    enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('new'),
+      beforeStateVector: lastBefore,
+    });
+    await flushPromises();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(mockRecords).toHaveLength(2);
+
+    ready = true;
+    startDrainAll();
+    await flushPromises();
+
+    expect(send).toHaveBeenCalledTimes(1);
+    const update = send.mock.calls[0][0].collabMessage.update;
+
+    // Merged payload covers first->last, so before = the first record's before.
+    expect(update.beforeStateVector).toBe(firstBefore);
+    expect(update.afterStateVector).toBeUndefined();
     expect(mockRecords).toHaveLength(0);
   });
 

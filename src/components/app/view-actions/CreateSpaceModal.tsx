@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 
 import {
   AccessLevel,
+  CreatePagePayload,
   SpaceInvitePolicy,
+  SpacePermission,
   SpacePermissionSettings,
   SpaceSidebarEditPolicy,
   SpaceVisibility,
@@ -39,10 +41,12 @@ function CreateSpaceModal({
   open,
   onClose,
   onCreated,
+  initialPage,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreated?: (spaceId: string) => void;
+  onCreated?: (spaceId: string, initialPageId?: string) => void;
+  initialPage?: CreatePagePayload;
 }) {
   const [spaceName, setSpaceName] = React.useState<string>('');
   const [spaceIcon, setSpaceIcon] = React.useState<string>('');
@@ -50,17 +54,33 @@ function CreateSpaceModal({
   const [spaceVisibility, setSpaceVisibility] = React.useState<SpaceVisibility>(SpaceVisibility.Open);
   const [loading, setLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
-  const { createSpace } = useAppOperations();
+  const { createSpace, createSpaceWithInitialPage } = useAppOperations();
   const handleOk = async () => {
-    if (!createSpace) return;
+    if (!createSpace && !(initialPage && createSpaceWithInitialPage)) return;
     setLoading(true);
     try {
-      const spaceId = await createSpace({
+      const spacePayload = {
         name: spaceName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
         permission: createSpacePermissionSettings(spaceVisibility),
-      });
+        space_permission: spaceVisibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public,
+      };
+
+      if (initialPage) {
+        if (!createSpaceWithInitialPage) return;
+        const result = await createSpaceWithInitialPage({
+          ...spacePayload,
+          initial_page: initialPage,
+        });
+
+        onClose();
+        onCreated && onCreated(result.space.view_id, result.page.view_id);
+        return;
+      }
+
+      if (!createSpace) return;
+      const spaceId = await createSpace(spacePayload);
 
       onClose();
 
