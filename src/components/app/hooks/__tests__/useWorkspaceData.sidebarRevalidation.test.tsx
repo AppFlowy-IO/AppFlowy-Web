@@ -65,7 +65,11 @@ const createView = (viewId: string, overrides: Partial<View> = {}): View => ({
   ...overrides,
 });
 
-function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => workspaceId) {
+function createWrapper(
+  eventEmitter: EventEmitter,
+  getWorkspaceId = () => workspaceId,
+  getSelectedWorkspaceId = getWorkspaceId
+) {
   const authContext: AuthInternalContextType = {
     currentWorkspaceId: getWorkspaceId(),
     isAuthenticated: true,
@@ -73,7 +77,7 @@ function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => worksp
     userWorkspaceInfo: {
       userId: 'user-id',
       selectedWorkspace: {
-        id: getWorkspaceId(),
+        id: getSelectedWorkspaceId(),
         databaseStorageId: 'database-storage-id',
         role: Role.Owner,
       },
@@ -94,6 +98,7 @@ function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => worksp
 
   return function Wrapper({ children }: { children: ReactNode }) {
     const activeWorkspaceId = getWorkspaceId();
+    const selectedWorkspaceId = getSelectedWorkspaceId();
     const activeAuthContext = {
       ...authContext,
       currentWorkspaceId: activeWorkspaceId,
@@ -102,7 +107,7 @@ function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => worksp
             ...authContext.userWorkspaceInfo,
             selectedWorkspace: {
               ...authContext.userWorkspaceInfo.selectedWorkspace,
-              id: activeWorkspaceId,
+              id: selectedWorkspaceId,
             },
           }
         : authContext.userWorkspaceInfo,
@@ -799,10 +804,10 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       return {
         outline: [
           createView('space-b', {
-            name: workspaceBOutlineCalls < 3 ? 'workspace b old' : 'workspace b new',
+            name: workspaceBOutlineCalls < 2 ? 'workspace b old' : 'workspace b new',
           }),
         ],
-        folderRid: workspaceBOutlineCalls < 3 ? '1-1' : '2-1',
+        folderRid: workspaceBOutlineCalls < 2 ? '1-1' : '2-1',
       };
     });
 
@@ -829,6 +834,136 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(revalidationResult).toBe('changed');
     expect(result.current.outline?.[0]?.name).toBe('workspace b new');
+  });
+
+  it('ignores a delayed root outline response after the workspace changes', async () => {
+    const eventEmitter = new EventEmitter();
+    const workspaceA = 'workspace-a';
+    const workspaceB = 'workspace-b';
+    const delayedWorkspaceAResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+    let activeWorkspaceId = workspaceA;
+
+    (ViewService.getOutline as jest.Mock).mockImplementation((requestedWorkspaceId: string) => {
+      if (requestedWorkspaceId === workspaceA) {
+        return delayedWorkspaceAResponse.promise;
+      }
+
+      return Promise.resolve({
+        outline: [createView('space-b', { name: 'workspace b' })],
+        folderRid: '1-1',
+      });
+    });
+
+    const { result, rerender } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter, () => activeWorkspaceId),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledWith(workspaceA);
+    });
+
+    activeWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('workspace b');
+    });
+
+    await act(async () => {
+      delayedWorkspaceAResponse.resolve({
+        outline: [createView('space-a', { name: 'stale workspace a' })],
+        folderRid: '2-1',
+      });
+      await delayedWorkspaceAResponse.promise;
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('workspace b');
+    expect(result.current.outline?.[0]?.view_id).toBe('space-b');
+  });
+
+  it('waits for the selected workspace and URL workspace to agree before reloading the outline', async () => {
+    const eventEmitter = new EventEmitter();
+    const workspaceA = 'workspace-a';
+    const workspaceB = 'workspace-b';
+    let activeWorkspaceId = workspaceA;
+    let selectedWorkspaceId = workspaceA;
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [createView('space-a', { name: 'workspace a' })],
+      folderRid: '1-1',
+    });
+
+    const { rerender } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(
+        eventEmitter,
+        () => activeWorkspaceId,
+        () => selectedWorkspaceId
+      ),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledWith(workspaceA);
+    });
+    (ViewService.getOutline as jest.Mock).mockClear();
+
+    selectedWorkspaceId = workspaceB;
+    rerender();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(ViewService.getOutline).not.toHaveBeenCalled();
+
+    activeWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledWith(workspaceB);
+    });
+    expect(ViewService.getOutline).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads the outline after a URL workspace selection catches up on the server', async () => {
+    const eventEmitter = new EventEmitter();
+    const workspaceA = 'workspace-a';
+    const workspaceB = 'workspace-b';
+    let activeWorkspaceId = workspaceA;
+    let selectedWorkspaceId = workspaceA;
+
+    (ViewService.getOutline as jest.Mock).mockImplementation(async (requestedWorkspaceId: string) => ({
+      outline: [createView(`space-${requestedWorkspaceId}`)],
+      folderRid: '1-1',
+    }));
+
+    const { rerender } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(
+        eventEmitter,
+        () => activeWorkspaceId,
+        () => selectedWorkspaceId
+      ),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledWith(workspaceA);
+    });
+    (ViewService.getOutline as jest.Mock).mockClear();
+
+    activeWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledWith(workspaceB);
+    });
+    (ViewService.getOutline as jest.Mock).mockClear();
+
+    selectedWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledWith(workspaceB);
+    });
+    expect(ViewService.getOutline).toHaveBeenCalledTimes(1);
   });
 
   it('ignores stale revalidation results after the workspace changes', async () => {

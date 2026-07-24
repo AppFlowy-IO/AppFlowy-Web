@@ -65,6 +65,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
   const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
   const workspaceInfoRequestIdRef = useRef(0);
+  const pendingWorkspaceChangeRef = useRef<string | null>(null);
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(
@@ -125,15 +126,35 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
         return;
       }
 
-      await WorkspaceService.open(workspaceId);
+      pendingWorkspaceChangeRef.current = workspaceId;
 
-      await loadUserWorkspaceInfo({ force: true });
+      try {
+        await WorkspaceService.open(workspaceId);
 
-      // Clean up old global key for backward compatibility
-      // New per-workspace-per-user keys don't need to be removed on workspace change
-      localStorage.removeItem('last_view_id');
+        const workspaceInfo = await loadUserWorkspaceInfo({ force: true });
 
-      navigate(`/app/${workspaceId}`);
+        // Clean up old global key for backward compatibility
+        // New per-workspace-per-user keys don't need to be removed on workspace change
+        localStorage.removeItem('last_view_id');
+
+        // Keep the URL transition behind the workspace-info refresh so
+        // workspace-scoped consumers never see the new URL with old metadata.
+        // pendingWorkspaceChangeRef suppresses the inverse intermediate state:
+        // the new server selection with the previous URL.
+        navigate(`/app/${workspaceId}`);
+
+        // A failed or inconsistent refresh should fall back to the URL-driven
+        // auto-switch path instead of leaving it suppressed indefinitely.
+        if (workspaceInfo?.selectedWorkspace.id !== workspaceId && pendingWorkspaceChangeRef.current === workspaceId) {
+          pendingWorkspaceChangeRef.current = null;
+        }
+      } catch (error) {
+        if (pendingWorkspaceChangeRef.current === workspaceId) {
+          pendingWorkspaceChangeRef.current = null;
+        }
+
+        throw error;
+      }
     },
     [loadUserWorkspaceInfo, navigate, userWorkspaceInfo]
   );
@@ -283,6 +304,15 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     if (!isAuthenticated || !urlWorkspaceId || !userWorkspaceInfo) return;
 
     const selectedId = userWorkspaceInfo.selectedWorkspace.id;
+    const pendingWorkspaceId = pendingWorkspaceChangeRef.current;
+
+    if (pendingWorkspaceId) {
+      if (urlWorkspaceId === pendingWorkspaceId && selectedId === pendingWorkspaceId) {
+        pendingWorkspaceChangeRef.current = null;
+      } else {
+        return;
+      }
+    }
 
     // Already on the correct workspace
     if (urlWorkspaceId === selectedId) return;

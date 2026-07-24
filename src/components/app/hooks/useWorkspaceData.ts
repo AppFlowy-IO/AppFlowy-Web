@@ -491,6 +491,8 @@ export function useWorkspaceData() {
 
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
+      const workspaceRevision = workspaceRevisionRef.current;
+
       try {
         // Parallelize API calls - both are independent and can run concurrently
         const [res, shareWithMeResult] = await Promise.all([
@@ -500,6 +502,10 @@ export function useWorkspaceData() {
             return null;
           }),
         ]);
+
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return;
+        }
 
         if (!res) {
           throw new Error('App outline not found');
@@ -534,6 +540,10 @@ export function useWorkspaceData() {
         if (!force) return;
 
         try {
+          if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+            return;
+          }
+
           const wId = window.location.pathname.split('/')[2];
           const pageId = window.location.pathname.split('/')[3];
           const search = window.location.search;
@@ -563,9 +573,18 @@ export function useWorkspaceData() {
             } else {
               try {
                 await ViewService.get(workspaceId, lastViewId);
+
+                if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+                  return;
+                }
+
                 navigate(`/app/${workspaceId}/${lastViewId}${search}`);
                 return;
               } catch {
+                if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+                  return;
+                }
+
                 if (lastViewKey) {
                   localStorage.removeItem(lastViewKey);
                 }
@@ -598,6 +617,11 @@ export function useWorkspaceData() {
                 spaces.map((space) => space.view_id),
                 1
               );
+
+              if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+                return;
+              }
+
               const spaceViewMap = new Map(spaceViews.map((spaceView) => [spaceView.view_id, spaceView]));
 
               for (const space of spaces) {
@@ -624,6 +648,10 @@ export function useWorkspaceData() {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return;
+        }
+
         Log.error('[Outline] App outline not found', e);
         if (e.code === ERROR_CODE.USER_UNAUTHORIZED || e.code === ERROR_CODE.NOT_LOGGED_IN) {
           invalidToken();
@@ -644,7 +672,9 @@ export function useWorkspaceData() {
         if (e.code === ERROR_CODE.INVALID_FOLDER_VIEW) {
           Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
           setTimeout(() => {
-            void loadOutline(workspaceId, force);
+            if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+              void loadOutline(workspaceId, force);
+            }
           }, 3000);
           return;
         }
@@ -656,6 +686,7 @@ export function useWorkspaceData() {
       updateAppliedRootOutlineSnapshot,
       userWorkspaceInfo?.userId,
       replaceOutlinePreservingChildren,
+      isStaleWorkspaceRequest,
     ]
   );
 
@@ -1678,6 +1709,7 @@ export function useWorkspaceData() {
     lastFolderRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
     lastAppliedRootOutlineFingerprintRef.current = null;
+    stableOutlineRef.current = [];
     setOutline([]);
     loadedViewIdsRef.current = new Set();
     setLoadedViewIdsRevision((r) => r + 1);
@@ -1714,18 +1746,31 @@ export function useWorkspaceData() {
   // (`undefined → defined`) — that's already handled by the effect above.
   const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
   const prevSelectedWorkspaceIdRef = useRef<string | undefined>(selectedWorkspaceId);
+  const workspaceAwaitingSelectionRef = useRef<string | null>(null);
 
   useEffect(() => {
     const prev = prevSelectedWorkspaceIdRef.current;
 
+    if (!selectedWorkspaceId || !currentWorkspaceId) return;
+
+    if (selectedWorkspaceId !== currentWorkspaceId) {
+      // A stable selection with a new URL is the direct-link/auto-switch path.
+      // Record it for one follow-up load after the server selection catches up.
+      // The inverse direction is a manual switch and the workspace-change
+      // effect will load the target once its URL changes.
+      workspaceAwaitingSelectionRef.current =
+        !prev || selectedWorkspaceId === prev ? currentWorkspaceId : null;
+      prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
+      return;
+    }
+
+    const shouldReload = workspaceAwaitingSelectionRef.current === currentWorkspaceId;
+
+    workspaceAwaitingSelectionRef.current = null;
     prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
+    if (!shouldReload) return;
 
-    // Only reload when transitioning between two defined values (an actual
-    // workspace switch), not on the initial load where prev was undefined.
-    if (!prev || !selectedWorkspaceId || prev === selectedWorkspaceId) return;
-    if (!currentWorkspaceId) return;
-
-    void loadOutline(currentWorkspaceId, false);
+    void loadOutline(selectedWorkspaceId, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedWorkspaceId, currentWorkspaceId]);
 
