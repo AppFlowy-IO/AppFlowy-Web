@@ -1090,6 +1090,75 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.outline?.[0]?.view_id).toBe('space-b-new');
   });
 
+  it('keeps an older successful outline while a newer same-workspace request is pending or fails', async () => {
+    const eventEmitter = new EventEmitter();
+    const workspaceA = 'workspace-a';
+    const workspaceB = 'workspace-b';
+    const initialWorkspaceBResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+    const catchUpWorkspaceBResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+    let activeWorkspaceId = workspaceA;
+    let selectedWorkspaceId = workspaceA;
+    let workspaceBOutlineCalls = 0;
+
+    (ViewService.getOutline as jest.Mock).mockImplementation((requestedWorkspaceId: string) => {
+      if (requestedWorkspaceId === workspaceA) {
+        return Promise.resolve({
+          outline: [createView('space-a', { name: 'workspace a' })],
+          folderRid: '1-1',
+        });
+      }
+
+      workspaceBOutlineCalls += 1;
+      return workspaceBOutlineCalls === 1 ? initialWorkspaceBResponse.promise : catchUpWorkspaceBResponse.promise;
+    });
+
+    const { result, rerender } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(
+        eventEmitter,
+        () => activeWorkspaceId,
+        () => selectedWorkspaceId
+      ),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('workspace a');
+    });
+
+    activeWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(workspaceBOutlineCalls).toBe(1);
+    });
+
+    selectedWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(workspaceBOutlineCalls).toBe(2);
+    });
+
+    await act(async () => {
+      initialWorkspaceBResponse.resolve({
+        outline: [createView('space-b-fallback', { name: 'workspace b fallback' })],
+        folderRid: '1-1',
+      });
+      await initialWorkspaceBResponse.promise;
+      await Promise.resolve();
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('workspace b fallback');
+
+    await act(async () => {
+      catchUpWorkspaceBResponse.reject(new Error('catch-up failed'));
+      await catchUpWorkspaceBResponse.promise.catch(() => undefined);
+      await Promise.resolve();
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('workspace b fallback');
+    expect(result.current.outline?.[0]?.view_id).toBe('space-b-fallback');
+  });
+
   it('keeps forced navigation active when a newer background outline request starts', async () => {
     const eventEmitter = new EventEmitter();
     const initialForcedResponse = createDeferred<{ outline: View[]; folderRid: string }>();
@@ -1209,6 +1278,74 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(revalidationResult).toBe('unchanged');
     expect(result.current.outline?.[0]?.name).toBe('latest outline');
+  });
+
+  it('does not apply an expanded child batch after a newer root response is accepted', async () => {
+    const eventEmitter = new EventEmitter();
+    const delayedChildResponse = createDeferred<View[]>();
+    const initialRoot = createView('space-id', {
+      children: [],
+      has_children: true,
+      name: 'initial root',
+    });
+    const revalidatedRoot = createView('space-id', {
+      children: [],
+      has_children: true,
+      name: 'revalidated root',
+    });
+    const latestRoot = createView('space-id', {
+      children: [],
+      has_children: true,
+      name: 'latest root',
+    });
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [initialRoot], folderRid: '1-1' })
+      .mockResolvedValueOnce({ outline: [revalidatedRoot], folderRid: '2-1' })
+      .mockResolvedValueOnce({ outline: [latestRoot], folderRid: '3-1' });
+    (ViewService.getMultiple as jest.Mock).mockReturnValueOnce(delayedChildResponse.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('initial root');
+    });
+
+    let revalidationPromise: Promise<string | undefined> = Promise.resolve(undefined);
+
+    act(() => {
+      revalidationPromise = result.current.revalidateSidebarOutline?.(['space-id']) ?? Promise.resolve(undefined);
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, ['space-id'], 1);
+    });
+
+    await act(async () => {
+      await result.current.loadOutline?.(workspaceId, false);
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('latest root');
+
+    let revalidationResult: string | undefined;
+
+    await act(async () => {
+      delayedChildResponse.resolve([
+        createView('space-id', {
+          children: [createView('stale-child')],
+          folder_rid: '2-1',
+          has_children: true,
+        }),
+      ]);
+      revalidationResult = await revalidationPromise;
+    });
+
+    expect(revalidationResult).toBe('unchanged');
+    expect(result.current.outline?.[0]?.name).toBe('latest root');
+    expect(result.current.outline?.[0]?.children).toEqual([]);
+    expect(result.current.loadedViewIds?.has('space-id')).toBe(false);
   });
 
   it('ignores stale revalidation results after the workspace changes', async () => {

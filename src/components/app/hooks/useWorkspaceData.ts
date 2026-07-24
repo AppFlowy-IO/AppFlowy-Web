@@ -377,10 +377,12 @@ export function useWorkspaceData() {
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
-  // Root loads and periodic revalidation share one latest-request-wins sequence.
-  // Forced routing is tracked separately so a background refresh can supersede
+  // Root loads and periodic revalidation share request IDs, but successful
+  // responses are superseded only after a newer response is accepted. Forced
+  // routing is tracked separately so a background refresh can supersede
   // outline data without leaving a root workspace URL unresolved.
   const rootOutlineRequestSeqRef = useRef(0);
+  const latestAcceptedRootOutlineRequestSeqRef = useRef(0);
   const latestForcedOutlineRequestSeqRef = useRef(0);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
@@ -498,6 +500,16 @@ export function useWorkspaceData() {
 
   const isStaleRootOutlineRequest = useCallback(
     (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
+      return (
+        isStaleWorkspaceRequest(workspaceId, workspaceRevision) ||
+        latestAcceptedRootOutlineRequestSeqRef.current > requestSeq
+      );
+    },
+    [isStaleWorkspaceRequest]
+  );
+
+  const isStaleRootOutlineFailure = useCallback(
+    (workspaceId: string, workspaceRevision: number, requestSeq: number) => {
       return isStaleWorkspaceRequest(workspaceId, workspaceRevision) || rootOutlineRequestSeqRef.current !== requestSeq;
     },
     [isStaleWorkspaceRequest]
@@ -558,7 +570,7 @@ export function useWorkspaceData() {
           outlineWithShareWithMe = [...res.outline, shareWithMeSpace];
         }
 
-        const shouldApplyOutline = rootOutlineRequestSeqRef.current === requestSeq;
+        const shouldApplyOutline = !isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq);
         const shouldNavigate = force && latestForcedOutlineRequestSeqRef.current === requestSeq;
 
         if (!shouldApplyOutline && !shouldNavigate) {
@@ -566,6 +578,7 @@ export function useWorkspaceData() {
         }
 
         if (shouldApplyOutline) {
+          latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
           const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
 
           updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
@@ -686,7 +699,7 @@ export function useWorkspaceData() {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
-        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
           return;
         }
 
@@ -710,7 +723,7 @@ export function useWorkspaceData() {
         if (e.code === ERROR_CODE.INVALID_FOLDER_VIEW) {
           Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
           setTimeout(() => {
-            if (!isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+            if (!isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
               void loadOutline(workspaceId, force);
             }
           }, 3000);
@@ -726,6 +739,7 @@ export function useWorkspaceData() {
       replaceOutlinePreservingChildren,
       isStaleWorkspaceRequest,
       isStaleRootOutlineRequest,
+      isStaleRootOutlineFailure,
       isStaleForcedOutlineNavigation,
     ]
   );
@@ -936,11 +950,15 @@ export function useWorkspaceData() {
   );
 
   const loadViewChildrenBatch = useCallback(
-    async (viewIds: string[]): Promise<View[]> => {
+    async (viewIds: string[], rootRequestSeq?: number): Promise<View[]> => {
       if (!currentWorkspaceId || viewIds.length === 0) return [];
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
+      const isStaleBatchRequest = () =>
+        rootRequestSeq === undefined
+          ? isStaleWorkspaceRequest(workspaceId, workspaceRevision)
+          : isStaleRootOutlineRequest(workspaceId, workspaceRevision, rootRequestSeq);
       const uniqueIds = Array.from(new Set(viewIds)).filter((viewId) => !loadingViewIdsRef.current.has(viewId));
 
       if (uniqueIds.length === 0) return [];
@@ -965,7 +983,7 @@ export function useWorkspaceData() {
 
         const views = await ViewService.getMultiple(workspaceId, uniqueIds, 1);
 
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleBatchRequest()) {
           return views;
         }
 
@@ -1007,7 +1025,7 @@ export function useWorkspaceData() {
 
         return views;
       } catch (e) {
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleBatchRequest()) {
           return [];
         }
 
@@ -1019,7 +1037,14 @@ export function useWorkspaceData() {
         }
       }
     },
-    [currentWorkspaceId, stableOutlineRef, eventEmitter, isStaleWorkspaceRequest, updateLastFolderRid]
+    [
+      currentWorkspaceId,
+      stableOutlineRef,
+      eventEmitter,
+      isStaleWorkspaceRequest,
+      isStaleRootOutlineRequest,
+      updateLastFolderRid,
+    ]
   );
 
   const markViewChildrenStale = useCallback(
@@ -1170,13 +1195,18 @@ export function useWorkspaceData() {
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
       const requestSeq = ++rootOutlineRequestSeqRef.current;
-      const res = await ViewService.getOutline(workspaceId).catch((error) => {
-        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
-          return null;
+      const outlineRequest = ViewService.getOutline(workspaceId);
+      let res: Awaited<typeof outlineRequest>;
+
+      try {
+        res = await outlineRequest;
+      } catch (error) {
+        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+          return 'unchanged';
         }
 
         throw error;
-      });
+      }
 
       if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
         Log.debug('[Outline] [periodic-revalidate] skipped stale root response', {
@@ -1188,6 +1218,8 @@ export function useWorkspaceData() {
       if (!res) {
         throw new Error('App outline not found');
       }
+
+      latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
 
       const nextFolderRid = parseFolderRid(res.folderRid);
       const currentRid = lastAppliedRootOutlineRidRef.current;
@@ -1236,7 +1268,7 @@ export function useWorkspaceData() {
       }
 
       try {
-        await loadViewChildrenBatch(refreshViewIds);
+        await loadViewChildrenBatch(refreshViewIds, requestSeq);
       } catch (error) {
         if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
           Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh error', {
@@ -1268,6 +1300,7 @@ export function useWorkspaceData() {
     [
       currentWorkspaceId,
       eventEmitter,
+      isStaleRootOutlineFailure,
       isStaleRootOutlineRequest,
       loadViewChildrenBatch,
       markCachedFolderSubtreesStale,
