@@ -798,11 +798,12 @@ export function useUpdateAdvancedFilter() {
             }
 
             if (filter) {
-              // Fast path: filter is a Yjs Map — update in-place
-              if (fieldId) {
-                filter.set(YjsDatabaseKey.field_id, fieldId);
+              if (fieldId && filter.get(YjsDatabaseKey.field_id) !== fieldId) {
+                Log.debug('[useUpdateAdvancedFilter] Skipping stale filter update', { filterId, fieldId });
+                return;
               }
 
+              // Fast path: filter is a Yjs Map — update in-place
               if (condition !== undefined) {
                 filter.set(YjsDatabaseKey.condition, condition);
               }
@@ -827,7 +828,14 @@ export function useUpdateAdvancedFilter() {
 
             const draft = { ...currentDrafts[idx] };
 
-            if (fieldId) draft.fieldId = fieldId;
+            if (fieldId && draft.fieldId !== fieldId) {
+              Log.debug('[useUpdateAdvancedFilter] Skipping stale plain-object filter update', {
+                filterId,
+                fieldId,
+              });
+              return;
+            }
+
             if (condition !== undefined) draft.condition = condition;
             if (content !== undefined) draft.content = content;
 

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseView, useFieldCellsSelector, useReadOnly } from '@/application/database-yjs';
+import { useDatabaseView, useFieldCellsByRowsSelector, useReadOnly } from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
 import { useCalculateFieldDispatch, useClearCalculate, useUpdateCalculate } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DropdownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { CalculationCell, ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell';
 import CalcationMenu from '@/components/database/components/grid/grid-calculation-cell/CalcationMenu';
+import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 
 export interface GridCalculateRowCellProps {
@@ -19,7 +20,8 @@ export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
   const [calculation, setCalculation] = useState<ICalculationCell>();
   const readOnly = useReadOnly();
   const calculate = useCalculateFieldDispatch(fieldId);
-  const { cells } = useFieldCellsSelector(fieldId);
+  const { rowOrders } = useGridContext();
+  const { cells } = useFieldCellsByRowsSelector(fieldId, rowOrders);
   const calculations = databaseView?.get(YjsDatabaseKey.calculations);
 
   const { t } = useTranslation();

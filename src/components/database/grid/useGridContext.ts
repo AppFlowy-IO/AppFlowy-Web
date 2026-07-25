@@ -1,10 +1,12 @@
 import { createContext, useContext } from 'react';
 
+import type { Row } from '@/application/database-yjs';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 
 type GridContextType = {
   hoverRowId?: string;
   setHoverRowId: (hoverRowId?: string) => void;
+  rowOrders?: Row[];
   rows: RenderRow[];
   setRows: (rows: RenderRow[]) => void;
   activePropertyId?: string;

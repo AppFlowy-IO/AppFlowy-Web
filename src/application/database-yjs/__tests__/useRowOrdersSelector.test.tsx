@@ -10,6 +10,8 @@ import {
   TextFilterCondition,
   useRowOrdersSelector,
 } from '@/application/database-yjs';
+import { useUpdateAdvancedFilter } from '@/application/database-yjs/dispatch';
+import * as databaseFilter from '@/application/database-yjs/filter';
 import {
   RowId,
   YDatabaseField,
@@ -173,6 +175,100 @@ describe('useRowOrdersSelector', () => {
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
     });
+  });
+
+  it('keeps current rows visible when a blank filter is created', async () => {
+    const fixture = createDatabaseFixture();
+    const filterBySpy = jest.spyOn(databaseFilter, 'filterBy');
+    const renderedOrders: Array<string[] | undefined> = [];
+    const { result } = renderHook(
+      () => {
+        const rows = useRowOrdersSelector();
+
+        renderedOrders.push(rows?.map((row) => row.id));
+        return rows;
+      },
+      {
+        wrapper: createWrapper(fixture),
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    filterBySpy.mockClear();
+    const renderCountBeforeFilter = renderedOrders.length;
+    const rowsBeforeFilter = result.current;
+
+    act(() => {
+      fixture.filters.push([createTextFilter('')]);
+    });
+
+    expect(result.current).toBe(rowsBeforeFilter);
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    expect(renderedOrders.slice(renderCountBeforeFilter)).not.toContain(undefined);
+    expect(filterBySpy).not.toHaveBeenCalled();
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    expect(filterBySpy).not.toHaveBeenCalled();
+    filterBySpy.mockRestore();
+  });
+
+  it('computes each filter change once', async () => {
+    const fixture = createDatabaseFixture();
+    const filterBySpy = jest.spyOn(databaseFilter, 'filterBy');
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    filterBySpy.mockClear();
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    expect(filterBySpy).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(filterBySpy).toHaveBeenCalledTimes(1);
+    filterBySpy.mockRestore();
+  });
+
+  it('applies conditions that do not require an input value', async () => {
+    const fixture = createDatabaseFixture();
+    const emptyFilter = createTextFilter('');
+
+    emptyFilter.set(YjsDatabaseKey.condition, TextFilterCondition.TextIsEmpty);
+
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([emptyFilter]);
+    });
+
+    expect(result.current).toEqual([]);
   });
 
   it('updates unconditioned row order immediately when rows are added or removed', async () => {
@@ -354,5 +450,30 @@ describe('useRowOrdersSelector', () => {
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
     });
+  });
+});
+
+describe('useUpdateAdvancedFilter', () => {
+  it('ignores a delayed update targeting a previous field', () => {
+    const fixture = createDatabaseFixture();
+    const filter = createTextFilter('');
+
+    fixture.filters.push([filter]);
+
+    const { result } = renderHook(() => useUpdateAdvancedFilter(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    act(() => {
+      filter.set(YjsDatabaseKey.field_id, 'replacement-field');
+      result.current({
+        filterId: 'filter-id',
+        fieldId,
+        content: 'stale value',
+      });
+    });
+
+    expect(filter.get(YjsDatabaseKey.field_id)).toBe('replacement-field');
+    expect(filter.get(YjsDatabaseKey.content)).toBe('');
   });
 });

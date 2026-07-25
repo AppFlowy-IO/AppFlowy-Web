@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { useDatabaseViewId, useRowOrdersSelector } from '@/application/database-yjs';
+import { useDatabaseViewId } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
@@ -58,12 +58,12 @@ export function useHoverControlsActions(rowId: string) {
   const [addBelowLoading, setAddBelowLoading] = useState<boolean>(false);
   const [addAboveLoading, setAddAboveLoading] = useState<boolean>(false);
   const [duplicateLoading, setDuplicateLoading] = useState<boolean>(false);
-  const rows = useRowOrdersSelector();
+  const { rowOrders } = useGridContext();
   const onNewRow = useNewRowDispatch();
   const duplicateRow = useDuplicateRowDispatch();
 
   const onAddRowBelow = useCallback(async () => {
-    if (!rows) {
+    if (!rowOrders) {
       throw new Error('No rows');
     }
 
@@ -76,16 +76,16 @@ export function useHoverControlsActions(rowId: string) {
     } finally {
       setAddBelowLoading(false);
     }
-  }, [onNewRow, rowId, rows]);
+  }, [onNewRow, rowId, rowOrders]);
 
   const onAddRowAbove = useCallback(async () => {
-    if (!rows) {
+    if (!rowOrders) {
       throw new Error('No rows');
     }
 
     setAddAboveLoading(true);
-    const index = rows.findIndex((row) => row.id === rowId);
-    const beforeRowId = index > 0 ? rows[index - 1].id : undefined;
+    const index = rowOrders.findIndex((row) => row.id === rowId);
+    const beforeRowId = index > 0 ? rowOrders[index - 1].id : undefined;
 
     try {
       await onNewRow({ beforeRowId });
@@ -94,7 +94,7 @@ export function useHoverControlsActions(rowId: string) {
     } finally {
       setAddAboveLoading(false);
     }
-  }, [onNewRow, rowId, rows]);
+  }, [onNewRow, rowId, rowOrders]);
 
   const onDuplicateRow = useCallback(async () => {
     setDuplicateLoading(true);
