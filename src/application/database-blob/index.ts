@@ -39,6 +39,7 @@ type SharedPrefetchEntry = {
   priorityRowIds: Set<string>;
   onSeedsReadyCallbacks: Set<() => void>;
   seedsReady: boolean;
+  hasCompleteSeedSet: boolean;
   coversFullSnapshot: boolean;
   reuseSettled?: boolean;
   settled?: boolean;
@@ -49,6 +50,7 @@ type SharedPrefetchEntry = {
 type FetchDiffResult = {
   diff: database_blob.DatabaseBlobDiffResponse;
   ready: boolean;
+  pages: database_blob.DatabaseBlobDiffResponse[];
 };
 
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
@@ -58,6 +60,9 @@ const MAX_ROW_DOC_SEEDS_LOOKUP = 10000;
 const BLOB_DIFF_PENDING_RETRIES = 1;
 const BLOB_DIFF_DEFAULT_RETRY_MS = 1000;
 const BLOB_DIFF_MAX_RETRY_MS = 5000;
+const BLOB_DIFF_PAGE_MAX_ITEMS = 256;
+const BLOB_DIFF_PAGE_MAX_BYTES = 16 * 1024 * 1024;
+const BLOB_DIFF_MAX_RESTARTS = 2;
 
 const readyStatus = database_blob.DiffStatus.READY;
 const pendingStatus = database_blob.DiffStatus.PENDING;
@@ -199,6 +204,15 @@ function compareRid(a: DatabaseBlobRowRid, b: DatabaseBlobRowRid) {
   }
 
   return a.timestamp > b.timestamp ? 1 : -1;
+}
+
+function latestRid(current: DatabaseBlobRowRid | null, candidate: DatabaseBlobRowRid | null) {
+  if (!candidate || (current && compareRid(current, candidate) >= 0)) return current;
+  return candidate;
+}
+
+function cursorKey(cursor: Uint8Array) {
+  return Array.from(cursor).join(',');
 }
 
 const rowDocSeedCache = new Map<string, RowDocSeed>();
@@ -822,33 +836,26 @@ async function applyDiff(
 async function persistDiffToIndexedDB(
   databaseId: string,
   diff: database_blob.DatabaseBlobDiffResponse,
-  options: { source: string; writeRid: boolean }
-) {
+  source: string
+): Promise<boolean> {
   const applyStartedAt = Date.now();
 
   try {
     await applyDiff(databaseId, diff, { seedCache: false });
     Log.debug('[Database] blob diff persisted to IndexedDB', {
       databaseId,
-      source: options.source,
+      source,
       durationMs: Date.now() - applyStartedAt,
       ...summarizeDiff(diff),
     });
-
-    if (!options.writeRid) return;
-
-    const maxRid = maxRidFromDiff(diff);
-
-    if (maxRid) {
-      writeCachedRid(databaseId, maxRid);
-      Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
-    }
+    return true;
   } catch (error) {
     Log.warn('[Database] blob diff persist failed', {
       databaseId,
-      source: options.source,
+      source,
       error,
     });
+    return false;
   }
 }
 
@@ -858,75 +865,163 @@ async function fetchReadyDiff(
   options: {
     cachedRid: DatabaseBlobRowRid | null;
     forceFullSync?: boolean;
-    onPendingDiff?: (diff: database_blob.DatabaseBlobDiffResponse, attempt: number) => void;
   }
 ): Promise<FetchDiffResult> {
   const cachedRid = options.cachedRid;
-  const request = database_blob.DatabaseBlobDiffRequest.create({
-    maxKnownRid: cachedRid ? { timestamp: cachedRid.timestamp, seqNo: cachedRid.seqNo } : undefined,
-    version: 1,
-  });
+  const maxKnownRid = cachedRid ? { timestamp: cachedRid.timestamp, seqNo: cachedRid.seqNo } : undefined;
+  let cursor = new Uint8Array();
+  let pages: database_blob.DatabaseBlobDiffResponse[] = [];
+  let seenCursors = new Set([cursorKey(cursor)]);
+  let restartCount = 0;
 
   Log.debug('[Database] blob diff request', {
     workspaceId,
     databaseId,
     forceFullSync: options?.forceFullSync ?? false,
     maxKnownRid: cachedRid ?? null,
+    version: 3,
+    pageMaxItems: BLOB_DIFF_PAGE_MAX_ITEMS,
+    pageMaxBytes: BLOB_DIFF_PAGE_MAX_BYTES,
   });
 
-  const firstAttemptStartedAt = Date.now();
+  const walkStartedAt = Date.now();
   const maxAttempts = BLOB_DIFF_PENDING_RETRIES + 1;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const attemptStartedAt = Date.now();
-    const diff = await databaseBlobDiff(workspaceId, databaseId, request);
-
-    Log.debug('[Database] blob diff response', {
-      databaseId,
-      status: diff.status,
-      retryAfterSecs: diff.retryAfterSecs ?? null,
-      attempt,
-      durationMs: Date.now() - attemptStartedAt,
-      totalDurationMs: Date.now() - firstAttemptStartedAt,
-      ...summarizeDiff(diff),
+  for (;;) {
+    const request = database_blob.DatabaseBlobDiffRequest.create({
+      maxKnownRid,
+      version: 3,
+      // The existing RID cache is document-aware. Keep this field absent so
+      // its RID domain remains compatible with legacy requests.
+      page: {
+        maxItems: BLOB_DIFF_PAGE_MAX_ITEMS,
+        maxBytes: BLOB_DIFF_PAGE_MAX_BYTES,
+        cursor,
+      },
     });
 
-    if (diff.status === readyStatus) {
-      return { diff, ready: true };
-    }
+    let diff: database_blob.DatabaseBlobDiffResponse | null = null;
 
-    if (diff.status !== pendingStatus) {
-      throw new Error(
-        `database blob diff failed: status=${diff.status}, attempts=${attempt}, message=${diff.message ?? 'none'}`
-      );
-    }
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const attemptStartedAt = Date.now();
 
-    options?.onPendingDiff?.(diff, attempt);
+      diff = await databaseBlobDiff(workspaceId, databaseId, request);
 
-    if (attempt === maxAttempts) {
-      Log.warn('[Database] blob diff still pending; falling back to row sync', {
+      Log.debug('[Database] blob diff page response', {
         databaseId,
-        attempts: attempt,
-        message: diff.message ?? null,
+        status: diff.status,
+        retryAfterSecs: diff.retryAfterSecs ?? null,
+        pageNumber: pages.length + 1,
+        attempt,
+        durationMs: Date.now() - attemptStartedAt,
+        totalDurationMs: Date.now() - walkStartedAt,
         ...summarizeDiff(diff),
       });
-      return { diff, ready: false };
+
+      const page = diff.page;
+
+      if (!page) {
+        throw new Error('database blob diff paging protocol error: version 3 response omitted page metadata');
+      }
+
+      if (page.restartRequired) {
+        if (
+          page.hasMore ||
+          (page.nextCursor?.length ?? 0) > 0 ||
+          diff.creates.length > 0 ||
+          diff.updates.length > 0 ||
+          diff.deletes.length > 0 ||
+          diff.missingRowIds.length > 0
+        ) {
+          throw new Error(
+            'database blob diff paging protocol error: restart response contained payload or a continuation cursor'
+          );
+        }
+
+        if (restartCount >= BLOB_DIFF_MAX_RESTARTS) {
+          Log.warn('[Database] blob diff page walk kept restarting; falling back to row sync', {
+            databaseId,
+            restartCount,
+            totalDurationMs: Date.now() - walkStartedAt,
+          });
+          return { diff, ready: false, pages: [] };
+        }
+
+        restartCount += 1;
+        cursor = new Uint8Array();
+        pages = [];
+        seenCursors = new Set([cursorKey(cursor)]);
+        Log.warn('[Database] blob diff page walk restarted', {
+          databaseId,
+          restartCount,
+          totalDurationMs: Date.now() - walkStartedAt,
+        });
+        break;
+      }
+
+      if (diff.status === readyStatus) {
+        pages.push(diff);
+
+        if (!page.hasMore) {
+          if ((page.nextCursor?.length ?? 0) > 0) {
+            throw new Error('database blob diff paging protocol error: final page contained a continuation cursor');
+          }
+
+          return { diff, ready: true, pages };
+        }
+
+        const nextCursor = page.nextCursor ?? new Uint8Array();
+
+        if (nextCursor.length === 0) {
+          throw new Error('database blob diff paging protocol error: non-final page omitted its continuation cursor');
+        }
+
+        const nextCursorKey = cursorKey(nextCursor);
+
+        if (seenCursors.has(nextCursorKey)) {
+          throw new Error('database blob diff paging protocol error: server repeated a continuation cursor');
+        }
+
+        seenCursors.add(nextCursorKey);
+        cursor = new Uint8Array(nextCursor);
+        break;
+      }
+
+      if (diff.status !== pendingStatus) {
+        throw new Error(
+          `database blob diff failed: status=${diff.status}, attempts=${attempt}, message=${diff.message ?? 'none'}`
+        );
+      }
+
+      if (attempt === maxAttempts) {
+        Log.warn('[Database] blob diff still pending; discarding page walk and falling back to row sync', {
+          databaseId,
+          pageNumber: pages.length + 1,
+          attempts: attempt,
+          message: diff.message ?? null,
+          ...summarizeDiff(diff),
+        });
+        return { diff, ready: false, pages: [] };
+      }
+
+      const delayMs = retryDelayMs(diff.retryAfterSecs);
+
+      Log.debug('[Database] blob diff page pending; retrying unchanged cursor', {
+        databaseId,
+        pageNumber: pages.length + 1,
+        attempt,
+        nextAttempt: attempt + 1,
+        delayMs,
+        message: diff.message ?? null,
+      });
+
+      await sleep(delayMs);
     }
 
-    const delayMs = retryDelayMs(diff.retryAfterSecs);
-
-    Log.debug('[Database] blob diff pending; retrying', {
-      databaseId,
-      attempt,
-      nextAttempt: attempt + 1,
-      delayMs,
-      message: diff.message ?? null,
-    });
-
-    await sleep(delayMs);
+    if (!diff) {
+      throw new Error('database blob diff page request returned no response');
+    }
   }
-
-  throw new Error('database blob diff is not ready');
 }
 
 export async function prefetchDatabaseBlobDiff(
@@ -937,8 +1032,12 @@ export async function prefetchDatabaseBlobDiff(
   const { sharedKey, entry: existingEntry } = findSharedPrefetchEntry(workspaceId, databaseId, options);
 
   if (existingEntry?.promise) {
-    const canReuseSettledFullSeed = Boolean(options?.forceFullSync && existingEntry.settled && existingEntry.seedsReady);
-    const canReuseSettledSeed = Boolean(existingEntry.reuseSettled && existingEntry.settled && existingEntry.seedsReady);
+    const canReuseSettledFullSeed = Boolean(
+      options?.forceFullSync && existingEntry.settled && existingEntry.hasCompleteSeedSet
+    );
+    const canReuseSettledSeed = Boolean(
+      existingEntry.reuseSettled && existingEntry.settled && existingEntry.hasCompleteSeedSet
+    );
 
     if (!existingEntry.settled || canReuseSettledFullSeed || canReuseSettledSeed) {
       applyPrefetchOptions(existingEntry, options);
@@ -961,12 +1060,11 @@ export async function prefetchDatabaseBlobDiff(
     priorityRowIds: new Set(),
     onSeedsReadyCallbacks: new Set(),
     seedsReady: false,
+    hasCompleteSeedSet: false,
     coversFullSnapshot: cachedRid === null,
   };
 
   applyPrefetchOptions(entry, options);
-
-  let pendingPersistQueue: Promise<void> = Promise.resolve();
 
   const seedDiff = (diff: database_blob.DatabaseBlobDiffResponse, source: string) => {
     const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
@@ -982,49 +1080,57 @@ export async function prefetchDatabaseBlobDiff(
       lookupCount: rowDocSeedLookup.size,
     });
 
-    // Signal that seeds are available before the slow IndexedDB persist.
-    notifySeedsReady(entry);
-
     return seedSummary;
   };
 
-  const handlePendingDiff = (diff: database_blob.DatabaseBlobDiffResponse, attempt: number) => {
-    const summary = summarizeDiff(diff);
-
-    if (summary.rowDocStates === 0) return;
-
-    seedDiff(diff, 'pending');
-
-    pendingPersistQueue = pendingPersistQueue.then(() =>
-      persistDiffToIndexedDB(databaseId, diff, {
-        source: `pending attempt ${attempt}`,
-        writeRid: false,
-      })
-    );
-  };
-
   const promise = (async () => {
-    const { diff, ready } = await fetchReadyDiff(workspaceId, databaseId, {
+    const { diff, ready, pages } = await fetchReadyDiff(workspaceId, databaseId, {
       cachedRid,
       forceFullSync: options?.forceFullSync,
-      onPendingDiff: handlePendingDiff,
     });
 
     if (!ready) {
-      if (!entry.seedsReady) {
-        notifySeedsReady(entry);
-      }
-
-      await pendingPersistQueue;
+      notifySeedsReady(entry);
       return diff;
     }
 
-    seedDiff(diff, 'ready');
-    await pendingPersistQueue;
-    await persistDiffToIndexedDB(databaseId, diff, {
-      source: options?.forceFullSync ? 'ready full' : 'ready delta',
-      writeRid: !options?.forceFullSync,
+    pages.forEach((page, index) => {
+      seedDiff(page, `ready page ${index + 1}/${pages.length}`);
     });
+
+    // A page walk is only usable after its terminal Ready page. Expose the
+    // complete seed set before the slower IndexedDB writes begin.
+    entry.hasCompleteSeedSet = true;
+    notifySeedsReady(entry);
+
+    let allPagesPersisted = true;
+    let maxRid: DatabaseBlobRowRid | null = null;
+
+    for (let index = 0; index < pages.length; index += 1) {
+      const page = pages[index];
+      const persisted = await persistDiffToIndexedDB(
+        databaseId,
+        page,
+        `${options?.forceFullSync ? 'ready full' : 'ready delta'} page ${index + 1}/${pages.length}`
+      );
+
+      allPagesPersisted = persisted && allPagesPersisted;
+      maxRid = latestRid(maxRid, maxRidFromDiff(page));
+    }
+
+    if (!options?.forceFullSync && allPagesPersisted && maxRid) {
+      writeCachedRid(databaseId, maxRid);
+      Log.debug('[Database] blob updated rid cache after terminal page', {
+        databaseId,
+        maxRid,
+        pageCount: pages.length,
+      });
+    } else if (!allPagesPersisted) {
+      Log.warn('[Database] blob rid cache unchanged because one or more pages failed to persist', {
+        databaseId,
+        pageCount: pages.length,
+      });
+    }
 
     return diff;
   })().finally(() => {
