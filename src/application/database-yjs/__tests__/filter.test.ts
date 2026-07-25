@@ -183,6 +183,18 @@ describe('number filter tests', () => {
     expect(numberFilterCheck('0', '0', NumberFilterCondition.Equal)).toBe(true);
   });
 
+  it.each([
+    ['equal', NumberFilterCondition.Equal],
+    ['not equal', NumberFilterCondition.NotEqual],
+    ['greater than', NumberFilterCondition.GreaterThan],
+    ['greater than or equal', NumberFilterCondition.GreaterThanOrEqualTo],
+    ['less than', NumberFilterCondition.LessThan],
+    ['less than or equal', NumberFilterCondition.LessThanOrEqualTo],
+  ])('does not apply %s until a comparison value is provided', (_label, condition) => {
+    expect(numberFilterCheck('10', '', condition)).toBe(true);
+    expect(numberFilterCheck('', '   ', condition)).toBe(true);
+  });
+
   it('handles NaN values', () => {
     expect(numberFilterCheck('NaN', '5', NumberFilterCondition.Equal)).toBe(false);
     expect(numberFilterCheck('NaN', '5', NumberFilterCondition.NumberIsNotEmpty)).toBe(true);
@@ -475,6 +487,21 @@ describe('advanced filter tests', () => {
     ]);
 
     const result = filterBy(rows, filters, fields, rowMetas).map((row) => row.id);
+    expect(result).toEqual(['row-a', 'row-b', 'row-c']);
+  });
+
+  it('keeps all rows until a number filter comparison value is entered', () => {
+    const filters = createFilters([
+      {
+        fieldId: numberFieldId,
+        fieldType: FieldType.Number,
+        condition: NumberFilterCondition.Equal,
+        content: '',
+      },
+    ]);
+
+    const result = filterBy(rows, filters, fields, rowMetas).map((row) => row.id);
+
     expect(result).toEqual(['row-a', 'row-b', 'row-c']);
   });
 });
@@ -1573,6 +1600,28 @@ describe('desktop grid filter parity', () => {
 
     const result = applyFilters(makeFilters([orGroup]));
     expect(result).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[3], fixture.rowIds[5]]);
+  });
+
+  it('ignores blank input filters inside OR groups', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildFilterHarness();
+    const blankTextFilter = makeDataFilter(
+      fixture.fieldIds.text,
+      FieldType.RichText,
+      TextFilterCondition.TextContains,
+      ''
+    );
+    const checkboxFilter = makeDataFilter(
+      fixture.fieldIds.checkbox,
+      FieldType.Checkbox,
+      CheckboxFilterCondition.IsChecked
+    );
+    const orGroup = makeGroupFilter(FilterType.Or, [blankTextFilter, checkboxFilter]);
+
+    expect(applyFilters(makeFilters([orGroup]))).toEqual([
+      fixture.rowIds[0],
+      fixture.rowIds[1],
+      fixture.rowIds[5],
+    ]);
   });
 
   it('applies nested filters with mixed group order', () => {

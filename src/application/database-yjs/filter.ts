@@ -158,6 +158,158 @@ function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
     .filter((node): node is YDatabaseFilter => node !== null);
 }
 
+type EffectiveFilterSnapshot = {
+  filterType: number;
+  fieldId?: string;
+  fieldType?: number;
+  condition?: number;
+  content?: unknown;
+  children?: EffectiveFilterSnapshot[];
+};
+
+function hasTextFilterContent(content: unknown) {
+  return typeof content === 'string' && content.length > 0;
+}
+
+function hasNumericFilterContent(content: unknown) {
+  return typeof content === 'string' && content.trim().length > 0;
+}
+
+function hasListFilterContent(content: unknown) {
+  if (typeof content !== 'string') return false;
+
+  const trimmed = content.trim();
+
+  if (!trimmed) return false;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (Array.isArray(parsed)) {
+      return parsed.length > 0;
+    }
+  } catch {
+    // Select filters also use comma-separated IDs.
+  }
+
+  return trimmed
+    .split(',')
+    .map((item) => item.trim())
+    .some(Boolean);
+}
+
+function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField) {
+  const fieldType = Number(field.get(YjsDatabaseKey.type));
+  const condition = Number(filter.get(YjsDatabaseKey.condition));
+  const content = filter.get(YjsDatabaseKey.content);
+
+  switch (fieldType) {
+    case FieldType.RichText:
+    case FieldType.URL:
+      return (
+        condition === TextFilterCondition.TextIsEmpty ||
+        condition === TextFilterCondition.TextIsNotEmpty ||
+        hasTextFilterContent(content)
+      );
+    case FieldType.Rollup:
+      return (
+        condition === TextFilterCondition.TextIsEmpty ||
+        condition === TextFilterCondition.TextIsNotEmpty ||
+        (isNumericRollupField(field) ? hasNumericFilterContent(content) : hasTextFilterContent(content))
+      );
+    case FieldType.Relation:
+      return (
+        condition === RelationFilterCondition.RelationIsEmpty ||
+        condition === RelationFilterCondition.RelationIsNotEmpty ||
+        condition === RelationFilterCondition.RelationLegacyTextIsEmpty ||
+        condition === RelationFilterCondition.RelationLegacyTextIsNotEmpty ||
+        hasListFilterContent(content)
+      );
+    case FieldType.SingleSelect:
+    case FieldType.MultiSelect:
+      return (
+        condition === SelectOptionFilterCondition.OptionIsEmpty ||
+        condition === SelectOptionFilterCondition.OptionIsNotEmpty ||
+        hasListFilterContent(content)
+      );
+    case FieldType.Person:
+      return (
+        condition === PersonFilterCondition.PersonIsEmpty ||
+        condition === PersonFilterCondition.PersonIsNotEmpty ||
+        hasListFilterContent(content)
+      );
+    case FieldType.Number:
+    case FieldType.Time:
+      return (
+        condition === NumberFilterCondition.NumberIsEmpty ||
+        condition === NumberFilterCondition.NumberIsNotEmpty ||
+        hasNumericFilterContent(content)
+      );
+    case FieldType.DateTime:
+    case FieldType.CreatedTime:
+    case FieldType.LastEditedTime:
+      return (
+        condition === DateFilterCondition.DateStartIsEmpty ||
+        condition === DateFilterCondition.DateStartIsNotEmpty ||
+        condition === DateFilterCondition.DateEndIsEmpty ||
+        condition === DateFilterCondition.DateEndIsNotEmpty ||
+        isRelativeDateCondition(condition) ||
+        hasTextFilterContent(content)
+      );
+    case FieldType.Checkbox:
+    case FieldType.Checklist:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function getEffectiveFilterSnapshot(
+  filterNode: YDatabaseFilter,
+  fields: YDatabaseFields
+): EffectiveFilterSnapshot | null {
+  const node = normalizeFilterNode(filterNode);
+
+  if (!node) return null;
+
+  const filterTypeValue = Number(node.get(YjsDatabaseKey.filter_type));
+  const filterType = Number.isFinite(filterTypeValue) ? filterTypeValue : FilterType.Data;
+
+  if (filterType === FilterType.And || filterType === FilterType.Or) {
+    const children = getFilterChildren(node)
+      .map((child) => getEffectiveFilterSnapshot(child, fields))
+      .filter((child): child is EffectiveFilterSnapshot => child !== null);
+
+    return children.length > 0 ? { filterType, children } : null;
+  }
+
+  const fieldId = node.get(YjsDatabaseKey.field_id);
+  const field = fields.get(fieldId);
+
+  if (!field || !isDataFilterEffective(node, field)) return null;
+
+  return {
+    filterType,
+    fieldId,
+    fieldType: Number(field.get(YjsDatabaseKey.type)),
+    condition: Number(node.get(YjsDatabaseKey.condition)),
+    content: node.get(YjsDatabaseKey.content),
+  };
+}
+
+export function getEffectiveFiltersSnapshot(filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+  if (!filters || !fields) return [];
+
+  return filters
+    .toArray()
+    .map((filterNode) => getEffectiveFilterSnapshot(filterNode, fields))
+    .filter((snapshot): snapshot is EffectiveFilterSnapshot => snapshot !== null);
+}
+
+export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+  return getEffectiveFiltersSnapshot(filters, fields).length > 0;
+}
+
 function parseRelationFilterIds(content: string): string[] | null {
   const trimmed = content.trim();
 
@@ -570,9 +722,9 @@ export function filterBy(
 
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
-  const compileFilterPredicate = (filterNode: YDatabaseFilter): ((row: Row) => boolean) => {
+  const compileFilterPredicate = (filterNode: YDatabaseFilter): ((row: Row) => boolean) | null => {
     if (!filterNode || typeof filterNode !== 'object') {
-      return () => true;
+      return null;
     }
 
     // Wrap plain objects that lack .get() (e.g. from desktop sync)
@@ -583,9 +735,11 @@ export function filterBy(
     const filterType = Number(node.get(YjsDatabaseKey.filter_type));
 
     if (filterType === FilterType.And || filterType === FilterType.Or) {
-      const childPredicates = getFilterChildren(node).map(compileFilterPredicate);
+      const childPredicates = getFilterChildren(node)
+        .map(compileFilterPredicate)
+        .filter((predicate): predicate is (row: Row) => boolean => predicate !== null);
 
-      if (childPredicates.length === 0) return () => true;
+      if (childPredicates.length === 0) return null;
 
       if (filterType === FilterType.And) {
         return (row: Row) => every(childPredicates, (predicate) => predicate(row));
@@ -597,7 +751,7 @@ export function filterBy(
     const fieldId = node.get(YjsDatabaseKey.field_id);
     const field = fields.get(fieldId);
 
-    if (!field) return () => true;
+    if (!field || !isDataFilterEffective(node, field)) return null;
 
     const fieldType = Number(field.get(YjsDatabaseKey.type));
     const filterValue = parseFilter(fieldType, node);
@@ -700,7 +854,12 @@ export function filterBy(
     };
   };
 
-  const conditions = filterArray.map(compileFilterPredicate);
+  const conditions = filterArray
+    .map(compileFilterPredicate)
+    .filter((predicate): predicate is (row: Row) => boolean => predicate !== null);
+
+  if (conditions.length === 0) return rows;
+
   const predicate = createPredicate(conditions);
 
   return filter(rows, predicate);
@@ -730,6 +889,14 @@ export function textFilterCheck(data: string, content: string, condition: TextFi
 }
 
 export function numberFilterCheck(data: string, content: string, condition: number) {
+  const isEmptyCondition =
+    condition === NumberFilterCondition.NumberIsEmpty ||
+    condition === NumberFilterCondition.NumberIsNotEmpty;
+
+  if (!isEmptyCondition && content.trim() === '') {
+    return true;
+  }
+
   if (isNaN(Number(data)) || isNaN(Number(content)) || data === '' || content === '') {
     if (condition === NumberFilterCondition.NumberIsEmpty) {
       return data === '';

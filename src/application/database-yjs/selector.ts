@@ -25,7 +25,13 @@ import {
   parseSelectOptionTypeOptions,
   SelectOption,
 } from '@/application/database-yjs/fields';
-import { filterBy, flattenFilterTree, parseFilter } from '@/application/database-yjs/filter';
+import {
+  filterBy,
+  flattenFilterTree,
+  getEffectiveFiltersSnapshot,
+  hasEffectiveFilters,
+  parseFilter,
+} from '@/application/database-yjs/filter';
 import { getGroupColumns, groupByField } from '@/application/database-yjs/group';
 import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
 import {
@@ -53,6 +59,7 @@ import {
   YDatabase,
   YDatabaseChartLayoutSetting,
   YDatabaseField,
+  YDatabaseFields,
   YDatabaseFilters,
   YDatabaseMetas,
   YDatabaseRow,
@@ -101,13 +108,14 @@ function stringifyConditionSignature(value: unknown) {
   return JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? item.toString() : item));
 }
 
-function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilters) {
-  const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+  const effectiveFilters = getEffectiveFiltersSnapshot(filters, fields);
+  const hasConditions = (sorts?.length ?? 0) > 0 || effectiveFilters.length > 0;
 
   if (!hasConditions) return '';
 
   return stringifyConditionSignature({
-    filters: filters?.toJSON?.() ?? [],
+    filters: effectiveFilters,
     sorts: sorts?.toJSON?.() ?? [],
   });
 }
@@ -1262,7 +1270,7 @@ export function useRowOrdersSelector() {
   const unavailableConditionRowsRef = useRef(new Set<string>());
 
   // Check if there are active conditions
-  const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+  const hasConditions = (sorts?.length ?? 0) > 0 || hasEffectiveFilters(filters, fields);
 
   // Background loading of row docs for sorting/filtering
   const { cachedRowDocs } = useBackgroundRowDocLoader(hasConditions);
@@ -1370,7 +1378,7 @@ export function useRowOrdersSelector() {
 
     if (!originalRowOrders) return false;
 
-    const conditionSignature = getConditionSignature(sorts, filters);
+    const conditionSignature = getConditionSignature(sorts, filters, fields);
     const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
     const currentHasConditions = conditionSignature !== '';
 
@@ -1386,7 +1394,7 @@ export function useRowOrdersSelector() {
     filtersAppliedRef.current = false;
     setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
     return true;
-  }, [filters, rowOrders, sorts, viewId]);
+  }, [fields, filters, rowOrders, sorts, viewId]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -1485,7 +1493,7 @@ export function useRowOrdersSelector() {
     // their `.length` always reflects the live document state, so this avoids
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
-    const conditionSignature = getConditionSignature(sorts, filters);
+    const conditionSignature = getConditionSignature(sorts, filters, fields);
     const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
     const currentHasConditions = conditionSignature !== '';
 
@@ -1613,16 +1621,15 @@ export function useRowOrdersSelector() {
     };
 
     const handleSortFilterChange = () => {
-      const conditionSignature = getConditionSignature(sorts, filters);
-      const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
+      const nextConditionStateKey = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 
-      if (conditionSignatureRef.current !== conditionStateKey) {
-        conditionSignatureRef.current = conditionStateKey;
-        filtersAppliedRef.current = false;
-        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
-      }
+      if (conditionSignatureRef.current === nextConditionStateKey) return;
 
-      debouncedChange();
+      // Recompute immediately so a filter change does not replace already-loaded
+      // rows with the loading placeholder. onConditionsChange still publishes
+      // the loading state when row documents genuinely need hydration.
+      onConditionsChange();
+      setRollupWatchVersion((prev) => prev + 1);
     };
 
     const handleFieldChange = () => {
@@ -1689,7 +1696,7 @@ export function useRowOrdersSelector() {
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
 
-  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters)}`;
+  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 
   return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
 }
@@ -2249,8 +2256,7 @@ export const useRowMetaSelector = (rowId: string) => {
   return meta;
 };
 
-export const useFieldCellsSelector = (fieldId: string) => {
-  const rows = useRowOrdersSelector();
+export const useFieldCellsByRowsSelector = (fieldId: string, rows?: Row[]) => {
   const [cells, setCells] = useState<Map<string, unknown> | null>(null);
   const rowMap = useRowMap();
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
@@ -2309,6 +2315,12 @@ export const useFieldCellsSelector = (fieldId: string) => {
   return {
     cells,
   };
+};
+
+export const useFieldCellsSelector = (fieldId: string) => {
+  const rows = useRowOrdersSelector();
+
+  return useFieldCellsByRowsSelector(fieldId, rows);
 };
 
 export const usePropertiesSelector = (isFilterHidden?: boolean) => {

@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -41,6 +41,7 @@ import RelationCellMenuContent from '@/components/database/components/cell/relat
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FieldDisplay } from '@/components/database/components/field';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
+import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -428,12 +429,12 @@ function ValueInput({ filter, fieldType, field, disabled }: ValueInputProps) {
 function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
-  const [value, setValue] = useState<string>(filter.content || '');
-
-  // Sync local state when filter.content changes externally (e.g., from Yjs sync)
-  useEffect(() => {
-    setValue(filter.content || '');
-  }, [filter.content]);
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: filter.content || '',
+    filterId: filter.id,
+    fieldId: filter.fieldId,
+    updateFilter,
+  });
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
@@ -442,14 +443,9 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      setValue(e.target.value);
-      updateFilter({
-        filterId: filter.id,
-        fieldId: filter.fieldId,
-        content: e.target.value,
-      });
+      updateValue(e.target.value);
     },
-    [filter.id, filter.fieldId, updateFilter]
+    [updateValue]
   );
 
   if (!showInput) return <div className='min-w-0 flex-[3]' />;
@@ -560,12 +556,12 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
 function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
-  const [value, setValue] = useState<string>(filter.content || '');
-
-  // Sync local state when filter.content changes externally (e.g., from Yjs sync)
-  useEffect(() => {
-    setValue(filter.content || '');
-  }, [filter.content]);
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: filter.content || '',
+    filterId: filter.id,
+    fieldId: filter.fieldId,
+    updateFilter,
+  });
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
@@ -574,14 +570,9 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      setValue(e.target.value);
-      updateFilter({
-        filterId: filter.id,
-        fieldId: filter.fieldId,
-        content: e.target.value,
-      });
+      updateValue(e.target.value);
     },
-    [filter.id, filter.fieldId, updateFilter]
+    [updateValue]
   );
 
   if (!showInput) return <div className='min-w-0 flex-[3]' />;

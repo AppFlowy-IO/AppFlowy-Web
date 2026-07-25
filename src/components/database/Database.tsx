@@ -10,6 +10,7 @@ import {
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -253,8 +254,12 @@ function Database(props: Database2Props) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+    const fields = database?.get(YjsDatabaseKey.fields);
 
-    return (view?.get(YjsDatabaseKey.filters)?.length ?? 0) > 0 || (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0;
+    return (
+      hasEffectiveFilters(view?.get(YjsDatabaseKey.filters), fields) ||
+      (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
+    );
   }, [doc, activeViewId]);
 
   const activeViewHasConditions = useSyncExternalStore(
