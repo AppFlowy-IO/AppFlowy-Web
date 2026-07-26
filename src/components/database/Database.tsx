@@ -208,6 +208,9 @@ function Database(props: Database2Props) {
   const localCachePrimedRef = useRef(false);
   const syncedRowKeysRef = useRef<Set<string>>(new Set());
   const batchPreloadDoneRef = useRef(false);
+  // Async blob work is scoped to one workspace/database lifecycle. A later
+  // generation makes completions from the previous lifecycle inert.
+  const blobPrefetchGenerationRef = useRef(0);
   // Gate that ensureRow awaits. Resolves after batch preload (or immediately in readOnly).
   const seedsGateRef = useRef(createDeferredGate());
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
@@ -226,6 +229,7 @@ function Database(props: Database2Props) {
 
     return databaseId || doc.guid;
   }, [doc]);
+  const currentDatabaseId = getDatabaseId();
 
   const getPriorityRowIds = useCallback(() => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -388,10 +392,13 @@ function Database(props: Database2Props) {
     [getDatabaseId]
   );
 
-  const runBatchPreload = useCallback(() => {
+  const runBatchPreload = useCallback((prefetchGeneration: number) => {
+    if (blobPrefetchGenerationRef.current !== prefetchGeneration) return;
     if (batchPreloadDoneRef.current) return;
     batchPreloadDoneRef.current = true;
     const gate = seedsGateRef.current;
+    const isCurrentPreload = () =>
+      blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
     const databaseId = getDatabaseId();
     const priorityRowIds = getPriorityRowIds();
 
@@ -437,6 +444,8 @@ function Database(props: Database2Props) {
       })
     )
       .then((results) => {
+        if (!isCurrentPreload()) return;
+
         const newEntries: Record<string, YDoc> = {};
 
         for (const result of results) {
@@ -457,6 +466,8 @@ function Database(props: Database2Props) {
         gate.resolve();
       })
       .catch(() => {
+        if (!isCurrentPreload()) return;
+
         // Ensure the gate always resolves even on unexpected errors,
         // otherwise ensureRow calls would be permanently blocked.
         gate.resolve();
@@ -464,10 +475,15 @@ function Database(props: Database2Props) {
   }, [getDatabaseId, getPriorityRowIds]);
 
   const ensureBlobPrefetch = useCallback(() => {
+    const prefetchGeneration = blobPrefetchGenerationRef.current;
+    const gate = seedsGateRef.current;
+    const isCurrentPrefetch = () =>
+      blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
+
     // Skip blob prefetch in read-only mode (publish view)
     // The publish API doesn't support blob/diff endpoint
     if (readOnly) {
-      seedsGateRef.current.resolve();
+      gate.resolve();
       setBlobPrefetchComplete(true);
       setSeedsReady(true);
       return null;
@@ -476,7 +492,7 @@ function Database(props: Database2Props) {
     const databaseId = getDatabaseId();
 
     if (!workspaceId || !databaseId) {
-      seedsGateRef.current.resolve();
+      gate.resolve();
       return null;
     }
 
@@ -500,19 +516,25 @@ function Database(props: Database2Props) {
       priorityRowIds,
       forceFullSync,
       onSeedsReady: () => {
+        if (!isCurrentPrefetch()) return;
+
         // Seeds are cached — filter/sort can now build ephemeral docs from them
         // without waiting for IndexedDB persist.
         setSeedsReady(true);
         // Also kick off batch preload for visible rows (heavy IndexedDB path).
-        runBatchPreload();
+        runBatchPreload(prefetchGeneration);
       },
     })
       .then(() => {
+        if (!isCurrentPrefetch()) return;
+
         setBlobPrefetchComplete(true);
       })
       .catch(() => {
+        if (!isCurrentPrefetch()) return;
+
         prefetchPromisesRef.current.delete(prefetchKey);
-        seedsGateRef.current.resolve(); // Unblock ensureRow on failure
+        gate.resolve(); // Unblock ensureRow on failure
         setBlobPrefetchComplete(true);
         setSeedsReady(true);
       });
@@ -523,14 +545,12 @@ function Database(props: Database2Props) {
   }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewHasConditions, runBatchPreload]);
 
   useEffect(() => {
-    const databaseId = getDatabaseId();
-
-    retainDatabaseRowDocSeedCache(databaseId);
+    retainDatabaseRowDocSeedCache(currentDatabaseId);
 
     return () => {
-      releaseDatabaseRowDocSeedCache(databaseId);
+      releaseDatabaseRowDocSeedCache(currentDatabaseId);
     };
-  }, [getDatabaseId]);
+  }, [currentDatabaseId]);
 
   const createNewRow = useCallback(
     async (rowKey: string) => {
@@ -565,6 +585,11 @@ function Database(props: Database2Props) {
     async (rowId: string) => {
       if (!createRow || !rowId) return;
 
+      const ensureGeneration = blobPrefetchGenerationRef.current;
+      const gate = seedsGateRef.current;
+      const isCurrentEnsure = () =>
+        blobPrefetchGenerationRef.current === ensureGeneration && seedsGateRef.current === gate;
+
       // Fast path: row already loaded (e.g. by batch preload or previous call).
       // Check before awaiting the gate to avoid blocking on already-available rows.
       const existing = rowMapRef.current[rowId];
@@ -579,7 +604,9 @@ function Database(props: Database2Props) {
 
       // Wait for batch preload to finish — it loads visible rows from seeds
       // in parallel. After it completes, the row may now be in rowMap.
-      await seedsGateRef.current.promise;
+      await gate.promise;
+
+      if (!isCurrentEnsure()) return;
 
       const existingAfterGate = rowMapRef.current[rowId];
 
@@ -594,7 +621,9 @@ function Database(props: Database2Props) {
       const pending = pendingRowDocsRef.current.get(rowId);
 
       if (pending) {
-        return pending;
+        const rowDoc = await pending;
+
+        return isCurrentEnsure() ? rowDoc : undefined;
       }
 
       const promise = (async () => {
@@ -611,6 +640,8 @@ function Database(props: Database2Props) {
         try {
           const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
+          if (!isCurrentEnsure()) return undefined;
+
           // Bind sync for this row - only visible rows call ensureRow
           // Non-visible rows rely on blob diff cached data
           registerRowSync(rowKey);
@@ -622,6 +653,8 @@ function Database(props: Database2Props) {
 
           return rowDoc;
         } catch {
+          if (!isCurrentEnsure()) return undefined;
+
           if (!localCachePrimedRef.current) {
             localCachePrimedRef.current = true;
             void ensureBlobPrefetch();
@@ -636,16 +669,18 @@ function Database(props: Database2Props) {
       try {
         const rowDoc = await promise;
 
-        if (rowDoc) {
+        if (rowDoc && isCurrentEnsure()) {
           setRowMap((prev) => {
             if (prev[rowId]) return prev;
             return { ...prev, [rowId]: rowDoc };
           });
         }
 
-        return rowDoc;
+        return isCurrentEnsure() ? rowDoc : undefined;
       } finally {
-        pendingRowDocsRef.current.delete(rowId);
+        if (pendingRowDocsRef.current.get(rowId) === promise) {
+          pendingRowDocsRef.current.delete(rowId);
+        }
       }
     },
     // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
@@ -655,6 +690,11 @@ function Database(props: Database2Props) {
   );
 
   useEffect(() => {
+    const prefetchGeneration = blobPrefetchGenerationRef.current + 1;
+    const previousGate = seedsGateRef.current;
+
+    blobPrefetchGenerationRef.current = prefetchGeneration;
+    previousGate.resolve();
     const initialRowMap = props.initialRowMap ?? {};
 
     rowMapRef.current = {};
@@ -664,23 +704,31 @@ function Database(props: Database2Props) {
     localCachePrimedRef.current = false;
     syncedRowKeysRef.current.clear();
     batchPreloadDoneRef.current = false;
-    seedsGateRef.current = createDeferredGate();
+    const lifecycleGate = createDeferredGate();
+
+    seedsGateRef.current = lifecycleGate;
     rowMapRef.current = initialRowMap;
     setRowMap(initialRowMap);
     setBlobPrefetchComplete(false);
     setSeedsReady(false);
-  }, [doc.guid, props.initialRowMap]);
+
+    return () => {
+      if (blobPrefetchGenerationRef.current === prefetchGeneration) {
+        blobPrefetchGenerationRef.current += 1;
+      }
+
+      lifecycleGate.resolve();
+    };
+  }, [workspaceId, doc, currentDatabaseId, props.initialRowMap]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
-    const databaseId = getDatabaseId();
-
-    if (workspaceId && databaseId) {
+    if (workspaceId && currentDatabaseId) {
       ensureBlobPrefetch()?.catch((error: unknown) => {
         console.error('[Database] Failed to prefetch blob:', error);
       });
     }
-  }, [workspaceId, getDatabaseId, ensureBlobPrefetch]);
+  }, [workspaceId, currentDatabaseId, ensureBlobPrefetch]);
 
   // Schedule deferred cleanup for all row sync contexts on unmount
   useEffect(() => {

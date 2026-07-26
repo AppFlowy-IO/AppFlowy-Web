@@ -1,19 +1,34 @@
 import { prefetchDatabaseBlobDiff, clearDatabaseRowDocSeedCache } from '@/application/database-blob';
+import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { deleteRow } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { database_blob } from '@/proto/database_blob';
 
 jest.mock('@/application/db', () => ({
+  deleteCollabDB: jest.fn(),
   getCachedProviderDoc: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
   openRowCollabDBWithProvider: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/cache', () => ({
+  deleteRow: jest.fn(),
   getCachedRowDoc: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/http/http_api', () => ({
   databaseBlobDiff: jest.fn(),
+}));
+
+jest.mock('@/application/sync-outbox', () => ({
+  deleteOutboxByObjectId: jest.fn(),
+}));
+
+// Persist assertions only care about control flow, not Yjs decoding, so the
+// tests can hand IndexedDB a stub doc.
+jest.mock('@/application/ydoc/apply', () => ({
+  applyYDoc: jest.fn(),
 }));
 
 jest.mock('@/utils/log', () => ({
@@ -24,7 +39,16 @@ jest.mock('@/utils/log', () => ({
 }));
 
 const mockedDatabaseBlobDiff = databaseBlobDiff as jest.MockedFunction<typeof databaseBlobDiff>;
+const mockedDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
+const mockedOpenRowCollabDB = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
+const mockedDeleteRow = deleteRow as jest.MockedFunction<typeof deleteRow>;
+const mockedDeleteOutbox = deleteOutboxByObjectId as jest.MockedFunction<typeof deleteOutboxByObjectId>;
 const databaseIds = new Set<string>();
+
+/** Drains the promise chain the page walk runs on, without advancing timers. */
+function flushPendingWork() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 function createDeferred<T>() {
   let resolve!: (value: T) => void;
@@ -80,10 +104,82 @@ function pageDiff(options: {
   });
 }
 
+// Version 4 / variant 10xx bytes, so decodeRowId can stringify them.
+const VALID_ROW_ID_BYTES = Uint8Array.from([
+  0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x47, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
+]);
+const VALID_ROW_ID = '11223344-5566-4788-99aa-bbccddeeff00';
+const SECOND_VALID_ROW_ID_BYTES = Uint8Array.from([
+  0x21, 0x22, 0x33, 0x44, 0x55, 0x66, 0x47, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x01,
+]);
+const SECOND_VALID_ROW_ID = '21223344-5566-4788-99aa-bbccddeeff01';
+
+/**
+ * A page whose row is well-formed enough to reach IndexedDB, so that failing the
+ * collab open below makes the page's persist fail rather than skip.
+ */
+function persistablePage(
+  rid: { timestamp: number; seqNo: number },
+  page: {
+    hasMore?: boolean;
+    nextCursor?: Uint8Array;
+  } = {}
+) {
+  return database_blob.DatabaseBlobDiffResponse.create({
+    status: database_blob.DiffStatus.READY,
+    creates: [
+      {
+        rowId: VALID_ROW_ID_BYTES,
+        rid,
+        docState: { docState: new Uint8Array([1, 2, 3]), encoderVersion: 1 },
+      },
+    ],
+    updates: [],
+    deletes: [],
+    page: {
+      hasMore: page.hasMore ?? false,
+      nextCursor: page.nextCursor ?? new Uint8Array(),
+      restartRequired: false,
+    },
+  });
+}
+
+function deletePage(
+  rid: { timestamp: number; seqNo: number },
+  options: {
+    rowId?: Uint8Array;
+    hasMore?: boolean;
+    nextCursor?: Uint8Array;
+  } = {}
+) {
+  return database_blob.DatabaseBlobDiffResponse.create({
+    status: database_blob.DiffStatus.READY,
+    creates: [],
+    updates: [],
+    deletes: [
+      {
+        rowId: options.rowId ?? VALID_ROW_ID_BYTES,
+        rid,
+      },
+    ],
+    page: {
+      hasMore: options.hasMore ?? false,
+      nextCursor: options.nextCursor ?? new Uint8Array(),
+      restartRequired: false,
+    },
+  });
+}
+
 describe('database blob prefetch deduplication', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockedDeleteCollabDB.mockResolvedValue(true);
+    mockedDeleteOutbox.mockResolvedValue(undefined);
+    mockedOpenRowCollabDB.mockResolvedValue({
+      doc: { destroy: jest.fn() },
+      provider: { destroy: jest.fn().mockResolvedValue(undefined) },
+    } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>);
   });
 
   afterEach(() => {
@@ -265,11 +361,13 @@ describe('database blob prefetch deduplication', () => {
     databaseIds.add(databaseId);
     mockedDatabaseBlobDiff
       .mockResolvedValueOnce(
-        pageDiff({
-          hasMore: true,
-          nextCursor,
-          rid: { timestamp: 20, seqNo: 1 },
-        })
+        persistablePage(
+          { timestamp: 20, seqNo: 1 },
+          {
+            hasMore: true,
+            nextCursor,
+          }
+        )
       )
       .mockResolvedValueOnce(pendingPage)
       .mockResolvedValueOnce(pendingPage);
@@ -284,6 +382,7 @@ describe('database blob prefetch deduplication', () => {
     expect(result).toBe(pendingPage);
     expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
     expect(onSeedsReady).toHaveBeenCalledTimes(1);
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
 
     mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
     await prefetchDatabaseBlobDiff(workspaceId, databaseId, {
@@ -297,11 +396,13 @@ describe('database blob prefetch deduplication', () => {
     const workspaceId = 'workspace-restart';
     const databaseId = 'database-restart';
     const nextCursor = new Uint8Array([4, 5, 6]);
-    const abandonedPage = pageDiff({
-      hasMore: true,
-      nextCursor,
-      rid: { timestamp: 99, seqNo: 0 },
-    });
+    const abandonedPage = persistablePage(
+      { timestamp: 99, seqNo: 0 },
+      {
+        hasMore: true,
+        nextCursor,
+      }
+    );
     const restartResponse = pageDiff({
       restartRequired: true,
     });
@@ -326,5 +427,314 @@ describe('database blob prefetch deduplication', () => {
       timestamp: 7,
       seqNo: 3,
     });
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+  });
+
+  it('withholds delta seeds and persistence until the terminal page', async () => {
+    const workspaceId = 'workspace-stream-delta';
+    const databaseId = 'database-stream-delta';
+    const onSeedsReady = jest.fn();
+    const finalPage = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(
+        persistablePage(
+          { timestamp: 400, seqNo: 1 },
+          {
+            hasMore: true,
+            nextCursor: new Uint8Array([1]),
+          }
+        )
+      )
+      .mockReturnValueOnce(finalPage.promise);
+
+    const prefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId, { onSeedsReady });
+
+    await flushPendingWork();
+
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    expect(onSeedsReady).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+
+    finalPage.resolve(readyDiff());
+    await prefetch;
+
+    expect(onSeedsReady).toHaveBeenCalledTimes(1);
+    expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+  });
+
+  it('withholds full-sync seeds until the terminal page', async () => {
+    const workspaceId = 'workspace-stream-full';
+    const databaseId = 'database-stream-full';
+    const onSeedsReady = jest.fn();
+    const finalPage = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(pageDiff({ hasMore: true, nextCursor: new Uint8Array([1]) }))
+      .mockReturnValueOnce(finalPage.promise);
+
+    const prefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId, {
+      forceFullSync: true,
+      onSeedsReady,
+    });
+
+    await flushPendingWork();
+
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+    expect(onSeedsReady).not.toHaveBeenCalled();
+
+    finalPage.resolve(readyDiff());
+    await prefetch;
+
+    expect(onSeedsReady).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a final page that carries a continuation cursor', async () => {
+    const databaseId = 'database-final-cursor';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(pageDiff({ hasMore: false, nextCursor: new Uint8Array([1]) }));
+
+    await expect(prefetchDatabaseBlobDiff('workspace-final-cursor', databaseId)).rejects.toThrow(
+      'final page contained a continuation cursor'
+    );
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  });
+
+  it('rejects a non-final page that omits its continuation cursor', async () => {
+    const databaseId = 'database-missing-cursor';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(pageDiff({ hasMore: true, nextCursor: new Uint8Array() }));
+
+    await expect(prefetchDatabaseBlobDiff('workspace-missing-cursor', databaseId)).rejects.toThrow(
+      'non-final page omitted its continuation cursor'
+    );
+  });
+
+  it('rejects a repeated continuation cursor', async () => {
+    const databaseId = 'database-repeated-cursor';
+    const repeatedCursor = new Uint8Array([5]);
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(pageDiff({ hasMore: true, nextCursor: repeatedCursor }))
+      .mockResolvedValueOnce(pageDiff({ hasMore: true, nextCursor: repeatedCursor }));
+
+    await expect(prefetchDatabaseBlobDiff('workspace-repeated-cursor', databaseId)).rejects.toThrow(
+      'server repeated a continuation cursor'
+    );
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(2);
+  });
+
+  it('falls back to row sync once restarts are exhausted', async () => {
+    const workspaceId = 'workspace-restart-loop';
+    const databaseId = 'database-restart-loop';
+    const onSeedsReady = jest.fn();
+    const restartResponse = pageDiff({ restartRequired: true });
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(restartResponse)
+      .mockResolvedValueOnce(restartResponse)
+      .mockResolvedValueOnce(restartResponse);
+
+    const result = await prefetchDatabaseBlobDiff(workspaceId, databaseId, { onSeedsReady });
+
+    expect(result).toBe(restartResponse);
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(3);
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+    expect(onSeedsReady).toHaveBeenCalledTimes(1);
+
+    // An exhausted walk holds no complete seed set, so it must not be reused.
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(readyDiff());
+    await prefetchDatabaseBlobDiff(workspaceId, databaseId, { forceFullSync: true });
+
+    expect(mockedDatabaseBlobDiff).toHaveBeenCalledTimes(4);
+  });
+
+  it('leaves the RID unadvanced when a page fails to persist', async () => {
+    const workspaceId = 'workspace-persist-failure';
+    const databaseId = 'database-persist-failure';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 500, seqNo: 4 }));
+    mockedOpenRowCollabDB.mockRejectedValueOnce(new Error('indexeddb unavailable'));
+
+    await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+    expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  });
+
+  it('advances the RID when the same page persists cleanly', async () => {
+    const workspaceId = 'workspace-persist-success';
+    const databaseId = 'database-persist-success';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 500, seqNo: 4 }));
+    mockedOpenRowCollabDB.mockResolvedValueOnce({
+      doc: { destroy: jest.fn() },
+      provider: { destroy: jest.fn().mockResolvedValue(undefined) },
+    } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>);
+
+    await prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+      timestamp: 500,
+      seqNo: 4,
+    });
+  });
+
+  it('applies an authoritative row tombstone before advancing the RID', async () => {
+    const databaseId = 'database-delete-success';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(deletePage({ timestamp: 600, seqNo: 2 }));
+
+    await prefetchDatabaseBlobDiff('workspace-delete-success', databaseId);
+
+    expect(mockedDeleteOutbox).toHaveBeenCalledWith(VALID_ROW_ID);
+    expect(mockedDeleteCollabDB).toHaveBeenCalledWith(VALID_ROW_ID, { destroyDoc: false });
+    expect(mockedDeleteCollabDB).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
+    expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual({
+      timestamp: 600,
+      seqNo: 2,
+    });
+  });
+
+  it('does not apply a non-terminal row tombstone', async () => {
+    const databaseId = 'database-delete-terminal-gate';
+    const terminalPage = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(
+        deletePage(
+          { timestamp: 700, seqNo: 1 },
+          {
+            hasMore: true,
+            nextCursor: new Uint8Array([4]),
+          }
+        )
+      )
+      .mockReturnValueOnce(terminalPage.promise);
+
+    const prefetch = prefetchDatabaseBlobDiff('workspace-delete-terminal-gate', databaseId);
+
+    await flushPendingWork();
+
+    expect(mockedDeleteOutbox).not.toHaveBeenCalled();
+    expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
+    expect(mockedDeleteRow).not.toHaveBeenCalled();
+
+    terminalPage.resolve(readyDiff());
+    await prefetch;
+
+    expect(mockedDeleteCollabDB).toHaveBeenCalledTimes(2);
+    expect(mockedDeleteRow).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves the RID unchanged when a row tombstone cannot be persisted', async () => {
+    const databaseId = 'database-delete-failure';
+    const cachedRid = { timestamp: 10, seqNo: 3 };
+
+    databaseIds.add(databaseId);
+    localStorage.setItem(`af_database_blob_rid:${databaseId}`, JSON.stringify(cachedRid));
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(deletePage({ timestamp: 800, seqNo: 5 }));
+    mockedDeleteCollabDB.mockResolvedValueOnce(false);
+
+    await prefetchDatabaseBlobDiff('workspace-delete-failure', databaseId);
+
+    expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
+    expect(JSON.parse(localStorage.getItem(`af_database_blob_rid:${databaseId}`) ?? 'null')).toEqual(cachedRid);
+  });
+
+  it('leaves the RID unchanged when legacy row storage cannot be deleted', async () => {
+    const databaseId = 'database-legacy-delete-failure';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(deletePage({ timestamp: 850, seqNo: 1 }));
+    mockedDeleteCollabDB.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    await prefetchDatabaseBlobDiff('workspace-legacy-delete-failure', databaseId);
+
+    expect(mockedDeleteCollabDB).toHaveBeenNthCalledWith(1, VALID_ROW_ID, { destroyDoc: false });
+    expect(mockedDeleteCollabDB).toHaveBeenNthCalledWith(2, `${databaseId}_rows_${VALID_ROW_ID}`);
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  });
+
+  it('waits for every tombstone in a failed delete batch to settle', async () => {
+    const databaseId = 'database-delete-batch-failure';
+    const delayedDelete = createDeferred<boolean>();
+    let settled = false;
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(
+      database_blob.DatabaseBlobDiffResponse.create({
+        status: database_blob.DiffStatus.READY,
+        creates: [],
+        updates: [],
+        deletes: [
+          {
+            rowId: VALID_ROW_ID_BYTES,
+            rid: { timestamp: 875, seqNo: 1 },
+          },
+          {
+            rowId: SECOND_VALID_ROW_ID_BYTES,
+            rid: { timestamp: 875, seqNo: 2 },
+          },
+        ],
+        page: {
+          hasMore: false,
+          nextCursor: new Uint8Array(),
+          restartRequired: false,
+        },
+      })
+    );
+    mockedDeleteCollabDB.mockImplementation((name) => {
+      if (name === VALID_ROW_ID) return Promise.reject(new Error('current row delete failed'));
+      if (name === SECOND_VALID_ROW_ID) return delayedDelete.promise;
+      return Promise.resolve(true);
+    });
+
+    const prefetch = prefetchDatabaseBlobDiff('workspace-delete-batch-failure', databaseId).finally(() => {
+      settled = true;
+    });
+
+    await flushPendingWork();
+
+    expect(settled).toBe(false);
+    expect(mockedDeleteCollabDB).toHaveBeenCalledWith(SECOND_VALID_ROW_ID, { destroyDoc: false });
+
+    delayedDelete.resolve(true);
+    await prefetch;
+
+    expect(settled).toBe(true);
+    expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
+    expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${SECOND_VALID_ROW_ID}`);
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+  });
+
+  it('does not advance the RID for a malformed row tombstone', async () => {
+    const databaseId = 'database-delete-invalid';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(
+      deletePage(
+        { timestamp: 900, seqNo: 1 },
+        {
+          rowId: new Uint8Array([1, 2, 3]),
+        }
+      )
+    );
+
+    await prefetchDatabaseBlobDiff('workspace-delete-invalid', databaseId);
+
+    expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
   });
 });

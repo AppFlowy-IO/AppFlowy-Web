@@ -1,12 +1,17 @@
 import { stringify as uuidStringify } from 'uuid';
-
 import * as Y from 'yjs';
 
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { getCachedProviderDoc, openCollabDBWithProvider, openRowCollabDBWithProvider } from '@/application/db';
-import { getCachedRowDoc } from '@/application/services/js-services/cache';
+import {
+  deleteCollabDB,
+  getCachedProviderDoc,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+} from '@/application/db';
+import { deleteRow as deleteCachedRow, getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { YDoc, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
@@ -31,7 +36,7 @@ type PrefetchOptions = {
   forceFullSync?: boolean;
   /** Allow the next caller to reuse this entry after it settles. */
   reuseSettled?: boolean;
-  /** Called immediately after seeds are cached (before IndexedDB persist). */
+  /** Called after a terminal page makes the cached seeds committable. */
   onSeedsReady?: () => void;
 };
 
@@ -50,7 +55,12 @@ type SharedPrefetchEntry = {
 type FetchDiffResult = {
   diff: database_blob.DatabaseBlobDiffResponse;
   ready: boolean;
-  pages: database_blob.DatabaseBlobDiffResponse[];
+  /**
+   * Provisional pages are encoded immediately so the walk does not retain the
+   * much larger decoded protobuf object graphs. They remain invisible until a
+   * terminal Ready page validates the complete walk.
+   */
+  encodedPages: Uint8Array[];
 };
 
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
@@ -212,13 +222,26 @@ function latestRid(current: DatabaseBlobRowRid | null, candidate: DatabaseBlobRo
 }
 
 function cursorKey(cursor: Uint8Array) {
-  return Array.from(cursor).join(',');
+  return cursor.join(',');
 }
 
 const rowDocSeedCache = new Map<string, RowDocSeed>();
 const rowDocSeedLookup = new Map<string, RowDocSeed>();
 const rowDocSeedDocCache = new Map<string, YDoc>();
 const rowDocSeedCacheRetainCounts = new Map<string, number>();
+
+function clearRowDocSeeds(databaseId: string, rowId: string) {
+  const rowKey = getRowKey(databaseId, rowId);
+  const seedDoc = rowDocSeedDocCache.get(rowKey);
+
+  rowDocSeedCache.delete(rowKey);
+  rowDocSeedLookup.delete(rowKey);
+
+  if (seedDoc) {
+    seedDoc.destroy();
+    rowDocSeedDocCache.delete(rowKey);
+  }
+}
 
 function applySeedToSharedRowDoc(rowKey: string, seed: RowDocSeed) {
   const doc = rowDocSeedDocCache.get(rowKey);
@@ -459,6 +482,7 @@ function summarizeDiff(diff: database_blob.DatabaseBlobDiffResponse) {
     deletes,
     rowDocStates,
     documentDocStates,
+    missingRowIds: diff.missingRowIds.length,
   };
 }
 
@@ -488,16 +512,13 @@ function applySeedToCachedDoc(rowKey: string, seed: RowDocSeed) {
 function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.DatabaseBlobDiffResponse, options?: PrefetchOptions) {
   const updates = [...diff.creates, ...diff.updates];
 
-  if (updates.length === 0) {
-    return { seeded: 0, prioritized: 0, priorityRequested: 0, appliedToCached: 0 };
-  }
-
   const priorityRowIds = options?.priorityRowIds ?? [];
   const prioritySet = new Set(priorityRowIds);
   const updatesByRowId = priorityRowIds.length > 0 ? new Map<string, database_blob.IDatabaseBlobRowUpdate>() : null;
   let seeded = 0;
   let prioritized = 0;
   let appliedToCached = 0;
+  let deleted = 0;
 
   updates.forEach((update) => {
     const rowId = decodeRowId(update.rowId);
@@ -574,11 +595,20 @@ function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.Databas
     }
   });
 
+  diff.deletes.forEach((del) => {
+    const rowId = decodeRowId(del.rowId);
+
+    if (!rowId) return;
+    clearRowDocSeeds(databaseId, rowId);
+    deleted += 1;
+  });
+
   return {
     seeded,
     prioritized,
     priorityRequested: priorityRowIds.length,
     appliedToCached,
+    deleted,
   };
 }
 
@@ -781,6 +811,53 @@ async function applyRowUpdate(
   });
 }
 
+async function applyRowDelete(databaseId: string, deletion: database_blob.IDatabaseBlobRowDelete) {
+  const rowId = decodeRowId(deletion.rowId);
+
+  if (!rowId) {
+    throw new Error('database blob diff contained a delete with an invalid row ID');
+  }
+
+  const rowKey = getRowKey(databaseId, rowId);
+
+  clearRowDocSeeds(databaseId, rowId);
+
+  try {
+    await deleteOutboxByObjectId(rowId);
+    const storageDeletes = await Promise.allSettled([
+      deleteCollabDB(rowId, { destroyDoc: false }),
+      // Older Web clients persisted rows under the composite row key. Leaving
+      // that database behind lets legacy backfill resurrect a tombstoned row.
+      deleteCollabDB(rowKey),
+    ]);
+    const rejectedDelete = storageDeletes.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+
+    if (rejectedDelete) {
+      throw rejectedDelete.reason;
+    }
+
+    if (storageDeletes.some((result) => result.status === 'fulfilled' && !result.value)) {
+      throw new Error(`failed to delete local database row ${rowId}`);
+    }
+  } finally {
+    // deleteCollabDB must dispose its provider before deleteCachedRow evicts
+    // that provider entry. The cached Y.Doc is removed even when storage
+    // deletion fails, and the unchanged RID makes the next diff retry it.
+    deleteCachedRow(rowKey);
+  }
+}
+
+async function awaitBatch(operations: Promise<void>[]) {
+  const results = await Promise.allSettled(operations);
+  const rejected = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+
+  if (rejected) {
+    throw rejected.reason;
+  }
+}
+
 async function applyDiff(
   databaseId: string,
   diff: database_blob.DatabaseBlobDiffResponse,
@@ -788,7 +865,9 @@ async function applyDiff(
 ) {
   const updates = [...diff.creates, ...diff.updates];
   const totalUpdates = updates.length;
-  const totalBatches = Math.ceil(totalUpdates / APPLY_CONCURRENCY);
+  const deletes = diff.deletes;
+  const totalBatches =
+    Math.ceil(totalUpdates / APPLY_CONCURRENCY) + Math.ceil(deletes.length / APPLY_CONCURRENCY);
 
   Log.debug('[Database] applyDiff start', {
     databaseId,
@@ -797,6 +876,7 @@ async function applyDiff(
     concurrency: APPLY_CONCURRENCY,
     creates: diff.creates.length,
     updates: diff.updates.length,
+    deletes: deletes.length,
     seedCache: options?.seedCache !== false,
   });
 
@@ -814,7 +894,7 @@ async function applyDiff(
       progress: `${i}/${totalUpdates}`,
     });
 
-    await Promise.all(batch.map((update) => applyRowUpdate(databaseId, update, options)));
+    await awaitBatch(batch.map((update) => applyRowUpdate(databaseId, update, options)));
 
     Log.debug('[Database] applyDiff batch completed', {
       databaseId,
@@ -825,9 +905,16 @@ async function applyDiff(
     });
   }
 
+  for (let i = 0; i < deletes.length; i += APPLY_CONCURRENCY) {
+    const batch = deletes.slice(i, i + APPLY_CONCURRENCY);
+
+    await awaitBatch(batch.map((deletion) => applyRowDelete(databaseId, deletion)));
+  }
+
   Log.debug('[Database] applyDiff completed', {
     databaseId,
     totalUpdates,
+    totalDeletes: deletes.length,
     totalBatches,
     totalDurationMs: Date.now() - startedAt,
   });
@@ -870,7 +957,7 @@ async function fetchReadyDiff(
   const cachedRid = options.cachedRid;
   const maxKnownRid = cachedRid ? { timestamp: cachedRid.timestamp, seqNo: cachedRid.seqNo } : undefined;
   let cursor = new Uint8Array();
-  let pages: database_blob.DatabaseBlobDiffResponse[] = [];
+  let encodedPages: Uint8Array[] = [];
   let seenCursors = new Set([cursorKey(cursor)]);
   let restartCount = 0;
 
@@ -900,18 +987,15 @@ async function fetchReadyDiff(
       },
     });
 
-    let diff: database_blob.DatabaseBlobDiffResponse | null = null;
-
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const attemptStartedAt = Date.now();
-
-      diff = await databaseBlobDiff(workspaceId, databaseId, request);
+      const diff = await databaseBlobDiff(workspaceId, databaseId, request);
 
       Log.debug('[Database] blob diff page response', {
         databaseId,
         status: diff.status,
         retryAfterSecs: diff.retryAfterSecs ?? null,
-        pageNumber: pages.length + 1,
+        pageNumber: encodedPages.length + 1,
         attempt,
         durationMs: Date.now() - attemptStartedAt,
         totalDurationMs: Date.now() - walkStartedAt,
@@ -944,12 +1028,12 @@ async function fetchReadyDiff(
             restartCount,
             totalDurationMs: Date.now() - walkStartedAt,
           });
-          return { diff, ready: false, pages: [] };
+          return { diff, ready: false, encodedPages: [] };
         }
 
         restartCount += 1;
         cursor = new Uint8Array();
-        pages = [];
+        encodedPages = [];
         seenCursors = new Set([cursorKey(cursor)]);
         Log.warn('[Database] blob diff page walk restarted', {
           databaseId,
@@ -960,17 +1044,18 @@ async function fetchReadyDiff(
       }
 
       if (diff.status === readyStatus) {
-        pages.push(diff);
+        const nextCursor = page.nextCursor ?? new Uint8Array();
 
+        // Validate the continuation contract before handing the page over, so a
+        // misbehaving server cannot get its payload seeded or persisted.
         if (!page.hasMore) {
-          if ((page.nextCursor?.length ?? 0) > 0) {
+          if (nextCursor.length > 0) {
             throw new Error('database blob diff paging protocol error: final page contained a continuation cursor');
           }
 
-          return { diff, ready: true, pages };
+          encodedPages.push(database_blob.DatabaseBlobDiffResponse.encode(diff).finish());
+          return { diff, ready: true, encodedPages };
         }
-
-        const nextCursor = page.nextCursor ?? new Uint8Array();
 
         if (nextCursor.length === 0) {
           throw new Error('database blob diff paging protocol error: non-final page omitted its continuation cursor');
@@ -982,6 +1067,7 @@ async function fetchReadyDiff(
           throw new Error('database blob diff paging protocol error: server repeated a continuation cursor');
         }
 
+        encodedPages.push(database_blob.DatabaseBlobDiffResponse.encode(diff).finish());
         seenCursors.add(nextCursorKey);
         cursor = new Uint8Array(nextCursor);
         break;
@@ -994,21 +1080,22 @@ async function fetchReadyDiff(
       }
 
       if (attempt === maxAttempts) {
-        Log.warn('[Database] blob diff still pending; discarding page walk and falling back to row sync', {
+        Log.warn('[Database] blob diff still pending; abandoning page walk and falling back to row sync', {
           databaseId,
-          pageNumber: pages.length + 1,
+          pageNumber: encodedPages.length + 1,
+          stagedPages: encodedPages.length,
           attempts: attempt,
           message: diff.message ?? null,
           ...summarizeDiff(diff),
         });
-        return { diff, ready: false, pages: [] };
+        return { diff, ready: false, encodedPages: [] };
       }
 
       const delayMs = retryDelayMs(diff.retryAfterSecs);
 
       Log.debug('[Database] blob diff page pending; retrying unchanged cursor', {
         databaseId,
-        pageNumber: pages.length + 1,
+        pageNumber: encodedPages.length + 1,
         attempt,
         nextAttempt: attempt + 1,
         delayMs,
@@ -1016,10 +1103,6 @@ async function fetchReadyDiff(
       });
 
       await sleep(delayMs);
-    }
-
-    if (!diff) {
-      throw new Error('database blob diff page request returned no response');
     }
   }
 }
@@ -1084,7 +1167,8 @@ export async function prefetchDatabaseBlobDiff(
   };
 
   const promise = (async () => {
-    const { diff, ready, pages } = await fetchReadyDiff(workspaceId, databaseId, {
+    const sourceLabel = options?.forceFullSync ? 'ready full' : 'ready delta';
+    const { diff, ready, encodedPages } = await fetchReadyDiff(workspaceId, databaseId, {
       cachedRid,
       forceFullSync: options?.forceFullSync,
     });
@@ -1094,28 +1178,31 @@ export async function prefetchDatabaseBlobDiff(
       return diff;
     }
 
-    pages.forEach((page, index) => {
-      seedDiff(page, `ready page ${index + 1}/${pages.length}`);
-    });
-
-    // A page walk is only usable after its terminal Ready page. Expose the
-    // complete seed set before the slower IndexedDB writes begin.
-    entry.hasCompleteSeedSet = true;
-    notifySeedsReady(entry);
-
     let allPagesPersisted = true;
     let maxRid: DatabaseBlobRowRid | null = null;
 
-    for (let index = 0; index < pages.length; index += 1) {
-      const page = pages[index];
+    // Decode one provisional page at a time only after the terminal page made
+    // the walk committable. This preserves atomic visibility while keeping the
+    // decoded working set bounded to one page.
+    encodedPages.forEach((encodedPage, index) => {
+      const page = database_blob.DatabaseBlobDiffResponse.decode(encodedPage);
+
+      seedDiff(page, `ready page ${index + 1}/${encodedPages.length}`);
+      maxRid = latestRid(maxRid, maxRidFromDiff(page));
+    });
+
+    entry.hasCompleteSeedSet = true;
+    notifySeedsReady(entry);
+
+    for (let index = 0; index < encodedPages.length; index += 1) {
+      const page = database_blob.DatabaseBlobDiffResponse.decode(encodedPages[index]);
       const persisted = await persistDiffToIndexedDB(
         databaseId,
         page,
-        `${options?.forceFullSync ? 'ready full' : 'ready delta'} page ${index + 1}/${pages.length}`
+        `${sourceLabel} page ${index + 1}/${encodedPages.length}`
       );
 
       allPagesPersisted = persisted && allPagesPersisted;
-      maxRid = latestRid(maxRid, maxRidFromDiff(page));
     }
 
     if (!options?.forceFullSync && allPagesPersisted && maxRid) {
@@ -1123,12 +1210,12 @@ export async function prefetchDatabaseBlobDiff(
       Log.debug('[Database] blob updated rid cache after terminal page', {
         databaseId,
         maxRid,
-        pageCount: pages.length,
+        pageCount: encodedPages.length,
       });
     } else if (!allPagesPersisted) {
       Log.warn('[Database] blob rid cache unchanged because one or more pages failed to persist', {
         databaseId,
-        pageCount: pages.length,
+        pageCount: encodedPages.length,
       });
     }
 
