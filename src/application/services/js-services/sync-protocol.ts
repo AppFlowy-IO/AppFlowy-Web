@@ -5,6 +5,7 @@ import { deleteCollabDB } from '@/application/db';
 import {
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
+  shouldRouteUpdateThroughOutbox,
   waitForDrain,
 } from '@/application/sync-outbox';
 import { Types, YDoc } from '@/application/types';
@@ -39,7 +40,7 @@ export interface SyncContext {
    * Drop queued local updates without sending them.
    * Used by version reset flows where pending updates are stale and must be discarded.
    */
-  discardPendingUpdates?: () => Promise<void>;
+  discardPendingUpdates?: (options?: { skipActiveDrain?: boolean }) => Promise<void>;
   /**
    * Called after a local Yjs update is observed. The WebSocket path still owns
    * immediate delivery; this hook lets the app schedule a debounced HTTP full
@@ -130,6 +131,25 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
     version: doc.version,
     bytes: update.byteLength,
   });
+
+  // A manifest response can contain years of locally retained Yjs history.
+  // If it exceeds the server-advertised realtime frame limit, persist it and
+  // let the serialized outbox use the bounded HTTP slow lane. Emitting here
+  // would close the WebSocket before any fallback could run.
+  if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
+    enqueueOutboxUpdate(
+      {
+        objectId: doc.guid,
+        collabType: ctx.collabType,
+        version: doc.version ?? null,
+        payload: update,
+        beforeStateVector: stateVector,
+      },
+      { broadcast: false }
+    );
+    return;
+  }
+
   // send the update containing new data back to the server. This is a
   // manifest-style diff, so the causal `before` vector is the server's own
   // advertised state (what it told us it has). No after vector — the server
@@ -241,7 +261,7 @@ export const initSync = (ctx: SyncContext) => {
   // crash, and modal-unmount races because IndexedDB is the source of truth.
   ctx.flush = () => waitForDrain([doc.guid]);
 
-  ctx.discardPendingUpdates = () => deleteOutboxByObjectId(doc.guid);
+  ctx.discardPendingUpdates = (options) => deleteOutboxByObjectId(doc.guid, options);
 
   const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
     if (origin === 'remote') {

@@ -5,14 +5,21 @@ import * as Y from 'yjs';
 
 import { deleteCollabDB, openCollabDB } from '@/application/db';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { User, YDoc } from '@/application/types';
+import { YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 import { rebuildCollabDoc } from './rebuildCollabDoc';
 import { replayQueuedMessages } from './replayQueuedMessages';
 import { SyncRefs } from './syncRefs';
-import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, versionChanged } from './types';
+import {
+  ApplyCollabMessageOptions,
+  isCollabVersionId,
+  QueuedCollabMessage,
+  RegisterSyncContext,
+  SyncDocMeta,
+  versionChanged,
+} from './types';
 
 import ICollabMessage = collab.ICollabMessage;
 
@@ -28,14 +35,7 @@ export function useCollabMessageHandler(
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
 
   const applyCollabMessage = useCallback(
-    async (
-      message: ICollabMessage,
-      options?: {
-        allowVersionReset?: boolean;
-        user?: User;
-        isCancelled?: () => boolean;
-      }
-    ) => {
+    async (message: ICollabMessage, options?: ApplyCollabMessageOptions) => {
       const objectId = message.objectId!;
 
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
@@ -58,7 +58,7 @@ export function useCollabMessageHandler(
 
         queued.push(message);
         refs.queuedMessagesDuringReset.current.set(objectId, queued);
-        return;
+        return false;
       }
 
       Log.debug(`[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(context?.doc?.version)}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`);
@@ -100,7 +100,7 @@ export function useCollabMessageHandler(
 
         if (options?.allowVersionReset && _versionChanged) {
           if (options?.isCancelled?.()) {
-            return;
+            return false;
           }
 
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
@@ -156,7 +156,9 @@ export function useCollabMessageHandler(
               // would leave the object permanently flagged as resetting —
               // `applyCollabMessage` would queue every subsequent message
               // and the doc would stay stuck until reload.
-              await context.discardPendingUpdates?.();
+              await context.discardPendingUpdates?.({
+                skipActiveDrain: options?.skipActiveDrainOnDiscard,
+              });
               await deleteCollabDB(previousDoc.guid, { destroyDoc: false });
               previousDoc.destroy();
 
@@ -237,6 +239,7 @@ export function useCollabMessageHandler(
       }
 
       Log.debug('Received collab message:', message.collabType, message);
+      return true;
     },
     [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup]
   );
@@ -256,19 +259,23 @@ export function useCollabMessageHandler(
           break;
         }
 
-        const nextMessage = queue.shift();
+        const nextTask = queue.shift();
 
-        if (!nextMessage) {
+        if (!nextTask) {
           continue;
         }
 
         try {
-          await applyCollabMessage(nextMessage, {
+          const applied = await applyCollabMessage(nextTask.message, {
             allowVersionReset: true,
             user: refs.latestUserRef.current,
+            ...nextTask.options,
           });
+
+          nextTask.resolve?.(applied);
         } catch (error) {
           Log.error('Failed to apply queued collab message', error);
+          nextTask.reject?.(error);
         }
       }
     } finally {
@@ -287,27 +294,30 @@ export function useCollabMessageHandler(
   }, [refs, applyCollabMessage]);
 
   const enqueueIncomingCollabMessage = useCallback(
-    (message: ICollabMessage) => {
+    (message: ICollabMessage, options?: ApplyCollabMessageOptions): Promise<boolean> => {
       if (refs.isDisposedRef.current) {
-        return;
+        return Promise.reject(new Error('Cannot enqueue collab message after sync disposal'));
       }
 
       const objectId = message.objectId;
 
       if (!objectId) {
         Log.warn('Received collab message without objectId; skipped queueing', message);
-        return;
+        return Promise.reject(new Error('Cannot enqueue collab message without objectId'));
       }
 
-      const queue = refs.incomingMessageQueuesRef.current.get(objectId);
+      return new Promise<boolean>((resolve, reject) => {
+        const task: QueuedCollabMessage = { message, options, resolve, reject };
+        const queue = refs.incomingMessageQueuesRef.current.get(objectId);
 
-      if (queue) {
-        queue.push(message);
-      } else {
-        refs.incomingMessageQueuesRef.current.set(objectId, [message]);
-      }
+        if (queue) {
+          queue.push(task);
+        } else {
+          refs.incomingMessageQueuesRef.current.set(objectId, [task]);
+        }
 
-      void processIncomingMessageQueueForObject(objectId);
+        void processIncomingMessageQueueForObject(objectId);
+      });
     },
     [refs, processIncomingMessageQueueForObject]
   );
@@ -320,7 +330,9 @@ export function useCollabMessageHandler(
     }
 
     lastHandledWsMessageRef.current = message;
-    enqueueIncomingCollabMessage(message);
+    void enqueueIncomingCollabMessage(message).catch((error) => {
+      Log.error('Failed to enqueue WebSocket collab message', error);
+    });
   }, [wsCollabMessage, enqueueIncomingCollabMessage]);
 
   useEffect(() => {
@@ -331,8 +343,10 @@ export function useCollabMessageHandler(
     }
 
     lastHandledBcMessageRef.current = message;
-    enqueueIncomingCollabMessage(message);
+    void enqueueIncomingCollabMessage(message).catch((error) => {
+      Log.error('Failed to enqueue BroadcastChannel collab message', error);
+    });
   }, [bcCollabMessage, enqueueIncomingCollabMessage]);
 
-  return { applyCollabMessage };
+  return { applyCollabMessage, enqueueIncomingCollabMessage };
 }

@@ -2279,6 +2279,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.PayloadCompressionType|null} [compression] CollabDocStateParams compression
          * @property {Uint8Array|null} [sv] CollabDocStateParams sv
          * @property {Uint8Array|null} [docState] CollabDocStateParams docState
+         * @property {string|null} [collabVersion] CollabDocStateParams collabVersion
          */
 
         /**
@@ -2337,6 +2338,14 @@ export const collab = $root.collab = (() => {
         CollabDocStateParams.prototype.docState = $util.newBuffer([]);
 
         /**
+         * CollabDocStateParams collabVersion.
+         * @member {string} collabVersion
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.collabVersion = "";
+
+        /**
          * Creates a new CollabDocStateParams instance using the specified properties.
          * @function create
          * @memberof collab.CollabDocStateParams
@@ -2370,6 +2379,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.sv);
             if (message.docState != null && Object.hasOwnProperty.call(message, "docState"))
                 writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
+            if (message.collabVersion != null && Object.hasOwnProperty.call(message, "collabVersion"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.collabVersion);
             return writer;
         };
 
@@ -2424,6 +2435,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 5: {
                         message.docState = reader.bytes();
+                        break;
+                    }
+                case 6: {
+                        message.collabVersion = reader.string();
                         break;
                     }
                 default:
@@ -2482,6 +2497,9 @@ export const collab = $root.collab = (() => {
             if (message.docState != null && message.hasOwnProperty("docState"))
                 if (!(message.docState && typeof message.docState.length === "number" || $util.isString(message.docState)))
                     return "docState: buffer expected";
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                if (!$util.isString(message.collabVersion))
+                    return "collabVersion: string expected";
             return null;
         };
 
@@ -2531,6 +2549,8 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.docState, message.docState = $util.newBuffer($util.base64.length(object.docState)), 0);
                 else if (object.docState.length >= 0)
                     message.docState = object.docState;
+            if (object.collabVersion != null)
+                message.collabVersion = String(object.collabVersion);
             return message;
         };
 
@@ -2565,6 +2585,7 @@ export const collab = $root.collab = (() => {
                     if (options.bytes !== Array)
                         object.docState = $util.newBuffer(object.docState);
                 }
+                object.collabVersion = "";
             }
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 object.objectId = message.objectId;
@@ -2576,6 +2597,8 @@ export const collab = $root.collab = (() => {
                 object.sv = options.bytes === String ? $util.base64.encode(message.sv, 0, message.sv.length) : options.bytes === Array ? Array.prototype.slice.call(message.sv) : message.sv;
             if (message.docState != null && message.hasOwnProperty("docState"))
                 object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                object.collabVersion = message.collabVersion;
             return object;
         };
 
@@ -2895,6 +2918,8 @@ export const collab = $root.collab = (() => {
          * @property {Uint8Array|null} [missingUpdate] CollabBatchSyncResult missingUpdate
          * @property {string|null} [error] CollabBatchSyncResult error
          * @property {Uint8Array|null} [serverStateVector] CollabBatchSyncResult serverStateVector
+         * @property {string|null} [collabVersion] CollabBatchSyncResult collabVersion
+         * @property {collab.IRid|null} [messageId] CollabBatchSyncResult messageId
          */
 
         /**
@@ -2961,6 +2986,22 @@ export const collab = $root.collab = (() => {
         CollabBatchSyncResult.prototype.serverStateVector = $util.newBuffer([]);
 
         /**
+         * CollabBatchSyncResult collabVersion.
+         * @member {string} collabVersion
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.collabVersion = "";
+
+        /**
+         * CollabBatchSyncResult messageId.
+         * @member {collab.IRid|null|undefined} messageId
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.messageId = null;
+
+        /**
          * Creates a new CollabBatchSyncResult instance using the specified properties.
          * @function create
          * @memberof collab.CollabBatchSyncResult
@@ -2996,6 +3037,10 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 5, wireType 2 =*/42).string(message.error);
             if (message.serverStateVector != null && Object.hasOwnProperty.call(message, "serverStateVector"))
                 writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.serverStateVector);
+            if (message.collabVersion != null && Object.hasOwnProperty.call(message, "collabVersion"))
+                writer.uint32(/* id 7, wireType 2 =*/58).string(message.collabVersion);
+            if (message.messageId != null && Object.hasOwnProperty.call(message, "messageId"))
+                $root.collab.Rid.encode(message.messageId, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
             return writer;
         };
 
@@ -3054,6 +3099,14 @@ export const collab = $root.collab = (() => {
                     }
                 case 6: {
                         message.serverStateVector = reader.bytes();
+                        break;
+                    }
+                case 7: {
+                        message.collabVersion = reader.string();
+                        break;
+                    }
+                case 8: {
+                        message.messageId = $root.collab.Rid.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -3115,6 +3168,14 @@ export const collab = $root.collab = (() => {
             if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
                 if (!(message.serverStateVector && typeof message.serverStateVector.length === "number" || $util.isString(message.serverStateVector)))
                     return "serverStateVector: buffer expected";
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                if (!$util.isString(message.collabVersion))
+                    return "collabVersion: string expected";
+            if (message.messageId != null && message.hasOwnProperty("messageId")) {
+                let error = $root.collab.Rid.verify(message.messageId);
+                if (error)
+                    return "messageId." + error;
+            }
             return null;
         };
 
@@ -3166,6 +3227,13 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.serverStateVector, message.serverStateVector = $util.newBuffer($util.base64.length(object.serverStateVector)), 0);
                 else if (object.serverStateVector.length >= 0)
                     message.serverStateVector = object.serverStateVector;
+            if (object.collabVersion != null)
+                message.collabVersion = String(object.collabVersion);
+            if (object.messageId != null) {
+                if (typeof object.messageId !== "object")
+                    throw TypeError(".collab.CollabBatchSyncResult.messageId: object expected");
+                message.messageId = $root.collab.Rid.fromObject(object.messageId);
+            }
             return message;
         };
 
@@ -3201,6 +3269,8 @@ export const collab = $root.collab = (() => {
                     if (options.bytes !== Array)
                         object.serverStateVector = $util.newBuffer(object.serverStateVector);
                 }
+                object.collabVersion = "";
+                object.messageId = null;
             }
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 object.objectId = message.objectId;
@@ -3214,6 +3284,10 @@ export const collab = $root.collab = (() => {
                 object.error = message.error;
             if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
                 object.serverStateVector = options.bytes === String ? $util.base64.encode(message.serverStateVector, 0, message.serverStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.serverStateVector) : message.serverStateVector;
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                object.collabVersion = message.collabVersion;
+            if (message.messageId != null && message.hasOwnProperty("messageId"))
+                object.messageId = $root.collab.Rid.toObject(message.messageId, options);
             return object;
         };
 

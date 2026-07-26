@@ -34,6 +34,16 @@ export interface AuthInternalContextType {
   enablePageHistory?: boolean;
   /** Whether server-backed AI features are enabled for this deployment/workspace. */
   aiEnabled?: boolean;
+  /** Maximum raw Yjs update accepted by the realtime WebSocket lane. */
+  maxUpdateBytes?: number;
+  /** Maximum raw Yjs update accepted by the opt-in HTTP slow lane. */
+  maxSlowSyncUpdateBytes?: number;
+  /**
+   * Whether the server-info request that owns the sync limits completed.
+   * `false` is distinct from an older server successfully omitting the
+   * optional limit fields.
+   */
+  syncLimitsLoaded?: boolean;
   /** Switch the active workspace. Triggers full data reload. */
   onChangeWorkspace: (workspaceId: string) => Promise<void>;
   /** Error from loading workspace info — allows consumers to show error/retry UI. */

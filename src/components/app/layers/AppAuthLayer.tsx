@@ -63,6 +63,9 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
   const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
+  const [maxUpdateBytes, setMaxUpdateBytes] = useState<number | undefined>(undefined);
+  const [maxSlowSyncUpdateBytes, setMaxSlowSyncUpdateBytes] = useState<number | undefined>(undefined);
+  const [syncLimitsLoaded, setSyncLimitsLoaded] = useState(false);
   const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
   const workspaceInfoRequestIdRef = useRef(0);
   const pendingWorkspaceChangeRef = useRef<string | null>(null);
@@ -240,19 +243,58 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   // Load user workspace info and server info on mount
   useEffect(() => {
     if (!isAuthenticated) {
+      setMaxUpdateBytes(undefined);
+      setMaxSlowSyncUpdateBytes(undefined);
+      setSyncLimitsLoaded(false);
       return;
     }
 
     void loadUserWorkspaceInfo();
 
-    void AuthService.getServerInfo().then((info) => {
-      setEnablePageHistory(info.enable_page_history);
-      setAIEnabled(info.ai_enabled ?? true);
-    }).catch((e) => {
-      console.error('[AppAuthLayer] Failed to load server info:', e);
-      setEnablePageHistory(true);
-      setAIEnabled(true);
-    });
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryAttempt = 0;
+    const serverInfoAbortController = new AbortController();
+
+    const loadServerInfo = () => {
+      void AuthService.getServerInfo(serverInfoAbortController.signal)
+        .then((info) => {
+          if (cancelled) return;
+
+          setEnablePageHistory(info.enable_page_history);
+          setAIEnabled(info.ai_enabled ?? true);
+          setMaxUpdateBytes(info.max_update_bytes);
+          setMaxSlowSyncUpdateBytes(info.max_slow_sync_update_bytes);
+          // A successful response that omits the optional fields is an older
+          // server, not a loading state. The outbox can now safely use its
+          // legacy realtime default while keeping the HTTP slow lane disabled.
+          setSyncLimitsLoaded(true);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+
+          console.error('[AppAuthLayer] Failed to load server info:', e);
+          setEnablePageHistory(true);
+          setAIEnabled(true);
+          setMaxUpdateBytes(undefined);
+          setMaxSlowSyncUpdateBytes(undefined);
+          setSyncLimitsLoaded(false);
+
+          const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
+
+          retryAttempt += 1;
+          retryTimer = setTimeout(loadServerInfo, delayMs);
+        });
+    };
+
+    setSyncLimitsLoaded(false);
+    loadServerInfo();
+
+    return () => {
+      cancelled = true;
+      serverInfoAbortController.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [loadUserWorkspaceInfo, isAuthenticated]);
 
   // If the app boots while the server is down, the first workspace-info request
@@ -338,11 +380,26 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
       aiEnabled,
+      maxUpdateBytes,
+      maxSlowSyncUpdateBytes,
+      syncLimitsLoaded,
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo,
     }),
-    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, aiEnabled, onChangeWorkspace, workspaceInfoError, retryLoadWorkspaceInfo]
+    [
+      userWorkspaceInfo,
+      currentWorkspaceId,
+      isAuthenticated,
+      enablePageHistory,
+      aiEnabled,
+      maxUpdateBytes,
+      maxSlowSyncUpdateBytes,
+      syncLimitsLoaded,
+      onChangeWorkspace,
+      workspaceInfoError,
+      retryLoadWorkspaceInfo,
+    ]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;

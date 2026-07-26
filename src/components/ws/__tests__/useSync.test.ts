@@ -106,6 +106,7 @@ jest.mock('@/application/sync-outbox', () => {
       for (const id of ids) drain(id);
       return true;
     }),
+    shouldRouteUpdateThroughOutbox: jest.fn(() => false),
     configureDrain: jest.fn((config: DrainConfig) => {
       ctx.config = config;
       for (const id of Array.from(ctx.pending.keys())) drain(id);
@@ -540,6 +541,56 @@ describe('useSync version-gated message handling', () => {
 
     unmount();
     doc.destroy();
+  });
+
+  it('accepts a no-RID HTTP result when an authoritative version supersedes the local doc', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '44444444-4444-4444-8444-444444444446';
+    const localVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b510';
+    const serverVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b511';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+
+    doc.version = localVersion;
+    nextDoc.version = serverVersion;
+    mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+    mockedHandleMessage.mockClear();
+
+    await act(async () => {
+      await result.current.applyHttpFullSyncResult({
+        objectId,
+        collabType: Types.Document,
+        missingUpdate: new Uint8Array(),
+        serverStateVector: new Uint8Array([0]),
+        collabVersion: serverVersion,
+      });
+    });
+
+    expect(mockedOpenCollabDB).toHaveBeenCalledWith(objectId, {
+      expectedVersion: serverVersion,
+      currentUser: undefined,
+    });
+    expect(mockedHandleMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ doc: nextDoc }),
+      expect.objectContaining({
+        objectId,
+        syncRequest: expect.objectContaining({
+          version: serverVersion,
+          stateVector: new Uint8Array([0]),
+          lastMessageId: undefined,
+        }),
+      })
+    );
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
   });
 
   it('resets when local version is known but incoming version is missing', async () => {
@@ -1382,6 +1433,48 @@ describe('useSync public API', () => {
     });
 
     expect(localDoc.getMap('root').get('server')).toBe('value');
+  });
+
+  it('applies a slow HTTP result through the normal message path with the active version and RID', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const localDoc = createDoc('efefefef-2222-4222-8222-efefefefefef') as Y.Doc & { version?: string };
+    const serverDoc = createDoc(localDoc.guid);
+    const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b500';
+    const messageId = { timestamp: 42, counter: 3 };
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    localDoc.version = version;
+    serverDoc.getMap('root').set('server', 'value');
+    const missingUpdate = Y.encodeStateAsUpdate(serverDoc, Y.encodeStateVector(localDoc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc: localDoc, collabType: Types.Document });
+    });
+    mockedHandleMessage.mockClear();
+
+    await act(async () => {
+      await result.current.applyHttpFullSyncResult({
+        objectId: localDoc.guid,
+        collabType: Types.Document,
+        missingUpdate,
+        serverStateVector: Y.encodeStateVector(serverDoc),
+        messageId,
+      });
+    });
+
+    expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        objectId: localDoc.guid,
+        collabType: Types.Document,
+        update: expect.objectContaining({
+          payload: missingUpdate,
+          version,
+          messageId,
+        }),
+      })
+    );
   });
 
   it('syncAllToServer sends sync request when HTTP missing update has dependencies', async () => {

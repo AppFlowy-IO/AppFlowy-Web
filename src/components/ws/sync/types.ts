@@ -1,7 +1,7 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, YDoc } from '@/application/types';
+import { Types, User, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 
 const UUID_REGEX =
@@ -34,6 +34,33 @@ export interface RegisterSyncContext {
   emit?: (reply: messages.IMessage) => void;
 }
 
+export interface ApplyCollabMessageOptions {
+  allowVersionReset?: boolean;
+  user?: User;
+  isCancelled?: () => boolean;
+  /**
+   * HTTP slow-sync applies its result from inside the active outbox drain.
+   * A version reset must not await that same drain promise.
+   */
+  skipActiveDrainOnDiscard?: boolean;
+}
+
+export interface HttpFullSyncResult {
+  objectId: string;
+  collabType: Types;
+  missingUpdate: Uint8Array;
+  serverStateVector: Uint8Array;
+  collabVersion?: string;
+  messageId?: collab.IRid;
+}
+
+export interface QueuedCollabMessage {
+  message: collab.ICollabMessage;
+  options?: ApplyCollabMessageOptions;
+  resolve?: (applied: boolean) => void;
+  reject?: (error: unknown) => void;
+}
+
 export type SyncContextType = {
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
   /**
@@ -51,6 +78,11 @@ export type SyncContextType = {
    * @returns Promise that resolves when all syncs are complete
    */
   syncAllToServer: (workspaceId: string) => Promise<void>;
+  /**
+   * Applies one HTTP full-sync response through the same per-object,
+   * version-aware queue used by WebSocket messages.
+   */
+  applyHttpFullSyncResult: (result: HttpFullSyncResult, fallbackVersion?: string | null) => Promise<void>;
   /**
    * Schedule deferred cleanup of a sync context after a delay.
    * If the same objectId is re-registered before the timer fires,
