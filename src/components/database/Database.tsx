@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   getDatabaseRowDocFromSeed,
@@ -230,6 +230,18 @@ function Database(props: Database2Props) {
     return databaseId || doc.guid;
   }, [doc]);
   const currentDatabaseId = getDatabaseId();
+  // A shared background loader can retain a callback and first invoke it after
+  // reset, so invocation-time generation checks alone cannot identify stale work.
+  const databaseLifecycleIdentity = useMemo(
+    () => ({
+      workspaceId,
+      doc,
+      databaseId: currentDatabaseId,
+      hasInitialRowMap: props.initialRowMap !== undefined,
+    }),
+    [workspaceId, doc, currentDatabaseId, props.initialRowMap]
+  );
+  const activeDatabaseLifecycleRef = useRef<typeof databaseLifecycleIdentity | null>(databaseLifecycleIdentity);
 
   const getPriorityRowIds = useCallback(() => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -329,7 +341,17 @@ function Database(props: Database2Props) {
   const loadRowFromSeed = useCallback(
     async (rowId: string): Promise<YDoc | undefined> => {
       if (!rowId) return undefined;
-      const databaseId = getDatabaseId();
+      const loadLifecycleIdentity = databaseLifecycleIdentity;
+      const loadGeneration = blobPrefetchGenerationRef.current;
+      const gate = seedsGateRef.current;
+      const isCurrentLoad = () =>
+        activeDatabaseLifecycleRef.current === loadLifecycleIdentity &&
+        getDatabaseId() === loadLifecycleIdentity.databaseId &&
+        blobPrefetchGenerationRef.current === loadGeneration &&
+        seedsGateRef.current === gate;
+
+      if (!isCurrentLoad()) return undefined;
+      const databaseId = loadLifecycleIdentity.databaseId;
       const rowKey = getRowKey(databaseId, rowId);
       const existing = rowMapRef.current[rowId];
 
@@ -337,7 +359,11 @@ function Database(props: Database2Props) {
 
       const pending = pendingRowDocsRef.current.get(rowId);
 
-      if (pending) return pending;
+      if (pending) {
+        const rowDoc = await pending;
+
+        return isCurrentLoad() ? rowDoc : undefined;
+      }
 
       const cachedRowDoc = getCachedRowDoc(rowKey);
       const seed = peekDatabaseRowDocSeed(rowKey);
@@ -363,19 +389,21 @@ function Database(props: Database2Props) {
       try {
         const rowDoc = await promise;
 
-        if (rowDoc) {
+        if (rowDoc && isCurrentLoad()) {
           setRowMap((prev) => {
             if (prev[rowId]) return prev;
             return { ...prev, [rowId]: rowDoc };
           });
         }
 
-        return rowDoc;
+        return isCurrentLoad() ? rowDoc : undefined;
       } finally {
-        pendingRowDocsRef.current.delete(rowId);
+        if (pendingRowDocsRef.current.get(rowId) === promise) {
+          pendingRowDocsRef.current.delete(rowId);
+        }
       }
     },
-    [getDatabaseId]
+    [databaseLifecycleIdentity, getDatabaseId]
   );
 
   // Synchronous shared read-only doc for filter/sort. Reuses an existing row
@@ -585,10 +613,16 @@ function Database(props: Database2Props) {
     async (rowId: string) => {
       if (!createRow || !rowId) return;
 
+      const ensureLifecycleIdentity = databaseLifecycleIdentity;
       const ensureGeneration = blobPrefetchGenerationRef.current;
       const gate = seedsGateRef.current;
       const isCurrentEnsure = () =>
-        blobPrefetchGenerationRef.current === ensureGeneration && seedsGateRef.current === gate;
+        activeDatabaseLifecycleRef.current === ensureLifecycleIdentity &&
+        getDatabaseId() === ensureLifecycleIdentity.databaseId &&
+        blobPrefetchGenerationRef.current === ensureGeneration &&
+        seedsGateRef.current === gate;
+
+      if (!isCurrentEnsure()) return;
 
       // Fast path: row already loaded (e.g. by batch preload or previous call).
       // Check before awaiting the gate to avoid blocking on already-available rows.
@@ -686,10 +720,11 @@ function Database(props: Database2Props) {
     // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
     // localCachePrimedRef), and module-level imports (openRowDoc, getCachedRowDoc, peekDatabaseRowDocSeed, getRowKey).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [createRow, getDatabaseId, ensureBlobPrefetch, registerRowSync]
+    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, registerRowSync]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    activeDatabaseLifecycleRef.current = databaseLifecycleIdentity;
     const prefetchGeneration = blobPrefetchGenerationRef.current + 1;
     const previousGate = seedsGateRef.current;
 
@@ -713,13 +748,17 @@ function Database(props: Database2Props) {
     setSeedsReady(false);
 
     return () => {
+      if (activeDatabaseLifecycleRef.current === databaseLifecycleIdentity) {
+        activeDatabaseLifecycleRef.current = null;
+      }
+
       if (blobPrefetchGenerationRef.current === prefetchGeneration) {
         blobPrefetchGenerationRef.current += 1;
       }
 
       lifecycleGate.resolve();
     };
-  }, [workspaceId, doc, currentDatabaseId, props.initialRowMap]);
+  }, [databaseLifecycleIdentity, props.initialRowMap]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
