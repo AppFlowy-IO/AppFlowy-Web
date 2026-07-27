@@ -9,6 +9,28 @@ import { getScrollParent } from '@/components/global-comment/utils';
 
 import { findEventNode, getBlockActionsPosition, getBlockCssProperty } from './utils';
 
+const TABLE_ROOT_TYPES = [BlockType.TableBlock, BlockType.SimpleTableBlock];
+
+export function getTableHoverControlsRoot(blockElement: HTMLElement) {
+  for (const type of TABLE_ROOT_TYPES) {
+    const tableRoot = blockElement.closest(`[data-block-type="${type}"]`);
+
+    if (tableRoot instanceof HTMLElement) {
+      return tableRoot;
+    }
+  }
+
+  return null;
+}
+
+export function shouldShowHoverControlsForBlock(node: Element, blockElement: HTMLElement) {
+  const tableRoot = getTableHoverControlsRoot(blockElement);
+
+  if (!tableRoot) return true;
+
+  return tableRoot.getAttribute('data-block-type') === node.type;
+}
+
 export function useHoverControls({ disabled }: { disabled: boolean }) {
   const editor = useSlateStatic() as YjsEditor;
   const ref = useRef<HTMLDivElement>(null);
@@ -128,12 +150,26 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
         return;
       }
 
-      const blockElement = ReactEditor.toDOMNode(editor, node);
+      let blockElement = ReactEditor.toDOMNode(editor, node);
 
       if (!blockElement) return;
-      const shouldSkipParentTypes = [BlockType.TableBlock, BlockType.SimpleTableBlock];
+      const tableRootElement = getTableHoverControlsRoot(blockElement);
 
-      if (shouldSkipParentTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
+      if (tableRootElement) {
+        try {
+          const tableRootNode = ReactEditor.toSlateNode(editor, tableRootElement);
+
+          if (Element.isElement(tableRootNode)) {
+            node = tableRootNode;
+            blockElement = tableRootElement;
+          }
+        } catch {
+          close();
+          return;
+        }
+      }
+
+      if (!shouldShowHoverControlsForBlock(node, blockElement)) {
         close();
         return;
       }
