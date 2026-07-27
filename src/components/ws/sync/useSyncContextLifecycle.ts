@@ -41,7 +41,7 @@ export function useSyncContextLifecycle(
   sendMessage: (message: messages.IMessage) => void,
   postMessage: (message: messages.IMessage) => void,
   onLocalUpdate?: (objectId: string) => void,
-  onManifestSync?: (objectId: string) => void
+  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void
 ) {
   const cancelDeferredCleanup = useCallback((objectId: string) => {
     const timer = refs.pendingCleanups.current.get(objectId);

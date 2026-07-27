@@ -11,7 +11,11 @@ import {
 } from '@/application/db';
 import { deleteRow as deleteCachedRow, getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
-import { deleteOutboxByObjectId } from '@/application/sync-outbox';
+import {
+  deleteOutboxByObjectId,
+  getCurrentOutboxSession,
+  type SyncOutboxSession,
+} from '@/application/sync-outbox';
 import { YDoc, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
@@ -811,7 +815,11 @@ async function applyRowUpdate(
   });
 }
 
-async function applyRowDelete(databaseId: string, deletion: database_blob.IDatabaseBlobRowDelete) {
+async function applyRowDelete(
+  databaseId: string,
+  deletion: database_blob.IDatabaseBlobRowDelete,
+  outboxSession: SyncOutboxSession | null
+) {
   const rowId = decodeRowId(deletion.rowId);
 
   if (!rowId) {
@@ -823,7 +831,11 @@ async function applyRowDelete(databaseId: string, deletion: database_blob.IDatab
   clearRowDocSeeds(databaseId, rowId);
 
   try {
-    await deleteOutboxByObjectId(rowId);
+    if (!outboxSession) {
+      throw new Error(`cannot persist database row tombstone ${rowId} without its originating outbox session`);
+    }
+
+    await deleteOutboxByObjectId(rowId, { session: outboxSession });
     const storageDeletes = await Promise.allSettled([
       deleteCollabDB(rowId, { destroyDoc: false }),
       // Older Web clients persisted rows under the composite row key. Leaving
@@ -861,7 +873,7 @@ async function awaitBatch(operations: Promise<void>[]) {
 async function applyDiff(
   databaseId: string,
   diff: database_blob.DatabaseBlobDiffResponse,
-  options?: { seedCache?: boolean }
+  options?: { seedCache?: boolean; outboxSession?: SyncOutboxSession | null }
 ) {
   const updates = [...diff.creates, ...diff.updates];
   const totalUpdates = updates.length;
@@ -908,7 +920,7 @@ async function applyDiff(
   for (let i = 0; i < deletes.length; i += APPLY_CONCURRENCY) {
     const batch = deletes.slice(i, i + APPLY_CONCURRENCY);
 
-    await awaitBatch(batch.map((deletion) => applyRowDelete(databaseId, deletion)));
+    await awaitBatch(batch.map((deletion) => applyRowDelete(databaseId, deletion, options?.outboxSession ?? null)));
   }
 
   Log.debug('[Database] applyDiff completed', {
@@ -923,12 +935,13 @@ async function applyDiff(
 async function persistDiffToIndexedDB(
   databaseId: string,
   diff: database_blob.DatabaseBlobDiffResponse,
-  source: string
+  source: string,
+  outboxSession: SyncOutboxSession | null
 ): Promise<boolean> {
   const applyStartedAt = Date.now();
 
   try {
-    await applyDiff(databaseId, diff, { seedCache: false });
+    await applyDiff(databaseId, diff, { seedCache: false, outboxSession });
     Log.debug('[Database] blob diff persisted to IndexedDB', {
       databaseId,
       source,
@@ -1138,6 +1151,10 @@ export async function prefetchDatabaseBlobDiff(
     sharedPrefetchEntries.delete(sharedKey);
   }
 
+  // The page walk can finish after a workspace switch. Capture its owner now
+  // and thread it through tombstone persistence instead of consulting the
+  // sync-outbox module's replacement session at completion time.
+  const outboxSession = getCurrentOutboxSession(workspaceId);
   const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
   const entry: SharedPrefetchEntry = {
     priorityRowIds: new Set(),
@@ -1199,7 +1216,8 @@ export async function prefetchDatabaseBlobDiff(
       const persisted = await persistDiffToIndexedDB(
         databaseId,
         page,
-        `${sourceLabel} page ${index + 1}/${encodedPages.length}`
+        `${sourceLabel} page ${index + 1}/${encodedPages.length}`,
+        outboxSession
       );
 
       allPagesPersisted = persisted && allPagesPersisted;

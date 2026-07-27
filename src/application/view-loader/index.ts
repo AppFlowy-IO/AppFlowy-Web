@@ -149,7 +149,7 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
     }
 
     applyYDoc(targetDoc, missingUpdate);
-    enqueueOutboxUpdate({
+    void enqueueOutboxUpdate({
       objectId: databaseId,
       collabType: Types.Database,
       version: targetDoc.version ?? null,

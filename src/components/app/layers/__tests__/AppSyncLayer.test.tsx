@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/collab-api';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { AppSyncLayer } from '@/components/app/layers/AppSyncLayer';
@@ -29,6 +30,8 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/services/js-services/http/collab-api', () => ({
   collabFullSyncBatch: jest.fn(),
+  getSlowSyncUploadTimeoutMs: jest.fn(() => 240_000),
+  SLOW_SYNC_PROBE_TIMEOUT_MS: 120_000,
 }));
 
 jest.mock('@/application/session/token', () => ({
@@ -38,6 +41,7 @@ jest.mock('@/application/session/token', () => ({
 jest.mock('@/application/sync-outbox', () => ({
   clearDrainConfig: jest.fn(),
   configureDrain: jest.fn(),
+  resumePermissionBlockedSync: jest.fn(),
   setCurrentSession: jest.fn(),
   startDrainAll: jest.fn(),
 }));
@@ -99,6 +103,7 @@ const authContextValue = {
 let consumerRenderCount = 0;
 let websocketStatusEmits = 0;
 let latestWebSocketReadyState: number | undefined;
+let latestEventEmitter: AppEventEmitter | undefined;
 
 const ContextConsumer = memo(function ContextConsumer() {
   const { eventEmitter } = useSyncInternal();
@@ -111,6 +116,7 @@ const ContextConsumer = memo(function ContextConsumer() {
     };
 
     latestWebSocketReadyState = eventEmitter.webSocketReadyState;
+    latestEventEmitter = eventEmitter;
     eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleStatus);
 
     return () => {
@@ -145,6 +151,7 @@ describe('AppSyncLayer per-message churn', () => {
     consumerRenderCount = 0;
     websocketStatusEmits = 0;
     latestWebSocketReadyState = undefined;
+    latestEventEmitter = undefined;
     mockUseSync.mockReturnValue(stableSyncValue);
     mockCollabFullSyncBatch.mockResolvedValue([
       {
@@ -260,6 +267,15 @@ describe('AppSyncLayer per-message churn', () => {
     expect(leaderConfig.slowSync).toEqual(expect.any(Function));
   });
 
+  it('resumes a permission-blocked object when access changes', () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+
+    renderLayer();
+    latestEventEmitter?.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'object-1' });
+
+    expect(outboxMock.resumePermissionBlockedSync).toHaveBeenCalledWith('object-1');
+  });
+
   it('keeps the conservative realtime drain active while server-info is unresolved', () => {
     const outboxMock = jest.requireMock('@/application/sync-outbox');
 
@@ -292,13 +308,16 @@ describe('AppSyncLayer per-message churn', () => {
     expect(leaderConfig.slowSync).toEqual(expect.any(Function));
 
     await expect(
-      leaderConfig.slowSync({
-        objectId: 'object-1',
-        collabType: 0,
-        version: 'version-1',
-        stateVector: desiredStateVector,
-        docState: new Uint8Array([2]),
-      })
+      leaderConfig.slowSync(
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          version: 'version-1',
+          stateVector: desiredStateVector,
+          docState: new Uint8Array([2]),
+        },
+        new AbortController().signal
+      )
     ).resolves.toMatchObject({ outcome: 'confirmed', messageId: { timestamp: 1, counter: 0 } });
     expect(mockCollabFullSyncBatch).toHaveBeenNthCalledWith(
       1,
@@ -310,7 +329,7 @@ describe('AppSyncLayer per-message churn', () => {
           docState: new Uint8Array(),
         }),
       ],
-      expect.objectContaining({ signal: expect.any(AbortSignal) })
+      expect.objectContaining({ signal: expect.any(AbortSignal), timeoutMs: 120_000 })
     );
     expect(mockCollabFullSyncBatch.mock.calls[0][2]?.syncLane).toBeUndefined();
     expect(mockCollabFullSyncBatch).toHaveBeenNthCalledWith(
@@ -323,7 +342,7 @@ describe('AppSyncLayer per-message churn', () => {
           docState: new Uint8Array([2]),
         }),
       ],
-      expect.objectContaining({ syncLane: 'slow', signal: expect.any(AbortSignal) })
+      expect.objectContaining({ syncLane: 'slow', signal: expect.any(AbortSignal), timeoutMs: 240_000 })
     );
     expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(2);
 
@@ -344,13 +363,16 @@ describe('AppSyncLayer per-message churn', () => {
       },
     ]);
     await expect(
-      leaderConfig.slowSync({
-        objectId: 'object-1',
-        collabType: 0,
-        version: 'version-1',
-        stateVector: desiredStateVector,
-        docState: new Uint8Array([2]),
-      })
+      leaderConfig.slowSync(
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          version: 'version-1',
+          stateVector: desiredStateVector,
+          docState: new Uint8Array([2]),
+        },
+        new AbortController().signal
+      )
     ).rejects.toThrow('did not exactly match');
 
     const noRidResult = [
@@ -364,13 +386,16 @@ describe('AppSyncLayer per-message churn', () => {
 
     mockCollabFullSyncBatch.mockResolvedValueOnce(noRidResult).mockResolvedValueOnce(noRidResult);
     await expect(
-      leaderConfig.slowSync({
-        objectId: 'object-1',
-        collabType: 0,
-        version: 'version-1',
-        stateVector: desiredStateVector,
-        docState: new Uint8Array([2]),
-      })
+      leaderConfig.slowSync(
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          version: 'version-1',
+          stateVector: desiredStateVector,
+          docState: new Uint8Array([2]),
+        },
+        new AbortController().signal
+      )
     ).rejects.toThrow('did not include a durable message id');
 
     mockUseWorkspaceRealtimeTransport.mockReturnValue({
@@ -415,13 +440,16 @@ describe('AppSyncLayer per-message churn', () => {
     const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
 
     await expect(
-      leaderConfig.slowSync({
-        objectId: 'object-1',
-        collabType: 0,
-        version: 'version-1',
-        stateVector: desiredStateVector,
-        docState: new Uint8Array([9, 9]),
-      })
+      leaderConfig.slowSync(
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          version: 'version-1',
+          stateVector: desiredStateVector,
+          docState: new Uint8Array([9, 9]),
+        },
+        new AbortController().signal
+      )
     ).resolves.toEqual({ outcome: 'confirmed', messageId: { timestamp: 5, counter: 0 } });
 
     expect(mockCollabFullSyncBatch).toHaveBeenCalledTimes(2);
@@ -446,13 +474,16 @@ describe('AppSyncLayer per-message churn', () => {
     const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
 
     await expect(
-      leaderConfig.slowSync({
-        objectId: 'object-1',
-        collabType: 0,
-        version: 'version-1',
-        stateVector: new Uint8Array([0]),
-        docState: new Uint8Array([9]),
-      })
+      leaderConfig.slowSync(
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          version: 'version-1',
+          stateVector: new Uint8Array([0]),
+          docState: new Uint8Array([9]),
+        },
+        new AbortController().signal
+      )
     ).resolves.toEqual({ outcome: 'confirmed', messageId: undefined });
 
     expect(mockCollabFullSyncBatch).toHaveBeenCalledTimes(1);
@@ -478,13 +509,16 @@ describe('AppSyncLayer per-message churn', () => {
     const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
 
     await expect(
-      leaderConfig.slowSync({
-        objectId: 'object-1',
-        collabType: 0,
-        version: 'version-1',
-        stateVector: new Uint8Array([0]),
-        docState: new Uint8Array([9]),
-      })
+      leaderConfig.slowSync(
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          version: 'version-1',
+          stateVector: new Uint8Array([0]),
+          docState: new Uint8Array([9]),
+        },
+        new AbortController().signal
+      )
     ).resolves.toEqual({ outcome: 'blocked', reason: 'permission_denied' });
 
     expect(stableSyncValue.applyHttpFullSyncResult).not.toHaveBeenCalled();

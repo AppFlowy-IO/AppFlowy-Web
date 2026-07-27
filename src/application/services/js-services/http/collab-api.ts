@@ -26,9 +26,32 @@ export interface CollabFullSyncBatchOptions {
   syncLane?: 'slow';
   /** Cancels an in-flight request when its owning workspace/session changes. */
   signal?: AbortSignal;
+  /** Bounds ordinary requests that participate in a serialized workflow. */
+  timeoutMs?: number;
 }
 
-const SLOW_SYNC_TIMEOUT_MS = 120_000;
+export const SLOW_SYNC_PROBE_TIMEOUT_MS = 120_000;
+const SLOW_SYNC_SERVER_PROCESSING_BUDGET_MS = 60_000;
+const SLOW_SYNC_NETWORK_HEADROOM_MS = 30_000;
+const SLOW_SYNC_MIN_UPLOAD_BITS_PER_SECOND = 1_500_000;
+const SLOW_SYNC_PROTOBUF_HEADROOM_BYTES = 64 * 1024;
+
+/**
+ * Budget upload time at 1.5 Mbps, then leave the server's full processing
+ * window plus transport/metadata headroom. The probe keeps its smaller fixed
+ * timeout because it carries no document state.
+ */
+export function getSlowSyncUploadTimeoutMs(payloadBytes: number): number {
+  const boundedPayloadBytes = Math.max(0, Number.isFinite(payloadBytes) ? payloadBytes : 0);
+  const uploadMs = Math.ceil(
+    ((boundedPayloadBytes + SLOW_SYNC_PROTOBUF_HEADROOM_BYTES) * 8 * 1_000) / SLOW_SYNC_MIN_UPLOAD_BITS_PER_SECOND
+  );
+
+  return Math.max(
+    SLOW_SYNC_PROBE_TIMEOUT_MS,
+    uploadMs + SLOW_SYNC_SERVER_PROCESSING_BUDGET_MS + SLOW_SYNC_NETWORK_HEADROOM_MS
+  );
+}
 
 function canUseStreamingGzip(): boolean {
   return typeof globalThis.CompressionStream === 'function' && typeof globalThis.DecompressionStream === 'function';
@@ -171,6 +194,10 @@ export async function collabFullSyncBatch(
 ): Promise<CollabFullSyncBatchResult[]> {
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
   const streamingGzipAvailable = canUseStreamingGzip();
+  const slowSyncPayloadBytes = items.reduce(
+    (total, item) => total + item.stateVector.byteLength + item.docState.byteLength,
+    0
+  );
 
   if (options?.syncLane === 'slow' && !streamingGzipAvailable) {
     throw new Error('HTTP slow-sync requires browser gzip compression support');
@@ -217,6 +244,8 @@ export async function collabFullSyncBatch(
 
   const deviceId = getOrCreateDeviceId();
   const axiosInstance = getAxios();
+  const timeoutMs =
+    options?.timeoutMs ?? (options?.syncLane === 'slow' ? getSlowSyncUploadTimeoutMs(slowSyncPayloadBytes) : undefined);
 
   // Send the request with protobuf content type.
   // Use validateStatus to prevent axios from throwing on 429/503 so we can
@@ -230,8 +259,9 @@ export async function collabFullSyncBatch(
     },
     responseType: 'arraybuffer',
     signal: options?.signal,
-    // A slow upload must not hold the module-global serialized queue forever.
-    ...(options?.syncLane === 'slow' ? { timeout: SLOW_SYNC_TIMEOUT_MS } : {}),
+    // A slow upload or its lightweight probe must not hold the serialized
+    // workspace lane forever.
+    ...(timeoutMs !== undefined ? { timeout: timeoutMs } : {}),
     // Axios' default transform sends typed-array `.buffer`, which can include
     // protobufjs' pooled zero padding beyond this Uint8Array view.
     transformRequest: [(data: Uint8Array) => data],

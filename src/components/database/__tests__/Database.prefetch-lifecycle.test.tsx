@@ -48,7 +48,7 @@ jest.mock('@/components/database/DatabaseViews', () => {
     jest.requireActual<typeof import('@/application/database-yjs/context')>('@/application/database-yjs/context');
 
   return function MockDatabaseViews() {
-    const { loadRowFromSeed, rowMap } = useDatabaseContext();
+    const { bindRowSync, loadRowFromSeed, rowMap } = useDatabaseContext();
     const initialLoadRowFromSeed = React.useRef(loadRowFromSeed).current;
     const previousLoadRowFromSeed = React.useRef(loadRowFromSeed);
 
@@ -85,6 +85,14 @@ jest.mock('@/components/database/DatabaseViews', () => {
           type: 'button',
         },
         'Load seeded row with initial lifecycle'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => bindRowSync?.('row-id'),
+          type: 'button',
+        },
+        'Bind row sync'
       )
     );
   };
@@ -328,11 +336,95 @@ describe('Database blob prefetch lifecycle', () => {
     });
 
     expect(results).toEqual([secondRowDoc]);
-    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('row-b');
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('row-b');
+    });
 
     unmount();
     firstDoc.destroy();
     secondDoc.destroy();
     secondRowDoc.destroy();
+  });
+
+  it('releases each lifecycle row-sync owner when the Y.Doc instance changes', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid');
+    const secondDoc = createDatabaseDoc('shared-guid');
+    const rowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const createRow = jest.fn().mockResolvedValue(rowDoc);
+    const scheduleDeferredCleanup = jest.fn();
+    const firstProps = {
+      ...databaseProps(firstDoc),
+      createRow,
+      scheduleDeferredCleanup,
+    };
+    const { rerender, unmount } = render(<Database {...firstProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <Database
+        {...databaseProps(secondDoc)}
+        createRow={createRow}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+      />
+    );
+
+    await waitFor(() => expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1));
+    expect(scheduleDeferredCleanup).toHaveBeenLastCalledWith('row-id');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(2));
+
+    unmount();
+
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(2);
+    expect(scheduleDeferredCleanup).toHaveBeenLastCalledWith('row-id');
+
+    firstDoc.destroy();
+    secondDoc.destroy();
+    rowDoc.destroy();
+  });
+
+  it('releases a row sync that finishes registering after its lifecycle ended', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid');
+    const secondDoc = createDatabaseDoc('shared-guid');
+    const rowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const pendingRowSync = createDeferred<YDoc>();
+    const createRow = jest.fn().mockReturnValue(pendingRowSync.promise);
+    const scheduleDeferredCleanup = jest.fn();
+    const { rerender, unmount } = render(
+      <Database
+        {...databaseProps(firstDoc)}
+        createRow={createRow}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    expect(createRow).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <Database
+        {...databaseProps(secondDoc)}
+        createRow={createRow}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+      />
+    );
+
+    expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pendingRowSync.resolve(rowDoc);
+      await pendingRowSync.promise;
+    });
+
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith('row-id');
+
+    unmount();
+    firstDoc.destroy();
+    secondDoc.destroy();
+    rowDoc.destroy();
   });
 });

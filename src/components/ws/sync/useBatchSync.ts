@@ -186,10 +186,33 @@ export function useBatchSync(
     }
   }, []);
 
-  const notifyManifestSync = useCallback((objectId: string) => {
+  const notifyManifestSync = useCallback((objectId: string, persisted?: Promise<boolean>) => {
     if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) return;
 
-    clearBackgroundDirtyEdits([objectId]);
+    const coveredDirtyEdit = backgroundDirtyEditsRef.current.get(objectId);
+
+    if (!coveredDirtyEdit) return;
+
+    const clearCoveredEdit = () => {
+      if (backgroundDirtyEditsRef.current.get(objectId)?.seq === coveredDirtyEdit.seq) {
+        clearBackgroundDirtyEdits([objectId]);
+      }
+    };
+
+    if (!persisted) {
+      clearCoveredEdit();
+      return;
+    }
+
+    void persisted
+      .then((isDurable) => {
+        if (isDurable) {
+          clearCoveredEdit();
+        }
+      })
+      .catch((error) => {
+        Log.warn('[sync] failed to observe durable manifest enqueue', { objectId, error });
+      });
   }, [clearBackgroundDirtyEdits]);
 
   const applyFullSyncResults = useCallback((results: Awaited<ReturnType<typeof collabFullSyncBatch>>) => {

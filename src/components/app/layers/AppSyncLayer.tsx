@@ -6,11 +6,17 @@ import { Awareness } from 'y-protocols/awareness';
 import { APP_EVENTS } from '@/application/constants';
 import { db } from '@/application/db';
 import { CollabService, UserService } from '@/application/services/domains';
-import { collabFullSyncBatch, type CollabFullSyncBatchResult } from '@/application/services/js-services/http/collab-api';
+import {
+  collabFullSyncBatch,
+  getSlowSyncUploadTimeoutMs,
+  SLOW_SYNC_PROBE_TIMEOUT_MS,
+  type CollabFullSyncBatchResult,
+} from '@/application/services/js-services/http/collab-api';
 import { getTokenParsed } from '@/application/session/token';
 import {
   clearDrainConfig,
   configureDrain,
+  resumePermissionBlockedSync,
   setCurrentSession,
   type SlowSyncBlockedReason,
   type SlowSyncOutboxItem,
@@ -186,7 +192,14 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
                 collabVersion: item.version,
               },
             ],
-            { syncLane, signal }
+            {
+              syncLane,
+              signal,
+              timeoutMs:
+                syncLane === 'slow'
+                  ? getSlowSyncUploadTimeoutMs(item.stateVector.byteLength + docState.byteLength)
+                  : SLOW_SYNC_PROBE_TIMEOUT_MS,
+            }
           )
         );
       const applyResult = (result: CollabFullSyncBatchResult) =>
@@ -237,7 +250,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     [applyHttpFullSyncResult, currentWorkspaceId]
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (currentUserId && currentWorkspaceId) {
       setCurrentSession({ userId: currentUserId, workspaceId: currentWorkspaceId });
     } else {
@@ -253,8 +266,6 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
 
   useEffect(() => {
     if (!currentWorkspaceId || !currentUserId) return;
-
-    const slowSyncAbortController = new AbortController();
 
     configureDrain({
       userId: currentUserId,
@@ -286,16 +297,13 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       maxUpdateBytes,
       maxSlowSyncUpdateBytes,
       syncLimitsLoaded,
-      abortSlowSync: () => slowSyncAbortController.abort(),
       // IndexedDB is shared by sibling tabs. Only the elected socket owner
       // may run the global low-concurrency HTTP lane; followers persist and
       // wake that owner through onPersisted.
-      slowSync:
-        syncLimitsLoaded && canSendToServer ? (item) => slowSync(item, slowSyncAbortController.signal) : undefined,
+      slowSync: syncLimitsLoaded && canSendToServer ? slowSync : undefined,
     });
 
     return () => {
-      slowSyncAbortController.abort();
       clearDrainConfig();
     };
   }, [
@@ -328,6 +336,23 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     syncLimitsLoaded,
     wsReadyState,
   ]);
+
+  // Access changes do not rebuild the transport configuration. Wake only a
+  // permission-blocked object so a restored grant can retry immediately,
+  // while update-too-large blocks remain terminal until limits change.
+  useEffect(() => {
+    const handlePermissionChange = (permissionChange: notification.IPermissionChanged) => {
+      if (permissionChange.objectId) {
+        resumePermissionBlockedSync(permissionChange.objectId);
+      }
+    };
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+    };
+  }, [eventEmitter]);
 
   // Handle user profile change notifications
   // This provides automatic UI updates when user profile changes occur via WebSocket.

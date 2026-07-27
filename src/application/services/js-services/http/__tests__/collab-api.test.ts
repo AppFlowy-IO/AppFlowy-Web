@@ -11,7 +11,12 @@ import { collab } from '@/proto/messages';
 import { database_blob } from '@/proto/database_blob';
 import { getAxios } from '@/application/services/js-services/http/core';
 
-import { collabFullSyncBatch, databaseBlobDiff } from '../collab-api';
+import {
+  collabFullSyncBatch,
+  databaseBlobDiff,
+  getSlowSyncUploadTimeoutMs,
+  SLOW_SYNC_PROBE_TIMEOUT_MS,
+} from '../collab-api';
 
 jest.mock('@/application/services/js-services/device-id', () => ({
   getOrCreateDeviceId: jest.fn(() => 'test-device-id'),
@@ -103,6 +108,40 @@ describe('collabFullSyncBatch', () => {
     expect(config.transformRequest[0](requestBody)).toBe(requestBody);
   });
 
+  it('bounds a lightweight probe without marking it as a slow-lane upload', async () => {
+    const responseBody = collab.CollabBatchSyncResponse.encode(
+      collab.CollabBatchSyncResponse.create({
+        results: [],
+        responseCompression: collab.PayloadCompressionType.COMPRESSION_NONE,
+      })
+    ).finish();
+    const post = jest.fn().mockResolvedValue({
+      status: 200,
+      data: responseBody,
+      headers: {},
+    });
+
+    mockGetAxios.mockReturnValue({ post });
+
+    await collabFullSyncBatch(
+      'workspace-id',
+      [
+        {
+          objectId: 'object-id',
+          collabType: 0,
+          stateVector: new Uint8Array([1]),
+          docState: new Uint8Array(),
+        },
+      ],
+      { timeoutMs: SLOW_SYNC_PROBE_TIMEOUT_MS }
+    );
+
+    const config = post.mock.calls[0][2];
+
+    expect(config.timeout).toBe(SLOW_SYNC_PROBE_TIMEOUT_MS);
+    expect(config.headers['x-appflowy-sync-lane']).toBeUndefined();
+  });
+
   it('forces gzip for one slow-lane object and decodes both compressed result payloads', async () => {
     const missingUpdate = new Uint8Array([3, 4, 5]);
     const serverStateVector = new Uint8Array([6, 7]);
@@ -149,7 +188,7 @@ describe('collabFullSyncBatch', () => {
     const item = request.items[0];
 
     expect(config.headers['x-appflowy-sync-lane']).toBe('slow');
-    expect(config.timeout).toBe(120_000);
+    expect(config.timeout).toBe(getSlowSyncUploadTimeoutMs(2));
     expect(config.signal).toBe(controller.signal);
     expect(request.items).toHaveLength(1);
     expect(item.compression).toBe(collab.PayloadCompressionType.COMPRESSION_GZIP);
@@ -165,6 +204,16 @@ describe('collabFullSyncBatch', () => {
     expect(results[0].messageId?.counter).toBe(1);
     expect(Array.from(results[0].missingUpdate)).toEqual(Array.from(missingUpdate));
     expect(Array.from(results[0].serverStateVector)).toEqual(Array.from(serverStateVector));
+  });
+
+  it('leaves upload and server-processing headroom for large slow-sync payloads', () => {
+    const sixteenMiBTimeout = getSlowSyncUploadTimeoutMs(16 * 1024 * 1024);
+    const sixtyFourMiBTimeout = getSlowSyncUploadTimeoutMs(64 * 1024 * 1024);
+
+    // 16 MiB takes about 90 seconds at 1.5 Mbps before the server's 60-second
+    // processing budget. The deadline must cover both plus response headroom.
+    expect(sixteenMiBTimeout).toBeGreaterThan(150_000);
+    expect(sixtyFourMiBTimeout).toBeGreaterThan(sixteenMiBTimeout);
   });
 
   it('preserves explicit server errors instead of trying to decompress raw error vectors', async () => {

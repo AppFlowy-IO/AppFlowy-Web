@@ -32,6 +32,7 @@ jest.mock('@/application/sync-outbox', () => {
       };
 
       peers.forEach((peer) => peer.emit(message));
+      return Promise.resolve(true);
     }),
     deleteOutboxByObjectId: jest.fn(async () => undefined),
     waitForDrain: jest.fn(async () => true),
@@ -368,10 +369,12 @@ describe('sync protocol', () => {
   it('persists an oversized manifest response instead of emitting it on WebSocket', () => {
     const doc = new Y.Doc({ guid: random.uuidv4() });
     const emit = jest.fn();
+    const onManifestSync = jest.fn();
     const ctx: SyncContext = {
       doc,
       collabType: Types.Database,
       emit,
+      onManifestSync,
     };
 
     doc.getMap('root').set('large-history', 'value');
@@ -393,7 +396,8 @@ describe('sync protocol', () => {
         collabType: Types.Database,
         payload: expect.any(Uint8Array),
       }),
-      { broadcast: false }
+      { broadcast: false, source: 'manifest' }
     );
+    expect(onManifestSync).toHaveBeenCalledWith(doc.guid, expect.any(Promise));
   });
 });

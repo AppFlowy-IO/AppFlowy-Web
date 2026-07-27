@@ -48,12 +48,11 @@ export interface SyncContext {
    */
   onLocalUpdate?: (objectId: string) => void;
   /**
-   * Called after this context participates in a WebSocket state-vector sync
-   * exchange. A completed manifest-style exchange reconciles the full Yjs
-   * state, so HTTP fallback dirty markers for the object can be cleared when
-   * the socket is open.
+   * Called after this context participates in a state-vector sync exchange.
+   * Routed manifests pass their IndexedDB persistence promise so consumers can
+   * clear only the dirty generation durably owned by the outbox.
    */
-  onManifestSync?: (objectId: string) => void;
+  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void;
   /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
@@ -137,7 +136,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   // let the serialized outbox use the bounded HTTP slow lane. Emitting here
   // would close the WebSocket before any fallback could run.
   if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
-    enqueueOutboxUpdate(
+    const persisted = enqueueOutboxUpdate(
       {
         objectId: doc.guid,
         collabType: ctx.collabType,
@@ -145,8 +144,10 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
         payload: update,
         beforeStateVector: stateVector,
       },
-      { broadcast: false }
+      { broadcast: false, source: 'manifest' }
     );
+
+    ctx.onManifestSync?.(doc.guid, persisted);
     return;
   }
 
@@ -275,7 +276,7 @@ export const initSync = (ctx: SyncContext) => {
     // post-update state from the update bytes itself), so it would be wasted work.
     const beforeStateVector = Y.encodeStateVector(transaction.beforeState);
 
-    enqueueOutboxUpdate({
+    void enqueueOutboxUpdate({
       objectId: doc.guid,
       collabType,
       version: doc.version ?? null,

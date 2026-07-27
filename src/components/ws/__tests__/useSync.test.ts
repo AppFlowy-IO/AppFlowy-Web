@@ -96,6 +96,7 @@ jest.mock('@/application/sync-outbox', () => {
       });
       ctx.pending.set(record.objectId, queued);
       drain(record.objectId);
+      return Promise.resolve(true);
     }),
     deleteOutboxByObjectId: jest.fn(async (objectId: string) => {
       ctx.pending.delete(objectId);
@@ -1369,6 +1370,151 @@ describe('useSync public API', () => {
       });
 
       expect(mockedCollabFullSyncBatch).not.toHaveBeenCalled();
+
+      unmount();
+      doc.destroy();
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('clears the covered dirty edit after a routed manifest becomes durable', async () => {
+    jest.useFakeTimers();
+    mockedCollabFullSyncBatch.mockResolvedValue([]);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 1,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('cfcfcfcf-4444-4444-8444-cfcfcfcfcfcf');
+      const persisted = createDeferred<boolean>();
+      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+      let syncContext: SyncContext | undefined;
+
+      act(() => {
+        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('covered-edit', true);
+        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
+      });
+
+      await act(async () => {
+        persisted.resolve(true);
+        await flushPromises();
+      });
+
+      act(() => {
+        ws.readyState = 0;
+        rerender();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).not.toHaveBeenCalled();
+
+      unmount();
+      doc.destroy();
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the covered dirty edit when a routed manifest cannot be persisted', async () => {
+    jest.useFakeTimers();
+    mockedCollabFullSyncBatch.mockResolvedValue([]);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 1,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('cfcfcfcf-6666-4666-8666-cfcfcfcfcfcf');
+      const persisted = createDeferred<boolean>();
+      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+      let syncContext: SyncContext | undefined;
+
+      act(() => {
+        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('unpersisted-edit', true);
+        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
+      });
+
+      await act(async () => {
+        persisted.resolve(false);
+        await flushPromises();
+      });
+
+      act(() => {
+        ws.readyState = 0;
+        rerender();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+      expect(mockedCollabFullSyncBatch.mock.calls[0]?.[1]).toEqual([
+        expect.objectContaining({ objectId: doc.guid, collabType: Types.Document }),
+      ]);
+
+      unmount();
+      doc.destroy();
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a newer dirty edit when an older routed manifest becomes durable', async () => {
+    jest.useFakeTimers();
+    mockedCollabFullSyncBatch.mockResolvedValue([]);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 1,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('cfcfcfcf-5555-4555-8555-cfcfcfcfcfcf');
+      const persisted = createDeferred<boolean>();
+      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+      let syncContext: SyncContext | undefined;
+
+      act(() => {
+        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('covered-edit', true);
+        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
+        doc.getMap('root').set('newer-edit', true);
+      });
+
+      await act(async () => {
+        persisted.resolve(true);
+        await flushPromises();
+      });
+
+      act(() => {
+        ws.readyState = 0;
+        rerender();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+      expect(mockedCollabFullSyncBatch.mock.calls[0]?.[1]).toEqual([
+        expect.objectContaining({ objectId: doc.guid, collabType: Types.Document }),
+      ]);
 
       unmount();
       doc.destroy();

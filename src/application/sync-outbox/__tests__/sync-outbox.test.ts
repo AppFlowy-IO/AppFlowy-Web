@@ -12,10 +12,12 @@ interface MockSyncOutboxRecord {
   payload: Uint8Array;
   createdAt: number;
   beforeStateVector?: Uint8Array;
+  source?: 'manifest';
 }
 
 let mockRecords: MockSyncOutboxRecord[] = [];
 let mockNextId = 1;
+let mockTransactionQueue: Promise<unknown> = Promise.resolve();
 
 function mockMatchesIndex(index: string, key: unknown[], record: MockSyncOutboxRecord) {
   if (index === '[userId+workspaceId]') {
@@ -76,9 +78,20 @@ const mockSyncOutboxTable = {
   })),
 };
 
+const mockTransaction = jest.fn(
+  (_mode: string, _table: typeof mockSyncOutboxTable, callback: () => Promise<unknown>) => {
+    const transaction = mockTransactionQueue.then(callback);
+
+    // IndexedDB serializes read-write transactions that touch the same store.
+    mockTransactionQueue = transaction.catch(() => undefined);
+    return transaction;
+  }
+);
+
 jest.mock('@/application/db', () => ({
   db: {
     sync_outbox: mockSyncOutboxTable,
+    transaction: mockTransaction,
   },
 }));
 
@@ -95,7 +108,9 @@ import {
   configureDrain,
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
+  getCurrentOutboxSession,
   purgeAllOutbox,
+  resumePermissionBlockedSync,
   setCurrentSession,
   shouldRouteUpdateThroughOutbox,
   startDrainAll,
@@ -118,11 +133,21 @@ async function flushPromises() {
   }
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
 describe('sync outbox live send', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockRecords = [];
     mockNextId = 1;
+    mockTransactionQueue = Promise.resolve();
     clearDrainConfig();
     setCurrentSession({ userId, workspaceId });
 
@@ -197,6 +222,57 @@ describe('sync outbox live send', () => {
 
     expect(onPersisted).toHaveBeenCalledWith(workspaceId, objectId);
     expect(mockRecords).toHaveLength(1);
+  });
+
+  it('atomically replaces older manifests without removing local edit records', async () => {
+    const firstManifest = makeUpdate('first manifest');
+    const localEdit = makeUpdate('local edit');
+    const latestManifest = makeUpdate('latest manifest');
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      isReady: () => false,
+    });
+
+    const [firstPersisted, localPersisted, latestPersisted] = await Promise.all([
+      enqueueOutboxUpdate(
+        {
+          objectId,
+          collabType: Types.Database,
+          version: null,
+          payload: firstManifest,
+        },
+        { broadcast: false, source: 'manifest' }
+      ),
+      enqueueOutboxUpdate({
+        objectId,
+        collabType: Types.Database,
+        version: null,
+        payload: localEdit,
+      }),
+      enqueueOutboxUpdate(
+        {
+          objectId,
+          collabType: Types.Database,
+          version: null,
+          payload: latestManifest,
+        },
+        { broadcast: false, source: 'manifest' }
+      ),
+    ]);
+
+    await flushPromises();
+
+    expect([firstPersisted, localPersisted, latestPersisted]).toEqual([true, true, true]);
+    expect(mockRecords).toHaveLength(2);
+    expect(mockRecords.filter((record) => record.source === 'manifest')).toEqual([
+      expect.objectContaining({ payload: latestManifest }),
+    ]);
+    expect(mockRecords.filter((record) => record.source === undefined)).toEqual([
+      expect.objectContaining({ payload: localEdit }),
+    ]);
   });
 
   it('drains queued records when startDrainAll runs after the transport becomes ready', async () => {
@@ -408,7 +484,8 @@ describe('sync outbox live send', () => {
         version: 'version-1',
         docState: payload,
         stateVector: expect.any(Uint8Array),
-      })
+      }),
+      expect.any(AbortSignal)
     );
     expect(mockRecords).toHaveLength(0);
   });
@@ -826,6 +903,127 @@ describe('sync outbox live send', () => {
     }
   });
 
+  it('cancels a pending cross-tab lock when the object is discarded', async () => {
+    const originalLocksDescriptor = Object.getOwnPropertyDescriptor(globalThis.navigator, 'locks');
+    const requestLock = jest.fn((_name: string, options: LockOptions) => {
+      const signal = options.signal;
+
+      if (!signal) throw new Error('expected a cancellable Web Lock request');
+
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { request: requestLock },
+    });
+
+    try {
+      const payload = makeUpdate('discard while waiting for lock');
+      const slowSync = jest.fn();
+
+      configureDrain({
+        userId,
+        workspaceId,
+        send: jest.fn(),
+        isReady: () => true,
+        maxUpdateBytes: payload.byteLength - 1,
+        maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
+        slowSync,
+      });
+
+      await enqueueOutboxUpdate({
+        objectId,
+        collabType: Types.Document,
+        version: null,
+        payload,
+      });
+      await flushPromises();
+
+      const signal = requestLock.mock.calls[0]?.[1].signal;
+
+      expect(signal).toEqual(expect.any(AbortSignal));
+      expect(signal?.aborted).toBe(false);
+
+      await deleteOutboxByObjectId(objectId);
+
+      expect(signal?.aborted).toBe(true);
+      expect(slowSync).not.toHaveBeenCalled();
+      expect(mockRecords).toHaveLength(0);
+    } finally {
+      if (originalLocksDescriptor) {
+        Object.defineProperty(globalThis.navigator, 'locks', originalLocksDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis.navigator, 'locks');
+      }
+    }
+  });
+
+  it('cancels a pending cross-tab lock before purging on logout', async () => {
+    const originalLocksDescriptor = Object.getOwnPropertyDescriptor(globalThis.navigator, 'locks');
+    const requestLock = jest.fn((_name: string, options: LockOptions) => {
+      const signal = options.signal;
+
+      if (!signal) throw new Error('expected a cancellable Web Lock request');
+
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    });
+
+    Object.defineProperty(globalThis.navigator, 'locks', {
+      configurable: true,
+      value: { request: requestLock },
+    });
+
+    try {
+      const payload = makeUpdate('logout while waiting for lock');
+
+      configureDrain({
+        userId,
+        workspaceId,
+        send: jest.fn(),
+        isReady: () => true,
+        maxUpdateBytes: payload.byteLength - 1,
+        maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
+        slowSync: jest.fn(),
+      });
+
+      await enqueueOutboxUpdate({
+        objectId,
+        collabType: Types.Document,
+        version: null,
+        payload,
+      });
+      await flushPromises();
+
+      const signal = requestLock.mock.calls[0]?.[1].signal;
+
+      await purgeAllOutbox();
+
+      expect(signal?.aborted).toBe(true);
+      expect(mockRecords).toHaveLength(0);
+
+      clearDrainConfig();
+      await expect(
+        enqueueOutboxUpdate({
+          objectId,
+          collabType: Types.Document,
+          version: null,
+          payload: makeUpdate('new session work'),
+        })
+      ).resolves.toBe(true);
+    } finally {
+      if (originalLocksDescriptor) {
+        Object.defineProperty(globalThis.navigator, 'locks', originalLocksDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis.navigator, 'locks');
+      }
+    }
+  });
+
   it('derives the desired state vector from a nonzero-clock incremental update', async () => {
     const doc = new Y.Doc({ guid: objectId });
     const values = doc.getArray<number>('values');
@@ -931,6 +1129,127 @@ describe('sync outbox live send', () => {
 
     expect(slowSync).toHaveBeenCalledTimes(1);
     expect(mockRecords).toHaveLength(1);
+  });
+
+  it('retries a permission-blocked oversized update after access changes', async () => {
+    const payload = makeUpdate('permission restored');
+    const slowSync = jest
+      .fn()
+      .mockResolvedValueOnce({ outcome: 'blocked', reason: 'permission_denied' })
+      .mockResolvedValueOnce({ outcome: 'confirmed', messageId: { timestamp: 1, counter: 0 } });
+
+    configureDrain({
+      userId,
+      workspaceId,
+      send: jest.fn(),
+      isReady: () => true,
+      maxUpdateBytes: payload.byteLength - 1,
+      maxSlowSyncUpdateBytes: payload.byteLength + 1_024,
+      slowSync,
+    });
+
+    await enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload,
+    });
+    await flushPromises();
+
+    expect(slowSync).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(1);
+
+    resumePermissionBlockedSync(objectId);
+    await flushPromises();
+
+    expect(slowSync).toHaveBeenCalledTimes(2);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('invalidates an update-too-large block when a newer manifest replaces its records', async () => {
+    const rejected = createDeferred<{
+      outcome: 'blocked';
+      reason: 'update_too_large';
+    }>();
+    const oversizedManifest = makeUpdate('x'.repeat(4_096));
+    const replacementManifest = makeUpdate('smaller manifest');
+    const send = jest.fn();
+    const slowSync = jest.fn(() => rejected.promise);
+
+    expect(oversizedManifest.byteLength).toBeGreaterThan(replacementManifest.byteLength);
+    configureDrain({
+      userId,
+      workspaceId,
+      send,
+      isReady: () => true,
+      maxUpdateBytes: replacementManifest.byteLength,
+      maxSlowSyncUpdateBytes: oversizedManifest.byteLength + 1_024,
+      slowSync,
+    });
+
+    await enqueueOutboxUpdate(
+      {
+        objectId,
+        collabType: Types.Database,
+        version: null,
+        payload: oversizedManifest,
+      },
+      { broadcast: false, source: 'manifest' }
+    );
+    await flushPromises();
+
+    expect(slowSync).toHaveBeenCalledTimes(1);
+
+    await enqueueOutboxUpdate(
+      {
+        objectId,
+        collabType: Types.Database,
+        version: null,
+        payload: replacementManifest,
+      },
+      { broadcast: false, source: 'manifest' }
+    );
+    expect(mockRecords).toEqual([expect.objectContaining({ id: 2, payload: replacementManifest })]);
+
+    rejected.resolve({ outcome: 'blocked', reason: 'update_too_large' });
+    await flushPromises();
+
+    expect(slowSync).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(mockRecords).toHaveLength(0);
+  });
+
+  it('deletes an object only from an explicitly captured session', async () => {
+    const originSession = { userId, workspaceId };
+    const replacementSession = { userId, workspaceId: 'workspace-2' };
+
+    clearDrainConfig();
+    setCurrentSession(originSession);
+    await enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('workspace one'),
+    });
+
+    setCurrentSession(replacementSession);
+    await enqueueOutboxUpdate({
+      objectId,
+      collabType: Types.Document,
+      version: null,
+      payload: makeUpdate('workspace two'),
+    });
+
+    expect(getCurrentOutboxSession()).toEqual(replacementSession);
+    await deleteOutboxByObjectId(objectId, { session: originSession });
+
+    expect(mockRecords).toEqual([
+      expect.objectContaining({
+        objectId,
+        userId: replacementSession.userId,
+        workspaceId: replacementSession.workspaceId,
+      }),
+    ]);
   });
 
   it('honours the server retry delay for a retryable slow-sync failure', async () => {

@@ -2,7 +2,7 @@ import { prefetchDatabaseBlobDiff, clearDatabaseRowDocSeedCache } from '@/applic
 import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { deleteRow } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
-import { deleteOutboxByObjectId } from '@/application/sync-outbox';
+import { deleteOutboxByObjectId, getCurrentOutboxSession } from '@/application/sync-outbox';
 import { database_blob } from '@/proto/database_blob';
 
 jest.mock('@/application/db', () => ({
@@ -23,6 +23,7 @@ jest.mock('@/application/services/js-services/http/http_api', () => ({
 
 jest.mock('@/application/sync-outbox', () => ({
   deleteOutboxByObjectId: jest.fn(),
+  getCurrentOutboxSession: jest.fn((workspaceId: string) => ({ userId: 'user-1', workspaceId })),
 }));
 
 // Persist assertions only care about control flow, not Yjs decoding, so the
@@ -43,6 +44,7 @@ const mockedDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof delete
 const mockedOpenRowCollabDB = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
 const mockedDeleteRow = deleteRow as jest.MockedFunction<typeof deleteRow>;
 const mockedDeleteOutbox = deleteOutboxByObjectId as jest.MockedFunction<typeof deleteOutboxByObjectId>;
+const mockedGetCurrentOutboxSession = getCurrentOutboxSession as jest.MockedFunction<typeof getCurrentOutboxSession>;
 const databaseIds = new Set<string>();
 
 /** Drains the promise chain the page walk runs on, without advancing timers. */
@@ -176,6 +178,10 @@ describe('database blob prefetch deduplication', () => {
     localStorage.clear();
     mockedDeleteCollabDB.mockResolvedValue(true);
     mockedDeleteOutbox.mockResolvedValue(undefined);
+    mockedGetCurrentOutboxSession.mockImplementation((workspaceId) => ({
+      userId: 'user-1',
+      workspaceId: workspaceId ?? 'workspace-1',
+    }));
     mockedOpenRowCollabDB.mockResolvedValue({
       doc: { destroy: jest.fn() },
       provider: { destroy: jest.fn().mockResolvedValue(undefined) },
@@ -596,7 +602,9 @@ describe('database blob prefetch deduplication', () => {
 
     await prefetchDatabaseBlobDiff('workspace-delete-success', databaseId);
 
-    expect(mockedDeleteOutbox).toHaveBeenCalledWith(VALID_ROW_ID);
+    expect(mockedDeleteOutbox).toHaveBeenCalledWith(VALID_ROW_ID, {
+      session: { userId: 'user-1', workspaceId: 'workspace-delete-success' },
+    });
     expect(mockedDeleteCollabDB).toHaveBeenCalledWith(VALID_ROW_ID, { destroyDoc: false });
     expect(mockedDeleteCollabDB).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
     expect(mockedDeleteRow).toHaveBeenCalledWith(`${databaseId}_rows_${VALID_ROW_ID}`);
@@ -636,6 +644,37 @@ describe('database blob prefetch deduplication', () => {
 
     expect(mockedDeleteCollabDB).toHaveBeenCalledTimes(2);
     expect(mockedDeleteRow).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the session captured before a paged tombstone finishes', async () => {
+    const workspaceId = 'workspace-origin';
+    const databaseId = 'database-delete-session-scope';
+    const originSession = { userId: 'user-1', workspaceId };
+    const terminalPage = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    mockedGetCurrentOutboxSession.mockReturnValueOnce(originSession);
+    mockedDatabaseBlobDiff
+      .mockResolvedValueOnce(
+        deletePage(
+          { timestamp: 750, seqNo: 1 },
+          {
+            hasMore: true,
+            nextCursor: new Uint8Array([5]),
+          }
+        )
+      )
+      .mockReturnValueOnce(terminalPage.promise);
+
+    const prefetch = prefetchDatabaseBlobDiff(workspaceId, databaseId);
+
+    await flushPendingWork();
+    mockedGetCurrentOutboxSession.mockReturnValue({ userId: 'user-1', workspaceId: 'workspace-replacement' });
+    terminalPage.resolve(readyDiff());
+    await prefetch;
+
+    expect(mockedGetCurrentOutboxSession).toHaveBeenCalledTimes(1);
+    expect(mockedDeleteOutbox).toHaveBeenCalledWith(VALID_ROW_ID, { session: originSession });
   });
 
   it('leaves the RID unchanged when a row tombstone cannot be persisted', async () => {
