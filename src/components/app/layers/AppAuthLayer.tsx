@@ -1,8 +1,8 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { invalidToken, isTokenValid } from '@/application/session/token';
 import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
+import { invalidToken, isTokenValid } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { AFConfigContext } from '@/components/main/app.hooks';

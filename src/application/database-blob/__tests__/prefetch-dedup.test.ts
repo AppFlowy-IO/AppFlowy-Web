@@ -1,4 +1,10 @@
-import { prefetchDatabaseBlobDiff, clearDatabaseRowDocSeedCache } from '@/application/database-blob';
+import {
+  prefetchDatabaseBlobDiff,
+  clearDatabaseRowDocSeedCache,
+  takeDatabaseRowDocSeed,
+} from '@/application/database-blob';
+import * as pageStageModule from '@/application/database-blob/page-stage';
+import type { DatabaseBlobDiffPageStage } from '@/application/database-blob/page-stage';
 import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { deleteRow } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
@@ -59,6 +65,36 @@ function createDeferred<T>() {
   });
 
   return { promise, resolve };
+}
+
+function createMockPageStage(options?: { failAppend?: boolean }) {
+  const pages: Uint8Array[] = [];
+  const append = jest.fn(async (bytes: Uint8Array) => {
+    if (options?.failAppend) throw new Error('page stage unavailable');
+    pages.push(bytes);
+  });
+  const read = jest.fn(async (pageIndex: number) => {
+    const page = pages[pageIndex];
+
+    if (!page) throw new Error(`missing test page ${pageIndex}`);
+    return page;
+  });
+  const clear = jest.fn(async () => {
+    pages.length = 0;
+  });
+  const stage: DatabaseBlobDiffPageStage = {
+    get pageCount() {
+      return pages.length;
+    },
+    get byteLength() {
+      return pages.reduce((total, page) => total + page.byteLength, 0);
+    },
+    append,
+    read,
+    clear,
+  };
+
+  return { stage, append, read, clear };
 }
 
 function readyDiff() {
@@ -190,6 +226,7 @@ describe('database blob prefetch deduplication', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
     databaseIds.forEach(clearDatabaseRowDocSeedCache);
     databaseIds.clear();
   });
@@ -255,9 +292,7 @@ describe('database blob prefetch deduplication', () => {
     const callbacks = [jest.fn(), jest.fn(), jest.fn()];
 
     databaseIds.add(databaseId);
-    mockedDatabaseBlobDiff
-      .mockReturnValueOnce(firstPage.promise)
-      .mockResolvedValueOnce(readyDiff());
+    mockedDatabaseBlobDiff.mockReturnValueOnce(firstPage.promise).mockResolvedValueOnce(readyDiff());
 
     const prefetches = callbacks.map((onSeedsReady) =>
       prefetchDatabaseBlobDiff(workspaceId, databaseId, { onSeedsReady })
@@ -497,8 +532,74 @@ describe('database blob prefetch deduplication', () => {
     expect(onSeedsReady).toHaveBeenCalledTimes(1);
   });
 
+  it('stages ready pages and reads them one at a time after the terminal page', async () => {
+    const databaseId = 'database-staged-pages';
+    const firstPage = pageDiff({
+      hasMore: true,
+      nextCursor: new Uint8Array([1]),
+      rid: { timestamp: 10, seqNo: 1 },
+    });
+    const finalPage = pageDiff({ rid: { timestamp: 10, seqNo: 2 } });
+    const { stage, append, read, clear } = createMockPageStage();
+    const stageSpy = jest.spyOn(pageStageModule, 'createDatabaseBlobDiffPageStage').mockReturnValueOnce(stage);
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(finalPage);
+
+    await prefetchDatabaseBlobDiff('workspace-staged-pages', databaseId);
+
+    expect(append).toHaveBeenCalledTimes(2);
+    expect(read.mock.calls.map(([pageIndex]) => pageIndex)).toEqual([0, 1, 0, 1]);
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBe(JSON.stringify({ timestamp: 10, seqNo: 2 }));
+
+    stageSpy.mockRestore();
+  });
+
+  it('copies cached row seed bytes out of the decoded page buffer', async () => {
+    const databaseId = 'database-owned-seed';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 15, seqNo: 1 }));
+
+    await prefetchDatabaseBlobDiff('workspace-owned-seed', databaseId);
+
+    const seed = takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`);
+
+    expect(Array.from(seed?.bytes ?? [])).toEqual([1, 2, 3]);
+    expect(seed?.bytes.byteLength).toBe(3);
+    expect(seed?.bytes.buffer.byteLength).toBe(3);
+  });
+
+  it('falls back to row sync when provisional page staging fails', async () => {
+    const databaseId = 'database-stage-failure';
+    const diff = pageDiff({
+      hasMore: true,
+      nextCursor: new Uint8Array([1]),
+      rid: { timestamp: 20, seqNo: 1 },
+    });
+    const onSeedsReady = jest.fn();
+    const { stage, append, read, clear } = createMockPageStage({ failAppend: true });
+    const stageSpy = jest.spyOn(pageStageModule, 'createDatabaseBlobDiffPageStage').mockReturnValueOnce(stage);
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(diff);
+
+    await expect(prefetchDatabaseBlobDiff('workspace-stage-failure', databaseId, { onSeedsReady })).resolves.toBe(diff);
+
+    expect(append).toHaveBeenCalledTimes(1);
+    expect(read).not.toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(onSeedsReady).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+
+    stageSpy.mockRestore();
+  });
+
   it('rejects a final page that carries a continuation cursor', async () => {
     const databaseId = 'database-final-cursor';
+    const { stage, clear } = createMockPageStage();
+    const stageSpy = jest.spyOn(pageStageModule, 'createDatabaseBlobDiffPageStage').mockReturnValueOnce(stage);
 
     databaseIds.add(databaseId);
     mockedDatabaseBlobDiff.mockResolvedValueOnce(pageDiff({ hasMore: false, nextCursor: new Uint8Array([1]) }));
@@ -506,7 +607,10 @@ describe('database blob prefetch deduplication', () => {
     await expect(prefetchDatabaseBlobDiff('workspace-final-cursor', databaseId)).rejects.toThrow(
       'final page contained a continuation cursor'
     );
+    expect(clear).toHaveBeenCalledTimes(1);
     expect(localStorage.getItem(`af_database_blob_rid:${databaseId}`)).toBeNull();
+
+    stageSpy.mockRestore();
   });
 
   it('rejects a non-final page that omits its continuation cursor', async () => {

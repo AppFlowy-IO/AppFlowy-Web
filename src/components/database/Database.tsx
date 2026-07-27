@@ -260,7 +260,13 @@ function Database(props: Database2Props) {
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
 
-  useEffect(() => {
+  // Layout phase, and declared before the lifecycle-reset effect below, so that
+  // in a commit where both `rowMap` and the lifecycle changed this mirror runs
+  // first and the reset's `rowMapRef.current = initialRowMap` wins. As a passive
+  // effect it ran *after* the reset and wrote the previous lifecycle's row docs
+  // back into the ref — the one path in this file not covered by the
+  // isCurrentEnsure/isCurrentLoad guards.
+  useLayoutEffect(() => {
     rowMapRef.current = rowMap;
   }, [rowMap]);
 
@@ -273,7 +279,45 @@ function Database(props: Database2Props) {
 
     return databaseId || doc.guid;
   }, [doc]);
-  const currentDatabaseId = getDatabaseId();
+
+  // Yjs mutations do not schedule a React render, so reading the id during
+  // render would only refresh it as a side effect of an unrelated re-render —
+  // and since it feeds `databaseLifecycleIdentity`, which drives a destructive
+  // teardown, that could reset the lifecycle at an arbitrary later moment.
+  // `database` is a direct key of the shared root and `id` a direct key of the
+  // database map, so shallow observers cover every way the id can change
+  // without waking React on unrelated row/field edits.
+  const subscribeToDatabaseId = useCallback(
+    (onStoreChange: () => void) => {
+      const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+      let database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+
+      // The database map can be created after the first subscribe, so re-attach
+      // the inner observer whenever the root swaps it.
+      const handleRootChange = () => {
+        const nextDatabase = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+
+        if (nextDatabase !== database) {
+          database?.unobserve(onStoreChange);
+          database = nextDatabase;
+          database?.observe(onStoreChange);
+        }
+
+        onStoreChange();
+      };
+
+      sharedRoot.observe(handleRootChange);
+      database?.observe(onStoreChange);
+
+      return () => {
+        sharedRoot.unobserve(handleRootChange);
+        database?.unobserve(onStoreChange);
+      };
+    },
+    [doc]
+  );
+
+  const currentDatabaseId = useSyncExternalStore(subscribeToDatabaseId, getDatabaseId, getDatabaseId);
   // A shared background loader can retain a callback and first invoke it after
   // reset, so invocation-time generation checks alone cannot identify stale work.
   const databaseLifecycleIdentity = useMemo(

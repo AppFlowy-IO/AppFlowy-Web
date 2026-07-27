@@ -23,6 +23,19 @@ import {
 
 import ICollabMessage = collab.ICollabMessage;
 
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+  return error;
+}
+
+function isApplyCancelled(options?: ApplyCollabMessageOptions): boolean {
+  return Boolean(options?.signal?.aborted || options?.isCancelled?.());
+}
+
 export function useCollabMessageHandler(
   refs: SyncRefs,
   wsCollabMessage: ICollabMessage | undefined | null,
@@ -38,9 +51,17 @@ export function useCollabMessageHandler(
     async (message: ICollabMessage, options?: ApplyCollabMessageOptions) => {
       const objectId = message.objectId!;
 
+      if (isApplyCancelled(options)) {
+        return false;
+      }
+
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
 
-      Log.debug(`[Version] applyCollabMessage: objectId=${objectId}, incomingVersion=${JSON.stringify(incomingVersion)}, isCollabVersionId=${isCollabVersionId(incomingVersion)}`);
+      Log.debug(
+        `[Version] applyCollabMessage: objectId=${objectId}, incomingVersion=${JSON.stringify(
+          incomingVersion
+        )}, isCollabVersionId=${isCollabVersionId(incomingVersion)}`
+      );
 
       if (isCollabVersionId(incomingVersion)) {
         refs.latestIncomingVersionRef.current.set(objectId, incomingVersion);
@@ -61,11 +82,20 @@ export function useCollabMessageHandler(
         return false;
       }
 
-      Log.debug(`[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(context?.doc?.version)}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`);
+      Log.debug(
+        `[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(
+          context?.doc?.version
+        )}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`
+      );
+
+      let messageHandled = false;
 
       if (context) {
-        let messageHandled = false;
         const handleOnActiveContext = () => {
+          if (isApplyCancelled(options)) {
+            return false;
+          }
+
           const activeContext = refs.registeredContexts.current.get(objectId);
 
           if (!activeContext) {
@@ -77,7 +107,15 @@ export function useCollabMessageHandler(
           const activeVersionKnown = isCollabVersionId(activeVersion);
           const incomingVersionKnown = isCollabVersionId(incomingVersion);
 
-          Log.debug(`[Version] handleOnActiveContext guard: objectId=${objectId}, activeVersion=${JSON.stringify(activeVersion)}, activeVersionKnown=${activeVersionKnown}, incomingVersion=${JSON.stringify(incomingVersion)}, incomingVersionKnown=${incomingVersionKnown}, guardWillFire=${activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)}`);
+          Log.debug(
+            `[Version] handleOnActiveContext guard: objectId=${objectId}, activeVersion=${JSON.stringify(
+              activeVersion
+            )}, activeVersionKnown=${activeVersionKnown}, incomingVersion=${JSON.stringify(
+              incomingVersion
+            )}, incomingVersionKnown=${incomingVersionKnown}, guardWillFire=${
+              activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)
+            }`
+          );
 
           if (activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)) {
             Log.debug('Skipped collab message with mismatched version on active context', {
@@ -96,10 +134,12 @@ export function useCollabMessageHandler(
 
         const _versionChanged = versionChanged(context, message);
 
-        Log.debug(`[Version] versionChanged=${_versionChanged}, allowVersionReset=${options?.allowVersionReset}, objectId=${objectId}`);
+        Log.debug(
+          `[Version] versionChanged=${_versionChanged}, allowVersionReset=${options?.allowVersionReset}, objectId=${objectId}`
+        );
 
         if (options?.allowVersionReset && _versionChanged) {
-          if (options?.isCancelled?.()) {
+          if (isApplyCancelled(options)) {
             return false;
           }
 
@@ -125,17 +165,27 @@ export function useCollabMessageHandler(
               return true;
             }
 
-            if (!options?.isCancelled?.()) {
+            if (!isApplyCancelled(options)) {
               return false;
             }
 
             return !activeContext;
           };
 
-          Log.debug('[Version] Collab version changed: objectId=%s, localVersion=%s, incomingVersion=%s', objectId, context.doc.version, newVersion);
+          Log.debug(
+            '[Version] Collab version changed: objectId=%s, localVersion=%s, incomingVersion=%s',
+            objectId,
+            context.doc.version,
+            newVersion
+          );
 
           if (shouldAbortReset()) {
-            Log.debug('[Version] abort reset: objectId=%s, localVersion=%s, incomingVersion=%s', objectId, context.doc.version, newVersion);
+            Log.debug(
+              '[Version] abort reset: objectId=%s, localVersion=%s, incomingVersion=%s',
+              objectId,
+              context.doc.version,
+              newVersion
+            );
             messageHandled = handleOnActiveContext();
           } else {
             const hadPendingDeferredCleanup = refs.pendingCleanups.current.has(previousDoc.guid);
@@ -176,7 +226,8 @@ export function useCollabMessageHandler(
                   let nextDoc: YDoc & SyncDocMeta;
 
                   try {
-                    const shouldForceResetCache = !isCollabVersionId(newVersion) && isCollabVersionId(previousDoc.version);
+                    const shouldForceResetCache =
+                      !isCollabVersionId(newVersion) && isCollabVersionId(previousDoc.version);
                     const openOptions: {
                       expectedVersion?: string;
                       currentUser?: string;
@@ -191,7 +242,14 @@ export function useCollabMessageHandler(
                       openOptions.forceReset = true;
                     }
 
-                    Log.debug('[Version] opening new doc: objectId=%s, expectedVersion=%s, forceReset=%s, previousDocVersion=%s, incomingVersion=%s', objectId, openOptions.expectedVersion, openOptions.forceReset, previousDoc.version, newVersion);
+                    Log.debug(
+                      '[Version] opening new doc: objectId=%s, expectedVersion=%s, forceReset=%s, previousDocVersion=%s, incomingVersion=%s',
+                      objectId,
+                      openOptions.expectedVersion,
+                      openOptions.forceReset,
+                      previousDoc.version,
+                      newVersion
+                    );
                     nextDoc = (await openCollabDB(previousDoc.guid, {
                       ...openOptions,
                     })) as YDoc & SyncDocMeta;
@@ -200,7 +258,10 @@ export function useCollabMessageHandler(
                       // Align with desktop Option<version> semantics after mismatch reset:
                       // local doc should become version-unknown until a new authoritative version is learned.
                       nextDoc.version = undefined;
-                      Log.debug('[Version] newVersion is unknown, set nextDoc.version=undefined for objectId=%s', objectId);
+                      Log.debug(
+                        '[Version] newVersion is unknown, set nextDoc.version=undefined for objectId=%s',
+                        objectId
+                      );
                     }
                   } catch (error) {
                     // Keep the page usable if cache replacement/open fails after teardown.
@@ -228,7 +289,12 @@ export function useCollabMessageHandler(
               // a later unrelated destroy doesn't accidentally suppress flush.
               refs.skipFlushOnDestroy.current.delete(previousDoc.guid);
               refs.resettingObjectIds.current.delete(objectId);
-              await replayQueuedMessages(objectId, refs.queuedMessagesDuringReset.current, applyCollabMessage, options?.user);
+              await replayQueuedMessages(
+                objectId,
+                refs.queuedMessagesDuringReset.current,
+                applyCollabMessage,
+                options?.user
+              );
             }
           }
         }
@@ -239,59 +305,86 @@ export function useCollabMessageHandler(
       }
 
       Log.debug('Received collab message:', message.collabType, message);
-      return true;
+      return options?.requireActiveContext ? messageHandled : true;
     },
     [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup]
   );
 
-  const processIncomingMessageQueueForObject = useCallback(async (objectId: string) => {
-    if (refs.isDisposedRef.current || refs.processingObjectIdsRef.current.has(objectId)) {
-      return;
-    }
+  const processIncomingMessageQueueForObject = useCallback(
+    async (objectId: string) => {
+      if (refs.isDisposedRef.current || refs.processingObjectIdsRef.current.has(objectId)) {
+        return;
+      }
 
-    refs.processingObjectIdsRef.current.add(objectId);
+      refs.processingObjectIdsRef.current.add(objectId);
 
-    try {
-      while (!refs.isDisposedRef.current) {
+      try {
+        while (!refs.isDisposedRef.current) {
+          const queue = refs.incomingMessageQueuesRef.current.get(objectId);
+
+          if (!queue || queue.length === 0) {
+            break;
+          }
+
+          const nextTask = queue.shift();
+
+          if (!nextTask) {
+            continue;
+          }
+
+          try {
+            const signal = nextTask.options?.signal;
+
+            if (isApplyCancelled(nextTask.options)) {
+              if (signal?.aborted) {
+                nextTask.reject?.(abortReason(signal));
+              } else {
+                nextTask.resolve?.(false);
+              }
+
+              continue;
+            }
+
+            const applied = await applyCollabMessage(nextTask.message, {
+              allowVersionReset: true,
+              user: refs.latestUserRef.current,
+              ...nextTask.options,
+            });
+
+            if (signal?.aborted) {
+              nextTask.reject?.(abortReason(signal));
+            } else {
+              nextTask.resolve?.(applied);
+            }
+          } catch (error) {
+            const signal = nextTask.options?.signal;
+
+            if (signal?.aborted) {
+              nextTask.reject?.(abortReason(signal));
+            } else {
+              Log.error('Failed to apply queued collab message', error);
+              nextTask.reject?.(error);
+            }
+          } finally {
+            nextTask.dispose?.();
+          }
+        }
+      } finally {
+        refs.processingObjectIdsRef.current.delete(objectId);
         const queue = refs.incomingMessageQueuesRef.current.get(objectId);
 
-        if (!queue || queue.length === 0) {
-          break;
+        if (queue && queue.length === 0) {
+          refs.incomingMessageQueuesRef.current.delete(objectId);
         }
 
-        const nextTask = queue.shift();
-
-        if (!nextTask) {
-          continue;
-        }
-
-        try {
-          const applied = await applyCollabMessage(nextTask.message, {
-            allowVersionReset: true,
-            user: refs.latestUserRef.current,
-            ...nextTask.options,
-          });
-
-          nextTask.resolve?.(applied);
-        } catch (error) {
-          Log.error('Failed to apply queued collab message', error);
-          nextTask.reject?.(error);
+        // If new messages for this object were enqueued during the final await, keep draining.
+        if (queue && queue.length > 0 && !refs.isDisposedRef.current) {
+          void processIncomingMessageQueueForObject(objectId);
         }
       }
-    } finally {
-      refs.processingObjectIdsRef.current.delete(objectId);
-      const queue = refs.incomingMessageQueuesRef.current.get(objectId);
-
-      if (queue && queue.length === 0) {
-        refs.incomingMessageQueuesRef.current.delete(objectId);
-      }
-
-      // If new messages for this object were enqueued during the final await, keep draining.
-      if (queue && queue.length > 0 && !refs.isDisposedRef.current) {
-        void processIncomingMessageQueueForObject(objectId);
-      }
-    }
-  }, [refs, applyCollabMessage]);
+    },
+    [refs, applyCollabMessage]
+  );
 
   const enqueueIncomingCollabMessage = useCallback(
     (message: ICollabMessage, options?: ApplyCollabMessageOptions): Promise<boolean> => {
@@ -306,17 +399,61 @@ export function useCollabMessageHandler(
         return Promise.reject(new Error('Cannot enqueue collab message without objectId'));
       }
 
+      const signal = options?.signal;
+
+      if (signal?.aborted) {
+        return Promise.reject(abortReason(signal));
+      }
+
+      const queuedObjectId = objectId;
+
       return new Promise<boolean>((resolve, reject) => {
-        const task: QueuedCollabMessage = { message, options, resolve, reject };
-        const queue = refs.incomingMessageQueuesRef.current.get(objectId);
+        function dispose() {
+          signal?.removeEventListener('abort', handleAbort);
+        }
+
+        function handleAbort() {
+          if (!signal) return;
+
+          const queue = refs.incomingMessageQueuesRef.current.get(queuedObjectId);
+          const queuedIndex = queue?.indexOf(task) ?? -1;
+
+          // A task that has already been shifted is allowed to finish its
+          // structural reset safely; applyCollabMessage checks cancellation
+          // again before touching the active context. A task still waiting
+          // behind another reset can be removed immediately, breaking the
+          // reset -> drain -> queued-result wait cycle.
+          if (!queue || queuedIndex < 0) return;
+
+          queue.splice(queuedIndex, 1);
+          if (queue.length === 0) {
+            refs.incomingMessageQueuesRef.current.delete(queuedObjectId);
+          }
+
+          dispose();
+          reject(abortReason(signal));
+        }
+
+        const task: QueuedCollabMessage = { message, options, resolve, reject, dispose };
+
+        signal?.addEventListener('abort', handleAbort, { once: true });
+
+        // Close the narrow race between the initial check and listener setup.
+        if (signal?.aborted) {
+          dispose();
+          reject(abortReason(signal));
+          return;
+        }
+
+        const queue = refs.incomingMessageQueuesRef.current.get(queuedObjectId);
 
         if (queue) {
           queue.push(task);
         } else {
-          refs.incomingMessageQueuesRef.current.set(objectId, [task]);
+          refs.incomingMessageQueuesRef.current.set(queuedObjectId, [task]);
         }
 
-        void processIncomingMessageQueueForObject(objectId);
+        void processIncomingMessageQueueForObject(queuedObjectId);
       });
     },
     [refs, processIncomingMessageQueueForObject]

@@ -39,6 +39,17 @@ export interface ApplyCollabMessageOptions {
   user?: User;
   isCancelled?: () => boolean;
   /**
+   * Lets an HTTP slow-sync result leave the per-object queue immediately when
+   * its outbox lifecycle ends (for example, while a version reset is active).
+   */
+  signal?: AbortSignal;
+  /**
+   * HTTP full-sync callers must know that an authoritative response actually
+   * reached a live document before they retire its persisted outbox records.
+   * Ordinary WS/BC delivery remains best-effort when a collab is not open.
+   */
+  requireActiveContext?: boolean;
+  /**
    * HTTP slow-sync applies its result from inside the active outbox drain.
    * A version reset must not await that same drain promise.
    */
@@ -59,6 +70,7 @@ export interface QueuedCollabMessage {
   options?: ApplyCollabMessageOptions;
   resolve?: (applied: boolean) => void;
   reject?: (error: unknown) => void;
+  dispose?: () => void;
 }
 
 export type SyncContextType = {
@@ -82,7 +94,11 @@ export type SyncContextType = {
    * Applies one HTTP full-sync response through the same per-object,
    * version-aware queue used by WebSocket messages.
    */
-  applyHttpFullSyncResult: (result: HttpFullSyncResult, fallbackVersion?: string | null) => Promise<void>;
+  applyHttpFullSyncResult: (
+    result: HttpFullSyncResult,
+    fallbackVersion?: string | null,
+    signal?: AbortSignal
+  ) => Promise<void>;
   /**
    * Schedule deferred cleanup of a sync context after a delay.
    * If the same objectId is re-registered before the timer fires,

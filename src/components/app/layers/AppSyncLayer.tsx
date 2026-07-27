@@ -55,6 +55,16 @@ function hasDurableMessageId(result: CollabFullSyncBatchResult): boolean {
   return Boolean(result.messageId && Number(result.messageId.timestamp ?? 0) > 0);
 }
 
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  if (signal.reason !== undefined) throw signal.reason;
+
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+  throw error;
+}
+
 function isAuthoritativeVersionChange(
   result: CollabFullSyncBatchResult,
   requestedVersion: string | null | undefined
@@ -202,8 +212,12 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
             }
           )
         );
-      const applyResult = (result: CollabFullSyncBatchResult) =>
-        applyHttpFullSyncResult(
+      const applyResult = async (result: CollabFullSyncBatchResult) => {
+        // Axios cannot cancel a response that has already resolved. Recheck
+        // the outbox lifecycle at the last possible point before enqueueing,
+        // then carry the same signal through the per-object apply queue.
+        throwIfAborted(signal);
+        await applyHttpFullSyncResult(
           {
             objectId: result.objectId,
             collabType: result.collabType,
@@ -212,8 +226,11 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
             collabVersion: result.collabVersion,
             messageId: result.messageId,
           },
-          item.version
+          item.version,
+          signal
         );
+        throwIfAborted(signal);
+      };
 
       // Pull server-side changes through the ordinary lightweight lane before
       // attempting the oversized upload. A state-vector match is not proof
@@ -248,6 +265,24 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       return { outcome: 'confirmed' as const, messageId: uploaded.messageId };
     },
     [applyHttpFullSyncResult, currentWorkspaceId]
+  );
+
+  // `clearDrainConfig` aborts in-flight oversized uploads, so anything in the
+  // configuration effect's dep array can kill a multi-MB request mid-flight.
+  // `slowSync`'s identity is derived through five useCallback hops
+  // (applyHttpFullSyncResult -> enqueueIncomingCollabMessage -> ... ->
+  // registerSyncContext), all stable today but not enforced by anything. Route
+  // it through a latest-ref so the drain rebuilds only when ownership actually
+  // changes (user, workspace, leadership, advertised limits).
+  const slowSyncRef = useRef(slowSync);
+
+  useLayoutEffect(() => {
+    slowSyncRef.current = slowSync;
+  }, [slowSync]);
+
+  const stableSlowSync = useCallback(
+    (item: SlowSyncOutboxItem, signal: AbortSignal) => slowSyncRef.current(item, signal),
+    []
   );
 
   useLayoutEffect(() => {
@@ -300,7 +335,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       // IndexedDB is shared by sibling tabs. Only the elected socket owner
       // may run the global low-concurrency HTTP lane; followers persist and
       // wake that owner through onPersisted.
-      slowSync: syncLimitsLoaded && canSendToServer ? slowSync : undefined,
+      slowSync: syncLimitsLoaded && canSendToServer ? stableSlowSync : undefined,
     });
 
     return () => {
@@ -317,25 +352,32 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     maxUpdateBytes,
     maxSlowSyncUpdateBytes,
     syncLimitsLoaded,
-    slowSync,
+    stableSlowSync,
   ]);
 
   // Transport readiness only wakes the already-configured drain. Keeping it
   // out of the configuration effect avoids aborting slow HTTP work and
   // resetting retry state on every CONNECTING/OPEN/CLOSED transition.
+  //
+  // The wake key is a dep the effect body does not read: every value in it can
+  // make a previously undrainable record drainable, so the drain must be poked
+  // when any of them changes. Keeping them in one named key stops
+  // `react-hooks/exhaustive-deps` autofix from silently stripping them as
+  // unused.
+  const drainWakeKey = [
+    currentUserId,
+    currentWorkspaceId,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded,
+    wsReadyState,
+  ].join('|');
+
   useEffect(() => {
     if (canSendToServer) {
       startDrainAll();
     }
-  }, [
-    canSendToServer,
-    currentUserId,
-    currentWorkspaceId,
-    maxSlowSyncUpdateBytes,
-    maxUpdateBytes,
-    syncLimitsLoaded,
-    wsReadyState,
-  ]);
+  }, [canSendToServer, drainWakeKey]);
 
   // Access changes do not rebuild the transport configuration. Wake only a
   // permission-blocked object so a restored grant can retry immediately,

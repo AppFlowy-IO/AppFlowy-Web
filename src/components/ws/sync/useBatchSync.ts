@@ -14,8 +14,8 @@ import {
   awaitPendingRowDocEnsures,
   mergeLegacyRowDocIfExists,
 } from '@/application/services/js-services/cache';
-import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
 import { handleAPIError, withRetry } from '@/application/services/js-services/http/core';
+import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
 import { waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';

@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { memo, useEffect } from 'react';
 import * as Y from 'yjs';
 
@@ -56,6 +56,20 @@ jest.mock('@/application/db', () => ({
 const mockUseSync = useSync as jest.Mock;
 const mockUseWorkspaceRealtimeTransport = useWorkspaceRealtimeTransport as jest.Mock;
 const mockCollabFullSyncBatch = collabFullSyncBatch as jest.MockedFunction<typeof collabFullSyncBatch>;
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+};
+
+const createDeferred = <T,>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+};
 
 // Stable per-connection pieces, matching the real (memoized) hook behaviour:
 // these keep their identity across messages — only the container object and
@@ -489,8 +503,113 @@ describe('AppSyncLayer per-message churn', () => {
     expect(mockCollabFullSyncBatch).toHaveBeenCalledTimes(1);
     expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledWith(
       expect.objectContaining({ collabVersion: 'version-2' }),
-      'version-1'
+      'version-1',
+      expect.any(AbortSignal)
     );
+  });
+
+  it('does not enqueue a completed probe response after cancellation', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const probe = createDeferred<Awaited<ReturnType<typeof collabFullSyncBatch>>>();
+
+    mockCollabFullSyncBatch.mockImplementationOnce(() => probe.promise);
+    renderLayer();
+    const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+    const controller = new AbortController();
+    const slowSyncPromise = leaderConfig.slowSync(
+      {
+        objectId: 'object-1',
+        collabType: 0,
+        version: 'version-1',
+        stateVector: new Uint8Array([0]),
+        docState: new Uint8Array([9]),
+      },
+      controller.signal
+    );
+
+    probe.resolve([
+      {
+        objectId: 'object-1',
+        collabType: 0,
+        missingUpdate: new Uint8Array(),
+        serverStateVector: new Uint8Array(),
+      },
+    ]);
+    controller.abort();
+
+    await expect(slowSyncPromise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(stableSyncValue.applyHttpFullSyncResult).not.toHaveBeenCalled();
+  });
+
+  it('does not continue after cancellation while a probe result is queued for application', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const applied = createDeferred<void>();
+
+    stableSyncValue.applyHttpFullSyncResult.mockImplementationOnce(() => applied.promise);
+    renderLayer();
+    const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+    const controller = new AbortController();
+    const slowSyncPromise = leaderConfig.slowSync(
+      {
+        objectId: 'object-1',
+        collabType: 0,
+        version: 'version-1',
+        stateVector: new Uint8Array([0]),
+        docState: new Uint8Array([9]),
+      },
+      controller.signal
+    );
+
+    await waitFor(() => expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(1));
+    controller.abort();
+    applied.resolve();
+
+    await expect(slowSyncPromise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(mockCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not enqueue a completed slow-lane upload after cancellation', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+    const upload = createDeferred<Awaited<ReturnType<typeof collabFullSyncBatch>>>();
+
+    mockCollabFullSyncBatch
+      .mockResolvedValueOnce([
+        {
+          objectId: 'object-1',
+          collabType: 0,
+          missingUpdate: new Uint8Array(),
+          serverStateVector: new Uint8Array(),
+        },
+      ])
+      .mockImplementationOnce(() => upload.promise);
+    renderLayer();
+    const leaderConfig = outboxMock.configureDrain.mock.calls.at(-1)?.[0];
+    const controller = new AbortController();
+    const slowSyncPromise = leaderConfig.slowSync(
+      {
+        objectId: 'object-1',
+        collabType: 0,
+        version: 'version-1',
+        stateVector: new Uint8Array([0]),
+        docState: new Uint8Array([9]),
+      },
+      controller.signal
+    );
+
+    await waitFor(() => expect(mockCollabFullSyncBatch).toHaveBeenCalledTimes(2));
+    upload.resolve([
+      {
+        objectId: 'object-1',
+        collabType: 0,
+        missingUpdate: new Uint8Array(),
+        serverStateVector: new Uint8Array(),
+        messageId: { timestamp: 2, counter: 0 },
+      },
+    ]);
+    controller.abort();
+
+    await expect(slowSyncPromise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(stableSyncValue.applyHttpFullSyncResult).toHaveBeenCalledTimes(1);
   });
 
   it('returns terminal server errors as blocked without applying the result', async () => {
