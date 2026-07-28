@@ -65,6 +65,47 @@ export async function signInWithUrl(url: string) {
   });
 }
 
+/**
+ * Sign in against a configured LDAP directory.
+ *
+ * Unlike the browser-based providers there is no redirect: AppFlowy Cloud
+ * performs the bind and mints the session, so the tokens arrive inline and are
+ * completed through the same path a password login uses.
+ *
+ * `username` is matched by the connection's user filter, so it is the directory
+ * username (e.g. `alice`) rather than an email, unless the filter says otherwise.
+ */
+export async function signInWithLdap(username: string, password: string) {
+  const url = '/web-api/ldap-login';
+
+  Log.info('[Auth] signInWithLdap: starting');
+
+  const data = await executeAPIRequest<{
+    access_token: string;
+    refresh_token: string;
+  }>(() =>
+    getAxios()?.post<APIResponse<{ access_token: string; refresh_token: string }>>(url, {
+      username,
+      password,
+    })
+  );
+
+  if (!data?.access_token || !data?.refresh_token) {
+    Log.error('[Auth] signInWithLdap: server returned no tokens');
+    return Promise.reject({
+      code: -1,
+      message: 'Failed to sign in with LDAP',
+    });
+  }
+
+  Log.info('[Auth] signInWithLdap: server returned tokens, completing auth flow');
+  return verifyAndRefreshGoTrueToken({
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    logContext: 'signInWithLdap',
+  });
+}
+
 export async function getServerInfo(): Promise<ServerInfo> {
   const url = '/api/server-info';
 

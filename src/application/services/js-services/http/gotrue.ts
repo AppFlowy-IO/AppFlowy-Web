@@ -484,6 +484,35 @@ export function signInApple(authUrl: string) {
   redirectToAuthProvider(url);
 }
 
+/** GoTrue requires this prefix on every runtime-registered provider. */
+export const CUSTOM_PROVIDER_PREFIX = 'custom:';
+
+/**
+ * Start a login through an admin-registered OIDC/OAuth2 provider.
+ *
+ * Same shape as the built-in providers above; only the identifier is dynamic.
+ * It carries the mandatory `custom:` prefix, added here when the caller passes
+ * the bare identifier, and is percent-encoded because the colon is reserved.
+ */
+export function signInCustomProvider(identifier: string, authUrl: string) {
+  const trimmed = identifier.trim();
+
+  if (!trimmed || trimmed === CUSTOM_PROVIDER_PREFIX) {
+    Log.error('[Auth] signInCustomProvider: empty provider identifier');
+    return;
+  }
+
+  const provider = trimmed.startsWith(CUSTOM_PROVIDER_PREFIX)
+    ? trimmed
+    : `${CUSTOM_PROVIDER_PREFIX}${trimmed}`;
+  const redirectTo = encodeURIComponent(authUrl);
+  const baseURL = axiosInstance?.defaults.baseURL;
+  const url = `${baseURL}/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${redirectTo}`;
+
+  Log.info('[Auth] signInCustomProvider: redirecting to provider', { provider });
+  redirectToAuthProvider(url);
+}
+
 export function signInGithub(authUrl: string) {
   const provider = 'github';
   const redirectTo = encodeURIComponent(authUrl);
