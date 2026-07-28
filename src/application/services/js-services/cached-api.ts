@@ -51,6 +51,8 @@ import {
   signInGoogle,
   signInOTP,
   signInSaml,
+  signInCustomProvider,
+  signInWithLdap,
   signInWithMagicLink,
   signInWithPassword,
   signUpWithPassword,
@@ -573,6 +575,28 @@ export async function signInDiscordWithRedirect(params: { redirectTo: string }) 
 export async function signInSamlWithRedirect(params: { redirectTo: string; domain: string }): Promise<void> {
   saveRedirectTo(params.redirectTo);
   return signInSaml(AUTH_CALLBACK_URL, params.domain);
+}
+
+export async function signInCustomProviderWithRedirect(params: {
+  redirectTo: string;
+  identifier: string;
+}): Promise<void> {
+  saveRedirectTo(params.redirectTo);
+  return signInCustomProvider(params.identifier, AUTH_CALLBACK_URL);
+}
+
+/**
+ * LDAP completes server-side, so unlike the redirect providers above there is
+ * no callback to come back through — the tokens are already in hand and the
+ * flow finishes here, exactly as a password sign-in does.
+ */
+export async function signInWithLdapWithRedirect(params: {
+  username: string;
+  password: string;
+  redirectTo: string;
+}) {
+  saveRedirectTo(params.redirectTo);
+  return finishAuthFlow('signInWithLdap', () => signInWithLdap(params.username, params.password));
 }
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
