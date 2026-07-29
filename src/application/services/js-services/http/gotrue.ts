@@ -2,8 +2,9 @@ import axios, { AxiosInstance } from 'axios';
 
 import { emit, EventType } from '@/application/session';
 import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
-
+import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
+
 import { verifyToken } from './cloud-auth';
 import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 
@@ -483,9 +484,6 @@ export function signInApple(authUrl: string) {
   Log.info('[Auth] signInApple: redirecting to Apple OAuth');
   redirectToAuthProvider(url);
 }
-
-/** GoTrue requires this prefix on every runtime-registered provider. */
-export const CUSTOM_PROVIDER_PREFIX = 'custom:';
 
 /**
  * Start a login through an admin-registered OIDC/OAuth2 provider.

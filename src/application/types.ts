@@ -1079,10 +1079,54 @@ export enum AuthProvider {
   SAML = 'saml',
   PHONE = 'phone',
   EMAIL = 'email',
+  LDAP = 'ldap',
 }
 
-export interface AuthProvidersResponse {
-  providers: AuthProvider[];
+/**
+ * Marks an identifier as belonging to an admin-registered provider rather than
+ * one of the built-in `AuthProvider` members. The single runtime source of
+ * truth — `CustomAuthProviderId` below has to repeat the literal because a
+ * template literal type cannot reference a value.
+ */
+export const CUSTOM_PROVIDER_PREFIX = 'custom:';
+
+/**
+ * A custom OAuth/OIDC provider registered in the admin console. The identifier
+ * is chosen per deployment, so unlike the providers above it cannot be an enum
+ * member — the server names it and the client passes it straight back to
+ * `/authorize?provider=`.
+ */
+export type CustomAuthProviderId = `custom:${string}`;
+
+export type LoginProviderId = AuthProvider | CustomAuthProviderId;
+
+/**
+ * Display name an admin gave a custom provider. Sent alongside the identifier
+ * so the login button can show "Okta Production" rather than a prettified
+ * "Okta Prod" guessed from the identifier.
+ *
+ * `name` is empty when the server sent none; callers derive a label from the
+ * identifier in that case rather than showing the raw identifier.
+ */
+export interface CustomAuthProvider {
+  identifier: CustomAuthProviderId;
+  name: string;
+}
+
+export function isCustomAuthProviderId(provider: LoginProviderId): provider is CustomAuthProviderId {
+  return provider.startsWith(CUSTOM_PROVIDER_PREFIX);
+}
+
+/**
+ * What the server says this deployment offers.
+ *
+ * `customProviders` carries the display names for the `custom:` entries in
+ * `providers`. Older servers omit it, so callers must tolerate it being empty
+ * and fall back to labelling a provider from its identifier.
+ */
+export interface LoginProviders {
+  providers: LoginProviderId[];
+  customProviders: CustomAuthProvider[];
 }
 
 export interface User {

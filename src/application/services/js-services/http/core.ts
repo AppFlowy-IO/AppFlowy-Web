@@ -32,6 +32,11 @@ export interface APIError {
   retryAfterSecs?: number;
 }
 
+export interface ExecuteAPIRequestOptions {
+  /** Omit `response.data.data` from debug logs when it contains credentials or other secrets. */
+  suppressResponseDataLogging?: boolean;
+}
+
 /**
  * Parse the `Retry-After` header (integer seconds) from an HTTP response.
  * Returns undefined when the header is absent or not a valid integer.
@@ -103,7 +108,8 @@ export function handleAPIError(error: unknown): APIError {
  * Returns the response data if successful, or rejects with a standardized error
  */
 export async function executeAPIRequest<TResponseData = unknown>(
-  request: () => Promise<AxiosResponse<APIResponse<TResponseData>> | undefined> | undefined
+  request: () => Promise<AxiosResponse<APIResponse<TResponseData>> | undefined> | undefined,
+  options: ExecuteAPIRequestOptions = {}
 ): Promise<TResponseData> {
   try {
     if (!axiosInstance) {
@@ -131,7 +137,13 @@ export async function executeAPIRequest<TResponseData = unknown>(
 
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
 
-    Log.debug('[executeAPIRequest]', { method, url: requestUrl, response_data: response.data?.data, response_code: response.data?.code, response_message: response.data?.message });
+    Log.debug('[executeAPIRequest]', {
+      method,
+      url: requestUrl,
+      ...(options.suppressResponseDataLogging ? {} : { response_data: response.data?.data }),
+      response_code: response.data?.code,
+      response_message: response.data?.message,
+    });
 
     if (!response.data) {
       console.error('[executeAPIRequest] No response data received', response);

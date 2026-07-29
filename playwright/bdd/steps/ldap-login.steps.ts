@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import { APIRequestContext, expect, request as playwrightRequest } from '@playwright/test';
 import { createBdd, DataTable } from 'playwright-bdd';
 
@@ -7,11 +9,32 @@ const { Given, When, Then, Before, After } = createBdd();
 
 /**
  * LDAP sign-in completes entirely server-side, so these steps exercise the
- * endpoint directly rather than a browser form. The web login UI has no LDAP
- * entry point yet; when it gains one, the scenarios stay as written and only
- * the "sign in" step needs to drive the form instead.
+ * endpoint directly. Dialog behavior is covered by component tests; these
+ * scenarios validate the directory authentication and session contract.
  */
 const LDAP_LOGIN_PATH = '/web-api/ldap-login';
+
+/**
+ * LDAP failures are limited by client IP for five minutes. A fresh address from
+ * the RFC 2544 benchmarking range gives every API context its own bucket, so
+ * scenarios and reruns do not inherit failures from one another. Requests
+ * within a scenario still share a context, preserving the anti-enumeration
+ * comparison under one limiter identity.
+ */
+function createRateLimitClientIp(): string {
+  const bytes = randomBytes(3);
+
+  return `198.${18 + (bytes[0] & 1)}.${bytes[1]}.${1 + (bytes[2] % 254)}`;
+}
+
+function createLdapApiContext(): Promise<APIRequestContext> {
+  return playwrightRequest.newContext({
+    baseURL: TestConfig.apiUrl,
+    extraHTTPHeaders: {
+      'X-Forwarded-For': createRateLimitClientIp(),
+    },
+  });
+}
 
 type LdapResult = {
   status: number;
@@ -30,7 +53,7 @@ let state: LdapState;
 
 Before(async () => {
   state = {
-    api: await playwrightRequest.newContext({ baseURL: TestConfig.apiUrl }),
+    api: await createLdapApiContext(),
     collected: [],
   };
 });
@@ -39,8 +62,12 @@ After(async () => {
   await state?.api.dispose();
 });
 
-async function ldapSignIn(username: string, password: string): Promise<LdapResult> {
-  const response = await state.api.post(LDAP_LOGIN_PATH, {
+async function ldapSignIn(
+  api: APIRequestContext,
+  username: string,
+  password: string
+): Promise<LdapResult> {
+  const response = await api.post(LDAP_LOGIN_PATH, {
     data: { username, password },
     headers: { 'Content-Type': 'application/json' },
     failOnStatusCode: false,
@@ -64,11 +91,41 @@ async function ldapSignIn(username: string, password: string): Promise<LdapResul
   };
 }
 
+/**
+ * Proving a connection exists costs a real sign-in: the endpoint deliberately
+ * answers "no connection configured" and "wrong password" identically, so
+ * nothing cheaper distinguishes them.
+ *
+ * That makes the probe too expensive to repeat per scenario. Under
+ * `fullyParallel` it would also mean one concurrent sign-in as the same user
+ * per scenario, which is worth avoiding on its own. So it runs once per worker
+ * and every scenario in that worker awaits the same result.
+ */
+const PROBE_ACCOUNT = { username: 'alice', password: 'alice-secret-pw' };
+
+let connectionProbe: Promise<LdapResult> | undefined;
+
+function probeLdapConnection(): Promise<LdapResult> {
+  connectionProbe ??= (async () => {
+    // Its own context: the probe outlives the scenario that triggered it,
+    // whose `state.api` is disposed in `After`.
+    const api = await createLdapApiContext();
+
+    try {
+      return await ldapSignIn(api, PROBE_ACCOUNT.username, PROBE_ACCOUNT.password);
+    } finally {
+      await api.dispose();
+    }
+  })();
+
+  return connectionProbe;
+}
+
 Given('an LDAP connection is configured for the workspace', async ({}) => {
   // Seeded out of band by AppFlowy-Cloud-Premium: `just seed-auth-fixtures`
   // starts the directory, and an admin creates the connection pointing at it.
   // Fail with the fix rather than letting every scenario fail on its assertion.
-  const probe = await ldapSignIn('alice', 'alice-secret-pw');
+  const probe = await probeLdapConnection();
 
   expect(
     probe.status,
@@ -86,7 +143,7 @@ Given('an LDAP connection is configured for the workspace', async ({}) => {
 When(
   'I sign in with LDAP username {string} and password {string}',
   async ({}, username: string, password: string) => {
-    state.last = await ldapSignIn(username, password);
+    state.last = await ldapSignIn(state.api, username, password);
   }
 );
 
@@ -94,7 +151,7 @@ When('I collect the rejection for each of these sign-ins', async ({}, table: Dat
   state.collected = [];
 
   for (const row of table.hashes()) {
-    const result = await ldapSignIn(row.username, row.password);
+    const result = await ldapSignIn(state.api, row.username, row.password);
 
     expect(result.code, `expected ${row.username} to be rejected`).not.toBe(0);
     state.collected.push(result);
@@ -126,12 +183,22 @@ Then('the session belongs to {string}', async ({}, email: string) => {
 Then('every rejection reports the same message', async ({}) => {
   expect(state.collected.length).toBeGreaterThan(1);
 
-  const messages = new Set(state.collected.map((result) => result.message));
+  const rejectionTuples = state.collected.map((result, index) => {
+    expect(typeof result.code, `rejection ${index + 1} must contain a numeric envelope code`).toBe('number');
+    expect(Number.isFinite(result.code), `rejection ${index + 1} must contain a finite envelope code`).toBe(true);
+    expect(result.code, `rejection ${index + 1} must have a nonzero envelope code`).not.toBe(0);
+    expect(typeof result.message, `rejection ${index + 1} must contain an envelope message`).toBe('string');
 
-  expect(
-    messages.size,
-    `rejections must be indistinguishable or the endpoint enumerates the directory; saw: ${[
-      ...messages,
-    ].join(' | ')}`
-  ).toBe(1);
+    return [result.status, result.code, result.message] as const;
+  });
+  const [expectedTuple, ...remainingTuples] = rejectionTuples;
+
+  for (const tuple of remainingTuples) {
+    expect(
+      tuple,
+      `rejections must be indistinguishable or the endpoint enumerates the directory; saw: ${rejectionTuples
+        .map((value) => JSON.stringify(value))
+        .join(' | ')}`
+    ).toEqual(expectedTuple);
+  }
 });
