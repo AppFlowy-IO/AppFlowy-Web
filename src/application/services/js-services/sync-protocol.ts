@@ -5,6 +5,7 @@ import { deleteCollabDB } from '@/application/db';
 import {
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
+  shouldRouteUpdateThroughOutbox,
   waitForDrain,
 } from '@/application/sync-outbox';
 import { Types, YDoc } from '@/application/types';
@@ -39,7 +40,7 @@ export interface SyncContext {
    * Drop queued local updates without sending them.
    * Used by version reset flows where pending updates are stale and must be discarded.
    */
-  discardPendingUpdates?: () => Promise<void>;
+  discardPendingUpdates?: (options?: { skipActiveDrain?: boolean }) => Promise<void>;
   /**
    * Called after a local Yjs update is observed. The WebSocket path still owns
    * immediate delivery; this hook lets the app schedule a debounced HTTP full
@@ -47,12 +48,11 @@ export interface SyncContext {
    */
   onLocalUpdate?: (objectId: string) => void;
   /**
-   * Called after this context participates in a WebSocket state-vector sync
-   * exchange. A completed manifest-style exchange reconciles the full Yjs
-   * state, so HTTP fallback dirty markers for the object can be cleared when
-   * the socket is open.
+   * Called after this context participates in a state-vector sync exchange.
+   * Routed manifests pass their IndexedDB persistence promise so consumers can
+   * clear only the dirty generation durably owned by the outbox.
    */
-  onManifestSync?: (objectId: string) => void;
+  onManifestSync?: (objectId: string, persisted?: Promise<boolean>) => void;
   /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
@@ -130,6 +130,27 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
     version: doc.version,
     bytes: update.byteLength,
   });
+
+  // A manifest response can contain years of locally retained Yjs history.
+  // If it exceeds the server-advertised realtime frame limit, persist it and
+  // let the serialized outbox use the bounded HTTP slow lane. Emitting here
+  // would close the WebSocket before any fallback could run.
+  if (shouldRouteUpdateThroughOutbox(update.byteLength)) {
+    const persisted = enqueueOutboxUpdate(
+      {
+        objectId: doc.guid,
+        collabType: ctx.collabType,
+        version: doc.version ?? null,
+        payload: update,
+        beforeStateVector: stateVector,
+      },
+      { broadcast: false, source: 'manifest' }
+    );
+
+    ctx.onManifestSync?.(doc.guid, persisted);
+    return;
+  }
+
   // send the update containing new data back to the server. This is a
   // manifest-style diff, so the causal `before` vector is the server's own
   // advertised state (what it told us it has). No after vector — the server
@@ -241,7 +262,7 @@ export const initSync = (ctx: SyncContext) => {
   // crash, and modal-unmount races because IndexedDB is the source of truth.
   ctx.flush = () => waitForDrain([doc.guid]);
 
-  ctx.discardPendingUpdates = () => deleteOutboxByObjectId(doc.guid);
+  ctx.discardPendingUpdates = (options) => deleteOutboxByObjectId(doc.guid, options);
 
   const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
     if (origin === 'remote') {
@@ -255,7 +276,7 @@ export const initSync = (ctx: SyncContext) => {
     // post-update state from the update bytes itself), so it would be wasted work.
     const beforeStateVector = Y.encodeStateVector(transaction.beforeState);
 
-    enqueueOutboxUpdate({
+    void enqueueOutboxUpdate({
       objectId: doc.guid,
       collabType,
       version: doc.version ?? null,
