@@ -85,7 +85,7 @@ export async function signInWithUrl(url: string) {
  * for compatibility with servers that only expose one generic LDAP provider.
  */
 export async function signInWithLdap(username: string, password: string, connectionId?: string) {
-  const url = '/web-api/ldap-login';
+  const url = '/api/auth/ldap/login';
 
   Log.info('[Auth] signInWithLdap: starting');
 

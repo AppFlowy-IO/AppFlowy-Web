@@ -220,7 +220,7 @@ describe('http_api client (unit)', () => {
       config: {
         baseURL: baseConfig.baseURL,
         method: 'post',
-        url: '/web-api/ldap-login',
+        url: '/api/auth/ldap/login',
       },
     });
     mockVerifyAndRefreshGoTrueToken.mockResolvedValueOnce(undefined);
@@ -232,7 +232,7 @@ describe('http_api client (unit)', () => {
     expect(requestLog?.[1]).toEqual(
       expect.objectContaining({
         method: 'POST',
-        url: `${baseConfig.baseURL}/web-api/ldap-login`,
+        url: `${baseConfig.baseURL}/api/auth/ldap/login`,
         response_code: 0,
         response_message: 'OK',
       })
@@ -240,7 +240,7 @@ describe('http_api client (unit)', () => {
     expect(requestLog?.[1]).not.toHaveProperty('response_data');
     expect(JSON.stringify(debugSpy.mock.calls)).not.toContain(tokens.access_token);
     expect(JSON.stringify(debugSpy.mock.calls)).not.toContain(tokens.refresh_token);
-    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/web-api/ldap-login', {
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/auth/ldap/login', {
       username: 'alice',
       password: 'alice-secret-pw',
     });
@@ -272,7 +272,7 @@ describe('http_api client (unit)', () => {
 
     await auth.signInWithLdap('alice@example.com', 'alice-secret-pw', 'corp-directory-id');
 
-    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/web-api/ldap-login', {
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/auth/ldap/login', {
       username: 'alice@example.com',
       password: 'alice-secret-pw',
       connection_id: 'corp-directory-id',
@@ -300,7 +300,7 @@ describe('http_api client (unit)', () => {
         baseURL: baseConfig.baseURL,
         data: JSON.stringify(credentials),
         method: 'post',
-        url: '/web-api/ldap-login',
+        url: '/api/auth/ldap/login',
       },
     });
 
@@ -315,7 +315,7 @@ describe('http_api client (unit)', () => {
     expect(serializedLogs).not.toContain(credentials.password);
     expect(errorSpy).toHaveBeenCalledWith('[executeAPIRequest] No response data received', {
       method: 'POST',
-      url: `${baseConfig.baseURL}/web-api/ldap-login`,
+      url: `${baseConfig.baseURL}/api/auth/ldap/login`,
       status: 204,
       statusText: 'No Content',
     });

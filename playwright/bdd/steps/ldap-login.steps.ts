@@ -1,5 +1,3 @@
-import { randomBytes } from 'node:crypto';
-
 import { APIRequestContext, expect, request as playwrightRequest } from '@playwright/test';
 import { createBdd, DataTable } from 'playwright-bdd';
 
@@ -12,27 +10,11 @@ const { Given, When, Then, Before, After } = createBdd();
  * endpoint directly. Dialog behavior is covered by component tests; these
  * scenarios validate the directory authentication and session contract.
  */
-const LDAP_LOGIN_PATH = '/web-api/ldap-login';
-
-/**
- * LDAP failures are limited by client IP for five minutes. A fresh address from
- * the RFC 2544 benchmarking range gives every API context its own bucket, so
- * scenarios and reruns do not inherit failures from one another. Requests
- * within a scenario still share a context, preserving the anti-enumeration
- * comparison under one limiter identity.
- */
-function createRateLimitClientIp(): string {
-  const bytes = randomBytes(3);
-
-  return `198.${18 + (bytes[0] & 1)}.${bytes[1]}.${1 + (bytes[2] % 254)}`;
-}
+const LDAP_LOGIN_PATH = '/api/auth/ldap/login';
 
 function createLdapApiContext(): Promise<APIRequestContext> {
   return playwrightRequest.newContext({
     baseURL: TestConfig.apiUrl,
-    extraHTTPHeaders: {
-      'X-Forwarded-For': createRateLimitClientIp(),
-    },
   });
 }
 
@@ -69,7 +51,6 @@ async function ldapSignIn(
 ): Promise<LdapResult> {
   const response = await api.post(LDAP_LOGIN_PATH, {
     data: { username, password },
-    headers: { 'Content-Type': 'application/json' },
     failOnStatusCode: false,
   });
 
