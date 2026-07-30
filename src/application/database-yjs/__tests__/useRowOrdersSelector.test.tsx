@@ -349,6 +349,44 @@ describe('useRowOrdersSelector', () => {
     expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
   });
 
+  it('prunes a deleted row while another conditioned row is still hydrating', async () => {
+    const fixture = createDatabaseFixture();
+    const ensureRow = jest.fn(() => new Promise<YDoc | undefined>(() => undefined));
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture, { ensureRow }),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.rowOrders.push([{ id: 'row-hydrating', height: 44 }]);
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(ensureRow).toHaveBeenCalledWith('row-hydrating');
+    expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+
+    act(() => {
+      const rowAIndex = fixture.rowOrders.toJSON().findIndex(({ id }) => id === 'row-a');
+
+      fixture.rowOrders.delete(rowAIndex);
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-b']);
+  });
+
   it('requests missing row docs while a conditioned view is loading', async () => {
     const fixture = createDatabaseFixture();
     const ensureRow = jest.fn(async () => undefined);

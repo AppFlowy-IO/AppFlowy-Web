@@ -1525,6 +1525,25 @@ export function useRowOrdersSelector() {
 
       if (!filtersAppliedRef.current) {
         setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
+      } else {
+        // New rows cannot be filtered until their docs load, but removals are
+        // authoritative in row_orders. Prune them from the last complete result
+        // so a remotely deleted row cannot remain visible during hydration.
+        const sourceRowIds = new Set(originalRowOrders.map(({ id }) => id));
+
+        setRowOrdersState((previousState) => {
+          if (previousState.conditionSignature !== conditionStateKey || !previousState.rows) {
+            return previousState;
+          }
+
+          const retainedRows = previousState.rows.filter(({ id }) => sourceRowIds.has(id));
+
+          if (retainedRows.length === previousState.rows.length) {
+            return previousState;
+          }
+
+          return { rows: retainedRows, conditionSignature: conditionStateKey };
+        });
       }
 
       logConditionCompute(rowsWithDocs.length);
