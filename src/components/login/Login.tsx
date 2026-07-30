@@ -19,7 +19,11 @@ const EMAIL_FIRST_PROVIDERS: LoginProviderId[] = [
 ];
 
 /** One server response, so one piece of state — the halves cannot diverge. */
-const NO_LOGIN_PROVIDERS: LoginProviders = { providers: [], customProviders: [] };
+const NO_LOGIN_PROVIDERS: LoginProviders = {
+  providers: [],
+  customProviders: [],
+  ldapProviders: [],
+};
 
 export function Login({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
@@ -34,6 +38,7 @@ export function Login({ redirectTo }: { redirectTo: string }) {
         setLoginProviders({
           providers: response.providers || [],
           customProviders: response.customProviders || [],
+          ldapProviders: response.ldapProviders || [],
         });
       } catch (error) {
         console.error('Failed to fetch auth providers:', error);
@@ -106,6 +111,7 @@ export function Login({ redirectTo }: { redirectTo: string }) {
           redirectTo={redirectTo}
           availableProviders={loginProviders.providers}
           customProviders={loginProviders.customProviders}
+          ldapProviders={loginProviders.ldapProviders}
         />
         <div className={'flex items-center gap-1 text-sm text-text-secondary'}>
           <span>{t('signIn.dontHaveAnAccount')}</span>

@@ -33,7 +33,7 @@ export interface APIError {
 }
 
 export interface ExecuteAPIRequestOptions {
-  /** Omit `response.data.data` from debug logs when it contains credentials or other secrets. */
+  /** Omit response bodies and full Axios responses when they may contain credentials or secrets. */
   suppressResponseDataLogging?: boolean;
 }
 
@@ -146,7 +146,17 @@ export async function executeAPIRequest<TResponseData = unknown>(
     });
 
     if (!response.data) {
-      console.error('[executeAPIRequest] No response data received', response);
+      console.error(
+        '[executeAPIRequest] No response data received',
+        options.suppressResponseDataLogging
+          ? {
+              method,
+              url: requestUrl,
+              status: response.status,
+              statusText: response.statusText,
+            }
+          : response
+      );
       return Promise.reject({
         code: -1,
         message: 'No response data received',

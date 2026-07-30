@@ -1113,6 +1113,18 @@ export interface CustomAuthProvider {
   name: string;
 }
 
+/**
+ * An enabled LDAP connection advertised by AppFlowy Cloud.
+ *
+ * The id is sent back with the credential request so deployments with multiple
+ * directories do not have to guess which connection should authenticate the
+ * user. The name is chosen by the administrator and is safe to show at login.
+ */
+export interface LdapAuthProvider {
+  id: string;
+  name: string;
+}
+
 export function isCustomAuthProviderId(provider: LoginProviderId): provider is CustomAuthProviderId {
   return provider.startsWith(CUSTOM_PROVIDER_PREFIX);
 }
@@ -1123,10 +1135,15 @@ export function isCustomAuthProviderId(provider: LoginProviderId): provider is C
  * `customProviders` carries the display names for the `custom:` entries in
  * `providers`. Older servers omit it, so callers must tolerate it being empty
  * and fall back to labelling a provider from its identifier.
+ *
+ * `ldapProviders` carries connection-specific choices. Older servers only
+ * advertise the flat `ldap` provider, so an empty list means the client should
+ * keep the legacy generic LDAP choice.
  */
 export interface LoginProviders {
   providers: LoginProviderId[];
   customProviders: CustomAuthProvider[];
+  ldapProviders: LdapAuthProvider[];
 }
 
 export interface User {

@@ -8,6 +8,18 @@ jest.mock('react-i18next', () => ({
 }));
 
 describe('LdapLoginDialog', () => {
+  it('has an accessible name and description', () => {
+    const onSubmit = jest.fn<(username: string, password: string) => Promise<void>>().mockResolvedValue();
+
+    render(<LdapLoginDialog open onOpenChange={jest.fn()} onSubmit={onSubmit} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'web.ldapLogin' });
+
+    expect(dialog.getAttribute('aria-labelledby')).toBe('ldap-login-title');
+    expect(dialog.getAttribute('aria-describedby')).toBe('ldap-login-description');
+    expect(document.getElementById('ldap-login-description')?.textContent).toBe('web.ldapLoginDescription');
+  });
+
   it('cannot be dismissed while authentication is pending', async () => {
     const onOpenChange = jest.fn();
     const onSubmit = jest.fn(() => new Promise<void>(() => undefined));

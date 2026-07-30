@@ -7,8 +7,9 @@ Feature: Signing in through a custom OIDC provider
   browser it cannot drive, so its suite stops at the authorize URL. Playwright
   *is* the browser, so it can follow the whole round trip.
 
-  Providers are registered per deployment through the admin console, so these
-  scenarios read whatever is configured rather than creating one — registering a
+  Providers are registered per deployment through the admin console. These
+  scenarios select the seeded `custom:authentik` provider by default (or the
+  `OIDC_TEST_PROVIDER` override) rather than creating one, because registering a
   provider from a test would overwrite a developer's setup.
 
   Test accounts live in the identity provider and are seeded by

@@ -2,6 +2,7 @@ import {
   AuthProvider,
   CUSTOM_PROVIDER_PREFIX,
   CustomAuthProviderId,
+  LdapAuthProvider,
   LoginProviderId,
   LoginProviders,
 } from '@/application/types';
@@ -78,10 +79,12 @@ export async function signInWithUrl(url: string) {
  * performs the bind and mints the session, so the tokens arrive inline and are
  * completed through the same path a password login uses.
  *
- * `username` is matched by the connection's user filter, so it is the directory
- * username (e.g. `alice`) rather than an email, unless the filter says otherwise.
+ * `username` is matched by the connection's user filter, so it may be a
+ * directory login (e.g. `alice`) or an email. New servers advertise connection
+ * ids so the user can choose the intended directory; the id remains optional
+ * for compatibility with servers that only expose one generic LDAP provider.
  */
-export async function signInWithLdap(username: string, password: string) {
+export async function signInWithLdap(username: string, password: string, connectionId?: string) {
   const url = '/web-api/ldap-login';
 
   Log.info('[Auth] signInWithLdap: starting');
@@ -94,6 +97,7 @@ export async function signInWithLdap(username: string, password: string) {
       getAxios()?.post<APIResponse<{ access_token: string; refresh_token: string }>>(url, {
         username,
         password,
+        ...(connectionId ? { connection_id: connectionId } : {}),
       }),
     { suppressResponseDataLogging: true }
   );
@@ -137,6 +141,7 @@ interface AuthProvidersPayload {
   signup_disabled: boolean;
   mailer_autoconfirm: boolean;
   custom_providers?: { identifier: string; name: string }[];
+  ldap_providers?: { id: string; name: string }[];
 }
 
 /**
@@ -204,15 +209,28 @@ export async function getAuthProviders(): Promise<LoginProviders> {
         name: provider.name?.trim() ?? '',
       }));
 
+    const ldapProviderIds = new Set<string>();
+    const ldapProviders = (payload.ldap_providers ?? []).reduce<LdapAuthProvider[]>((result, provider) => {
+      const id = provider?.id?.trim() ?? '';
+
+      if (!id || ldapProviderIds.has(id)) {
+        return result;
+      }
+
+      ldapProviderIds.add(id);
+      result.push({ id, name: provider.name?.trim() ?? '' });
+      return result;
+    }, []);
+
     // Deduplicated because each entry becomes a React key downstream: a server
     // that lists one provider twice would otherwise render sibling elements
     // sharing a key.
-    return { providers: [...new Set(providers)], customProviders };
+    return { providers: [...new Set(providers)], customProviders, ldapProviders };
   } catch (error) {
     const message = (error as APIError)?.message;
 
     console.warn('Auth providers API returned error:', message);
     console.error('Failed to fetch auth providers:', error);
-    return { providers: [AuthProvider.PASSWORD], customProviders: [] };
+    return { providers: [AuthProvider.PASSWORD], customProviders: [], ldapProviders: [] };
   }
 }

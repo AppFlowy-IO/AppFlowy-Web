@@ -5,17 +5,19 @@ import { TestConfig } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 
+const OIDC_TEST_PROVIDER = process.env.OIDC_TEST_PROVIDER?.trim() || 'custom:authentik';
+
 type ConfiguredProvider = {
   identifier: string;
   name: string;
 };
 
 /**
- * The provider this deployment has registered, or null when it has none.
+ * The seeded test provider this deployment has registered, or null when absent.
  *
- * Read from the server rather than hardcoded: which providers exist is a
- * per-deployment decision, and a test that registered its own would overwrite
- * whatever a developer had configured.
+ * `custom:authentik` matches the seeded credentials in the feature. Deployments
+ * can select another seeded provider with `OIDC_TEST_PROVIDER`; the test never
+ * creates one because doing so would overwrite an administrator's setup.
  *
  * Memoized because it is a Background step — running it per scenario would mean
  * one request per scenario for a value that cannot change mid-run.
@@ -36,8 +38,8 @@ function configuredProvider(): Promise<ConfiguredProvider | null> {
 
       const body = await response.json();
       const data = body?.data ?? {};
-      const identifier = (data.providers ?? []).find((provider: string) =>
-        provider.startsWith('custom:')
+      const identifier = (data.providers ?? []).find(
+        (provider: string) => provider === OIDC_TEST_PROVIDER
       );
 
       if (!identifier) return null;
@@ -64,7 +66,8 @@ async function requireProvider(): Promise<ConfiguredProvider> {
 
   expect(
     provider,
-    'No custom OIDC provider is configured. Register one in the admin console — ' +
+    `OIDC test provider "${OIDC_TEST_PROVIDER}" is not configured. ` +
+      'Register it in the admin console or set OIDC_TEST_PROVIDER — ' +
       '`just oidc-config` in AppFlowy-Cloud-Premium prints the values to use.'
   ).not.toBeNull();
 
@@ -166,12 +169,15 @@ When(
 );
 
 Then('I am signed in to AppFlowy', async ({ page }) => {
-  // Back on our origin, past /login: the callback exchanged the code and
-  // established the session.
+  const appOrigin = new URL(TestConfig.baseUrl).origin;
+
+  // `/auth/callback` is only an intermediate same-origin page. Wait until token
+  // verification and refresh have completed and the app route is active.
   await page.waitForURL(
-    (url) => url.href.startsWith(TestConfig.baseUrl) && !url.pathname.startsWith('/login'),
+    (url) =>
+      url.origin === appOrigin && (url.pathname === '/app' || url.pathname.startsWith('/app/')),
     { timeout: 60_000 }
   );
 
-  expect(page.url()).toContain('/app');
+  expect(new URL(page.url()).pathname).toMatch(/^\/app(?:\/|$)/);
 });

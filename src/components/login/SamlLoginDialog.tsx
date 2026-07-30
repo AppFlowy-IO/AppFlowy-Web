@@ -11,6 +11,8 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const PAPER_PROPS = { sx: { width: 420 } } as const;
 
+const TITLE_ID = 'saml-login-title';
+const DESCRIPTION_ID = 'saml-login-description';
 const ERROR_ID = 'saml-login-error';
 
 interface SamlLoginDialogProps {
@@ -95,11 +97,20 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
     setError(null);
   }, []);
 
-  const title = useMemo(() => <div className='text-left'>{t('web.ssoLogin')}</div>, [t]);
+  const title = useMemo(
+    () => (
+      <div id={TITLE_ID} className='text-left'>
+        {t('web.ssoLogin')}
+      </div>
+    ),
+    [t]
+  );
 
   return (
     <NormalModal
       open={open}
+      aria-labelledby={TITLE_ID}
+      aria-describedby={DESCRIPTION_ID}
       onClose={handleClose}
       onOk={handleOk}
       okText={t('web.continueWithSso')}
@@ -115,7 +126,9 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
         data-testid='saml-login-dialog'
         className='flex w-full flex-col gap-4'
       >
-        <div className='help-text text-xs text-text-caption'>{t('web.ssoLoginDescription')}</div>
+        <div id={DESCRIPTION_ID} className='help-text text-xs text-text-caption'>
+          {t('web.ssoLoginDescription')}
+        </div>
 
         <div className='flex flex-col gap-1'>
           <Label htmlFor='saml-email'>{t('signIn.emailHint')}</Label>

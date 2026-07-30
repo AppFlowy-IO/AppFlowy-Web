@@ -593,10 +593,11 @@ export async function signInCustomProviderWithRedirect(params: {
 export async function signInWithLdapWithRedirect(params: {
   username: string;
   password: string;
+  connectionId?: string;
   redirectTo: string;
 }) {
   saveRedirectTo(params.redirectTo);
-  return finishAuthFlow('signInWithLdap', () => signInWithLdap(params.username, params.password));
+  return finishAuthFlow('signInWithLdap', () => signInWithLdap(params.username, params.password, params.connectionId));
 }
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {

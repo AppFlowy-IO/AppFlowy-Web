@@ -8,6 +8,7 @@ import {
   CUSTOM_PROVIDER_PREFIX,
   CustomAuthProvider,
   CustomAuthProviderId,
+  LdapAuthProvider,
   LoginProviderId,
   isCustomAuthProviderId,
 } from '@/application/types';
@@ -38,6 +39,15 @@ function customProviderLabel(identifier: CustomAuthProviderId) {
 /** Stable identities, so omitting a prop does not defeat the options memo. */
 const NO_PROVIDERS: LoginProviderId[] = [];
 const NO_CUSTOM_PROVIDERS: CustomAuthProvider[] = [];
+const NO_LDAP_PROVIDERS: LdapAuthProvider[] = [];
+
+interface LoginOption {
+  key: string;
+  label: string;
+  value: LoginProviderId;
+  Icon: typeof SamlSvg;
+  ldapConnectionId?: string;
+}
 
 const moreOptionsVariants = {
   hidden: {
@@ -64,16 +74,19 @@ function LoginProvider({
   redirectTo,
   availableProviders = NO_PROVIDERS,
   customProviders = NO_CUSTOM_PROVIDERS,
+  ldapProviders = NO_LDAP_PROVIDERS,
 }: {
   redirectTo: string;
   availableProviders?: LoginProviderId[];
   customProviders?: CustomAuthProvider[];
+  ldapProviders?: LdapAuthProvider[];
 }) {
   const { t } = useTranslation();
   const [expand, setExpand] = useState(false);
   // SAML SSO dialog state
   const [samlDialogOpen, setSamlDialogOpen] = useState(false);
   const [ldapDialogOpen, setLdapDialogOpen] = useState(false);
+  const [selectedLdapConnectionId, setSelectedLdapConnectionId] = useState<string>();
 
   // Only render what this deployment actually serves. Built-in providers are
   // matched against the advertised list; custom OAuth/OIDC providers are named
@@ -82,38 +95,65 @@ function LoginProvider({
   const options = useMemo(() => {
     const advertised = new Set<LoginProviderId>(availableProviders);
 
-    const builtIn = [
+    const builtIn: LoginOption[] = [
       {
+        key: AuthProvider.GOOGLE,
         label: t('web.continueWithGoogle'),
         Icon: GoogleSvg,
         value: AuthProvider.GOOGLE,
       },
       {
+        key: AuthProvider.APPLE,
         label: t('web.continueWithApple'),
         Icon: AppleSvg,
         value: AuthProvider.APPLE,
       },
       {
+        key: AuthProvider.GITHUB,
         label: t('web.continueWithGithub'),
         value: AuthProvider.GITHUB,
         Icon: GithubSvg,
       },
       {
+        key: AuthProvider.DISCORD,
         label: t('web.continueWithDiscord'),
         value: AuthProvider.DISCORD,
         Icon: DiscordSvg,
       },
       {
+        key: AuthProvider.SAML,
         label: t('web.continueWithSaml'),
         value: AuthProvider.SAML,
         Icon: SamlSvg,
       },
-      {
-        label: t('web.continueWithLdap'),
-        value: AuthProvider.LDAP,
-        Icon: SamlSvg,
-      },
     ].filter((option) => advertised.has(option.value));
+
+    // Structured LDAP metadata is authoritative when present: each button
+    // routes credentials to one directory. The flat `ldap` entry is retained
+    // by the server for old clients, so it only becomes a generic choice when
+    // this richer metadata is absent.
+    const ldap: LoginOption[] =
+      ldapProviders.length > 0
+        ? ldapProviders.map((provider) => ({
+            key: `ldap:${provider.id}`,
+            label: t('web.continueWithProvider', {
+              provider: provider.name || 'LDAP',
+              interpolation: { escapeValue: false },
+            }),
+            value: AuthProvider.LDAP,
+            Icon: SamlSvg,
+            ldapConnectionId: provider.id,
+          }))
+        : advertised.has(AuthProvider.LDAP)
+        ? [
+            {
+              key: AuthProvider.LDAP,
+              label: t('web.continueWithLdap'),
+              value: AuthProvider.LDAP,
+              Icon: SamlSvg,
+            },
+          ]
+        : [];
 
     // The admin's chosen name wins; deriving a label from the identifier is only
     // a fallback for a server that does not send names. Blank names are dropped
@@ -124,16 +164,20 @@ function LoginProvider({
         .map((provider) => [provider.identifier, provider.name])
     );
 
-    const custom = availableProviders.filter(isCustomAuthProviderId).map((identifier) => ({
+    const custom: LoginOption[] = availableProviders.filter(isCustomAuthProviderId).map((identifier) => ({
+      key: identifier,
       label: t('web.continueWithProvider', {
         provider: names.get(identifier) ?? customProviderLabel(identifier),
+        // React escapes text nodes. i18next escaping here would render entity
+        // strings literally (for example, `&amp;`) in the button label.
+        interpolation: { escapeValue: false },
       }),
       value: identifier,
       Icon: SamlSvg,
     }));
 
-    return [...builtIn, ...custom];
-  }, [availableProviders, customProviders, t]);
+    return [...builtIn, ...ldap, ...custom];
+  }, [availableProviders, customProviders, ldapProviders, t]);
 
   // Handle SAML SSO login with email domain
   const handleSamlSubmit = useCallback(
@@ -147,20 +191,25 @@ function LoginProvider({
   // dialog rather than as a redirect back to an error page.
   const handleLdapSubmit = useCallback(
     async (username: string, password: string) => {
-      await AuthService.signInLdap({ username, password, redirectTo });
+      await AuthService.signInLdap({
+        username,
+        password,
+        connectionId: selectedLdapConnectionId,
+        redirectTo,
+      });
     },
-    [redirectTo]
+    [redirectTo, selectedLdapConnectionId]
   );
 
   const handleClick = useCallback(
-    async (option: LoginProviderId) => {
+    async (option: LoginOption) => {
       try {
-        if (isCustomAuthProviderId(option)) {
-          await AuthService.signInCustomProvider({ redirectTo, identifier: option });
+        if (isCustomAuthProviderId(option.value)) {
+          await AuthService.signInCustomProvider({ redirectTo, identifier: option.value });
           return;
         }
 
-        switch (option) {
+        switch (option.value) {
           case AuthProvider.GOOGLE:
             await AuthService.signInGoogle({ redirectTo });
             break;
@@ -178,6 +227,7 @@ function LoginProvider({
             setSamlDialogOpen(true);
             return;
           case AuthProvider.LDAP:
+            setSelectedLdapConnectionId(option.ldapConnectionId);
             setLdapDialogOpen(true);
             return;
         }
@@ -195,7 +245,7 @@ function LoginProvider({
       size={'lg'}
       variant={'outline'}
       className={'w-full'}
-      onClick={() => handleClick(option.value)}
+      onClick={() => handleClick(option)}
     >
       <option.Icon className={'h-5 w-5'} />
       <div className={'w-auto whitespace-pre'}>{option.label}</div>
@@ -211,7 +261,7 @@ function LoginProvider({
     <div className={'flex w-full transform flex-col items-center justify-center gap-3 transition-all'}>
       {options.slice(0, 2).map((option, index) => (
         <motion.div
-          key={option.value}
+          key={option.key}
           className='w-full'
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -249,7 +299,7 @@ function LoginProvider({
           >
             {options.slice(2).map((option, index) => (
               <motion.div
-                key={option.value}
+                key={option.key}
                 className='w-full'
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}

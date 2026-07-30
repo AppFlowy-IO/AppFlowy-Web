@@ -9,6 +9,8 @@ import { PasswordInput } from '@/components/ui/password-input';
 
 const PAPER_PROPS = { sx: { width: 420 } } as const;
 
+const TITLE_ID = 'ldap-login-title';
+const DESCRIPTION_ID = 'ldap-login-description';
 // Both fields point at the same message, so the id is shared.
 const ERROR_ID = 'ldap-login-error';
 
@@ -21,11 +23,11 @@ interface LdapLoginDialogProps {
 /**
  * Credential prompt for a configured LDAP directory.
  *
- * Deliberately asks for a *username*, not an email: the connection's user
- * filter decides what is matched, and the common `(uid={{username}})` matches
- * the directory uid. The server also rejects a bad password, an unknown user
- * and a user whose entry lacks the mail attribute with one identical message,
- * so this shows whatever it returns rather than guessing at a reason.
+ * The connection's user filter decides whether the login is a directory uid,
+ * an email address, or another directory attribute. The server also rejects a
+ * bad password, an unknown user and a user whose entry lacks the mail attribute
+ * with one identical message, so this shows whatever it returns rather than
+ * guessing at a reason.
  */
 function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps) {
   const { t } = useTranslation();
@@ -97,11 +99,20 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
     setError(null);
   }, []);
 
-  const title = useMemo(() => <div className='text-left'>{t('web.ldapLogin')}</div>, [t]);
+  const title = useMemo(
+    () => (
+      <div id={TITLE_ID} className='text-left'>
+        {t('web.ldapLogin')}
+      </div>
+    ),
+    [t]
+  );
 
   return (
     <NormalModal
       open={open}
+      aria-labelledby={TITLE_ID}
+      aria-describedby={DESCRIPTION_ID}
       onClose={handleClose}
       onOk={handleOk}
       closable={!loading}
@@ -118,7 +129,9 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
         data-testid='ldap-login-dialog'
         className='flex w-full flex-col gap-4'
       >
-        <div className='help-text text-xs text-text-caption'>{t('web.ldapLoginDescription')}</div>
+        <div id={DESCRIPTION_ID} className='help-text text-xs text-text-caption'>
+          {t('web.ldapLoginDescription')}
+        </div>
 
         <div className='flex flex-col gap-1'>
           <Label htmlFor='ldap-username'>{t('web.ldapUsernamePlaceholder')}</Label>
