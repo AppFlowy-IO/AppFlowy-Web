@@ -28,8 +28,9 @@ import {
   LoadRowDocument,
   LoadView,
   LoadViewMeta,
-  RowId,
   RowDocumentSourcePayload,
+  RowId,
+  SearchMentions,
   UIVariant,
   UpdatePagePayload,
   View,
@@ -167,6 +168,7 @@ export interface Database2Props {
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  searchMentions?: SearchMentions;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   embeddedHeight?: number;
   /**
@@ -234,6 +236,7 @@ function Database(props: Database2Props) {
     addPage,
     openPageModal,
     loadDatabaseRelations,
+    searchMentions,
     loadViews,
     generateAISummaryForRow,
     generateAITranslateForRow,
@@ -693,10 +696,20 @@ function Database(props: Database2Props) {
         throw new Error('createRow function is not provided');
       }
 
+      const createLifecycleIdentity = databaseLifecycleIdentity;
+      const createGeneration = blobPrefetchGenerationRef.current;
+      const isCurrentCreate = () =>
+        activeDatabaseLifecycleRef.current === createLifecycleIdentity &&
+        blobPrefetchGenerationRef.current === createGeneration;
+
       const [rowKeyDatabaseId, rowId] = rowKey.split('_rows_');
       const currentDatabaseId = getDatabaseId();
 
       const rowDoc = await createRow(rowKey);
+
+      // The row exists on the server either way, so still hand it back to the
+      // caller — only the local state writes belong to the old lifecycle.
+      if (!isCurrentCreate()) return rowDoc;
 
       // Add the new row doc to rowMap so grouping logic can see it immediately
       if (rowId && rowDoc) {
@@ -713,7 +726,7 @@ function Database(props: Database2Props) {
 
       return rowDoc;
     },
-    [createRow, getDatabaseId, ensureBlobPrefetch]
+    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch]
   );
 
   const ensureRow = useCallback(
@@ -1008,6 +1021,7 @@ function Database(props: Database2Props) {
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
+      searchMentions,
       loadViews: loadViews ? loadViewsForContext : undefined,
       variant: props.variant,
       calendarViewTypeMap,
@@ -1050,6 +1064,7 @@ function Database(props: Database2Props) {
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
       loadDatabaseRelations,
+      searchMentions,
       loadViews,
       loadViewsForContext,
       props.variant,

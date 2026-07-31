@@ -5,6 +5,8 @@ export {
   approveRequestAccess,
   sendRequestAccess,
   getShareDetail,
+  invalidateShareDetailCache,
+  getObjectPermission,
   sharePageTo,
   revokeAccess,
   turnIntoMember,

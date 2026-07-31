@@ -36,6 +36,8 @@ export interface AppNavigationContextType {
   onRendered?: () => void;
   /** True when the requested view was not found (404). */
   notFound?: boolean;
+  /** True when the current user has no read access to the requested view. */
+  viewNoAccess?: boolean;
   /** True when the requested view exists but has been soft-deleted. */
   viewHasBeenDeleted?: boolean;
   /** The view ID currently displayed in the page modal overlay, if any. */

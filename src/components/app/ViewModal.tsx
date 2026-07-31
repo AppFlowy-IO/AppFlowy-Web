@@ -1,11 +1,20 @@
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import { TransitionProps } from '@mui/material/transitions';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import {
+  MentionSearchRequest,
+  UIVariant,
+  View,
+  ViewComponentProps,
+  ViewLayout,
+  ViewMetaProps,
+  YDoc,
+  YDocWithMeta,
+} from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
@@ -30,7 +39,7 @@ import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ViewService } from '@/application/services/domains';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -67,6 +76,16 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const eventEmitter = useEventEmitter();
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
+  const searchMentions = useCallback(
+    (request: MentionSearchRequest) => {
+      if (!workspaceId) {
+        return Promise.reject(new Error('workspaceId is required'));
+      }
+
+      return WorkspaceService.searchMentions(workspaceId, request);
+    },
+    [workspaceId]
+  );
   const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
   const outline = useAppOutline();
@@ -77,6 +96,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
   const [notFound, setNotFound] = useState(false);
   const [syncBound, setSyncBound] = useState(false);
+  const loadRequestRevisionRef = useRef(0);
 
   // Fallback view metadata fetched from server (used when view not in outline yet).
   // Stores the full View (including children/extra) so getFirstChildView can
@@ -143,14 +163,19 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // Load document
   const loadPageDoc = useCallback(
     async (targetViewId: string) => {
+      const requestRevision = loadRequestRevisionRef.current + 1;
+
+      loadRequestRevisionRef.current = requestRevision;
       setNotFound(false);
       setDoc(undefined);
       setSyncBound(false);
       try {
         const loadedDoc = await loadView(targetViewId, false, true);
 
+        if (loadRequestRevisionRef.current !== requestRevision) return;
         setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
+        if (loadRequestRevisionRef.current !== requestRevision) return;
         setNotFound(true);
         console.error('[ViewModal] Failed to load document:', e);
       }
@@ -209,11 +234,33 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [resolvedView, effectiveOutlineView, workspaceId]);
 
   const handleClose = useCallback(() => {
+    loadRequestRevisionRef.current += 1;
     setDoc(undefined);
     setSyncBound(false);
     setFallbackMeta(null);
     onClose();
   }, [onClose]);
+
+  // AppBusinessLayer can close this modal directly when permission is
+  // revoked, bypassing handleClose. Clear the retained Y.Doc before paint so
+  // revoked content cannot remain mounted during the exit transition or flash
+  // when the same target is reopened.
+  useLayoutEffect(() => {
+    if (open) return;
+
+    loadRequestRevisionRef.current += 1;
+    setDoc(undefined);
+    setSyncBound(false);
+    setFallbackMeta(null);
+    setNotFound(false);
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      loadRequestRevisionRef.current += 1;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!doc || !bindViewSync || syncBound) return;
@@ -347,7 +394,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if (!open || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
@@ -372,6 +419,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         scheduleDeferredCleanup={scheduleDeferredCleanup}
         getSubscriptions={operations.getSubscriptions}
         getMentionUser={getMentionUser}
+        searchMentions={searchMentions}
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
@@ -390,6 +438,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     );
   }, [
     doc,
+    open,
     viewMeta,
     View,
     requestInstance,
@@ -410,6 +459,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     handleUploadFile,
     scheduleDeferredCleanup,
     getMentionUser,
+    searchMentions,
     eventEmitter,
     loadDatabaseRelations,
   ]);

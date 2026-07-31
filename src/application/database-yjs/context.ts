@@ -3,21 +3,24 @@ import EventEmitter from 'events';
 import { AxiosInstance } from 'axios';
 import { createContext, useContext, useEffect, useState } from 'react';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  DuplicatePageOperationOptions,
   CreateRow,
   DatabaseRelations,
   DateFormat,
+  DuplicatePageOperationOptions,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
   LoadRowDocument,
   LoadView,
   LoadViewMeta,
-  RowId,
+  MentionSearchContext,
   RowDocumentSourcePayload,
+  RowId,
+  SearchMentions,
   Subscription,
   TestDatabasePromptConfig,
   TimeFormat,
@@ -31,7 +34,6 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -102,6 +104,8 @@ export interface DatabaseContextState {
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   loadViews?: () => Promise<View[]>;
   uploadFile?: (file: File) => Promise<string>;
   loadDatabasePrompts?: LoadDatabasePrompts;

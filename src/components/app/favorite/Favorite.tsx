@@ -11,7 +11,9 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import OutlineItem from '@/components/_shared/outline/OutlineItem';
 import { Popover } from '@/components/_shared/popover';
 import RecentListSkeleton from '@/components/_shared/skeleton/RecentListSkeleton';
-import { useAIEnabled, useAppFavorites, useToView, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppFavorites, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+
+import { useFavoriteNavigation } from './useFavoriteNavigation';
 
 const popoverOrigin: Partial<PopoverProps> = {
   transformOrigin: {
@@ -47,7 +49,7 @@ function isPinnedFavorite(view: View): boolean {
 
 export function Favorite() {
   const { favoriteViews, loadFavoriteViews } = useAppFavorites();
-  const navigateToView = useToView();
+  const navigateToView = useFavoriteNavigation(favoriteViews);
   const viewId = useSidebarSelectedViewId();
   const aiEnabled = useAIEnabled();
   const { t } = useTranslation();

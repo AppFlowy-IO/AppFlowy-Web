@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseViewLayout } from '@/application/database-yjs';
-import { useBulkDeleteRowDispatch } from '@/application/database-yjs/dispatch';
+import { useTrashAwareDeleteRowsDispatch } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,11 +27,13 @@ export function DeleteRowConfirm({
   onDeleted?: () => void;
 }) {
   const { t } = useTranslation();
-  const deleteRowsDispatch = useBulkDeleteRowDispatch();
+  const deleteRowsDispatch = useTrashAwareDeleteRowsDispatch();
 
   const layout = useDatabaseViewLayout();
   const handleDelete = () => {
-    deleteRowsDispatch(rowIds);
+    void deleteRowsDispatch(rowIds).catch((e) => {
+      Log.error('[DeleteRowConfirm] delete rows failed', e);
+    });
     onDeleted?.();
     onClose();
   };

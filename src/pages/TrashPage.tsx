@@ -8,7 +8,12 @@ import dayjs from 'dayjs';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { View } from '@/application/types';
+import {
+  removeRowsFromDatabase,
+  restoreSoftDeletedRowsInDatabase,
+} from '@/application/database-yjs/dispatch/row-lifecycle';
+import { getRowDocumentSourceFromView } from '@/application/row-document/lifecycle';
+import { RowDocumentSourcePayload, View, YDatabase, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as RestoreIcon } from '@/assets/icons/restore.svg';
 import { NormalModal } from '@/components/_shared/modal';
@@ -25,12 +30,55 @@ function TrashPage() {
   const deleteView = useMemo(() => {
     return trashList?.find((view) => view.view_id === deleteViewId);
   }, [deleteViewId, trashList]);
-  const { deleteTrash, restorePage } = useAppOperations();
+  const { deleteTrash, restorePage, loadView, bindViewSync } = useAppOperations();
+
+  // Applies a row-lifecycle mutation (restore / permanent delete) to the
+  // database collab a trashed row page belongs to. The collab is loaded with
+  // sync bound so the change reaches the server through the normal outbox.
+  const withDatabaseCollab = useCallback(
+    async (
+      source: RowDocumentSourcePayload,
+      mutate: (sharedRoot: YSharedRoot, database: YDatabase, rowIds: string[]) => void
+    ) => {
+      const doc = await loadView(source.database_view_id, false, false, { databaseId: source.database_id });
+
+      bindViewSync?.(doc);
+      const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+      const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+
+      if (!database) {
+        throw new Error('Database not found for trashed row page');
+      }
+
+      mutate(sharedRoot, database, [source.row_id]);
+    },
+    [bindViewSync, loadView]
+  );
+
+  const rowDocumentEntries = useCallback(
+    (viewId?: string) => {
+      const entries = viewId ? trashList?.filter((view) => view.view_id === viewId) : trashList;
+
+      return (entries ?? [])
+        .map((view) => getRowDocumentSourceFromView(view))
+        .filter((source): source is RowDocumentSourcePayload => source !== null);
+    },
+    [trashList]
+  );
 
   const handleRestore = useCallback(
     async (viewId?: string) => {
       if (!currentWorkspaceId) return;
       try {
+        const rowSources = rowDocumentEntries(viewId);
+
+        // Restoring a row page also clears the row's soft-delete tombstone so
+        // it reappears in every database view. Apply this first so a collab
+        // load/mutation failure leaves the row page in Trash for retry.
+        for (const source of rowSources) {
+          await withDatabaseCollab(source, restoreSoftDeletedRowsInDatabase);
+        }
+
         await restorePage?.(viewId);
         void loadTrash?.(currentWorkspaceId);
         // eslint-disable-next-line
@@ -38,13 +86,24 @@ function TrashPage() {
         notify.error(`Failed to restore page: ${e.message}`);
       }
     },
-    [restorePage, loadTrash, currentWorkspaceId]
+    [restorePage, loadTrash, currentWorkspaceId, rowDocumentEntries, withDatabaseCollab]
   );
 
   const handleDelete = useCallback(
     async (viewId?: string) => {
       if (!currentWorkspaceId) return;
       try {
+        const rowSources = rowDocumentEntries(viewId);
+
+        // Permanently deleting a row page removes the row from the database
+        // collab entirely. Apply this first so the Trash entry remains if the
+        // source database cannot be loaded or mutated.
+        for (const source of rowSources) {
+          await withDatabaseCollab(source, (sharedRoot, database, rowIds) =>
+            removeRowsFromDatabase(sharedRoot, database, rowIds)
+          );
+        }
+
         await deleteTrash?.(viewId);
         setDeleteViewId(undefined);
         void loadTrash?.(currentWorkspaceId);
@@ -53,7 +112,7 @@ function TrashPage() {
         notify.error(`Failed to delete page: ${e.message}`);
       }
     },
-    [deleteTrash, loadTrash, currentWorkspaceId]
+    [deleteTrash, loadTrash, currentWorkspaceId, rowDocumentEntries, withDatabaseCollab]
   );
 
   useEffect(() => {

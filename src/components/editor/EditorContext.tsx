@@ -24,6 +24,8 @@ import {
   TestDatabasePromptConfig,
   Subscription,
   MentionablePerson,
+  MentionSearchContext,
+  SearchMentions,
   DatabaseRelations,
   RowDocumentSourcePayload,
   YDoc,
@@ -102,6 +104,8 @@ export interface EditorContextState {
   getSubscriptions?: (() => Promise<Subscription[]>) | undefined;
   eventEmitter?: EventEmitter;
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   awareness?: Awareness;
   getDeviceId?: () => string;
   databaseRelations?: DatabaseRelations;
@@ -149,6 +153,8 @@ export const EditorContextProvider = ({
   getSubscriptions,
   eventEmitter,
   getMentionUser,
+  searchMentions,
+  mentionContext,
   awareness,
   getDeviceId,
   databaseRelations,
@@ -234,6 +240,8 @@ export const EditorContextProvider = ({
       getSubscriptions,
       eventEmitter,
       getMentionUser,
+      searchMentions,
+      mentionContext,
       awareness,
       getDeviceId,
       databaseRelations,
@@ -276,6 +284,8 @@ export const EditorContextProvider = ({
       getSubscriptions,
       eventEmitter,
       getMentionUser,
+      searchMentions,
+      mentionContext,
       awareness,
       getDeviceId,
       databaseRelations,

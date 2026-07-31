@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, Row, useFieldType } from '@/application/database-yjs';
-import { useDeleteGroupColumnDispatch } from '@/application/database-yjs/dispatch';
+import { useDeleteGroupColumnDispatch } from '@/application/database-yjs/dispatch/group';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

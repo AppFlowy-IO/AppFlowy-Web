@@ -680,6 +680,7 @@
     "addToFavorites": "Add to Favorites",
     "favoriteSuccessfully": "Favorited success",
     "unfavoriteSuccessfully": "Unfavorited success",
+    "favoriteFailed": "Couldn't update favorite",
     "duplicateSuccessfully": "Duplicated successfully",
     "rename": "Rename",
     "helpCenter": "Help Center",
