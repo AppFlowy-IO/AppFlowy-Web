@@ -26,6 +26,7 @@ import {
   MentionablePerson,
   DatabaseRelations,
   RowDocumentSourcePayload,
+  UpdatePagePayload,
   YDoc,
 } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -88,6 +89,7 @@ export interface EditorContextState {
   variant?: UIVariant;
   onRendered?: () => void;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
+  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
@@ -135,6 +137,7 @@ export const EditorContextProvider = ({
   variant,
   onRendered,
   addPage,
+  updatePage,
   deletePage,
   duplicatePage,
   openPageModal,
@@ -220,6 +223,7 @@ export const EditorContextProvider = ({
       variant,
       onRendered,
       addPage,
+      updatePage,
       deletePage,
       duplicatePage,
       openPageModal,
@@ -262,6 +266,7 @@ export const EditorContextProvider = ({
       variant,
       onRendered,
       addPage,
+      updatePage,
       deletePage,
       duplicatePage,
       openPageModal,

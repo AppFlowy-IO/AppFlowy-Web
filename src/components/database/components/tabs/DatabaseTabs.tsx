@@ -3,7 +3,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { UIVariant, View, YjsDatabaseKey } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -62,7 +62,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [meta, setMeta] = useState<View | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
-    const [renameViewId, setRenameViewId] = useState<string | null>(null);
+    const [renameView, setRenameView] = useState<View | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
 
     // Used to trigger a scroll in the child component
@@ -137,63 +137,40 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [databasePageId, eventEmitter, reloadView]);
 
-    const renameView = useMemo(() => {
-      if (!renameViewId) return null;
+    const openRenameModal = useCallback(
+      (view: View) => {
+        const fromMeta =
+          meta?.view_id === view.view_id ? meta : meta?.children.find((child) => child.view_id === view.view_id);
 
-      const fromMeta = meta?.view_id === renameViewId ? meta : meta?.children.find((v) => v.view_id === renameViewId);
+        setRenameView(fromMeta ?? view);
+      },
+      [meta]
+    );
 
-      if (fromMeta) return fromMeta;
-
-      // Fallback: build a minimal view from Yjs so rename still works even when meta
-      // doesn't include siblings (e.g., embedded linked views without a container).
-      const databaseView = views?.get(renameViewId) as YDatabaseView | null;
-
-      if (!databaseView) return null;
-
-      const rawLayoutValue = databaseView.get(YjsDatabaseKey.layout);
-      const databaseLayout = Number(rawLayoutValue) as DatabaseViewLayout;
-      const computedLayout =
-        databaseLayout === DatabaseViewLayout.Board
-          ? ViewLayout.Board
-          : databaseLayout === DatabaseViewLayout.Calendar
-          ? ViewLayout.Calendar
-          : databaseLayout === DatabaseViewLayout.Chart
-          ? ViewLayout.Chart
-          : ViewLayout.Grid;
-
-      const name = databaseView.get(YjsDatabaseKey.name) || '';
-
-      return {
-        view_id: renameViewId,
-        name,
-        layout: computedLayout,
-        parent_view_id: meta?.view_id ?? databasePageId,
-        children: [],
-        icon: null,
-        extra: null,
-        is_published: false,
-        is_private: false,
-      } as View;
-    }, [databasePageId, meta, renameViewId, views]);
-
-    const viewNameById = useMemo(() => {
+    const viewNameById = (() => {
       if (!meta) return undefined;
 
-      // Prefer container children when available.
+      // Outline metadata can lag behind the database collab after a rename.
+      // In the editable app, only use it as a fallback for views that are not
+      // loaded in Yjs. Published pages intentionally prefer outline names.
       if (isDatabaseContainer(meta)) {
         const mapping: Record<string, string> = {};
 
         for (const child of meta.children ?? []) {
-          mapping[child.view_id] = child.name;
+          if (context.variant === UIVariant.Publish || !views?.has(child.view_id)) {
+            mapping[child.view_id] = child.name;
+          }
         }
 
         return mapping;
       }
 
-      return {
-        [meta.view_id]: meta.name,
-      };
-    }, [meta]);
+      return context.variant !== UIVariant.Publish && views?.has(meta.view_id)
+        ? undefined
+        : {
+            [meta.view_id]: meta.name,
+          };
+    })();
 
     useEffect(() => {
       void reloadView();
@@ -224,6 +201,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [menuViewId]);
 
+    const embeddedDatabaseName = context.isDocumentBlock && isDatabaseContainer(meta) ? meta?.name.trim() : '';
+
     return (
       <div
         ref={ref}
@@ -233,6 +212,11 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
+        {embeddedDatabaseName ? (
+          <h3 data-testid='embedded-database-title' className='w-full pb-3 text-xl font-semibold text-text-primary'>
+            {embeddedDatabaseName}
+          </h3>
+        ) : null}
         <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
           <DatabaseViewTabs
             viewIds={viewIds}
@@ -246,7 +230,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             menuViewId={menuViewId}
             setMenuViewId={setMenuViewId}
             setDeleteConfirmOpen={setDeleteConfirmOpen}
-            setRenameViewId={setRenameViewId}
+            setRenameView={openRenameModal}
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
             onReorderTabs={onReorderTabs}
@@ -288,18 +272,18 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           ) : null}
         </div>
 
-        {renameView && Boolean(renameViewId) && (
+        {renameView && (
           <RenameModal
-            open={Boolean(renameViewId)}
+            open
             onClose={() => {
-              setRenameViewId(null);
+              setRenameView(null);
             }}
             view={renameView}
             updatePage={async (viewId, payload) => {
               await updatePage(viewId, payload);
               void reloadView();
             }}
-            viewId={renameViewId || ''}
+            viewId={renameView.view_id}
           />
         )}
 

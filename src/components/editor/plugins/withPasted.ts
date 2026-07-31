@@ -1,6 +1,5 @@
 import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
-import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -23,7 +22,7 @@ import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste
 import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
-import { isSingleURLText, processUrl } from '@/utils/url';
+import { isSingleURLText, parseAppFlowyPageLink, processUrl } from '@/utils/url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -389,41 +388,32 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
 /**
  * Handles URL paste.
  *
- * Internal AppFlowy links that point at a specific block are inserted as a
- * page-reference mention directly. Every other URL is pasted as an inline link
- * and the "Paste as" menu (Mention / URL / Bookmark / Embed) is shown so the
- * user can choose how to render it — matching the desktop app's behavior.
+ * Internal AppFlowy page links are inserted as page-reference mentions so they
+ * retain the exact view identity and follow live metadata updates. Every other
+ * URL is pasted as an inline link and the "Paste as" menu (Mention / URL /
+ * Bookmark / Embed) is shown so the user can choose how to render it.
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
-  // Check for AppFlowy internal links
-  const isAppFlowyLinkUrl = isURL(url, {
-    host_whitelist: [window.location.hostname],
-  });
+  const appFlowyPageLink = parseAppFlowyPageLink(url, window.location.hostname);
 
-  if (isAppFlowyLinkUrl) {
-    const urlObj = new URL(url);
-    const blockId = urlObj.searchParams.get('blockId');
+  if (appFlowyPageLink) {
+    const point = editor.selection?.anchor as BasePoint;
 
-    if (blockId) {
-      const pageId = urlObj.pathname.split('/').pop();
-      const point = editor.selection?.anchor as BasePoint;
-
-      if (point) {
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention: {
-              type: MentionType.PageRef,
-              page_id: pageId,
-              block_id: blockId,
-            },
+    if (point) {
+      Transforms.insertNodes(
+        editor,
+        {
+          text: '@',
+          mention: {
+            type: MentionType.PageRef,
+            page_id: appFlowyPageLink.viewId,
+            ...(appFlowyPageLink.blockId ? { block_id: appFlowyPageLink.blockId } : {}),
           },
-          { at: point, select: true, voids: false }
-        );
+        },
+        { at: point, select: true, voids: false }
+      );
 
-        return true;
-      }
+      return true;
     }
   }
 

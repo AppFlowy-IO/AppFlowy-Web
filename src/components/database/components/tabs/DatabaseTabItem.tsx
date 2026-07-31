@@ -1,5 +1,5 @@
 import { type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
@@ -30,7 +30,7 @@ export interface DatabaseTabItemProps {
   visibleViewIds: string[];
   onSetMenuViewId: (id: string | null) => void;
   onOpenDeleteModal: (id: string) => void;
-  onOpenRenameModal: (id: string) => void;
+  onOpenRenameModal: (view: View) => void;
   setTabRef: (id: string, el: HTMLElement | null) => void;
   /** Drag instance of the tab bar group; undefined disables reordering for this tab. */
   reorderInstanceId?: symbol;
@@ -53,6 +53,25 @@ export const DatabaseTabItem = memo(
   }: DatabaseTabItemProps) => {
     const { t } = useTranslation();
     const tabRef = useRef<HTMLElement | null>(null);
+    const subscribeToView = useCallback(
+      (onStoreChange: () => void) => {
+        view.observe(onStoreChange);
+
+        return () => {
+          view.unobserve(onStoreChange);
+        };
+      },
+      [view]
+    );
+    const getViewSnapshot = useCallback(
+      () => JSON.stringify([view.get(YjsDatabaseKey.name) ?? null, view.get(YjsDatabaseKey.layout) ?? null]),
+      [view]
+    );
+
+    // Y.Map mutates in place, so React.memo cannot detect a renamed tab from
+    // prop identity alone. The primitive snapshot also avoids rerendering this
+    // tab when an unrelated view setting changes.
+    useSyncExternalStore(subscribeToView, getViewSnapshot, getViewSnapshot);
 
     const { dragState, shouldSuppressClick } = useReorderableItem({
       elementRef: tabRef,

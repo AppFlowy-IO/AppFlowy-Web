@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import { EditorContextProvider, useEditorContext } from '../EditorContext';
 
@@ -11,12 +11,16 @@ function RowDocumentContextProbe() {
       data-has-check={String(Boolean(context.checkIfRowDocumentExists))}
       data-has-create={String(Boolean(context.createRowDocument))}
       data-has-load={String(Boolean(context.loadRowDocument))}
+      data-has-update={String(Boolean(context.updatePage))}
+      onClick={() => void context.updatePage?.('database-view-id', { name: 'Renamed view' })}
     />
   );
 }
 
 describe('EditorContextProvider', () => {
-  it('preserves row document operations for embedded databases', () => {
+  it('preserves row document and page update operations for embedded databases', () => {
+    const updatePage = jest.fn().mockResolvedValue(undefined);
+
     render(
       <EditorContextProvider
         workspaceId="workspace-id"
@@ -25,6 +29,7 @@ describe('EditorContextProvider', () => {
         checkIfRowDocumentExists={jest.fn()}
         createRowDocument={jest.fn()}
         loadRowDocument={jest.fn()}
+        updatePage={updatePage}
       >
         <RowDocumentContextProbe />
       </EditorContextProvider>
@@ -35,5 +40,9 @@ describe('EditorContextProvider', () => {
     expect(probe.getAttribute('data-has-check')).toBe('true');
     expect(probe.getAttribute('data-has-create')).toBe('true');
     expect(probe.getAttribute('data-has-load')).toBe('true');
+    expect(probe.getAttribute('data-has-update')).toBe('true');
+
+    fireEvent.click(probe);
+    expect(updatePage).toHaveBeenCalledWith('database-view-id', { name: 'Renamed view' });
   });
 });
