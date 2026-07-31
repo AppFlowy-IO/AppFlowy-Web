@@ -22,7 +22,7 @@ import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste
 import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
-import { isSingleURLText, parseAppFlowyPageLink, processUrl } from '@/utils/url';
+import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -388,15 +388,22 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
 /**
  * Handles URL paste.
  *
- * Internal AppFlowy page links are inserted as page-reference mentions so they
- * retain the exact view identity and follow live metadata updates. Every other
- * URL is pasted as an inline link and the "Paste as" menu (Mention / URL /
- * Bookmark / Embed) is shown so the user can choose how to render it.
+ * Page links into the current workspace are inserted as page-reference
+ * mentions so they retain the exact view identity and follow live metadata
+ * updates. Every other URL — external sites, other workspaces (whose views a
+ * mention could not resolve here), or links carrying row/tab targets — is
+ * pasted as an inline link and the "Paste as" menu (Mention / URL / Bookmark /
+ * Embed) is shown so the user can choose how to render it.
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
   const appFlowyPageLink = parseAppFlowyPageLink(url, window.location.hostname);
+  const currentWorkspaceId = workspaceIdFromAppPathname(window.location.pathname);
 
-  if (appFlowyPageLink) {
+  if (
+    appFlowyPageLink &&
+    currentWorkspaceId &&
+    appFlowyPageLink.workspaceId.toLowerCase() === currentWorkspaceId.toLowerCase()
+  ) {
     const point = editor.selection?.anchor as BasePoint;
 
     if (point) {

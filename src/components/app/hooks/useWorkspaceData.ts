@@ -245,6 +245,11 @@ type FolderRid = {
   seqNo: number;
 };
 
+type PendingFolderViewUpdate = {
+  view: View;
+  folderRid: FolderRid | null;
+};
+
 const AUTHORITATIVE_VIEW_REFRESH_ERROR_CODES = new Set<number>([
   ERROR_CODE.RECORD_NOT_FOUND,
   ERROR_CODE.RECORD_DELETED,
@@ -389,7 +394,7 @@ export function useWorkspaceData() {
   const lastFolderViewRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
-  const pendingFolderViewUpdatesRef = useRef<Map<string, View>>(new Map());
+  const pendingFolderViewUpdatesRef = useRef<Map<string, PendingFolderViewUpdate>>(new Map());
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
   // Root loads and periodic revalidation share request IDs, but successful
@@ -449,22 +454,34 @@ export function useWorkspaceData() {
     return mergedOutline;
   }, []);
 
-  const preservePendingFolderViewUpdates = useCallback((nextOutline: View[]) => {
-    let outlineWithPendingUpdates = nextOutline;
+  const reconcilePendingFolderViewUpdates = useCallback((nextOutline: View[], nextFolderRid: FolderRid | null) => {
+    let reconciledOutline = nextOutline;
 
-    for (const [viewId, pendingView] of pendingFolderViewUpdatesRef.current) {
-      const incomingView = findView(outlineWithPendingUpdates, viewId);
+    for (const [viewId, pendingUpdate] of pendingFolderViewUpdatesRef.current) {
+      const incomingView = findView(reconciledOutline, viewId);
 
       if (!incomingView) continue;
 
-      if (createFolderViewFieldsFingerprint(incomingView) === createFolderViewFieldsFingerprint(pendingView)) {
+      const incomingMatchesPending =
+        createFolderViewFieldsFingerprint(incomingView) === createFolderViewFieldsFingerprint(pendingUpdate.view);
+
+      if (incomingMatchesPending) {
         pendingFolderViewUpdatesRef.current.delete(viewId);
-      } else {
-        outlineWithPendingUpdates = updateViewInOutline(outlineWithPendingUpdates, pendingView);
+        continue;
       }
+
+      const incomingIsNewer =
+        nextFolderRid && pendingUpdate.folderRid && compareFolderRid(nextFolderRid, pendingUpdate.folderRid) > 0;
+
+      if (incomingIsNewer) {
+        pendingFolderViewUpdatesRef.current.delete(viewId);
+        continue;
+      }
+
+      reconciledOutline = updateViewInOutline(reconciledOutline, pendingUpdate.view);
     }
 
-    return outlineWithPendingUpdates;
+    return reconciledOutline;
   }, []);
 
   const refreshFavoriteViewsForWorkspace = useCallback(async (workspaceId: string) => {
@@ -612,13 +629,8 @@ export function useWorkspaceData() {
 
         if (shouldApplyOutline) {
           latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
-          for (const viewId of pendingFolderViewUpdatesRef.current.keys()) {
-            if (findView(outlineWithShareWithMe, viewId)) {
-              pendingFolderViewUpdatesRef.current.delete(viewId);
-            }
-          }
-
-          const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+          const reconciledOutline = reconcilePendingFolderViewUpdates(outlineWithShareWithMe, nextFolderRid);
+          const mergedOutline = replaceOutlinePreservingChildren(reconciledOutline);
 
           updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
 
@@ -776,6 +788,7 @@ export function useWorkspaceData() {
       updateAppliedRootOutlineSnapshot,
       userWorkspaceInfo?.userId,
       replaceOutlinePreservingChildren,
+      reconcilePendingFolderViewUpdates,
       isStaleWorkspaceRequest,
       isStaleRootOutlineRequest,
       isStaleRootOutlineFailure,
@@ -1484,7 +1497,7 @@ export function useWorkspaceData() {
       const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
       const nextOutline = existingShareWithMe ? [...patchedOutline, existingShareWithMe] : patchedOutline;
 
-      const mergedOutline = replaceOutlinePreservingChildren(preservePendingFolderViewUpdates(nextOutline));
+      const mergedOutline = replaceOutlinePreservingChildren(reconcilePendingFolderViewUpdates(nextOutline, patchRid));
 
       if (usedRelaxedPatch) {
         updateLastFolderRid(patchRid);
@@ -1512,7 +1525,7 @@ export function useWorkspaceData() {
     loadOutline,
     refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
-    preservePendingFolderViewUpdates,
+    reconcilePendingFolderViewUpdates,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
     updateAppliedRootOutlineSnapshot,
@@ -1559,7 +1572,10 @@ export function useWorkspaceData() {
             const previousView = findView(nextOutline, updatedView.view_id);
 
             if (previousView) {
-              pendingFolderViewUpdatesRef.current.set(updatedView.view_id, updatedView);
+              pendingFolderViewUpdatesRef.current.set(updatedView.view_id, {
+                view: updatedView,
+                folderRid,
+              });
             }
 
             eventEmitter?.emit(APP_EVENTS.VIEW_META_CHANGED, updatedView);
@@ -1608,6 +1624,7 @@ export function useWorkspaceData() {
             // FOLDER_OUTLINE_CHANGED shallow refresh.
             for (const childId of childIds) {
               loadedViewIdsRef.current.delete(childId);
+              pendingFolderViewUpdatesRef.current.delete(childId);
             }
 
             // If the parent has no remaining children, remove it from loaded IDs
@@ -1903,8 +1920,7 @@ export function useWorkspaceData() {
       // Record it for one follow-up load after the server selection catches up.
       // The inverse direction is a manual switch and the workspace-change
       // effect will load the target once its URL changes.
-      workspaceAwaitingSelectionRef.current =
-        !prev || selectedWorkspaceId === prev ? currentWorkspaceId : null;
+      workspaceAwaitingSelectionRef.current = !prev || selectedWorkspaceId === prev ? currentWorkspaceId : null;
       prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
       return;
     }

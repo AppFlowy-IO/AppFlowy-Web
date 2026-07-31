@@ -75,7 +75,11 @@ export const DatabaseTabItem = memo(
     // Y.Map mutates in place, so React.memo cannot detect a renamed tab from
     // prop identity alone. The primitive snapshot also avoids rerendering this
     // tab when an unrelated view setting changes.
-    useSyncExternalStore(subscribeToView, getViewSnapshot, getViewSnapshot);
+    const viewSnapshot = useSyncExternalStore(subscribeToView, getViewSnapshot, getViewSnapshot);
+    const [rawName, rawLayoutValue] = useMemo(
+      () => JSON.parse(viewSnapshot) as [string | null, string | number | null],
+      [viewSnapshot]
+    );
 
     const { dragState, shouldSuppressClick } = useReorderableItem({
       elementRef: tabRef,
@@ -94,8 +98,7 @@ export const DatabaseTabItem = memo(
       [setTabRef, viewId]
     );
 
-    const rawLayoutValue = view.get(YjsDatabaseKey.layout);
-    const databaseLayout = Number(rawLayoutValue) as DatabaseViewLayout;
+    const databaseLayout = (rawLayoutValue === null ? NaN : Number(rawLayoutValue)) as DatabaseViewLayout;
 
     // Get the default name based on layout if no name is available
     const getDefaultNameByLayout = () => {
@@ -113,7 +116,6 @@ export const DatabaseTabItem = memo(
       }
     };
 
-    const rawName = view.get(YjsDatabaseKey.name);
     const defaultName = getDefaultNameByLayout();
     const yjsName = rawName?.trim();
     const override = nameOverride?.trim();

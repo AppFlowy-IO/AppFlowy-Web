@@ -512,11 +512,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       await loadPromise;
     });
 
-    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([
-      'child-a',
-      'child-b',
-      'child-c',
-    ]);
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b', 'child-c']);
   });
 
   it('keeps transient fallback children visible without marking the subtree loaded', async () => {
@@ -879,6 +875,65 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
 
     expect(result.current.outline?.[0]?.name).toBe('later server rename');
+  });
+
+  it('preserves a granular update across an older in-flight outline response', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', { name: 'old space' });
+    const renamedRoot = createView('space-id', { name: 'renamed space' });
+    const olderOutlineResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [root], folderRid: '1-1' })
+      .mockReturnValueOnce(olderOutlineResponse.promise)
+      .mockResolvedValueOnce({
+        outline: [createView('space-id', { name: 'newer server name' })],
+        folderRid: '4-1',
+      });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('old space');
+    });
+
+    let olderLoadPromise: Promise<void> = Promise.resolve();
+
+    act(() => {
+      olderLoadPromise = result.current.loadOutline?.(workspaceId, false) ?? Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '3-1',
+        viewJson: JSON.stringify(renamedRoot),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      olderOutlineResponse.resolve({
+        outline: [root],
+        folderRid: '2-1',
+      });
+      await olderLoadPromise;
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      await result.current.loadOutline?.(workspaceId, false);
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('newer server name');
   });
 
   it('repairs relaxed outline patches with same-rid root revalidation', async () => {

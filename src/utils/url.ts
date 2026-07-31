@@ -24,13 +24,19 @@ export function isSingleURLText(input: string) {
   return Boolean(processUrl(trimmed));
 }
 
-const APPFLOWY_PAGE_PATH =
-  /^\/app\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i;
+const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const APPFLOWY_PAGE_PATH = new RegExp(`^/app/(${UUID_PATTERN})/(${UUID_PATTERN})/?$`, 'i');
+const APPFLOWY_WORKSPACE_PATH = new RegExp(`^/app/(${UUID_PATTERN})(?:/|$)`, 'i');
 
 export interface AppFlowyPageLink {
   workspaceId: string;
   viewId: string;
   blockId?: string;
+}
+
+/** Workspace id segment of an /app route pathname, if present. */
+export function workspaceIdFromAppPathname(pathname: string): string | undefined {
+  return APPFLOWY_WORKSPACE_PATH.exec(pathname)?.[1];
 }
 
 /**
@@ -39,6 +45,10 @@ export interface AppFlowyPageLink {
  * Keeping this semantic distinction at paste time lets page mentions follow
  * live folder metadata (including database tab renames) instead of freezing
  * the database container's HTML title into an external-link preview.
+ *
+ * Only URLs a page mention can fully represent qualify: query params other
+ * than blockId (e.g. `r` row targets, `v` database tab selection) carry
+ * targeting a mention would silently drop, so those URLs stay plain links.
  */
 export function parseAppFlowyPageLink(input: string, appHostname: string): AppFlowyPageLink | undefined {
   const normalized = processUrl(input);
@@ -53,6 +63,10 @@ export function parseAppFlowyPageLink(input: string, appHostname: string): AppFl
     const match = APPFLOWY_PAGE_PATH.exec(url.pathname);
 
     if (!match) return;
+
+    for (const key of url.searchParams.keys()) {
+      if (key !== 'blockId') return;
+    }
 
     const blockId = url.searchParams.get('blockId')?.trim();
 
@@ -96,7 +110,6 @@ export function processUrl(input: string) {
 }
 
 export async function openUrl(url: string, target: string = '_current') {
-
   const newUrl = processUrl(url);
 
   if (!newUrl) return;

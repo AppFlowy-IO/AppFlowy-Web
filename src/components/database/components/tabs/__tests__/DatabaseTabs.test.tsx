@@ -30,6 +30,7 @@ jest.mock('@/components/database/components/tabs/DatabaseViewTabs', () => ({
     <div data-testid='database-view-tabs'>
       {viewNameById?.['database-view-id'] ?? 'Yjs view name'}
       <button onClick={() => setRenameView(mockNewDatabaseView)}>Rename new view</button>
+      <button onClick={() => setRenameView(mockLiveRenameView)}>Rename live view</button>
     </div>
   ),
 }));
@@ -76,6 +77,12 @@ const mockNewDatabaseView: View = {
   view_id: 'new-database-view-id',
   name: 'Board',
   layout: ViewLayout.Board,
+};
+
+// Same view as in outline meta, but carrying the live (Yjs) tab name.
+const mockLiveRenameView: View = {
+  ...databaseView,
+  name: 'Live Grid',
 };
 
 describe('DatabaseTabs', () => {
@@ -209,6 +216,46 @@ describe('DatabaseTabs', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('rename-modal').textContent).toBe('Board');
+    });
+  });
+
+  it('prefills rename with the live tab name even when outline meta lags behind', async () => {
+    const views = new Map([[databaseView.view_id, {}]]);
+    const loadViewMeta = jest.fn(async (viewId: string) => {
+      if (viewId === databaseView.view_id) return databaseView;
+      if (viewId === databaseContainer.view_id) return databaseContainer;
+      return null;
+    });
+
+    (useDatabase as jest.Mock).mockReturnValue({
+      get: () => views,
+    });
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      isDocumentBlock: true,
+      loadViewMeta,
+      readOnly: false,
+      showActions: true,
+    } as DatabaseContextState);
+
+    render(
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        viewIds={[databaseView.view_id]}
+      />
+    );
+
+    // Wait for meta to commit (the embedded title renders from it) so the
+    // rename handler resolves the outline entry, which still carries the
+    // stale name 'Grid'.
+    await waitFor(() => {
+      expect(screen.getByTestId('embedded-database-title')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename live view' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rename-modal').textContent).toBe('Live Grid');
     });
   });
 });

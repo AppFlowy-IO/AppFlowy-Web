@@ -33,22 +33,23 @@ jest.mock('@/components/app/view-actions/RenameModal', () => ({
     viewId,
     updatePage,
   }: {
-    view: View;
+    view: Pick<View, 'name'>;
     viewId: string;
     updatePage: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   }) => (
-    <button
-      data-testid='save-container-rename'
-      onClick={() =>
-        void updatePage(viewId, {
-          name: 'Renamed Database',
-          icon: view.icon,
-          extra: view.extra,
-        })
-      }
-    >
-      Save rename
-    </button>
+    <>
+      <span data-testid='rename-target-name'>{view.name}</span>
+      <button
+        data-testid='save-container-rename'
+        onClick={() =>
+          void updatePage(viewId, {
+            name: 'Renamed Database',
+          })
+        }
+      >
+        Save rename
+      </button>
+    </>
   ),
 }));
 
@@ -123,13 +124,12 @@ describe('DatabaseTabs embedded database title rename', () => {
     const title = await screen.findByTestId('embedded-database-title-rename');
 
     fireEvent.click(title);
+    expect(screen.getByTestId('rename-target-name').textContent).toBe('New Database');
     fireEvent.click(screen.getByTestId('save-container-rename'));
 
     await waitFor(() => {
       expect(updateContainerPage).toHaveBeenCalledWith(databaseContainer.view_id, {
         name: 'Renamed Database',
-        icon: databaseContainer.icon,
-        extra: databaseContainer.extra,
       });
       expect(screen.getByTestId('embedded-database-title').textContent).toBe('Renamed Database');
     });
@@ -148,6 +148,8 @@ describe('DatabaseTabs embedded database title rename', () => {
       eventEmitter.emit(APP_EVENTS.VIEW_META_CHANGED, renamedContainer);
     });
 
+    expect(screen.getByTestId('rename-target-name').textContent).toBe('Renamed Database');
+
     const remotelyRenamedContainer = { ...databaseContainer, name: 'Remote Database' };
 
     await act(async () => {
@@ -155,5 +157,40 @@ describe('DatabaseTabs embedded database title rename', () => {
     });
 
     expect(screen.getByTestId('embedded-database-title').textContent).toBe('Remote Database');
+    expect(screen.getByTestId('rename-target-name').textContent).toBe('Remote Database');
+  });
+
+  it('keeps an untitled database renameable', async () => {
+    const untitledContainer = { ...databaseContainer, name: '   ' };
+    const updateContainerPage = jest.fn().mockResolvedValue(undefined);
+    const eventEmitter = new EventEmitter();
+    const loadViewMeta = jest.fn(async (viewId: string) => {
+      if (viewId === databaseView.view_id) return databaseView;
+      if (viewId === untitledContainer.view_id) return untitledContainer;
+      return null;
+    });
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      isDocumentBlock: true,
+      loadViewMeta,
+      readOnly: false,
+      showActions: true,
+      updatePage: updateContainerPage,
+      eventEmitter,
+    } as DatabaseContextState);
+
+    render(
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        viewIds={[databaseView.view_id]}
+      />
+    );
+
+    const title = await screen.findByTestId('embedded-database-title-rename');
+
+    expect(title.textContent).toBe('untitled');
+    fireEvent.click(title);
+    expect(screen.getByTestId('rename-target-name').textContent).toBe('   ');
   });
 });

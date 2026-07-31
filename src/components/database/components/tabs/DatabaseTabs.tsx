@@ -1,4 +1,5 @@
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
@@ -11,6 +12,15 @@ import RenameModal from '@/components/app/view-actions/RenameModal';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { DatabaseViewTabs } from '@/components/database/components/tabs/DatabaseViewTabs';
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
+
+const TAB_BAR_CLASS_NAME =
+  '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden';
+
+interface RenameTarget {
+  viewId: string;
+  name: string;
+  isContainer: boolean;
+}
 
 export interface DatabaseTabBarProps {
   viewIds: string[];
@@ -55,6 +65,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     },
     ref
   ) => {
+    const { t } = useTranslation();
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
     const {
@@ -70,11 +81,26 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [pendingContainerName, setPendingContainerName] = useState<{ viewId: string; name: string } | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
-    const [renameView, setRenameView] = useState<View | null>(null);
+    const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
+
+    const updateRenameTargetFromMeta = useCallback((nextMeta: View) => {
+      setRenameTarget((current) => {
+        if (!current) return current;
+
+        const currentView =
+          nextMeta.view_id === current.viewId
+            ? nextMeta
+            : nextMeta.children.find((child) => child.view_id === current.viewId);
+
+        if (!currentView || current.name === currentView.name) return current;
+
+        return { ...current, name: currentView.name };
+      });
+    }, []);
 
     const reloadView = useCallback(async () => {
       if (!loadViewMeta) return;
@@ -148,14 +174,31 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     useEffect(() => {
       const handleViewMetaChanged = (updatedView: View) => {
         setMeta((current) => {
-          if (!current || current.view_id !== updatedView.view_id) return current;
+          if (!current) return current;
 
-          return {
-            ...current,
+          if (current.view_id === updatedView.view_id) {
+            return {
+              ...current,
+              ...updatedView,
+              children: current.children,
+            };
+          }
+
+          const childIndex = current.children.findIndex((child) => child.view_id === updatedView.view_id);
+
+          if (childIndex < 0) return current;
+
+          const children = [...current.children];
+
+          children[childIndex] = {
+            ...children[childIndex],
             ...updatedView,
-            children: current.children,
+            children: children[childIndex].children,
           };
+
+          return { ...current, children };
         });
+        updateRenameTargetFromMeta(updatedView);
       };
 
       if (eventEmitter) {
@@ -167,14 +210,20 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           eventEmitter.off(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
         }
       };
-    }, [eventEmitter]);
+    }, [eventEmitter, updateRenameTargetFromMeta]);
 
     const openRenameModal = useCallback(
       (view: View) => {
         const fromMeta =
           meta?.view_id === view.view_id ? meta : meta?.children.find((child) => child.view_id === view.view_id);
 
-        setRenameView(fromMeta ?? view);
+        // The live tab name wins over lagging outline metadata. Only retain
+        // interaction state; current metadata continues to live in `meta`.
+        setRenameTarget({
+          viewId: view.view_id,
+          name: view.name,
+          isContainer: isDatabaseContainer(fromMeta ?? view),
+        });
       },
       [meta]
     );
@@ -222,14 +271,6 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       setPendingContainerName(null);
     }, [databasePageId]);
 
-    const className = useMemo(() => {
-      const classList = [
-        '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden',
-      ];
-
-      return classList.join(' ');
-    }, []);
-
     useEffect(() => {
       const preventDefault = (e: Event) => {
         e.preventDefault();
@@ -247,28 +288,37 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [menuViewId]);
 
-    const embeddedDatabaseName =
-      context.isDocumentBlock && meta && isDatabaseContainer(meta)
-        ? (pendingContainerName?.viewId === meta.view_id ? pendingContainerName.name : meta.name).trim()
-        : '';
+    const embeddedDatabaseMeta = context.isDocumentBlock && isDatabaseContainer(meta) ? meta : null;
+    const embeddedDatabaseRawName = embeddedDatabaseMeta
+      ? pendingContainerName?.viewId === embeddedDatabaseMeta.view_id
+        ? pendingContainerName.name
+        : embeddedDatabaseMeta.name
+      : '';
+    const embeddedDatabaseName = embeddedDatabaseRawName.trim() || t('untitled');
 
     return (
       <div
         ref={ref}
-        className={className}
+        className={TAB_BAR_CLASS_NAME}
         style={{
           paddingLeft: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
-        {embeddedDatabaseName ? (
+        {embeddedDatabaseMeta ? (
           <h3 data-testid='embedded-database-title' className='w-full pb-3 text-xl font-semibold text-text-primary'>
-            {!readOnly && updateContainerPage && meta ? (
+            {!readOnly && updateContainerPage ? (
               <button
                 type='button'
                 data-testid='embedded-database-title-rename'
                 className='w-full cursor-pointer text-left'
-                onClick={() => setRenameView(meta)}
+                onClick={() =>
+                  setRenameTarget({
+                    viewId: embeddedDatabaseMeta.view_id,
+                    name: embeddedDatabaseRawName,
+                    isContainer: true,
+                  })
+                }
               >
                 {embeddedDatabaseName}
               </button>
@@ -332,15 +382,15 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           ) : null}
         </div>
 
-        {renameView && (
+        {renameTarget && (
           <RenameModal
             open
             onClose={() => {
-              setRenameView(null);
+              setRenameTarget(null);
             }}
-            view={renameView}
+            view={renameTarget}
             updatePage={async (viewId, payload) => {
-              if (isDatabaseContainer(renameView)) {
+              if (renameTarget.isContainer) {
                 if (!updateContainerPage) {
                   throw new Error('Database container rename is unavailable');
                 }
@@ -356,7 +406,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               await updateDatabaseView(viewId, payload);
               void reloadView();
             }}
-            viewId={renameView.view_id}
+            viewId={renameTarget.viewId}
           />
         )}
 
