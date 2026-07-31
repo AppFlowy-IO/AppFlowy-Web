@@ -63,10 +63,14 @@ export const DatabaseTabItem = memo(
       },
       [view]
     );
-    const getViewSnapshot = useCallback(
-      () => JSON.stringify([view.get(YjsDatabaseKey.name) ?? null, view.get(YjsDatabaseKey.layout) ?? null]),
-      [view]
-    );
+    const getViewSnapshot = useCallback(() => {
+      const name = view.get(YjsDatabaseKey.name) ?? null;
+      const layout = view.get(YjsDatabaseKey.layout);
+
+      // Rust-backed Yjs enum values may be BigInt. Normalize only the enum
+      // before serializing the primitive external-store snapshot.
+      return JSON.stringify([name, layout === null || layout === undefined ? null : String(layout)]);
+    }, [view]);
 
     // Y.Map mutates in place, so React.memo cannot detect a renamed tab from
     // prop identity alone. The primitive snapshot also avoids rerendering this

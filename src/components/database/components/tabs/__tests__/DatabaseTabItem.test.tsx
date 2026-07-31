@@ -23,6 +23,39 @@ jest.mock('react-i18next', () => ({
 const viewId = 'database-view-id';
 
 describe('DatabaseTabItem', () => {
+  it('renders a new database tab whose Yjs layout is BigInt', () => {
+    const view = {
+      get: jest.fn((key: YjsDatabaseKey) =>
+        key === YjsDatabaseKey.name ? 'Grid' : BigInt(DatabaseViewLayout.Grid)
+      ),
+      observe: jest.fn(),
+      unobserve: jest.fn(),
+    } as unknown as YDatabaseView;
+
+    expect(() =>
+      render(
+        <Tabs value={viewId}>
+          <TabsList>
+            <DatabaseTabItem
+              viewId={viewId}
+              view={view}
+              databasePageId={viewId}
+              menuViewId={null}
+              readOnly={false}
+              visibleViewIds={[viewId]}
+              onSetMenuViewId={jest.fn()}
+              onOpenDeleteModal={jest.fn()}
+              onOpenRenameModal={jest.fn()}
+              setTabRef={jest.fn()}
+            />
+          </TabsList>
+        </Tabs>
+      )
+    ).not.toThrow();
+
+    expect(screen.getByTestId(`view-tab-${viewId}`).textContent).toContain('Grid');
+  });
+
   it('rerenders when the mutable Yjs view name changes', () => {
     const doc = new Y.Doc();
     const view = doc.getMap('view') as YDatabaseView;
