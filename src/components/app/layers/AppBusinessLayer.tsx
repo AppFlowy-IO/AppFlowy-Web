@@ -434,35 +434,35 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
             findPermissionProbeView(activeViewId, ViewService.getCached(workspaceId, activeViewId))
         );
 
-        probe = resolvePermissionProbeTargetFromMetadata(workspaceId, activeViewId, outline)
-          .then((target) =>
-            AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType)
-              .then(
-                (permission): PermissionProbeResult => ({
-                  ...target,
-                  verdict: permission?.can_read === false ? 'denied' : 'allowed',
-                })
-              )
-              .catch((error: unknown): PermissionProbeResult => {
-                // Only a definitive permission denial counts. Transient/network/404
-                // errors must not evict local data (a brand-new page can briefly 404
-                // here before the server projects its permission records).
-                const code = (error as { code?: number } | null)?.code;
-
-                return {
-                  ...target,
-                  verdict: code === ERROR_CODE.NOT_HAS_PERMISSION || code === 403 ? 'denied' : 'unknown',
-                };
+        const probePermission = (target: PermissionProbeTarget) =>
+          AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType)
+            .then(
+              (permission): PermissionProbeResult => ({
+                ...target,
+                verdict: permission?.can_read === false ? 'denied' : 'allowed',
               })
-          )
-          .catch((error: unknown): PermissionProbeResult => {
-            const code = (error as { code?: number } | null)?.code;
+            )
+            .catch((error: unknown): PermissionProbeResult => {
+              // Only a definitive permission denial counts. Transient/network/404
+              // errors must not evict local data (a brand-new page can briefly 404
+              // here before the server projects its permission records).
+              const code = (error as { code?: number } | null)?.code;
 
-            return {
-              ...fallbackTarget,
-              verdict: code === ERROR_CODE.NOT_HAS_PERMISSION || code === 403 ? 'denied' : 'unknown',
-            };
-          });
+              return {
+                ...target,
+                verdict: code === ERROR_CODE.NOT_HAS_PERMISSION || code === 403 ? 'denied' : 'unknown',
+              };
+            });
+
+        probe = resolvePermissionProbeTargetFromMetadata(workspaceId, activeViewId, outline)
+          // Resolving the target reads folder metadata, which is not a permission
+          // signal: the workspace-scoped view endpoint 403s for guests, who hold
+          // view-level access without workspace membership. Treating that as a
+          // denial gated legitimately shared pages and purged their local copy.
+          // Fall back to the cached identity and let the object-permission API —
+          // which guests can call — return the authoritative verdict.
+          .catch(() => fallbackTarget)
+          .then(probePermission);
         if (permissionProbeCache.size >= PERMISSION_PROBE_CACHE_MAX) {
           const oldestKey = permissionProbeCache.keys().next().value;
 

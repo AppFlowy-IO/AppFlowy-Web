@@ -237,4 +237,46 @@ describe('AppBusinessLayer permission gates', () => {
     expect(AccessService.getObjectPermission).toHaveBeenLastCalledWith(workspaceId, routeViewId, Types.Document);
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
+
+  // A guest holds view-level access without workspace membership, so the
+  // workspace-scoped view endpoint 403s while the object-permission API still
+  // grants read. Resolving the probe target must not turn that into a denial.
+  it.each([{ code: 403 }, { code: 1012 }])(
+    'allows a shared view when metadata resolution fails with %p but permission grants read',
+    async (metadataError) => {
+      const eventEmitter = new EventEmitter();
+
+      (ViewService.get as jest.Mock).mockRejectedValue(metadataError);
+      (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+
+      // Empty outline: the shared page has not been folded into the guest's
+      // outline yet, which is what forces the network metadata lookup.
+      renderBusinessLayer(eventEmitter, []);
+
+      await waitFor(() => {
+        expect(AccessService.getObjectPermission).toHaveBeenCalledWith(workspaceId, routeViewId, Types.Document);
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByTestId('no-access').textContent).toBe('false');
+      expect(deleteCollabDB).not.toHaveBeenCalled();
+      expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+    }
+  );
+
+  it('still denies when metadata resolution fails and permission refuses read', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.get as jest.Mock).mockRejectedValue({ code: 403 });
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: false });
+
+    renderBusinessLayer(eventEmitter, []);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('no-access').textContent).toBe('true');
+    });
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+  });
 });
