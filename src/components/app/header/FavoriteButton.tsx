@@ -9,7 +9,17 @@ import { ReactComponent as StarIcon } from '@/assets/icons/star.svg';
 import { useAppFavorites, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
 
-export function FavoriteButton({ viewId }: { viewId: string }) {
+export function FavoriteButton({
+  viewId,
+  beforeToggle,
+}: {
+  viewId: string;
+  /**
+   * Runs before the favorite request; used by row pages to materialize the
+   * row-document view and push its title. Throwing aborts the toggle.
+   */
+  beforeToggle?: () => Promise<void>;
+}) {
   const { t } = useTranslation();
   const workspaceId = useCurrentWorkspaceId();
   const { favoriteViews, loadFavoriteViews } = useAppFavorites();
@@ -42,20 +52,22 @@ export function FavoriteButton({ viewId }: { viewId: string }) {
     setSubmitting(true);
     setOptimisticFavorite(next);
     try {
+      await beforeToggle?.();
       await PageService.favorite(workspaceId, viewId, next, next);
       // Refresh only the favorites list — favoriting doesn't change the outline
       // tree, so a full outline reload would be wasted work.
       await loadFavoriteViews?.();
       toast.success(next ? t('button.favoriteSuccessfully') : t('button.unfavoriteSuccessfully'));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
-      toast.error(e?.message ?? t('error.generalError'));
+    } catch {
+      // Desktop parity: a failed favorite toggle rolls back optimistically and
+      // shows the dedicated failure message (button.favoriteFailed).
+      toast.error(t('button.favoriteFailed'));
     } finally {
       // Drop the optimistic override; render falls back to the refreshed server state.
       setOptimisticFavorite(null);
       setSubmitting(false);
     }
-  }, [workspaceId, favoritesLoaded, isFavorite, viewId, loadFavoriteViews, t]);
+  }, [workspaceId, favoritesLoaded, isFavorite, viewId, beforeToggle, loadFavoriteViews, t]);
 
   return (
     <Tooltip title={isFavorite ? t('disclosureAction.unfavorite') : t('disclosureAction.favorite')}>

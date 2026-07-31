@@ -1,17 +1,33 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   RowMeta,
   RowMetaKey,
   useCellSelector,
+  useDatabase,
   useDatabaseContext,
   usePrimaryFieldId,
   useReadOnly,
   useRowMetaSelector,
 } from '@/application/database-yjs';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
-import { AppendBreadcrumb, CoverType, RowCoverType, ViewIconType, ViewLayout, ViewMetaCover } from '@/application/types';
+import { rowDocumentIdFromRowId, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
+import { setActiveRowPage } from '@/application/row-document/row-page-state';
+import {
+  AppendBreadcrumb,
+  CoverType,
+  RowCoverType,
+  ViewIconType,
+  ViewLayout,
+  ViewMetaCover,
+  YjsDatabaseKey,
+} from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
+import {
+  createRowDocumentViewNameBaseline,
+  normalizeRowDocumentViewName,
+  shouldSyncRowDocumentViewName,
+} from '@/components/database/components/header/rowDocumentViewName';
 import Title from '@/components/database/components/header/Title';
 import { getScrollParent } from '@/components/global-comment/utils';
 import ViewCoverActions from '@/components/view-meta/ViewCoverActions';
@@ -28,7 +44,12 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
   const cover = meta?.cover;
   const readOnly = useReadOnly();
   const [hoveredCover, setShowAction] = useState(false);
-  const isDatabaseRowPage = useDatabaseContext()?.isDatabaseRowPage;
+  const context = useDatabaseContext();
+  const isDatabaseRowPage = context?.isDatabaseRowPage;
+  const workspaceId = context?.workspaceId;
+  const database = useDatabase();
+  const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
+  const databaseViewId = context?.activeViewId || context?.databasePageId;
 
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
 
@@ -141,6 +162,60 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
       appendBreadcrumb?.(undefined);
     };
   }, [appendBreadcrumb]);
+
+  const title = (cell?.data as string) || '';
+  const documentId = meta?.documentId || rowDocumentIdFromRowId(rowId);
+  const hasDocument = meta?.isEmptyDocument === false;
+
+  // Publish the active row page so app chrome outside the database context
+  // (header favorite button) can target the row document instead of the database.
+  useEffect(() => {
+    if (!isDatabaseRowPage) return;
+
+    setActiveRowPage({
+      rowId,
+      documentId,
+      title,
+      source:
+        databaseId && databaseViewId
+          ? { database_id: databaseId, database_view_id: databaseViewId, row_id: rowId }
+          : null,
+      hasDocument,
+    });
+
+    return () => {
+      setActiveRowPage(null);
+    };
+  }, [isDatabaseRowPage, rowId, documentId, title, hasDocument, databaseId, databaseViewId]);
+
+  // Keep the row-document view name in sync with the primary cell so
+  // favorites/trash entries show the row title. Baseline on first run:
+  // an existing title is already current (explicit actions like favorite/delete
+  // push it themselves), while an initially blank title must sync its first value.
+  const titleSyncBaselineRef = useRef(createRowDocumentViewNameBaseline(documentId, title));
+
+  useEffect(() => {
+    const name = normalizeRowDocumentViewName(title);
+    const baseline = titleSyncBaselineRef.current;
+
+    if (baseline.documentId !== documentId) {
+      titleSyncBaselineRef.current = createRowDocumentViewNameBaseline(documentId, name);
+      return;
+    }
+
+    if (readOnly || !hasDocument || !documentId || !workspaceId) return;
+
+    if (!shouldSyncRowDocumentViewName(baseline.title, name)) return;
+
+    const timer = window.setTimeout(() => {
+      titleSyncBaselineRef.current = createRowDocumentViewNameBaseline(documentId, name);
+      void syncRowDocumentViewName(workspaceId, documentId, name);
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [readOnly, hasDocument, documentId, workspaceId, title]);
 
   useEffect(() => {
     const el = ref.current;

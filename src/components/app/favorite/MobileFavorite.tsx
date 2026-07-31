@@ -3,23 +3,18 @@ import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import MobileOutlineWithCover from '@/components/_shared/mobile-outline/MobileOutlineWithCover';
-import { useAppFavorites, useToView } from '@/components/app/app.hooks';
+import { useAppFavorites } from '@/components/app/app.hooks';
 
-function MobileFavorite ({
-  onClose,
-}: {
-  onClose: () => void;
-}) {
-  const {
-    favoriteViews,
-    loadFavoriteViews,
-  } = useAppFavorites();
+import { useFavoriteNavigation } from './useFavoriteNavigation';
+
+function MobileFavorite({ onClose }: { onClose: () => void }) {
+  const { favoriteViews, loadFavoriteViews } = useAppFavorites();
 
   useEffect(() => {
     void loadFavoriteViews?.();
   }, [loadFavoriteViews]);
 
-  const navigateToView = useToView();
+  const navigateToView = useFavoriteNavigation(favoriteViews);
   const { t } = useTranslation();
   const sortedViews = useMemo(() => {
     return orderBy(favoriteViews, ['favorited_at'], ['desc']);

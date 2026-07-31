@@ -97,6 +97,10 @@ export interface Column {
 export interface Row {
   id: string;
   height: number;
+  // Soft-delete tombstone mirroring collab-database's RowOrder.is_deleted.
+  // Tombstoned rows stay in row_orders (restorable from trash) but must be
+  // hidden from every rendered view.
+  is_deleted?: boolean;
 }
 
 function shouldLogDatabaseConditionPerformance() {
@@ -1374,7 +1378,8 @@ export function useRowOrdersSelector() {
   );
 
   const syncUnconditionedRowOrders = useCallback(() => {
-    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
 
     if (!originalRowOrders) return false;
 
@@ -1461,7 +1466,8 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
-    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
 
     if (!originalRowOrders) return;
 

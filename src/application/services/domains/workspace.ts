@@ -13,6 +13,7 @@ export {
   createWorkspaceInviteCode as createInviteCode,
   deleteWorkspaceInviteCode as deleteInviteCode,
   getMentionableUsers,
+  searchMentions,
   updatePageMention,
   joinWorkspaceByInvitationCode as joinByInvitationCode,
   getWorkspaceInfoByInvitationCode as getInfoByInvitationCode,

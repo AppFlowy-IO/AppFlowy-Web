@@ -16,6 +16,7 @@ function SharePanel({
   people,
   isLoadingPeople,
   onPeopleChange,
+  onPersonRemoved,
   hasFullAccess,
   currentUserAccessLevel,
   sectionType,
@@ -24,6 +25,7 @@ function SharePanel({
   people: IPeopleWithAccessType[];
   isLoadingPeople: boolean;
   onPeopleChange: () => Promise<void>;
+  onPersonRemoved: (email: string) => void;
   hasFullAccess: boolean;
   currentUserAccessLevel?: AccessLevel;
   sectionType: ShareSectionType;
@@ -70,8 +72,7 @@ function SharePanel({
   // Refresh people list after invite or other changes
   const refreshPeople = useCallback(async () => {
     try {
-      await loadMentionableData();
-      await onPeopleChange();
+      await Promise.all([loadMentionableData(), onPeopleChange()]);
       // eslint-disable-next-line
     } catch (error: any) {
       notify.error(error.message);
@@ -135,8 +136,10 @@ function SharePanel({
           people={people}
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
+          onPersonRemoved={onPersonRemoved}
           hasFullAccess={hasFullAccess}
           canGrantFullAccess={hasFullAccess}
+          sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} />
         <CopyLink />

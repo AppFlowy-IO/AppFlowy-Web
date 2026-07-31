@@ -10,6 +10,7 @@ import { ReactComponent as AddIcon } from '@/assets/icons/add_new_page.svg';
 import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import RelationRowItem from '@/components/database/components/cell/relation/RelationRowItem';
+import { getLiveRelationRowIds } from '@/components/database/components/cell/relation/relationRowOrders';
 import { useNavigationKey } from '@/components/database/components/cell/relation/useNavigationKey';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
@@ -147,7 +148,7 @@ function RelationCellMenuContent({
         const views = database.get(YjsDatabaseKey.views);
         const view = views.get(selectedViewId);
         const rows = view.get(YjsDatabaseKey.row_orders);
-        const ids = rows.toArray().map((row) => row.id);
+        const ids = getLiveRelationRowIds(rows.toArray());
 
         setRowIds(ids);
       } catch (e) {

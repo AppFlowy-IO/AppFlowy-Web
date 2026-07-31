@@ -31,6 +31,7 @@ jest.mock('lodash-es', () => ({
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getShareWithMe: jest.fn(),
+    invalidateShareDetailCache: jest.fn(),
   },
   ViewService: {
     get: jest.fn(),

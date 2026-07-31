@@ -224,7 +224,7 @@ export function useAppViewId() {
   return context.viewId;
 }
 
-/** Memoized `{ notFound, deleted }` error flags for the current view. */
+/** Memoized `{ notFound, deleted, noAccess }` error flags for the current view. */
 export function useViewErrorStatus() {
   const context = useContext(AppNavigationContext);
 
@@ -235,7 +235,8 @@ export function useViewErrorStatus() {
   return useMemo(() => ({
     notFound: context.notFound,
     deleted: context.viewHasBeenDeleted,
-  }), [context.notFound, context.viewHasBeenDeleted]);
+    noAccess: context.viewNoAccess,
+  }), [context.notFound, context.viewHasBeenDeleted, context.viewNoAccess]);
 }
 
 /** The breadcrumb trail, or undefined if outside AppProvider. Does not throw. */

@@ -13,11 +13,51 @@ import { getRowKey } from '@/application/database-yjs/row_meta';
 import { createRow } from '@/application/services/js-services/cache';
 import {
   YDatabase,
-  YDatabaseView,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
 import { Log } from '@/utils/log';
+
+interface RowOrderEntry {
+  id?: string;
+  is_deleted?: boolean;
+}
+
+/**
+ * Publishing must not expose rows that only remain in the live collab as
+ * restoreable tombstones. Clone the database document so those entries can be
+ * removed without mutating the open database or its undo history.
+ */
+function createDatabasePublishSnapshot(dbDoc: Y.Doc): { doc: Y.Doc; rowIds: string[] } {
+  const publishDoc = new Y.Doc({ guid: dbDoc.guid });
+
+  Y.applyUpdate(publishDoc, Y.encodeStateAsUpdate(dbDoc));
+
+  const sharedRoot = publishDoc.getMap(YjsEditorKey.data_section);
+  const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+  const rowIdSet = new Set<string>();
+  const views = database?.get(YjsDatabaseKey.views);
+
+  publishDoc.transact(() => {
+    views?.forEach((view) => {
+      const rowOrders = view.get(YjsDatabaseKey.row_orders);
+
+      if (!rowOrders) return;
+
+      for (let index = rowOrders.length - 1; index >= 0; index -= 1) {
+        const row = rowOrders.get(index) as RowOrderEntry | undefined;
+
+        if (row?.is_deleted) {
+          rowOrders.delete(index);
+        } else if (row?.id) {
+          rowIdSet.add(row.id);
+        }
+      }
+    });
+  }, 'filterTombstonedRowsForPublish');
+
+  return { doc: publishDoc, rowIds: Array.from(rowIdSet) };
+}
 
 /**
  * Gather all database collab data needed for publishing.
@@ -48,29 +88,9 @@ export async function gatherDatabasePublishData(
 
   const actualDatabaseId = databaseIdHint || db.get(YjsDatabaseKey.id) || dbDoc.guid || viewId;
 
-  // 2. Collect all unique row IDs from all views
-  const rowIdSet = new Set<string>();
-  const views = db.get(YjsDatabaseKey.views);
-
-  if (views) {
-    views.forEach((_value: unknown, key: string) => {
-      const view = views.get(key) as YDatabaseView | undefined;
-
-      if (!view) return;
-      const rowOrders = view.get(YjsDatabaseKey.row_orders);
-
-      if (!rowOrders) return;
-      for (let i = 0; i < rowOrders.length; i++) {
-        const row = rowOrders.get(i) as { id?: string } | undefined;
-
-        if (row?.id) {
-          rowIdSet.add(row.id);
-        }
-      }
-    });
-  }
-
-  const rowIds = Array.from(rowIdSet);
+  // 2. Build an isolated publish snapshot. Tombstoned row orders are removed
+  //    from both the encoded database collab and the row-collab work list.
+  const { doc: publishDbDoc, rowIds } = createDatabasePublishSnapshot(dbDoc);
 
   Log.debug('[gatherDatabasePublishData]', {
     viewId,
@@ -79,7 +99,9 @@ export async function gatherDatabasePublishData(
   });
 
   // 3. Encode database collab
-  const databaseCollab = Array.from(Y.encodeStateAsUpdate(dbDoc));
+  const databaseCollab = Array.from(Y.encodeStateAsUpdate(publishDbDoc));
+
+  publishDbDoc.destroy();
 
   // 4. Encode each row collab
   const databaseRowCollabs: Record<string, number[]> = {};
