@@ -119,34 +119,27 @@ describe('DatabaseTabs', () => {
     });
   });
 
-  it('does not let stale outline metadata override a loaded Yjs view name', async () => {
-    const views = new Map<string, object>();
+  it('passes outline names for views loaded in Yjs (folder names are the source of truth, like desktop)', async () => {
+    // Desktop renames only update the folder view; the database collab keeps
+    // its creation-time layout default ("Grid"). The outline name must win
+    // even when the view's collab is loaded.
+    const views = new Map([[databaseView.view_id, {}]]);
+    const renamedContainer: View = {
+      ...databaseContainer,
+      children: [{ ...databaseView, name: 'kkk' }],
+    };
 
     (useDatabase as jest.Mock).mockReturnValue({
       get: () => views,
     });
     (useDatabaseContext as jest.Mock).mockReturnValue({
       isDocumentBlock: true,
-      loadViewMeta: jest.fn(async () => databaseContainer),
+      loadViewMeta: jest.fn(async () => renamedContainer),
       readOnly: false,
       showActions: true,
     } as DatabaseContextState);
 
-    const tabs = (
-      <DatabaseTabs
-        databasePageId={databaseView.view_id}
-        selectedViewId={databaseView.view_id}
-        viewIds={[databaseView.view_id]}
-      />
-    );
-    const { rerender } = render(tabs);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('database-view-tabs').textContent).toContain('Grid');
-    });
-
-    views.set(databaseView.view_id, {});
-    rerender(
+    render(
       <DatabaseTabs
         databasePageId={databaseView.view_id}
         selectedViewId={databaseView.view_id}
@@ -155,7 +148,7 @@ describe('DatabaseTabs', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('database-view-tabs').textContent).toContain('Yjs view name');
+      expect(screen.getByTestId('database-view-tabs').textContent).toContain('kkk');
     });
   });
 

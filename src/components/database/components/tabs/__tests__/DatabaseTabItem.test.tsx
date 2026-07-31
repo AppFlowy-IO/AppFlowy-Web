@@ -56,6 +56,39 @@ describe('DatabaseTabItem', () => {
     expect(screen.getByTestId(`view-tab-${viewId}`).textContent).toContain('Grid');
   });
 
+  it('prefers the folder/outline name over the collab layout-default name (desktop parity)', () => {
+    // Desktop creates database views with the layout name ("Grid") in the
+    // database collab and never updates it on rename — the folder view holds
+    // the user-visible name ("kkk").
+    const doc = new Y.Doc();
+    const view = doc.getMap('view') as YDatabaseView;
+
+    view.set(YjsDatabaseKey.name, 'Grid');
+    view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+
+    render(
+      <Tabs value={viewId}>
+        <TabsList>
+          <DatabaseTabItem
+            viewId={viewId}
+            view={view}
+            databasePageId={viewId}
+            nameOverride='kkk'
+            menuViewId={null}
+            readOnly={false}
+            visibleViewIds={[viewId]}
+            onSetMenuViewId={jest.fn()}
+            onOpenDeleteModal={jest.fn()}
+            onOpenRenameModal={jest.fn()}
+            setTabRef={jest.fn()}
+          />
+        </TabsList>
+      </Tabs>
+    );
+
+    expect(screen.getByTestId(`view-tab-${viewId}`).textContent).toContain('kkk');
+  });
+
   it('rerenders when the mutable Yjs view name changes', () => {
     const doc = new Y.Doc();
     const view = doc.getMap('view') as YDatabaseView;

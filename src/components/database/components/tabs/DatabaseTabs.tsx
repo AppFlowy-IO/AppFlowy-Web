@@ -1,10 +1,10 @@
-import { forwardRef, useCallback, useEffect, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { UIVariant, View, YjsDatabaseKey } from '@/application/types';
+import { View, YjsDatabaseKey } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -228,30 +228,27 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       [meta]
     );
 
-    const viewNameById = (() => {
+    // Folder/outline names are the tab-label source of truth, matching desktop:
+    // desktop renames only ever update the folder view, while the database
+    // collab's view name keeps its creation-time layout default ("Grid",
+    // "Board", ...). The Yjs name is only a fallback for views missing from
+    // the outline. Renames stay live because folder changes stream in through
+    // OUTLINE_LOADED / VIEW_META_CHANGED and patch `meta`.
+    const viewNameById = useMemo(() => {
       if (!meta) return undefined;
 
-      // Outline metadata can lag behind the database collab after a rename.
-      // In the editable app, only use it as a fallback for views that are not
-      // loaded in Yjs. Published pages intentionally prefer outline names.
       if (isDatabaseContainer(meta)) {
         const mapping: Record<string, string> = {};
 
         for (const child of meta.children ?? []) {
-          if (context.variant === UIVariant.Publish || !views?.has(child.view_id)) {
-            mapping[child.view_id] = child.name;
-          }
+          mapping[child.view_id] = child.name;
         }
 
         return mapping;
       }
 
-      return context.variant !== UIVariant.Publish && views?.has(meta.view_id)
-        ? undefined
-        : {
-            [meta.view_id]: meta.name,
-          };
-    })();
+      return { [meta.view_id]: meta.name };
+    }, [meta]);
 
     useEffect(() => {
       void reloadView();
