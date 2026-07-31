@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import type { MutableRefObject } from 'react';
 
-import { PublishService } from '@/application/services/domains';
+import { PageService, PublishService } from '@/application/services/domains';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import { publishCollabs } from '@/application/services/js-services/http/publish-api';
@@ -13,7 +13,9 @@ import { usePageOperations } from '../usePageOperations';
 jest.mock('@/application/services/domains', () => ({
   BillingService: {},
   FileService: {},
-  PageService: {},
+  PageService: {
+    add: jest.fn(),
+  },
   PublishService: {
     publish: jest.fn(),
     unpublish: jest.fn(),
@@ -133,5 +135,29 @@ describe('usePageOperations publish', () => {
 
     expect(getDatabaseIdForViewId).not.toHaveBeenCalled();
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
+  });
+});
+
+describe('usePageOperations addPage', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not refresh the sidebar outline when creation fails', async () => {
+    const createError = new Error('create failed');
+
+    jest.mocked(PageService.add).mockRejectedValueOnce(createError);
+    const { result, loadOutline } = renderUsePageOperations();
+
+    await act(async () => {
+      await expect(
+        result.current.addPage('parent-view-id', {
+          layout: ViewLayout.AIChat,
+          name: 'New chat',
+        })
+      ).rejects.toBe(createError);
+    });
+
+    expect(loadOutline).not.toHaveBeenCalled();
   });
 });

@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
-import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import { getStoredCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import {
   useDatabase,
   useDatabaseContext,
@@ -16,7 +16,9 @@ import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/applicat
 import { RelationLimit, RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { createRelationField, setRelationTypeOptionValues } from '@/application/database-yjs/fields/relation/utils';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
+import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   FieldId,
@@ -56,44 +58,7 @@ function uniq(ids: RowId[]) {
 // instance keeps our binding to a single owner per doc.
 const boundRelatedDocs = new WeakSet<YDoc>();
 
-export function getRelationRowIdsFromCell(cell?: YDatabaseCell): RowId[] {
-  if (!cell) return [];
-
-  // useSwitchPropertyType preserves the original cell payload when a non-relation
-  // column is converted to Relation (string text, Y.Array file blobs, etc.).
-  // Treat anything coming from a different source type as empty so foreign data
-  // never gets interpreted as relation row IDs.
-  const sourceType = cell.get(YjsDatabaseKey.source_field_type);
-
-  if (sourceType !== undefined && Number(sourceType) !== FieldType.Relation) {
-    return [];
-  }
-
-  const data = cell.get(YjsDatabaseKey.data);
-
-  if (!data) return [];
-  if (data instanceof Y.Array) {
-    return uniq(data.toArray().map(String));
-  }
-
-  if (Array.isArray(data)) {
-    return uniq(data.map(String));
-  }
-
-  if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data);
-
-      if (Array.isArray(parsed)) {
-        return uniq(parsed.map(String));
-      }
-    } catch {
-      return uniq(data.split(',').map((id) => id.trim()));
-    }
-  }
-
-  return [];
-}
+export { getRelationRowIdsFromCell };
 
 function getDatabaseFromDoc(doc: YDoc): YDatabase | null {
   return (doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined) ?? null;
@@ -123,8 +88,9 @@ function getOrCreateRelationCell(rowDoc: YDoc, fieldId: FieldId): YDatabaseCell 
   }
 
   const data = cell.get(YjsDatabaseKey.data);
+  const sourceType = getStoredCellFieldType(cell, FieldType.Relation);
 
-  if (!(data instanceof Y.Array)) {
+  if (sourceType !== FieldType.Relation || !(data instanceof Y.Array)) {
     const relationData = new Y.Array<string>();
     const existing = getRelationRowIdsFromCell(cell);
 
@@ -133,10 +99,9 @@ function getOrCreateRelationCell(rowDoc: YDoc, fieldId: FieldId): YDatabaseCell 
     }
 
     cell.set(YjsDatabaseKey.data, relationData);
-    // The cell now holds canonical relation row IDs, so the source-type marker
-    // (carried over from useSwitchPropertyType) must not keep filtering reads
-    // through getRelationRowIdsFromCell as foreign data.
-    cell.delete(YjsDatabaseKey.source_field_type);
+    setCellStoredType(cell, FieldType.Relation);
+    // The cell now holds canonical relation row IDs, so legacy source metadata
+    // must not keep filtering reads as foreign data.
   }
 
   return cell;
@@ -204,11 +169,10 @@ function setRelationCellRowIds(rowDoc: YDoc, fieldId: FieldId, rowIds: RowId[]) 
     }
 
     cell.set(YjsDatabaseKey.data, data);
-    cell.set(YjsDatabaseKey.field_type, FieldType.Relation);
+    setCellStoredType(cell, FieldType.Relation);
     // Drop any leftover source-type marker — getRelationRowIdsFromCell uses it
     // to ignore preserved-on-conversion payloads, but we just wrote canonical
     // relation data so the marker would now suppress real reads.
-    cell.delete(YjsDatabaseKey.source_field_type);
     cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
   });
@@ -326,37 +290,6 @@ function collectDatabaseRowIds(database: YDatabase, loadedRowIds: RowId[] = []) 
   return Array.from(rowIds);
 }
 
-// `createRow` opens / binds a row doc but the `database_row` map arrives
-// asynchronously from sync. Without waiting, getOrCreateRelationCell sees no
-// row and silently drops the reciprocal write — leaving two-way relations
-// pointing at a row that never got a back-link. Wait briefly for the data to
-// arrive; resolve null on timeout so we don't block forever on a permanently
-// missing row.
-const ROW_HYDRATION_TIMEOUT_MS = 3000;
-
-function waitForRowHydration(rowDoc: YDoc, timeoutMs = ROW_HYDRATION_TIMEOUT_MS): Promise<YDoc | null> {
-  if (hasRowConditionData(rowDoc)) return Promise.resolve(rowDoc);
-
-  return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value: YDoc | null) => {
-      if (settled) return;
-      settled = true;
-      rowDoc.off('update', listener);
-      clearTimeout(timer);
-      resolve(value);
-    };
-
-    const listener = () => {
-      if (hasRowConditionData(rowDoc)) finish(rowDoc);
-    };
-
-    const timer = setTimeout(() => finish(null), timeoutMs);
-
-    rowDoc.on('update', listener);
-  });
-}
-
 async function loadRowDoc(args: {
   databaseDoc: YDoc;
   rowId: RowId;
@@ -370,7 +303,7 @@ async function loadRowDoc(args: {
 
   const rowDoc = await args.createRow(getRowKey(args.databaseDoc.guid, args.rowId));
 
-  return waitForRowHydration(rowDoc);
+  return waitForDatabaseRowHydration(rowDoc);
 }
 
 async function loadRelatedDatabaseDoc(args: {

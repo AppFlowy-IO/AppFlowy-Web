@@ -7,6 +7,7 @@ import { resolveActiveDatabaseViewId } from '@/application/view-utils';
 import type {
   AppendBreadcrumb,
   CreateRow,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   RowId,
@@ -35,7 +36,7 @@ export interface DatabaseProps {
   /**
    * Load a row sub-document from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   viewMeta: ViewMetaProps;

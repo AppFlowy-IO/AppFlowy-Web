@@ -12,7 +12,7 @@ import {
   collabIndexedDBExists,
 } from '@/application/db';
 import * as httpApi from '@/application/services/js-services/http/http_api';
-import { handleMessage } from '@/application/services/js-services/sync-protocol';
+import { handleMessage, type SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, User, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -80,23 +80,26 @@ jest.mock('@/application/sync-outbox', () => {
   };
 
   return {
-    enqueueOutboxUpdate: jest.fn((record: { objectId: string; collabType: number; version?: string | null; payload: Uint8Array }) => {
-      const queued = ctx.pending.get(record.objectId) ?? [];
+    enqueueOutboxUpdate: jest.fn(
+      (record: { objectId: string; collabType: number; version?: string | null; payload: Uint8Array }) => {
+        const queued = ctx.pending.get(record.objectId) ?? [];
 
-      queued.push({
-        collabMessage: {
-          objectId: record.objectId,
-          collabType: record.collabType,
-          update: {
-            flags: 0,
-            payload: record.payload,
-            version: record.version ?? undefined,
+        queued.push({
+          collabMessage: {
+            objectId: record.objectId,
+            collabType: record.collabType,
+            update: {
+              flags: 0,
+              payload: record.payload,
+              version: record.version ?? undefined,
+            },
           },
-        },
-      });
-      ctx.pending.set(record.objectId, queued);
-      drain(record.objectId);
-    }),
+        });
+        ctx.pending.set(record.objectId, queued);
+        drain(record.objectId);
+        return Promise.resolve(true);
+      }
+    ),
     deleteOutboxByObjectId: jest.fn(async (objectId: string) => {
       ctx.pending.delete(objectId);
     }),
@@ -106,6 +109,7 @@ jest.mock('@/application/sync-outbox', () => {
       for (const id of ids) drain(id);
       return true;
     }),
+    shouldRouteUpdateThroughOutbox: jest.fn(() => false),
     configureDrain: jest.fn((config: DrainConfig) => {
       ctx.config = config;
       for (const id of Array.from(ctx.pending.keys())) drain(id);
@@ -223,7 +227,9 @@ const flushPromises = async () => {
 
 const mockedOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
 const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
-const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
+const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<
+  typeof openRowCollabDBWithProvider
+>;
 const mockedListCollabIndexedDBNames = listCollabIndexedDBNames as jest.MockedFunction<typeof listCollabIndexedDBNames>;
 const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
 const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMessage>;
@@ -256,6 +262,120 @@ const resetCommonMocks = () => {
   mockedCollabFullSyncBatch.mockReset();
   mockedRevertCollabVersion.mockReset();
 };
+
+describe('useSync reconnect binding', () => {
+  beforeEach(() => {
+    jest.useRealTimers();
+    resetCommonMocks();
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('does not bind registered documents twice when the websocket opens for the first time', () => {
+    const ws = {
+      ...createWs(),
+      readyState: WebSocket.CONNECTING,
+    } as AppflowyWebSocketType;
+    const bc = createBroadcastChannel();
+    const doc = createDoc('03030303-0303-4303-8303-030303030303');
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+    const sendMessage = ws.sendMessage as jest.Mock;
+    const postMessage = bc.postMessage as jest.Mock;
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      ws.readyState = WebSocket.OPEN;
+      rerender();
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(1);
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('starts a fresh manifest exchange for every registered document when the websocket reopens', () => {
+    const ws = {
+      ...createWs(),
+      readyState: WebSocket.OPEN,
+    } as AppflowyWebSocketType;
+    const bc = createBroadcastChannel();
+    const docA = createDoc('01010101-0101-4101-8101-010101010101');
+    const docB = createDoc('02020202-0202-4202-8202-020202020202');
+
+    docA.getMap('root').set('value', 'a');
+    docB.getMap('root').set('value', 'b');
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+    let contextA: SyncContext | undefined;
+
+    act(() => {
+      contextA = result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
+      result.current.registerSyncContext({ doc: docB, collabType: Types.DatabaseRow });
+    });
+
+    contextA!.lastMessageId = { timestamp: 42, counter: 7 };
+    const sendMessage = ws.sendMessage as jest.Mock;
+    const postMessage = bc.postMessage as jest.Mock;
+
+    sendMessage.mockClear();
+    postMessage.mockClear();
+
+    act(() => {
+      ws.readyState = WebSocket.CLOSED;
+      rerender();
+    });
+
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      ws.readyState = WebSocket.OPEN;
+      rerender();
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(sendMessage.mock.calls.map(([message]) => message.collabMessage.objectId)).toEqual([docA.guid, docB.guid]);
+    expect(sendMessage.mock.calls[0][0]).toEqual({
+      collabMessage: {
+        objectId: docA.guid,
+        collabType: Types.Document,
+        syncRequest: {
+          stateVector: Y.encodeStateVector(docA),
+          lastMessageId: { timestamp: 42, counter: 7 },
+          version: docA.version,
+        },
+      },
+    });
+    expect(sendMessage.mock.calls[1][0]).toEqual({
+      collabMessage: {
+        objectId: docB.guid,
+        collabType: Types.DatabaseRow,
+        syncRequest: {
+          stateVector: Y.encodeStateVector(docB),
+          lastMessageId: { timestamp: 0, counter: 0 },
+          version: docB.version,
+        },
+      },
+    });
+
+    rerender();
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+
+    unmount();
+    docA.destroy();
+    docB.destroy();
+  });
+});
 
 describe('useSync deferred cleanup', () => {
   beforeEach(() => {
@@ -374,7 +494,7 @@ describe('useSync deferred cleanup', () => {
           collabType: Types.DatabaseRow,
           update: expect.any(Object),
         }),
-      }),
+      })
     );
 
     outboxMock.clearDrainConfig();
@@ -424,6 +544,205 @@ describe('useSync version-gated message handling', () => {
 
     unmount();
     doc.destroy();
+  });
+
+  it('accepts a no-RID HTTP result when an authoritative version supersedes the local doc', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '44444444-4444-4444-8444-444444444446';
+    const localVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b510';
+    const serverVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b511';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+
+    doc.version = localVersion;
+    nextDoc.version = serverVersion;
+    mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+    mockedHandleMessage.mockClear();
+
+    await act(async () => {
+      await result.current.applyHttpFullSyncResult({
+        objectId,
+        collabType: Types.Document,
+        missingUpdate: new Uint8Array(),
+        serverStateVector: new Uint8Array([0]),
+        collabVersion: serverVersion,
+      });
+    });
+
+    expect(mockedOpenCollabDB).toHaveBeenCalledWith(objectId, {
+      expectedVersion: serverVersion,
+      currentUser: undefined,
+    });
+    expect(mockedHandleMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ doc: nextDoc }),
+      expect.objectContaining({
+        objectId,
+        syncRequest: expect.objectContaining({
+          version: serverVersion,
+          stateVector: new Uint8Array([0]),
+          lastMessageId: undefined,
+        }),
+      })
+    );
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
+  });
+
+  it('does not finalize a version-only HTTP result for an inactive collab', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '44444444-4444-4444-8444-444444444447';
+    const serverVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b512';
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    await expect(
+      act(async () => {
+        await result.current.applyHttpFullSyncResult({
+          objectId,
+          collabType: Types.Document,
+          missingUpdate: new Uint8Array(),
+          serverStateVector: new Uint8Array([0]),
+          collabVersion: serverVersion,
+        });
+      })
+    ).rejects.toThrow(`HTTP full-sync result for ${objectId} was not applied to an active sync context`);
+
+    expect(mockedHandleMessage).not.toHaveBeenCalled();
+    expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+
+    unmount();
+  });
+
+  it('does not finalize a queued HTTP result when its context closes before apply', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const eventEmitter = new EventEmitter();
+    const objectId = '44444444-4444-4444-8444-444444444448';
+    const localVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b513';
+    const serverVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b514';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+    const deferredOpen = createDeferred<Y.Doc>();
+
+    doc.version = localVersion;
+    nextDoc.version = serverVersion;
+    mockedOpenCollabDB.mockImplementationOnce(() => deferredOpen.promise as Promise<Y.Doc>);
+    eventEmitter.once(APP_EVENTS.COLLAB_DOC_RESET, (payload: { doc: Y.Doc }) => payload.doc.destroy());
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    let httpApply!: Promise<void>;
+
+    act(() => {
+      ws.lastMessage = {
+        collabMessage: {
+          objectId,
+          collabType: Types.Document,
+          update: { version: serverVersion },
+        },
+      } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+
+      // The active context exists when this response is enqueued, but the
+      // preceding reset owns this object's queue and closes it before apply.
+      httpApply = result.current.applyHttpFullSyncResult({
+        objectId,
+        collabType: Types.Document,
+        missingUpdate: new Uint8Array(),
+        serverStateVector: new Uint8Array([0]),
+        collabVersion: serverVersion,
+      });
+    });
+
+    await waitFor(() => expect(mockedOpenCollabDB).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      deferredOpen.resolve(nextDoc);
+      await expect(httpApply).rejects.toThrow(
+        `HTTP full-sync result for ${objectId} was not applied to an active sync context`
+      );
+    });
+
+    unmount();
+  });
+
+  it('cancels an HTTP result queued behind a version reset without waiting for that reset', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '44444444-4444-4444-8444-444444444448';
+    const localVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b513';
+    const resetVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b514';
+    const staleHttpVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b515';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+    const resetOpen = createDeferred<Y.Doc>();
+
+    doc.version = localVersion;
+    nextDoc.version = resetVersion;
+    mockedOpenCollabDB.mockImplementationOnce(() => resetOpen.promise);
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+      ws.lastMessage = {
+        collabMessage: {
+          objectId,
+          collabType: Types.Document,
+          update: { version: resetVersion },
+        },
+      } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+    await waitFor(() => expect(mockedOpenCollabDB).toHaveBeenCalledTimes(1));
+
+    const controller = new AbortController();
+    const applyPromise = result.current.applyHttpFullSyncResult(
+      {
+        objectId,
+        collabType: Types.Document,
+        missingUpdate: new Uint8Array(),
+        serverStateVector: new Uint8Array([0]),
+        collabVersion: staleHttpVersion,
+      },
+      localVersion,
+      controller.signal
+    );
+    const rejection = expect(applyPromise).rejects.toMatchObject({ name: 'AbortError' });
+
+    controller.abort();
+    await rejection;
+
+    // Cancellation settles while the reset is still blocked. The stale HTTP
+    // result therefore cannot participate in the replacement context later.
+    expect(mockedHandleMessage).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resetOpen.resolve(nextDoc);
+      await resetOpen.promise;
+    });
+    await waitFor(() => expect(mockedHandleMessage).toHaveBeenCalledTimes(1));
+    expect(mockedHandleMessage).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        update: expect.objectContaining({ version: staleHttpVersion }),
+      })
+    );
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
   });
 
   it('resets when local version is known but incoming version is missing', async () => {
@@ -1211,6 +1530,151 @@ describe('useSync public API', () => {
     }
   });
 
+  it('clears the covered dirty edit after a routed manifest becomes durable', async () => {
+    jest.useFakeTimers();
+    mockedCollabFullSyncBatch.mockResolvedValue([]);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 1,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('cfcfcfcf-4444-4444-8444-cfcfcfcfcfcf');
+      const persisted = createDeferred<boolean>();
+      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+      let syncContext: SyncContext | undefined;
+
+      act(() => {
+        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('covered-edit', true);
+        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
+      });
+
+      await act(async () => {
+        persisted.resolve(true);
+        await flushPromises();
+      });
+
+      act(() => {
+        ws.readyState = 0;
+        rerender();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).not.toHaveBeenCalled();
+
+      unmount();
+      doc.destroy();
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the covered dirty edit when a routed manifest cannot be persisted', async () => {
+    jest.useFakeTimers();
+    mockedCollabFullSyncBatch.mockResolvedValue([]);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 1,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('cfcfcfcf-6666-4666-8666-cfcfcfcfcfcf');
+      const persisted = createDeferred<boolean>();
+      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+      let syncContext: SyncContext | undefined;
+
+      act(() => {
+        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('unpersisted-edit', true);
+        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
+      });
+
+      await act(async () => {
+        persisted.resolve(false);
+        await flushPromises();
+      });
+
+      act(() => {
+        ws.readyState = 0;
+        rerender();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+      expect(mockedCollabFullSyncBatch.mock.calls[0]?.[1]).toEqual([
+        expect.objectContaining({ objectId: doc.guid, collabType: Types.Document }),
+      ]);
+
+      unmount();
+      doc.destroy();
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps a newer dirty edit when an older routed manifest becomes durable', async () => {
+    jest.useFakeTimers();
+    mockedCollabFullSyncBatch.mockResolvedValue([]);
+
+    try {
+      const ws = {
+        ...createWs(),
+        readyState: 1,
+      } as AppflowyWebSocketType;
+      const bc = createBroadcastChannel();
+      const doc = createDoc('cfcfcfcf-5555-4555-8555-cfcfcfcfcfcf');
+      const persisted = createDeferred<boolean>();
+      const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+      let syncContext: SyncContext | undefined;
+
+      act(() => {
+        syncContext = result.current.registerSyncContext({ doc, collabType: Types.Document });
+        doc.getMap('root').set('covered-edit', true);
+        syncContext?.onManifestSync?.(doc.guid, persisted.promise);
+        doc.getMap('root').set('newer-edit', true);
+      });
+
+      await act(async () => {
+        persisted.resolve(true);
+        await flushPromises();
+      });
+
+      act(() => {
+        ws.readyState = 0;
+        rerender();
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+        await flushPromises();
+      });
+
+      expect(mockedCollabFullSyncBatch).toHaveBeenCalledTimes(1);
+      expect(mockedCollabFullSyncBatch.mock.calls[0]?.[1]).toEqual([
+        expect.objectContaining({ objectId: doc.guid, collabType: Types.Document }),
+      ]);
+
+      unmount();
+      doc.destroy();
+    } finally {
+      jest.runOnlyPendingTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('syncAllToServer sends one batch for all registered contexts', async () => {
     mockedCollabFullSyncBatch.mockResolvedValueOnce([]);
     const ws = createWs();
@@ -1266,6 +1730,48 @@ describe('useSync public API', () => {
     });
 
     expect(localDoc.getMap('root').get('server')).toBe('value');
+  });
+
+  it('applies a slow HTTP result through the normal message path with the active version and RID', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const localDoc = createDoc('efefefef-2222-4222-8222-efefefefefef') as Y.Doc & { version?: string };
+    const serverDoc = createDoc(localDoc.guid);
+    const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b500';
+    const messageId = { timestamp: 42, counter: 3 };
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    localDoc.version = version;
+    serverDoc.getMap('root').set('server', 'value');
+    const missingUpdate = Y.encodeStateAsUpdate(serverDoc, Y.encodeStateVector(localDoc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc: localDoc, collabType: Types.Document });
+    });
+    mockedHandleMessage.mockClear();
+
+    await act(async () => {
+      await result.current.applyHttpFullSyncResult({
+        objectId: localDoc.guid,
+        collabType: Types.Document,
+        missingUpdate,
+        serverStateVector: Y.encodeStateVector(serverDoc),
+        messageId,
+      });
+    });
+
+    expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        objectId: localDoc.guid,
+        collabType: Types.Document,
+        update: expect.objectContaining({
+          payload: missingUpdate,
+          version,
+          messageId,
+        }),
+      })
+    );
   });
 
   it('syncAllToServer sends sync request when HTTP missing update has dependencies', async () => {
@@ -1645,7 +2151,6 @@ describe('useSync queue guards and dedupe', () => {
 
     errorSpy.mockRestore();
   });
-
 });
 
 describe('useSync revertCollabVersion', () => {
@@ -1762,12 +2267,7 @@ describe('useSync revertCollabVersion', () => {
       await result.current.revertCollabVersion(doc.guid, targetVersion);
     });
 
-    expect(mockedRevertCollabVersion).toHaveBeenCalledWith(
-      workspaceId,
-      doc.guid,
-      Types.Document,
-      targetVersion
-    );
+    expect(mockedRevertCollabVersion).toHaveBeenCalledWith(workspaceId, doc.guid, Types.Document, targetVersion);
     expect(mockedOpenCollabDB).toHaveBeenCalledWith(doc.guid, {
       expectedVersion: targetVersion,
       currentUser: user.uid,

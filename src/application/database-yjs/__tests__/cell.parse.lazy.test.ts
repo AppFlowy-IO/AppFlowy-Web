@@ -4,9 +4,11 @@ jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, defaultValue: string) => defaultValue,
 }));
 
-import { getCellDataText } from '@/application/database-yjs/cell.parse';
+import { getCellDataText, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { SelectOption } from '@/application/database-yjs/fields';
+import { SelectOption, SelectOptionColor } from '@/application/database-yjs/fields';
+import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
+import { NumberFormat } from '@/application/database-yjs/fields/number/number.type';
 import { YDatabaseCell, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
 function createField(type: FieldType, typeOptionContent?: unknown): YDatabaseField {
@@ -27,10 +29,7 @@ function createCell(data: unknown, currentType: FieldType, sourceType?: FieldTyp
   const doc = new Y.Doc();
   const cell = doc.getMap('cell') as YDatabaseCell;
   cell.set(YjsDatabaseKey.data, data);
-  cell.set(YjsDatabaseKey.field_type, String(currentType));
-  if (sourceType !== undefined) {
-    cell.set(YjsDatabaseKey.source_field_type, String(sourceType));
-  }
+  cell.set(YjsDatabaseKey.field_type, String(sourceType ?? currentType));
   return cell;
 }
 
@@ -60,11 +59,11 @@ describe('lazy cell parsing parity with desktop', () => {
   });
 
   it('maps checklist selections to select option names when viewing as select', () => {
-    const option: SelectOption = { id: 'opt1', name: 'Alpha', color: 0 };
+    const option: SelectOption = { id: 'opt1', name: 'Alpha', color: SelectOptionColor.OptionColor1 };
     const field = createField(FieldType.SingleSelect, { options: [option], disable_color: false });
 
     const checklistJson = JSON.stringify({
-      options: [{ id: 'opt1', name: 'Alpha', color: 0 }],
+      options: [{ id: 'opt1', name: 'Alpha', color: SelectOptionColor.OptionColor1 }],
       selected_option_ids: ['opt1'],
     });
     const cell = createCell(checklistJson, FieldType.SingleSelect, FieldType.Checklist);
@@ -106,14 +105,85 @@ describe('Number field type conversions', () => {
   it('returns empty for non-numeric RichText to Number', () => {
     const field = createField(FieldType.Number);
     const cell = createCell('not a number', FieldType.Number, FieldType.RichText);
-    // Non-numeric text should either return empty or the original value
-    const result = getCellDataText(cell, field);
-    expect(result === '' || result === 'not a number').toBe(true);
+    expect(getCellDataText(cell, field)).toBe('');
+  });
+
+  it.each(['1e100', '0.1e29', '79228162514264337593543950336', '1e-29'])(
+    'rejects values outside Desktop rust_decimal range: %s',
+    (input) => {
+      const field = createField(FieldType.Number);
+      const cell = createCell(input, FieldType.Number, FieldType.RichText);
+
+      expect(getCellDataText(cell, field)).toBe('');
+    }
+  );
+
+  it.each([
+    ['79228162514264337593543950335', '79228162514264337593543950335'],
+    ['7.92281625142643375935439503356', '7.922816251426433759354395034'],
+  ])('matches Desktop rust_decimal precision for %s', (input, expected) => {
+    const field = createField(FieldType.Number);
+    const cell = createCell(input, FieldType.Number, FieldType.RichText);
+
+    expect(getCellDataText(cell, field)).toBe(expected);
   });
 
   it('handles empty string from RichText to Number', () => {
     const field = createField(FieldType.Number);
     const cell = createCell('', FieldType.Number, FieldType.RichText);
+    expect(getCellDataText(cell, field)).toBe('');
+  });
+
+  it.each([
+    ['0.5', '50%'],
+    ['50', '5,000%'],
+  ])('uses Desktop Percent scaling for %s', (input, expected) => {
+    const field = createField(FieldType.Number);
+    const typeOption = new Y.Map();
+
+    typeOption.set(YjsDatabaseKey.format, NumberFormat.Percent);
+    field.get(YjsDatabaseKey.type_option)?.set(String(FieldType.Number), typeOption);
+
+    const cell = createCell(input, FieldType.Number, FieldType.RichText);
+    const parsed = parseYDatabaseCellToCell(cell, field);
+
+    expect(EnhancedBigStats.parse(String(parsed.data), NumberFormat.Percent)).toBe(expected);
+  });
+
+  it.each([
+    ['0.5', '50%'],
+    ['50', '5,000%'],
+  ])('stringifies a stored Percent number as Desktop text for %s', (input, expected) => {
+    const field = createField(FieldType.RichText);
+    const typeOptions = new Y.Map();
+    const numberOption = new Y.Map();
+
+    numberOption.set(YjsDatabaseKey.format, NumberFormat.Percent);
+    typeOptions.set(String(FieldType.Number), numberOption);
+    field.set(YjsDatabaseKey.type_option, typeOptions);
+
+    const cell = createCell(input, FieldType.RichText, FieldType.Number);
+
+    expect(getCellDataText(cell, field)).toBe(expected);
+  });
+
+  it.each([
+    ['3h', '10800000'],
+    ['45m', '2700000'],
+    ['2h 15m', '8100000'],
+    ['9:30', '34200000'],
+    ['09:30:45', '34245000'],
+  ])('matches Desktop RichText -> Time parsing for %s', (input, expected) => {
+    const field = createField(FieldType.Time);
+    const cell = createCell(input, FieldType.Time, FieldType.RichText);
+
+    expect(getCellDataText(cell, field)).toBe(expected);
+  });
+
+  it.each(['1.5', '1e3', '0x10', 'Infinity'])('rejects non-i64 Desktop time input %s', (input) => {
+    const field = createField(FieldType.Time);
+    const cell = createCell(input, FieldType.Time, FieldType.RichText);
+
     expect(getCellDataText(cell, field)).toBe('');
   });
 
@@ -141,10 +211,11 @@ describe('Number field type conversions', () => {
   });
 
   // Number -> Checkbox
-  it('non-zero number becomes checked checkbox', () => {
+  it('unsupported Number -> Checkbox renders the default unchecked value without mutating data', () => {
     const field = createField(FieldType.Checkbox);
     const cell = createCell('1', FieldType.Checkbox, FieldType.Number);
-    expect(getCellDataText(cell, field)).toBe('Yes');
+    expect(getCellDataText(cell, field)).toBe('No');
+    expect(cell.get(YjsDatabaseKey.data)).toBe('1');
   });
 
   it('zero becomes unchecked checkbox', () => {
@@ -154,17 +225,18 @@ describe('Number field type conversions', () => {
   });
 
   // Time -> Number (potentially lossy)
-  it('time milliseconds to Number is preserved', () => {
+  it('unsupported Time -> Number renders empty while preserving the raw value', () => {
     const field = createField(FieldType.Number);
     const cell = createCell('36000000', FieldType.Number, FieldType.Time);
-    expect(getCellDataText(cell, field)).toBe('36000000');
+    expect(getCellDataText(cell, field)).toBe('');
+    expect(cell.get(YjsDatabaseKey.data)).toBe('36000000');
   });
 
   // Number -> Time
-  it('numeric milliseconds displayed as Time value', () => {
+  it('unsupported Number -> Time renders empty', () => {
     const field = createField(FieldType.Time);
     const cell = createCell('36000000', FieldType.Time, FieldType.Number);
-    expect(getCellDataText(cell, field)).toBe('36000000');
+    expect(getCellDataText(cell, field)).toBe('');
   });
 
   // URL -> Number
@@ -177,10 +249,10 @@ describe('Number field type conversions', () => {
   });
 
   // Number -> URL
-  it('number displayed as URL', () => {
+  it('unsupported Number -> URL renders empty', () => {
     const field = createField(FieldType.URL);
     const cell = createCell('12345', FieldType.URL, FieldType.Number);
-    expect(getCellDataText(cell, field)).toBe('12345');
+    expect(getCellDataText(cell, field)).toBe('');
   });
 
   // SingleSelect -> Number
@@ -213,9 +285,8 @@ describe('Number field type conversions', () => {
   it('handles scientific notation', () => {
     const field = createField(FieldType.Number);
     const cell = createCell('1e10', FieldType.Number, FieldType.RichText);
-    // Should parse as number (10000000000)
-    const result = getCellDataText(cell, field);
-    expect(result === '1e10' || result === '10000000000').toBe(true);
+
+    expect(getCellDataText(cell, field)).toBe('10000000000');
   });
 });
 
@@ -258,19 +329,17 @@ describe('DateTime field type conversions', () => {
   });
 
   // Number -> DateTime
-  it('number as Unix timestamp to DateTime', () => {
+  it('unsupported Number -> DateTime renders empty', () => {
     const field = createField(FieldType.DateTime);
     const cell = createCell('1705276800', FieldType.DateTime, FieldType.Number);
-    // Unix timestamp should be preserved
-    const result = getCellDataText(cell, field);
-    expect(result === '1705276800' || result.length > 0).toBe(true);
+    expect(getCellDataText(cell, field)).toBe('');
   });
 
   // DateTime -> Number
-  it('DateTime timestamp to Number', () => {
+  it('unsupported DateTime -> Number renders empty', () => {
     const field = createField(FieldType.Number);
     const cell = createCell('1705276800', FieldType.Number, FieldType.DateTime);
-    expect(getCellDataText(cell, field)).toBe('1705276800');
+    expect(getCellDataText(cell, field)).toBe('');
   });
 
   // Checkbox -> DateTime (lossy)
@@ -325,10 +394,10 @@ describe('DateTime field type conversions', () => {
   });
 
   // DateTime -> URL
-  it('DateTime to URL shows timestamp', () => {
+  it('unsupported DateTime -> URL renders empty', () => {
     const field = createField(FieldType.URL);
     const cell = createCell('1705276800', FieldType.URL, FieldType.DateTime);
-    expect(getCellDataText(cell, field)).toBe('1705276800');
+    expect(getCellDataText(cell, field)).toBe('');
   });
 
   // SingleSelect -> DateTime
@@ -419,10 +488,10 @@ describe('Time field type conversions', () => {
   });
 
   // Time -> URL
-  it('time to URL shows milliseconds', () => {
+  it('unsupported Time -> URL renders empty', () => {
     const field = createField(FieldType.URL);
     const cell = createCell('36000000', FieldType.URL, FieldType.Time);
-    expect(getCellDataText(cell, field)).toBe('36000000');
+    expect(getCellDataText(cell, field)).toBe('');
   });
 
   // Time -> SingleSelect
@@ -512,7 +581,7 @@ describe('Multi-hop conversion data preservation', () => {
     expect(result.toLowerCase()).toBe('yes');
   });
 
-  it('RichText -> Time -> Number -> RichText preserves time string', () => {
+  it('RichText -> Time -> Number keeps the original raw text across an unsupported direct hop', () => {
     // RichText with time string
     const originalData = '09:30';
 
@@ -524,31 +593,30 @@ describe('Multi-hop conversion data preservation', () => {
     // Time -> Number (milliseconds as number)
     const numberField = createField(FieldType.Number);
     const toNumber = createCell(originalData, FieldType.Number, FieldType.Time);
-    // In lazy mode, original data is preserved
-    const result = getCellDataText(toNumber, numberField);
-    expect(result === '09:30' || result === '34200000').toBe(true);
+    expect(getCellDataText(toNumber, numberField)).toBe('');
+    expect(toNumber.get(YjsDatabaseKey.data)).toBe(originalData);
   });
 
-  it('Number -> Checkbox -> SingleSelect -> Number preserves data', () => {
+  it('Number -> Checkbox -> SingleSelect -> Number preserves raw data through unsupported hops', () => {
     // Use '1' which parseCheckboxValue recognizes as truthy
     const originalData = '1';
 
-    // Number -> Checkbox ('1' is truthy)
+    // Number -> Checkbox is not a supported direct Desktop conversion.
     const checkboxField = createField(FieldType.Checkbox);
     const toCheckbox = createCell(originalData, FieldType.Checkbox, FieldType.Number);
-    expect(getCellDataText(toCheckbox, checkboxField)).toBe('Yes');
+    expect(getCellDataText(toCheckbox, checkboxField)).toBe('No');
 
     // Checkbox -> SingleSelect
     const option: SelectOption = { id: 'yes-opt', name: 'Yes', color: 0 };
     const selectField = createField(FieldType.SingleSelect, { options: [option], disable_color: false });
     const toSelect = createCell(originalData, FieldType.SingleSelect, FieldType.Checkbox);
     const selectResult = getCellDataText(toSelect, selectField);
-    // May show 'Yes' from mapping or the original '1'
-    expect(selectResult === 'Yes' || selectResult === '1' || selectResult === '').toBe(true);
+    expect(selectResult).toBe('Yes');
 
     // Back to Number (original preserved)
     const numberField = createField(FieldType.Number);
     const backToNumber = createCell(originalData, FieldType.Number, FieldType.SingleSelect);
-    expect(getCellDataText(backToNumber, numberField)).toBe('1');
+    expect(getCellDataText(backToNumber, numberField)).toBe('');
+    expect(backToNumber.get(YjsDatabaseKey.data)).toBe(originalData);
   });
 });

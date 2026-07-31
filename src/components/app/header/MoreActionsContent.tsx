@@ -89,7 +89,7 @@ function MoreActionsContent({
         source: 0,
       });
       void refreshOutline?.();
-      // The shallow outline (depth=2) doesn't include children beyond space level.
+      // The bounded outline (depth=6) may not include deeply nested children.
       // Reload the parent view's children so the new duplicate appears in the sidebar.
       if (parentViewId) {
         ViewService.invalidateCache(workspaceId, parentViewId);
@@ -130,7 +130,11 @@ function MoreActionsContent({
     const next = !view.is_locked;
 
     try {
-      await PageService.update(workspaceId, viewId, { name: view.name, is_locked: next });
+      await PageService.update(workspaceId, viewId, {
+        name: view.name,
+        icon: view.icon ?? undefined,
+        is_locked: next,
+      });
       void refreshOutline?.();
       toast.success(next ? t('lockPage.pageLockedToast') : t('lockPage.pageUnlockedToast'));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

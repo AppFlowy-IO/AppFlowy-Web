@@ -19,6 +19,7 @@ import { dataStringTOJson } from '@/application/slate-yjs/utils/yjs';
 import {
   BlockType,
   CollabOrigin,
+  LoadRowDocumentOptions,
   Types,
   YDatabaseCell,
   YDatabaseField,
@@ -41,6 +42,11 @@ type ContentNode = {
   children?: unknown[];
   data?: Record<string, unknown>;
 };
+
+type IsCurrentRowDocumentRequest = () => boolean;
+
+const ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST = () => true;
+const CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS: LoadRowDocumentOptions = { maxAttempts: 1 };
 
 function hasNonEmptyString(value: unknown) {
   return typeof value === 'string' && value.length > 0;
@@ -156,6 +162,11 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNonEmptyRef = useRef(false);
   const docReadyRef = useRef(false); // Track if document is loaded to prevent retry timer from resetting it
+  // Tracks the documentId this component currently represents, and the one the
+  // loaded `doc` actually belongs to. The request-generation guard below only
+  // covers work started by the main load effect; these cover every other async
+  // caller plus the render path, so a row whose documentId changes never shows
+  // or binds the previous row's document.
   const activeDocumentIdRef = useRef<string | undefined>(documentId);
   const loadedDocumentIdRef = useRef<string | null>(null);
   const rowDocEnsuredRef = useRef(false); // Track if row document has been ensured on server to avoid redundant API calls
@@ -213,6 +224,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const [doc, setDoc] = useState<YDoc | null>(null);
   const retryLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadRequestGenerationRef = useRef(0);
   const loadedDocMatchesCurrent = Boolean(doc && documentId && loadedDocumentIdRef.current === documentId);
 
   const document = loadedDocMatchesCurrent ? doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document) : null;
@@ -280,8 +292,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   );
 
   const handleOpenDocument = useCallback(
-    async (documentId: string): Promise<boolean> => {
-      if (activeDocumentIdRef.current !== documentId) return false;
+    async (
+      documentId: string,
+      options?: LoadRowDocumentOptions,
+      isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
+    ): Promise<boolean> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
+
+      if (!isCurrent()) return false;
 
       Log.debug('[DatabaseRowSubDocument] handleOpenDocument start', { rowId, documentId });
       setLoading(true);
@@ -295,11 +313,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return false;
         }
 
-        const doc = await loadRowDocument(documentId);
+        const doc = await loadRowDocument(documentId, options);
 
-        if (activeDocumentIdRef.current !== documentId) {
-          return false;
-        }
+        if (!isCurrent()) return false;
 
         if (!doc) {
           Log.debug('[DatabaseRowSubDocument] loadRowDocument returned null', { documentId });
@@ -336,6 +352,20 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           sampleText,
         });
 
+        // loadRowDocument can resolve with an empty local doc when the server
+        // fetch failed (e.g. the row document doesn't exist yet). Binding to it
+        // would permanently show an empty area, so report failure and let the
+        // retry/create flow handle it.
+        if (!document) {
+          Log.warn('[DatabaseRowSubDocument] loaded doc has no document structure; will retry', {
+            rowId,
+            documentId,
+          });
+          return false;
+        }
+
+        if (!isCurrent()) return false;
+
         setDoc(doc);
         loadedDocumentIdRef.current = documentId;
         docReadyRef.current = true;
@@ -347,7 +377,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         });
         return false;
       } finally {
-        if (activeDocumentIdRef.current === documentId) {
+        if (isCurrent()) {
           setLoading(false);
         }
       }
@@ -356,10 +386,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   );
   // Open document with server-provided doc_state (Y.js update)
   const openDocumentWithState = useCallback(
-    async (documentId: string, docState: Uint8Array): Promise<boolean> => {
-      if (!documentId) return false;
-      if (activeDocumentIdRef.current !== documentId) return false;
+    async (
+      documentId: string,
+      docState: Uint8Array,
+      isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
+    ): Promise<boolean> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
 
+      if (!documentId || !isCurrent()) return false;
       try {
         docReadyRef.current = false;
         loadedDocumentIdRef.current = null;
@@ -377,9 +411,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         // Use cached doc to preserve sync state across reopens
         const doc = await getOrCreateRowSubDoc(documentId);
 
-        if (activeDocumentIdRef.current !== documentId) {
-          return false;
-        }
+        if (!isCurrent()) return false;
 
         // Apply the server's doc_state to initialize the document
         // This ensures the document structure matches what the server created
@@ -398,6 +430,8 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           });
           return false;
         }
+
+        if (!isCurrent()) return false;
 
         // Store metadata for sync binding
         const docWithMeta = doc as YDocWithMeta;
@@ -427,10 +461,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   );
 
   const handleCreateDocument = useCallback(
-    async (documentId: string, requireServerReady: boolean = false): Promise<boolean> => {
-      if (!documentId) return false;
-      if (activeDocumentIdRef.current !== documentId) return false;
+    async (
+      documentId: string,
+      requireServerReady: boolean = false,
+      isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
+    ): Promise<boolean> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
 
+      if (!documentId || !isCurrent()) return false;
       setLoading(true);
       let docState: Uint8Array | null = null;
 
@@ -447,9 +485,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         const localHasContent = await hasLocalDocContent(documentId);
 
-        if (activeDocumentIdRef.current !== documentId) {
-          return false;
-        }
+        if (!isCurrent()) return false;
 
         if (localHasContent) {
           Log.debug('[DatabaseRowSubDocument] local doc has content; creating server collab before binding', {
@@ -469,23 +505,31 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         try {
           Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId, requireServerReady });
           docState = await createRowDocument(documentId, rowDocumentSource);
-
-          if (activeDocumentIdRef.current !== documentId) {
-            return false;
-          }
-
-          Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
-            documentId,
-            docStateSize: docState?.length ?? 0,
-          });
         } catch (e) {
           Log.error('[DatabaseRowSubDocument] createRowDocument failed', e);
           return false;
         }
 
+        if (!isCurrent()) return false;
+
+        // createRowDocument swallows API errors and returns null (e.g. the server
+        // hasn't persisted a freshly created row yet). Treat that as a failure so
+        // the caller schedules a retry instead of binding to a structureless doc.
+        if (!docState) {
+          Log.warn('[DatabaseRowSubDocument] createRowDocument returned no doc state; will retry', {
+            documentId,
+          });
+          return false;
+        }
+
+        Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
+          documentId,
+          docStateSize: docState.length,
+        });
+
         // Use the server-created doc_state as the only source of default document structure.
         if (docState && docState.length > 0) {
-          const success = await openDocumentWithState(documentId, docState);
+          const success = await openDocumentWithState(documentId, docState, isCurrent);
 
           if (success) {
             return true;
@@ -498,7 +542,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
 
         if (loadRowDocument) {
-          const loaded = await handleOpenDocument(documentId);
+          const loaded = await handleOpenDocument(documentId, undefined, isCurrent);
 
           if (loaded) {
             return true;
@@ -510,7 +554,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         });
         return false;
       } finally {
-        if (activeDocumentIdRef.current === documentId) {
+        if (isCurrent()) {
           setLoading(false);
         }
       }
@@ -595,6 +639,8 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     rowId,
   ]);
 
+  // Drop every trace of the previous document as soon as documentId changes, so
+  // the editor never renders or binds the old row's doc while the new one loads.
   useEffect(() => {
     docReadyRef.current = false;
     loadedDocumentIdRef.current = null;
@@ -626,6 +672,8 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     if (!documentId) return;
 
     let cancelled = false;
+    const requestGeneration = ++loadRequestGenerationRef.current;
+    const isCurrentRequest = () => !cancelled && loadRequestGenerationRef.current === requestGeneration;
     let retryCount = 0;
     const MAX_RETRIES = 3;
 
@@ -636,11 +684,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       }
     };
 
-    const scheduleRetry = () => {
-      if (activeDocumentIdRef.current !== documentId) return;
+    const scheduleRetry = (loadOptions?: LoadRowDocumentOptions) => {
       if (retryLoadTimerRef.current) return;
       retryLoadTimerRef.current = setTimeout(async () => {
-        if (cancelled || activeDocumentIdRef.current !== documentId) return;
+        if (!isCurrentRequest()) return;
 
         // If doc is already loaded (e.g., by handleCreateDocument), skip retry
         // This prevents resetting the editor mid-typing
@@ -655,22 +702,43 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         retryCount++;
 
-        const retried = await handleOpenDocument(documentId);
+        // A newly-created row can reach this component before its row collab has
+        // propagated to the server. In that case the initial create request is
+        // rejected because the server cannot resolve the row yet. Retrying a
+        // load first is both unnecessary (the meta already says the document is
+        // empty) and slow enough to keep the editor skeleton visible for the
+        // entire retry window, so retry creation directly after propagation has
+        // had another chance to complete.
+        const retryingEmptyDocument = isDocumentEmptyResolved === true;
+        const retried = retryingEmptyDocument
+          ? await handleCreateDocument(documentId, false, isCurrentRequest)
+          : await handleOpenDocument(documentId, loadOptions, isCurrentRequest);
 
-        if (retried || cancelled || activeDocumentIdRef.current !== documentId) {
+        if (retried || !isCurrentRequest()) {
           return;
         }
 
         retryLoadTimerRef.current = null;
 
-        // After max retries, create the document on the server. Do not initialize a local
-        // synced document here; the server doc_state is the source of the default structure.
         if (retryCount >= MAX_RETRIES) {
-          const localHasContent = await hasLocalDocContent(documentId);
-
-          if (cancelled || activeDocumentIdRef.current !== documentId) {
+          // Empty documents already attempted server creation on every retry.
+          // Stop here so a permanently rejected row cannot keep issuing an
+          // orphan-creation request every two seconds while the modal is open.
+          if (retryingEmptyDocument) {
+            Log.warn('[DatabaseRowSubDocument] max retries reached; row document creation rejected', {
+              rowId,
+              documentId,
+              retryCount,
+            });
             return;
           }
+
+          // For non-empty documents, make one final create attempt after the
+          // bounded load retries. The server doc_state remains the only source
+          // of the default document structure.
+          const localHasContent = await hasLocalDocContent(documentId);
+
+          if (!isCurrentRequest()) return;
 
           if (localHasContent) {
             Log.debug('[DatabaseRowSubDocument] max retries reached; local content found, creating server doc before binding', {
@@ -685,16 +753,20 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             documentId,
             retryCount,
           });
-          const created = await handleCreateDocument(documentId, true);
+          const created = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-          if (!created && !cancelled && activeDocumentIdRef.current === documentId) {
-            scheduleRetry();
+          if (!created && isCurrentRequest()) {
+            Log.warn('[DatabaseRowSubDocument] final row document creation attempt rejected', {
+              rowId,
+              documentId,
+              retryCount,
+            });
           }
 
           return;
         }
 
-        scheduleRetry();
+        scheduleRetry(loadOptions);
       }, 2000); // Reduced from 5000ms to 2000ms for faster response
     };
 
@@ -736,9 +808,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           rowId,
           documentId,
         });
-        const created = await handleCreateDocument(documentId, false);
+        const created = await handleCreateDocument(documentId, false, isCurrentRequest);
 
-        if (!created && !cancelled) {
+        if (!created && isCurrentRequest()) {
           scheduleRetry();
         }
 
@@ -750,9 +822,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       if (!checkIfRowDocumentExists) {
         const localHasContent = await hasLocalDocContent(documentId);
 
-        if (cancelled || activeDocumentIdRef.current !== documentId) {
-          return;
-        }
+        if (!isCurrentRequest()) return;
 
         if (localHasContent) {
           Log.debug('[DatabaseRowSubDocument] doc not found; local content found, creating server doc before binding', {
@@ -762,9 +832,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
 
         void (async () => {
-          const created = await handleCreateDocument(documentId, true);
+          const created = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-          if (!created && !cancelled && activeDocumentIdRef.current === documentId) {
+          if (!created && isCurrentRequest()) {
             scheduleRetry();
           }
         })();
@@ -775,9 +845,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       try {
         const exists = await checkIfRowDocumentExists(documentId);
 
-        if (cancelled || activeDocumentIdRef.current !== documentId) {
-          return;
-        }
+        if (!isCurrentRequest()) return;
 
         Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists', {
           rowId,
@@ -794,34 +862,22 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             return;
           }
 
-          const success = await handleOpenDocument(documentId);
+          // A positive existence check means the collab object is already
+          // present. Do one read attempt, then repair its row-document
+          // registration and open the returned state instead of waiting
+          // through the duplication-oriented backoff loop.
+          const success = await handleOpenDocument(documentId, CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS, isCurrentRequest);
 
-          if (cancelled || activeDocumentIdRef.current !== documentId) {
-            return;
-          }
+          if (!success && isCurrentRequest()) {
+            Log.debug('[DatabaseRowSubDocument] repairing row document after load failure', {
+              rowId,
+              documentId,
+            });
+            const repaired = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-          if (!success) {
-            if (createRowDocument) {
-              try {
-                Log.debug('[DatabaseRowSubDocument] createRowDocument after load failure', {
-                  rowId,
-                  documentId,
-                });
-                await createRowDocument(documentId, rowDocumentSource);
-
-                if (cancelled || activeDocumentIdRef.current !== documentId) {
-                  return;
-                }
-              } catch {
-                // Ignore; we'll retry loading below.
-              }
+            if (!repaired && isCurrentRequest()) {
+              scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
             }
-
-            if (cancelled || activeDocumentIdRef.current !== documentId) {
-              return;
-            }
-
-            scheduleRetry();
           }
 
           return;
@@ -835,9 +891,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         // Retry a few times in case of race condition, will create after max retries
         scheduleRetry();
       } catch (e) {
-        if (cancelled || activeDocumentIdRef.current !== documentId) {
-          return;
-        }
+        if (!isCurrentRequest()) return;
 
         Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry', {
           rowId,
@@ -858,8 +912,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     checkIfRowDocumentExists,
     isDocumentEmptyResolved,
     hasLocalDocContent,
-    createRowDocument,
-    rowDocumentSource,
     rowId,
     doc,
   ]);
@@ -935,8 +987,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   }, []);
 
   const ensureRowDocumentExists = useCallback(async () => {
-    if (!documentId) return false;
-    if (activeDocumentIdRef.current !== documentId) return false;
+    if (!documentId || activeDocumentIdRef.current !== documentId) return false;
 
     // Skip if we've already ensured this document exists (memoize to avoid redundant API calls)
     if (rowDocEnsuredRef.current) {

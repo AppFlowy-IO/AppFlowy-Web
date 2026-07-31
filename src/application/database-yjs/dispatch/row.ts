@@ -16,6 +16,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
+import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   useCreateRow,
   useDatabase,
@@ -93,31 +96,6 @@ function reorderRow(rowId: string, beforeRowId: string | undefined, view: YDatab
   rows.insert(adjustedTargetIndex, [row]);
 }
 
-/**
- * Helper: Clone a cell for row duplication
- */
-function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
-  const cell = new Y.Map() as YDatabaseCell;
-
-  referenceCell?.forEach((value, key) => {
-    let newValue = value;
-
-    if (typeof value === 'bigint') {
-      newValue = value.toString();
-    } else if (value instanceof Y.Array) {
-      newValue = value.clone();
-    }
-
-    cell.set(key, newValue);
-  });
-
-  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-  cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-  cell.set(YjsDatabaseKey.field_type, fieldType);
-
-  return cell;
-}
-
 export function useReorderRowDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
@@ -172,6 +150,10 @@ export function useMoveCardDispatch() {
 
             const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
+            if (!field) {
+              throw new Error(`Field not found`);
+            }
+
             const fieldType = Number(field.get(YjsDatabaseKey.type));
 
             const rowDoc = rowMap?.[rowId];
@@ -197,7 +179,7 @@ export function useMoveCardDispatch() {
 
               cells.set(fieldId, cell);
             } else {
-              const cellData = cell.get(YjsDatabaseKey.data);
+              const cellData = parseYDatabaseCellToCell(cell, field).data;
               let newCellData = cellData;
 
               if (isSelectOptionField) {
@@ -217,6 +199,9 @@ export function useMoveCardDispatch() {
               }
 
               cell.set(YjsDatabaseKey.data, newCellData);
+              setCellStoredType(cell, fieldType);
+              cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+              row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -786,7 +771,7 @@ export function useDuplicateRowDispatch() {
 
             const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
 
-            const cell = cloneCell(fieldType, referenceCell);
+            const cell = cloneDatabaseCell(fieldType, referenceCell);
 
             cells.set(fieldId, cell);
           } catch (e) {

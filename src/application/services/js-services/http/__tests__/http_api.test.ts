@@ -102,9 +102,10 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/server-info/auth-providers');
   });
 
-  it('identifies server-info requests as web so page history is not hidden by native client gates', async () => {
+  it('bounds and cancels server-info requests while identifying the web platform', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);
+    const abortController = new AbortController();
 
     mockAxiosInstance.get.mockResolvedValueOnce({
       data: {
@@ -116,7 +117,7 @@ describe('http_api client (unit)', () => {
       },
     });
 
-    await expect(module.getServerInfo()).resolves.toEqual({
+    await expect(module.getServerInfo(abortController.signal)).resolves.toEqual({
       enable_page_history: true,
       ai_enabled: true,
     });
@@ -124,6 +125,8 @@ describe('http_api client (unit)', () => {
       headers: {
         'x-platform': 'web',
       },
+      signal: abortController.signal,
+      timeout: 10_000,
     });
   });
 

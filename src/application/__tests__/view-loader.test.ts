@@ -2,10 +2,11 @@ import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
 import { openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-import { getDatabaseIdFromDoc, openView } from '@/application/view-loader';
+import { getDatabaseIdFromDoc, openRowSubDocument, openView } from '@/application/view-loader';
 
 jest.mock('@/application/db', () => ({
   openCollabDB: jest.fn(),
@@ -31,6 +32,7 @@ jest.mock('@/application/sync-outbox', () => ({
 
 const mockOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
 const mockOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
+const mockGetOrCreateRowSubDoc = getOrCreateRowSubDoc as jest.MockedFunction<typeof getOrCreateRowSubDoc>;
 const mockFetchPageCollab = fetchPageCollab as jest.MockedFunction<typeof fetchPageCollab>;
 const mockEnqueueOutboxUpdate = enqueueOutboxUpdate as jest.MockedFunction<typeof enqueueOutboxUpdate>;
 
@@ -154,5 +156,47 @@ describe('view-loader database cache identity', () => {
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(true);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
+  });
+});
+
+describe('view-loader row document retry policy', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('keeps the default retry budget for a row document that may still be created', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000007';
+    const doc = createEmptyDoc(documentId);
+
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchPageCollab.mockRejectedValue(new Error('row document is not ready'));
+
+    const resultPromise = openRowSubDocument('workspace-id', documentId);
+
+    await jest.runAllTimersAsync();
+
+    const result = await resultPromise;
+
+    expect(result.doc).toBe(doc);
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(6);
+  });
+
+  it('honors a one-attempt limit when existence was already confirmed', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000008';
+    const doc = createEmptyDoc(documentId);
+
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchPageCollab.mockRejectedValue(new Error('page view is not registered yet'));
+
+    const result = await openRowSubDocument('workspace-id', documentId, { maxAttempts: 1 });
+
+    expect(result.doc).toBe(doc);
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

@@ -259,6 +259,281 @@ export const database_blob = $root.database_blob = (() => {
         return DatabaseBlobRowRid;
     })();
 
+    database_blob.DatabaseBlobDiffPageRequest = (function() {
+
+        /**
+         * Properties of a DatabaseBlobDiffPageRequest.
+         * @memberof database_blob
+         * @interface IDatabaseBlobDiffPageRequest
+         * @property {number|null} [maxItems] DatabaseBlobDiffPageRequest maxItems
+         * @property {number|Long|null} [maxBytes] DatabaseBlobDiffPageRequest maxBytes
+         * @property {Uint8Array|null} [cursor] DatabaseBlobDiffPageRequest cursor
+         */
+
+        /**
+         * Constructs a new DatabaseBlobDiffPageRequest.
+         * @memberof database_blob
+         * @classdesc Represents a DatabaseBlobDiffPageRequest.
+         * @implements IDatabaseBlobDiffPageRequest
+         * @constructor
+         * @param {database_blob.IDatabaseBlobDiffPageRequest=} [properties] Properties to set
+         */
+        function DatabaseBlobDiffPageRequest(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DatabaseBlobDiffPageRequest maxItems.
+         * @member {number} maxItems
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @instance
+         */
+        DatabaseBlobDiffPageRequest.prototype.maxItems = 0;
+
+        /**
+         * DatabaseBlobDiffPageRequest maxBytes.
+         * @member {number|Long} maxBytes
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @instance
+         */
+        DatabaseBlobDiffPageRequest.prototype.maxBytes = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * DatabaseBlobDiffPageRequest cursor.
+         * @member {Uint8Array} cursor
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @instance
+         */
+        DatabaseBlobDiffPageRequest.prototype.cursor = $util.newBuffer([]);
+
+        /**
+         * Creates a new DatabaseBlobDiffPageRequest instance using the specified properties.
+         * @function create
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageRequest=} [properties] Properties to set
+         * @returns {database_blob.DatabaseBlobDiffPageRequest} DatabaseBlobDiffPageRequest instance
+         */
+        DatabaseBlobDiffPageRequest.create = function create(properties) {
+            return new DatabaseBlobDiffPageRequest(properties);
+        };
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageRequest message. Does not implicitly {@link database_blob.DatabaseBlobDiffPageRequest.verify|verify} messages.
+         * @function encode
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageRequest} message DatabaseBlobDiffPageRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseBlobDiffPageRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.maxItems != null && Object.hasOwnProperty.call(message, "maxItems"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.maxItems);
+            if (message.maxBytes != null && Object.hasOwnProperty.call(message, "maxBytes"))
+                writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.maxBytes);
+            if (message.cursor != null && Object.hasOwnProperty.call(message, "cursor"))
+                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.cursor);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageRequest message, length delimited. Does not implicitly {@link database_blob.DatabaseBlobDiffPageRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageRequest} message DatabaseBlobDiffPageRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseBlobDiffPageRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DatabaseBlobDiffPageRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {database_blob.DatabaseBlobDiffPageRequest} DatabaseBlobDiffPageRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseBlobDiffPageRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.database_blob.DatabaseBlobDiffPageRequest();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.maxItems = reader.uint32();
+                        break;
+                    }
+                case 2: {
+                        message.maxBytes = reader.uint64();
+                        break;
+                    }
+                case 3: {
+                        message.cursor = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DatabaseBlobDiffPageRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {database_blob.DatabaseBlobDiffPageRequest} DatabaseBlobDiffPageRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseBlobDiffPageRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DatabaseBlobDiffPageRequest message.
+         * @function verify
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DatabaseBlobDiffPageRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.maxItems != null && message.hasOwnProperty("maxItems"))
+                if (!$util.isInteger(message.maxItems))
+                    return "maxItems: integer expected";
+            if (message.maxBytes != null && message.hasOwnProperty("maxBytes"))
+                if (!$util.isInteger(message.maxBytes) && !(message.maxBytes && $util.isInteger(message.maxBytes.low) && $util.isInteger(message.maxBytes.high)))
+                    return "maxBytes: integer|Long expected";
+            if (message.cursor != null && message.hasOwnProperty("cursor"))
+                if (!(message.cursor && typeof message.cursor.length === "number" || $util.isString(message.cursor)))
+                    return "cursor: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a DatabaseBlobDiffPageRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {database_blob.DatabaseBlobDiffPageRequest} DatabaseBlobDiffPageRequest
+         */
+        DatabaseBlobDiffPageRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.database_blob.DatabaseBlobDiffPageRequest)
+                return object;
+            let message = new $root.database_blob.DatabaseBlobDiffPageRequest();
+            if (object.maxItems != null)
+                message.maxItems = object.maxItems >>> 0;
+            if (object.maxBytes != null)
+                if ($util.Long)
+                    (message.maxBytes = $util.Long.fromValue(object.maxBytes)).unsigned = true;
+                else if (typeof object.maxBytes === "string")
+                    message.maxBytes = parseInt(object.maxBytes, 10);
+                else if (typeof object.maxBytes === "number")
+                    message.maxBytes = object.maxBytes;
+                else if (typeof object.maxBytes === "object")
+                    message.maxBytes = new $util.LongBits(object.maxBytes.low >>> 0, object.maxBytes.high >>> 0).toNumber(true);
+            if (object.cursor != null)
+                if (typeof object.cursor === "string")
+                    $util.base64.decode(object.cursor, message.cursor = $util.newBuffer($util.base64.length(object.cursor)), 0);
+                else if (object.cursor.length >= 0)
+                    message.cursor = object.cursor;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DatabaseBlobDiffPageRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {database_blob.DatabaseBlobDiffPageRequest} message DatabaseBlobDiffPageRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DatabaseBlobDiffPageRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.maxItems = 0;
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, true);
+                    object.maxBytes = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.maxBytes = options.longs === String ? "0" : 0;
+                if (options.bytes === String)
+                    object.cursor = "";
+                else {
+                    object.cursor = [];
+                    if (options.bytes !== Array)
+                        object.cursor = $util.newBuffer(object.cursor);
+                }
+            }
+            if (message.maxItems != null && message.hasOwnProperty("maxItems"))
+                object.maxItems = message.maxItems;
+            if (message.maxBytes != null && message.hasOwnProperty("maxBytes"))
+                if (typeof message.maxBytes === "number")
+                    object.maxBytes = options.longs === String ? String(message.maxBytes) : message.maxBytes;
+                else
+                    object.maxBytes = options.longs === String ? $util.Long.prototype.toString.call(message.maxBytes) : options.longs === Number ? new $util.LongBits(message.maxBytes.low >>> 0, message.maxBytes.high >>> 0).toNumber(true) : message.maxBytes;
+            if (message.cursor != null && message.hasOwnProperty("cursor"))
+                object.cursor = options.bytes === String ? $util.base64.encode(message.cursor, 0, message.cursor.length) : options.bytes === Array ? Array.prototype.slice.call(message.cursor) : message.cursor;
+            return object;
+        };
+
+        /**
+         * Converts this DatabaseBlobDiffPageRequest to JSON.
+         * @function toJSON
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DatabaseBlobDiffPageRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DatabaseBlobDiffPageRequest
+         * @function getTypeUrl
+         * @memberof database_blob.DatabaseBlobDiffPageRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DatabaseBlobDiffPageRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/database_blob.DatabaseBlobDiffPageRequest";
+        };
+
+        return DatabaseBlobDiffPageRequest;
+    })();
+
     database_blob.DatabaseBlobDiffRequest = (function() {
 
         /**
@@ -267,6 +542,8 @@ export const database_blob = $root.database_blob = (() => {
          * @interface IDatabaseBlobDiffRequest
          * @property {database_blob.IDatabaseBlobRowRid|null} [maxKnownRid] DatabaseBlobDiffRequest maxKnownRid
          * @property {number|null} [version] DatabaseBlobDiffRequest version
+         * @property {boolean|null} [includeDocuments] DatabaseBlobDiffRequest includeDocuments
+         * @property {database_blob.IDatabaseBlobDiffPageRequest|null} [page] DatabaseBlobDiffRequest page
          */
 
         /**
@@ -300,6 +577,22 @@ export const database_blob = $root.database_blob = (() => {
          */
         DatabaseBlobDiffRequest.prototype.version = 0;
 
+        /**
+         * DatabaseBlobDiffRequest includeDocuments.
+         * @member {boolean|null|undefined} includeDocuments
+         * @memberof database_blob.DatabaseBlobDiffRequest
+         * @instance
+         */
+        DatabaseBlobDiffRequest.prototype.includeDocuments = null;
+
+        /**
+         * DatabaseBlobDiffRequest page.
+         * @member {database_blob.IDatabaseBlobDiffPageRequest|null|undefined} page
+         * @memberof database_blob.DatabaseBlobDiffRequest
+         * @instance
+         */
+        DatabaseBlobDiffRequest.prototype.page = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
@@ -311,6 +604,28 @@ export const database_blob = $root.database_blob = (() => {
          */
         Object.defineProperty(DatabaseBlobDiffRequest.prototype, "_maxKnownRid", {
             get: $util.oneOfGetter($oneOfFields = ["maxKnownRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * DatabaseBlobDiffRequest _includeDocuments.
+         * @member {"includeDocuments"|undefined} _includeDocuments
+         * @memberof database_blob.DatabaseBlobDiffRequest
+         * @instance
+         */
+        Object.defineProperty(DatabaseBlobDiffRequest.prototype, "_includeDocuments", {
+            get: $util.oneOfGetter($oneOfFields = ["includeDocuments"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * DatabaseBlobDiffRequest _page.
+         * @member {"page"|undefined} _page
+         * @memberof database_blob.DatabaseBlobDiffRequest
+         * @instance
+         */
+        Object.defineProperty(DatabaseBlobDiffRequest.prototype, "_page", {
+            get: $util.oneOfGetter($oneOfFields = ["page"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -342,6 +657,10 @@ export const database_blob = $root.database_blob = (() => {
                 $root.database_blob.DatabaseBlobRowRid.encode(message.maxKnownRid, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             if (message.version != null && Object.hasOwnProperty.call(message, "version"))
                 writer.uint32(/* id 2, wireType 0 =*/16).int32(message.version);
+            if (message.includeDocuments != null && Object.hasOwnProperty.call(message, "includeDocuments"))
+                writer.uint32(/* id 3, wireType 0 =*/24).bool(message.includeDocuments);
+            if (message.page != null && Object.hasOwnProperty.call(message, "page"))
+                $root.database_blob.DatabaseBlobDiffPageRequest.encode(message.page, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
             return writer;
         };
 
@@ -384,6 +703,14 @@ export const database_blob = $root.database_blob = (() => {
                     }
                 case 2: {
                         message.version = reader.int32();
+                        break;
+                    }
+                case 3: {
+                        message.includeDocuments = reader.bool();
+                        break;
+                    }
+                case 4: {
+                        message.page = $root.database_blob.DatabaseBlobDiffPageRequest.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -433,6 +760,19 @@ export const database_blob = $root.database_blob = (() => {
             if (message.version != null && message.hasOwnProperty("version"))
                 if (!$util.isInteger(message.version))
                     return "version: integer expected";
+            if (message.includeDocuments != null && message.hasOwnProperty("includeDocuments")) {
+                properties._includeDocuments = 1;
+                if (typeof message.includeDocuments !== "boolean")
+                    return "includeDocuments: boolean expected";
+            }
+            if (message.page != null && message.hasOwnProperty("page")) {
+                properties._page = 1;
+                {
+                    let error = $root.database_blob.DatabaseBlobDiffPageRequest.verify(message.page);
+                    if (error)
+                        return "page." + error;
+                }
+            }
             return null;
         };
 
@@ -455,6 +795,13 @@ export const database_blob = $root.database_blob = (() => {
             }
             if (object.version != null)
                 message.version = object.version | 0;
+            if (object.includeDocuments != null)
+                message.includeDocuments = Boolean(object.includeDocuments);
+            if (object.page != null) {
+                if (typeof object.page !== "object")
+                    throw TypeError(".database_blob.DatabaseBlobDiffRequest.page: object expected");
+                message.page = $root.database_blob.DatabaseBlobDiffPageRequest.fromObject(object.page);
+            }
             return message;
         };
 
@@ -480,6 +827,16 @@ export const database_blob = $root.database_blob = (() => {
             }
             if (message.version != null && message.hasOwnProperty("version"))
                 object.version = message.version;
+            if (message.includeDocuments != null && message.hasOwnProperty("includeDocuments")) {
+                object.includeDocuments = message.includeDocuments;
+                if (options.oneofs)
+                    object._includeDocuments = "includeDocuments";
+            }
+            if (message.page != null && message.hasOwnProperty("page")) {
+                object.page = $root.database_blob.DatabaseBlobDiffPageRequest.toObject(message.page, options);
+                if (options.oneofs)
+                    object._page = "page";
+            }
             return object;
         };
 
@@ -512,6 +869,492 @@ export const database_blob = $root.database_blob = (() => {
         return DatabaseBlobDiffRequest;
     })();
 
+    database_blob.DatabaseBlobDiffPageCursor = (function() {
+
+        /**
+         * Properties of a DatabaseBlobDiffPageCursor.
+         * @memberof database_blob
+         * @interface IDatabaseBlobDiffPageCursor
+         * @property {number|null} [formatVersion] DatabaseBlobDiffPageCursor formatVersion
+         * @property {Uint8Array|null} [workspaceId] DatabaseBlobDiffPageCursor workspaceId
+         * @property {Uint8Array|null} [databaseId] DatabaseBlobDiffPageCursor databaseId
+         * @property {string|null} [manifestVersion] DatabaseBlobDiffPageCursor manifestVersion
+         * @property {database_blob.IDatabaseBlobRowRid|null} [maxKnownRid] DatabaseBlobDiffPageCursor maxKnownRid
+         * @property {number|Long|null} [nextOffset] DatabaseBlobDiffPageCursor nextOffset
+         * @property {Uint8Array|null} [planHash] DatabaseBlobDiffPageCursor planHash
+         * @property {database_blob.IDatabaseBlobRowRid|null} [maxObservedRid] DatabaseBlobDiffPageCursor maxObservedRid
+         * @property {Uint8Array|null} [signature] DatabaseBlobDiffPageCursor signature
+         */
+
+        /**
+         * Constructs a new DatabaseBlobDiffPageCursor.
+         * @memberof database_blob
+         * @classdesc Represents a DatabaseBlobDiffPageCursor.
+         * @implements IDatabaseBlobDiffPageCursor
+         * @constructor
+         * @param {database_blob.IDatabaseBlobDiffPageCursor=} [properties] Properties to set
+         */
+        function DatabaseBlobDiffPageCursor(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DatabaseBlobDiffPageCursor formatVersion.
+         * @member {number} formatVersion
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.formatVersion = 0;
+
+        /**
+         * DatabaseBlobDiffPageCursor workspaceId.
+         * @member {Uint8Array} workspaceId
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.workspaceId = $util.newBuffer([]);
+
+        /**
+         * DatabaseBlobDiffPageCursor databaseId.
+         * @member {Uint8Array} databaseId
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.databaseId = $util.newBuffer([]);
+
+        /**
+         * DatabaseBlobDiffPageCursor manifestVersion.
+         * @member {string} manifestVersion
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.manifestVersion = "";
+
+        /**
+         * DatabaseBlobDiffPageCursor maxKnownRid.
+         * @member {database_blob.IDatabaseBlobRowRid|null|undefined} maxKnownRid
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.maxKnownRid = null;
+
+        /**
+         * DatabaseBlobDiffPageCursor nextOffset.
+         * @member {number|Long} nextOffset
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.nextOffset = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+        /**
+         * DatabaseBlobDiffPageCursor planHash.
+         * @member {Uint8Array} planHash
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.planHash = $util.newBuffer([]);
+
+        /**
+         * DatabaseBlobDiffPageCursor maxObservedRid.
+         * @member {database_blob.IDatabaseBlobRowRid|null|undefined} maxObservedRid
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.maxObservedRid = null;
+
+        /**
+         * DatabaseBlobDiffPageCursor signature.
+         * @member {Uint8Array} signature
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        DatabaseBlobDiffPageCursor.prototype.signature = $util.newBuffer([]);
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * DatabaseBlobDiffPageCursor _maxKnownRid.
+         * @member {"maxKnownRid"|undefined} _maxKnownRid
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        Object.defineProperty(DatabaseBlobDiffPageCursor.prototype, "_maxKnownRid", {
+            get: $util.oneOfGetter($oneOfFields = ["maxKnownRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * DatabaseBlobDiffPageCursor _maxObservedRid.
+         * @member {"maxObservedRid"|undefined} _maxObservedRid
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         */
+        Object.defineProperty(DatabaseBlobDiffPageCursor.prototype, "_maxObservedRid", {
+            get: $util.oneOfGetter($oneOfFields = ["maxObservedRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new DatabaseBlobDiffPageCursor instance using the specified properties.
+         * @function create
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageCursor=} [properties] Properties to set
+         * @returns {database_blob.DatabaseBlobDiffPageCursor} DatabaseBlobDiffPageCursor instance
+         */
+        DatabaseBlobDiffPageCursor.create = function create(properties) {
+            return new DatabaseBlobDiffPageCursor(properties);
+        };
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageCursor message. Does not implicitly {@link database_blob.DatabaseBlobDiffPageCursor.verify|verify} messages.
+         * @function encode
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageCursor} message DatabaseBlobDiffPageCursor message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseBlobDiffPageCursor.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.formatVersion != null && Object.hasOwnProperty.call(message, "formatVersion"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.formatVersion);
+            if (message.workspaceId != null && Object.hasOwnProperty.call(message, "workspaceId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.workspaceId);
+            if (message.databaseId != null && Object.hasOwnProperty.call(message, "databaseId"))
+                writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.databaseId);
+            if (message.manifestVersion != null && Object.hasOwnProperty.call(message, "manifestVersion"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.manifestVersion);
+            if (message.maxKnownRid != null && Object.hasOwnProperty.call(message, "maxKnownRid"))
+                $root.database_blob.DatabaseBlobRowRid.encode(message.maxKnownRid, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+            if (message.nextOffset != null && Object.hasOwnProperty.call(message, "nextOffset"))
+                writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.nextOffset);
+            if (message.planHash != null && Object.hasOwnProperty.call(message, "planHash"))
+                writer.uint32(/* id 7, wireType 2 =*/58).bytes(message.planHash);
+            if (message.maxObservedRid != null && Object.hasOwnProperty.call(message, "maxObservedRid"))
+                $root.database_blob.DatabaseBlobRowRid.encode(message.maxObservedRid, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+            if (message.signature != null && Object.hasOwnProperty.call(message, "signature"))
+                writer.uint32(/* id 9, wireType 2 =*/74).bytes(message.signature);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageCursor message, length delimited. Does not implicitly {@link database_blob.DatabaseBlobDiffPageCursor.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageCursor} message DatabaseBlobDiffPageCursor message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseBlobDiffPageCursor.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DatabaseBlobDiffPageCursor message from the specified reader or buffer.
+         * @function decode
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {database_blob.DatabaseBlobDiffPageCursor} DatabaseBlobDiffPageCursor
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseBlobDiffPageCursor.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.database_blob.DatabaseBlobDiffPageCursor();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.formatVersion = reader.uint32();
+                        break;
+                    }
+                case 2: {
+                        message.workspaceId = reader.bytes();
+                        break;
+                    }
+                case 3: {
+                        message.databaseId = reader.bytes();
+                        break;
+                    }
+                case 4: {
+                        message.manifestVersion = reader.string();
+                        break;
+                    }
+                case 5: {
+                        message.maxKnownRid = $root.database_blob.DatabaseBlobRowRid.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 6: {
+                        message.nextOffset = reader.uint64();
+                        break;
+                    }
+                case 7: {
+                        message.planHash = reader.bytes();
+                        break;
+                    }
+                case 8: {
+                        message.maxObservedRid = $root.database_blob.DatabaseBlobRowRid.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 9: {
+                        message.signature = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DatabaseBlobDiffPageCursor message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {database_blob.DatabaseBlobDiffPageCursor} DatabaseBlobDiffPageCursor
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseBlobDiffPageCursor.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DatabaseBlobDiffPageCursor message.
+         * @function verify
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DatabaseBlobDiffPageCursor.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.formatVersion != null && message.hasOwnProperty("formatVersion"))
+                if (!$util.isInteger(message.formatVersion))
+                    return "formatVersion: integer expected";
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                if (!(message.workspaceId && typeof message.workspaceId.length === "number" || $util.isString(message.workspaceId)))
+                    return "workspaceId: buffer expected";
+            if (message.databaseId != null && message.hasOwnProperty("databaseId"))
+                if (!(message.databaseId && typeof message.databaseId.length === "number" || $util.isString(message.databaseId)))
+                    return "databaseId: buffer expected";
+            if (message.manifestVersion != null && message.hasOwnProperty("manifestVersion"))
+                if (!$util.isString(message.manifestVersion))
+                    return "manifestVersion: string expected";
+            if (message.maxKnownRid != null && message.hasOwnProperty("maxKnownRid")) {
+                properties._maxKnownRid = 1;
+                {
+                    let error = $root.database_blob.DatabaseBlobRowRid.verify(message.maxKnownRid);
+                    if (error)
+                        return "maxKnownRid." + error;
+                }
+            }
+            if (message.nextOffset != null && message.hasOwnProperty("nextOffset"))
+                if (!$util.isInteger(message.nextOffset) && !(message.nextOffset && $util.isInteger(message.nextOffset.low) && $util.isInteger(message.nextOffset.high)))
+                    return "nextOffset: integer|Long expected";
+            if (message.planHash != null && message.hasOwnProperty("planHash"))
+                if (!(message.planHash && typeof message.planHash.length === "number" || $util.isString(message.planHash)))
+                    return "planHash: buffer expected";
+            if (message.maxObservedRid != null && message.hasOwnProperty("maxObservedRid")) {
+                properties._maxObservedRid = 1;
+                {
+                    let error = $root.database_blob.DatabaseBlobRowRid.verify(message.maxObservedRid);
+                    if (error)
+                        return "maxObservedRid." + error;
+                }
+            }
+            if (message.signature != null && message.hasOwnProperty("signature"))
+                if (!(message.signature && typeof message.signature.length === "number" || $util.isString(message.signature)))
+                    return "signature: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a DatabaseBlobDiffPageCursor message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {database_blob.DatabaseBlobDiffPageCursor} DatabaseBlobDiffPageCursor
+         */
+        DatabaseBlobDiffPageCursor.fromObject = function fromObject(object) {
+            if (object instanceof $root.database_blob.DatabaseBlobDiffPageCursor)
+                return object;
+            let message = new $root.database_blob.DatabaseBlobDiffPageCursor();
+            if (object.formatVersion != null)
+                message.formatVersion = object.formatVersion >>> 0;
+            if (object.workspaceId != null)
+                if (typeof object.workspaceId === "string")
+                    $util.base64.decode(object.workspaceId, message.workspaceId = $util.newBuffer($util.base64.length(object.workspaceId)), 0);
+                else if (object.workspaceId.length >= 0)
+                    message.workspaceId = object.workspaceId;
+            if (object.databaseId != null)
+                if (typeof object.databaseId === "string")
+                    $util.base64.decode(object.databaseId, message.databaseId = $util.newBuffer($util.base64.length(object.databaseId)), 0);
+                else if (object.databaseId.length >= 0)
+                    message.databaseId = object.databaseId;
+            if (object.manifestVersion != null)
+                message.manifestVersion = String(object.manifestVersion);
+            if (object.maxKnownRid != null) {
+                if (typeof object.maxKnownRid !== "object")
+                    throw TypeError(".database_blob.DatabaseBlobDiffPageCursor.maxKnownRid: object expected");
+                message.maxKnownRid = $root.database_blob.DatabaseBlobRowRid.fromObject(object.maxKnownRid);
+            }
+            if (object.nextOffset != null)
+                if ($util.Long)
+                    (message.nextOffset = $util.Long.fromValue(object.nextOffset)).unsigned = true;
+                else if (typeof object.nextOffset === "string")
+                    message.nextOffset = parseInt(object.nextOffset, 10);
+                else if (typeof object.nextOffset === "number")
+                    message.nextOffset = object.nextOffset;
+                else if (typeof object.nextOffset === "object")
+                    message.nextOffset = new $util.LongBits(object.nextOffset.low >>> 0, object.nextOffset.high >>> 0).toNumber(true);
+            if (object.planHash != null)
+                if (typeof object.planHash === "string")
+                    $util.base64.decode(object.planHash, message.planHash = $util.newBuffer($util.base64.length(object.planHash)), 0);
+                else if (object.planHash.length >= 0)
+                    message.planHash = object.planHash;
+            if (object.maxObservedRid != null) {
+                if (typeof object.maxObservedRid !== "object")
+                    throw TypeError(".database_blob.DatabaseBlobDiffPageCursor.maxObservedRid: object expected");
+                message.maxObservedRid = $root.database_blob.DatabaseBlobRowRid.fromObject(object.maxObservedRid);
+            }
+            if (object.signature != null)
+                if (typeof object.signature === "string")
+                    $util.base64.decode(object.signature, message.signature = $util.newBuffer($util.base64.length(object.signature)), 0);
+                else if (object.signature.length >= 0)
+                    message.signature = object.signature;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DatabaseBlobDiffPageCursor message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {database_blob.DatabaseBlobDiffPageCursor} message DatabaseBlobDiffPageCursor
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DatabaseBlobDiffPageCursor.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.formatVersion = 0;
+                if (options.bytes === String)
+                    object.workspaceId = "";
+                else {
+                    object.workspaceId = [];
+                    if (options.bytes !== Array)
+                        object.workspaceId = $util.newBuffer(object.workspaceId);
+                }
+                if (options.bytes === String)
+                    object.databaseId = "";
+                else {
+                    object.databaseId = [];
+                    if (options.bytes !== Array)
+                        object.databaseId = $util.newBuffer(object.databaseId);
+                }
+                object.manifestVersion = "";
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, true);
+                    object.nextOffset = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.nextOffset = options.longs === String ? "0" : 0;
+                if (options.bytes === String)
+                    object.planHash = "";
+                else {
+                    object.planHash = [];
+                    if (options.bytes !== Array)
+                        object.planHash = $util.newBuffer(object.planHash);
+                }
+                if (options.bytes === String)
+                    object.signature = "";
+                else {
+                    object.signature = [];
+                    if (options.bytes !== Array)
+                        object.signature = $util.newBuffer(object.signature);
+                }
+            }
+            if (message.formatVersion != null && message.hasOwnProperty("formatVersion"))
+                object.formatVersion = message.formatVersion;
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                object.workspaceId = options.bytes === String ? $util.base64.encode(message.workspaceId, 0, message.workspaceId.length) : options.bytes === Array ? Array.prototype.slice.call(message.workspaceId) : message.workspaceId;
+            if (message.databaseId != null && message.hasOwnProperty("databaseId"))
+                object.databaseId = options.bytes === String ? $util.base64.encode(message.databaseId, 0, message.databaseId.length) : options.bytes === Array ? Array.prototype.slice.call(message.databaseId) : message.databaseId;
+            if (message.manifestVersion != null && message.hasOwnProperty("manifestVersion"))
+                object.manifestVersion = message.manifestVersion;
+            if (message.maxKnownRid != null && message.hasOwnProperty("maxKnownRid")) {
+                object.maxKnownRid = $root.database_blob.DatabaseBlobRowRid.toObject(message.maxKnownRid, options);
+                if (options.oneofs)
+                    object._maxKnownRid = "maxKnownRid";
+            }
+            if (message.nextOffset != null && message.hasOwnProperty("nextOffset"))
+                if (typeof message.nextOffset === "number")
+                    object.nextOffset = options.longs === String ? String(message.nextOffset) : message.nextOffset;
+                else
+                    object.nextOffset = options.longs === String ? $util.Long.prototype.toString.call(message.nextOffset) : options.longs === Number ? new $util.LongBits(message.nextOffset.low >>> 0, message.nextOffset.high >>> 0).toNumber(true) : message.nextOffset;
+            if (message.planHash != null && message.hasOwnProperty("planHash"))
+                object.planHash = options.bytes === String ? $util.base64.encode(message.planHash, 0, message.planHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.planHash) : message.planHash;
+            if (message.maxObservedRid != null && message.hasOwnProperty("maxObservedRid")) {
+                object.maxObservedRid = $root.database_blob.DatabaseBlobRowRid.toObject(message.maxObservedRid, options);
+                if (options.oneofs)
+                    object._maxObservedRid = "maxObservedRid";
+            }
+            if (message.signature != null && message.hasOwnProperty("signature"))
+                object.signature = options.bytes === String ? $util.base64.encode(message.signature, 0, message.signature.length) : options.bytes === Array ? Array.prototype.slice.call(message.signature) : message.signature;
+            return object;
+        };
+
+        /**
+         * Converts this DatabaseBlobDiffPageCursor to JSON.
+         * @function toJSON
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DatabaseBlobDiffPageCursor.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DatabaseBlobDiffPageCursor
+         * @function getTypeUrl
+         * @memberof database_blob.DatabaseBlobDiffPageCursor
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DatabaseBlobDiffPageCursor.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/database_blob.DatabaseBlobDiffPageCursor";
+        };
+
+        return DatabaseBlobDiffPageCursor;
+    })();
+
     database_blob.CollabDocState = (function() {
 
         /**
@@ -520,6 +1363,7 @@ export const database_blob = $root.database_blob = (() => {
          * @interface ICollabDocState
          * @property {Uint8Array|null} [docState] CollabDocState docState
          * @property {number|null} [encoderVersion] CollabDocState encoderVersion
+         * @property {string|null} [collabVersion] CollabDocState collabVersion
          */
 
         /**
@@ -554,6 +1398,14 @@ export const database_blob = $root.database_blob = (() => {
         CollabDocState.prototype.encoderVersion = 0;
 
         /**
+         * CollabDocState collabVersion.
+         * @member {string} collabVersion
+         * @memberof database_blob.CollabDocState
+         * @instance
+         */
+        CollabDocState.prototype.collabVersion = "";
+
+        /**
          * Creates a new CollabDocState instance using the specified properties.
          * @function create
          * @memberof database_blob.CollabDocState
@@ -581,6 +1433,8 @@ export const database_blob = $root.database_blob = (() => {
                 writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.docState);
             if (message.encoderVersion != null && Object.hasOwnProperty.call(message, "encoderVersion"))
                 writer.uint32(/* id 2, wireType 0 =*/16).int32(message.encoderVersion);
+            if (message.collabVersion != null && Object.hasOwnProperty.call(message, "collabVersion"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.collabVersion);
             return writer;
         };
 
@@ -625,6 +1479,10 @@ export const database_blob = $root.database_blob = (() => {
                         message.encoderVersion = reader.int32();
                         break;
                     }
+                case 3: {
+                        message.collabVersion = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -666,6 +1524,9 @@ export const database_blob = $root.database_blob = (() => {
             if (message.encoderVersion != null && message.hasOwnProperty("encoderVersion"))
                 if (!$util.isInteger(message.encoderVersion))
                     return "encoderVersion: integer expected";
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                if (!$util.isString(message.collabVersion))
+                    return "collabVersion: string expected";
             return null;
         };
 
@@ -688,6 +1549,8 @@ export const database_blob = $root.database_blob = (() => {
                     message.docState = object.docState;
             if (object.encoderVersion != null)
                 message.encoderVersion = object.encoderVersion | 0;
+            if (object.collabVersion != null)
+                message.collabVersion = String(object.collabVersion);
             return message;
         };
 
@@ -713,11 +1576,14 @@ export const database_blob = $root.database_blob = (() => {
                         object.docState = $util.newBuffer(object.docState);
                 }
                 object.encoderVersion = 0;
+                object.collabVersion = "";
             }
             if (message.docState != null && message.hasOwnProperty("docState"))
                 object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
             if (message.encoderVersion != null && message.hasOwnProperty("encoderVersion"))
                 object.encoderVersion = message.encoderVersion;
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                object.collabVersion = message.collabVersion;
             return object;
         };
 
@@ -1606,6 +2472,267 @@ export const database_blob = $root.database_blob = (() => {
         return DatabaseBlobRowDelete;
     })();
 
+    database_blob.DatabaseBlobDiffPageInfo = (function() {
+
+        /**
+         * Properties of a DatabaseBlobDiffPageInfo.
+         * @memberof database_blob
+         * @interface IDatabaseBlobDiffPageInfo
+         * @property {Uint8Array|null} [nextCursor] DatabaseBlobDiffPageInfo nextCursor
+         * @property {boolean|null} [hasMore] DatabaseBlobDiffPageInfo hasMore
+         * @property {boolean|null} [restartRequired] DatabaseBlobDiffPageInfo restartRequired
+         */
+
+        /**
+         * Constructs a new DatabaseBlobDiffPageInfo.
+         * @memberof database_blob
+         * @classdesc Represents a DatabaseBlobDiffPageInfo.
+         * @implements IDatabaseBlobDiffPageInfo
+         * @constructor
+         * @param {database_blob.IDatabaseBlobDiffPageInfo=} [properties] Properties to set
+         */
+        function DatabaseBlobDiffPageInfo(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * DatabaseBlobDiffPageInfo nextCursor.
+         * @member {Uint8Array} nextCursor
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @instance
+         */
+        DatabaseBlobDiffPageInfo.prototype.nextCursor = $util.newBuffer([]);
+
+        /**
+         * DatabaseBlobDiffPageInfo hasMore.
+         * @member {boolean} hasMore
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @instance
+         */
+        DatabaseBlobDiffPageInfo.prototype.hasMore = false;
+
+        /**
+         * DatabaseBlobDiffPageInfo restartRequired.
+         * @member {boolean} restartRequired
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @instance
+         */
+        DatabaseBlobDiffPageInfo.prototype.restartRequired = false;
+
+        /**
+         * Creates a new DatabaseBlobDiffPageInfo instance using the specified properties.
+         * @function create
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageInfo=} [properties] Properties to set
+         * @returns {database_blob.DatabaseBlobDiffPageInfo} DatabaseBlobDiffPageInfo instance
+         */
+        DatabaseBlobDiffPageInfo.create = function create(properties) {
+            return new DatabaseBlobDiffPageInfo(properties);
+        };
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageInfo message. Does not implicitly {@link database_blob.DatabaseBlobDiffPageInfo.verify|verify} messages.
+         * @function encode
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageInfo} message DatabaseBlobDiffPageInfo message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseBlobDiffPageInfo.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.nextCursor != null && Object.hasOwnProperty.call(message, "nextCursor"))
+                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.nextCursor);
+            if (message.hasMore != null && Object.hasOwnProperty.call(message, "hasMore"))
+                writer.uint32(/* id 2, wireType 0 =*/16).bool(message.hasMore);
+            if (message.restartRequired != null && Object.hasOwnProperty.call(message, "restartRequired"))
+                writer.uint32(/* id 3, wireType 0 =*/24).bool(message.restartRequired);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageInfo message, length delimited. Does not implicitly {@link database_blob.DatabaseBlobDiffPageInfo.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {database_blob.IDatabaseBlobDiffPageInfo} message DatabaseBlobDiffPageInfo message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        DatabaseBlobDiffPageInfo.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a DatabaseBlobDiffPageInfo message from the specified reader or buffer.
+         * @function decode
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {database_blob.DatabaseBlobDiffPageInfo} DatabaseBlobDiffPageInfo
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseBlobDiffPageInfo.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.database_blob.DatabaseBlobDiffPageInfo();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.nextCursor = reader.bytes();
+                        break;
+                    }
+                case 2: {
+                        message.hasMore = reader.bool();
+                        break;
+                    }
+                case 3: {
+                        message.restartRequired = reader.bool();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a DatabaseBlobDiffPageInfo message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {database_blob.DatabaseBlobDiffPageInfo} DatabaseBlobDiffPageInfo
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        DatabaseBlobDiffPageInfo.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a DatabaseBlobDiffPageInfo message.
+         * @function verify
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        DatabaseBlobDiffPageInfo.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.nextCursor != null && message.hasOwnProperty("nextCursor"))
+                if (!(message.nextCursor && typeof message.nextCursor.length === "number" || $util.isString(message.nextCursor)))
+                    return "nextCursor: buffer expected";
+            if (message.hasMore != null && message.hasOwnProperty("hasMore"))
+                if (typeof message.hasMore !== "boolean")
+                    return "hasMore: boolean expected";
+            if (message.restartRequired != null && message.hasOwnProperty("restartRequired"))
+                if (typeof message.restartRequired !== "boolean")
+                    return "restartRequired: boolean expected";
+            return null;
+        };
+
+        /**
+         * Creates a DatabaseBlobDiffPageInfo message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {database_blob.DatabaseBlobDiffPageInfo} DatabaseBlobDiffPageInfo
+         */
+        DatabaseBlobDiffPageInfo.fromObject = function fromObject(object) {
+            if (object instanceof $root.database_blob.DatabaseBlobDiffPageInfo)
+                return object;
+            let message = new $root.database_blob.DatabaseBlobDiffPageInfo();
+            if (object.nextCursor != null)
+                if (typeof object.nextCursor === "string")
+                    $util.base64.decode(object.nextCursor, message.nextCursor = $util.newBuffer($util.base64.length(object.nextCursor)), 0);
+                else if (object.nextCursor.length >= 0)
+                    message.nextCursor = object.nextCursor;
+            if (object.hasMore != null)
+                message.hasMore = Boolean(object.hasMore);
+            if (object.restartRequired != null)
+                message.restartRequired = Boolean(object.restartRequired);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a DatabaseBlobDiffPageInfo message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {database_blob.DatabaseBlobDiffPageInfo} message DatabaseBlobDiffPageInfo
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        DatabaseBlobDiffPageInfo.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                if (options.bytes === String)
+                    object.nextCursor = "";
+                else {
+                    object.nextCursor = [];
+                    if (options.bytes !== Array)
+                        object.nextCursor = $util.newBuffer(object.nextCursor);
+                }
+                object.hasMore = false;
+                object.restartRequired = false;
+            }
+            if (message.nextCursor != null && message.hasOwnProperty("nextCursor"))
+                object.nextCursor = options.bytes === String ? $util.base64.encode(message.nextCursor, 0, message.nextCursor.length) : options.bytes === Array ? Array.prototype.slice.call(message.nextCursor) : message.nextCursor;
+            if (message.hasMore != null && message.hasOwnProperty("hasMore"))
+                object.hasMore = message.hasMore;
+            if (message.restartRequired != null && message.hasOwnProperty("restartRequired"))
+                object.restartRequired = message.restartRequired;
+            return object;
+        };
+
+        /**
+         * Converts this DatabaseBlobDiffPageInfo to JSON.
+         * @function toJSON
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        DatabaseBlobDiffPageInfo.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for DatabaseBlobDiffPageInfo
+         * @function getTypeUrl
+         * @memberof database_blob.DatabaseBlobDiffPageInfo
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        DatabaseBlobDiffPageInfo.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/database_blob.DatabaseBlobDiffPageInfo";
+        };
+
+        return DatabaseBlobDiffPageInfo;
+    })();
+
     database_blob.DatabaseBlobDiffResponse = (function() {
 
         /**
@@ -1620,6 +2747,8 @@ export const database_blob = $root.database_blob = (() => {
          * @property {database_blob.DiffStatus|null} [status] DatabaseBlobDiffResponse status
          * @property {number|null} [retryAfterSecs] DatabaseBlobDiffResponse retryAfterSecs
          * @property {string|null} [message] DatabaseBlobDiffResponse message
+         * @property {Array.<Uint8Array>|null} [missingRowIds] DatabaseBlobDiffResponse missingRowIds
+         * @property {database_blob.IDatabaseBlobDiffPageInfo|null} [page] DatabaseBlobDiffResponse page
          */
 
         /**
@@ -1634,6 +2763,7 @@ export const database_blob = $root.database_blob = (() => {
             this.updates = [];
             this.deletes = [];
             this.creates = [];
+            this.missingRowIds = [];
             if (properties)
                 for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
                     if (properties[keys[i]] != null)
@@ -1704,6 +2834,22 @@ export const database_blob = $root.database_blob = (() => {
          */
         DatabaseBlobDiffResponse.prototype.message = null;
 
+        /**
+         * DatabaseBlobDiffResponse missingRowIds.
+         * @member {Array.<Uint8Array>} missingRowIds
+         * @memberof database_blob.DatabaseBlobDiffResponse
+         * @instance
+         */
+        DatabaseBlobDiffResponse.prototype.missingRowIds = $util.emptyArray;
+
+        /**
+         * DatabaseBlobDiffResponse page.
+         * @member {database_blob.IDatabaseBlobDiffPageInfo|null|undefined} page
+         * @memberof database_blob.DatabaseBlobDiffResponse
+         * @instance
+         */
+        DatabaseBlobDiffResponse.prototype.page = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
@@ -1737,6 +2883,17 @@ export const database_blob = $root.database_blob = (() => {
          */
         Object.defineProperty(DatabaseBlobDiffResponse.prototype, "_message", {
             get: $util.oneOfGetter($oneOfFields = ["message"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * DatabaseBlobDiffResponse _page.
+         * @member {"page"|undefined} _page
+         * @memberof database_blob.DatabaseBlobDiffResponse
+         * @instance
+         */
+        Object.defineProperty(DatabaseBlobDiffResponse.prototype, "_page", {
+            get: $util.oneOfGetter($oneOfFields = ["page"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -1783,6 +2940,11 @@ export const database_blob = $root.database_blob = (() => {
                 writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.retryAfterSecs);
             if (message.message != null && Object.hasOwnProperty.call(message, "message"))
                 writer.uint32(/* id 8, wireType 2 =*/66).string(message.message);
+            if (message.missingRowIds != null && message.missingRowIds.length)
+                for (let i = 0; i < message.missingRowIds.length; ++i)
+                    writer.uint32(/* id 9, wireType 2 =*/74).bytes(message.missingRowIds[i]);
+            if (message.page != null && Object.hasOwnProperty.call(message, "page"))
+                $root.database_blob.DatabaseBlobDiffPageInfo.encode(message.page, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
             return writer;
         };
 
@@ -1855,6 +3017,16 @@ export const database_blob = $root.database_blob = (() => {
                     }
                 case 8: {
                         message.message = reader.string();
+                        break;
+                    }
+                case 9: {
+                        if (!(message.missingRowIds && message.missingRowIds.length))
+                            message.missingRowIds = [];
+                        message.missingRowIds.push(reader.bytes());
+                        break;
+                    }
+                case 10: {
+                        message.page = $root.database_blob.DatabaseBlobDiffPageInfo.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -1946,6 +3118,21 @@ export const database_blob = $root.database_blob = (() => {
                 if (!$util.isString(message.message))
                     return "message: string expected";
             }
+            if (message.missingRowIds != null && message.hasOwnProperty("missingRowIds")) {
+                if (!Array.isArray(message.missingRowIds))
+                    return "missingRowIds: array expected";
+                for (let i = 0; i < message.missingRowIds.length; ++i)
+                    if (!(message.missingRowIds[i] && typeof message.missingRowIds[i].length === "number" || $util.isString(message.missingRowIds[i])))
+                        return "missingRowIds: buffer[] expected";
+            }
+            if (message.page != null && message.hasOwnProperty("page")) {
+                properties._page = 1;
+                {
+                    let error = $root.database_blob.DatabaseBlobDiffPageInfo.verify(message.page);
+                    if (error)
+                        return "page." + error;
+                }
+            }
             return null;
         };
 
@@ -2015,6 +3202,21 @@ export const database_blob = $root.database_blob = (() => {
                 message.retryAfterSecs = object.retryAfterSecs >>> 0;
             if (object.message != null)
                 message.message = String(object.message);
+            if (object.missingRowIds) {
+                if (!Array.isArray(object.missingRowIds))
+                    throw TypeError(".database_blob.DatabaseBlobDiffResponse.missingRowIds: array expected");
+                message.missingRowIds = [];
+                for (let i = 0; i < object.missingRowIds.length; ++i)
+                    if (typeof object.missingRowIds[i] === "string")
+                        $util.base64.decode(object.missingRowIds[i], message.missingRowIds[i] = $util.newBuffer($util.base64.length(object.missingRowIds[i])), 0);
+                    else if (object.missingRowIds[i].length >= 0)
+                        message.missingRowIds[i] = object.missingRowIds[i];
+            }
+            if (object.page != null) {
+                if (typeof object.page !== "object")
+                    throw TypeError(".database_blob.DatabaseBlobDiffResponse.page: object expected");
+                message.page = $root.database_blob.DatabaseBlobDiffPageInfo.fromObject(object.page);
+            }
             return message;
         };
 
@@ -2035,6 +3237,7 @@ export const database_blob = $root.database_blob = (() => {
                 object.updates = [];
                 object.deletes = [];
                 object.creates = [];
+                object.missingRowIds = [];
             }
             if (options.defaults) {
                 object.manifestVersion = "";
@@ -2073,6 +3276,16 @@ export const database_blob = $root.database_blob = (() => {
                 object.message = message.message;
                 if (options.oneofs)
                     object._message = "message";
+            }
+            if (message.missingRowIds && message.missingRowIds.length) {
+                object.missingRowIds = [];
+                for (let j = 0; j < message.missingRowIds.length; ++j)
+                    object.missingRowIds[j] = options.bytes === String ? $util.base64.encode(message.missingRowIds[j], 0, message.missingRowIds[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.missingRowIds[j]) : message.missingRowIds[j];
+            }
+            if (message.page != null && message.hasOwnProperty("page")) {
+                object.page = $root.database_blob.DatabaseBlobDiffPageInfo.toObject(message.page, options);
+                if (options.oneofs)
+                    object._page = "page";
             }
             return object;
         };
@@ -2742,6 +3955,7 @@ export const database_blob = $root.database_blob = (() => {
          * @property {database_blob.IDatabaseBlobRowRid|null} [rid] ManifestRowPointer rid
          * @property {boolean|null} [deleted] ManifestRowPointer deleted
          * @property {database_blob.IManifestRowDocumentPointer|null} [document] ManifestRowPointer document
+         * @property {number|null} [segmentLen] ManifestRowPointer segmentLen
          */
 
         /**
@@ -2807,6 +4021,14 @@ export const database_blob = $root.database_blob = (() => {
          */
         ManifestRowPointer.prototype.document = null;
 
+        /**
+         * ManifestRowPointer segmentLen.
+         * @member {number} segmentLen
+         * @memberof database_blob.ManifestRowPointer
+         * @instance
+         */
+        ManifestRowPointer.prototype.segmentLen = 0;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
@@ -2857,6 +4079,8 @@ export const database_blob = $root.database_blob = (() => {
                 writer.uint32(/* id 5, wireType 0 =*/40).bool(message.deleted);
             if (message.document != null && Object.hasOwnProperty.call(message, "document"))
                 $root.database_blob.ManifestRowDocumentPointer.encode(message.document, writer.uint32(/* id 6, wireType 2 =*/50).fork()).ldelim();
+            if (message.segmentLen != null && Object.hasOwnProperty.call(message, "segmentLen"))
+                writer.uint32(/* id 7, wireType 0 =*/56).uint32(message.segmentLen);
             return writer;
         };
 
@@ -2915,6 +4139,10 @@ export const database_blob = $root.database_blob = (() => {
                     }
                 case 6: {
                         message.document = $root.database_blob.ManifestRowDocumentPointer.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 7: {
+                        message.segmentLen = reader.uint32();
                         break;
                     }
                 default:
@@ -2978,6 +4206,9 @@ export const database_blob = $root.database_blob = (() => {
                         return "document." + error;
                 }
             }
+            if (message.segmentLen != null && message.hasOwnProperty("segmentLen"))
+                if (!$util.isInteger(message.segmentLen))
+                    return "segmentLen: integer expected";
             return null;
         };
 
@@ -3021,6 +4252,8 @@ export const database_blob = $root.database_blob = (() => {
                     throw TypeError(".database_blob.ManifestRowPointer.document: object expected");
                 message.document = $root.database_blob.ManifestRowDocumentPointer.fromObject(object.document);
             }
+            if (object.segmentLen != null)
+                message.segmentLen = object.segmentLen >>> 0;
             return message;
         };
 
@@ -3053,6 +4286,7 @@ export const database_blob = $root.database_blob = (() => {
                     object.segmentOffset = options.longs === String ? "0" : 0;
                 object.rid = null;
                 object.deleted = false;
+                object.segmentLen = 0;
             }
             if (message.rowId != null && message.hasOwnProperty("rowId"))
                 object.rowId = options.bytes === String ? $util.base64.encode(message.rowId, 0, message.rowId.length) : options.bytes === Array ? Array.prototype.slice.call(message.rowId) : message.rowId;
@@ -3072,6 +4306,8 @@ export const database_blob = $root.database_blob = (() => {
                 if (options.oneofs)
                     object._document = "document";
             }
+            if (message.segmentLen != null && message.hasOwnProperty("segmentLen"))
+                object.segmentLen = message.segmentLen;
             return object;
         };
 
@@ -3117,6 +4353,7 @@ export const database_blob = $root.database_blob = (() => {
          * @property {Array.<database_blob.IManifestRowPointer>|null} [rowIndex] DatabaseBlobManifest rowIndex
          * @property {number|Long|null} [updatedAtMillis] DatabaseBlobManifest updatedAtMillis
          * @property {number|Long|null} [lockEpoch] DatabaseBlobManifest lockEpoch
+         * @property {boolean|null} [generationIncomplete] DatabaseBlobManifest generationIncomplete
          */
 
         /**
@@ -3193,6 +4430,14 @@ export const database_blob = $root.database_blob = (() => {
         DatabaseBlobManifest.prototype.lockEpoch = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
+         * DatabaseBlobManifest generationIncomplete.
+         * @member {boolean} generationIncomplete
+         * @memberof database_blob.DatabaseBlobManifest
+         * @instance
+         */
+        DatabaseBlobManifest.prototype.generationIncomplete = false;
+
+        /**
          * Creates a new DatabaseBlobManifest instance using the specified properties.
          * @function create
          * @memberof database_blob.DatabaseBlobManifest
@@ -3232,6 +4477,8 @@ export const database_blob = $root.database_blob = (() => {
                 writer.uint32(/* id 6, wireType 0 =*/48).int64(message.updatedAtMillis);
             if (message.lockEpoch != null && Object.hasOwnProperty.call(message, "lockEpoch"))
                 writer.uint32(/* id 7, wireType 0 =*/56).uint64(message.lockEpoch);
+            if (message.generationIncomplete != null && Object.hasOwnProperty.call(message, "generationIncomplete"))
+                writer.uint32(/* id 8, wireType 0 =*/64).bool(message.generationIncomplete);
             return writer;
         };
 
@@ -3298,6 +4545,10 @@ export const database_blob = $root.database_blob = (() => {
                     }
                 case 7: {
                         message.lockEpoch = reader.uint64();
+                        break;
+                    }
+                case 8: {
+                        message.generationIncomplete = reader.bool();
                         break;
                     }
                 default:
@@ -3368,6 +4619,9 @@ export const database_blob = $root.database_blob = (() => {
             if (message.lockEpoch != null && message.hasOwnProperty("lockEpoch"))
                 if (!$util.isInteger(message.lockEpoch) && !(message.lockEpoch && $util.isInteger(message.lockEpoch.low) && $util.isInteger(message.lockEpoch.high)))
                     return "lockEpoch: integer|Long expected";
+            if (message.generationIncomplete != null && message.hasOwnProperty("generationIncomplete"))
+                if (typeof message.generationIncomplete !== "boolean")
+                    return "generationIncomplete: boolean expected";
             return null;
         };
 
@@ -3433,6 +4687,8 @@ export const database_blob = $root.database_blob = (() => {
                     message.lockEpoch = object.lockEpoch;
                 else if (typeof object.lockEpoch === "object")
                     message.lockEpoch = new $util.LongBits(object.lockEpoch.low >>> 0, object.lockEpoch.high >>> 0).toNumber(true);
+            if (object.generationIncomplete != null)
+                message.generationIncomplete = Boolean(object.generationIncomplete);
             return message;
         };
 
@@ -3479,6 +4735,7 @@ export const database_blob = $root.database_blob = (() => {
                     object.lockEpoch = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
                 } else
                     object.lockEpoch = options.longs === String ? "0" : 0;
+                object.generationIncomplete = false;
             }
             if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
                 object.workspaceId = options.bytes === String ? $util.base64.encode(message.workspaceId, 0, message.workspaceId.length) : options.bytes === Array ? Array.prototype.slice.call(message.workspaceId) : message.workspaceId;
@@ -3506,6 +4763,8 @@ export const database_blob = $root.database_blob = (() => {
                     object.lockEpoch = options.longs === String ? String(message.lockEpoch) : message.lockEpoch;
                 else
                     object.lockEpoch = options.longs === String ? $util.Long.prototype.toString.call(message.lockEpoch) : options.longs === Number ? new $util.LongBits(message.lockEpoch.low >>> 0, message.lockEpoch.high >>> 0).toNumber(true) : message.lockEpoch;
+            if (message.generationIncomplete != null && message.hasOwnProperty("generationIncomplete"))
+                object.generationIncomplete = message.generationIncomplete;
             return object;
         };
 

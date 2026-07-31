@@ -32,6 +32,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
   }, [editor, node]);
 
   const block = getBlock();
+  const blockCount = editor.children.length;
 
   const className = useMemo(() => {
     const classList = attributes.className?.split(' ') ?? [];
@@ -61,7 +62,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
 
         // Show placeholder when the document is empty (single empty paragraph)
         // This matches the desktop "Enter a / to insert a block, or start typing" behavior
-        if(editor.children.length <= 1) {
+        if(blockCount <= 1) {
           return t('cardDetails.notesPlaceholder');
         }
 
@@ -123,7 +124,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, editor, node, t]);
+  }, [block, blockCount, editor, node, t]);
 
   const isInsideTableCell = useMemo(() => {
     try {

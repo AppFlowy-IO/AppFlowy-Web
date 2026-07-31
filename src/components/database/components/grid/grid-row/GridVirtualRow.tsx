@@ -1,5 +1,5 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
@@ -17,6 +17,7 @@ import { RenderColumn } from '@/components/database/components/grid/grid-column'
 import GridVirtualColumn from '@/components/database/components/grid/grid-column/GridVirtualColumn';
 import { GridRowProvider } from '@/components/database/components/grid/grid-row/GridRowContext';
 import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
+import { useGridRowDraggable } from '@/components/database/components/grid/grid-row/useGridRowDraggable';
 import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
@@ -24,7 +25,6 @@ import { cn } from '@/lib/utils';
 import HoverControls from 'src/components/database/components/grid/controls/HoverControls';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
-const draggingState: ItemState = { type: GridDragState.DRAGGING };
 
 function GridVirtualRow({
   row,
@@ -47,7 +47,7 @@ function GridVirtualRow({
   const rowIndex = row.index;
   const rowId = data[rowIndex].rowId as string;
   const rowType = data[rowIndex].type;
-  const { setHoverRowId, setResizeRow } = useGridContext();
+  const { activeCell, setHoverRowId, setResizeRow } = useGridContext();
   const databaseRow = useRowData(rowId);
   const cells = databaseRow?.get(YjsDatabaseKey.cells);
   const cellsCount = cells?.size;
@@ -68,6 +68,7 @@ function GridVirtualRow({
   );
 
   const isRegularRow = rowType === RenderRowType.Row;
+  const hasActiveCell = activeCell?.rowId === rowId;
 
   useEffect(() => {
     const element = innerRef.current;
@@ -83,21 +84,6 @@ function GridVirtualRow({
 
     return combine(
       registerRow({ rowId, element }),
-      draggable({
-        element,
-        dragHandle,
-
-        getInitialData: () => data,
-        onGenerateDragPreview() {
-          setState({ type: GridDragState.PREVIEW });
-        },
-        onDragStart() {
-          setState(draggingState);
-        },
-        onDrop() {
-          setState(idleState);
-        },
-      }),
       dropTargetForElements({
         element,
         canDrop: ({ source }) => {
@@ -136,6 +122,17 @@ function GridVirtualRow({
       })
     );
   }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isRegularRow]);
+
+  useGridRowDraggable({
+    elementRef: innerRef,
+    dragHandleRef,
+    // Firefox prevents text selection inside a native draggable ancestor.
+    enabled: isRegularRow && !hasActiveCell,
+    instanceId,
+    rowId,
+    rowIndex,
+    setState,
+  });
   const readOnly = useReadOnly();
 
   const children = useMemo(() => {

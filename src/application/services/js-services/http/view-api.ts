@@ -7,7 +7,7 @@ const MAX_WORKSPACE_VIEW_SUBTREES_GET_URL_BYTES = 4096;
 const WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE = 50;
 
 export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
-  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=2`;
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=6`;
 
   return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url)).then((data) => ({
     outline: Array.isArray(data.children) ? data.children : [],

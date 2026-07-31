@@ -11,6 +11,7 @@ import {
   DatabasePromptRow,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  LoadRowDocumentOptions,
   RowDocumentSourcePayload,
   Types,
   YDatabase,
@@ -297,14 +298,14 @@ export function useDatabaseOperations(
 
   // Load a row sub-document (document content inside a database row)
   const loadRowDocument = useCallback(
-    async (documentId: string): Promise<YDoc | null> => {
+    async (documentId: string, options?: LoadRowDocumentOptions): Promise<YDoc | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[loadRowDocument] workspaceId not available');
         return null;
       }
 
       try {
-        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId);
+        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId, options);
 
         // Set metadata for sync binding
         const docWithMeta = doc as YDoc & {

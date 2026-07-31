@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getPrimaryFieldId, useDatabaseContext } from '@/application/database-yjs';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { decodeCellToText } from '@/application/database-yjs/decode';
 import { createRowInRelatedDatabase } from '@/application/database-yjs/dispatch/relation';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { View, YDatabase, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -97,6 +97,7 @@ function RelationCellMenuContent({
   const [searchInput, setSearchInput] = useState<string>('');
   const [primaryFieldId, setPrimaryFieldId] = useState<string | null>(null);
   const [primaryField, setPrimaryField] = useState<YDatabaseField | null>(null);
+  const [primaryFieldClock, setPrimaryFieldClock] = useState(0);
   const [guid, setGuid] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
   const [rowIds, setRowIds] = useState<string[]>([]);
@@ -156,8 +157,23 @@ function RelationCellMenuContent({
     })();
   }, [loadView, selectedViewId]);
 
+  useEffect(() => {
+    if (!primaryField) return;
+
+    const onPrimaryFieldChange = () => {
+      setPrimaryFieldClock((clock) => clock + 1);
+    };
+
+    primaryField.observeDeep(onPrimaryFieldChange);
+    return () => {
+      primaryField.unobserveDeep(onPrimaryFieldChange);
+    };
+  }, [primaryField]);
+
   const getContent = useCallback(
     (rowId: string) => {
+      void primaryFieldClock;
+
       const rowDoc = rowDocsRef.current.get(rowId);
 
       if (!rowDoc || !primaryFieldId) {
@@ -169,11 +185,9 @@ function RelationCellMenuContent({
       const cell = row?.get(YjsDatabaseKey.cells)?.get(primaryFieldId);
 
       if (!cell) return '';
-      const cellValue = parseYDatabaseCellToCell(cell, primaryField || undefined);
-
-      return (cellValue?.data as string) || '';
+      return primaryField ? decodeCellToText(cell, primaryField) : '';
     },
-    [primaryFieldId, primaryField]
+    [primaryFieldId, primaryField, primaryFieldClock]
   );
 
   useEffect(() => {
@@ -291,7 +305,7 @@ function RelationCellMenuContent({
                 size={'icon'}
                 className={cn(
                   'shrink-0 opacity-0 transition-opacity',
-                  (selectedId === id) && 'opacity-100',
+                  selectedId === id && 'opacity-100',
                   'group-hover:opacity-100'
                 )}
               >

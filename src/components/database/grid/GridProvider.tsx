@@ -93,6 +93,7 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
     () => ({
       hoverRowId,
       setHoverRowId: handleHoverRowStart,
+      rowOrders,
       rows,
       setRows,
       activePropertyId,
@@ -112,6 +113,7 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
     [
       hoverRowId,
       handleHoverRowStart,
+      rowOrders,
       rows,
       activePropertyId,
       activeCell,

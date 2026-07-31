@@ -109,7 +109,6 @@ export const SpaceSelectors = {
   itemByName: (page: Page, spaceName: string) =>
     page.locator(`[data-testid="space-item"]:has([data-testid="space-name"]:text-is("${spaceName}"))`).first(),
   moreActionsButton: (page: Page) => page.getByTestId('inline-more-actions'),
-  createNewSpaceButton: (page: Page) => page.getByTestId('create-new-space-button'),
   createSpaceModal: (page: Page) => page.getByTestId('create-space-modal'),
   spaceNameInput: (page: Page) => page.getByTestId('space-name-input'),
 };
@@ -142,6 +141,7 @@ export const ModalSelectors = {
   confirmDeleteButton: (page: Page) => page.getByTestId('confirm-delete-button'),
   deletePageModal: (page: Page) => page.getByTestId('delete-page-confirm-modal'),
   newPageModal: (page: Page) => page.getByTestId('new-page-modal'),
+  createNewSpaceButton: (page: Page) => page.getByTestId('new-page-create-space-button'),
   spaceItemInModal: (page: Page) => page.getByTestId('space-item'),
   okButton: (page: Page) => page.getByTestId('modal-ok-button'),
   renameInput: (page: Page) => page.getByTestId('rename-modal-input'),

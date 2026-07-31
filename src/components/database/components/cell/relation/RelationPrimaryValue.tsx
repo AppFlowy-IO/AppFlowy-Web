@@ -2,10 +2,27 @@ import { useEffect, useState } from 'react';
 
 import { FieldType } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { FieldId, YDatabaseCell, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { decodeCellToText } from '@/application/database-yjs/decode';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
+import {
+  FieldId,
+  YDatabaseCell,
+  YDatabaseField,
+  YDatabaseRow,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 
-
-export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; fieldId?: FieldId }) {
+export function RelationPrimaryValue({
+  rowDoc,
+  fieldId,
+  field,
+}: {
+  rowDoc: YDoc;
+  fieldId?: FieldId;
+  field?: YDatabaseField;
+}) {
   const [text, setText] = useState<string | null>(null);
   const [row, setRow] = useState<YDatabaseRow | null>(null);
 
@@ -17,14 +34,15 @@ export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; field
     };
 
     onRowChange();
-    data?.observeDeep(onRowChange);
-    return () => {
-      data?.unobserveDeep(onRowChange);
-    };
+    return subscribeSharedYjsDeep(data, onRowChange);
   }, [rowDoc]);
 
   useEffect(() => {
-    if (!row) return;
+    if (!row) {
+      setText('');
+      return;
+    }
+
     const cells = row.get(YjsDatabaseKey.cells);
 
     let primaryCell: YDatabaseCell | undefined;
@@ -32,10 +50,10 @@ export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; field
     if (fieldId) {
       primaryCell = cells?.get(fieldId);
     } else {
-      const fieldId = Array.from(cells.keys()).find((key) => {
+      const fieldId = Array.from(cells?.keys() ?? []).find((key) => {
         const fieldType = cells.get(key)?.get(YjsDatabaseKey.field_type);
 
-        if (!fieldType) return false;
+        if (fieldType === undefined || fieldType === null) return false;
         return Number(fieldType) === FieldType.RichText;
       });
 
@@ -45,17 +63,25 @@ export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; field
     }
 
     const observeHandler = () => {
-      if (!primaryCell) return;
-      setText(parseYDatabaseCellToCell(primaryCell).data as string);
+      if (!primaryCell) {
+        setText('');
+        return;
+      }
+
+      setText(field ? decodeCellToText(primaryCell, field) : String(parseYDatabaseCellToCell(primaryCell).data ?? ''));
     };
 
     observeHandler();
 
-    primaryCell?.observe(observeHandler);
+    const observerCleanups: Array<() => void> = [];
+
+    if (primaryCell) observerCleanups.push(subscribeSharedYjsDeep(primaryCell, observeHandler));
+    if (field) observerCleanups.push(subscribeSharedYjsDeep(field, observeHandler));
+
     return () => {
-      primaryCell?.unobserve(observeHandler);
+      observerCleanups.forEach((cleanup) => cleanup());
     };
-  }, [row, fieldId]);
+  }, [row, fieldId, field]);
 
   return <div>{text}</div>;
 }

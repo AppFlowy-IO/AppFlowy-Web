@@ -8,10 +8,11 @@ import { useAppflowyWebSocket, Options } from '../useAppflowyWebSocket';
 // across renders, like the real library does for an unchanged connection.
 const stableSendMessage = jest.fn();
 const stableGetWebSocket = jest.fn(() => null);
+let mockReadyState = 1;
 const mockUseWebSocket = jest.fn(() => ({
   lastMessage: null,
   sendMessage: stableSendMessage,
-  readyState: 1,
+  readyState: mockReadyState,
   getWebSocket: stableGetWebSocket,
 }));
 
@@ -41,16 +42,27 @@ const setStoredToken = (accessToken: string) => {
   });
 };
 
-const lastSocketUrl = (): string => {
-  const calls = mockUseWebSocket.mock.calls as unknown as [string][];
+type SocketUrl = string | (() => string | Promise<string>);
+
+const lastSocketInput = (): SocketUrl => {
+  const calls = mockUseWebSocket.mock.calls as unknown as [SocketUrl][];
 
   return calls[calls.length - 1][0];
+};
+
+const resolveLastSocketUrl = async (): Promise<string> => {
+  const input = lastSocketInput();
+
+  return typeof input === 'function' ? input() : input;
 };
 
 const lastSocketOptions = () => {
   const calls = mockUseWebSocket.mock.calls as unknown as [
     string,
-    { shouldReconnect?: (event: CloseEvent) => boolean }
+    {
+      shouldReconnect?: (event: CloseEvent) => boolean;
+      reconnectInterval?: (attemptNumber: number) => number;
+    }
   ][];
 
   return calls[calls.length - 1][1];
@@ -65,35 +77,36 @@ const baseOptions: Options = {
 describe('useAppflowyWebSocket', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockReadyState = 1;
     setStoredToken('token-A');
   });
 
-  it('connects with the session token in the socket URL', () => {
+  it('connects with the session token in the socket URL', async () => {
     renderHook(() => useAppflowyWebSocket(baseOptions));
 
-    expect(lastSocketUrl()).toContain('token=token-A');
-    expect(lastSocketUrl()).toContain('/workspace-1/');
+    expect(await resolveLastSocketUrl()).toContain('token=token-A');
+    expect(await resolveLastSocketUrl()).toContain('/workspace-1/');
   });
 
-  // Reproduces the silent-reconnect bug: the HTTP layer refreshing the stored
-  // token must NOT change the socket URL on the next render — a URL change
-  // makes react-use-websocket tear down and reopen the connection, bypassing
-  // the throttled nonce reconnect path entirely.
-  it('keeps the socket URL stable when the stored token is refreshed mid-session', () => {
+  // A token rotation must not replace the URL callback during a live session,
+  // but the next actual connection attempt must read the rotated token.
+  it('keeps the socket input stable while resolving the freshest token', async () => {
     const { rerender } = renderHook(() => useAppflowyWebSocket(baseOptions));
 
-    const initialUrl = lastSocketUrl();
+    const initialInput = lastSocketInput();
 
     setStoredToken('token-B');
     rerender();
 
-    expect(lastSocketUrl()).toBe(initialUrl);
+    expect(lastSocketInput()).toBe(initialInput);
+    expect(await resolveLastSocketUrl()).toContain('token=token-B');
   });
 
   // Guards the load-bearing counterpart of the test above: an explicit
   // reconnect MUST pick up the freshest stored token, since the old one may
   // have been rotated or expired while the socket was down.
   it('uses the freshest stored token when a reconnect is triggered', async () => {
+    mockReadyState = 3;
     const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
 
     setStoredToken('token-B');
@@ -102,15 +115,16 @@ describe('useAppflowyWebSocket', () => {
       result.current.reconnect();
     });
 
-    await waitFor(() => {
-      expect(lastSocketUrl()).toContain('_rc=1');
+    await waitFor(async () => {
+      expect(await resolveLastSocketUrl()).toContain('_rc=1');
     });
 
-    expect(lastSocketUrl()).toContain('token=token-B');
+    expect(await resolveLastSocketUrl()).toContain('token=token-B');
   });
 
   it('uses the freshest stored token when react-use-websocket schedules an automatic retry', async () => {
     renderHook(() => useAppflowyWebSocket(baseOptions));
+    const initialInput = lastSocketInput();
 
     setStoredToken('token-B');
 
@@ -118,11 +132,45 @@ describe('useAppflowyWebSocket', () => {
       expect(lastSocketOptions().shouldReconnect?.({ code: 1006, reason: 'abnormal close' } as CloseEvent)).toBe(true);
     });
 
-    await waitFor(() => {
-      expect(lastSocketUrl()).toContain('token=token-B');
+    expect(lastSocketInput()).toBe(initialInput);
+    expect(await resolveLastSocketUrl()).toContain('token=token-B');
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
+  });
+
+  it('does not start a nonce reconnect while an automatic retry is pending', async () => {
+    mockReadyState = 3;
+    const { result } = renderHook(() => useAppflowyWebSocket(baseOptions));
+    const socketOptions = lastSocketOptions();
+
+    act(() => {
+      expect(socketOptions.shouldReconnect?.({ code: 1006, reason: 'abnormal close' } as CloseEvent)).toBe(true);
+      socketOptions.reconnectInterval?.(0);
     });
 
-    expect(lastSocketUrl()).not.toContain('_rc=');
+    act(() => {
+      result.current.reconnect();
+    });
+
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
+  });
+
+  it('does not let browser recovery events bypass a scheduled retry', async () => {
+    mockReadyState = 3;
+    renderHook(() => useAppflowyWebSocket(baseOptions));
+    const socketOptions = lastSocketOptions();
+
+    act(() => {
+      expect(socketOptions.shouldReconnect?.({ code: 1006, reason: 'abnormal close' } as CloseEvent)).toBe(true);
+      socketOptions.reconnectInterval?.(0);
+      window.dispatchEvent(new Event('online'));
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(await resolveLastSocketUrl()).not.toContain('_rc=');
   });
 
   // Reproduces the per-message fan-out amplifier: the hook returned a fresh
@@ -153,5 +201,40 @@ describe('useAppflowyWebSocket', () => {
 
     expect(result.current.sendMessage).toBe(sendMessage);
     expect(result.current.reconnect).toBe(reconnect);
+  });
+
+  it('does not open or buffer a websocket from a follower tab', () => {
+    const { result } = renderHook(() => useAppflowyWebSocket({ ...baseOptions, connect: false }));
+
+    act(() => {
+      result.current.sendMessage({ collabMessage: {} }, true);
+    });
+
+    const calls = mockUseWebSocket.mock.calls as unknown as [SocketUrl, unknown, boolean][];
+
+    expect(calls[calls.length - 1][2]).toBe(false);
+    expect(stableSendMessage).toHaveBeenCalledWith(expect.anything(), false);
+  });
+
+  it('keeps retained senders stable and adopts the latest leadership buffering policy', () => {
+    const { result, rerender } = renderHook(
+      ({ connect }) => useAppflowyWebSocket({ ...baseOptions, connect }),
+      { initialProps: { connect: false } }
+    );
+    const retainedSendMessage = result.current.sendMessage;
+
+    act(() => {
+      retainedSendMessage({ collabMessage: {} }, true);
+    });
+    expect(stableSendMessage).toHaveBeenLastCalledWith(expect.anything(), false);
+
+    stableSendMessage.mockClear();
+    rerender({ connect: true });
+
+    expect(result.current.sendMessage).toBe(retainedSendMessage);
+    act(() => {
+      retainedSendMessage({ collabMessage: {} }, true);
+    });
+    expect(stableSendMessage).toHaveBeenCalledWith(expect.anything(), true);
   });
 });

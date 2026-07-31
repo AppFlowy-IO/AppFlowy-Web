@@ -1,3 +1,4 @@
+import BaseDexie from 'dexie';
 import * as Y from 'yjs';
 
 import { db } from '@/application/db';
@@ -14,6 +15,34 @@ export type OutboxSender = (message: messages.IMessage) => void;
 
 export type OutboxReady = () => boolean;
 
+export interface SyncOutboxSession {
+  userId: string;
+  workspaceId: string;
+}
+
+export interface SlowSyncOutboxItem {
+  objectId: string;
+  collabType: Types;
+  version?: string | null;
+  stateVector: Uint8Array;
+  docState: Uint8Array;
+}
+
+export type SlowSyncBlockedReason = 'permission_denied' | 'update_too_large';
+
+type SlowSyncBlock = { reason: 'permission_denied' } | { reason: 'update_too_large'; recordIds: number[] };
+
+export type SlowSyncOutboxResult =
+  | {
+      outcome: 'confirmed';
+      /** An authoritative collab-version supersession needs no RID. */
+      messageId?: collab.IRid;
+    }
+  | {
+      outcome: 'blocked';
+      reason: SlowSyncBlockedReason;
+    };
+
 interface DrainConfig {
   userId: string;
   workspaceId: string;
@@ -27,12 +56,29 @@ interface DrainConfig {
   /**
    * Best-effort send used only when the durable IndexedDB enqueue fails
    * (quota exhausted, private-mode, upgrade blocked). Unlike `send` this
-   * SHOULD tolerate a closed socket by buffering in the WebSocket library's
-   * in-memory retry queue (e.g. react-use-websocket's `keep=true`), so the
-   * edit at least reaches the server after reconnect while this tab is alive.
+   * SHOULD tolerate the absence of a direct open socket by buffering on the
+   * owning socket or relaying to the elected socket owner, so the edit can
+   * still reach the server while this browser session is alive.
    */
   sendBestEffort?: OutboxSender;
   isReady: OutboxReady;
+  /** Notifies the elected socket owner after the IndexedDB row is durable. */
+  onPersisted?: (workspaceId: string, objectId: string) => void;
+  /** Realtime raw-update cap advertised by the server. */
+  maxUpdateBytes?: number;
+  /** Optional raw-update cap for the backward-compatible HTTP slow lane. */
+  maxSlowSyncUpdateBytes?: number;
+  /**
+   * False only while server-info is unresolved. The realtime lane still uses
+   * its conservative legacy limit; the HTTP slow lane remains disabled.
+   */
+  syncLimitsLoaded?: boolean;
+  /**
+   * Persists one oversized object through the authenticated HTTP full-sync
+   * endpoint. Confirmation requires a durable RID unless an authoritative
+   * collab-version change supersedes the queued update.
+   */
+  slowSync?: (item: SlowSyncOutboxItem, signal: AbortSignal) => Promise<SlowSyncOutboxResult>;
 }
 
 let drainConfig: DrainConfig | null = null;
@@ -41,6 +87,13 @@ let drainConfig: DrainConfig | null = null;
 let currentUserId: string | null = null;
 let currentWorkspaceId: string | null = null;
 const draining = new Map<string, Promise<void>>();
+const slowSyncRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const slowSyncRetryAttempts = new Map<string, number>();
+const oversizedDiagnostics = new Map<string, string>();
+const blockedSlowSyncObjects = new Map<string, SlowSyncBlock>();
+const serializedSlowSyncObjects = new Set<string>();
+const slowSyncAbortControllers = new Map<string, AbortController>();
+let slowSyncQueue: Promise<void> = Promise.resolve();
 // Object ids whose records were enqueued while a drain was already in flight.
 // Processed in the drain's finally block so the race between the drain loop's
 // "nothing left" exit and a concurrent enqueue cannot leave records stranded.
@@ -49,9 +102,9 @@ const pendingRerun = new Set<string>();
 // `discardPendingUpdates()` await these before proceeding so a record whose
 // IDB write is still pending cannot be missed by a flush or survive a discard.
 const inflightAdds = new Map<string, Set<Promise<unknown>>>();
-// Object ids currently being discarded. A drain loop that has already loaded
-// records for one of these into memory must abort before sending — otherwise a
-// pre-reset edit can slip through after `discardPendingUpdates()` resolves.
+// Session-object keys currently being discarded. Scoping suppression prevents
+// stale async cleanup from workspace A from dropping edits in workspace B.
+// A drain loop that already loaded records must abort before sending.
 const suppressedObjects = new Set<string>();
 // When `purgeAllOutbox` is running, both new enqueues and new drain iterations
 // are blocked so we can quiesce the outbox across a logout boundary without
@@ -63,6 +116,30 @@ let isPurging = false;
 // IndexedDB finishes.
 let pendingPurge: Promise<void> | null = null;
 let startDrainAllQueued = false;
+// A newly mounted session must discover persisted predecessors before any
+// fresh update can take the immediate WebSocket path. Otherwise a small edit
+// can leapfrog an oversized record left in IndexedDB by a prior page load.
+let discoveredOutboxSessionKey: string | null = null;
+
+const SLOW_SYNC_RETRY_DELAYS_MS = [5_000, 30_000, 2 * 60_000, 5 * 60_000];
+const DEFAULT_REALTIME_UPDATE_BYTES = 4 * 1024 * 1024;
+const OUTBOX_READ_BATCH_SIZE = 64;
+const SLOW_SYNC_LOCK_PREFIX = 'appflowy:sync-outbox:slow';
+
+interface EnqueueOutboxOptions {
+  /** Manifest replies are server-directed and do not need sibling-tab fan-out. */
+  broadcast?: boolean;
+  /** Coalesce older server-directed manifests without touching local edits. */
+  source?: 'manifest';
+}
+
+function sessionObjectKey(userId: string, workspaceId: string, objectId: string): string {
+  return `${userId}\u0000${workspaceId}\u0000${objectId}`;
+}
+
+function sessionKey(userId: string, workspaceId: string): string {
+  return `${userId}\u0000${workspaceId}`;
+}
 
 /**
  * Set (or clear) the session that subsequent enqueues will be stamped with.
@@ -72,16 +149,41 @@ let startDrainAllQueued = false;
  * `(userId, workspaceId)`.
  */
 export function setCurrentSession(session: { userId: string; workspaceId: string } | null) {
-  currentUserId = session?.userId ?? null;
-  currentWorkspaceId = session?.workspaceId ?? null;
+  const nextUserId = session?.userId ?? null;
+  const nextWorkspaceId = session?.workspaceId ?? null;
+  const nextSessionKey = nextUserId && nextWorkspaceId ? sessionKey(nextUserId, nextWorkspaceId) : null;
+  const currentSessionKey = currentUserId && currentWorkspaceId ? sessionKey(currentUserId, currentWorkspaceId) : null;
+
+  if (nextSessionKey !== currentSessionKey) {
+    discoveredOutboxSessionKey = null;
+  }
+
+  currentUserId = nextUserId;
+  currentWorkspaceId = nextWorkspaceId;
 }
 
-export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId'>) {
+/**
+ * Capture the session that owns newly enqueued records. Passing an expected
+ * workspace prevents async work from accidentally snapshotting a replacement
+ * workspace during a route/session transition.
+ */
+export function getCurrentOutboxSession(expectedWorkspaceId?: string): SyncOutboxSession | null {
+  if (!currentUserId || !currentWorkspaceId) return null;
+  if (expectedWorkspaceId && currentWorkspaceId !== expectedWorkspaceId) return null;
+
+  return { userId: currentUserId, workspaceId: currentWorkspaceId };
+}
+
+/** Resolves true only after the update has been written to IndexedDB. */
+export function enqueueOutboxUpdate(
+  record: Omit<SyncOutboxRecord, 'id' | 'createdAt' | 'workspaceId' | 'userId' | 'source'>,
+  options?: EnqueueOutboxOptions
+): Promise<boolean> {
   if (isPurging) {
     // Logout / session-change in progress — drop. A new session will
     // re-enqueue any genuinely-pending edits through its own lifecycle.
     Log.debug('[outbox] enqueue dropped: purge in progress', { objectId: record.objectId });
-    return;
+    return Promise.resolve(false);
   }
 
   const userId = currentUserId;
@@ -89,17 +191,19 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
 
   if (!userId || !workspaceId) {
     Log.warn('[outbox] enqueue skipped: no session configured', { objectId: record.objectId });
-    return;
+    return Promise.resolve(false);
   }
+
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, record.objectId);
 
   // A discard is in progress for this objectId (version reset / revert).
   // Refuse to add new rows so a local edit landing mid-discard cannot slip
   // past `deleteOutboxByObjectId()`'s inflight-snapshot wait and later drain
   // onto the rebuilt doc. The doc whose observers produced this update is
   // about to be destroyed; the rebuilt doc starts from server state.
-  if (suppressedObjects.has(record.objectId)) {
+  if (suppressedObjects.has(objectSessionKey)) {
     Log.debug('[outbox] enqueue dropped: discard in progress', { objectId: record.objectId });
-    return;
+    return Promise.resolve(false);
   }
 
   const row: Omit<SyncOutboxRecord, 'id'> = {
@@ -107,6 +211,7 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
     userId,
     workspaceId,
     createdAt: Date.now(),
+    source: options?.source,
   };
 
   // Fan out to sibling tabs immediately, regardless of WebSocket state. The
@@ -114,7 +219,7 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
   // the durable outbox row remains the fallback when it is not.
   const broadcast = drainConfig?.broadcast;
 
-  if (broadcast && drainConfig?.workspaceId === workspaceId) {
+  if (options?.broadcast !== false && broadcast && drainConfig?.workspaceId === workspaceId) {
     try {
       broadcast(buildUpdateMessage(record));
     } catch (error) {
@@ -128,20 +233,36 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
   // WebSocket.
   const enqueueUserId = userId;
   const enqueueWorkspaceId = workspaceId;
+  const isIndividuallyOversized = exceedsRealtimeLimit(record.payload.byteLength, drainConfig?.maxUpdateBytes);
 
-  const addPromise: Promise<unknown> = db.sync_outbox.add(row as SyncOutboxRecord);
+  if (isIndividuallyOversized) {
+    serializedSlowSyncObjects.add(objectSessionKey);
+  }
+
+  const addPromise: Promise<unknown> = persistOutboxRow(row as SyncOutboxRecord);
   const set = inflightAdds.get(record.objectId) ?? new Set<Promise<unknown>>();
   let sentImmediately = false;
-
   const activeConfig = drainConfig;
+  const notifyPersisted =
+    activeConfig?.userId === enqueueUserId && activeConfig.workspaceId === enqueueWorkspaceId
+      ? activeConfig.onPersisted
+      : undefined;
 
+  // Preserve the low-latency realtime path for ordinary edits. Oversized
+  // updates are different: they must first become durable, then the serialized
+  // drain routes them through HTTP. Sending one here would exceed the server
+  // frame limit before the slow lane gets a chance to run.
   if (
     activeConfig &&
     activeConfig.userId === enqueueUserId &&
     activeConfig.workspaceId === enqueueWorkspaceId &&
     !isPurging &&
-    !suppressedObjects.has(record.objectId) &&
-    activeConfig.isReady()
+    discoveredOutboxSessionKey === sessionKey(enqueueUserId, enqueueWorkspaceId) &&
+    !suppressedObjects.has(objectSessionKey) &&
+    !draining.has(record.objectId) &&
+    activeConfig.isReady() &&
+    !isIndividuallyOversized &&
+    !serializedSlowSyncObjects.has(objectSessionKey)
   ) {
     try {
       activeConfig.send(buildUpdateMessage(record));
@@ -154,8 +275,18 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
   set.add(addPromise);
   inflightAdds.set(record.objectId, set);
 
-  addPromise
+  return addPromise
     .then(async (id) => {
+      try {
+        notifyPersisted?.(enqueueWorkspaceId, record.objectId);
+      } catch (error) {
+        Log.warn('[outbox] durable-update notification failed', {
+          workspaceId: enqueueWorkspaceId,
+          objectId: record.objectId,
+          error,
+        });
+      }
+
       if (sentImmediately) {
         if (typeof id === 'number') {
           try {
@@ -173,15 +304,16 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
         // normal drain so those older rows are reconciled instead of waiting
         // for refresh/reconnect.
         scheduleDrain(record.objectId);
-        return;
+        return true;
       }
 
       scheduleDrain(record.objectId);
+      return true;
     })
-    .catch((error) => {
+    .catch(async (error) => {
       if (sentImmediately) {
         Log.warn('[outbox] enqueue failed after immediate send', { objectId: record.objectId, error });
-        return;
+        return false;
       }
 
       Log.error('[outbox] enqueue failed', { objectId: record.objectId, error });
@@ -194,11 +326,7 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
       // comparison would spuriously treat those rebuilds as session switches.
       const activeConfig = drainConfig;
 
-      if (
-        !activeConfig ||
-        activeConfig.userId !== enqueueUserId ||
-        activeConfig.workspaceId !== enqueueWorkspaceId
-      ) {
+      if (!activeConfig || activeConfig.userId !== enqueueUserId || activeConfig.workspaceId !== enqueueWorkspaceId) {
         Log.warn('[outbox] fallback skipped: session changed since enqueue', {
           objectId: record.objectId,
           enqueueUserId,
@@ -206,15 +334,44 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
           currentUserId: activeConfig?.userId,
           currentWorkspaceId: activeConfig?.workspaceId,
         });
-        return;
+        return false;
       }
 
       // A purge (logout) or version-reset discard started while the IDB write
       // was in flight. The synchronous guard at enqueue time passed, but the
       // state has since changed — drop the fallback to honour the boundary.
-      if (isPurging || suppressedObjects.has(record.objectId)) {
+      if (isPurging || suppressedObjects.has(objectSessionKey)) {
         Log.debug('[outbox] fallback skipped: purge/discard in progress', { objectId: record.objectId });
-        return;
+        return false;
+      }
+
+      // An update above the realtime limit must never leak onto WebSocket.
+      // Without a durable row there is no safe way to retry the slow lane
+      // after a refresh, so fail visibly and let the next manifest exchange
+      // reconstruct the diff instead of closing the socket with an oversize
+      // frame.
+      if (exceedsRealtimeLimit(record.payload.byteLength, activeConfig.maxUpdateBytes)) {
+        Log.error('[outbox] oversized update could not be persisted; WebSocket fallback suppressed', {
+          objectId: record.objectId,
+          payloadBytes: record.payload.byteLength,
+          maxUpdateBytes: activeConfig.maxUpdateBytes,
+        });
+
+        try {
+          const remaining = await db.sync_outbox
+            .where('[userId+workspaceId+objectId]')
+            .equals([enqueueUserId, enqueueWorkspaceId, record.objectId])
+            .count();
+
+          if (remaining === 0) {
+            serializedSlowSyncObjects.delete(objectSessionKey);
+          }
+        } catch {
+          // Keep the serialization guard when IndexedDB itself is unavailable.
+          // The next manifest can reconstruct the update after storage recovers.
+        }
+
+        return false;
       }
 
       const directMessage: messages.IMessage = {
@@ -236,7 +393,7 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
         Log.warn('[outbox] cannot fall back: no sendBestEffort and WS not OPEN', {
           objectId: record.objectId,
         });
-        return;
+        return false;
       }
 
       try {
@@ -247,6 +404,8 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
           error: sendError,
         });
       }
+
+      return false;
     })
     .finally(() => {
       const current = inflightAdds.get(record.objectId);
@@ -259,6 +418,36 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
     });
 }
 
+/**
+ * Atomically replace older pending manifest snapshots for one session/object.
+ * IndexedDB serializes read-write transactions across tabs, so concurrent
+ * manifest replies cannot both observe an empty prefix and commit duplicates.
+ */
+async function persistOutboxRow(row: SyncOutboxRecord): Promise<number> {
+  if (row.source !== 'manifest') {
+    return db.sync_outbox.add(row);
+  }
+
+  return db.transaction('rw', db.sync_outbox, async () => {
+    const supersededIds: number[] = [];
+
+    await db.sync_outbox
+      .where('[userId+workspaceId+objectId]')
+      .equals([row.userId, row.workspaceId, row.objectId])
+      .each((pending) => {
+        if (pending.source === 'manifest' && pending.id !== undefined) {
+          supersededIds.push(pending.id);
+        }
+      });
+
+    if (supersededIds.length > 0) {
+      await db.sync_outbox.bulkDelete(supersededIds);
+    }
+
+    return db.sync_outbox.add(row);
+  });
+}
+
 async function awaitInflightAdds(objectId: string): Promise<void> {
   const pending = inflightAdds.get(objectId);
 
@@ -268,12 +457,66 @@ async function awaitInflightAdds(objectId: string): Promise<void> {
 }
 
 export function configureDrain(config: DrainConfig) {
+  const previousConfig = drainConfig;
+
+  if (previousConfig && (previousConfig.userId !== config.userId || previousConfig.workspaceId !== config.workspaceId)) {
+    abortSlowSyncCoordinations(previousConfig.userId, previousConfig.workspaceId);
+  }
+
+  // A meaningful owner/capability rebuild is the point at which a previously
+  // terminal server decision may have changed (permission grant or larger
+  // advertised limit). Ordinary readyState transitions no longer rebuild.
+  for (const key of blockedSlowSyncObjects.keys()) {
+    if (key.startsWith(`${config.userId}\u0000${config.workspaceId}\u0000`)) {
+      blockedSlowSyncObjects.delete(key);
+    }
+  }
+
   drainConfig = config;
 }
 
 export function clearDrainConfig() {
+  const previousConfig = drainConfig;
+
   drainConfig = null;
+  if (previousConfig) {
+    abortSlowSyncCoordinations(previousConfig.userId, previousConfig.workspaceId);
+  }
+
   pendingRerun.clear();
+  oversizedDiagnostics.clear();
+  // Retry state is session-object keyed and intentionally survives a
+  // same-session transport/config rebuild. Purge owns the hard reset.
+}
+
+/** Retry only objects whose slow upload was terminally blocked by access. */
+export function resumePermissionBlockedSync(objectId: string): void {
+  const config = drainConfig;
+
+  if (!config) return;
+
+  const objectSessionKey = sessionObjectKey(config.userId, config.workspaceId, objectId);
+
+  if (blockedSlowSyncObjects.get(objectSessionKey)?.reason !== 'permission_denied') return;
+
+  blockedSlowSyncObjects.delete(objectSessionKey);
+  oversizedDiagnostics.delete(objectSessionKey);
+  scheduleDrain(objectId);
+}
+
+/**
+ * Returns true when a raw Yjs update cannot use the realtime lane.
+ *
+ * A conservative 4 MiB fallback protects both unresolved server-info requests
+ * and older servers that omit the field. An explicitly advertised zero means
+ * unlimited.
+ */
+export function shouldRouteUpdateThroughOutbox(updateBytes: number): boolean {
+  if (drainConfig && discoveredOutboxSessionKey !== sessionKey(drainConfig.userId, drainConfig.workspaceId)) {
+    return true;
+  }
+
+  return exceedsRealtimeLimit(updateBytes, drainConfig?.maxUpdateBytes);
 }
 
 /**
@@ -297,18 +540,31 @@ export function startDrainAll() {
       await pendingPurge.catch(() => undefined);
     }
 
-    if (!drainConfig) return;
+    const config = drainConfig;
+
+    if (!config) return;
 
     try {
-      const objectIds = await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId);
+      const objectIds = await distinctObjectIdsForSession(config.userId, config.workspaceId);
 
+      if (!sameDrainSession(drainConfig, config)) return;
       for (const objectId of objectIds) {
         scheduleDrain(objectId);
       }
+
+      // scheduleDrain synchronously installs the per-object drain promise, so
+      // an edit arriving after this assignment is still held behind any
+      // discovered predecessor for that object.
+      discoveredOutboxSessionKey = sessionKey(config.userId, config.workspaceId);
     } catch (error) {
       Log.warn('[outbox] startDrainAll failed', error);
     }
   });
+}
+
+/** Wakes the configured transport for one object after another tab persists it. */
+export function startDrainObject(objectId: string) {
+  scheduleDrain(objectId);
 }
 
 interface WaitForDrainOptions {
@@ -327,14 +583,12 @@ interface WaitForDrainOptions {
  * doc state through an alternate channel (HTTP batch) — the Yjs handshake
  * on reconnect will still reconcile any records left behind.
  */
-export async function waitForDrain(
-  objectIds?: string[],
-  opts?: WaitForDrainOptions,
-): Promise<boolean> {
+export async function waitForDrain(objectIds?: string[], opts?: WaitForDrainOptions): Promise<boolean> {
   const timeoutMs = opts?.timeoutMs ?? 5_000;
   const pollIntervalMs = opts?.pollIntervalMs ?? 150;
   const start = Date.now();
-  const ids = objectIds ?? (drainConfig ? await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId) : []);
+  const ids =
+    objectIds ?? (drainConfig ? await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId) : []);
 
   if (ids.length === 0) return true;
 
@@ -354,9 +608,7 @@ export async function waitForDrain(
     if (!userId || !workspaceId) return false;
 
     const remaining = await Promise.all(
-      ids.map((id) =>
-        db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).count(),
-      ),
+      ids.map((id) => db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, id]).count())
     );
 
     if (remaining.every((count) => count === 0)) return true;
@@ -391,6 +643,8 @@ export function purgeAllOutbox(): Promise<void> {
   // — e.g. from a React render triggered by `SESSION_INVALID` — is dropped
   // before it can add new rows behind the purge.
   isPurging = true;
+  // Abort lock acquisition and HTTP before runPurge awaits active drains.
+  abortSlowSyncCoordinations();
 
   const purge = runPurge();
 
@@ -416,6 +670,12 @@ async function runPurge(): Promise<void> {
     // doesn't pick up stale bookkeeping.
     pendingRerun.clear();
     inflightAdds.clear();
+    serializedSlowSyncObjects.clear();
+    oversizedDiagnostics.clear();
+    blockedSlowSyncObjects.clear();
+    slowSyncAbortControllers.clear();
+    discoveredOutboxSessionKey = null;
+    clearAllSlowSyncRetries();
 
     try {
       await db.sync_outbox.clear();
@@ -428,12 +688,38 @@ async function runPurge(): Promise<void> {
   }
 }
 
-export async function deleteOutboxByObjectId(objectId: string): Promise<void> {
-  // Synchronously suppress any in-flight drain iteration for this objectId
-  // BEFORE yielding to the event loop. A drain that has already read records
-  // into memory checks this set just before sending, so a concurrent discard
-  // cannot race past a drain that was already mid-iteration.
-  suppressedObjects.add(objectId);
+export async function deleteOutboxByObjectId(
+  objectId: string,
+  options?: {
+    /**
+     * Used only by an HTTP result being applied from inside this object's
+     * active drain. Waiting for that drain here would await the current
+     * promise and deadlock the version-reset path.
+     */
+    skipActiveDrain?: boolean;
+    /**
+     * Explicit owner for async work that can outlive its originating
+     * workspace. When omitted, the active session is captured at call time.
+     */
+    session?: SyncOutboxSession;
+  }
+): Promise<void> {
+  const targetSession = options?.session ?? getCurrentOutboxSession();
+  const userId = targetSession?.userId;
+  const workspaceId = targetSession?.workspaceId;
+
+  if (!userId || !workspaceId) {
+    Log.debug('[outbox] deleteOutboxByObjectId skipped: no session configured', { objectId });
+    return;
+  }
+
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
+
+  // Synchronously suppress in-flight work for this exact session/object BEFORE
+  // yielding. A stale cleanup from another workspace must not drop current
+  // edits that happen to use the same object ID.
+  suppressedObjects.add(objectSessionKey);
+  abortSlowSyncCoordination(objectSessionKey);
 
   try {
     // Wait for a drain that's already in flight to finish. New drain iterations
@@ -443,7 +729,7 @@ export async function deleteOutboxByObjectId(objectId: string): Promise<void> {
     // we guarantee no further stale sends can fire.
     const existingDrain = draining.get(objectId);
 
-    if (existingDrain) {
+    if (existingDrain && !options?.skipActiveDrain) {
       await existingDrain.catch(() => undefined);
     }
 
@@ -456,26 +742,14 @@ export async function deleteOutboxByObjectId(objectId: string): Promise<void> {
     // to ensure stale rows are gone before rebuilding the doc. Silently
     // resolving here would let a blocked/closing IDB leave stale records that
     // then drain onto the newly rebuilt document.
-    const userId = currentUserId;
-    const workspaceId = currentWorkspaceId;
+    await db.sync_outbox.where('[userId+workspaceId+objectId]').equals([userId, workspaceId, objectId]).delete();
 
-    if (!userId || !workspaceId) {
-      // No active session — nothing the current user could have enqueued
-      // against this objectId, and the sync_outbox v6 schema only indexes
-      // the compound `[userId+workspaceId+objectId]` key, so there's no
-      // cheap way (and no need) to touch IDB here. Rows from a prior
-      // session are scoped to their own userId and will never drain
-      // against another user's WebSocket.
-      Log.debug('[outbox] deleteOutboxByObjectId skipped: no session configured', { objectId });
-      return;
-    }
-
-    await db.sync_outbox
-      .where('[userId+workspaceId+objectId]')
-      .equals([userId, workspaceId, objectId])
-      .delete();
+    serializedSlowSyncObjects.delete(objectSessionKey);
+    oversizedDiagnostics.delete(objectSessionKey);
+    blockedSlowSyncObjects.delete(objectSessionKey);
+    clearSlowSyncRetry(objectSessionKey);
   } finally {
-    suppressedObjects.delete(objectId);
+    suppressedObjects.delete(objectSessionKey);
   }
 }
 
@@ -492,7 +766,7 @@ async function distinctObjectIdsForSession(userId: string, workspaceId: string):
 }
 
 function buildUpdateMessage(
-  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector'>,
+  record: Pick<SyncOutboxRecord, 'objectId' | 'collabType' | 'payload' | 'version' | 'beforeStateVector'>
 ): messages.IMessage {
   return {
     collabMessage: {
@@ -508,8 +782,331 @@ function buildUpdateMessage(
   };
 }
 
+function validByteLimit(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : undefined;
+}
+
+function realtimeByteLimit(value: number | undefined): number | undefined {
+  // The protocol's established frame limit protects older servers that omit
+  // the optional field. A server can explicitly advertise 0 to opt out.
+  if (value === 0) return undefined;
+
+  return validByteLimit(value) ?? DEFAULT_REALTIME_UPDATE_BYTES;
+}
+
+function exceedsRealtimeLimit(payloadBytes: number, maxUpdateBytes: number | undefined): boolean {
+  const limit = realtimeByteLimit(maxUpdateBytes);
+
+  return limit !== undefined && payloadBytes > limit;
+}
+
+async function readOutboxPrefix(userId: string, workspaceId: string, objectId: string): Promise<SyncOutboxRecord[]> {
+  // The four-part index is naturally ordered by the auto-incremented id. A
+  // fixed prefix bound prevents one long-offline object from being read into
+  // memory in a single drain iteration.
+  return db.sync_outbox
+    .where('[userId+workspaceId+objectId+id]')
+    .between([userId, workspaceId, objectId, BaseDexie.minKey], [userId, workspaceId, objectId, BaseDexie.maxKey])
+    .limit(OUTBOX_READ_BATCH_SIZE)
+    .toArray();
+}
+
+function mergeRecordPrefix(records: SyncOutboxRecord[], count = records.length): Uint8Array {
+  if (count === 1) return records[0].payload;
+
+  return Y.mergeUpdates(records.slice(0, count).map((record) => record.payload));
+}
+
+function selectRecordsForRealtime(
+  records: SyncOutboxRecord[],
+  limit: number | undefined
+): { records: SyncOutboxRecord[]; merged: Uint8Array } {
+  if (limit === undefined) {
+    return { records, merged: mergeRecordPrefix(records) };
+  }
+
+  // Conservatively budget by raw bytes, then merge once. If encoding overhead
+  // still crosses the cap, halve the bounded prefix rather than repeatedly
+  // merging every growing prefix (the old quadratic path).
+  let count = 0;
+  let rawBytes = 0;
+
+  for (const record of records) {
+    if (count > 0 && rawBytes + record.payload.byteLength > limit) break;
+    rawBytes += record.payload.byteLength;
+    count += 1;
+  }
+
+  count = Math.max(1, count);
+  let merged = mergeRecordPrefix(records, count);
+
+  while (count > 1 && merged.byteLength > limit) {
+    count = Math.max(1, Math.floor(count / 2));
+    merged = mergeRecordPrefix(records, count);
+  }
+
+  return { records: records.slice(0, count), merged };
+}
+
+function selectRecordsForSlowSync(
+  records: SyncOutboxRecord[],
+  limit: number
+): { records: SyncOutboxRecord[]; merged: Uint8Array; stateVector: Uint8Array } {
+  // Server-info advertises the raw doc_state cap. The state vector has its own
+  // server-side bound, so charging it against this limit would reject a valid
+  // update whose doc_state is exactly at the advertised maximum.
+  const buildCandidate = (count: number) => {
+    const merged = mergeRecordPrefix(records, count);
+    const stateVector = postUpdateStateVector(records[0].beforeStateVector, merged);
+
+    return {
+      records: records.slice(0, count),
+      merged,
+      stateVector,
+    };
+  };
+
+  const wholePrefix = buildCandidate(records.length);
+
+  if (wholePrefix.merged.byteLength <= limit || records.length === 1) {
+    return wholePrefix;
+  }
+
+  // The prefix is bounded by OUTBOX_READ_BATCH_SIZE. Binary search gives us a
+  // near-maximal request with O(log n) merges instead of O(n) successively
+  // larger merges that repeatedly reparse the same Yjs structs.
+  let low = 1;
+  let high = records.length - 1;
+  let best = buildCandidate(1);
+
+  while (low <= high) {
+    const midpoint = Math.floor((low + high) / 2);
+    const candidate = buildCandidate(midpoint);
+
+    if (candidate.merged.byteLength <= limit) {
+      best = candidate;
+      low = midpoint + 1;
+    } else {
+      high = midpoint - 1;
+    }
+  }
+
+  return best;
+}
+
+function recordIds(records: SyncOutboxRecord[]): number[] {
+  return records.map((record) => record.id).filter((id): id is number => id !== undefined);
+}
+
+function postUpdateStateVector(beforeStateVector: Uint8Array | undefined, update: Uint8Array): Uint8Array {
+  const state = beforeStateVector?.byteLength ? Y.decodeStateVector(beforeStateVector) : new Map<number, number>();
+  // encodeStateVectorFromUpdate omits clients whose structs start at a
+  // non-zero clock. parseUpdateMeta().to contains the actual post-update clock
+  // for both full snapshots and incremental updates.
+  const updateState = Y.parseUpdateMeta(update).to;
+
+  for (const [clientId, clock] of updateState) {
+    state.set(clientId, Math.max(state.get(clientId) ?? 0, clock));
+  }
+
+  return Y.encodeStateVector(state);
+}
+
+function clearSlowSyncRetry(objectSessionKey: string) {
+  const timer = slowSyncRetryTimers.get(objectSessionKey);
+
+  if (timer) clearTimeout(timer);
+  slowSyncRetryTimers.delete(objectSessionKey);
+  slowSyncRetryAttempts.delete(objectSessionKey);
+}
+
+function clearAllSlowSyncRetries() {
+  for (const timer of slowSyncRetryTimers.values()) {
+    clearTimeout(timer);
+  }
+
+  slowSyncRetryTimers.clear();
+  slowSyncRetryAttempts.clear();
+}
+
+function scheduleSlowSyncRetry(userId: string, workspaceId: string, objectId: string, retryAfterSecs?: number) {
+  const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
+
+  if (slowSyncRetryTimers.has(objectSessionKey)) return;
+
+  const attempt = slowSyncRetryAttempts.get(objectSessionKey) ?? 0;
+  const advertisedDelay =
+    typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+      ? Math.ceil(retryAfterSecs * 1_000)
+      : undefined;
+  const delay = advertisedDelay ?? SLOW_SYNC_RETRY_DELAYS_MS[Math.min(attempt, SLOW_SYNC_RETRY_DELAYS_MS.length - 1)];
+
+  slowSyncRetryAttempts.set(objectSessionKey, attempt + 1);
+  slowSyncRetryTimers.set(
+    objectSessionKey,
+    setTimeout(() => {
+      slowSyncRetryTimers.delete(objectSessionKey);
+      const config = drainConfig;
+
+      if (!config || config.userId !== userId || config.workspaceId !== workspaceId) return;
+      scheduleDrain(objectId);
+    }, delay)
+  );
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortReason(signal);
+}
+
+function isAbortError(error: unknown): boolean {
+  return (error as { name?: unknown })?.name === 'AbortError';
+}
+
+function waitForAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(abortReason(signal));
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+function abortSlowSyncCoordination(objectSessionKey: string): void {
+  slowSyncAbortControllers.get(objectSessionKey)?.abort();
+}
+
+function abortSlowSyncCoordinations(userId?: string, workspaceId?: string): void {
+  const prefix = userId && workspaceId ? `${userId}\u0000${workspaceId}\u0000` : null;
+
+  for (const [key, controller] of slowSyncAbortControllers) {
+    if (!prefix || key.startsWith(prefix)) {
+      controller.abort();
+    }
+  }
+}
+
+async function runSlowSyncSerialized<T>(task: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  const previous = slowSyncQueue.catch(() => undefined);
+  let release!: () => void;
+  const turnComplete = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  // Keep the queue chained to its predecessor even if this waiter is aborted;
+  // otherwise a later task could leapfrog the still-active predecessor.
+  slowSyncQueue = previous.then(() => turnComplete);
+
+  try {
+    await waitForAbort(previous, signal);
+    throwIfAborted(signal);
+    return await task();
+  } finally {
+    release();
+  }
+}
+
+async function runSlowSyncCoordinated<T>(
+  userId: string,
+  workspaceId: string,
+  objectSessionKey: string,
+  task: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  abortSlowSyncCoordination(objectSessionKey);
+  const controller = new AbortController();
+
+  slowSyncAbortControllers.set(objectSessionKey, controller);
+
+  try {
+    const lockManager = globalThis.navigator?.locks;
+
+    if (lockManager) {
+      const lockName = `${SLOW_SYNC_LOCK_PREFIX}:${userId}:${workspaceId}`;
+
+      return await lockManager.request(lockName, { mode: 'exclusive', signal: controller.signal }, () =>
+        task(controller.signal)
+      );
+    }
+
+    return await runSlowSyncSerialized(() => task(controller.signal), controller.signal);
+  } catch (error) {
+    // Axios reports an aborted request as CanceledError rather than
+    // AbortError. Normalize any failure observed after lifecycle cancellation
+    // so teardown does not log it as a transport failure or schedule a retry.
+    if (controller.signal.aborted) throw abortReason(controller.signal);
+    throw error;
+  } finally {
+    if (slowSyncAbortControllers.get(objectSessionKey) === controller) {
+      slowSyncAbortControllers.delete(objectSessionKey);
+    }
+  }
+}
+
+function retryAfterSecsFromError(error: unknown): number | undefined {
+  const retryAfterSecs = (error as { retryAfterSecs?: unknown })?.retryAfterSecs;
+
+  return typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+    ? retryAfterSecs
+    : undefined;
+}
+
+function sameDrainSession(left: DrainConfig | null, right: DrainConfig | null): boolean {
+  return Boolean(left && right && left.userId === right.userId && left.workspaceId === right.workspaceId);
+}
+
+function logOversizedOnce(objectSessionKey: string, reason: string, details: Record<string, unknown>) {
+  if (oversizedDiagnostics.get(objectSessionKey) === reason) return;
+
+  oversizedDiagnostics.set(objectSessionKey, reason);
+  Log.warn('[outbox] oversized update remains durable', { reason, ...details });
+}
+
+function isSlowSyncBlockedForRecords(objectSessionKey: string, records: SyncOutboxRecord[]): boolean {
+  const block = blockedSlowSyncObjects.get(objectSessionKey);
+
+  if (!block) return false;
+  if (block.reason === 'permission_denied') return true;
+
+  const sameRejectedPrefix =
+    block.recordIds.length > 0 && block.recordIds.every((id, index) => records[index]?.id === id);
+
+  if (sameRejectedPrefix) return true;
+
+  // The rejected record generation was deleted or replaced (for example by a
+  // newer manifest). Re-evaluate the new prefix instead of retaining a stale
+  // object-wide size block.
+  blockedSlowSyncObjects.delete(objectSessionKey);
+  oversizedDiagnostics.delete(objectSessionKey);
+  return false;
+}
+
 function scheduleDrain(objectId: string) {
-  if (!drainConfig) return;
+  const config = drainConfig;
+
+  if (!config) return;
+
+  const objectSessionKey = sessionObjectKey(config.userId, config.workspaceId, objectId);
 
   // Refuse to spawn a drain while a discard or purge is in progress. Without
   // this gate, an in-flight `db.sync_outbox.add()` can resolve mid-discard
@@ -522,7 +1119,7 @@ function scheduleDrain(objectId: string) {
   // Gating at schedule time prevents that drain from ever existing; the
   // row is removed by the pending delete/clear and the scheduling is
   // re-entered normally after the flag flips back off via a fresh enqueue.
-  if (isPurging || suppressedObjects.has(objectId)) return;
+  if (isPurging || suppressedObjects.has(objectSessionKey)) return;
 
   if (draining.has(objectId)) {
     // Another drain is in flight for this objectId. Mark it so the in-flight
@@ -552,12 +1149,10 @@ async function drainObject(objectId: string): Promise<void> {
   }
 }
 
-// Note: we deliberately do NOT use `navigator.locks.request(..., { ifAvailable: true })`
-// to coordinate drains across tabs. That approach silently skipped the drain
-// body when another tab held the lock, stranding records until some later
-// trigger re-scheduled them. Each tab now drains its own schedule; duplicate
-// sends are harmless because Yjs updates are idempotent and the post-send
-// `bulkDelete` on already-deleted ids is a no-op.
+// Cross-tab ownership keeps ordinary WebSocket draining on one leader. The
+// oversized HTTP path additionally takes a blocking workspace lock because a
+// leader handoff can otherwise upload the same multi-megabyte IndexedDB prefix
+// twice. Browsers without Web Locks retain the server-idempotent fallback.
 
 async function drainObjectWhileReady(objectId: string): Promise<void> {
   // Snapshot the drain config at loop entry. If the user switches workspace
@@ -568,54 +1163,174 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
   // eslint-disable-next-line no-constant-condition
   for (;;) {
     // Re-read the module config each iteration and abort if it has been
-    // swapped out (workspace change / sign-out) or is not ready (WS closed).
+    // swapped out (workspace change / sign-out).
     const config = drainConfig;
 
     if (!config || config !== initialConfig) return;
 
-    if (!config.isReady()) return;
-
     const userId = config.userId;
     const workspaceId = config.workspaceId;
-    const records = await db.sync_outbox
-      .where('[userId+workspaceId+objectId]')
-      .equals([userId, workspaceId, objectId])
-      .sortBy('id');
+    const objectSessionKey = sessionObjectKey(userId, workspaceId, objectId);
 
-    if (records.length === 0) return;
+    if (slowSyncRetryTimers.has(objectSessionKey)) return;
 
-    // Records are sorted by id (insertion order), so first/last bound the batch.
+    const records = await readOutboxPrefix(userId, workspaceId, objectId);
+
+    if (records.length === 0) {
+      serializedSlowSyncObjects.delete(objectSessionKey);
+      clearSlowSyncRetry(objectSessionKey);
+      return;
+    }
+
+    if (isSlowSyncBlockedForRecords(objectSessionKey, records)) return;
+
+    const realtimeLimit = realtimeByteLimit(config.maxUpdateBytes);
     const firstRecord = records[0];
-    const lastRecord = records[records.length - 1];
+    // A backlog of individually valid updates must stay on the realtime lane
+    // in bounded prefixes. Only an atomic head update that can never fit the
+    // WebSocket frame needs the slow HTTP lane.
+    const useSlowLane = realtimeLimit !== undefined && firstRecord.payload.byteLength > realtimeLimit;
 
-    const merged = records.length === 1
-      ? firstRecord.payload
-      : Y.mergeUpdates(records.map((r) => r.payload));
-    const collabType = lastRecord.collabType as Types;
-    const version = lastRecord.version;
-    // The merged payload spans from the first queued edit to the last, so its
-    // causal `before` is the first record's before-vector.
-    const beforeStateVector = firstRecord.beforeStateVector;
+    if (useSlowLane) {
+      serializedSlowSyncObjects.add(objectSessionKey);
+      const slowLimit = config.syncLimitsLoaded === false ? undefined : validByteLimit(config.maxSlowSyncUpdateBytes);
 
-    const message: messages.IMessage = {
-      collabMessage: {
-        objectId,
-        collabType,
-        update: {
-          flags: FLAGS_LIB0V1,
-          payload: merged,
-          version: version ?? undefined,
-          beforeStateVector,
-        } as collab.IUpdate,
-      },
-    };
+      if (!slowLimit || !config.slowSync) {
+        logOversizedOnce(objectSessionKey, !slowLimit ? 'slow_lane_not_advertised' : 'slow_lane_not_owned_by_this_tab', {
+          objectId,
+          payloadBytes: firstRecord.payload.byteLength,
+          maxUpdateBytes: realtimeLimit,
+          maxSlowSyncUpdateBytes: slowLimit,
+        });
+        return;
+      }
+
+      try {
+        const coordinated = await runSlowSyncCoordinated(userId, workspaceId, objectSessionKey, async (signal) => {
+          if (suppressedObjects.has(objectSessionKey) || !sameDrainSession(drainConfig, initialConfig) || isPurging) {
+            return { status: 'aborted' as const };
+          }
+
+          // Another tab may have completed the prefix while this tab waited
+          // for the lock. Re-read and select under the lock so the upload and
+          // its exact-ID retirement operate on one authoritative snapshot.
+          const lockedRecords = await readOutboxPrefix(userId, workspaceId, objectId);
+
+          if (suppressedObjects.has(objectSessionKey) || !sameDrainSession(drainConfig, initialConfig) || isPurging) {
+            return { status: 'aborted' as const };
+          }
+
+          if (lockedRecords.length === 0) {
+            return { status: 'rescan' as const };
+          }
+
+          const lockedFirstRecord = lockedRecords[0];
+          const lockedHeadNeedsSlowLane =
+            realtimeLimit !== undefined && lockedFirstRecord.payload.byteLength > realtimeLimit;
+
+          if (!lockedHeadNeedsSlowLane) {
+            return { status: 'rescan' as const };
+          }
+
+          const lockedBatch = selectRecordsForSlowSync(lockedRecords, slowLimit);
+
+          if (lockedBatch.merged.byteLength > slowLimit) {
+            logOversizedOnce(objectSessionKey, 'update_exceeds_slow_lane_limit', {
+              objectId,
+              payloadBytes: lockedBatch.merged.byteLength,
+              stateVectorBytes: lockedBatch.stateVector.byteLength,
+              maxUpdateBytes: realtimeLimit,
+              maxSlowSyncUpdateBytes: slowLimit,
+            });
+            return { status: 'stalled' as const };
+          }
+
+          const lockedLastRecord = lockedBatch.records[lockedBatch.records.length - 1];
+          const lockedIds = recordIds(lockedBatch.records);
+          const result = await config.slowSync!(
+            {
+              objectId,
+              collabType: lockedLastRecord.collabType as Types,
+              version: lockedLastRecord.version,
+              stateVector: lockedBatch.stateVector,
+              docState: lockedBatch.merged,
+            },
+            signal
+          );
+
+          if (result.outcome === 'blocked') {
+            return {
+              status: 'blocked' as const,
+              reason: result.reason,
+              recordIds: lockedIds,
+              recordCount: lockedIds.length,
+              payloadBytes: lockedBatch.merged.byteLength,
+            };
+          }
+
+          if (suppressedObjects.has(objectSessionKey) || !sameDrainSession(drainConfig, initialConfig) || isPurging) {
+            return { status: 'aborted' as const };
+          }
+
+          // Keep retirement inside the same lock as the upload. A successor
+          // tab therefore observes either the old prefix (and waits) or the
+          // post-confirmation state, never the stale in-between snapshot.
+          await db.sync_outbox.bulkDelete(lockedIds);
+          return { status: 'confirmed' as const };
+        });
+
+        if (coordinated.status === 'aborted' || coordinated.status === 'stalled') return;
+        if (coordinated.status === 'rescan') continue;
+        if (coordinated.status === 'blocked') {
+          blockedSlowSyncObjects.set(
+            objectSessionKey,
+            coordinated.reason === 'update_too_large'
+              ? { reason: coordinated.reason, recordIds: coordinated.recordIds }
+              : { reason: coordinated.reason }
+          );
+          logOversizedOnce(objectSessionKey, coordinated.reason, {
+            objectId,
+            recordCount: coordinated.recordCount,
+            payloadBytes: coordinated.payloadBytes,
+          });
+          return;
+        }
+      } catch (error) {
+        if (isAbortError(error)) return;
+
+        Log.warn('[outbox] HTTP slow-sync transaction failed; leaving records queued', {
+          objectId,
+          headPayloadBytes: firstRecord.payload.byteLength,
+          error,
+        });
+        scheduleSlowSyncRetry(userId, workspaceId, objectId, retryAfterSecsFromError(error));
+        return;
+      }
+
+      clearSlowSyncRetry(objectSessionKey);
+      oversizedDiagnostics.delete(objectSessionKey);
+      blockedSlowSyncObjects.delete(objectSessionKey);
+      continue;
+    }
+
+    if (!config.isReady()) return;
+
+    const realtimeBatch = selectRecordsForRealtime(records, realtimeLimit);
+    const lastRecord = realtimeBatch.records[realtimeBatch.records.length - 1];
+    const message = buildUpdateMessage({
+      objectId,
+      collabType: lastRecord.collabType,
+      payload: realtimeBatch.merged,
+      version: lastRecord.version,
+      beforeStateVector: firstRecord.beforeStateVector,
+    });
 
     // Synchronous gate right before the send. Abort if a discard is in
     // progress for this objectId, the drain config has been swapped out
     // (workspace change), or a purge is quiescing the outbox (logout).
     // Records stay in IDB (if any still exist after a concurrent delete)
     // and will be picked up by a future drain.
-    if (suppressedObjects.has(objectId) || drainConfig !== initialConfig || isPurging) return;
+    if (suppressedObjects.has(objectSessionKey) || drainConfig !== initialConfig || isPurging) return;
 
     if (!config.isReady()) return;
 
@@ -626,7 +1341,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
       return;
     }
 
-    const ids = records.map((r) => r.id).filter((id): id is number => id !== undefined);
+    const ids = recordIds(realtimeBatch.records);
 
     try {
       await db.sync_outbox.bulkDelete(ids);

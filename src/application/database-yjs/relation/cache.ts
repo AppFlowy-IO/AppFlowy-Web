@@ -1,11 +1,11 @@
 import { FieldType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
   YDatabase,
-  YDatabaseCell,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRow,
@@ -122,20 +122,6 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-function getRelationRowIds(cell?: YDatabaseCell): RowId[] {
-  if (!cell) return [];
-  const data = cell.get(YjsDatabaseKey.data);
-
-  if (!data) return [];
-  if (typeof data === 'object' && 'toJSON' in data) {
-    const ids = (data as { toJSON: () => unknown }).toJSON();
-
-    return Array.isArray(ids) ? (ids as RowId[]) : [];
-  }
-
-  return Array.isArray(data) ? (data as RowId[]) : [];
-}
-
 function getPrimaryFieldId(database: YDatabase): string | undefined {
   const fields = database?.get(YjsDatabaseKey.fields);
 
@@ -178,7 +164,7 @@ async function computeRelationCellValue(context: RelationComputeContext): Promis
     }
 
     const relationCell = row?.get(YjsDatabaseKey.cells)?.get(fieldId);
-    const relatedRowIds = getRelationRowIds(relationCell);
+    const relatedRowIds = getRelationRowIdsFromCell(relationCell);
 
     if (relatedRowIds.length === 0) return { value: '' };
 

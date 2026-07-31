@@ -45,31 +45,30 @@ test.describe('Space Creation Tests', () => {
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
       await page.waitForTimeout(2000);
 
-      // Step 2: Find the first space and open its more actions menu
-      const firstSpace = SpaceSelectors.items(page).first();
-      await expect(firstSpace).toBeVisible({ timeout: 10000 });
+      // Step 2: Open the global new page flow
+      await expect(PageSelectors.newPageButton(page)).toBeVisible({ timeout: 20000 });
+      await PageSelectors.newPageButton(page).click();
+      await expect(ModalSelectors.newPageModal(page)).toBeVisible({ timeout: 5000 });
 
-      // Click the more actions button for spaces (always visible in test environment)
-      await expect(SpaceSelectors.moreActionsButton(page).first()).toBeVisible({ timeout: 5000 });
-      await SpaceSelectors.moreActionsButton(page).first().click();
-      await page.waitForTimeout(1000);
-
-      // Step 3: Click on "Create New Space" option
-      await expect(SpaceSelectors.createNewSpaceButton(page)).toBeVisible({ timeout: 5000 });
-      await SpaceSelectors.createNewSpaceButton(page).click();
-      await page.waitForTimeout(1000);
+      // Step 3: Create a space from the new page modal
+      await expect(ModalSelectors.createNewSpaceButton(page)).toBeVisible({ timeout: 5000 });
+      await ModalSelectors.createNewSpaceButton(page).click();
 
       // Step 4: Fill in the space details
-      await expect(SpaceSelectors.createSpaceModal(page)).toBeVisible({ timeout: 5000 });
-      const nameInputContainer = SpaceSelectors.spaceNameInput(page);
+      const createSpaceModal = SpaceSelectors.createSpaceModal(page);
+
+      await expect(createSpaceModal).toBeVisible({ timeout: 5000 });
+      const nameInputContainer = createSpaceModal.getByTestId('space-name-input');
       await expect(nameInputContainer).toBeVisible();
       const nameInput = nameInputContainer.locator('input');
       await nameInput.clear();
       await nameInput.fill(spaceName);
 
       // Step 5: Save the new space
-      await expect(ModalSelectors.okButton(page)).toBeVisible();
-      await ModalSelectors.okButton(page).click();
+      const saveButton = createSpaceModal.getByTestId('modal-ok-button');
+
+      await expect(saveButton).toBeVisible();
+      await saveButton.click();
       await page.waitForTimeout(3000);
 
       // Step 6: Verify the new space appears in the sidebar

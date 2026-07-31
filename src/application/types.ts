@@ -1156,6 +1156,12 @@ export type LoadView = (
   options?: LoadViewOptions
 ) => Promise<YDoc>;
 
+export interface LoadRowDocumentOptions {
+  maxAttempts?: number;
+}
+
+export type LoadRowDocument = (documentId: string, options?: LoadRowDocumentOptions) => Promise<YDoc | null>;
+
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
 
 export type DatabaseRelations = Record<DatabaseId, ViewId>;
@@ -1355,6 +1361,8 @@ export interface View {
   extra: ViewExtra | null;
   children: View[];
   has_children?: boolean;
+  /** Authoritative space marker returned by newer folder-view APIs. */
+  is_space?: boolean;
   is_published: boolean;
   is_private: boolean;
   /** Whether this view is currently in the user's favorites. Synced via the folder. */
@@ -1560,7 +1568,7 @@ export interface ViewComponentProps {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.

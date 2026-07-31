@@ -66,13 +66,66 @@ export function parseCheckboxValue(data?: string | number | boolean): boolean {
   return false;
 }
 
+/** Match Desktop's CheckboxCellDataPB parser for lazy RichText conversion. */
+export function parseDesktopCheckboxValue(data: string | number | boolean): boolean {
+  return ['1', 'true', 'yes'].includes(String(data).toLowerCase());
+}
+
+export function parseDesktopI64(value: string | number): string | null {
+  const text = String(value);
+
+  if (!/^[+-]?\d+$/.test(text)) return null;
+
+  try {
+    const parsed = BigInt(text);
+
+    return parsed >= -9223372036854775808n && parsed <= 9223372036854775807n ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseTimeStringToMs(text: string): string | null {
   const trimmed = text.trim();
 
   if (!trimmed) return '';
 
-  if (!Number.isNaN(Number(trimmed))) {
-    return String(trimmed);
+  const directMilliseconds = parseDesktopI64(trimmed);
+
+  if (directMilliseconds !== null) return directMilliseconds;
+
+  let durationOffset = 0;
+  let durationHours: bigint | null = null;
+  let durationMinutes: bigint | null = null;
+  const durationPart = /\s*(\d+)([hm])/y;
+
+  while (durationOffset < trimmed.length) {
+    durationPart.lastIndex = durationOffset;
+    const match = durationPart.exec(trimmed);
+
+    if (!match) break;
+
+    const value = BigInt(match[1]);
+
+    if (match[2] === 'h') {
+      if (durationHours !== null) return null;
+      durationHours = value;
+    } else {
+      if (durationMinutes !== null) return null;
+      durationMinutes = value;
+    }
+
+    durationOffset = durationPart.lastIndex;
+  }
+
+  if (durationOffset === trimmed.length && (durationHours !== null || durationMinutes !== null)) {
+    const milliseconds = ((durationHours ?? 0n) * 60n + (durationMinutes ?? 0n)) * 60_000n;
+
+    if (milliseconds >= -9223372036854775808n && milliseconds <= 9223372036854775807n) {
+      return milliseconds.toString();
+    }
+
+    return null;
   }
 
   const hhmmMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);

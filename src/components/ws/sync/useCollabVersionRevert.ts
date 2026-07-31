@@ -31,7 +31,7 @@ export type CollabVersionRevertDeps = {
       user?: User;
       isCancelled?: () => boolean;
     }
-  ) => Promise<void>;
+  ) => Promise<unknown>;
 };
 
 export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
