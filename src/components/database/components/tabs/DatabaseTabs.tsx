@@ -57,8 +57,15 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
   ) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
-    const { loadViewMeta, navigateToView, readOnly, showActions = true, eventEmitter } = context;
-    const updatePage = useUpdateDatabaseView();
+    const {
+      loadViewMeta,
+      navigateToView,
+      readOnly,
+      showActions = true,
+      eventEmitter,
+      updatePage: updateContainerPage,
+    } = context;
+    const updateDatabaseView = useUpdateDatabaseView();
     const [meta, setMeta] = useState<View | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
@@ -214,7 +221,18 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       >
         {embeddedDatabaseName ? (
           <h3 data-testid='embedded-database-title' className='w-full pb-3 text-xl font-semibold text-text-primary'>
-            {embeddedDatabaseName}
+            {!readOnly && updateContainerPage && meta ? (
+              <button
+                type='button'
+                data-testid='embedded-database-title-rename'
+                className='w-full cursor-pointer text-left'
+                onClick={() => setRenameView(meta)}
+              >
+                {embeddedDatabaseName}
+              </button>
+            ) : (
+              embeddedDatabaseName
+            )}
           </h3>
         ) : null}
         <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
@@ -280,7 +298,24 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             }}
             view={renameView}
             updatePage={async (viewId, payload) => {
-              await updatePage(viewId, payload);
+              if (isDatabaseContainer(renameView)) {
+                if (!updateContainerPage) {
+                  throw new Error('Database container rename is unavailable');
+                }
+
+                await updateContainerPage(viewId, payload);
+                setMeta((current) => {
+                  if (!current || current.view_id !== viewId) return current;
+
+                  return {
+                    ...current,
+                    name: payload.name ?? current.name,
+                  };
+                });
+                return;
+              }
+
+              await updateDatabaseView(viewId, payload);
               void reloadView();
             }}
             viewId={renameView.view_id}
