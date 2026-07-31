@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
+import { type ReactNode, useEffect } from 'react';
 import * as Y from 'yjs';
 
 import {
@@ -8,12 +8,16 @@ import {
   FieldType,
   FilterType,
   TextFilterCondition,
+  useFieldCellsByRowsSelector,
   useRowOrdersSelector,
 } from '@/application/database-yjs';
-import { useUpdateAdvancedFilter } from '@/application/database-yjs/dispatch';
+import { CalculationType } from '@/application/database-yjs/database.type';
+import { useCalculateFieldDispatch, useUpdateAdvancedFilter } from '@/application/database-yjs/dispatch';
 import * as databaseFilter from '@/application/database-yjs/filter';
 import {
   RowId,
+  YDatabaseCalculation,
+  YDatabaseCalculations,
   YDatabaseField,
   YDatabaseFilter,
   YDatabaseFilters,
@@ -125,7 +129,7 @@ function createWrapper(fixture: DatabaseFixture, contextOverrides: Partial<Datab
     ...contextOverrides,
   };
 
-  return ({ children }: { children: React.ReactNode }) => (
+  return ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 }
@@ -349,15 +353,41 @@ describe('useRowOrdersSelector', () => {
     expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
   });
 
-  it('prunes a deleted row while another conditioned row is still hydrating', async () => {
+  it('prunes a deleted row and updates calculations while another conditioned row is still hydrating', async () => {
     const fixture = createDatabaseFixture();
     const ensureRow = jest.fn(() => new Promise<YDoc | undefined>(() => undefined));
-    const { result } = renderHook(() => useRowOrdersSelector(), {
-      wrapper: createWrapper(fixture, { ensureRow }),
-    });
+    const calculation = new Y.Map() as YDatabaseCalculation;
+    const calculations = new Y.Array() as YDatabaseCalculations;
+
+    calculation.set(YjsDatabaseKey.id, 'calculation-id');
+    calculation.set(YjsDatabaseKey.field_id, fieldId);
+    calculation.set(YjsDatabaseKey.type, CalculationType.Count);
+    calculation.set(YjsDatabaseKey.calculation_value, 0);
+    calculations.push([calculation]);
+    fixture.view.set(YjsDatabaseKey.calculations, calculations);
+
+    const { result } = renderHook(
+      () => {
+        const rows = useRowOrdersSelector();
+        const { cells } = useFieldCellsByRowsSelector(fieldId, rows);
+        const calculate = useCalculateFieldDispatch(fieldId);
+
+        useEffect(() => {
+          if (cells) {
+            calculate(cells);
+          }
+        }, [calculate, cells]);
+
+        return rows;
+      },
+      {
+        wrapper: createWrapper(fixture, { ensureRow }),
+      }
+    );
 
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe(3);
     });
 
     act(() => {
@@ -367,6 +397,7 @@ describe('useRowOrdersSelector', () => {
 
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe(2);
     });
 
     act(() => {
@@ -384,7 +415,10 @@ describe('useRowOrdersSelector', () => {
       jest.advanceTimersByTime(250);
     });
 
-    expect(result.current?.map((row) => row.id)).toEqual(['row-b']);
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-b']);
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe(1);
+    });
   });
 
   it('requests missing row docs while a conditioned view is loading', async () => {
