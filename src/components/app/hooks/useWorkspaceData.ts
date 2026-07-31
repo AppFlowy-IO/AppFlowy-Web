@@ -341,6 +341,19 @@ function createRootOutlineFingerprint(views: View[]): string {
   return JSON.stringify(normalizeRootOutlineForComparison(views));
 }
 
+function createFolderViewFieldsFingerprint(view: View): string {
+  return JSON.stringify(
+    normalizeRootOutlineForComparison({
+      name: view.name,
+      icon: view.icon,
+      extra: view.extra,
+      is_private: view.is_private,
+      is_favorite: view.is_favorite,
+      is_locked: view.is_locked,
+    })
+  );
+}
+
 const OUTLINE_NON_VISUAL_FIELDS = new Set(['/last_edited_time', '/last_edited_by']);
 
 function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
@@ -373,8 +386,10 @@ export function useWorkspaceData() {
   // Global folder ordering can advance from lazy subtree fetches. Root polling
   // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
+  const lastFolderViewRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
+  const pendingFolderViewUpdatesRef = useRef<Map<string, View>>(new Map());
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
   // Root loads and periodic revalidation share request IDs, but successful
@@ -432,6 +447,24 @@ export function useWorkspaceData() {
     setOutline(mergedOutline);
 
     return mergedOutline;
+  }, []);
+
+  const preservePendingFolderViewUpdates = useCallback((nextOutline: View[]) => {
+    let outlineWithPendingUpdates = nextOutline;
+
+    for (const [viewId, pendingView] of pendingFolderViewUpdatesRef.current) {
+      const incomingView = findView(outlineWithPendingUpdates, viewId);
+
+      if (!incomingView) continue;
+
+      if (createFolderViewFieldsFingerprint(incomingView) === createFolderViewFieldsFingerprint(pendingView)) {
+        pendingFolderViewUpdatesRef.current.delete(viewId);
+      } else {
+        outlineWithPendingUpdates = updateViewInOutline(outlineWithPendingUpdates, pendingView);
+      }
+    }
+
+    return outlineWithPendingUpdates;
   }, []);
 
   const refreshFavoriteViewsForWorkspace = useCallback(async (workspaceId: string) => {
@@ -579,6 +612,12 @@ export function useWorkspaceData() {
 
         if (shouldApplyOutline) {
           latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
+          for (const viewId of pendingFolderViewUpdatesRef.current.keys()) {
+            if (findView(outlineWithShareWithMe, viewId)) {
+              pendingFolderViewUpdatesRef.current.delete(viewId);
+            }
+          }
+
           const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
 
           updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
@@ -1445,7 +1484,7 @@ export function useWorkspaceData() {
       const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
       const nextOutline = existingShareWithMe ? [...patchedOutline, existingShareWithMe] : patchedOutline;
 
-      const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
+      const mergedOutline = replaceOutlinePreservingChildren(preservePendingFolderViewUpdates(nextOutline));
 
       if (usedRelaxedPatch) {
         updateLastFolderRid(patchRid);
@@ -1473,6 +1512,7 @@ export function useWorkspaceData() {
     loadOutline,
     refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
+    preservePendingFolderViewUpdates,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
     updateAppliedRootOutlineSnapshot,
@@ -1486,11 +1526,23 @@ export function useWorkspaceData() {
 
       const folderRid = parseFolderRid(payload.folderRid);
       const currentRid = lastFolderRidRef.current;
+      const lastFolderViewRid = lastFolderViewRidRef.current;
 
-      if (folderRid && currentRid && compareFolderRid(folderRid, currentRid) <= 0) {
+      // FolderChanged and FolderViewChanged are complementary notifications
+      // emitted with the same revision. Reject older revisions globally, but
+      // deduplicate equal revisions only within this notification stream.
+      if (folderRid && currentRid && compareFolderRid(folderRid, currentRid) < 0) {
         Log.debug('[Outline] [FolderViewChanged] skipped stale notification', {
           folderRid: payload.folderRid,
           lastRid: `${currentRid.timestamp}-${currentRid.seqNo}`,
+        });
+        return;
+      }
+
+      if (folderRid && lastFolderViewRid && compareFolderRid(folderRid, lastFolderViewRid) <= 0) {
+        Log.debug('[Outline] [FolderViewChanged] skipped duplicate notification', {
+          folderRid: payload.folderRid,
+          lastFolderViewRid: `${lastFolderViewRid.timestamp}-${lastFolderViewRid.seqNo}`,
         });
         return;
       }
@@ -1506,6 +1558,11 @@ export function useWorkspaceData() {
             const updatedView = JSON.parse(payload.viewJson) as View;
             const previousView = findView(nextOutline, updatedView.view_id);
 
+            if (previousView) {
+              pendingFolderViewUpdatesRef.current.set(updatedView.view_id, updatedView);
+            }
+
+            eventEmitter?.emit(APP_EVENTS.VIEW_META_CHANGED, updatedView);
             nextOutline = updateViewInOutline(nextOutline, updatedView);
             if (previousView?.is_favorite !== updatedView.is_favorite) {
               refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
@@ -1587,6 +1644,10 @@ export function useWorkspaceData() {
 
       if (shouldRefreshTrash) {
         refreshTrashListInBackground();
+      }
+
+      if (folderRid) {
+        lastFolderViewRidRef.current = folderRid;
       }
 
       if (nextOutline !== stableOutlineRef.current) {
@@ -1787,8 +1848,10 @@ export function useWorkspaceData() {
   useEffect(() => {
     if (!currentWorkspaceId) return;
     lastFolderRidRef.current = null;
+    lastFolderViewRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
     lastAppliedRootOutlineFingerprintRef.current = null;
+    pendingFolderViewUpdatesRef.current.clear();
     stableOutlineWorkspaceIdRef.current = currentWorkspaceId;
     stableOutlineWorkspaceRevisionRef.current = workspaceRevisionRef.current;
     stableOutlineRef.current = [];

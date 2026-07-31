@@ -734,6 +734,153 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.outline?.[0]?.name).toBe('server space');
   });
 
+  it('applies a granular folder change after its complementary outline change at the same revision', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      last_edited_time: 1,
+      name: 'old space',
+    });
+    const updatedRoot = createView('space-id', {
+      last_edited_time: 2,
+      name: 'renamed space',
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({
+      outline: [root],
+      folderRid: '1-1',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('old space');
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline/0/last_edited_time',
+            value: 2,
+          },
+        ]),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(updatedRoot),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify({ ...updatedRoot, name: 'duplicate should be ignored' }),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+  });
+
+  it('publishes metadata updates for views outside the loaded outline', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id');
+    const nestedView = createView('nested-view-id', { name: 'renamed nested view' });
+    const handleViewMetaChanged = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({
+      outline: [root],
+      folderRid: '1-1',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.view_id).toBe(root.view_id);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(nestedView),
+      });
+    });
+
+    expect(handleViewMetaChanged).toHaveBeenCalledWith(nestedView);
+    expect(result.current.outline).toEqual([root]);
+  });
+
+  it('preserves a granular view update when a stale full outline arrives afterward', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', { name: 'old space' });
+    const renamedRoot = createView('space-id', { name: 'renamed space' });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({
+      outline: [root],
+      folderRid: '1-1',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('old space');
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        viewJson: JSON.stringify(renamedRoot),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline',
+            value: [root],
+          },
+        ]),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline',
+            value: [renamedRoot],
+          },
+        ]),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline',
+            value: [{ ...renamedRoot, name: 'later server rename' }],
+          },
+        ]),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('later server rename');
+  });
+
   it('repairs relaxed outline patches with same-rid root revalidation', async () => {
     const eventEmitter = new EventEmitter();
     const root = createView('space-id', {

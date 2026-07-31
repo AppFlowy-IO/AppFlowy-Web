@@ -67,6 +67,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     } = context;
     const updateDatabaseView = useUpdateDatabaseView();
     const [meta, setMeta] = useState<View | null>(null);
+    const [pendingContainerName, setPendingContainerName] = useState<{ viewId: string; name: string } | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
     const [renameView, setRenameView] = useState<View | null>(null);
@@ -144,6 +145,30 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [databasePageId, eventEmitter, reloadView]);
 
+    useEffect(() => {
+      const handleViewMetaChanged = (updatedView: View) => {
+        setMeta((current) => {
+          if (!current || current.view_id !== updatedView.view_id) return current;
+
+          return {
+            ...current,
+            ...updatedView,
+            children: current.children,
+          };
+        });
+      };
+
+      if (eventEmitter) {
+        eventEmitter.on(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
+      }
+
+      return () => {
+        if (eventEmitter) {
+          eventEmitter.off(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
+        }
+      };
+    }, [eventEmitter]);
+
     const openRenameModal = useCallback(
       (view: View) => {
         const fromMeta =
@@ -183,6 +208,20 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       void reloadView();
     }, [reloadView]);
 
+    useEffect(() => {
+      if (
+        pendingContainerName &&
+        meta?.view_id === pendingContainerName.viewId &&
+        meta.name === pendingContainerName.name
+      ) {
+        setPendingContainerName(null);
+      }
+    }, [meta, pendingContainerName]);
+
+    useEffect(() => {
+      setPendingContainerName(null);
+    }, [databasePageId]);
+
     const className = useMemo(() => {
       const classList = [
         '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden',
@@ -208,7 +247,10 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [menuViewId]);
 
-    const embeddedDatabaseName = context.isDocumentBlock && isDatabaseContainer(meta) ? meta?.name.trim() : '';
+    const embeddedDatabaseName =
+      context.isDocumentBlock && isDatabaseContainer(meta)
+        ? (pendingContainerName?.viewId === meta.view_id ? pendingContainerName.name : meta.name).trim()
+        : '';
 
     return (
       <div
@@ -304,14 +346,10 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                 }
 
                 await updateContainerPage(viewId, payload);
-                setMeta((current) => {
-                  if (!current || current.view_id !== viewId) return current;
+                if (payload.name) {
+                  setPendingContainerName({ viewId, name: payload.name });
+                }
 
-                  return {
-                    ...current,
-                    name: payload.name ?? current.name,
-                  };
-                });
                 return;
               }
 

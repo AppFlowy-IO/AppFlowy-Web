@@ -1,4 +1,4 @@
-import { BrowserContext, expect, Locator, Page } from '@playwright/test';
+import { BrowserContext, expect, Locator, Page, Response } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi, signUpAndLoginWithPasswordViaUi } from '../../support/auth-flow-helpers';
@@ -129,6 +129,70 @@ Then('the nested database title is {string}', async ({ page }, expectedTitle: st
 
   await expect(nestedGrid(page, state).getByTestId('embedded-database-title')).toHaveText(expectedTitle, {
     timeout: 15000,
+  });
+});
+
+When(
+  'I rename nested database title {string} to {string}',
+  async ({ page }, currentTitle: string, nextTitle: string) => {
+    const state = requireState(page);
+    const title = nestedGrid(page, state).getByTestId('embedded-database-title-rename');
+
+    await expect(title).toHaveText(currentTitle, { timeout: 15000 });
+    await title.click();
+
+    const renameInput = ModalSelectors.renameInput(page);
+    const renameSaveButton = ModalSelectors.renameSaveButton(page);
+
+    await expect(renameInput).toBeVisible({ timeout: 10000 });
+    await expect(renameInput).toHaveValue(currentTitle);
+    await renameInput.fill(nextTitle);
+    await expect(renameInput).toHaveValue(nextTitle);
+    await expect(renameSaveButton).toBeEnabled({ timeout: 10000 });
+
+    const pageViewPathPrefix = `/api/workspace/${state.workspaceId}/page-view/`;
+    const renameResponsePromise = page.waitForResponse(
+      (response) => {
+        const pathname = new URL(response.url()).pathname;
+
+        return (
+          response.request().method() === 'PATCH' &&
+          pathname.startsWith(pageViewPathPrefix) &&
+          pathname.length > pageViewPathPrefix.length &&
+          pageNameFromResponseRequest(response) === nextTitle
+        );
+      },
+      { timeout: 15000 }
+    );
+
+    await renameSaveButton.click();
+
+    const renameResponse = await renameResponsePromise;
+    const renamedViewId = decodeURIComponent(new URL(renameResponse.url()).pathname.slice(pageViewPathPrefix.length));
+
+    expect(renameResponse.ok(), `Nested database title rename failed with HTTP ${renameResponse.status()}`).toBeTruthy();
+    expect(renamedViewId, 'The embedded database title must rename the container page, not its selected tab').not.toBe(
+      state.nestedViewId
+    );
+    await expect(title).toHaveText(nextTitle, { timeout: 15000 });
+  }
+);
+
+Then("the other web client's nested database title is {string}", async ({ page }, expectedTitle: string) => {
+  const state = requireState(page);
+  const secondPage = requireSecondPage(state);
+
+  await expect(nestedGrid(secondPage, state).getByTestId('embedded-database-title')).toHaveText(expectedTitle, {
+    timeout: 30000,
+  });
+});
+
+Then('nested database title {string} remains after reopening the row page', async ({ page }, expectedTitle: string) => {
+  const state = requireState(page);
+
+  await reopenRowPage(page, state);
+  await expect(nestedGrid(page, state).getByTestId('embedded-database-title')).toHaveText(expectedTitle, {
+    timeout: 30000,
   });
 });
 
@@ -334,6 +398,24 @@ function workspaceIdFromAppUrl(urlValue: string): string {
   }
 
   return segments[1];
+}
+
+function pageNameFromResponseRequest(response: Response): string | undefined {
+  const postData = response.request().postData();
+
+  if (!postData) return undefined;
+
+  try {
+    const payload: unknown = JSON.parse(postData);
+
+    if (!payload || typeof payload !== 'object' || !('name' in payload)) return undefined;
+
+    const name = (payload as Record<string, unknown>).name;
+
+    return typeof name === 'string' ? name : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function nestedGrid(page: Page, state: NestedDatabaseState): Locator {

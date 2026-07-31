@@ -11,6 +11,14 @@ Feature: Nested database interoperability
     And the other web client shows nested database row "BDD nested row"
     And nested database row "BDD nested row" remains after reopening the row page
 
+  Scenario: Renaming a nested database title synchronizes and persists
+    Given a nested inline database in a database row page is open
+    And another web client opens the same database row page
+    When I rename nested database title "New Database" to "Synced Nested Database"
+    Then the nested database title is "Synced Nested Database"
+    And the other web client's nested database title is "Synced Nested Database"
+    And nested database title "Synced Nested Database" remains after reopening the row page
+
   Scenario: Creating and renaming a nested database view synchronizes to another web client
     Given a nested inline database in a database row page is open
     And another web client opens the same database row page

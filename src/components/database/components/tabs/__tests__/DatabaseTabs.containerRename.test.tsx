@@ -1,5 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import EventEmitter from 'events';
 
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+
+import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseContextState } from '@/application/database-yjs/context';
@@ -93,6 +96,7 @@ describe('DatabaseTabs embedded database title rename', () => {
 
   it('renames the database container instead of the selected tab', async () => {
     const updateContainerPage = jest.fn().mockResolvedValue(undefined);
+    const eventEmitter = new EventEmitter();
     const loadViewMeta = jest.fn(async (viewId: string) => {
       if (viewId === databaseView.view_id) return databaseView;
       if (viewId === databaseContainer.view_id) return databaseContainer;
@@ -105,6 +109,7 @@ describe('DatabaseTabs embedded database title rename', () => {
       readOnly: false,
       showActions: true,
       updatePage: updateContainerPage,
+      eventEmitter,
     } as DatabaseContextState);
 
     render(
@@ -130,5 +135,25 @@ describe('DatabaseTabs embedded database title rename', () => {
     });
 
     expect(updateDatabaseView).not.toHaveBeenCalled();
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, [databaseContainer]);
+    });
+
+    expect(screen.getByTestId('embedded-database-title').textContent).toBe('Renamed Database');
+
+    const renamedContainer = { ...databaseContainer, name: 'Renamed Database' };
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.VIEW_META_CHANGED, renamedContainer);
+    });
+
+    const remotelyRenamedContainer = { ...databaseContainer, name: 'Remote Database' };
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.VIEW_META_CHANGED, remotelyRenamedContainer);
+    });
+
+    expect(screen.getByTestId('embedded-database-title').textContent).toBe('Remote Database');
   });
 });
