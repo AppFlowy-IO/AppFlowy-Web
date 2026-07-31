@@ -248,7 +248,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     }, [menuViewId]);
 
     const embeddedDatabaseName =
-      context.isDocumentBlock && isDatabaseContainer(meta)
+      context.isDocumentBlock && meta && isDatabaseContainer(meta)
         ? (pendingContainerName?.viewId === meta.view_id ? pendingContainerName.name : meta.name).trim()
         : '';
 
