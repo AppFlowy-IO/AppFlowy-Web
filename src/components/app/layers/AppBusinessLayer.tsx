@@ -635,31 +635,22 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   const sourceCrumbs = originalCrumbs.length > 0 ? originalCrumbs : fallbackCrumbs;
 
-  const [breadcrumbs, setBreadcrumbs] = useState<View[]>(sourceCrumbs);
+  // Trailing crumb appended by pages without their own route ancestry (e.g. a
+  // database row opened as a full page). Held separately from the ancestor
+  // chain so outline refreshes, which rebuild sourceCrumbs, cannot erase it.
+  const [appendedCrumb, setAppendedCrumb] = useState<View | undefined>(undefined);
 
-  // Update breadcrumbs when original crumbs change
-  useEffect(() => {
-    setBreadcrumbs(sourceCrumbs);
-  }, [sourceCrumbs]);
-
-  // Handle breadcrumb manipulation
   const appendBreadcrumb = useCallback((view?: View) => {
-    setBreadcrumbs((prev) => {
-      if (!view) {
-        return prev.slice(0, -1);
-      }
-
-      const index = prev.findIndex((v) => v.view_id === view.view_id);
-
-      if (index === -1) {
-        return [...prev, view];
-      }
-
-      const rest = prev.slice(0, index);
-
-      return [...rest, view];
-    });
+    setAppendedCrumb(view);
   }, []);
+
+  const breadcrumbs = useMemo(() => {
+    if (!appendedCrumb) return sourceCrumbs;
+    const index = sourceCrumbs.findIndex((v) => v.view_id === appendedCrumb.view_id);
+
+    if (index === -1) return [...sourceCrumbs, appendedCrumb];
+    return [...sourceCrumbs.slice(0, index), appendedCrumb];
+  }, [sourceCrumbs, appendedCrumb]);
 
   // Load view metadata — with server fallback for lazy-loaded outline
   const loadViewMeta = useCallback(
