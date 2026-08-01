@@ -198,29 +198,22 @@ export const PublishProvider = ({
     return crumbs.length > 0 ? crumbs : [currentView];
   }, [viewMeta, outline]);
 
-  const [breadcrumbs, setBreadcrumbs] = useState<View[]>([]);
-
-  useEffect(() => {
-    setBreadcrumbs(originalCrumbs);
-  }, [originalCrumbs]);
+  // Trailing crumb appended by pages without their own route ancestry (e.g. a
+  // database row opened as a full page). Held separately from the ancestor
+  // chain so outline updates, which rebuild originalCrumbs, cannot erase it.
+  const [appendedCrumb, setAppendedCrumb] = useState<View | undefined>(undefined);
 
   const appendBreadcrumb = useCallback((view?: View) => {
-    setBreadcrumbs((prev) => {
-      if (!view) {
-        return prev.slice(0, -1);
-      }
-
-      const index = prev.findIndex((v) => v.view_id === view.view_id);
-
-      if (index === -1) {
-        return [...prev, view];
-      }
-
-      const rest = prev.slice(0, index);
-
-      return [...rest, view];
-    });
+    setAppendedCrumb(view);
   }, []);
+
+  const breadcrumbs = useMemo(() => {
+    if (!appendedCrumb) return originalCrumbs;
+    const index = originalCrumbs.findIndex((v) => v.view_id === appendedCrumb.view_id);
+
+    if (index === -1) return [...originalCrumbs, appendedCrumb];
+    return [...originalCrumbs.slice(0, index), appendedCrumb];
+  }, [originalCrumbs, appendedCrumb]);
 
   useEffect(() => {
     rowDocumentSnapshotsRef.current = {};
