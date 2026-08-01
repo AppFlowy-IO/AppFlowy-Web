@@ -281,18 +281,57 @@ export function databaseBlocks(editor: Locator): Locator {
   return editor.locator(BlockSelectors.blockSelector('grid'));
 }
 
+/**
+ * Result of probing the server for a document's persisted database-block count.
+ *
+ * This is deliberately a discriminated union rather than a numeric sentinel: the
+ * probe can fail for six unrelated reasons, and collapsing them all into `-1`
+ * makes a failing `expect.poll` indistinguishable from a genuine count mismatch.
+ * Playwright prints the received value on timeout, so the `error` string lands
+ * directly in the CI log.
+ */
+type ServerDatabaseBlockProbe = { count: number } | { error: string };
+
+/**
+ * Read the auth token the way the app stores it.
+ *
+ * The app persists its session under `token` as a JSON blob
+ * (src/application/session/token.ts). `af_auth_token` is a test-only mirror
+ * written solely by the magic-link helpers in `auth-utils.ts`, so specs that log
+ * in through the real password form never have it. Prefer the app's own key and
+ * keep the mirror as a fallback.
+ */
+async function getAccessToken(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const raw = localStorage.getItem('token');
+
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { access_token?: string };
+
+        if (parsed?.access_token) return parsed.access_token;
+      } catch {
+        // Fall through to the test-only mirror below.
+      }
+    }
+
+    return localStorage.getItem('af_auth_token');
+  });
+}
+
 async function getServerDocumentDatabaseBlockCount(
   page: Page,
   apiOrigin: string,
   docViewId: string
-): Promise<number> {
-  const [, workspaceId] = new URL(page.url()).pathname.split('/').filter(Boolean);
+): Promise<ServerDatabaseBlockProbe> {
+  const pageUrl = page.url();
+  const [, workspaceId] = new URL(pageUrl).pathname.split('/').filter(Boolean);
 
-  if (!workspaceId) return -1;
+  if (!workspaceId) return { error: `could not parse workspaceId from URL ${pageUrl}` };
 
-  const token = await page.evaluate(() => localStorage.getItem('af_auth_token'));
+  const token = await getAccessToken(page);
 
-  if (!token) return -1;
+  if (!token) return { error: 'no auth token in localStorage (checked "token" and "af_auth_token")' };
 
   let encodedCollab: number[] | null = null;
 
@@ -308,18 +347,18 @@ async function getServerDocumentDatabaseBlockCount(
       },
     });
 
-    if (!response.ok()) return -1;
+    if (!response.ok()) return { error: `GET page-view returned HTTP ${response.status()}` };
 
     const payload = (await response.json()) as {
       data?: { data?: { encoded_collab?: number[] } };
     };
 
     encodedCollab = payload.data?.data?.encoded_collab ?? null;
-  } catch {
-    return -1;
+  } catch (e) {
+    return { error: `page-view request failed: ${e instanceof Error ? e.message : String(e)}` };
   }
 
-  if (!encodedCollab) return -1;
+  if (!encodedCollab) return { error: 'page-view response contained no encoded_collab' };
 
   const doc = new Y.Doc();
 
@@ -335,9 +374,9 @@ async function getServerDocumentDatabaseBlockCount(
       }
     });
 
-    return count;
-  } catch {
-    return -1;
+    return { count };
+  } catch (e) {
+    return { error: `failed to decode collab update: ${e instanceof Error ? e.message : String(e)}` };
   } finally {
     doc.destroy();
   }
@@ -355,7 +394,7 @@ async function waitForDocumentDatabaseBlocksOnServer(
       intervals: [250, 500, 1000],
       message: `Expected document ${docViewId} to persist ${expectedCount} database block(s) before duplication`,
     })
-    .toBe(expectedCount);
+    .toEqual({ count: expectedCount });
 }
 
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
@@ -494,6 +533,13 @@ export async function insertLinkedGridViaSlash(
   // show "No databases found". We also retry if the picker itself fails to
   // appear — on slow CI the slash-menu click → picker-open chain is racy.
   for (let attempt = 0; attempt < 3; attempt++) {
+    // Reset per attempt so a stale attempt-0 error is never reported as the
+    // reason a later attempt failed.
+    lastError = undefined;
+    // Flips once the server has confirmed the linked view exists. After that
+    // point the insert has succeeded and must never be retried.
+    let viewCreated = false;
+
     try {
       await openSlashMenuInEditor(page, editor, line);
       const linkedGridOption = page.getByTestId('slash-menu-linkedGrid');
@@ -540,6 +586,11 @@ export async function insertLinkedGridViaSlash(
           throw new Error(`Linked database view creation failed with HTTP ${response.status()}`);
         }
 
+        // The POST succeeded, so the linked view now exists server-side and the
+        // block will follow. Everything below only *verifies* that; a failure
+        // there is not a failed insert and retrying would create a second view.
+        viewCreated = true;
+
         const expectedBlockCount = initialBlockCount + 1;
         const apiOrigin = new URL(response.url()).origin;
 
@@ -549,7 +600,12 @@ export async function insertLinkedGridViaSlash(
       }
     } catch (e) {
       lastError = e;
-      // Fall through to state validation + cleanup below.
+      // A verification failure after a confirmed insert is fatal. Rethrow it
+      // unwrapped so the real cause survives instead of being relabelled as a
+      // block-count corruption by the guard below.
+      if (viewCreated) throw e;
+      // Otherwise the insert itself never landed — fall through to state
+      // validation + cleanup and retry.
     }
 
     const currentBlockCount = await databaseBlocks(editor).count();
