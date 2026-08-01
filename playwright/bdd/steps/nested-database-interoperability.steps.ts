@@ -141,14 +141,18 @@ When(
     await expect(title).toHaveText(currentTitle, { timeout: 15000 });
     await title.click();
 
-    const renameInput = ModalSelectors.renameInput(page);
-    const renameSaveButton = ModalSelectors.renameSaveButton(page);
+    // The title is edited inline, in the document — there is no rename dialog.
+    const renameInput = nestedGrid(page, state).getByTestId('embedded-database-title-input');
 
     await expect(renameInput).toBeVisible({ timeout: 10000 });
     await expect(renameInput).toHaveValue(currentTitle);
-    await renameInput.fill(nextTitle);
+
+    // Type the way a user does instead of using fill(): the existing name must be
+    // selected so typing replaces it. Regression guard — the old dialog applied its
+    // select-all on a timer that could lose a focus race, which appended the typed
+    // text to the old name (e.g. "New Database" + "123" => "New Database123").
+    await page.keyboard.type(nextTitle);
     await expect(renameInput).toHaveValue(nextTitle);
-    await expect(renameSaveButton).toBeEnabled({ timeout: 10000 });
 
     const pageViewPathPrefix = `/api/workspace/${state.workspaceId}/page-view/`;
     const renameResponsePromise = page.waitForResponse(
@@ -165,7 +169,7 @@ When(
       { timeout: 15000 }
     );
 
-    await renameSaveButton.click();
+    await page.keyboard.press('Enter');
 
     const renameResponse = await renameResponsePromise;
     const renamedViewId = decodeURIComponent(new URL(renameResponse.url()).pathname.slice(pageViewPathPrefix.length));

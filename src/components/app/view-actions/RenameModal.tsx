@@ -22,7 +22,7 @@ function RenameModal({
 }) {
   const { t } = useTranslation();
 
-  const [newValue, setNewValue] = React.useState('');
+  const [newValue, setNewValue] = React.useState(view?.name ?? '');
   const [loading, setLoading] = React.useState(false);
   const activeViewIdRef = useRef<string>();
   const dirtyRef = useRef(false);
@@ -80,6 +80,21 @@ function RenameModal({
       }}
     >
       <DialogContent
+        // Take over the dialog's initial focus so the field is focused *and*
+        // fully selected in one deterministic step. Previously the selection was
+        // applied on a 100ms timer that raced the dialog's own autofocus: when
+        // the timer lost, the caret sat at the end of the pre-filled name and
+        // typing appended to it instead of replacing it.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+
+          const input = inputRef.current;
+
+          if (!input) return;
+
+          input.focus();
+          input.select();
+        }}
         onCloseAutoFocus={(e) => {
           e.preventDefault();
         }}
@@ -88,19 +103,10 @@ function RenameModal({
           <DialogTitle>{t('button.rename')}</DialogTitle>
         </DialogHeader>
         <Input
-          autoFocus
           data-testid='rename-modal-input'
           placeholder={'Enter new name'}
           value={newValue}
-          ref={(input: HTMLInputElement) => {
-            if (!input) return;
-            if (!inputRef.current) {
-              setTimeout(() => {
-                input.setSelectionRange(0, input.value.length);
-              }, 100);
-              inputRef.current = input;
-            }
-          }}
+          ref={inputRef}
           onChange={(e) => {
             dirtyRef.current = true;
             setNewValue(e.target.value);

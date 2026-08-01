@@ -1,5 +1,6 @@
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
@@ -86,6 +87,11 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
+
+    // Inline editing state for the embedded database title.
+    const [editingTitle, setEditingTitle] = useState(false);
+    const [titleDraft, setTitleDraft] = useState('');
+    const titleInputRef = useRef<HTMLInputElement>(null);
 
     const updateRenameTargetFromMeta = useCallback((nextMeta: View) => {
       setRenameTarget((current) => {
@@ -292,6 +298,57 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         : embeddedDatabaseMeta.name
       : '';
     const embeddedDatabaseName = embeddedDatabaseRawName.trim() || t('untitled');
+    const embeddedDatabaseViewId = embeddedDatabaseMeta?.view_id;
+    const canRenameEmbeddedTitle = Boolean(embeddedDatabaseMeta && !readOnly && updateContainerPage);
+
+    const startEditingTitle = useCallback(() => {
+      setTitleDraft(embeddedDatabaseRawName);
+      setEditingTitle(true);
+    }, [embeddedDatabaseRawName]);
+
+    const cancelEditingTitle = useCallback(() => {
+      setEditingTitle(false);
+      setTitleDraft('');
+    }, []);
+
+    const commitTitle = useCallback(async () => {
+      if (!editingTitle || !embeddedDatabaseViewId || !updateContainerPage) return;
+
+      const nextName = titleDraft.trim();
+      const currentName = embeddedDatabaseRawName.trim();
+
+      setEditingTitle(false);
+
+      // An empty title is not a rename — restore the previous name.
+      if (!nextName || nextName === currentName) return;
+
+      try {
+        await updateContainerPage(embeddedDatabaseViewId, { name: nextName });
+        setPendingContainerName({ viewId: embeddedDatabaseViewId, name: nextName });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }, [editingTitle, embeddedDatabaseViewId, embeddedDatabaseRawName, titleDraft, updateContainerPage]);
+
+    // Focus and select deterministically once the input is mounted. Doing this
+    // here (rather than on a timer) avoids racing any other focus handler, which
+    // would otherwise collapse the selection and make typing append to the old
+    // name instead of replacing it.
+    useEffect(() => {
+      if (!editingTitle) return;
+
+      const input = titleInputRef.current;
+
+      if (!input) return;
+
+      input.focus();
+      input.select();
+    }, [editingTitle]);
+
+    // Stop editing if the database this title belongs to changes underneath us.
+    useEffect(() => {
+      setEditingTitle(false);
+    }, [embeddedDatabaseViewId]);
 
     return (
       <div
@@ -304,21 +361,44 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       >
         {embeddedDatabaseMeta ? (
           <h3 data-testid='embedded-database-title' className='w-full pb-3 text-xl font-semibold text-text-primary'>
-            {!readOnly && updateContainerPage ? (
-              <button
-                type='button'
-                data-testid='embedded-database-title-rename'
-                className='w-full cursor-pointer text-left'
-                onClick={() =>
-                  setRenameTarget({
-                    viewId: embeddedDatabaseMeta.view_id,
-                    name: embeddedDatabaseRawName,
-                    isContainer: true,
-                  })
-                }
-              >
-                {embeddedDatabaseName}
-              </button>
+            {canRenameEmbeddedTitle ? (
+              editingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  data-testid='embedded-database-title-input'
+                  className='w-full bg-transparent text-xl font-semibold text-text-primary outline-none'
+                  value={titleDraft}
+                  placeholder={t('untitled')}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => void commitTitle()}
+                  // The title lives inside the document editor; keep its keys and
+                  // pointer events from reaching the surrounding Slate editor.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void commitTitle();
+                      return;
+                    }
+
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelEditingTitle();
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  type='button'
+                  data-testid='embedded-database-title-rename'
+                  className='w-full cursor-text rounded-200 text-left hover:bg-fill-list-hover'
+                  onClick={startEditingTitle}
+                >
+                  {embeddedDatabaseName}
+                </button>
+              )
             ) : (
               embeddedDatabaseName
             )}
