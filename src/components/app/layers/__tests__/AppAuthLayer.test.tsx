@@ -180,4 +180,92 @@ describe('AppAuthLayer workspace info loading', () => {
     expect(mockOpenWorkspace).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-new');
   });
+
+  it('keeps sync limits unresolved and retries after a transient server-info failure', async () => {
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    let latestAuthContext: AuthInternalContextType | null = null;
+
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
+    mockGetServerInfo
+      .mockReset()
+      .mockRejectedValueOnce(new Error('server unavailable'))
+      .mockResolvedValueOnce({
+        enable_page_history: true,
+        ai_enabled: true,
+        max_update_bytes: 8_000_000,
+        max_slow_sync_update_bytes: 64_000_000,
+      } as never);
+
+    function CaptureAuthContext() {
+      latestAuthContext = useContext(AuthInternalContext);
+      return null;
+    }
+
+    const view = render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <CaptureAuthContext />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockGetServerInfo).toHaveBeenCalledTimes(1);
+      expect(latestAuthContext?.syncLimitsLoaded).toBe(false);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+
+      expect(mockGetServerInfo).toHaveBeenCalledTimes(2);
+      expect(latestAuthContext?.syncLimitsLoaded).toBe(true);
+      expect(latestAuthContext?.maxUpdateBytes).toBe(8_000_000);
+      expect(latestAuthContext?.maxSlowSyncUpdateBytes).toBe(64_000_000);
+    } finally {
+      view.unmount();
+      errorSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('aborts an in-flight server-info request when the auth layer unmounts', async () => {
+    const serverInfo = createDeferred<Awaited<ReturnType<typeof AuthService.getServerInfo>>>();
+
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
+    mockGetServerInfo.mockReset().mockReturnValue(serverInfo.promise);
+
+    const view = render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <div />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(mockGetServerInfo).toHaveBeenCalledTimes(1));
+
+    const signal = mockGetServerInfo.mock.calls[0][0];
+
+    expect(signal?.aborted).toBe(false);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
+  });
 });

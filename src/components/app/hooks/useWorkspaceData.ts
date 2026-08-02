@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
@@ -24,6 +25,8 @@ import {
 import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
+
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -245,6 +248,11 @@ type FolderRid = {
   seqNo: number;
 };
 
+type PendingFolderViewUpdate = {
+  view: View;
+  folderRid: FolderRid | null;
+};
+
 const AUTHORITATIVE_VIEW_REFRESH_ERROR_CODES = new Set<number>([
   ERROR_CODE.RECORD_NOT_FOUND,
   ERROR_CODE.RECORD_DELETED,
@@ -252,6 +260,18 @@ const AUTHORITATIVE_VIEW_REFRESH_ERROR_CODES = new Set<number>([
   ERROR_CODE.NOT_HAS_PERMISSION,
   ERROR_CODE.USER_UNAUTHORIZED,
   401,
+  403,
+  404,
+  410,
+]);
+
+// Errors that prove the current user can no longer read a view. Deliberately
+// excludes auth errors (401 / not-logged-in): a token blip must not wipe the
+// local copy of a page the user still has access to.
+const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
+  ERROR_CODE.RECORD_NOT_FOUND,
+  ERROR_CODE.RECORD_DELETED,
+  ERROR_CODE.NOT_HAS_PERMISSION,
   403,
   404,
   410,
@@ -341,6 +361,19 @@ function createRootOutlineFingerprint(views: View[]): string {
   return JSON.stringify(normalizeRootOutlineForComparison(views));
 }
 
+function createFolderViewFieldsFingerprint(view: View): string {
+  return JSON.stringify(
+    normalizeRootOutlineForComparison({
+      name: view.name,
+      icon: view.icon,
+      extra: view.extra,
+      is_private: view.is_private,
+      is_favorite: view.is_favorite,
+      is_locked: view.is_locked,
+    })
+  );
+}
+
 const OUTLINE_NON_VISUAL_FIELDS = new Set(['/last_edited_time', '/last_edited_by']);
 
 function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
@@ -364,6 +397,7 @@ function folderOutlinePatchMayAffectFavorites(patch: JsonPatchOperation[]): bool
 export function useWorkspaceData() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { eventEmitter } = useSyncInternal();
+  const currentUserEmail = useCurrentUserOptional()?.email;
   const navigate = useNavigate();
 
   const [outline, setOutline] = useState<View[]>();
@@ -373,8 +407,10 @@ export function useWorkspaceData() {
   // Global folder ordering can advance from lazy subtree fetches. Root polling
   // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
+  const lastFolderViewRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
+  const pendingFolderViewUpdatesRef = useRef<Map<string, PendingFolderViewUpdate>>(new Map());
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
   // Root loads and periodic revalidation share request IDs, but successful
@@ -392,6 +428,7 @@ export function useWorkspaceData() {
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
   const trashRequestSeqRef = useRef(0);
+  const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
@@ -432,6 +469,36 @@ export function useWorkspaceData() {
     setOutline(mergedOutline);
 
     return mergedOutline;
+  }, []);
+
+  const reconcilePendingFolderViewUpdates = useCallback((nextOutline: View[], nextFolderRid: FolderRid | null) => {
+    let reconciledOutline = nextOutline;
+
+    for (const [viewId, pendingUpdate] of pendingFolderViewUpdatesRef.current) {
+      const incomingView = findView(reconciledOutline, viewId);
+
+      if (!incomingView) continue;
+
+      const incomingMatchesPending =
+        createFolderViewFieldsFingerprint(incomingView) === createFolderViewFieldsFingerprint(pendingUpdate.view);
+
+      if (incomingMatchesPending) {
+        pendingFolderViewUpdatesRef.current.delete(viewId);
+        continue;
+      }
+
+      const incomingIsNewer =
+        nextFolderRid && pendingUpdate.folderRid && compareFolderRid(nextFolderRid, pendingUpdate.folderRid) > 0;
+
+      if (incomingIsNewer) {
+        pendingFolderViewUpdatesRef.current.delete(viewId);
+        continue;
+      }
+
+      reconciledOutline = updateViewInOutline(reconciledOutline, pendingUpdate.view);
+    }
+
+    return reconciledOutline;
   }, []);
 
   const refreshFavoriteViewsForWorkspace = useCallback(async (workspaceId: string) => {
@@ -579,7 +646,8 @@ export function useWorkspaceData() {
 
         if (shouldApplyOutline) {
           latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
-          const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+          const reconciledOutline = reconcilePendingFolderViewUpdates(outlineWithShareWithMe, nextFolderRid);
+          const mergedOutline = replaceOutlinePreservingChildren(reconciledOutline);
 
           updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
 
@@ -737,6 +805,7 @@ export function useWorkspaceData() {
       updateAppliedRootOutlineSnapshot,
       userWorkspaceInfo?.userId,
       replaceOutlinePreservingChildren,
+      reconcilePendingFolderViewUpdates,
       isStaleWorkspaceRequest,
       isStaleRootOutlineRequest,
       isStaleRootOutlineFailure,
@@ -1312,10 +1381,95 @@ export function useWorkspaceData() {
   );
 
   useEffect(() => {
-    const handleShareViewsChanged = () => {
+    let cancelled = false;
+
+    const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
 
+      const changedViewId = payload?.viewId;
+      const normalizedCurrentEmail = currentUserEmail?.toLowerCase();
+      const affectsCurrentUser =
+        normalizedCurrentEmail !== undefined &&
+        payload?.emails?.some((email) => email?.toLowerCase() === normalizedCurrentEmail);
+      const shouldProbeAccess = Boolean(changedViewId && affectsCurrentUser);
+      const cachedNavigation =
+        shouldProbeAccess && changedViewId ? ViewService.getCached(currentWorkspaceId, changedViewId) : undefined;
+      const changedView =
+        shouldProbeAccess && changedViewId
+          ? findView(stableOutlineRef.current, changedViewId) ??
+            (cachedNavigation ? findView([cachedNavigation], changedViewId) : null)
+          : null;
+
+      // A lazy/depth-truncated outline may not contain the route metadata, and
+      // its memory cache may already have expired. Start the disk lookup before
+      // loadOutline can replace or invalidate anything; only await it if a
+      // definitive denial requires local collab eviction.
+      const diskCachedNavigationPromise =
+        shouldProbeAccess && changedViewId && !changedView
+          ? ViewService.getCachedFromDisk(currentWorkspaceId, changedViewId).catch((error) => {
+              Log.warn('[Outline] failed to read cached view metadata after share change', {
+                workspaceId: currentWorkspaceId,
+                viewId: changedViewId,
+                error,
+              });
+              return undefined;
+            })
+          : undefined;
+
+      // Database folder/view UUIDs are metadata identifiers. Their Y.Doc and
+      // IndexedDB collab are stored under the backing database UUID instead.
+      // Capture it before loadOutline can remove a newly revoked view.
+      const cachedDatabaseId = changedView?.extra?.database_id;
+
+      // The access-details service keeps a short-lived resolved-promise cache.
+      // Notifications can come from another tab or client, so invalidate it
+      // before any consumer reacts to the changed outline.
+      AccessService.invalidateShareDetailCache(currentWorkspaceId);
       void loadOutline(currentWorkspaceId, false);
+
+      if (!changedViewId || !affectsCurrentUser) return;
+
+      // The notification fires for grants and revokes alike, so probe the
+      // server. If this user lost read access, evict the locally cached
+      // collab so the page cannot keep rendering from IndexedDB, and tell
+      // the app shell in case the page is currently on screen.
+      const workspaceId = currentWorkspaceId;
+      const probeKey = `${normalizedCurrentEmail}:${workspaceId}:${changedViewId}`;
+      const probeGeneration = (shareAccessProbeGenerationsRef.current.get(probeKey) ?? 0) + 1;
+      const isCurrentProbe = () =>
+        !cancelled && shareAccessProbeGenerationsRef.current.get(probeKey) === probeGeneration;
+
+      shareAccessProbeGenerationsRef.current.set(probeKey, probeGeneration);
+
+      void ViewService.getNavigation(workspaceId, changedViewId, 0)
+        .then(() => {
+          if (!isCurrentProbe()) return;
+          eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: changedViewId });
+        })
+        .catch(async (error: unknown) => {
+          if (!isCurrentProbe()) return;
+
+          const code = getRefreshErrorCode(error);
+
+          if (code === undefined || !ACCESS_REVOKED_PROBE_ERROR_CODES.has(code)) return;
+
+          const diskCachedNavigation = await diskCachedNavigationPromise;
+
+          if (!isCurrentProbe()) return;
+
+          const diskChangedView = diskCachedNavigation
+            ? findView([diskCachedNavigation], changedViewId)
+            : null;
+          const databaseId = cachedDatabaseId ?? diskChangedView?.extra?.database_id;
+
+          ViewService.invalidateCache(workspaceId, changedViewId);
+          const collabIds = new Set([changedViewId, databaseId].filter((id): id is string => Boolean(id)));
+
+          collabIds.forEach((collabId) => {
+            void deleteCollabDB(collabId, { destroyDoc: true });
+          });
+          eventEmitter?.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: changedViewId });
+        });
     };
 
     if (eventEmitter) {
@@ -1323,11 +1477,12 @@ export function useWorkspaceData() {
     }
 
     return () => {
+      cancelled = true;
       if (eventEmitter) {
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
       }
     };
-  }, [currentWorkspaceId, eventEmitter, loadOutline]);
+  }, [currentWorkspaceId, currentUserEmail, eventEmitter, loadOutline, stableOutlineRef]);
 
   useEffect(() => {
     const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {
@@ -1445,7 +1600,7 @@ export function useWorkspaceData() {
       const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
       const nextOutline = existingShareWithMe ? [...patchedOutline, existingShareWithMe] : patchedOutline;
 
-      const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
+      const mergedOutline = replaceOutlinePreservingChildren(reconcilePendingFolderViewUpdates(nextOutline, patchRid));
 
       if (usedRelaxedPatch) {
         updateLastFolderRid(patchRid);
@@ -1473,6 +1628,7 @@ export function useWorkspaceData() {
     loadOutline,
     refreshLoadedFavoriteViewsInBackground,
     refreshTrashListInBackground,
+    reconcilePendingFolderViewUpdates,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
     updateAppliedRootOutlineSnapshot,
@@ -1486,11 +1642,23 @@ export function useWorkspaceData() {
 
       const folderRid = parseFolderRid(payload.folderRid);
       const currentRid = lastFolderRidRef.current;
+      const lastFolderViewRid = lastFolderViewRidRef.current;
 
-      if (folderRid && currentRid && compareFolderRid(folderRid, currentRid) <= 0) {
+      // FolderChanged and FolderViewChanged are complementary notifications
+      // emitted with the same revision. Reject older revisions globally, but
+      // deduplicate equal revisions only within this notification stream.
+      if (folderRid && currentRid && compareFolderRid(folderRid, currentRid) < 0) {
         Log.debug('[Outline] [FolderViewChanged] skipped stale notification', {
           folderRid: payload.folderRid,
           lastRid: `${currentRid.timestamp}-${currentRid.seqNo}`,
+        });
+        return;
+      }
+
+      if (folderRid && lastFolderViewRid && compareFolderRid(folderRid, lastFolderViewRid) <= 0) {
+        Log.debug('[Outline] [FolderViewChanged] skipped duplicate notification', {
+          folderRid: payload.folderRid,
+          lastFolderViewRid: `${lastFolderViewRid.timestamp}-${lastFolderViewRid.seqNo}`,
         });
         return;
       }
@@ -1506,6 +1674,14 @@ export function useWorkspaceData() {
             const updatedView = JSON.parse(payload.viewJson) as View;
             const previousView = findView(nextOutline, updatedView.view_id);
 
+            if (previousView) {
+              pendingFolderViewUpdatesRef.current.set(updatedView.view_id, {
+                view: updatedView,
+                folderRid,
+              });
+            }
+
+            eventEmitter?.emit(APP_EVENTS.VIEW_META_CHANGED, updatedView);
             nextOutline = updateViewInOutline(nextOutline, updatedView);
             if (previousView?.is_favorite !== updatedView.is_favorite) {
               refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
@@ -1551,6 +1727,7 @@ export function useWorkspaceData() {
             // FOLDER_OUTLINE_CHANGED shallow refresh.
             for (const childId of childIds) {
               loadedViewIdsRef.current.delete(childId);
+              pendingFolderViewUpdatesRef.current.delete(childId);
             }
 
             // If the parent has no remaining children, remove it from loaded IDs
@@ -1587,6 +1764,10 @@ export function useWorkspaceData() {
 
       if (shouldRefreshTrash) {
         refreshTrashListInBackground();
+      }
+
+      if (folderRid) {
+        lastFolderViewRidRef.current = folderRid;
       }
 
       if (nextOutline !== stableOutlineRef.current) {
@@ -1787,8 +1968,10 @@ export function useWorkspaceData() {
   useEffect(() => {
     if (!currentWorkspaceId) return;
     lastFolderRidRef.current = null;
+    lastFolderViewRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
     lastAppliedRootOutlineFingerprintRef.current = null;
+    pendingFolderViewUpdatesRef.current.clear();
     stableOutlineWorkspaceIdRef.current = currentWorkspaceId;
     stableOutlineWorkspaceRevisionRef.current = workspaceRevisionRef.current;
     stableOutlineRef.current = [];
@@ -1840,8 +2023,7 @@ export function useWorkspaceData() {
       // Record it for one follow-up load after the server selection catches up.
       // The inverse direction is a manual switch and the workspace-change
       // effect will load the target once its URL changes.
-      workspaceAwaitingSelectionRef.current =
-        !prev || selectedWorkspaceId === prev ? currentWorkspaceId : null;
+      workspaceAwaitingSelectionRef.current = !prev || selectedWorkspaceId === prev ? currentWorkspaceId : null;
       prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
       return;
     }

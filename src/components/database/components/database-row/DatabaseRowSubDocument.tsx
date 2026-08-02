@@ -119,12 +119,23 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const row = useRowData(rowId) as YDatabaseRow | undefined;
   const currentUser = useCurrentUserOptional();
   const workspaceId = useCurrentWorkspaceIdOptional();
+  const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
 
   // Get context for Editor props and row document operations
   // The context provides mode-specific implementations:
   // - App mode: authenticated APIs, WebSocket sync
   // - Publish mode: published cache, no writes
   const context = useDatabaseContextOptional();
+  const mentionContext = useMemo(
+    () => ({
+      ...context?.mentionContext,
+      view_id: documentId,
+      database_id: context?.mentionContext?.database_id ?? databaseId,
+      database_view_id: context?.mentionContext?.database_view_id ?? context?.activeViewId,
+      row_id: rowId,
+    }),
+    [context?.activeViewId, context?.mentionContext, databaseId, documentId, rowId]
+  );
 
   // Row document operations from context (mode-specific implementations)
   const loadRowDocument = context?.loadRowDocument;
@@ -151,7 +162,16 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNonEmptyRef = useRef(false);
   const docReadyRef = useRef(false); // Track if document is loaded to prevent retry timer from resetting it
+  // Tracks the documentId this component currently represents, and the one the
+  // loaded `doc` actually belongs to. The request-generation guard below only
+  // covers work started by the main load effect; these cover every other async
+  // caller plus the render path, so a row whose documentId changes never shows
+  // or binds the previous row's document.
+  const activeDocumentIdRef = useRef<string | undefined>(documentId);
+  const loadedDocumentIdRef = useRef<string | null>(null);
   const rowDocEnsuredRef = useRef(false); // Track if row document has been ensured on server to avoid redundant API calls
+
+  activeDocumentIdRef.current = documentId;
 
   const getCellData = useCallback(
     (cell: YDatabaseCell, field: YDatabaseField) => {
@@ -205,8 +225,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const retryLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadRequestGenerationRef = useRef(0);
+  const loadedDocMatchesCurrent = Boolean(doc && documentId && loadedDocumentIdRef.current === documentId);
 
-  const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
+  const document = loadedDocMatchesCurrent ? doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document) : null;
   // undefined = meta hasn't loaded from Yjs yet (wait)
   // true = meta loaded, document is empty (open locally)
   // false = meta loaded, document has content (load from server)
@@ -274,14 +295,17 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     async (
       documentId: string,
       options?: LoadRowDocumentOptions,
-      isCurrent: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
+      isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
     ): Promise<boolean> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
+
       if (!isCurrent()) return false;
 
       Log.debug('[DatabaseRowSubDocument] handleOpenDocument start', { rowId, documentId });
       setLoading(true);
       try {
         docReadyRef.current = false;
+        loadedDocumentIdRef.current = null;
         setDoc(null);
 
         if (!loadRowDocument) {
@@ -343,6 +367,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         if (!isCurrent()) return false;
 
         setDoc(doc);
+        loadedDocumentIdRef.current = documentId;
         docReadyRef.current = true;
         rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
         return true;
@@ -364,11 +389,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     async (
       documentId: string,
       docState: Uint8Array,
-      isCurrent: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
+      isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
     ): Promise<boolean> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
+
       if (!documentId || !isCurrent()) return false;
       try {
         docReadyRef.current = false;
+        loadedDocumentIdRef.current = null;
         setDoc(null);
 
         // Validate docState
@@ -414,6 +442,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         docWithMeta._syncBound = false;
 
         setDoc(doc);
+        loadedDocumentIdRef.current = documentId;
         docReadyRef.current = true;
         rowDocEnsuredRef.current = true; // Document was created on server via createRowDocument
         Log.debug('[DatabaseRowSubDocument] openDocumentWithState ready', {
@@ -435,8 +464,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     async (
       documentId: string,
       requireServerReady: boolean = false,
-      isCurrent: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
+      isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
     ): Promise<boolean> => {
+      const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
+
       if (!documentId || !isCurrent()) return false;
       setLoading(true);
       let docState: Uint8Array | null = null;
@@ -449,6 +480,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
       try {
         docReadyRef.current = false;
+        loadedDocumentIdRef.current = null;
         setDoc(null);
 
         const localHasContent = await hasLocalDocContent(documentId);
@@ -539,15 +571,23 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
-    if (!documentId || ensureDocRetryTimerRef.current) {
+    if (!documentId || activeDocumentIdRef.current !== documentId || ensureDocRetryTimerRef.current) {
       return;
     }
 
     ensureDocRetryTimerRef.current = setTimeout(async () => {
       ensureDocRetryTimerRef.current = null;
 
+      if (activeDocumentIdRef.current !== documentId) {
+        return;
+      }
+
       try {
         const exists = checkIfRowDocumentExists ? await checkIfRowDocumentExists(documentId) : false;
+
+        if (activeDocumentIdRef.current !== documentId) {
+          return;
+        }
 
         Log.debug('[DatabaseRowSubDocument] ensureRowDocumentExists retry', {
           rowId,
@@ -561,6 +601,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             documentId,
           });
           await createRowDocument(documentId, rowDocumentSource);
+
+          if (activeDocumentIdRef.current !== documentId) {
+            return;
+          }
         }
 
         if (pendingNonEmptyRef.current) {
@@ -595,11 +639,37 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     rowId,
   ]);
 
+  // Drop every trace of the previous document as soon as documentId changes, so
+  // the editor never renders or binds the old row's doc while the new one loads.
+  useEffect(() => {
+    docReadyRef.current = false;
+    loadedDocumentIdRef.current = null;
+    editorRef.current = null;
+    lastIsEmptyRef.current = null;
+    pendingNonEmptyRef.current = false;
+    rowDocEnsuredRef.current = false;
+
+    if (pendingMetaUpdateRef.current) {
+      clearTimeout(pendingMetaUpdateRef.current);
+      pendingMetaUpdateRef.current = null;
+    }
+
+    if (retryLoadTimerRef.current) {
+      clearTimeout(retryLoadTimerRef.current);
+      retryLoadTimerRef.current = null;
+    }
+
+    if (ensureDocRetryTimerRef.current) {
+      clearTimeout(ensureDocRetryTimerRef.current);
+      ensureDocRetryTimerRef.current = null;
+    }
+
+    setDoc(null);
+    setLoading(Boolean(documentId));
+  }, [documentId]);
+
   useEffect(() => {
     if (!documentId) return;
-
-    // Reset ensured state when documentId changes
-    rowDocEnsuredRef.current = false;
 
     let cancelled = false;
     const requestGeneration = ++loadRequestGenerationRef.current;
@@ -621,7 +691,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         // If doc is already loaded (e.g., by handleCreateDocument), skip retry
         // This prevents resetting the editor mid-typing
-        if (docReadyRef.current) {
+        if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
           Log.debug('[DatabaseRowSubDocument] skipping retry - doc already loaded', {
             rowId,
             documentId,
@@ -702,7 +772,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
     void (async () => {
       // Skip if doc is already loaded - prevents reloading when meta changes
-      if (docReadyRef.current && doc) {
+      if (docReadyRef.current && loadedDocumentIdRef.current === documentId && doc) {
         Log.debug('[DatabaseRowSubDocument] skipping effect - doc already loaded', {
           rowId,
           documentId,
@@ -722,7 +792,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
       if (isDocumentEmptyResolved) {
         // Skip if doc is already loaded
-        if (docReadyRef.current) {
+        if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
           Log.debug('[DatabaseRowSubDocument] row meta says empty but doc already loaded, skipping', {
             rowId,
             documentId,
@@ -784,7 +854,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         });
         if (exists) {
           // Skip loading if doc is already ready
-          if (docReadyRef.current) {
+          if (docReadyRef.current && loadedDocumentIdRef.current === documentId) {
             Log.debug('[DatabaseRowSubDocument] doc exists and already loaded, skipping', {
               rowId,
               documentId,
@@ -847,12 +917,13 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   ]);
 
   useEffect(() => {
-    if (loading || !doc || !documentId || !bindViewSync) {
+    if (loading || !doc || !documentId || !loadedDocMatchesCurrent || !bindViewSync) {
       Log.debug('[DatabaseRowSubDocument] bindViewSync skipped', {
         rowId,
         documentId,
         loading,
         hasDoc: !!doc,
+        loadedDocumentId: loadedDocumentIdRef.current,
         hasBindViewSync: !!bindViewSync,
       });
       return;
@@ -892,7 +963,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     } catch (e) {
       Log.error('[DatabaseRowSubDocument] bindViewSync error', e);
     }
-  }, [loading, doc, documentId, bindViewSync, rowId]);
+  }, [loading, doc, documentId, loadedDocMatchesCurrent, bindViewSync, rowId]);
 
   const getMoreAIContext = useCallback(() => {
     return JSON.stringify(properties);
@@ -916,7 +987,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   }, []);
 
   const ensureRowDocumentExists = useCallback(async () => {
-    if (!documentId) return false;
+    if (!documentId || activeDocumentIdRef.current !== documentId) return false;
 
     // Skip if we've already ensured this document exists (memoize to avoid redundant API calls)
     if (rowDocEnsuredRef.current) {
@@ -928,9 +999,17 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     if (checkIfRowDocumentExists) {
       try {
         exists = await checkIfRowDocumentExists(documentId);
+
+        if (activeDocumentIdRef.current !== documentId) {
+          return false;
+        }
       } catch {
         // Ignore and fall through to orphaned view creation attempt.
       }
+    }
+
+    if (activeDocumentIdRef.current !== documentId) {
+      return false;
     }
 
     // If document already exists, mark as ensured and return early
@@ -944,6 +1023,11 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     if (createRowDocument) {
       try {
         await createRowDocument(documentId, rowDocumentSource);
+
+        if (activeDocumentIdRef.current !== documentId) {
+          return false;
+        }
+
         rowDocEnsuredRef.current = true;
         return true;
       } catch {
@@ -956,7 +1040,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   }, [checkIfRowDocumentExists, createRowDocument, documentId, rowDocumentSource]);
 
   useEffect(() => {
-    if (!doc) return;
+    if (!doc || !documentId || !loadedDocMatchesCurrent) return;
 
     // Body of the debounced meta update. Extracted so the unmount cleanup can
     // flush it synchronously instead of cancelling pending work — otherwise a
@@ -1049,6 +1133,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   }, [
     doc,
     documentId,
+    loadedDocMatchesCurrent,
     rowId,
     isDocumentEmpty,
     shouldSkipIsDocumentEmptyUpdate,
@@ -1066,7 +1151,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     };
   }, []);
 
-  if (loading) {
+  if (loading || (doc && documentId && !loadedDocMatchesCurrent)) {
     return <EditorSkeleton />;
   }
 
@@ -1082,6 +1167,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       viewId={documentId}
       doc={doc}
       readOnly={false}
+      mentionContext={mentionContext}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}
     />

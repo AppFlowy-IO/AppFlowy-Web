@@ -1,9 +1,11 @@
-import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { View, YjsDatabaseKey } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -11,6 +13,15 @@ import RenameModal from '@/components/app/view-actions/RenameModal';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { DatabaseViewTabs } from '@/components/database/components/tabs/DatabaseViewTabs';
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
+
+const TAB_BAR_CLASS_NAME =
+  '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden';
+
+interface RenameTarget {
+  viewId: string;
+  name: string;
+  isContainer: boolean;
+}
 
 export interface DatabaseTabBarProps {
   viewIds: string[];
@@ -55,18 +66,47 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     },
     ref
   ) => {
+    const { t } = useTranslation();
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
-    const { loadViewMeta, navigateToView, readOnly, showActions = true, eventEmitter } = context;
-    const updatePage = useUpdateDatabaseView();
+    const {
+      loadViewMeta,
+      navigateToView,
+      readOnly,
+      showActions = true,
+      eventEmitter,
+      updatePage: updateContainerPage,
+    } = context;
+    const updateDatabaseView = useUpdateDatabaseView();
     const [meta, setMeta] = useState<View | null>(null);
+    const [pendingContainerName, setPendingContainerName] = useState<{ viewId: string; name: string } | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
-    const [renameViewId, setRenameViewId] = useState<string | null>(null);
+    const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
+
+    // Inline editing state for the embedded database title.
+    const [editingTitle, setEditingTitle] = useState(false);
+    const [titleDraft, setTitleDraft] = useState('');
+    const titleInputRef = useRef<HTMLInputElement>(null);
+
+    const updateRenameTargetFromMeta = useCallback((nextMeta: View) => {
+      setRenameTarget((current) => {
+        if (!current) return current;
+
+        const currentView =
+          nextMeta.view_id === current.viewId
+            ? nextMeta
+            : nextMeta.children.find((child) => child.view_id === current.viewId);
+
+        if (!currentView || current.name === currentView.name) return current;
+
+        return { ...current, name: currentView.name };
+      });
+    }, []);
 
     const reloadView = useCallback(async () => {
       if (!loadViewMeta) return;
@@ -137,49 +177,72 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [databasePageId, eventEmitter, reloadView]);
 
-    const renameView = useMemo(() => {
-      if (!renameViewId) return null;
+    useEffect(() => {
+      const handleViewMetaChanged = (updatedView: View) => {
+        setMeta((current) => {
+          if (!current) return current;
 
-      const fromMeta = meta?.view_id === renameViewId ? meta : meta?.children.find((v) => v.view_id === renameViewId);
+          if (current.view_id === updatedView.view_id) {
+            return {
+              ...current,
+              ...updatedView,
+              children: current.children,
+            };
+          }
 
-      if (fromMeta) return fromMeta;
+          const childIndex = current.children.findIndex((child) => child.view_id === updatedView.view_id);
 
-      // Fallback: build a minimal view from Yjs so rename still works even when meta
-      // doesn't include siblings (e.g., embedded linked views without a container).
-      const databaseView = views?.get(renameViewId) as YDatabaseView | null;
+          if (childIndex < 0) return current;
 
-      if (!databaseView) return null;
+          const children = [...current.children];
 
-      const rawLayoutValue = databaseView.get(YjsDatabaseKey.layout);
-      const databaseLayout = Number(rawLayoutValue) as DatabaseViewLayout;
-      const computedLayout =
-        databaseLayout === DatabaseViewLayout.Board
-          ? ViewLayout.Board
-          : databaseLayout === DatabaseViewLayout.Calendar
-          ? ViewLayout.Calendar
-          : databaseLayout === DatabaseViewLayout.Chart
-          ? ViewLayout.Chart
-          : ViewLayout.Grid;
+          children[childIndex] = {
+            ...children[childIndex],
+            ...updatedView,
+            children: children[childIndex].children,
+          };
 
-      const name = databaseView.get(YjsDatabaseKey.name) || '';
+          return { ...current, children };
+        });
+        updateRenameTargetFromMeta(updatedView);
+      };
 
-      return {
-        view_id: renameViewId,
-        name,
-        layout: computedLayout,
-        parent_view_id: meta?.view_id ?? databasePageId,
-        children: [],
-        icon: null,
-        extra: null,
-        is_published: false,
-        is_private: false,
-      } as View;
-    }, [databasePageId, meta, renameViewId, views]);
+      if (eventEmitter) {
+        eventEmitter.on(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
+      }
 
+      return () => {
+        if (eventEmitter) {
+          eventEmitter.off(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
+        }
+      };
+    }, [eventEmitter, updateRenameTargetFromMeta]);
+
+    const openRenameModal = useCallback(
+      (view: View) => {
+        const fromMeta =
+          meta?.view_id === view.view_id ? meta : meta?.children.find((child) => child.view_id === view.view_id);
+
+        // The live tab name wins over lagging outline metadata. Only retain
+        // interaction state; current metadata continues to live in `meta`.
+        setRenameTarget({
+          viewId: view.view_id,
+          name: view.name,
+          isContainer: isDatabaseContainer(fromMeta ?? view),
+        });
+      },
+      [meta]
+    );
+
+    // Folder/outline names are the tab-label source of truth, matching desktop:
+    // desktop renames only ever update the folder view, while the database
+    // collab's view name keeps its creation-time layout default ("Grid",
+    // "Board", ...). The Yjs name is only a fallback for views missing from
+    // the outline. Renames stay live because folder changes stream in through
+    // OUTLINE_LOADED / VIEW_META_CHANGED and patch `meta`.
     const viewNameById = useMemo(() => {
       if (!meta) return undefined;
 
-      // Prefer container children when available.
       if (isDatabaseContainer(meta)) {
         const mapping: Record<string, string> = {};
 
@@ -190,22 +253,26 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         return mapping;
       }
 
-      return {
-        [meta.view_id]: meta.name,
-      };
+      return { [meta.view_id]: meta.name };
     }, [meta]);
 
     useEffect(() => {
       void reloadView();
     }, [reloadView]);
 
-    const className = useMemo(() => {
-      const classList = [
-        '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden',
-      ];
+    useEffect(() => {
+      if (
+        pendingContainerName &&
+        meta?.view_id === pendingContainerName.viewId &&
+        meta.name === pendingContainerName.name
+      ) {
+        setPendingContainerName(null);
+      }
+    }, [meta, pendingContainerName]);
 
-      return classList.join(' ');
-    }, []);
+    useEffect(() => {
+      setPendingContainerName(null);
+    }, [databasePageId]);
 
     useEffect(() => {
       const preventDefault = (e: Event) => {
@@ -224,15 +291,119 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [menuViewId]);
 
+    const embeddedDatabaseMeta = context.isDocumentBlock && isDatabaseContainer(meta) ? meta : null;
+    const embeddedDatabaseRawName = embeddedDatabaseMeta
+      ? pendingContainerName?.viewId === embeddedDatabaseMeta.view_id
+        ? pendingContainerName.name
+        : embeddedDatabaseMeta.name
+      : '';
+    const embeddedDatabaseName = embeddedDatabaseRawName.trim() || t('untitled');
+    const embeddedDatabaseViewId = embeddedDatabaseMeta?.view_id;
+    const canRenameEmbeddedTitle = Boolean(embeddedDatabaseMeta && !readOnly && updateContainerPage);
+
+    const startEditingTitle = useCallback(() => {
+      setTitleDraft(embeddedDatabaseRawName);
+      setEditingTitle(true);
+    }, [embeddedDatabaseRawName]);
+
+    const cancelEditingTitle = useCallback(() => {
+      setEditingTitle(false);
+      setTitleDraft('');
+    }, []);
+
+    const commitTitle = useCallback(async () => {
+      if (!editingTitle || !embeddedDatabaseViewId || !updateContainerPage) return;
+
+      const nextName = titleDraft.trim();
+      const currentName = embeddedDatabaseRawName.trim();
+
+      setEditingTitle(false);
+
+      // An empty title is not a rename — restore the previous name.
+      if (!nextName || nextName === currentName) return;
+
+      try {
+        await updateContainerPage(embeddedDatabaseViewId, { name: nextName });
+        setPendingContainerName({ viewId: embeddedDatabaseViewId, name: nextName });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }, [editingTitle, embeddedDatabaseViewId, embeddedDatabaseRawName, titleDraft, updateContainerPage]);
+
+    // Focus and select deterministically once the input is mounted. Doing this
+    // here (rather than on a timer) avoids racing any other focus handler, which
+    // would otherwise collapse the selection and make typing append to the old
+    // name instead of replacing it.
+    useEffect(() => {
+      if (!editingTitle) return;
+
+      const input = titleInputRef.current;
+
+      if (!input) return;
+
+      input.focus();
+      input.select();
+    }, [editingTitle]);
+
+    // Stop editing if the database this title belongs to changes underneath us.
+    useEffect(() => {
+      setEditingTitle(false);
+    }, [embeddedDatabaseViewId]);
+
     return (
       <div
         ref={ref}
-        className={className}
+        className={TAB_BAR_CLASS_NAME}
         style={{
           paddingLeft: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
+        {embeddedDatabaseMeta ? (
+          <h3 data-testid='embedded-database-title' className='w-full pb-3 text-xl font-semibold text-text-primary'>
+            {canRenameEmbeddedTitle ? (
+              editingTitle ? (
+                <input
+                  ref={titleInputRef}
+                  data-testid='embedded-database-title-input'
+                  className='w-full bg-transparent text-xl font-semibold text-text-primary outline-none'
+                  value={titleDraft}
+                  placeholder={t('untitled')}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => void commitTitle()}
+                  // The title lives inside the document editor; keep its keys and
+                  // pointer events from reaching the surrounding Slate editor.
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void commitTitle();
+                      return;
+                    }
+
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      cancelEditingTitle();
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  type='button'
+                  data-testid='embedded-database-title-rename'
+                  className='w-full cursor-text rounded-200 text-left hover:bg-fill-list-hover'
+                  onClick={startEditingTitle}
+                >
+                  {embeddedDatabaseName}
+                </button>
+              )
+            ) : (
+              embeddedDatabaseName
+            )}
+          </h3>
+        ) : null}
         <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
           <DatabaseViewTabs
             viewIds={viewIds}
@@ -246,7 +417,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             menuViewId={menuViewId}
             setMenuViewId={setMenuViewId}
             setDeleteConfirmOpen={setDeleteConfirmOpen}
-            setRenameViewId={setRenameViewId}
+            setRenameView={openRenameModal}
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
             onReorderTabs={onReorderTabs}
@@ -288,18 +459,31 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           ) : null}
         </div>
 
-        {renameView && Boolean(renameViewId) && (
+        {renameTarget && (
           <RenameModal
-            open={Boolean(renameViewId)}
+            open
             onClose={() => {
-              setRenameViewId(null);
+              setRenameTarget(null);
             }}
-            view={renameView}
+            view={renameTarget}
             updatePage={async (viewId, payload) => {
-              await updatePage(viewId, payload);
+              if (renameTarget.isContainer) {
+                if (!updateContainerPage) {
+                  throw new Error('Database container rename is unavailable');
+                }
+
+                await updateContainerPage(viewId, payload);
+                if (payload.name) {
+                  setPendingContainerName({ viewId, name: payload.name });
+                }
+
+                return;
+              }
+
+              await updateDatabaseView(viewId, payload);
               void reloadView();
             }}
-            viewId={renameViewId || ''}
+            viewId={renameTarget.viewId}
           />
         )}
 

@@ -134,6 +134,7 @@ message CollabDocStateParams {
     PayloadCompressionType compression = 3;
     bytes sv = 4;
     bytes doc_state = 5;
+    string collab_version = 6;
 }
 
 /**
@@ -155,6 +156,11 @@ message CollabBatchSyncResult {
     bytes missing_update = 4;
     string error = 5;
     bytes server_state_vector = 6;
+    string collab_version = 7;
+    // Redis stream message ID confirming that a non-empty client update was
+    // durably persisted. Slow-sync callers require this before retiring an
+    // upload unless an authoritative collab-version change supersedes it.
+    Rid message_id = 8;
 }
 
 /**

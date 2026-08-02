@@ -61,6 +61,7 @@ function renderPersonItem(overrides: Partial<ComponentProps<typeof PersonItem>> 
     currentUserCanGrantFullAccess: true,
     currentUserHasFullAccess: true,
     currentUserIsOwner: false,
+    isInheritedWorkspaceAccess: false,
     isYou: false,
     onAccessLevelChange: async () => undefined,
     onRemoveAccess: async () => undefined,

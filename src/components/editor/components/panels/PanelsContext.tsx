@@ -321,6 +321,22 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
     };
   }, [closePanel, editor, openTriggerPanel]);
 
+  useEffect(() => {
+    const handleDocumentKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !openRef.current) return;
+
+      e.stopPropagation();
+      e.preventDefault();
+      closePanel();
+    };
+
+    document.addEventListener('keydown', handleDocumentKeyDown, true);
+
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown, true);
+    };
+  }, [closePanel]);
+
   const contextValue = useMemo(
     () => ({
       activePanel,

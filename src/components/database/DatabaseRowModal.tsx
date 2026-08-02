@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { useDatabaseContextOptional } from '@/application/database-yjs';
-import { useDeleteRowDispatch, useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
+import { useDuplicateRowDispatch, useTrashAwareDeleteRowsDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ArrowLeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -38,7 +38,7 @@ function DatabaseRowModal({
   const openPageModalViewId = context?.openPageModalViewId;
   const { t } = useTranslation();
   const duplicateRow = useDuplicateRowDispatch();
-  const deleteRow = useDeleteRowDispatch();
+  const deleteRows = useTrashAwareDeleteRowsDispatch();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
 
   return (
@@ -132,7 +132,9 @@ function DatabaseRowModal({
                   variant={'destructive'}
                   data-testid='row-detail-delete'
                   onSelect={() => {
-                    deleteRow?.(rowId);
+                    void deleteRows([rowId]).catch((e: Error) => {
+                      toast.error(e.message);
+                    });
                     onOpenChange(false);
                   }}
                 >

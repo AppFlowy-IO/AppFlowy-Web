@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FC, type ReactN
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
-import { ViewService } from '@/application/services/domains';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
+import { AccessService, ViewService } from '@/application/services/domains';
+import { getTokenParsed } from '@/application/session/token';
 import { LoadViewOptions, TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
@@ -24,12 +27,31 @@ import { useRowOperations } from '../hooks/useRowOperations';
 import { useViewOperations } from '../hooks/useViewOperations';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 
+import {
+  bumpPermissionProbeRevision,
+  clearPermissionProbeCacheForScope,
+  createPermissionProbeCacheKey,
+  findPermissionProbeView,
+  getPermissionProbePurgeObjectIds,
+  resolvePermissionProbeTarget,
+  type PermissionProbeTarget,
+} from './permissionProbe';
+
 interface AppBusinessLayerProps {
   children: ReactNode;
 }
 
 const ROUTE_VIEW_EXISTS_CACHE_MAX = 200;
 const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
+
+// Open-time permission probes share one short-lived cache so rapid navigation
+// between the same pages does not refire identical permission GETs.
+const PERMISSION_PROBE_TTL_MS = 10000;
+const PERMISSION_PROBE_CACHE_MAX = 200;
+
+type PermissionProbeVerdict = 'allowed' | 'denied' | 'unknown';
+type PermissionProbeResult = PermissionProbeTarget & { verdict: PermissionProbeVerdict };
+const permissionProbeCache = new Map<string, { probedAt: number; promise: Promise<PermissionProbeResult> }>();
 const ROUTE_NOT_FOUND_MESSAGE_PATTERN = /\b(not\s*found|record\s*not\s*found|view\s*not\s*found|page\s*not\s*found)\b/i;
 
 type RouteViewExistsCacheEntry = {
@@ -61,12 +83,51 @@ function isRouteNotFoundError(error: unknown): boolean {
   return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(message);
 }
 
+async function resolvePermissionProbeTargetFromMetadata(
+  workspaceId: string,
+  viewId: string,
+  outline: View[]
+): Promise<PermissionProbeTarget> {
+  const memoryView =
+    findView(outline, viewId) ?? findPermissionProbeView(viewId, ViewService.getCached(workspaceId, viewId));
+
+  if (memoryView) return resolvePermissionProbeTarget(viewId, memoryView);
+
+  const diskResponse = await ViewService.getCachedFromDisk(workspaceId, viewId).catch(() => undefined);
+  const diskView = findPermissionProbeView(viewId, diskResponse);
+
+  if (diskView) return resolvePermissionProbeTarget(viewId, diskView);
+
+  const responseRoot = await ViewService.get(workspaceId, viewId);
+  const routeView = findPermissionProbeView(viewId, responseRoot);
+
+  return resolvePermissionProbeTarget(viewId, routeView);
+}
+
+function purgePermissionProbeTarget(workspaceId: string, routeViewId: string, target: PermissionProbeTarget) {
+  ViewService.invalidateCache(workspaceId, routeViewId);
+
+  // Current database caches use the canonical database id, while older web
+  // releases may also have persisted a database under the folder view id.
+  // Remove both identities so neither copy can keep revoked content readable.
+  for (const collabObjectId of getPermissionProbePurgeObjectIds(routeViewId, target)) {
+    void deleteCollabDB(collabObjectId, { destroyDoc: true });
+  }
+}
+
 // Third layer: Business logic operations
 // Handles all business operations like outline management, page operations, database operations
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const authContext = useAuthInternal();
-  const { currentWorkspaceId } = authContext;
+  const { currentWorkspaceId, isAuthenticated, userWorkspaceInfo } = authContext;
+  const requesterId = isAuthenticated ? getTokenParsed()?.user?.id ?? userWorkspaceInfo?.userId : undefined;
+  const currentRequesterIdRef = useRef(requesterId);
+  const permissionProbeSessionRevisionRef = useRef(0);
+  const permissionProbeRevisionRef = useRef<Map<string, number>>(new Map());
+  const [permissionProbeRefreshRevision, setPermissionProbeRefreshRevision] = useState(0);
+
+  currentRequesterIdRef.current = requesterId;
   const syncContext = useSyncInternal();
   const { revertCollabVersion } = syncContext;
   const params = useParams();
@@ -303,6 +364,217 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   const viewNotFound = Boolean(viewId && !viewHasBeenDeleted && routeViewExists === false);
 
+  // Open-time permission gate: local-first rendering serves cached pages
+  // without consulting the server, so a user whose access was revoked could
+  // otherwise keep reading a page from IndexedDB indefinitely. Probe the
+  // object-permission API in the background on navigation; on a definitive
+  // denial show the no-access page and purge the local copies.
+  //
+  // The denied view id (not a boolean) is stored so `viewNoAccess` derives
+  // during render — navigating away never flashes the no-access screen on
+  // the next page while waiting for an effect to reset a flag.
+  const [noAccessViewId, setNoAccessViewId] = useState<string | null>(null);
+  const viewNoAccess = Boolean(viewId && noAccessViewId === viewId);
+
+  useEffect(() => {
+    const invalidatePermissionProbeSession = () => {
+      permissionProbeSessionRevisionRef.current += 1;
+
+      if (requesterId && currentWorkspaceId) {
+        clearPermissionProbeCacheForScope(permissionProbeCache, requesterId, currentWorkspaceId);
+      }
+    };
+
+    // Module-level verdicts are reusable only within one authenticated layer
+    // session. Clear this identity's scope on mount, auth/workspace changes,
+    // and unmount so A -> logout -> A always performs a fresh probe.
+    invalidatePermissionProbeSession();
+    return invalidatePermissionProbeSession;
+  }, [currentWorkspaceId, requesterId]);
+
+  useEffect(() => {
+    // A denial belongs to the requester/workspace that produced it. Clear the
+    // rendered gate immediately when either identity changes; the probe below
+    // then runs under the new requester-scoped cache key.
+    setNoAccessViewId(null);
+  }, [currentWorkspaceId, requesterId]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId || !requesterId) return;
+
+    // A page modal owns a separate collab from the route underneath it. Probe
+    // both active targets so opening a cached modal never bypasses the
+    // open-time permission gate. De-duplicate the common case where both ids
+    // happen to be the same.
+    const activeViewIds = Array.from(
+      new Set(
+        [viewHasBeenDeleted ? undefined : viewId, openModalViewId].filter((activeViewId): activeViewId is string =>
+          Boolean(activeViewId)
+        )
+      )
+    );
+
+    if (activeViewIds.length === 0) return;
+
+    let cancelled = false;
+    const workspaceId = currentWorkspaceId;
+    const sessionRevision = permissionProbeSessionRevisionRef.current;
+
+    activeViewIds.forEach((activeViewId) => {
+      const cacheKey = createPermissionProbeCacheKey(requesterId, workspaceId, activeViewId);
+      const probeRevision = permissionProbeRevisionRef.current.get(cacheKey) ?? 0;
+      const cached = permissionProbeCache.get(cacheKey);
+      let probe = cached && Date.now() - cached.probedAt < PERMISSION_PROBE_TTL_MS ? cached.promise : undefined;
+
+      if (!probe) {
+        const outline = stableOutlineRef.current ?? [];
+        const fallbackTarget = resolvePermissionProbeTarget(
+          activeViewId,
+          findView(outline, activeViewId) ??
+            findPermissionProbeView(activeViewId, ViewService.getCached(workspaceId, activeViewId))
+        );
+
+        const probePermission = (target: PermissionProbeTarget) =>
+          AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType)
+            .then(
+              (permission): PermissionProbeResult => ({
+                ...target,
+                verdict: permission?.can_read === false ? 'denied' : 'allowed',
+              })
+            )
+            .catch((error: unknown): PermissionProbeResult => {
+              // Only a definitive permission denial counts. Transient/network/404
+              // errors must not evict local data (a brand-new page can briefly 404
+              // here before the server projects its permission records).
+              const code = (error as { code?: number } | null)?.code;
+
+              return {
+                ...target,
+                verdict: code === ERROR_CODE.NOT_HAS_PERMISSION || code === 403 ? 'denied' : 'unknown',
+              };
+            });
+
+        probe = resolvePermissionProbeTargetFromMetadata(workspaceId, activeViewId, outline)
+          // Resolving the target reads folder metadata, which is not a permission
+          // signal: the workspace-scoped view endpoint 403s for guests, who hold
+          // view-level access without workspace membership. Treating that as a
+          // denial gated legitimately shared pages and purged their local copy.
+          // Fall back to the cached identity and let the object-permission API —
+          // which guests can call — return the authoritative verdict.
+          .catch(() => fallbackTarget)
+          .then(probePermission);
+        if (permissionProbeCache.size >= PERMISSION_PROBE_CACHE_MAX) {
+          const oldestKey = permissionProbeCache.keys().next().value;
+
+          if (oldestKey !== undefined) permissionProbeCache.delete(oldestKey);
+        }
+
+        permissionProbeCache.set(cacheKey, { probedAt: Date.now(), promise: probe });
+      }
+
+      void probe.then((result) => {
+        // Ignore a result superseded by an auth transition or an explicit
+        // revoke/restore notification. Route-only navigation does not change
+        // the revision, so a confirmed revoke still purges an off-screen page.
+        if (currentRequesterIdRef.current !== requesterId) return;
+        if (permissionProbeSessionRevisionRef.current !== sessionRevision) return;
+        if ((permissionProbeRevisionRef.current.get(cacheKey) ?? 0) !== probeRevision) return;
+        const latestProbe = permissionProbeCache.get(cacheKey);
+
+        // A TTL refresh may replace an unresolved probe without a push event.
+        // In that case only the newest promise is allowed to mutate access state.
+        if (latestProbe && latestProbe.promise !== probe) return;
+
+        if (result.verdict === 'denied') {
+          // Evict even if this navigation was superseded — revoked content must
+          // not stay readable from the local caches.
+          purgePermissionProbeTarget(workspaceId, activeViewId, result);
+          if (!cancelled) {
+            if (activeViewId === viewId) setNoAccessViewId(activeViewId);
+            // ViewModal owns its loaded Y.Doc and does not consume the route's
+            // no-access state, so close it to stop rendering revoked content.
+            setOpenModalViewId((currentModalViewId) =>
+              currentModalViewId === activeViewId ? undefined : currentModalViewId
+            );
+          }
+        } else if (result.verdict === 'allowed' && !cancelled && activeViewId === viewId) {
+          setNoAccessViewId((prev) => (prev === activeViewId ? null : prev));
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    viewId,
+    openModalViewId,
+    currentWorkspaceId,
+    requesterId,
+    viewHasBeenDeleted,
+    stableOutlineRef,
+    permissionProbeRefreshRevision,
+  ]);
+
+  // Push path: a share-change notification proved we lost access to a view
+  // (useWorkspaceData already evicted its local cache). Record the denial so
+  // the page swaps to the no-access screen if it is (or becomes) current.
+  useEffect(() => {
+    const invalidatePermissionProbe = (changedViewId: string) => {
+      if (!currentWorkspaceId || !requesterId) return;
+
+      const cacheKey = createPermissionProbeCacheKey(requesterId, currentWorkspaceId, changedViewId);
+
+      permissionProbeCache.delete(cacheKey);
+      bumpPermissionProbeRevision(permissionProbeRevisionRef.current, cacheKey);
+    };
+
+    const revalidateOtherActiveViews = (changedViewId: string) => {
+      // A share notification names the view whose share changed, not all of
+      // its descendants. The outline may already have been refreshed (and the
+      // revoked branch removed) by the time this event arrives, so ancestry
+      // cannot be determined reliably here. Conservatively re-probe the few
+      // currently rendered targets. This covers inherited parent shares while
+      // adding at most one route and one modal request per notification.
+      const activeViewIds = Array.from(
+        new Set([viewId, openModalViewId].filter((activeViewId): activeViewId is string => Boolean(activeViewId)))
+      ).filter((activeViewId) => activeViewId !== changedViewId);
+
+      if (activeViewIds.length === 0) return;
+      activeViewIds.forEach(invalidatePermissionProbe);
+      setPermissionProbeRefreshRevision((revision) => revision + 1);
+    };
+
+    const handleViewAccessRevoked = (payload?: { viewId?: string | null }) => {
+      const revokedViewId = payload?.viewId;
+
+      if (!revokedViewId) return;
+      invalidatePermissionProbe(revokedViewId);
+      setNoAccessViewId(revokedViewId);
+      setOpenModalViewId((currentModalViewId) =>
+        currentModalViewId === revokedViewId ? undefined : currentModalViewId
+      );
+      revalidateOtherActiveViews(revokedViewId);
+    };
+
+    const handleViewAccessRestored = (payload?: { viewId?: string | null }) => {
+      const restoredViewId = payload?.viewId;
+
+      if (!restoredViewId) return;
+      invalidatePermissionProbe(restoredViewId);
+      setNoAccessViewId((prev) => (prev === restoredViewId ? null : prev));
+      revalidateOtherActiveViews(restoredViewId);
+    };
+
+    syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+    syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
+
+    return () => {
+      syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
+      syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
+    };
+  }, [syncContext.eventEmitter, currentWorkspaceId, requesterId, viewId, openModalViewId]);
+
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {
     if (!outline || !breadcrumbViewId) return [];
@@ -363,31 +635,22 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   const sourceCrumbs = originalCrumbs.length > 0 ? originalCrumbs : fallbackCrumbs;
 
-  const [breadcrumbs, setBreadcrumbs] = useState<View[]>(sourceCrumbs);
+  // Trailing crumb appended by pages without their own route ancestry (e.g. a
+  // database row opened as a full page). Held separately from the ancestor
+  // chain so outline refreshes, which rebuild sourceCrumbs, cannot erase it.
+  const [appendedCrumb, setAppendedCrumb] = useState<View | undefined>(undefined);
 
-  // Update breadcrumbs when original crumbs change
-  useEffect(() => {
-    setBreadcrumbs(sourceCrumbs);
-  }, [sourceCrumbs]);
-
-  // Handle breadcrumb manipulation
   const appendBreadcrumb = useCallback((view?: View) => {
-    setBreadcrumbs((prev) => {
-      if (!view) {
-        return prev.slice(0, -1);
-      }
-
-      const index = prev.findIndex((v) => v.view_id === view.view_id);
-
-      if (index === -1) {
-        return [...prev, view];
-      }
-
-      const rest = prev.slice(0, index);
-
-      return [...rest, view];
-    });
+    setAppendedCrumb(view);
   }, []);
+
+  const breadcrumbs = useMemo(() => {
+    if (!appendedCrumb) return sourceCrumbs;
+    const index = sourceCrumbs.findIndex((v) => v.view_id === appendedCrumb.view_id);
+
+    if (index === -1) return [...sourceCrumbs, appendedCrumb];
+    return [...sourceCrumbs.slice(0, index), appendedCrumb];
+  }, [sourceCrumbs, appendedCrumb]);
 
   // Load view metadata — with server fallback for lazy-loaded outline
   const loadViewMeta = useCallback(
@@ -500,6 +763,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       rendered,
       onRendered,
       notFound: viewNotFound,
+      viewNoAccess,
       viewHasBeenDeleted,
       openPageModalViewId: openModalViewId,
       openPageModal,
@@ -511,6 +775,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       rendered,
       onRendered,
       viewNotFound,
+      viewNoAccess,
       viewHasBeenDeleted,
       openModalViewId,
       openPageModal,

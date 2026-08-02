@@ -17,7 +17,16 @@ export { verifyToken } from './cloud-auth';
 export interface ServerInfo {
   enable_page_history: boolean;
   ai_enabled?: boolean;
+  /** Maximum raw Yjs update accepted by the realtime WebSocket fast lane. */
+  max_update_bytes?: number;
+  /**
+   * Maximum raw Yjs update accepted by the opt-in HTTP slow lane.
+   * Older servers omit this field, which keeps the slow lane disabled.
+   */
+  max_slow_sync_update_bytes?: number;
 }
+
+const SERVER_INFO_REQUEST_TIMEOUT_MS = 10_000;
 
 export async function signInWithUrl(url: string) {
   Log.info('[Auth] signInWithUrl: processing OAuth callback');
@@ -118,21 +127,18 @@ export async function signInWithLdap(username: string, password: string, connect
   });
 }
 
-export async function getServerInfo(): Promise<ServerInfo> {
+export async function getServerInfo(signal?: AbortSignal): Promise<ServerInfo> {
   const url = '/api/server-info';
 
-  try {
-    return await executeAPIRequest<ServerInfo>(() =>
-      getAxios()?.get<APIResponse<ServerInfo>>(url, {
-        headers: {
-          'x-platform': 'web',
-        },
-      })
-    );
-  } catch (error) {
-    console.warn('Server info API returned error:', (error as APIError)?.message);
-    return { enable_page_history: true, ai_enabled: true };
-  }
+  return executeAPIRequest<ServerInfo>(() =>
+    getAxios()?.get<APIResponse<ServerInfo>>(url, {
+      headers: {
+        'x-platform': 'web',
+      },
+      timeout: SERVER_INFO_REQUEST_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
+    })
+  );
 }
 
 interface AuthProvidersPayload {

@@ -32,9 +32,11 @@ jest.mock('@/application/sync-outbox', () => {
       };
 
       peers.forEach((peer) => peer.emit(message));
+      return Promise.resolve(true);
     }),
     deleteOutboxByObjectId: jest.fn(async () => undefined),
     waitForDrain: jest.fn(async () => true),
+    shouldRouteUpdateThroughOutbox: jest.fn(() => false),
     configureDrain: jest.fn(),
     clearDrainConfig: jest.fn(),
     startDrainAll: jest.fn(),
@@ -362,5 +364,40 @@ describe('sync protocol', () => {
     drain();
 
     expectTextConvergence(texts, 'ABC');
+  });
+
+  it('persists an oversized manifest response instead of emitting it on WebSocket', () => {
+    const doc = new Y.Doc({ guid: random.uuidv4() });
+    const emit = jest.fn();
+    const onManifestSync = jest.fn();
+    const ctx: SyncContext = {
+      doc,
+      collabType: Types.Database,
+      emit,
+      onManifestSync,
+    };
+
+    doc.getMap('root').set('large-history', 'value');
+    outboxMock.shouldRouteUpdateThroughOutbox.mockReturnValueOnce(true);
+
+    handleMessage(ctx, {
+      objectId: doc.guid,
+      collabType: Types.Database,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(new Y.Doc()),
+        version: doc.version,
+      },
+    });
+
+    expect(emit).not.toHaveBeenCalled();
+    expect(outboxMock.enqueueOutboxUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        objectId: doc.guid,
+        collabType: Types.Database,
+        payload: expect.any(Uint8Array),
+      }),
+      { broadcast: false, source: 'manifest' }
+    );
+    expect(onManifestSync).toHaveBeenCalledWith(doc.guid, expect.any(Promise));
   });
 });

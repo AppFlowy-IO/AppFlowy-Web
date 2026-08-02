@@ -54,6 +54,7 @@ function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined) {
       people={[]}
       isLoadingPeople={false}
       onPeopleChange={async () => undefined}
+      onPersonRemoved={() => undefined}
       hasFullAccess={currentUserAccessLevel === AccessLevel.FullAccess}
       currentUserAccessLevel={currentUserAccessLevel}
       sectionType={ShareSectionType.Private}

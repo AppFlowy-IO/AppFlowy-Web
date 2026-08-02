@@ -40,7 +40,9 @@ export function isEmbeddedView(view: View | null | undefined): boolean {
  * @param view The view to check
  * @returns true if this view is a database container
  */
-export function isDatabaseContainer(view: View | null | undefined): boolean {
+export function isDatabaseContainer(
+  view: View | null | undefined
+): view is View & { extra: { is_database_container: true } } {
   return view?.extra?.is_database_container === true;
 }
 

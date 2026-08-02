@@ -97,6 +97,10 @@ export interface Column {
 export interface Row {
   id: string;
   height: number;
+  // Soft-delete tombstone mirroring collab-database's RowOrder.is_deleted.
+  // Tombstoned rows stay in row_orders (restorable from trash) but must be
+  // hidden from every rendered view.
+  is_deleted?: boolean;
 }
 
 function shouldLogDatabaseConditionPerformance() {
@@ -1374,7 +1378,8 @@ export function useRowOrdersSelector() {
   );
 
   const syncUnconditionedRowOrders = useCallback(() => {
-    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
 
     if (!originalRowOrders) return false;
 
@@ -1461,7 +1466,8 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
-    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
 
     if (!originalRowOrders) return;
 
@@ -1525,6 +1531,25 @@ export function useRowOrdersSelector() {
 
       if (!filtersAppliedRef.current) {
         setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
+      } else {
+        // New rows cannot be filtered until their docs load, but removals are
+        // authoritative in row_orders. Prune them from the last complete result
+        // so a remotely deleted row cannot remain visible during hydration.
+        const sourceRowIds = new Set(originalRowOrders.map(({ id }) => id));
+
+        setRowOrdersState((previousState) => {
+          if (previousState.conditionSignature !== conditionStateKey || !previousState.rows) {
+            return previousState;
+          }
+
+          const retainedRows = previousState.rows.filter(({ id }) => sourceRowIds.has(id));
+
+          if (retainedRows.length === previousState.rows.length) {
+            return previousState;
+          }
+
+          return { rows: retainedRows, conditionSignature: conditionStateKey };
+        });
       }
 
       logConditionCompute(rowsWithDocs.length);
