@@ -415,7 +415,6 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
 export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
 
   return useCallback(
     (columnId: string, hidden: boolean) => {
@@ -423,6 +422,10 @@ export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: str
         sharedRoot,
         [
           () => {
+            if (!view) {
+              throw new Error('View not found');
+            }
+
             const groups = view?.get(YjsDatabaseKey.groups);
 
             if (!groups) {
@@ -457,16 +460,34 @@ export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: str
 
             columns.insert(index, [newColumn]);
 
-            if (column.id === fieldId && layoutSetting) {
-              layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, hidden);
+            if (column.id === fieldId) {
+              getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.hide_ungrouped_column, hidden);
             }
           },
         ],
         'hideGroupColumn'
       );
     },
-    [fieldId, groupId, layoutSetting, sharedRoot, view]
+    [fieldId, groupId, sharedRoot, view]
   );
+}
+
+function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
+  let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
+
+  if (!layoutSettings) {
+    layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+    view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+  }
+
+  let layoutSetting = layoutSettings.get('1');
+
+  if (!layoutSetting) {
+    layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
+    layoutSettings.set('1', layoutSetting);
+  }
+
+  return layoutSetting;
 }
 
 export function useToggleCollapsedHiddenGroupColumnDispatch() {
@@ -483,21 +504,7 @@ export function useToggleCollapsedHiddenGroupColumnDispatch() {
               throw new Error(`Unable to toggle collapsed hidden group column`);
             }
 
-            // Get or create the layout settings for the view
-            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
-
-            if (!layoutSettings) {
-              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
-            }
-
-            let layoutSetting = layoutSettings.get('1');
-
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
-              layoutSettings.set('1', layoutSetting);
-            }
-
-            layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, collapsed);
+            getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.collapse_hidden_groups, collapsed);
           },
         ],
         'toggleCollapsedHiddenGroupColumn'
@@ -521,24 +528,34 @@ export function useToggleHideUnGrouped() {
               throw new Error(`Unable to toggle hide ungrouped column`);
             }
 
-            // Get or create the layout settings for the view
-            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
-
-            if (!layoutSettings) {
-              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
-            }
-
-            let layoutSetting = layoutSettings.get('1');
-
-            if (!layoutSetting) {
-              layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
-              layoutSettings.set('1', layoutSetting);
-            }
-
-            layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, hide);
+            getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.hide_ungrouped_column, hide);
           },
         ],
         'toggleHideUnGrouped'
+      );
+    },
+    [sharedRoot, view]
+  );
+}
+
+export function useToggleHideEmptyGroups() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (hide: boolean) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            if (!view) {
+              throw new Error('Unable to toggle hide empty groups');
+            }
+
+            getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.hide_empty_groups, hide);
+          },
+        ],
+        'toggleHideEmptyGroups'
       );
     },
     [sharedRoot, view]
@@ -1761,6 +1778,7 @@ function generateBoardLayoutSettings() {
   const layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
 
   layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, false);
+  layoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
   layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, true);
   layoutSettings.set('1', layoutSetting);
   return layoutSettings;

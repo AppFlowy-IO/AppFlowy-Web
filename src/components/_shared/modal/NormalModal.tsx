@@ -4,6 +4,18 @@ import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
+const ENTER_HANDLED_BY_CONTROL_SELECTOR = [
+  'button',
+  'a[href]',
+  'textarea',
+  'select',
+  '[role="button"]',
+  '[contenteditable="true"]',
+  'input[type="button"]',
+  'input[type="submit"]',
+  'input[type="reset"]',
+].join(',');
+
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 export interface NormalModalProps extends DialogProps {
@@ -48,7 +60,10 @@ export function NormalModal ({
           onClose?.();
         }
 
-        if (e.key === 'Enter' && onOk) {
+        const targetHandlesEnter =
+          e.target instanceof Element && e.target.closest(ENTER_HANDLED_BY_CONTROL_SELECTOR) !== null;
+
+        if (e.key === 'Enter' && onOk && !targetHandlesEnter) {
           onOk();
         }
       }}
@@ -64,6 +79,7 @@ export function NormalModal ({
           <div className={'flex-1 text-center font-medium truncate'}>{title}</div>
           {closable && <div className={'relative -right-1.5'}>
             <IconButton
+              aria-label={t('button.close')}
               size={'small'}
               color={'inherit'}
               className={'h-6 w-6'}

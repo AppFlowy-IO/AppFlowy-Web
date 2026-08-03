@@ -1,0 +1,160 @@
+import { expect, Locator, Page } from '@playwright/test';
+import { createBdd } from 'playwright-bdd';
+
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { BoardSelectors } from '../../support/selectors';
+import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
+
+const { Given, When, Then } = createBdd();
+
+Given('a Board database is open for hide-empty-group testing', async ({ page, request }) => {
+  setupPageErrorHandling(page);
+
+  await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
+    createWaitMs: 7000,
+    verify: async (currentPage) => {
+      await expect(BoardSelectors.boardContainer(currentPage)).toHaveCount(1);
+      await expect(BoardSelectors.boardContainer(currentPage)).toBeVisible({ timeout: 15000 });
+      await expect(BoardSelectors.mainColumns(currentPage)).toHaveCount(1);
+      await expect(BoardSelectors.mainColumns(currentPage)).toBeVisible({ timeout: 15000 });
+      await expect.poll(() => BoardSelectors.cards(currentPage).count(), { timeout: 15000 }).toBeGreaterThan(0);
+    },
+  });
+});
+
+Given('an empty Board group named {string} exists', async ({ page }, groupName: string) => {
+  const addGroupButton = BoardSelectors.addGroupButton(page);
+
+  await expect(addGroupButton).toHaveCount(1);
+  await expect(addGroupButton).toBeVisible();
+  await addGroupButton.click();
+
+  const input = BoardSelectors.addGroupInput(page);
+  const submit = BoardSelectors.addGroupSubmit(page);
+
+  await expect(input).toHaveCount(1);
+  await expect(input).toBeVisible();
+  await expect(submit).toHaveCount(1);
+  await expect(submit).toBeVisible();
+  await input.fill(groupName);
+  await input.press('Enter');
+  await expect(input).toHaveCount(0);
+
+  await expectExactEmptyBoardColumn(page, groupName);
+});
+
+When('I enable Hide empty groups for the Board', async ({ page }) => {
+  const { toggleRow, toggleSwitch } = await openBoardGroupSettings(page);
+
+  await expect(toggleRow).toHaveCount(1);
+  await expect(toggleRow).toBeVisible();
+  await expect(toggleSwitch).toHaveCount(1);
+  await expect(toggleSwitch).toBeVisible();
+  await expect(toggleSwitch).not.toBeChecked();
+  await toggleRow.click();
+  await expect(toggleSwitch).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  const reopenedSettings = await openBoardGroupSettings(page);
+
+  await expect(reopenedSettings.toggleSwitch).toHaveCount(1);
+  await expect(reopenedSettings.toggleSwitch).toBeVisible();
+  await expect(reopenedSettings.toggleSwitch).toBeChecked();
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+});
+
+When('I expand the Board Hidden Groups section', async ({ page }) => {
+  const toggle = BoardSelectors.hiddenGroupsToggle(page);
+
+  await expect(toggle).toHaveCount(1);
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+});
+
+Then('the Board has no visible column named {string}', async ({ page }, groupName: string) => {
+  await expect(BoardSelectors.columnByName(page, groupName)).toHaveCount(0);
+});
+
+Then(
+  'Hidden Groups has exactly one {string} row with only a show action',
+  async ({ page }, groupName: string) => {
+    await expectExactHiddenGroupAction(page, groupName, 'show');
+  }
+);
+
+When('I click the show action for hidden Board group {string}', async ({ page }, groupName: string) => {
+  await clickExactHiddenGroupAction(page, groupName, 'show');
+});
+
+Then('the Board has exactly one visible empty column named {string}', async ({ page }, groupName: string) => {
+  await expectExactEmptyBoardColumn(page, groupName);
+});
+
+Then(
+  'Hidden Groups has exactly one {string} row with only a hide action',
+  async ({ page }, groupName: string) => {
+    await expectExactHiddenGroupAction(page, groupName, 'hide');
+  }
+);
+
+When('I click the hide action for shown Board group {string}', async ({ page }, groupName: string) => {
+  await clickExactHiddenGroupAction(page, groupName, 'hide');
+});
+
+async function expectExactEmptyBoardColumn(page: Page, groupName: string) {
+  const column = BoardSelectors.columnByName(page, groupName);
+
+  await expect(column).toHaveCount(1);
+  await expect(column).toBeVisible();
+  await expect(column.getByTestId('board-column-name').getByText(groupName, { exact: true })).toHaveCount(1);
+  await expect(column.locator('.board-card')).toHaveCount(0);
+}
+
+async function expectExactHiddenGroupAction(page: Page, groupName: string, action: 'show' | 'hide') {
+  const row = BoardSelectors.hiddenGroupByName(page, groupName);
+  const expectedAction = hiddenGroupAction(row, action);
+  const oppositeAction = hiddenGroupAction(row, action === 'show' ? 'hide' : 'show');
+
+  await expect(row).toHaveCount(1);
+  await expect(row).toBeVisible();
+  await expect(row.getByTestId('board-hidden-group-name').getByText(groupName, { exact: true })).toHaveCount(1);
+  await row.hover();
+  await expect(expectedAction).toHaveCount(1);
+  await expect(expectedAction).toBeVisible();
+  await expect(oppositeAction).toHaveCount(0);
+}
+
+async function clickExactHiddenGroupAction(page: Page, groupName: string, action: 'show' | 'hide') {
+  const row = BoardSelectors.hiddenGroupByName(page, groupName);
+
+  await expectExactHiddenGroupAction(page, groupName, action);
+  await hiddenGroupAction(row, action).click();
+}
+
+function hiddenGroupAction(row: Locator, action: 'show' | 'hide') {
+  return row.getByTestId(`board-hidden-group-${action}`);
+}
+
+async function openBoardGroupSettings(page: Page) {
+  const settingsButton = BoardSelectors.settingsButton(page);
+
+  await expect(settingsButton).toHaveCount(1);
+  await expect(settingsButton).toBeVisible();
+  await settingsButton.click();
+
+  const groupSettingsTrigger = page.getByTestId('board-group-settings-trigger');
+
+  await expect(groupSettingsTrigger).toHaveCount(1);
+  await expect(groupSettingsTrigger).toBeVisible();
+  await groupSettingsTrigger.click();
+
+  return {
+    toggleRow: page.getByTestId('board-hide-empty-groups-toggle'),
+    toggleSwitch: page.getByTestId('board-hide-empty-groups-switch'),
+  };
+}

@@ -609,6 +609,7 @@ export enum YjsDatabaseKey {
   visible = 'visible',
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
+  hide_empty_groups = 'hide_empty_groups',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
   show_week_numbers = 'show_week_numbers',
@@ -903,7 +904,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
-  get(key: YjsDatabaseKey.hide_ungrouped_column | YjsDatabaseKey.collapse_hidden_groups): boolean;
+  get(
+    key: YjsDatabaseKey.hide_ungrouped_column | YjsDatabaseKey.hide_empty_groups | YjsDatabaseKey.collapse_hidden_groups
+  ): boolean;
 }
 
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
@@ -1217,10 +1220,71 @@ export enum AuthProvider {
   SAML = 'saml',
   PHONE = 'phone',
   EMAIL = 'email',
+  LDAP = 'ldap',
 }
 
-export interface AuthProvidersResponse {
-  providers: AuthProvider[];
+/**
+ * Marks an identifier as belonging to an admin-registered provider rather than
+ * one of the built-in `AuthProvider` members. The single runtime source of
+ * truth — `CustomAuthProviderId` below has to repeat the literal because a
+ * template literal type cannot reference a value.
+ */
+export const CUSTOM_PROVIDER_PREFIX = 'custom:';
+
+/**
+ * A custom OAuth/OIDC provider registered in the admin console. The identifier
+ * is chosen per deployment, so unlike the providers above it cannot be an enum
+ * member — the server names it and the client passes it straight back to
+ * `/authorize?provider=`.
+ */
+export type CustomAuthProviderId = `custom:${string}`;
+
+export type LoginProviderId = AuthProvider | CustomAuthProviderId;
+
+/**
+ * Display name an admin gave a custom provider. Sent alongside the identifier
+ * so the login button can show "Okta Production" rather than a prettified
+ * "Okta Prod" guessed from the identifier.
+ *
+ * `name` is empty when the server sent none; callers derive a label from the
+ * identifier in that case rather than showing the raw identifier.
+ */
+export interface CustomAuthProvider {
+  identifier: CustomAuthProviderId;
+  name: string;
+}
+
+/**
+ * An enabled LDAP connection advertised by AppFlowy Cloud.
+ *
+ * The id is sent back with the credential request so deployments with multiple
+ * directories do not have to guess which connection should authenticate the
+ * user. The name is chosen by the administrator and is safe to show at login.
+ */
+export interface LdapAuthProvider {
+  id: string;
+  name: string;
+}
+
+export function isCustomAuthProviderId(provider: LoginProviderId): provider is CustomAuthProviderId {
+  return provider.startsWith(CUSTOM_PROVIDER_PREFIX);
+}
+
+/**
+ * What the server says this deployment offers.
+ *
+ * `customProviders` carries the display names for the `custom:` entries in
+ * `providers`. Older servers omit it, so callers must tolerate it being empty
+ * and fall back to labelling a provider from its identifier.
+ *
+ * `ldapProviders` carries connection-specific choices. Older servers only
+ * advertise the flat `ldap` provider, so an empty list means the client should
+ * keep the legacy generic LDAP choice.
+ */
+export interface LoginProviders {
+  providers: LoginProviderId[];
+  customProviders: CustomAuthProvider[];
+  ldapProviders: LdapAuthProvider[];
 }
 
 export interface User {

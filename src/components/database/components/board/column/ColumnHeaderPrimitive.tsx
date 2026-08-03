@@ -44,7 +44,7 @@ function ColumnHeaderPrimitive(
       {...props}
     >
       <div className={'flex flex-1 items-center gap-2'}>
-        <div className={'w-auto max-w-[170px] overflow-hidden'}>{header}</div>
+        <div data-testid={'board-column-name'} className={'w-auto max-w-[170px] overflow-hidden'}>{header}</div>
         <span className={'text-xs text-text-secondary'}>{rowCount}</span>
       </div>
       {!readOnly && (

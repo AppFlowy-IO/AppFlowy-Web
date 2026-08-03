@@ -2,8 +2,9 @@ import axios, { AxiosInstance } from 'axios';
 
 import { emit, EventType } from '@/application/session';
 import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
-
+import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
+
 import { verifyToken } from './cloud-auth';
 import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 
@@ -481,6 +482,32 @@ export function signInApple(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInApple: redirecting to Apple OAuth');
+  redirectToAuthProvider(url);
+}
+
+/**
+ * Start a login through an admin-registered OIDC/OAuth2 provider.
+ *
+ * Same shape as the built-in providers above; only the identifier is dynamic.
+ * It carries the mandatory `custom:` prefix, added here when the caller passes
+ * the bare identifier, and is percent-encoded because the colon is reserved.
+ */
+export function signInCustomProvider(identifier: string, authUrl: string) {
+  const trimmed = identifier.trim();
+
+  if (!trimmed || trimmed === CUSTOM_PROVIDER_PREFIX) {
+    Log.error('[Auth] signInCustomProvider: empty provider identifier');
+    return;
+  }
+
+  const provider = trimmed.startsWith(CUSTOM_PROVIDER_PREFIX)
+    ? trimmed
+    : `${CUSTOM_PROVIDER_PREFIX}${trimmed}`;
+  const redirectTo = encodeURIComponent(authUrl);
+  const baseURL = axiosInstance?.defaults.baseURL;
+  const url = `${baseURL}/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${redirectTo}`;
+
+  Log.info('[Auth] signInCustomProvider: redirecting to provider', { provider });
   redirectToAuthProvider(url);
 }
 

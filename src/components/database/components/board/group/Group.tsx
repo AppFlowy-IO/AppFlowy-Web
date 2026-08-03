@@ -22,7 +22,11 @@ export interface GroupProps {
 }
 
 export const Group = ({ groupId }: GroupProps) => {
-  const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
+  const [temporarilyShownColumnIds, setTemporarilyShownColumnIds] = useState<ReadonlySet<string>>(() => new Set());
+  const { columns, groupResult, fieldId, groupRowsReady, hideEmptyGroups, notFound } = useRowsByGroup(
+    groupId,
+    temporarilyShownColumnIds
+  );
   const { t } = useTranslation();
   const context = useDatabaseContext();
   const { paddingStart, paddingEnd, navigateToRow } = context;
@@ -39,6 +43,30 @@ export const Group = ({ groupId }: GroupProps) => {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);
+  const previousHideEmptyGroupsRef = useRef(hideEmptyGroups);
+
+  const setColumnTemporarilyShown = useCallback((columnId: string, shown: boolean) => {
+    setTemporarilyShownColumnIds((currentIds) => {
+      if (currentIds.has(columnId) === shown) return currentIds;
+
+      const nextIds = new Set(currentIds);
+
+      if (shown) {
+        nextIds.add(columnId);
+      } else {
+        nextIds.delete(columnId);
+      }
+
+      return nextIds;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (previousHideEmptyGroupsRef.current === hideEmptyGroups) return;
+
+    previousHideEmptyGroupsRef.current = hideEmptyGroups;
+    setTemporarilyShownColumnIds(new Set());
+  }, [hideEmptyGroups]);
 
   const onDeleteCards = useCallback((ids: string[]) => {
     const rowIds = ids.map((id) => id.split('/')[1]);
@@ -241,9 +269,11 @@ export const Group = ({ groupId }: GroupProps) => {
             groupId={groupId}
             fieldId={fieldId}
             groupResult={groupResult}
+            groupRowsReady={groupRowsReady}
             columns={columns}
             ref={innerRef}
             addCardBefore={addCardBefore}
+            onColumnTemporarilyShownChange={setColumnTemporarilyShown}
           />
         </div>
         <DatabaseStickyTopOverlay>

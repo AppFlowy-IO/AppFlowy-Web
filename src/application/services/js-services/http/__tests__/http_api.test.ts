@@ -4,13 +4,14 @@ import { AuthProvider } from '@/application/types';
 
 const mockAxiosInstance = {
   interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } },
-  get: jest.fn(),
-  post: jest.fn(),
-  put: jest.fn(),
-  delete: jest.fn(),
+  get: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  post: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  put: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  delete: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
 };
 
 const mockAxiosCreate = jest.fn(() => mockAxiosInstance);
+const mockVerifyAndRefreshGoTrueToken = jest.fn<(...args: unknown[]) => Promise<unknown>>();
 const mockGetTokenParsed = jest.fn(() => null as { user?: { id?: string } } | null);
 
 jest.mock('axios', () => ({
@@ -26,6 +27,7 @@ jest.mock('axios', () => ({
 jest.mock('@/application/services/js-services/http/gotrue', () => ({
   initGrantService: jest.fn(),
   refreshToken: jest.fn(),
+  verifyAndRefreshGoTrueToken: mockVerifyAndRefreshGoTrueToken,
 }));
 
 jest.mock('@/application/session/token', () => ({
@@ -57,6 +59,7 @@ describe('http_api client (unit)', () => {
     mockAxiosInstance.interceptors.response.use.mockReset();
     mockAxiosInstance.get.mockReset();
     mockAxiosInstance.post.mockReset();
+    mockVerifyAndRefreshGoTrueToken.mockReset();
     mockAxiosInstance.put.mockReset();
     mockAxiosInstance.delete.mockReset();
     mockGetTokenParsed.mockReset();
@@ -89,17 +92,94 @@ describe('http_api client (unit)', () => {
       data: {
         code: 0,
         data: {
-          count: 2,
-          providers: ['google', 'apple'],
+          count: 3,
+          providers: ['google', 'apple', 'ldap'],
           signup_disabled: false,
           mailer_autoconfirm: true,
+          ldap_providers: [
+            { id: 'corp-directory-id', name: '  Corporate Directory  ' },
+            { id: 'partner-directory-id', name: 'Partners' },
+            // Duplicate ids cannot become duplicate React keys or choices.
+            { id: 'corp-directory-id', name: 'Duplicate' },
+            { id: '   ', name: 'Missing id' },
+          ],
         },
       },
     });
 
-    const providers = await module.getAuthProviders();
-    expect(providers).toEqual([AuthProvider.GOOGLE, AuthProvider.APPLE]);
+    const { providers, ldapProviders } = await module.getAuthProviders();
+    expect(providers).toEqual([AuthProvider.GOOGLE, AuthProvider.APPLE, AuthProvider.LDAP]);
+    expect(ldapProviders).toEqual([
+      { id: 'corp-directory-id', name: 'Corporate Directory' },
+      { id: 'partner-directory-id', name: 'Partners' },
+    ]);
     expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/server-info/auth-providers');
+  });
+
+  it('passes custom providers through and leaves a blank name blank', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        data: {
+          count: 3,
+          providers: ['google', 'custom:okta-prod', 'custom:keycloak'],
+          signup_disabled: false,
+          mailer_autoconfirm: true,
+          custom_providers: [
+            { identifier: 'custom:okta-prod', name: '  Okta Production  ' },
+            // A blank name must not be backfilled with the identifier — the
+            // caller derives a nicer label from it than "custom:keycloak".
+            { identifier: 'custom:keycloak', name: '   ' },
+            // Not advertised in `providers`, so it is carried but unused.
+            { identifier: 'not-custom', name: 'Ignored' },
+          ],
+        },
+      },
+    });
+
+    const { providers, customProviders, ldapProviders } = await module.getAuthProviders();
+
+    expect(providers).toEqual([AuthProvider.GOOGLE, 'custom:okta-prod', 'custom:keycloak']);
+    expect(customProviders).toEqual([
+      { identifier: 'custom:okta-prod', name: 'Okta Production' },
+      { identifier: 'custom:keycloak', name: '' },
+    ]);
+    expect(ldapProviders).toEqual([]);
+  });
+
+  it('drops a bare custom prefix and deduplicates repeated providers', async () => {
+    const module = await import('../http_api');
+    module.initAPIService(baseConfig);
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        data: {
+          count: 5,
+          // `custom:` names no provider, and the repeats would collide as React
+          // keys once each entry becomes a login button.
+          providers: ['google', 'custom:', 'custom:okta', 'google', 'custom:okta'],
+          signup_disabled: false,
+          mailer_autoconfirm: true,
+          custom_providers: [
+            { identifier: 'custom:', name: 'Nameless' },
+            { identifier: 'custom:okta', name: 'Okta' },
+          ],
+        },
+      },
+    });
+
+    const { providers, customProviders } = await module.getAuthProviders();
+
+    expect(providers).toEqual([AuthProvider.GOOGLE, 'custom:okta']);
+    expect(customProviders).toEqual([{ identifier: 'custom:okta', name: 'Okta' }]);
+    expect(warnSpy).toHaveBeenCalledWith('Unknown auth provider from server: custom:');
+    warnSpy.mockRestore();
   });
 
   it('bounds and cancels server-info requests while identifying the web platform', async () => {
@@ -130,6 +210,133 @@ describe('http_api client (unit)', () => {
     });
   });
 
+  it('does not log LDAP session tokens from the response envelope', async () => {
+    const module = await import('../http_api');
+    const auth = await import('../auth-api');
+    module.initAPIService(baseConfig);
+
+    const tokens = {
+      access_token: 'secret-access-token',
+      refresh_token: 'secret-refresh-token',
+    };
+    const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    mockAxiosInstance.post.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        message: 'OK',
+        data: tokens,
+      },
+      config: {
+        baseURL: baseConfig.baseURL,
+        method: 'post',
+        url: '/api/auth/ldap/login',
+      },
+    });
+    mockVerifyAndRefreshGoTrueToken.mockResolvedValueOnce(undefined);
+
+    await auth.signInWithLdap('alice', 'alice-secret-pw');
+
+    const requestLog = debugSpy.mock.calls.find(([message]) => message === '[executeAPIRequest]');
+
+    expect(requestLog?.[1]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        url: `${baseConfig.baseURL}/api/auth/ldap/login`,
+        response_code: 0,
+        response_message: 'OK',
+      })
+    );
+    expect(requestLog?.[1]).not.toHaveProperty('response_data');
+    expect(JSON.stringify(debugSpy.mock.calls)).not.toContain(tokens.access_token);
+    expect(JSON.stringify(debugSpy.mock.calls)).not.toContain(tokens.refresh_token);
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/auth/ldap/login', {
+      username: 'alice',
+      password: 'alice-secret-pw',
+    });
+    expect(mockVerifyAndRefreshGoTrueToken).toHaveBeenCalledWith({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      logContext: 'signInWithLdap',
+    });
+
+    debugSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
+  it('routes LDAP credentials to the selected connection', async () => {
+    const module = await import('../http_api');
+    const auth = await import('../auth-api');
+    module.initAPIService(baseConfig);
+
+    mockAxiosInstance.post.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        data: {
+          access_token: 'access-token',
+          refresh_token: 'refresh-token',
+        },
+      },
+    });
+    mockVerifyAndRefreshGoTrueToken.mockResolvedValueOnce(undefined);
+
+    await auth.signInWithLdap('alice@example.com', 'alice-secret-pw', 'corp-directory-id');
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/api/auth/ldap/login', {
+      username: 'alice@example.com',
+      password: 'alice-secret-pw',
+      connection_id: 'corp-directory-id',
+    });
+  });
+
+  it('does not log LDAP credentials when a response has no body', async () => {
+    const module = await import('../http_api');
+    const auth = await import('../auth-api');
+    module.initAPIService(baseConfig);
+
+    const credentials = {
+      username: 'alice',
+      password: 'alice-secret-pw',
+    };
+    const debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    mockAxiosInstance.post.mockResolvedValueOnce({
+      data: undefined,
+      status: 204,
+      statusText: 'No Content',
+      config: {
+        baseURL: baseConfig.baseURL,
+        data: JSON.stringify(credentials),
+        method: 'post',
+        url: '/api/auth/ldap/login',
+      },
+    });
+
+    await expect(auth.signInWithLdap(credentials.username, credentials.password)).rejects.toEqual({
+      code: -1,
+      message: 'No response data received',
+    });
+
+    const serializedLogs = JSON.stringify([...debugSpy.mock.calls, ...errorSpy.mock.calls]);
+
+    expect(serializedLogs).not.toContain(credentials.username);
+    expect(serializedLogs).not.toContain(credentials.password);
+    expect(errorSpy).toHaveBeenCalledWith('[executeAPIRequest] No response data received', {
+      method: 'POST',
+      url: `${baseConfig.baseURL}/api/auth/ldap/login`,
+      status: 204,
+      statusText: 'No Content',
+    });
+    expect(mockVerifyAndRefreshGoTrueToken).not.toHaveBeenCalled();
+
+    debugSpy.mockRestore();
+    errorSpy.mockRestore();
+    infoSpy.mockRestore();
+  });
+
   it('falls back to password provider when API responds with error', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);
@@ -143,7 +350,11 @@ describe('http_api client (unit)', () => {
       },
     });
 
-    await expect(module.getAuthProviders()).resolves.toEqual([AuthProvider.PASSWORD]);
+    await expect(module.getAuthProviders()).resolves.toEqual({
+      providers: [AuthProvider.PASSWORD],
+      customProviders: [],
+      ldapProviders: [],
+    });
     expect(warnSpy).toHaveBeenCalledWith('Auth providers API returned error:', 'Invalid request');
     warnSpy.mockRestore();
   });
@@ -161,7 +372,11 @@ describe('http_api client (unit)', () => {
       },
     });
 
-    await expect(module.getAuthProviders()).resolves.toEqual([AuthProvider.PASSWORD]);
+    await expect(module.getAuthProviders()).resolves.toEqual({
+      providers: [AuthProvider.PASSWORD],
+      customProviders: [],
+      ldapProviders: [],
+    });
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });

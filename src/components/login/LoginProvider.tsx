@@ -1,17 +1,53 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthService } from '@/application/services/domains';
-import { AuthProvider } from '@/application/types';
+import {
+  AuthProvider,
+  CUSTOM_PROVIDER_PREFIX,
+  CustomAuthProvider,
+  CustomAuthProviderId,
+  LdapAuthProvider,
+  LoginProviderId,
+  isCustomAuthProviderId,
+} from '@/application/types';
 import { ReactComponent as AppleSvg } from '@/assets/login/apple.svg';
 import { ReactComponent as DiscordSvg } from '@/assets/login/discord.svg';
 import { ReactComponent as GithubSvg } from '@/assets/login/github.svg';
 import { ReactComponent as GoogleSvg } from '@/assets/login/google.svg';
 import { ReactComponent as SamlSvg } from '@/assets/login/saml.svg';
 import { notify } from '@/components/_shared/notify';
+import LdapLoginDialog from '@/components/login/LdapLoginDialog';
 import SamlLoginDialog from '@/components/login/SamlLoginDialog';
 import { Button } from '@/components/ui/button';
+
+/**
+ * Fallback only, for a server that predates `custom_providers` and therefore
+ * sends no display name. `custom:okta-prod` reads as "Okta Prod" — close, but
+ * not what an admin typed, which is why the name is preferred when present.
+ */
+function customProviderLabel(identifier: CustomAuthProviderId) {
+  return identifier
+    .slice(CUSTOM_PROVIDER_PREFIX.length)
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** Stable identities, so omitting a prop does not defeat the options memo. */
+const NO_PROVIDERS: LoginProviderId[] = [];
+const NO_CUSTOM_PROVIDERS: CustomAuthProvider[] = [];
+const NO_LDAP_PROVIDERS: LdapAuthProvider[] = [];
+
+interface LoginOption {
+  key: string;
+  label: string;
+  value: LoginProviderId;
+  Icon: typeof SamlSvg;
+  ldapConnectionId?: string;
+}
 
 const moreOptionsVariants = {
   hidden: {
@@ -36,51 +72,112 @@ const moreOptionsVariants = {
 
 function LoginProvider({
   redirectTo,
-  availableProviders = [],
+  availableProviders = NO_PROVIDERS,
+  customProviders = NO_CUSTOM_PROVIDERS,
+  ldapProviders = NO_LDAP_PROVIDERS,
 }: {
   redirectTo: string;
-  availableProviders?: AuthProvider[];
+  availableProviders?: LoginProviderId[];
+  customProviders?: CustomAuthProvider[];
+  ldapProviders?: LdapAuthProvider[];
 }) {
   const { t } = useTranslation();
-  const [expand, setExpand] = React.useState(false);
+  const [expand, setExpand] = useState(false);
   // SAML SSO dialog state
   const [samlDialogOpen, setSamlDialogOpen] = useState(false);
+  const [ldapDialogOpen, setLdapDialogOpen] = useState(false);
+  const [selectedLdapConnectionId, setSelectedLdapConnectionId] = useState<string>();
 
-  const allOptions = useMemo(
-    () => [
+  // Only render what this deployment actually serves. Built-in providers are
+  // matched against the advertised list; custom OAuth/OIDC providers are named
+  // per deployment, so they come from that list rather than from any local
+  // table — an unadvertised provider has no button at all.
+  const options = useMemo(() => {
+    const advertised = new Set<LoginProviderId>(availableProviders);
+
+    const builtIn: LoginOption[] = [
       {
+        key: AuthProvider.GOOGLE,
         label: t('web.continueWithGoogle'),
         Icon: GoogleSvg,
         value: AuthProvider.GOOGLE,
       },
       {
+        key: AuthProvider.APPLE,
         label: t('web.continueWithApple'),
         Icon: AppleSvg,
         value: AuthProvider.APPLE,
       },
       {
+        key: AuthProvider.GITHUB,
         label: t('web.continueWithGithub'),
         value: AuthProvider.GITHUB,
         Icon: GithubSvg,
       },
       {
+        key: AuthProvider.DISCORD,
         label: t('web.continueWithDiscord'),
         value: AuthProvider.DISCORD,
         Icon: DiscordSvg,
       },
       {
+        key: AuthProvider.SAML,
         label: t('web.continueWithSaml'),
         value: AuthProvider.SAML,
         Icon: SamlSvg,
       },
-    ],
-    [t]
-  );
+    ].filter((option) => advertised.has(option.value));
 
-  // Filter options based on available providers
-  const options = useMemo(() => {
-    return allOptions.filter((option) => availableProviders.includes(option.value));
-  }, [allOptions, availableProviders]);
+    // Structured LDAP metadata is authoritative when present: each button
+    // routes credentials to one directory. The flat `ldap` entry is retained
+    // by the server for old clients, so it only becomes a generic choice when
+    // this richer metadata is absent.
+    const ldap: LoginOption[] =
+      ldapProviders.length > 0
+        ? ldapProviders.map((provider) => ({
+            key: `ldap:${provider.id}`,
+            label: t('web.continueWithProvider', {
+              provider: provider.name || 'LDAP',
+              interpolation: { escapeValue: false },
+            }),
+            value: AuthProvider.LDAP,
+            Icon: SamlSvg,
+            ldapConnectionId: provider.id,
+          }))
+        : advertised.has(AuthProvider.LDAP)
+        ? [
+            {
+              key: AuthProvider.LDAP,
+              label: t('web.continueWithLdap'),
+              value: AuthProvider.LDAP,
+              Icon: SamlSvg,
+            },
+          ]
+        : [];
+
+    // The admin's chosen name wins; deriving a label from the identifier is only
+    // a fallback for a server that does not send names. Blank names are dropped
+    // rather than stored, so the `??` below cannot be satisfied by an empty one.
+    const names = new Map(
+      customProviders
+        .filter((provider) => provider.name)
+        .map((provider) => [provider.identifier, provider.name])
+    );
+
+    const custom: LoginOption[] = availableProviders.filter(isCustomAuthProviderId).map((identifier) => ({
+      key: identifier,
+      label: t('web.continueWithProvider', {
+        provider: names.get(identifier) ?? customProviderLabel(identifier),
+        // React escapes text nodes. i18next escaping here would render entity
+        // strings literally (for example, `&amp;`) in the button label.
+        interpolation: { escapeValue: false },
+      }),
+      value: identifier,
+      Icon: SamlSvg,
+    }));
+
+    return [...builtIn, ...ldap, ...custom];
+  }, [availableProviders, customProviders, ldapProviders, t]);
 
   // Handle SAML SSO login with email domain
   const handleSamlSubmit = useCallback(
@@ -90,10 +187,29 @@ function LoginProvider({
     [redirectTo]
   );
 
+  // Completes server-side and returns tokens inline, so failures surface in the
+  // dialog rather than as a redirect back to an error page.
+  const handleLdapSubmit = useCallback(
+    async (username: string, password: string) => {
+      await AuthService.signInLdap({
+        username,
+        password,
+        connectionId: selectedLdapConnectionId,
+        redirectTo,
+      });
+    },
+    [redirectTo, selectedLdapConnectionId]
+  );
+
   const handleClick = useCallback(
-    async (option: AuthProvider) => {
+    async (option: LoginOption) => {
       try {
-        switch (option) {
+        if (isCustomAuthProviderId(option.value)) {
+          await AuthService.signInCustomProvider({ redirectTo, identifier: option.value });
+          return;
+        }
+
+        switch (option.value) {
           case AuthProvider.GOOGLE:
             await AuthService.signInGoogle({ redirectTo });
             break;
@@ -110,6 +226,10 @@ function LoginProvider({
             // Open SAML dialog to get user's email for domain identification
             setSamlDialogOpen(true);
             return;
+          case AuthProvider.LDAP:
+            setSelectedLdapConnectionId(option.ldapConnectionId);
+            setLdapDialogOpen(true);
+            return;
         }
       } catch (e) {
         notify.error(t('web.signInError'));
@@ -118,22 +238,18 @@ function LoginProvider({
     [t, redirectTo]
   );
 
-  const renderOption = useCallback(
-    (option: (typeof options)[0]) => {
-      return (
-        <Button
-          key={option.value}
-          size={'lg'}
-          variant={'outline'}
-          className={'w-full'}
-          onClick={() => handleClick(option.value)}
-        >
-          <option.Icon className={'h-5 w-5'} />
-          <div className={'w-auto whitespace-pre'}>{option.label}</div>
-        </Button>
-      );
-    },
-    [handleClick]
+  // Called inline from the maps below rather than passed as a prop, so its
+  // identity is unobservable and memoizing it would prevent nothing.
+  const renderOption = (option: (typeof options)[0]) => (
+    <Button
+      size={'lg'}
+      variant={'outline'}
+      className={'w-full'}
+      onClick={() => handleClick(option)}
+    >
+      <option.Icon className={'h-5 w-5'} />
+      <div className={'w-auto whitespace-pre'}>{option.label}</div>
+    </Button>
   );
 
   // Don't show component if no OAuth providers available
@@ -145,7 +261,7 @@ function LoginProvider({
     <div className={'flex w-full transform flex-col items-center justify-center gap-3 transition-all'}>
       {options.slice(0, 2).map((option, index) => (
         <motion.div
-          key={`option-${index}`}
+          key={option.key}
           className='w-full'
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -162,11 +278,9 @@ function LoginProvider({
         {!expand && options.length > 2 && (
           <motion.div
             className='w-full'
-            initial='initial'
-            animate='initial'
-            exit='exit'
-            whileHover='hover'
-            whileTap='tap'
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
           >
             <Button variant={'link'} onClick={() => setExpand(true)} className={'w-full'}>
               {t('web.moreOptions')}
@@ -185,7 +299,7 @@ function LoginProvider({
           >
             {options.slice(2).map((option, index) => (
               <motion.div
-                key={`extra-option-${index}`}
+                key={option.key}
                 className='w-full'
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -205,6 +319,12 @@ function LoginProvider({
         open={samlDialogOpen}
         onOpenChange={setSamlDialogOpen}
         onSubmit={handleSamlSubmit}
+      />
+
+      <LdapLoginDialog
+        open={ldapDialogOpen}
+        onOpenChange={setLdapDialogOpen}
+        onSubmit={handleLdapSubmit}
       />
     </div>
   );

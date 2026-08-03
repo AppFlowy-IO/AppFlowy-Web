@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
+import { resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
@@ -1058,27 +1059,30 @@ export function useGroup(groupId: string) {
 
 export function useBoardLayoutSettings() {
   const view = useDatabaseView();
-  const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
+  const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!layoutSetting) return;
+    if (!view) return;
 
     const observerEvent = () => {
+      const layoutSetting = view.get(YjsDatabaseKey.layout_settings)?.get('1');
+
       setIsCollapsed(Boolean(layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups)));
       setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
+      setHideEmptyGroups(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_empty_groups)));
     };
 
     observerEvent();
-    layoutSetting.observe(observerEvent);
+    view.observeDeep(observerEvent);
 
     return () => {
-      layoutSetting.unobserve(observerEvent);
+      view.unobserveDeep(observerEvent);
     };
-  }, [view, layoutSetting]);
+  }, [view]);
 
   useEffect(() => {
     const observerEvent = () => {
@@ -1102,45 +1106,48 @@ export function useBoardLayoutSettings() {
   return {
     isCollapsed,
     hideUnGroup,
+    hideEmptyGroups,
     fieldId,
   };
 }
 
-export function useGetBoardHiddenGroup(groupId: string) {
+export function useGetBoardHiddenGroup(
+  groupId: string,
+  getRowCount: (columnId: string) => number,
+  groupRowsReady: boolean
+) {
   const { columns, fieldId } = useGroup(groupId);
-  const [hiddenColumns, setHiddenColumns] = useState<GroupColumn[]>([]);
-  const { hideUnGroup } = useBoardLayoutSettings();
-
-  useEffect(() => {
-    if (!columns) return;
-
-    const hiddenColumns = columns.filter((column) => {
-      if (column.id === fieldId) return hideUnGroup;
-
-      return !column.visible;
-    });
-
-    setHiddenColumns(hiddenColumns);
-  }, [columns, fieldId, hideUnGroup]);
+  const { hideEmptyGroups, hideUnGroup } = useBoardLayoutSettings();
+  const hiddenColumns = useMemo(
+    () =>
+      resolveBoardColumnVisibility({
+        columns,
+        fieldId,
+        getRowCount,
+        groupRowsReady,
+        hideEmptyGroups,
+        hideUngroupedColumn: hideUnGroup,
+      }).hiddenColumns,
+    [columns, fieldId, getRowCount, groupRowsReady, hideEmptyGroups, hideUnGroup]
+  );
 
   return {
     hiddenColumns,
   };
 }
 
-export function useRowsByGroup(groupId: string) {
+export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: ReadonlySet<string>) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
 
-  const [visibleColumns, setVisibleColumns] = useState<GroupColumn[]>([]);
-
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
   const [groupResult, setGroupResult] = useState<Map<string, Row[]>>(new Map());
+  const [groupRowsReady, setGroupRowsReady] = useState(false);
   const view = useDatabaseView();
-  const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
   const filters = view?.get(YjsDatabaseKey.filters);
+  const { hideEmptyGroups, hideUnGroup } = useBoardLayoutSettings();
 
   useEffect(() => {
     if (!fieldId || !rowOrders || !rows) return;
@@ -1153,6 +1160,7 @@ export function useRowsByGroup(groupId: string) {
       if (!field) {
         setNotFound(true);
         setGroupResult(newResult);
+        setGroupRowsReady(true);
         return;
       }
 
@@ -1161,6 +1169,7 @@ export function useRowsByGroup(groupId: string) {
       if (![FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType)) {
         setNotFound(true);
         setGroupResult(newResult);
+        setGroupRowsReady(true);
         return;
       }
 
@@ -1170,10 +1179,12 @@ export function useRowsByGroup(groupId: string) {
 
       if (!groupResult) {
         setGroupResult(newResult);
+        setGroupRowsReady(true);
         return;
       }
 
       setGroupResult(groupResult);
+      setGroupRowsReady(true);
     };
 
     onConditionsChange();
@@ -1201,29 +1212,26 @@ export function useRowsByGroup(groupId: string) {
     };
   }, [fieldId, fields, rowOrders, rows, filters]);
 
-  useEffect(() => {
-    const observeEvent = () => {
-      const newVisibleColumns = columns.filter((column) => {
-        if (column.id === fieldId) return !layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column);
-        return column.visible;
-      });
-
-      setVisibleColumns(newVisibleColumns);
-    };
-
-    observeEvent();
-
-    layoutSetting?.observe(observeEvent);
-
-    return () => {
-      layoutSetting?.unobserve(observeEvent);
-    };
-  }, [layoutSetting, columns, fieldId]);
+  const visibleColumns = useMemo(
+    () =>
+      resolveBoardColumnVisibility({
+        columns,
+        fieldId,
+        getRowCount: (columnId) => groupResult.get(columnId)?.length ?? 0,
+        groupRowsReady,
+        hideEmptyGroups,
+        hideUngroupedColumn: hideUnGroup,
+        temporarilyShownColumnIds,
+      }).visibleColumns,
+    [columns, fieldId, groupResult, groupRowsReady, hideEmptyGroups, hideUnGroup, temporarilyShownColumnIds]
+  );
 
   return {
     fieldId,
     groupResult,
     columns: visibleColumns,
+    groupRowsReady,
+    hideEmptyGroups,
     notFound,
   };
 }

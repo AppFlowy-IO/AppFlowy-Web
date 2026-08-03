@@ -1,8 +1,15 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, FieldType, useGroup } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  DatabaseContextState,
+  FieldType,
+  useBoardLayoutSettings,
+  useGroup,
+} from '@/application/database-yjs';
+import { useToggleHideEmptyGroups } from '@/application/database-yjs/dispatch';
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -13,11 +20,13 @@ function createDatabaseDoc({
   fieldId,
   groupId,
   groupColumns,
+  includeLayoutSettings = true,
   viewId,
 }: {
   fieldId: string;
   groupId: string;
   groupColumns: unknown[];
+  includeLayoutSettings?: boolean;
   viewId: string;
 }): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
@@ -43,6 +52,15 @@ function createDatabaseDoc({
   groups.push([group]);
 
   view.set(YjsDatabaseKey.groups, groups);
+  if (includeLayoutSettings) {
+    const layoutSettings = new Y.Map();
+    const boardLayoutSetting = new Y.Map();
+
+    boardLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
+    layoutSettings.set('1', boardLayoutSetting);
+    view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+  }
+
   views.set(viewId, view);
 
   database.set(YjsDatabaseKey.id, 'database-id');
@@ -117,5 +135,38 @@ describe('useGroup', () => {
     });
 
     expect(result.current.columns).toEqual([{ id: optionId, visible: false }]);
+  });
+
+  it('persists and observes the shared hide empty groups Board setting', async () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: fieldId, visible: true }],
+      includeLayoutSettings: false,
+      viewId,
+    });
+
+    const { result } = renderHook(
+      () => ({
+        layoutSettings: useBoardLayoutSettings(),
+        toggleHideEmptyGroups: useToggleHideEmptyGroups(),
+      }),
+      {
+        wrapper: createWrapper(databaseDoc, viewId),
+      }
+    );
+
+    expect(result.current.layoutSettings.hideEmptyGroups).toBe(false);
+
+    act(() => {
+      result.current.toggleHideEmptyGroups(true);
+    });
+
+    await waitFor(() => {
+      expect(result.current.layoutSettings.hideEmptyGroups).toBe(true);
+    });
   });
 });

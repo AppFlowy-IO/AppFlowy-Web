@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthService } from '@/application/services/domains';
-import { AuthProvider } from '@/application/types';
+import { AuthProvider, LoginProviderId, LoginProviders } from '@/application/types';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import EmailLogin from '@/components/login/EmailLogin';
@@ -11,22 +11,39 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { getPlatform } from '@/utils/platform';
 
+/** Providers the email form already covers, so they do not imply an SSO block. */
+const EMAIL_FIRST_PROVIDERS: LoginProviderId[] = [
+  AuthProvider.EMAIL,
+  AuthProvider.PASSWORD,
+  AuthProvider.MAGIC_LINK,
+];
+
+/** One server response, so one piece of state — the halves cannot diverge. */
+const NO_LOGIN_PROVIDERS: LoginProviders = {
+  providers: [],
+  customProviders: [],
+  ldapProviders: [],
+};
+
 export function Login({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
-  const [availableProviders, setAvailableProviders] = useState<AuthProvider[]>([]);
+  const [loginProviders, setLoginProviders] = useState<LoginProviders>(NO_LOGIN_PROVIDERS);
 
   // Fetch available auth providers on mount
   useEffect(() => {
     const fetchProviders = async () => {
       try {
-        const providers = await AuthService.getAuthProviders();
+        const response = await AuthService.getAuthProviders();
 
-        setAvailableProviders(providers || []);
-
+        setLoginProviders({
+          providers: response.providers || [],
+          customProviders: response.customProviders || [],
+          ldapProviders: response.ldapProviders || [],
+        });
       } catch (error) {
         console.error('Failed to fetch auth providers:', error);
-        // On error, set empty array (no OAuth providers)
-        setAvailableProviders([]);
+        // On error, offer nothing beyond the email form.
+        setLoginProviders(NO_LOGIN_PROVIDERS);
       }
     };
 
@@ -34,8 +51,8 @@ export function Login({ redirectTo }: { redirectTo: string }) {
   }, []);
 
   // Filter to check if there are any OAuth providers (not EMAIL or PASSWORD)
-  const hasOAuthProviders = availableProviders.some(
-    provider => ![AuthProvider.EMAIL, AuthProvider.PASSWORD, AuthProvider.MAGIC_LINK].includes(provider)
+  const hasOAuthProviders = loginProviders.providers.some(
+    provider => !EMAIL_FIRST_PROVIDERS.includes(provider)
   );
 
   const isMobile = getPlatform().isMobile;
@@ -90,7 +107,12 @@ export function Login({ redirectTo }: { redirectTo: string }) {
             <Separator className={'flex-1'} />
           </div>
         )}
-        <LoginProvider redirectTo={redirectTo} availableProviders={availableProviders} />
+        <LoginProvider
+          redirectTo={redirectTo}
+          availableProviders={loginProviders.providers}
+          customProviders={loginProviders.customProviders}
+          ldapProviders={loginProviders.ldapProviders}
+        />
         <div className={'flex items-center gap-1 text-sm text-text-secondary'}>
           <span>{t('signIn.dontHaveAnAccount')}</span>
           <Button

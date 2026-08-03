@@ -30,6 +30,7 @@ function AddGroupColumn({ fieldId }: { fieldId: string; groupId: string }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              data-testid={'board-add-group-button'}
               onClick={() => {
                 setIsCreating(true);
                 setValue('');
@@ -75,6 +76,7 @@ function AddGroupColumn({ fieldId }: { fieldId: string; groupId: string }) {
               )}
             >
               <Input
+                data-testid={'board-add-group-input'}
                 value={value}
                 onChange={(e) => {
                   setValue(e.target.value);
@@ -89,6 +91,7 @@ function AddGroupColumn({ fieldId }: { fieldId: string; groupId: string }) {
                 }}
               />
               <Button
+                data-testid={'board-add-group-submit'}
                 onClick={() => {
                   addOption({
                     id: value,

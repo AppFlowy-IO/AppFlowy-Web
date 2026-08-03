@@ -2,7 +2,11 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, useBoardLayoutSettings, useFieldType, usePropertiesSelector } from '@/application/database-yjs';
-import { useGroupByFieldDispatch, useToggleHideUnGrouped } from '@/application/database-yjs/dispatch';
+import {
+  useGroupByFieldDispatch,
+  useToggleHideEmptyGroups,
+  useToggleHideUnGrouped,
+} from '@/application/database-yjs/dispatch';
 import { ReactComponent as GroupIcon } from '@/assets/icons/group.svg';
 import { FieldDisplay } from '@/components/database/components/field';
 import {
@@ -17,11 +21,13 @@ import { Switch } from '@/components/ui/switch';
 function BoardSettingGroup () {
   const { t } = useTranslation();
   const {
+    hideEmptyGroups,
     hideUnGroup,
     fieldId,
   } = useBoardLayoutSettings();
   const fieldType = useFieldType(fieldId || '');
   const toggle = useToggleHideUnGrouped();
+  const toggleHideEmptyGroups = useToggleHideEmptyGroups();
   const groupBy = useGroupByFieldDispatch();
 
   const { properties: allProperties } = usePropertiesSelector(true);
@@ -42,7 +48,7 @@ function BoardSettingGroup () {
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
+      <DropdownMenuSubTrigger data-testid={'board-group-settings-trigger'}>
         <GroupIcon />
         {t('grid.settings.group')}
       </DropdownMenuSubTrigger>
@@ -52,6 +58,22 @@ function BoardSettingGroup () {
         >
           {fieldType !== FieldType.Checkbox && (
             <>
+              <DropdownMenuItem
+                data-testid={'board-hide-empty-groups-toggle'}
+                className={'w-full'}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  toggleHideEmptyGroups(!hideEmptyGroups);
+                }}
+              >
+                {t('board.hideEmptyGroups')}
+                <Switch
+                  data-testid={'board-hide-empty-groups-switch'}
+                  aria-label={t('board.hideEmptyGroups')}
+                  className={'ml-auto'}
+                  checked={hideEmptyGroups}
+                />
+              </DropdownMenuItem>
               <DropdownMenuItem
                 className={'w-full'}
                 onSelect={(e) => {
