@@ -10,13 +10,14 @@ type ResolveBoardColumnVisibilityOptions<T extends BoardColumn> = {
   hideEmptyGroups: boolean;
   groupRowsReady: boolean;
   getRowCount: (columnId: string) => number;
-  temporarilyShownColumnIds?: ReadonlySet<string>;
+  shownEmptyGroupIds?: ReadonlySet<string>;
 };
 
 /**
  * Resolves the two Board column partitions from persisted settings and exact
- * row counts. Temporarily shown empty columns deliberately stay in the hidden
- * partition so their eye action can hide them again, matching desktop.
+ * row counts. Explicitly shown empty columns deliberately stay in the hidden
+ * partition so their eye action can hide them again. The explicit-show set is
+ * shared view state, so Web and desktop resolve the same rendered columns.
  */
 export function resolveBoardColumnVisibility<T extends BoardColumn>({
   columns,
@@ -25,7 +26,7 @@ export function resolveBoardColumnVisibility<T extends BoardColumn>({
   hideEmptyGroups,
   groupRowsReady,
   getRowCount,
-  temporarilyShownColumnIds,
+  shownEmptyGroupIds,
 }: ResolveBoardColumnVisibilityOptions<T>) {
   const visibleColumns: T[] = [];
   const hiddenColumns: T[] = [];
@@ -38,7 +39,7 @@ export function resolveBoardColumnVisibility<T extends BoardColumn>({
       hiddenColumns.push(column);
     }
 
-    if (!explicitlyHidden && (!automaticallyHidden || temporarilyShownColumnIds?.has(column.id) === true)) {
+    if (!explicitlyHidden && (!automaticallyHidden || shownEmptyGroupIds?.has(column.id) === true)) {
       visibleColumns.push(column);
     }
   });

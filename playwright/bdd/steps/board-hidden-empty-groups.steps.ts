@@ -1,14 +1,29 @@
-import { expect, Locator, Page } from '@playwright/test';
+import { BrowserContext, expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 import { BoardSelectors, DatabaseViewSelectors } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
-const { Given, When, Then } = createBdd();
+const { Given, When, Then, After } = createBdd();
+
+type BoardHiddenGroupsState = {
+  secondContext?: BrowserContext;
+  secondPage?: Page;
+};
+
+const stateByPage = new WeakMap<Page, BoardHiddenGroupsState>();
+
+After(async ({ page }) => {
+  const state = stateByPage.get(page);
+
+  await state?.secondContext?.close();
+  stateByPage.delete(page);
+});
 
 Given('a Board database is open for group behavior testing', async ({ page, request }) => {
   setupPageErrorHandling(page);
+  stateByPage.set(page, {});
 
   await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
     createWaitMs: 7000,
@@ -20,6 +35,36 @@ Given('a Board database is open for group behavior testing', async ({ page, requ
       await expect.poll(() => BoardSelectors.cards(currentPage).count(), { timeout: 15000 }).toBeGreaterThan(0);
     },
   });
+});
+
+Given('another web client opens the same Board database', async ({ page, browser }) => {
+  const state = stateByPage.get(page) ?? {};
+  const secondContext = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: await page.context().storageState({ indexedDB: true }),
+    viewport: { width: 1440, height: 900 },
+  });
+  const secondPage = await secondContext.newPage();
+
+  state.secondContext = secondContext;
+  state.secondPage = secondPage;
+  stateByPage.set(page, state);
+  setupPageErrorHandling(secondPage);
+
+  await secondPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+  await expect(BoardSelectors.boardContainer(secondPage)).toHaveCount(1, { timeout: 30000 });
+  await expect(BoardSelectors.boardContainer(secondPage)).toBeVisible({ timeout: 30000 });
+  await expect(BoardSelectors.mainColumns(secondPage)).toHaveCount(1, { timeout: 30000 });
+  await expect(BoardSelectors.mainColumns(secondPage)).toBeVisible({ timeout: 30000 });
+
+  const toggle = BoardSelectors.hiddenGroupsToggle(secondPage);
+
+  await expect(toggle).toHaveCount(1, { timeout: 30000 });
+  await expect(toggle).toBeVisible({ timeout: 30000 });
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
 Given('an empty Board group named {string} exists', async ({ page }, groupName: string) => {
@@ -85,8 +130,9 @@ When('I expand the Board Hidden Groups section', async ({ page }) => {
 
   await expect(toggle).toHaveCount(1);
   await expect(toggle).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await toggle.click();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click();
+  }
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 });
 
@@ -94,12 +140,9 @@ Then('the Board has no visible column named {string}', async ({ page }, groupNam
   await expect(BoardSelectors.columnByName(page, groupName)).toHaveCount(0);
 });
 
-Then(
-  'Hidden Groups has exactly one {string} row with only a show action',
-  async ({ page }, groupName: string) => {
-    await expectExactHiddenGroupAction(page, groupName, 'show');
-  }
-);
+Then('Hidden Groups has exactly one {string} row with only a show action', async ({ page }, groupName: string) => {
+  await expectExactHiddenGroupAction(page, groupName, 'show');
+});
 
 When('I click the show action for hidden Board group {string}', async ({ page }, groupName: string) => {
   await clickExactHiddenGroupAction(page, groupName, 'show');
@@ -109,16 +152,35 @@ Then('the Board has exactly one visible empty column named {string}', async ({ p
   await expectExactEmptyBoardColumn(page, groupName);
 });
 
-Then(
-  'Hidden Groups has exactly one {string} row with only a hide action',
-  async ({ page }, groupName: string) => {
-    await expectExactHiddenGroupAction(page, groupName, 'hide');
-  }
-);
+Then('Hidden Groups has exactly one {string} row with only a hide action', async ({ page }, groupName: string) => {
+  await expectExactHiddenGroupAction(page, groupName, 'hide');
+});
 
 When('I click the hide action for shown Board group {string}', async ({ page }, groupName: string) => {
   await clickExactHiddenGroupAction(page, groupName, 'hide');
 });
+
+Then('the other web client has no visible column named {string}', async ({ page }, groupName: string) => {
+  await expect(BoardSelectors.columnByName(requireSecondPage(page), groupName)).toHaveCount(0, { timeout: 30000 });
+});
+
+Then('the other web client has exactly one visible empty column named {string}', async ({ page }, groupName: string) => {
+  await expectExactEmptyBoardColumn(requireSecondPage(page), groupName, 30000);
+});
+
+Then(
+  "the other web client's Hidden Groups has exactly one {string} row with only a show action",
+  async ({ page }, groupName: string) => {
+    await expectExactHiddenGroupAction(requireSecondPage(page), groupName, 'show', 30000);
+  }
+);
+
+Then(
+  "the other web client's Hidden Groups has exactly one {string} row with only a hide action",
+  async ({ page }, groupName: string) => {
+    await expectExactHiddenGroupAction(requireSecondPage(page), groupName, 'hide', 30000);
+  }
+);
 
 When('I open Board Group settings', async ({ page }) => {
   const { menu } = await openBoardGroupSettings(page);
@@ -177,37 +239,38 @@ When('I add another Board view from the database tab bar', async ({ page }) => {
   await expect(viewTabs).toHaveCount(previousTabCount + 1);
   await expect(DatabaseViewSelectors.activeViewTab(page)).toHaveCount(1);
   await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText('Board');
-  await expect(DatabaseViewSelectors.activeViewTab(page)).not.toHaveAttribute(
-    'data-testid',
-    previousActiveTabId ?? ''
-  );
+  await expect(DatabaseViewSelectors.activeViewTab(page)).not.toHaveAttribute('data-testid', previousActiveTabId ?? '');
   await expect(BoardSelectors.boardContainer(page)).toHaveCount(1);
   await expect(BoardSelectors.boardContainer(page)).toBeVisible();
   await expect(BoardSelectors.mainColumns(page)).toHaveCount(1);
   await expect(BoardSelectors.mainColumns(page)).toBeVisible();
 });
 
-async function expectExactEmptyBoardColumn(page: Page, groupName: string) {
+async function expectExactEmptyBoardColumn(page: Page, groupName: string, timeout = 5000) {
   const column = BoardSelectors.columnByName(page, groupName);
 
-  await expect(column).toHaveCount(1);
-  await expect(column).toBeVisible();
-  await expect(column.getByTestId('board-column-name').getByText(groupName, { exact: true })).toHaveCount(1);
-  await expect(column.locator('.board-card')).toHaveCount(0);
+  await expect(column).toHaveCount(1, { timeout });
+  await expect(column).toBeVisible({ timeout });
+  await expect(column.getByTestId('board-column-name').getByText(groupName, { exact: true })).toHaveCount(1, {
+    timeout,
+  });
+  await expect(column.locator('.board-card')).toHaveCount(0, { timeout });
 }
 
-async function expectExactHiddenGroupAction(page: Page, groupName: string, action: 'show' | 'hide') {
+async function expectExactHiddenGroupAction(page: Page, groupName: string, action: 'show' | 'hide', timeout = 5000) {
   const row = BoardSelectors.hiddenGroupByName(page, groupName);
   const expectedAction = hiddenGroupAction(row, action);
   const oppositeAction = hiddenGroupAction(row, action === 'show' ? 'hide' : 'show');
 
-  await expect(row).toHaveCount(1);
-  await expect(row).toBeVisible();
-  await expect(row.getByTestId('board-hidden-group-name').getByText(groupName, { exact: true })).toHaveCount(1);
+  await expect(row).toHaveCount(1, { timeout });
+  await expect(row).toBeVisible({ timeout });
+  await expect(row.getByTestId('board-hidden-group-name').getByText(groupName, { exact: true })).toHaveCount(1, {
+    timeout,
+  });
   await row.hover();
-  await expect(expectedAction).toHaveCount(1);
-  await expect(expectedAction).toBeVisible();
-  await expect(oppositeAction).toHaveCount(0);
+  await expect(expectedAction).toHaveCount(1, { timeout });
+  await expect(expectedAction).toBeVisible({ timeout });
+  await expect(oppositeAction).toHaveCount(0, { timeout });
 }
 
 async function clickExactHiddenGroupAction(page: Page, groupName: string, action: 'show' | 'hide') {
@@ -219,6 +282,16 @@ async function clickExactHiddenGroupAction(page: Page, groupName: string, action
 
 function hiddenGroupAction(row: Locator, action: 'show' | 'hide') {
   return row.getByTestId(`board-hidden-group-${action}`);
+}
+
+function requireSecondPage(page: Page) {
+  const secondPage = stateByPage.get(page)?.secondPage;
+
+  if (!secondPage) {
+    throw new Error('Expected another web client to have opened the Board database');
+  }
+
+  return secondPage;
 }
 
 async function openBoardGroupSettings(page: Page) {

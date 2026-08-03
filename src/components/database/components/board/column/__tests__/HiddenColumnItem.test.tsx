@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import type React from 'react';
 
-import { useToggleHiddenGroupColumnDispatch } from '@/application/database-yjs/dispatch';
+import { useSetBoardColumnRenderedDispatch } from '@/application/database-yjs/dispatch';
 
 import HiddenColumnItem from '../HiddenColumnItem';
 
@@ -12,7 +12,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
-  useToggleHiddenGroupColumnDispatch: jest.fn(),
+  useSetBoardColumnRenderedDispatch: jest.fn(),
 }));
 
 jest.mock('@/components/database/components/board/column/useRenderColumn', () => ({
@@ -28,35 +28,32 @@ jest.mock('@/components/database/components/board/column/HiddenItemMenu', () => 
   HiddenItemMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-const mockUseToggleHiddenGroupColumnDispatch = useToggleHiddenGroupColumnDispatch as jest.MockedFunction<
-  typeof useToggleHiddenGroupColumnDispatch
+const mockUseSetBoardColumnRenderedDispatch = useSetBoardColumnRenderedDispatch as jest.MockedFunction<
+  typeof useSetBoardColumnRenderedDispatch
 >;
 
 describe('HiddenColumnItem', () => {
   it('shows an auto-hidden group on the first eye click and hides it on the second', () => {
-    const toggleHidden = jest.fn();
-    const onColumnTemporarilyShownChange = jest.fn();
+    const setColumnRendered = jest.fn();
     const baseProps = {
       fieldId: 'status-field',
       getRows: () => [],
       groupId: 'board-group',
       id: 'empty-group',
-      onColumnTemporarilyShownChange,
+      automaticallyHidden: true,
     };
 
-    mockUseToggleHiddenGroupColumnDispatch.mockReturnValue(toggleHidden);
+    mockUseSetBoardColumnRenderedDispatch.mockReturnValue(setColumnRendered);
 
     const { rerender } = render(<HiddenColumnItem {...baseProps} isShownOnBoard={false} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'board.mobile.showGroup' }));
 
-    expect(onColumnTemporarilyShownChange).toHaveBeenLastCalledWith('empty-group', true);
-    expect(toggleHidden).toHaveBeenLastCalledWith('empty-group', false);
+    expect(setColumnRendered).toHaveBeenLastCalledWith('empty-group', true, true);
 
     rerender(<HiddenColumnItem {...baseProps} isShownOnBoard />);
     fireEvent.click(screen.getByRole('button', { name: 'board.column.hideColumn' }));
 
-    expect(onColumnTemporarilyShownChange).toHaveBeenLastCalledWith('empty-group', false);
-    expect(toggleHidden).toHaveBeenLastCalledWith('empty-group', true);
+    expect(setColumnRendered).toHaveBeenLastCalledWith('empty-group', false, true);
   });
 });

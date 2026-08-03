@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Row } from '@/application/database-yjs';
-import { useToggleHiddenGroupColumnDispatch } from '@/application/database-yjs/dispatch';
+import { useSetBoardColumnRenderedDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
@@ -19,14 +19,14 @@ function HiddenColumnItem({
   getRows: getRowsProp,
   groupId,
   isShownOnBoard,
-  onColumnTemporarilyShownChange,
+  automaticallyHidden,
 }: {
   id: string;
   fieldId: string;
   getRows: (id: string) => Row[];
   groupId: string;
   isShownOnBoard: boolean;
-  onColumnTemporarilyShownChange: (columnId: string, shown: boolean) => void;
+  automaticallyHidden: boolean;
 }) {
   const { t } = useTranslation();
   const { header } = useRenderColumn(id, fieldId);
@@ -38,7 +38,7 @@ function HiddenColumnItem({
   }, [getRows]);
 
   const [hover, setHover] = useState(false);
-  const toggleHidden = useToggleHiddenGroupColumnDispatch(groupId, fieldId);
+  const setColumnRendered = useSetBoardColumnRenderedDispatch(groupId, fieldId);
 
   return (
     <div
@@ -55,7 +55,9 @@ function HiddenColumnItem({
       <DragItem id={id}>
         <HiddenItemMenu getRows={getRows}>
           <div className={'flex w-full items-center gap-1.5'}>
-            <div data-testid={'board-hidden-group-name'} className={'w-auto max-w-[150px] overflow-hidden'}>{header}</div>
+            <div data-testid={'board-hidden-group-name'} className={'w-auto max-w-[150px] overflow-hidden'}>
+              {header}
+            </div>
             <span className={'text-xs text-text-secondary'}>{count}</span>
 
             <Button
@@ -68,8 +70,7 @@ function HiddenColumnItem({
                 e.stopPropagation();
                 const shouldShow = !isShownOnBoard;
 
-                onColumnTemporarilyShownChange(id, shouldShow);
-                toggleHidden(id, !shouldShow);
+                setColumnRendered(id, shouldShow, automaticallyHidden);
               }}
             >
               {isShownOnBoard ? <HideIcon className={'h-5 w-5'} /> : <ShowIcon className={'h-5 w-5'} />}

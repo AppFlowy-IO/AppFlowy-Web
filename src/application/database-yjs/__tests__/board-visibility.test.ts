@@ -15,11 +15,11 @@ const rowCounts = new Map([
 function resolveVisibility({
   hideEmptyGroups = true,
   hideUngroupedColumn = false,
-  temporarilyShownColumnIds,
+  shownEmptyGroupIds,
 }: {
   hideEmptyGroups?: boolean;
   hideUngroupedColumn?: boolean;
-  temporarilyShownColumnIds?: ReadonlySet<string>;
+  shownEmptyGroupIds?: ReadonlySet<string>;
 } = {}) {
   return resolveBoardColumnVisibility({
     columns,
@@ -28,7 +28,7 @@ function resolveVisibility({
     groupRowsReady: true,
     hideEmptyGroups,
     hideUngroupedColumn,
-    temporarilyShownColumnIds,
+    shownEmptyGroupIds,
   });
 }
 
@@ -40,9 +40,9 @@ describe('resolveBoardColumnVisibility', () => {
     expect(result.hiddenColumns.map((column) => column.id)).toEqual(['status-field', 'done']);
   });
 
-  it('keeps a temporarily shown empty column in both Board and Hidden Groups', () => {
+  it('keeps a shared explicitly shown empty column in both Board and Hidden Groups', () => {
     const result = resolveVisibility({
-      temporarilyShownColumnIds: new Set(['status-field']),
+      shownEmptyGroupIds: new Set(['status-field']),
     });
 
     expect(result.visibleColumns.map((column) => column.id)).toEqual(['status-field', 'todo']);

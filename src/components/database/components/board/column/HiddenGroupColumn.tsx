@@ -12,18 +12,16 @@ function HiddenGroupColumn({
   getRows,
   groupRowsReady,
   shownColumnIds,
-  onColumnTemporarilyShownChange,
 }: {
   groupId: string;
   fieldId: string;
   getRows: (id: string) => Row[];
   groupRowsReady: boolean;
   shownColumnIds: ReadonlySet<string>;
-  onColumnTemporarilyShownChange: (columnId: string, shown: boolean) => void;
 }) {
   const getRowCount = useCallback((columnId: string) => getRows(columnId).length, [getRows]);
   const { hiddenColumns } = useGetBoardHiddenGroup(groupId, getRowCount, groupRowsReady);
-  const { isCollapsed } = useBoardLayoutSettings();
+  const { hideEmptyGroups, isCollapsed } = useBoardLayoutSettings();
   const reorderColumn = useReorderGroupColumnDispatch(groupId);
   const onReorder = useCallback(
     ({
@@ -79,7 +77,7 @@ function HiddenGroupColumn({
                 getRows={getRows}
                 groupId={groupId}
                 isShownOnBoard={shownColumnIds.has(column.id)}
-                onColumnTemporarilyShownChange={onColumnTemporarilyShownChange}
+                automaticallyHidden={groupRowsReady && hideEmptyGroups && getRows(column.id).length === 0}
               />
             ))}
           </div>
