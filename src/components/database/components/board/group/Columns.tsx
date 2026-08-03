@@ -13,8 +13,10 @@ const Columns = forwardRef<
     columns: GroupColumn[];
     addCardBefore: (id: string) => void;
     groupId: string;
+    groupRowsReady: boolean;
+    onColumnTemporarilyShownChange: (columnId: string, shown: boolean) => void;
   }
->(({ columns, groupResult, fieldId, ...props }, ref) => {
+>(({ columns, groupResult, fieldId, groupRowsReady, onColumnTemporarilyShownChange, ...props }, ref) => {
   const fieldType = useFieldType(fieldId);
   const isSelectField = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
@@ -43,12 +45,22 @@ const Columns = forwardRef<
       })
       .filter(Boolean) as (GroupColumn & { rows: Row[] })[];
   }, [columns, groupResult]);
+  const shownColumnIds = useMemo(() => new Set(columnsWithRows.map((column) => column.id)), [columnsWithRows]);
 
   const readOnly = useReadOnly();
 
   return (
     <div ref={ref} className={'columns flex h-full min-h-0 w-fit min-w-full flex-1 gap-2'}>
-      {!readOnly && <HiddenGroupColumn fieldId={fieldId} groupId={props.groupId} getRows={getRows} />}
+      {!readOnly && (
+        <HiddenGroupColumn
+          fieldId={fieldId}
+          groupId={props.groupId}
+          getRows={getRows}
+          groupRowsReady={groupRowsReady}
+          shownColumnIds={shownColumnIds}
+          onColumnTemporarilyShownChange={onColumnTemporarilyShownChange}
+        />
+      )}
 
       {columnsWithRows.map((data) => (
         <Column key={data.id} id={data.id} fieldId={fieldId} rows={data.rows} {...props} />

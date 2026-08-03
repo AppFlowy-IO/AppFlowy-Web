@@ -10,12 +10,19 @@ function HiddenGroupColumn({
   groupId,
   fieldId,
   getRows,
+  groupRowsReady,
+  shownColumnIds,
+  onColumnTemporarilyShownChange,
 }: {
   groupId: string;
   fieldId: string;
   getRows: (id: string) => Row[];
+  groupRowsReady: boolean;
+  shownColumnIds: ReadonlySet<string>;
+  onColumnTemporarilyShownChange: (columnId: string, shown: boolean) => void;
 }) {
-  const { hiddenColumns } = useGetBoardHiddenGroup(groupId);
+  const getRowCount = useCallback((columnId: string) => getRows(columnId).length, [getRows]);
+  const { hiddenColumns } = useGetBoardHiddenGroup(groupId, getRowCount, groupRowsReady);
   const { isCollapsed } = useBoardLayoutSettings();
   const reorderColumn = useReorderGroupColumnDispatch(groupId);
   const onReorder = useCallback(
@@ -53,6 +60,7 @@ function HiddenGroupColumn({
 
   return (
     <div
+      data-testid={'board-hidden-groups'}
       ref={setContainer}
       style={{
         width: isCollapsed ? '32px' : '240px',
@@ -62,9 +70,17 @@ function HiddenGroupColumn({
       <HiddenGroupColumnHeader />
       {!isCollapsed && (
         <DragContext.Provider value={contextValue}>
-          <div className={'flex flex-col justify-start'}>
+          <div data-testid={'board-hidden-groups-list'} className={'flex flex-col justify-start'}>
             {hiddenColumns.map((column) => (
-              <HiddenColumnItem key={column.id} fieldId={fieldId} id={column.id} getRows={getRows} groupId={groupId} />
+              <HiddenColumnItem
+                key={column.id}
+                fieldId={fieldId}
+                id={column.id}
+                getRows={getRows}
+                groupId={groupId}
+                isShownOnBoard={shownColumnIds.has(column.id)}
+                onColumnTemporarilyShownChange={onColumnTemporarilyShownChange}
+              />
             ))}
           </div>
         </DragContext.Provider>

@@ -2579,6 +2579,7 @@
     "setting": "Setting",
     "propertyName": "Property name",
     "menuName": "Board",
+    "hideEmptyGroups": "Hide empty groups",
     "showUngrouped": "Show ungrouped items",
     "ungroupedButtonText": "Ungrouped",
     "ungroupedButtonTooltip": "Contains cards that don't belong in any group",

@@ -594,12 +594,27 @@ export const CalendarSelectors = {
  */
 export const BoardSelectors = {
   boardContainer: (page: Page) => page.locator('.database-board'),
+  settingsButton: (page: Page) => page.getByTestId('database-actions-settings'),
+  mainColumns: (page: Page) => page.locator('.database-board .columns'),
   columns: (page: Page) => page.locator('[class*="board-column"], [data-testid*="board-column"]'),
+  columnByName: (page: Page, name: string) =>
+    page.locator('.database-board .columns').getByTestId('board-column').filter({
+      has: page.getByTestId('board-column-name').getByText(name, { exact: true }),
+    }),
   cards: (page: Page) => page.locator('.board-card'),
   cardByRowId: (page: Page, rowId: string) => page.locator(`[data-card-id*="${rowId}"]`),
   cardContent: (page: Page) => page.locator('.board-card .truncate'),
   columnHeaders: (page: Page) => page.locator('[class*="column-header"], [data-testid*="column-header"]'),
   newCardButton: (page: Page) => page.getByText('+ New'),
+  addGroupButton: (page: Page) => page.locator('.database-board .columns').getByTestId('board-add-group-button'),
+  addGroupInput: (page: Page) => page.getByTestId('board-add-group-input'),
+  addGroupSubmit: (page: Page) => page.getByTestId('board-add-group-submit'),
+  hiddenGroupsToggle: (page: Page) =>
+    page.locator('.database-board .columns').getByTestId('board-hidden-groups-toggle'),
+  hiddenGroupByName: (page: Page, name: string) =>
+    page.locator('.database-board .columns').getByTestId('board-hidden-group').filter({
+      has: page.getByTestId('board-hidden-group-name').getByText(name, { exact: true }),
+    }),
 };
 
 /**
