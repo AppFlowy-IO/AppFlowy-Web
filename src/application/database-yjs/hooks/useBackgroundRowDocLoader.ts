@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 
 import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
@@ -250,9 +250,18 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
   const rows = useRowMap();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
-  const { databaseDoc, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } = useDatabaseContext();
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+  const {
+    databaseDoc,
+    ensureRow,
+    loadRowFromSeed,
+    peekRowDocFromSeed,
+    blobPrefetchComplete,
+    seedsReady,
+  } = useDatabaseContext();
   const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
+  const [rowOrderRevision, setRowOrderRevision] = useState(0);
 
   store.rows = rows;
 
@@ -269,6 +278,22 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     useCallback(() => store.cachedRowDocs, [store]),
     useCallback(() => store.cachedRowDocs, [store])
   );
+
+  // Y.Array identity is stable when collaborative edits insert rows. Track a
+  // primitive revision so the loading effects also process rows added after
+  // the initial Board hydration pass.
+  useEffect(() => {
+    if (!active || !rowOrders) return;
+
+    const handleRowOrdersChange = () => {
+      setRowOrderRevision((revision) => revision + 1);
+    };
+
+    rowOrders.observeDeep(handleRowOrdersChange);
+    return () => {
+      rowOrders.unobserveDeep(handleRowOrdersChange);
+    };
+  }, [active, rowOrders]);
 
   const scheduleFlush = useCallback(() => {
     if (store.flushHandle !== null) return;
@@ -345,7 +370,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
   useEffect(() => {
     if (!active || !seedsReady || !peekRowDocFromSeed || store.seedHydrateActive) return;
 
-    const rowOrdersData = (view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
+    const rowOrdersData = (rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
       (row) => !row.is_deleted
     );
 
@@ -430,7 +455,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
         store.seedHydrateFrame = null;
       }
     };
-  }, [active, seedsReady, peekRowDocFromSeed, store, view, viewId]);
+  }, [active, seedsReady, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
 
   useEffect(() => {
     if (active) return;
@@ -444,7 +469,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
   useEffect(() => {
     if (!active || !blobPrefetchComplete) return;
 
-    const rowOrdersData = (view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
+    const rowOrdersData = (rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
       (row) => !row.is_deleted
     );
 
@@ -516,6 +541,22 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
 
               if (!isRunActive()) return;
 
+              // A row inserted after the blob snapshot has no seed yet. Open
+              // its live row document so collaborative inserts can hydrate
+              // even though no card was mounted to call ensureRow itself.
+              if (ensureRow) {
+                try {
+                  const doc = await ensureRow(rowId);
+
+                  if (!isRunActive()) return;
+                  if (doc && hasRowConditionData(doc)) return;
+                } catch {
+                  // Fall through to the read-only IndexedDB path.
+                }
+              }
+
+              if (!isRunActive()) return;
+
               // Fallback: open from IndexedDB for rows without seeds. The
               // module-level pending map dedupes concurrent opens across views
               // without retaining the doc in the process-wide row cache.
@@ -570,7 +611,18 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
         cancelBackgroundRun(store, runId);
       }
     };
-  }, [databaseDoc.guid, active, blobPrefetchComplete, rows, view, viewId, loadRowFromSeed, scheduleFlush, store]);
+  }, [
+    databaseDoc.guid,
+    active,
+    blobPrefetchComplete,
+    rows,
+    rowOrders,
+    rowOrderRevision,
+    loadRowFromSeed,
+    ensureRow,
+    scheduleFlush,
+    store,
+  ]);
 
   return {
     cachedRowDocs,
