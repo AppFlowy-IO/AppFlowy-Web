@@ -23,6 +23,7 @@ import {
   CreatePageResponse,
   CreateRow,
   DatabaseRelations,
+  DatabaseViewLayout,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadRowDocument,
@@ -357,19 +358,23 @@ function Database(props: Database2Props) {
     return ids;
   }, [doc, activeViewId]);
 
-  const getActiveViewHasConditions = useCallback(() => {
+  const getActiveViewNeedsFullRowData = useCallback(() => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
     const fields = database?.get(YjsDatabaseKey.fields);
+    const isGroupedBoard =
+      Number(view?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Board &&
+      (view?.get(YjsDatabaseKey.groups)?.length ?? 0) > 0;
 
     return (
+      isGroupedBoard ||
       hasEffectiveFilters(view?.get(YjsDatabaseKey.filters), fields) ||
       (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
     );
   }, [doc, activeViewId]);
 
-  const activeViewHasConditions = useSyncExternalStore(
+  const activeViewNeedsFullRowData = useSyncExternalStore(
     useCallback(
       (onStoreChange) => {
         const sharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -394,8 +399,8 @@ function Database(props: Database2Props) {
       },
       [doc, activeViewId]
     ),
-    getActiveViewHasConditions,
-    getActiveViewHasConditions
+    getActiveViewNeedsFullRowData,
+    getActiveViewNeedsFullRowData
   );
 
   const registerRowSync = useCallback(
@@ -634,7 +639,7 @@ function Database(props: Database2Props) {
       return null;
     }
 
-    const forceFullSync = activeViewHasConditions;
+    const forceFullSync = activeViewNeedsFullRowData;
     const prefetchKey = `${databaseId}:${forceFullSync ? 'full' : 'delta'}`;
     const existingPromise = prefetchPromisesRef.current.get(prefetchKey);
 
@@ -680,7 +685,7 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(prefetchKey, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewHasConditions, runBatchPreload]);
+  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewNeedsFullRowData, runBatchPreload]);
 
   useEffect(() => {
     retainDatabaseRowDocSeedCache(currentDatabaseId);

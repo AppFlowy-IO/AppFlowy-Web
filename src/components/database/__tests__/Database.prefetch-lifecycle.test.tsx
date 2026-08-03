@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 
 import { peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
-import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import Database, { Database2Props } from '@/components/database/Database';
 
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
@@ -177,6 +177,28 @@ describe('Database blob prefetch lifecycle', () => {
     mockedPrefetch.mockReset();
     mockedGetCachedRowDoc.mockReturnValue(undefined);
     mockedPrefetch.mockImplementation(() => new Promise(() => undefined));
+  });
+
+  it('requests a complete row seed set for a grouped Board view', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+    const groups = new Y.Array();
+
+    groups.push([new Y.Map()]);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    view?.set(YjsDatabaseKey.groups, groups);
+
+    const { unmount } = render(<Database {...databaseProps(doc)} />);
+
+    await waitFor(() => {
+      expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedPrefetch.mock.calls[0][2]?.forceFullSync).toBe(true);
+
+    unmount();
+    doc.destroy();
   });
 
   it('starts a new prefetch when the Y.Doc instance changes but its guid stays the same', async () => {
