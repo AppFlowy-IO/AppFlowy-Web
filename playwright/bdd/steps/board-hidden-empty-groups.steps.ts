@@ -2,12 +2,12 @@ import { expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
-import { BoardSelectors } from '../../support/selectors';
+import { BoardSelectors, DatabaseViewSelectors } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 
-Given('a Board database is open for hide-empty-group testing', async ({ page, request }) => {
+Given('a Board database is open for group behavior testing', async ({ page, request }) => {
   setupPageErrorHandling(page);
 
   await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
@@ -66,6 +66,20 @@ When('I enable Hide empty groups for the Board', async ({ page }) => {
   await page.keyboard.press('Escape');
 });
 
+Then('Hide empty groups remains enabled for the Board', async ({ page }) => {
+  const { menu, toggleRow, toggleSwitch } = await openBoardGroupSettings(page);
+
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toBeVisible();
+  await expect(toggleRow).toHaveCount(1);
+  await expect(toggleRow).toBeVisible();
+  await expect(toggleSwitch).toHaveCount(1);
+  await expect(toggleSwitch).toBeVisible();
+  await expect(toggleSwitch).toBeChecked();
+
+  await closeBoardGroupSettings(page);
+});
+
 When('I expand the Board Hidden Groups section', async ({ page }) => {
   const toggle = BoardSelectors.hiddenGroupsToggle(page);
 
@@ -104,6 +118,73 @@ Then(
 
 When('I click the hide action for shown Board group {string}', async ({ page }, groupName: string) => {
   await clickExactHiddenGroupAction(page, groupName, 'hide');
+});
+
+When('I open Board Group settings', async ({ page }) => {
+  const { menu } = await openBoardGroupSettings(page);
+
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toBeVisible();
+});
+
+Then('Board Group settings expose no ungrouping action', async ({ page }) => {
+  const menu = boardGroupSettingsMenu(page);
+
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: 'None', exact: true })).toHaveCount(0);
+  await expect(menu.getByRole('menuitem', { name: 'Delete grouping', exact: true })).toHaveCount(0);
+});
+
+Then('Board Group settings show exactly one selected field named {string}', async ({ page }, fieldName: string) => {
+  const menu = boardGroupSettingsMenu(page);
+  const fieldRows = menu.getByTestId('board-group-by-field');
+  const selectedField = fieldRows.filter({
+    has: page.getByTestId('board-group-by-field-name').getByText(fieldName, { exact: true }),
+  });
+
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toBeVisible();
+  await expect(selectedField).toHaveCount(1);
+  await expect(selectedField).toBeVisible();
+  await expect(selectedField.getByTestId('board-group-by-field-selected')).toHaveCount(1);
+  await expect(menu.getByTestId('board-group-by-field-selected')).toHaveCount(1);
+});
+
+When('I close Board Group settings', async ({ page }) => {
+  await closeBoardGroupSettings(page);
+});
+
+When('I add another Board view from the database tab bar', async ({ page }) => {
+  const viewTabs = DatabaseViewSelectors.viewTab(page);
+  const previousTabCount = await viewTabs.count();
+  const previousActiveTabId = await DatabaseViewSelectors.activeViewTab(page).getAttribute('data-testid');
+  const addViewButton = DatabaseViewSelectors.addViewButton(page);
+
+  await expect(addViewButton).toHaveCount(1);
+  await expect(addViewButton).toBeVisible();
+  await addViewButton.click();
+
+  const menu = page.locator('[data-slot="dropdown-menu-content"]:visible');
+  const boardOption = menu.getByRole('menuitem', { name: 'Board', exact: true });
+
+  await expect(menu).toHaveCount(1);
+  await expect(menu).toBeVisible();
+  await expect(boardOption).toHaveCount(1);
+  await expect(boardOption).toBeVisible();
+  await boardOption.click();
+
+  await expect(viewTabs).toHaveCount(previousTabCount + 1);
+  await expect(DatabaseViewSelectors.activeViewTab(page)).toHaveCount(1);
+  await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText('Board');
+  await expect(DatabaseViewSelectors.activeViewTab(page)).not.toHaveAttribute(
+    'data-testid',
+    previousActiveTabId ?? ''
+  );
+  await expect(BoardSelectors.boardContainer(page)).toHaveCount(1);
+  await expect(BoardSelectors.boardContainer(page)).toBeVisible();
+  await expect(BoardSelectors.mainColumns(page)).toHaveCount(1);
+  await expect(BoardSelectors.mainColumns(page)).toBeVisible();
 });
 
 async function expectExactEmptyBoardColumn(page: Page, groupName: string) {
@@ -154,7 +235,18 @@ async function openBoardGroupSettings(page: Page) {
   await groupSettingsTrigger.click();
 
   return {
+    menu: boardGroupSettingsMenu(page),
     toggleRow: page.getByTestId('board-hide-empty-groups-toggle'),
     toggleSwitch: page.getByTestId('board-hide-empty-groups-switch'),
   };
+}
+
+async function closeBoardGroupSettings(page: Page) {
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(boardGroupSettingsMenu(page)).toHaveCount(0);
+}
+
+function boardGroupSettingsMenu(page: Page) {
+  return page.getByTestId('board-group-settings-menu');
 }

@@ -54,6 +54,7 @@ function BoardSettingGroup () {
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent
+          data-testid={'board-group-settings-menu'}
           className={'max-w-[240px] appflowy-scroller overflow-y-auto'}
         >
           {fieldType !== FieldType.Checkbox && (
@@ -95,6 +96,7 @@ function BoardSettingGroup () {
           <DropdownMenuLabel>{t('board.groupBy')}</DropdownMenuLabel>
           {properties.map(property => (
             <DropdownMenuItem
+              data-testid={'board-group-by-field'}
               key={property.id}
               className={'w-full'}
               onSelect={(e) => {
@@ -102,8 +104,8 @@ function BoardSettingGroup () {
                 groupBy(property.id);
               }}
             >
-              <FieldDisplay fieldId={property.id} />
-              {fieldId === property.id && <DropdownMenuItemTick />}
+              <FieldDisplay data-testid={'board-group-by-field-name'} fieldId={property.id} />
+              {fieldId === property.id && <DropdownMenuItemTick data-testid={'board-group-by-field-selected'} />}
 
             </DropdownMenuItem>
           ))}
