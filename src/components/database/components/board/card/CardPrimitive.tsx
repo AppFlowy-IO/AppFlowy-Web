@@ -18,7 +18,13 @@ import { useAIEnabled } from '@/components/app/app.hooks';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { coverOffsetToObjectPosition } from '@/utils/cover';
-import { Log } from '@/utils/log';
+
+const CARD_INTERACTIVE_TARGET_SELECTOR =
+  '.custom-icon, a, button, input, label, select, textarea, [contenteditable]:not([contenteditable="false"]), [role="button"]';
+
+export function isBoardCardInteractiveTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(CARD_INTERACTIVE_TARGET_SELECTOR));
+}
 
 export interface CardProps {
   groupFieldId: string;
@@ -131,33 +137,23 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
     return (
       <div
         onClick={(e) => {
-          if (editing) return;
           const target = e.target as HTMLElement;
 
-          Log.debug('custom-icon', target);
           if (target.closest('.custom-icon')) {
             e.stopPropagation();
             return;
           }
 
+          if (isBoardCardInteractiveTarget(target)) return;
+
+          if (editing) setEditing(false);
           navigateToRow?.(rowId);
-        }}
-        onPointerMove={(e) => {
-          if (editing) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
         }}
         onMouseEnter={() => {
           setHovered(true);
         }}
         onMouseLeave={() => {
           setHovered(false);
-        }}
-        onMouseDown={(e) => {
-          if (editing) {
-            e.preventDefault();
-          }
         }}
         ref={ref}
         data-card-id={dataCardId}

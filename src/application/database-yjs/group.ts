@@ -1,4 +1,5 @@
 import { getCell } from '@/application/database-yjs/const';
+import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
@@ -8,8 +9,12 @@ import {
 } from '@/application/database-yjs/fields';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
-import { Row } from '@/application/database-yjs/selector';
+import type { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
+
+export function areGroupRowsHydrated(rows: Row[], rowMetas: Record<RowId, YDoc>) {
+  return rows.every((row) => hasRowConditionData(rowMetas[row.id]));
+}
 
 export function groupByField(
   rows: Row[],
@@ -79,20 +84,11 @@ export function groupByCheckbox(
   });
 
   rows.forEach((row) => {
-    // If row document isn't loaded yet, default to 'No' group
-    // The card component will trigger loading via ensureRow
-    if (!rowMetas[row.id]) {
-      const defaultGroupName = 'No';
-
-      if (result.has(defaultGroupName)) {
-        const group = result.get(defaultGroupName) ?? [];
-
-        group.push(row);
-        result.set(defaultGroupName, group);
-      }
-
-      return;
-    }
+    // Rendering an unloaded row in a guessed group lets hydration move its
+    // card between columns during a pointer gesture. The board hydrates group
+    // rows in the background, so only expose a row once its real value is
+    // available.
+    if (!hasRowConditionData(rowMetas[row.id])) return;
 
     const cell = getCell(row.id, fieldId, rowMetas);
     const cellData = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
@@ -157,18 +153,9 @@ export function groupBySelectOption(
   });
 
   rows.forEach((row) => {
-    // If row document isn't loaded yet, put in "No Status" group (fieldId)
-    // The card component will trigger loading via ensureRow
-    if (!rowMetas[row.id]) {
-      if (result.has(fieldId)) {
-        const group = result.get(fieldId) ?? [];
-
-        group.push(row);
-        result.set(fieldId, group);
-      }
-
-      return;
-    }
+    // Do not guess "No Status" for an unloaded row. Moving that row after
+    // hydration can unmount a card between pointer-down and click.
+    if (!hasRowConditionData(rowMetas[row.id])) return;
 
     const cell = getCell(row.id, fieldId, rowMetas);
     const cellData = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;

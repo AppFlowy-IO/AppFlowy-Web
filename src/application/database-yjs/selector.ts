@@ -33,7 +33,7 @@ import {
   hasEffectiveFilters,
   parseFilter,
 } from '@/application/database-yjs/filter';
-import { getGroupColumns, groupByField } from '@/application/database-yjs/group';
+import { areGroupRowsHydrated, getGroupColumns, groupByField } from '@/application/database-yjs/group';
 import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
 import {
   invalidateRelationCell,
@@ -1070,8 +1070,9 @@ export function useBoardLayoutSettings() {
 
     const observerEvent = () => {
       const layoutSetting = view.get(YjsDatabaseKey.layout_settings)?.get('1');
+      const collapseHiddenGroups = layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups);
 
-      setIsCollapsed(Boolean(layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups)));
+      setIsCollapsed(collapseHiddenGroups === undefined ? true : Boolean(collapseHiddenGroups));
       setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
       setHideEmptyGroups(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_empty_groups)));
     };
@@ -1140,6 +1141,18 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
+  const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
+  const groupingRows = useMemo(() => {
+    const next = { ...cachedRowDocs };
+
+    Object.entries(rows ?? {}).forEach(([rowId, rowDoc]) => {
+      if (hasRowConditionData(rowDoc) || !next[rowId]) {
+        next[rowId] = rowDoc;
+      }
+    });
+
+    return next;
+  }, [cachedRowDocs, rows]);
 
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
@@ -1150,7 +1163,11 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
   const { hideEmptyGroups, hideUnGroup } = useBoardLayoutSettings();
 
   useEffect(() => {
-    if (!fieldId || !rowOrders || !rows) return;
+    if (!fieldId || !rowOrders) {
+      setGroupResult(new Map());
+      setGroupRowsReady(false);
+      return;
+    }
 
     const onConditionsChange = () => {
       const newResult = new Map<string, Row[]>();
@@ -1164,6 +1181,8 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
         return;
       }
 
+      setNotFound(false);
+
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
       if (![FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType)) {
@@ -1175,7 +1194,7 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
 
       const filter = filters?.toArray().find((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
 
-      const groupResult = groupByField(rowOrders, rows, field, filter);
+      const groupResult = groupByField(rowOrders, groupingRows, field, filter);
 
       if (!groupResult) {
         setGroupResult(newResult);
@@ -1184,7 +1203,7 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
       }
 
       setGroupResult(groupResult);
-      setGroupRowsReady(true);
+      setGroupRowsReady(areGroupRowsHydrated(rowOrders, groupingRows));
     };
 
     onConditionsChange();
@@ -1198,7 +1217,7 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
       debouncedConditionsChange();
     };
 
-    Object.values(rows).forEach((row) => {
+    Object.values(groupingRows).forEach((row) => {
       row.getMap(YjsEditorKey.data_section).observeDeep(observerRowsEvent);
     });
     return () => {
@@ -1206,11 +1225,11 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
 
       fields.unobserveDeep(onConditionsChange);
       filters?.unobserveDeep(onConditionsChange);
-      Object.values(rows).forEach((row) => {
+      Object.values(groupingRows).forEach((row) => {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [fieldId, fields, rowOrders, rows, filters]);
+  }, [fieldId, fields, rowOrders, groupingRows, filters]);
 
   const visibleColumns = useMemo(
     () =>

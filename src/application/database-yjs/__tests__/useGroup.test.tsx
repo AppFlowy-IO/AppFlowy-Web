@@ -9,7 +9,7 @@ import {
   useBoardLayoutSettings,
   useGroup,
 } from '@/application/database-yjs';
-import { useToggleHideEmptyGroups } from '@/application/database-yjs/dispatch';
+import { useToggleHiddenGroupColumnDispatch, useToggleHideEmptyGroups } from '@/application/database-yjs/dispatch';
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -109,6 +109,69 @@ describe('useGroup', () => {
     expect(result.current.columns).toEqual([{ id: fieldId, visible: true }]);
   });
 
+  it('materializes fallback columns before persisting their visibility', async () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const optionId = 'option-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+    const fields = database.get(YjsDatabaseKey.fields) as Y.Map<Y.Map<unknown>>;
+    const field = fields.get(fieldId)!;
+    const typeOptions = new Y.Map();
+    const selectOptions = new Y.Map();
+
+    field.set(YjsDatabaseKey.type_option, typeOptions);
+    typeOptions.set(String(FieldType.SingleSelect), selectOptions);
+    selectOptions.set(
+      YjsDatabaseKey.content,
+      JSON.stringify({
+        disable_color: false,
+        options: [{ id: optionId, name: 'Option', color: 0 }],
+      })
+    );
+
+    const expectedColumns = [
+      { id: fieldId, visible: true },
+      { id: optionId, visible: true },
+    ];
+    const { result } = renderHook(
+      () => ({
+        group: useGroup(groupId),
+        toggleHidden: useToggleHiddenGroupColumnDispatch(groupId, fieldId),
+      }),
+      {
+        wrapper: createWrapper(databaseDoc, viewId),
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current.group.columns).toEqual(expectedColumns);
+    });
+
+    expect(() => {
+      act(() => {
+        result.current.toggleHidden(optionId, false);
+      });
+    }).not.toThrow();
+
+    await waitFor(() => {
+      expect(result.current.group.columns).toEqual(expectedColumns);
+    });
+
+    const views = database.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const view = views.get(viewId);
+    const groups = view?.get(YjsDatabaseKey.groups) as Y.Array<Y.Map<unknown>>;
+    const persistedColumns = groups.get(0).get(YjsDatabaseKey.groups) as Y.Array<unknown>;
+
+    expect(persistedColumns.toJSON()).toEqual(expectedColumns);
+  });
+
   it('normalizes Y.Map group columns from persisted collab data', async () => {
     const fieldId = 'field-id';
     const groupId = 'group-id';
@@ -135,6 +198,35 @@ describe('useGroup', () => {
     });
 
     expect(result.current.columns).toEqual([{ id: optionId, visible: false }]);
+  });
+
+  it('keeps Hidden Groups collapsed when the collapse setting is absent', async () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: fieldId, visible: true }],
+      viewId,
+    });
+    const view = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId);
+
+    view?.get(YjsDatabaseKey.layout_settings)?.get('1')?.set(YjsDatabaseKey.hide_ungrouped_column, true);
+
+    const { result } = renderHook(() => useBoardLayoutSettings(), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    await waitFor(() => {
+      expect(result.current.hideUnGroup).toBe(true);
+    });
+
+    expect(result.current.isCollapsed).toBe(true);
   });
 
   it('persists and observes the shared hide empty groups Board setting', async () => {

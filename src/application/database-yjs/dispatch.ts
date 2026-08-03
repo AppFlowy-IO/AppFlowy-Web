@@ -48,6 +48,7 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
+import { getGroupColumns } from '@/application/database-yjs/group';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
@@ -414,6 +415,7 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
 
 export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: string) {
   const view = useDatabaseView();
+  const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
@@ -444,23 +446,56 @@ export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: str
               throw new Error('Group columns not found');
             }
 
-            const index = columns.toArray().findIndex((column) => column.id === columnId);
-            const column = columns.toArray().find((column) => column.id === columnId);
+            const getColumnId = (column: unknown) => {
+              if (column instanceof Y.Map) {
+                return column.get(YjsDatabaseKey.id);
+              }
+
+              return (column as { id?: string } | undefined)?.id;
+            };
+
+            let index = columns.toArray().findIndex((column) => getColumnId(column) === columnId);
+
+            if (index === -1) {
+              const field = fields?.get(fieldId);
+              const fallbackColumns = field ? getGroupColumns(field) ?? [] : [];
+
+              if (!fallbackColumns.some((column) => column.id === columnId)) {
+                throw new Error(`Column with id ${columnId} not found in group ${groupId}`);
+              }
+
+              const existingColumnIds = new Set(columns.toArray().map(getColumnId));
+              const missingColumns = fallbackColumns
+                .filter((column) => !existingColumnIds.has(column.id))
+                .map((column) => ({ ...column, visible: true }));
+
+              if (missingColumns.length > 0) {
+                columns.insert(columns.length, missingColumns);
+              }
+
+              index = columns.toArray().findIndex((column) => getColumnId(column) === columnId);
+            }
+
+            const column = columns.get(index) as { id: string; visible: boolean } | Y.Map<unknown> | undefined;
 
             if (index === -1 || !column) {
               throw new Error(`Column with id ${columnId} not found in group ${groupId}`);
             }
 
-            const newColumn = {
-              ...column,
-              visible: !hidden,
-            };
+            if (column instanceof Y.Map) {
+              column.set(YjsDatabaseKey.visible, !hidden);
+            } else {
+              const newColumn = {
+                ...column,
+                visible: !hidden,
+              };
 
-            columns.delete(index);
+              columns.delete(index);
 
-            columns.insert(index, [newColumn]);
+              columns.insert(index, [newColumn]);
+            }
 
-            if (column.id === fieldId) {
+            if (columnId === fieldId) {
               getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.hide_ungrouped_column, hidden);
             }
           },
@@ -468,7 +503,7 @@ export function useToggleHiddenGroupColumnDispatch(groupId: string, fieldId: str
         'hideGroupColumn'
       );
     },
-    [fieldId, groupId, sharedRoot, view]
+    [fieldId, fields, groupId, sharedRoot, view]
   );
 }
 
