@@ -528,6 +528,56 @@ describe('Database blob prefetch lifecycle', () => {
     canonicalRowDoc.destroy();
   });
 
+  it('retries force sync after a settled request returns an unhydrated row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const unhydratedCanonicalRowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const hydratedCanonicalRowDoc = createHydratedRowDoc('row-id');
+    let forceSyncAttempts = 0;
+    const createRow = jest.fn(async (_rowKey: string, options?: { forceSync?: boolean }) => {
+      if (!options?.forceSync) return unhydratedCanonicalRowDoc;
+
+      forceSyncAttempts += 1;
+      return forceSyncAttempts === 1 ? unhydratedCanonicalRowDoc : hydratedCanonicalRowDoc;
+    });
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+    act(() => {
+      mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    let firstEnsure: YDoc | undefined;
+
+    await act(async () => {
+      firstEnsure = await requestEnsureRow();
+    });
+
+    expect(firstEnsure).toBe(unhydratedCanonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    let secondEnsure: YDoc | undefined;
+
+    await act(async () => {
+      secondEnsure = await requestEnsureRow();
+    });
+
+    expect(secondEnsure).toBe(hydratedCanonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(3);
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    unhydratedCanonicalRowDoc.destroy();
+    hydratedCanonicalRowDoc.destroy();
+  });
+
   it('keeps hydrated snapshot rows local in a read-only database', async () => {
     const doc = createDatabaseDoc('database-id');
     const snapshotRowDoc = createHydratedRowDoc('snapshot-row');

@@ -422,18 +422,32 @@ function Database(props: Database2Props) {
       if (existingRegistration) {
         if (forceSync && existingRegistration.status === 'registered') {
           if (!existingRegistration.forceSyncPromise) {
-            existingRegistration.forceSyncPromise = createRow(rowKey, { forceSync: true })
-              .then((doc) => {
-                if (lifecycleRegistrations.get(rowKey) === existingRegistration) {
-                  existingRegistration.promise = Promise.resolve(doc);
-                }
-
-                return doc;
-              })
+            const forceSyncPromise = createRow(rowKey, { forceSync: true })
               .catch((error) => {
                 console.error('[Database] row sync retry failed', rowKey, error);
                 return undefined;
               });
+
+            existingRegistration.forceSyncPromise = forceSyncPromise;
+            void forceSyncPromise.then((doc) => {
+              if (
+                lifecycleRegistrations.get(rowKey) !== existingRegistration ||
+                existingRegistration.forceSyncPromise !== forceSyncPromise
+              ) {
+                return;
+              }
+
+              if (doc) {
+                existingRegistration.promise = Promise.resolve(doc);
+              }
+
+              // Keep a hydrated canonical result cached so mounted cells do not
+              // emit duplicate manifests. Empty/failed results must remain
+              // retryable: row_orders can arrive before its DatabaseRow collab.
+              if (!hasRowConditionData(doc)) {
+                existingRegistration.forceSyncPromise = undefined;
+              }
+            });
           }
 
           return existingRegistration.forceSyncPromise;
@@ -495,7 +509,7 @@ function Database(props: Database2Props) {
 
       if (registration?.status === 'registered') {
         registration.promise = Promise.resolve(canonicalDoc);
-        registration.forceSyncPromise = registration.promise;
+        registration.forceSyncPromise = hasRowConditionData(canonicalDoc) ? registration.promise : undefined;
       }
     };
 

@@ -223,4 +223,58 @@ describe('useRowsByGroup', () => {
     fixture.existingTodoRowDoc.destroy();
     fixture.databaseDoc.destroy();
   });
+
+  it('does not reuse grouping readiness after the database document is replaced with the same ids', async () => {
+    const fixture = createBoardFixture();
+    const replacement = createBoardFixture();
+    const coldTodoRowDoc = new Y.Doc({ guid: existingTodoRowId }) as YDoc;
+    const coldDoingRowDoc = new Y.Doc({ guid: existingDoingRowId }) as YDoc;
+    const readinessHistory: boolean[] = [];
+    const { result, rerender, unmount } = renderHook(
+      () => {
+        const groupedRows = useRowsByGroup(groupId);
+
+        readinessHistory.push(groupedRows.groupRowsReady);
+        return groupedRows;
+      },
+      { wrapper: fixture.wrapper }
+    );
+
+    await waitFor(() => expect(result.current.groupRowsReady).toBe(true));
+    const transitionStart = readinessHistory.length;
+
+    Object.assign(fixture.contextValue, replacement.contextValue, {
+      rowMap: {
+        [existingTodoRowId]: coldTodoRowDoc,
+        [existingDoingRowId]: coldDoingRowDoc,
+      },
+    });
+    rerender();
+
+    await waitFor(() => expect(result.current.groupRowsReady).toBe(false));
+    expect(readinessHistory.slice(transitionStart)).not.toContain(true);
+    expect(result.current.columns.map(({ id }) => id)).toEqual([statusFieldId, todoId, doingId, doneId]);
+
+    act(() => {
+      Y.applyUpdate(coldTodoRowDoc, Y.encodeStateAsUpdate(replacement.existingTodoRowDoc));
+      Y.applyUpdate(coldDoingRowDoc, Y.encodeStateAsUpdate(replacement.existingDoingRowDoc));
+    });
+
+    await waitFor(() => {
+      expect(result.current.groupRowsReady).toBe(true);
+      expect(result.current.columns.map(({ id }) => id)).toEqual([todoId, doingId]);
+    });
+
+    unmount();
+    coldTodoRowDoc.destroy();
+    coldDoingRowDoc.destroy();
+    replacement.remoteDoingRowDoc.destroy();
+    replacement.existingDoingRowDoc.destroy();
+    replacement.existingTodoRowDoc.destroy();
+    replacement.databaseDoc.destroy();
+    fixture.remoteDoingRowDoc.destroy();
+    fixture.existingDoingRowDoc.destroy();
+    fixture.existingTodoRowDoc.destroy();
+    fixture.databaseDoc.destroy();
+  });
 });

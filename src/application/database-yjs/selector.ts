@@ -1160,6 +1160,7 @@ export function useRowsByGroup(groupId: string) {
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
   const viewId = useDatabaseViewId();
+  const { databaseDoc } = useDatabaseContext();
   const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -1176,11 +1177,14 @@ export function useRowsByGroup(groupId: string) {
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
   const [groupResult, setGroupResult] = useState<Map<string, Row[]>>(new Map());
-  const [hydratedGroupingIdentity, setHydratedGroupingIdentity] = useState<string | null>(null);
+  const [hydratedGroupingIdentity, setHydratedGroupingIdentity] = useState<{
+    databaseDoc: YDoc;
+    groupingKey: string;
+  } | null>(null);
   const view = useDatabaseView();
   const filters = view?.get(YjsDatabaseKey.filters);
   const { hideEmptyGroups, hideUnGroup, shownEmptyGroupIds } = useBoardLayoutSettings();
-  const groupingIdentity = fieldId ? `${viewId ?? ''}:${groupId}:${fieldId}` : null;
+  const groupingKey = fieldId ? `${viewId ?? ''}:${groupId}:${fieldId}` : null;
 
   useEffect(() => {
     if (!fieldId || !rowOrders) {
@@ -1221,8 +1225,12 @@ export function useRowsByGroup(groupId: string) {
       setGroupResult(groupResult);
       const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
 
-      if (rowsHydrated && groupingIdentity) {
-        setHydratedGroupingIdentity(groupingIdentity);
+      if (rowsHydrated && groupingKey) {
+        setHydratedGroupingIdentity((current) =>
+          current?.databaseDoc === databaseDoc && current.groupingKey === groupingKey
+            ? current
+            : { databaseDoc, groupingKey }
+        );
       }
     };
 
@@ -1249,13 +1257,16 @@ export function useRowsByGroup(groupId: string) {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [fieldId, fields, rowOrders, groupingRows, filters, groupingIdentity]);
+  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey]);
 
   // Cold Boards must wait for their first complete grouping before empty
   // columns can be classified safely. Once that baseline exists, a later
   // row_order arriving before its separate DatabaseRow collab must not
   // temporarily disable Hide empty groups for every column.
-  const groupVisibilityReady = groupingIdentity !== null && hydratedGroupingIdentity === groupingIdentity;
+  const groupVisibilityReady =
+    groupingKey !== null &&
+    hydratedGroupingIdentity?.databaseDoc === databaseDoc &&
+    hydratedGroupingIdentity.groupingKey === groupingKey;
 
   const visibleColumns = useMemo(
     () =>
