@@ -45,7 +45,7 @@ jest.mock('@/components/app/header/Users', () => ({
   Users: () => <div data-testid='users' />,
 }));
 
-describe('RightMenu row favorite action', () => {
+describe('RightMenu row-page actions', () => {
   beforeEach(() => {
     mockActiveRowPage = null;
   });
@@ -97,6 +97,27 @@ describe('RightMenu row favorite action', () => {
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('row-document');
   });
 
+  it('hides the share and publish action on a row-page route', () => {
+    mockActiveRowPage = {
+      rowId: 'requested-row',
+      documentId: 'row-document',
+      title: 'Requested row',
+      source: null,
+      hasDocument: false,
+    };
+
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container?r=requested-row']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(screen.queryByTestId('share-button')).toBeNull();
+  });
+
   it('continues targeting the route view outside row-page routes', () => {
     render(
       <MemoryRouter
@@ -108,5 +129,6 @@ describe('RightMenu row favorite action', () => {
     );
 
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(screen.getByTestId('share-button')).toBeTruthy();
   });
 });
