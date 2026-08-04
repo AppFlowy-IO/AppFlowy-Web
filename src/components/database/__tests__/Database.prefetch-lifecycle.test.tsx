@@ -482,6 +482,52 @@ describe('Database blob prefetch lifecycle', () => {
     canonicalRowDoc.destroy();
   });
 
+  it('deduplicates concurrent force sync requests for a registered row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const forceSync = createDeferred<YDoc>();
+    const createRow = jest.fn((_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? forceSync.promise : Promise.resolve(seedShell)
+    );
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    const firstEnsure = requestEnsureRow();
+    const secondEnsure = requestEnsureRow();
+
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(2));
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+
+    let ensuredRows: Array<YDoc | undefined> = [];
+
+    await act(async () => {
+      forceSync.resolve(canonicalRowDoc);
+      ensuredRows = await Promise.all([firstEnsure, secondEnsure]);
+    });
+
+    expect(ensuredRows).toEqual([canonicalRowDoc, canonicalRowDoc]);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    let cachedEnsure: YDoc | undefined;
+
+    await act(async () => {
+      cachedEnsure = await requestEnsureRow();
+    });
+
+    expect(cachedEnsure).toBe(canonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
   it('keeps hydrated snapshot rows local in a read-only database', async () => {
     const doc = createDatabaseDoc('database-id');
     const snapshotRowDoc = createHydratedRowDoc('snapshot-row');

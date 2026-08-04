@@ -66,6 +66,7 @@ type RowSyncRegistration = {
   status: 'pending' | 'registered' | 'release-pending' | 'released';
   cleanup?: (objectId: string, delayMs?: number) => void;
   promise?: Promise<YDoc | undefined>;
+  forceSyncPromise?: Promise<YDoc | undefined>;
 };
 
 function cleanupRegisteredRowSync(registration: RowSyncRegistration) {
@@ -420,10 +421,22 @@ function Database(props: Database2Props) {
 
       if (existingRegistration) {
         if (forceSync && existingRegistration.status === 'registered') {
-          return createRow(rowKey, { forceSync: true }).catch((error) => {
-            console.error('[Database] row sync retry failed', rowKey, error);
-            return undefined;
-          });
+          if (!existingRegistration.forceSyncPromise) {
+            existingRegistration.forceSyncPromise = createRow(rowKey, { forceSync: true })
+              .then((doc) => {
+                if (lifecycleRegistrations.get(rowKey) === existingRegistration) {
+                  existingRegistration.promise = Promise.resolve(doc);
+                }
+
+                return doc;
+              })
+              .catch((error) => {
+                console.error('[Database] row sync retry failed', rowKey, error);
+                return undefined;
+              });
+          }
+
+          return existingRegistration.forceSyncPromise;
         }
 
         return existingRegistration.promise;
@@ -482,6 +495,7 @@ function Database(props: Database2Props) {
 
       if (registration?.status === 'registered') {
         registration.promise = Promise.resolve(canonicalDoc);
+        registration.forceSyncPromise = registration.promise;
       }
     };
 

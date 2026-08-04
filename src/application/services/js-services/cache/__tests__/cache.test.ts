@@ -1,4 +1,9 @@
 import * as Y from 'yjs';
+import {
+  createDatabaseRowDocSeed,
+  invalidateDatabaseRowDocSeedGeneration,
+} from '@/application/database-blob/row-seed-fence';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { expect } from '@jest/globals';
@@ -10,6 +15,7 @@ import {
   getPublishView,
   getPublishViewMeta,
   mergeLegacyRowDocIfExists,
+  openRowDoc,
 } from '@/application/services/js-services/cache';
 import { applyYDoc } from '@/application/ydoc/apply';
 import {
@@ -328,6 +334,36 @@ describe('database row document cache', () => {
     secondDoc.destroy();
   });
 
+  it('does not apply a row seed invalidated while its canonical doc is opening', async () => {
+    const rowId = 'row-cache-reset-seed';
+    const rowKey = `database-cache-reset-seed_rows_${rowId}`;
+    const canonicalDoc = createRowDoc(rowId, 'database-cache-reset-seed', {});
+    const provider = {
+      synced: true,
+      destroy: jest.fn().mockResolvedValue(undefined),
+    };
+    const seed = createDatabaseRowDocSeed(rowId, {
+      bytes: new Uint8Array([1, 2, 3]),
+      encoderVersion: 1,
+    });
+    let resolveOpen!: (value: Awaited<ReturnType<typeof openRowCollabDBWithProvider>>) => void;
+    const pendingOpen = new Promise<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>((resolve) => {
+      resolveOpen = resolve;
+    });
+
+    mockedOpenRowCollabDBWithProvider.mockReturnValueOnce(pendingOpen);
+
+    const opening = openRowDoc(rowKey, seed);
+
+    invalidateDatabaseRowDocSeedGeneration(rowId);
+    resolveOpen({ doc: canonicalDoc, provider } as never);
+
+    await expect(opening).resolves.toBe(canonicalDoc);
+    expect(mockedApplyYDoc).not.toHaveBeenCalled();
+
+    canonicalDoc.destroy();
+  });
+
   it('adopts the canonical row document selected by version reset', () => {
     const rowId = 'row-cache-reset';
     const rowKey = `database-cache-reset_rows_${rowId}`;
@@ -339,6 +375,26 @@ describe('database row document cache', () => {
 
     canonicalDoc.destroy();
     expect(getCachedRowDoc(rowKey)).toBeUndefined();
+  });
+
+  it('normalizes legacy cell field types on a canonical reset document', () => {
+    const rowId = 'row-cache-reset-normalizer';
+    const rowKey = `database-cache-reset-normalizer_rows_${rowId}`;
+    const canonicalDoc = createRowDoc(rowId, 'database-cache-reset-normalizer', { 'field-id': '42' });
+    const row = canonicalDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+    const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+    const cell = cells.get('field-id');
+
+    cell?.set(YjsDatabaseKey.field_type, String(FieldType.RichText));
+    cell?.set(YjsDatabaseKey.source_field_type, FieldType.Number);
+
+    cacheCanonicalRowDoc(rowId, canonicalDoc);
+
+    expect(getCachedRowDoc(rowKey)).toBe(canonicalDoc);
+    expect(cell?.get(YjsDatabaseKey.field_type)).toBe(FieldType.Number);
+    expect(cell?.has(YjsDatabaseKey.source_field_type)).toBe(false);
+
+    canonicalDoc.destroy();
   });
 });
 

@@ -52,4 +52,33 @@ describe('useRowOperations', () => {
     canonicalDoc.destroy();
     staleCachedDoc.destroy();
   });
+
+  it('does not acquire a new row owner when a force rebind misses', async () => {
+    const databaseId = '33333333-3333-4333-8333-333333333333';
+    const rowId = '44444444-4444-4444-8444-444444444444';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const staleCachedDoc = new Y.Doc({ guid: rowId }) as YDoc;
+    const rebindSyncContext = jest.fn(() => undefined);
+    const registerSyncContext = jest.fn();
+
+    jest
+      .mocked(useAuthInternal)
+      .mockReturnValue({ currentWorkspaceId: 'workspace-id' } as ReturnType<typeof useAuthInternal>);
+    jest
+      .mocked(useSyncInternal)
+      .mockReturnValue({ rebindSyncContext, registerSyncContext } as ReturnType<typeof useSyncInternal>);
+    jest.mocked(RowService.create).mockResolvedValue(staleCachedDoc);
+
+    const { result, unmount } = renderHook(() => useRowOperations());
+
+    await expect(result.current.createRow(rowKey, { forceSync: true })).rejects.toThrow(
+      'Cannot rebind row sync while its context is unavailable'
+    );
+    expect(rebindSyncContext).toHaveBeenCalledWith(rowId);
+    expect(RowService.create).not.toHaveBeenCalled();
+    expect(registerSyncContext).not.toHaveBeenCalled();
+
+    unmount();
+    staleCachedDoc.destroy();
+  });
 });

@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { invalidateDatabaseRowDocSeed } from '@/application/database-blob';
 import { APP_EVENTS } from '@/application/constants';
 import {
   openCollabDB,
@@ -21,6 +22,10 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { BroadcastChannelType } from '../useBroadcastChannel';
 import { AppflowyWebSocketType } from '../useAppflowyWebSocket';
 import { useSync } from '../useSync';
+
+jest.mock('@/application/database-blob', () => ({
+  invalidateDatabaseRowDocSeed: jest.fn(),
+}));
 
 jest.mock('@/application/db', () => {
   return {
@@ -237,6 +242,9 @@ const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMe
 const mockedCollabFullSyncBatch = httpApi.collabFullSyncBatch as jest.MockedFunction<typeof httpApi.collabFullSyncBatch>;
 const mockedRevertCollabVersion = httpApi.revertCollabVersion as jest.MockedFunction<typeof httpApi.revertCollabVersion>;
 const mockedUseCurrentUserOptional = useCurrentUserOptional as jest.MockedFunction<typeof useCurrentUserOptional>;
+const mockedInvalidateDatabaseRowDocSeed = invalidateDatabaseRowDocSeed as jest.MockedFunction<
+  typeof invalidateDatabaseRowDocSeed
+>;
 
 const createUser = (workspaceId = 'workspace-from-user'): User => ({
   uid: 'user-1',
@@ -262,6 +270,7 @@ const resetCommonMocks = () => {
   mockedHandleMessage.mockReset();
   mockedCollabFullSyncBatch.mockReset();
   mockedRevertCollabVersion.mockReset();
+  mockedInvalidateDatabaseRowDocSeed.mockReset();
 };
 
 describe('useSync reconnect binding', () => {
@@ -972,6 +981,10 @@ describe('useSync version-gated message handling', () => {
       });
     });
     expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+    expect(mockedInvalidateDatabaseRowDocSeed).toHaveBeenCalledWith(objectId);
+    expect(mockedInvalidateDatabaseRowDocSeed.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedOpenRowCollabDBWithProvider.mock.invocationCallOrder[0]
+    );
     await waitFor(() => {
       expect(emitSpy).toHaveBeenCalledWith(
         APP_EVENTS.COLLAB_DOC_RESET,

@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
+import { invalidateDatabaseRowDocSeed } from '@/application/database-blob';
 import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { cacheCanonicalRowDoc } from '@/application/services/js-services/cache';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -202,6 +203,13 @@ export function useCollabMessageHandler(
             refs.resettingObjectIds.current.add(objectId);
 
             try {
+              if (context.collabType === Types.DatabaseRow) {
+                // Blob snapshots and seed-derived docs predate this reset. Fence
+                // the row before awaiting teardown so mounted cell loaders cannot
+                // observe or merge that stale state into the replacement doc.
+                invalidateDatabaseRowDocSeed(objectId);
+              }
+
               // Discard and destroy live inside the try so a rejection
               // (e.g. IDB blocked/closing) still runs the finally that
               // clears `resettingObjectIds`. Without this, a failed discard

@@ -1,5 +1,9 @@
 import * as Y from 'yjs';
 
+import {
+  type DatabaseRowDocSeed,
+  isDatabaseRowDocSeedCurrent,
+} from '@/application/database-blob/row-seed-fence';
 import { installLegacyCellFieldTypeNormalizer } from '@/application/database-yjs/cell.field-type';
 import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
@@ -504,6 +508,7 @@ function storeRowDocEntry(rowObjectId: string, entry: RowDocEntry) {
 
 /** Keep RowService consumers on the document selected by sync version reset. */
 export function cacheCanonicalRowDoc(rowId: string, doc: YDoc) {
+  installLegacyCellFieldTypeNormalizer(doc);
   storeRowDocEntry(getRowObjectId(rowId), {
     doc,
     whenSynced: Promise.resolve(),
@@ -860,7 +865,7 @@ export async function createRow(rowKey: string) {
   return entry.doc;
 }
 
-export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; encoderVersion: number }) {
+export async function openRowDoc(rowKey: string, seed?: DatabaseRowDocSeed) {
   Log.debug('[Database] createRowDocFast start', {
     rowKey,
     hasSeed: Boolean(seed),
@@ -873,7 +878,7 @@ export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; enc
   const rowSharedRootBefore = entry.doc.getMap(YjsEditorKey.data_section);
   const hasRowDataBefore = rowSharedRootBefore.has(YjsEditorKey.database_row);
 
-  if (seed && !hasAppliedSeed(entry.doc, seed.bytes)) {
+  if (seed && isDatabaseRowDocSeedCurrent(seed) && !hasAppliedSeed(entry.doc, seed.bytes)) {
     Log.debug('[Database] createRowDocFast applying seed', {
       rowKey,
       seedBytes: seed.bytes.length,

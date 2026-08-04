@@ -26,10 +26,20 @@ export function useRowOperations() {
         // on the canonical context; registering it again would leak a ref count.
         const rowId = rowKey.split('_rows_')[1];
 
-        if (options?.forceSync && rowId) {
+        if (options?.forceSync) {
+          if (!rowId) {
+            throw new Error('Failed to create row doc');
+          }
+
           const canonicalDoc = rebindSyncContext(rowId);
 
           if (canonicalDoc) return canonicalDoc;
+
+          // Force sync is a rebind of an existing owner, never an acquisition.
+          // During a version reset the old context has already been destroyed
+          // and its replacement may still be opening; falling through here
+          // would register a second owner that this Database never releases.
+          throw new Error('Cannot rebind row sync while its context is unavailable');
         }
 
         const doc = await RowService.create(rowKey);
