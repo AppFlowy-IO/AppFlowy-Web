@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { cacheCanonicalRowDoc } from '@/application/services/js-services/cache';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
@@ -189,6 +190,7 @@ export function useCollabMessageHandler(
             messageHandled = handleOnActiveContext();
           } else {
             const hadPendingDeferredCleanup = refs.pendingCleanups.current.has(previousDoc.guid);
+            const ownerCount = Math.max(1, refs.contextRefCounts.current.get(objectId) ?? 0);
             const previousDocSnapshot = Y.encodeStateAsUpdate(previousDoc);
 
             // Tear down the currently active doc first to stop stale edits from being
@@ -221,6 +223,7 @@ export function useCollabMessageHandler(
                 registerSyncContext,
                 scheduleDeferredCleanup,
                 hadPendingDeferredCleanup,
+                ownerCount,
                 isExternalRevert: true,
                 openDoc: async () => {
                   let nextDoc: YDoc & SyncDocMeta;
@@ -290,6 +293,10 @@ export function useCollabMessageHandler(
                   return nextDoc;
                 },
               });
+
+              if (localContext.collabType === Types.DatabaseRow) {
+                cacheCanonicalRowDoc(objectId, context.doc);
+              }
             } finally {
               // If discard threw before destroy fired, the doc.on('destroy')
               // handler never consumed this flag — clean it up defensively so

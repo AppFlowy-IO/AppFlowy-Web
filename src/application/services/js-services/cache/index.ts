@@ -488,6 +488,28 @@ function getRowObjectId(rowKey: string) {
   return rowObjectId || rowKey;
 }
 
+function storeRowDocEntry(rowObjectId: string, entry: RowDocEntry) {
+  const existing = rowDocs.get(rowObjectId);
+
+  if (existing?.doc === entry.doc) return existing;
+
+  rowDocs.set(rowObjectId, entry);
+  entry.doc.on('destroy', () => {
+    if (rowDocs.get(rowObjectId) === entry) {
+      rowDocs.delete(rowObjectId);
+    }
+  });
+  return entry;
+}
+
+/** Keep RowService consumers on the document selected by sync version reset. */
+export function cacheCanonicalRowDoc(rowId: string, doc: YDoc) {
+  storeRowDocEntry(getRowObjectId(rowId), {
+    doc,
+    whenSynced: Promise.resolve(),
+  });
+}
+
 function hasDatabaseRow(doc: YDoc) {
   return doc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.database_row);
 }
@@ -766,13 +788,7 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
       return raceWinner;
     }
 
-    rowDocs.set(rowObjectId, entry);
-    entry.doc.on('destroy', () => {
-      if (rowDocs.get(rowObjectId) === entry) {
-        rowDocs.delete(rowObjectId);
-      }
-    });
-    return entry;
+    return storeRowDocEntry(rowObjectId, entry);
   })();
 
   pendingRowDocEntries.set(rowObjectId, promise);

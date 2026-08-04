@@ -12,6 +12,7 @@ import {
   collabIndexedDBExists,
 } from '@/application/db';
 import * as httpApi from '@/application/services/js-services/http/http_api';
+import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { handleMessage, type SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, User, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -947,6 +948,7 @@ describe('useSync version-gated message handling', () => {
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
     });
 
     act(() => {
@@ -973,6 +975,15 @@ describe('useSync version-gated message handling', () => {
         expect.objectContaining({ objectId, doc: nextDoc })
       );
     });
+    expect(getCachedRowDoc(`database-id_rows_${objectId}`)).toBe(nextDoc);
+
+    act(() => {
+      result.current.scheduleDeferredCleanup(objectId, 0);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(result.current.rebindSyncContext(objectId)).toBe(nextDoc);
 
     unmount();
     doc.destroy();

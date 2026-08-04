@@ -3,6 +3,7 @@ import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { expect } from '@jest/globals';
 import {
+  cacheCanonicalRowDoc,
   collabTypeToDBType,
   createRow,
   getCachedRowDoc,
@@ -325,6 +326,19 @@ describe('database row document cache', () => {
     expect(mockedOpenRowCollabDBWithProvider).toHaveBeenCalledTimes(2);
 
     secondDoc.destroy();
+  });
+
+  it('adopts the canonical row document selected by version reset', () => {
+    const rowId = 'row-cache-reset';
+    const rowKey = `database-cache-reset_rows_${rowId}`;
+    const canonicalDoc = createRowDoc(rowId, 'database-cache-reset', {});
+
+    cacheCanonicalRowDoc(rowId, canonicalDoc);
+
+    expect(getCachedRowDoc(rowKey)).toBe(canonicalDoc);
+
+    canonicalDoc.destroy();
+    expect(getCachedRowDoc(rowKey)).toBeUndefined();
   });
 });
 
