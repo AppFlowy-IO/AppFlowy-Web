@@ -61,7 +61,7 @@ function RightMenu() {
   return (
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
-      {actionViewId && !hasRowPageRoute ? <ShareButton viewId={actionViewId} /> : null}
+      {actionViewId ? <ShareButton viewId={actionViewId} disablePublish={hasRowPageRoute} /> : null}
       {favoriteViewId && (
         <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
       )}

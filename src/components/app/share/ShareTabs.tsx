@@ -25,11 +25,13 @@ enum TabKey {
 function ShareTabs({
   opened,
   viewId,
+  disablePublish = false,
   onClose,
   onOpenPublishManage,
 }: {
   opened: boolean;
   viewId: string;
+  disablePublish?: boolean;
   onClose: () => void;
   onOpenPublishManage?: () => void;
 }) {
@@ -100,6 +102,7 @@ function ShareTabs({
               className={'flex flex-row items-center justify-center gap-3 px-1.5 pb-1.5'}
               key={option.value}
               value={option.value}
+              disabled={disablePublish && option.value === TabKey.PUBLISH}
               data-testid={option.value === TabKey.PUBLISH ? 'publish-tab' : undefined}
             >
               {option.icon}
