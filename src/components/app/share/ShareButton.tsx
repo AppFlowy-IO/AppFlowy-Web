@@ -16,6 +16,7 @@ export function ShareButton({ viewId, hidePublish = false }: { viewId: string; h
   const layout = view?.layout;
   const [opened, setOpened] = React.useState(false);
   const [publishManageOpen, setPublishManageOpen] = React.useState(false);
+  const publishManageVisible = publishManageOpen && !hidePublish;
 
   if (layout === ViewLayout.AIChat) return null;
 
@@ -49,7 +50,7 @@ export function ShareButton({ viewId, hidePublish = false }: { viewId: string; h
       </Popover>
       <NormalModal
         data-testid='publish-manage-modal'
-        open={publishManageOpen}
+        open={publishManageVisible}
         onClose={() => setPublishManageOpen(false)}
         scroll='paper'
         overflowHidden

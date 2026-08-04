@@ -38,6 +38,7 @@ function ShareTabs({
   const { t } = useTranslation();
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
+  const activeValue = hidePublish && value === TabKey.PUBLISH ? TabKey.SHARE : value;
   const currentUser = useCurrentUser();
   const {
     people,
@@ -96,7 +97,7 @@ function ShareTabs({
   }, [opened]);
 
   return (
-    <Tabs value={value} className='gap-0' onValueChange={(newValue) => setValue(newValue as TabKey)}>
+    <Tabs value={activeValue} className='gap-0' onValueChange={(newValue) => setValue(newValue as TabKey)}>
       <TabsList className={'flex w-full items-center justify-start px-3 pt-3'}>
         {opened &&
           options.map((option) => (

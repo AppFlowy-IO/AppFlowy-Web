@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 import ShareTabs from '@/components/app/share/ShareTabs';
 
@@ -63,5 +63,17 @@ describe('ShareTabs publish availability', () => {
     renderShareTabs(false);
 
     expect(screen.getByTestId('publish-tab')).toBeTruthy();
+  });
+
+  it('falls back to Share when Publish is removed after being selected', () => {
+    const { rerender } = renderShareTabs(false);
+
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+    expect(screen.getByTestId('publish-panel')).toBeTruthy();
+
+    rerender(<ShareTabs opened viewId='database-view' hidePublish onClose={() => undefined} />);
+
+    expect(screen.queryByTestId('publish-tab')).toBeNull();
+    expect(screen.getByTestId('share-panel')).toBeTruthy();
   });
 });
