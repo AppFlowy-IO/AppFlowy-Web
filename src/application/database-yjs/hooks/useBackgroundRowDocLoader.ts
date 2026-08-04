@@ -11,13 +11,13 @@ import * as Y from 'yjs';
 
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
+import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openRowCollabDBWithProvider } from '@/application/db';
 import { YDatabaseRowOrders, YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
 const BACKGROUND_CONCURRENCY = 12;
-const BACKGROUND_RETRY_DELAYS_MS = [1_000, 3_000, 5_000] as const;
 const SEED_HYDRATE_BATCH_SIZE = 128;
 
 type RowDocMap = Record<string, YDoc>;
@@ -72,11 +72,16 @@ async function openLegacyReadOnlyRowDoc(rowKey: string) {
     const updates = await getAllStoreValues<Uint8Array>(db, 'updates');
     const doc = new Y.Doc({ guid: rowKey }) as YDoc;
 
-    Y.transact(doc, () => {
-      updates.forEach((update) => {
-        Y.applyUpdate(doc, update);
-      });
-    }, null, false);
+    Y.transact(
+      doc,
+      () => {
+        updates.forEach((update) => {
+          Y.applyUpdate(doc, update);
+        });
+      },
+      null,
+      false
+    );
 
     return doc;
   } finally {
@@ -106,11 +111,13 @@ function openEphemeralRowDoc(rowKey: string, rowId: string) {
   const promise = openReadOnlyRowDoc(rowKey, rowId);
 
   pendingEphemeralRowDocs.set(pendingKey, promise);
-  promise.finally(() => {
-    if (pendingEphemeralRowDocs.get(pendingKey) === promise) {
-      pendingEphemeralRowDocs.delete(pendingKey);
-    }
-  }).catch(() => undefined);
+  promise
+    .finally(() => {
+      if (pendingEphemeralRowDocs.get(pendingKey) === promise) {
+        pendingEphemeralRowDocs.delete(pendingKey);
+      }
+    })
+    .catch(() => undefined);
 
   return promise;
 }
@@ -268,14 +275,8 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
-  const {
-    databaseDoc,
-    ensureRow,
-    loadRowFromSeed,
-    peekRowDocFromSeed,
-    blobPrefetchComplete,
-    seedsReady,
-  } = useDatabaseContext();
+  const { databaseDoc, ensureRow, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } =
+    useDatabaseContext();
   const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
@@ -525,12 +526,12 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
 
       const attempt = retryAttempts.get(rowId) ?? 0;
 
-      if (attempt >= BACKGROUND_RETRY_DELAYS_MS.length) {
+      if (attempt >= ROW_SYNC_RETRY_DELAYS_MS.length) {
         retryAttempts.delete(rowId);
         return;
       }
 
-      const delayMs = BACKGROUND_RETRY_DELAYS_MS[attempt];
+      const delayMs = ROW_SYNC_RETRY_DELAYS_MS[attempt];
 
       retryAttempts.set(rowId, attempt + 1);
       await new Promise((resolve) => setTimeout(resolve, delayMs));

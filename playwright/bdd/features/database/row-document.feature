@@ -18,6 +18,15 @@ Feature: Database row document
     And I close the card row page
     Then the other web client shows exactly one row document icon for the card
 
+  Scenario: A newly ordered card reconciles its row document metadata without reload
+    Given a board database is open before the synchronized card is created
+    And another web client opens the Board before the synchronized card is created
+    When I create the synchronized card
+    Then the other web client shows no row document icon for the card
+    When I add image link "https://example.com/newly-ordered-row-page-image.png" to the card row page
+    And I close the card row page
+    Then the other web client shows exactly one row document icon for the card
+
   Scenario: Duplicating an inline grid block in a row page creates an independent database
     Given a grid database is open for row-page inline grid duplication
     When I open the first row as a full row page

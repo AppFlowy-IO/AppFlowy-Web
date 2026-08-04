@@ -68,6 +68,20 @@ Given('a board database with a card is open', async ({ page, request }) => {
   await expect(cardByName(page, currentCardName)).toBeVisible({ timeout: 15000 });
 });
 
+Given('a board database is open before the synchronized card is created', async ({ page, request }) => {
+  const currentCardName = `NewRemoteCard-${uuidv4().slice(0, 6)}`;
+
+  cardNamesByPage.set(page, currentCardName);
+
+  await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
+    createWaitMs: 7000,
+    verify: async (p) => {
+      await expect(BoardSelectors.boardContainer(p)).toHaveCount(1, { timeout: 15000 });
+      await expect(BoardSelectors.boardContainer(p)).toBeVisible({ timeout: 15000 });
+    },
+  });
+});
+
 Given('another web client opens the same card Board', async ({ page, browser }) => {
   const currentCardName = getCurrentCardName(page);
   const context = await browser.newContext({
@@ -82,8 +96,32 @@ Given('another web client opens the same card Board', async ({ page, browser }) 
 
   await secondPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
   await expect(BoardSelectors.boardContainer(secondPage)).toHaveCount(1, { timeout: 30000 });
-  await expect(cardByName(secondPage, currentCardName)).toHaveCount(1, { timeout: 30000 });
+  await expect(cardsByName(secondPage, currentCardName)).toHaveCount(1, { timeout: 30000 });
   await expect(cardByName(secondPage, currentCardName)).toBeVisible({ timeout: 30000 });
+});
+
+Given('another web client opens the Board before the synchronized card is created', async ({ page, browser }) => {
+  const context = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: await page.context().storageState({ indexedDB: true }),
+    viewport: { width: 1440, height: 900 },
+  });
+  const secondPage = await context.newPage();
+
+  secondCardClientByPage.set(page, { context, page: secondPage });
+  setupPageErrorHandling(secondPage);
+
+  await secondPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+  await expect(BoardSelectors.boardContainer(secondPage)).toHaveCount(1, { timeout: 30000 });
+  await expect(BoardSelectors.boardContainer(secondPage)).toBeVisible({ timeout: 30000 });
+});
+
+When('I create the synchronized card', async ({ page }) => {
+  const currentCardName = getCurrentCardName(page);
+
+  await addNewCard(page, currentCardName);
+  await expect(cardsByName(page, currentCardName)).toHaveCount(1, { timeout: 15000 });
+  await expect(cardByName(page, currentCardName)).toBeVisible({ timeout: 15000 });
 });
 
 When('I add image link {string} to the card row page', async ({ page }, imageUrl: string) => {
@@ -150,9 +188,10 @@ Then('the other web client shows no row document icon for the card', async ({ pa
     throw new Error('Expected another web client to have opened the Board');
   }
 
-  const card = cardByName(secondPage, currentCardName);
+  const cards = cardsByName(secondPage, currentCardName);
+  const card = cards.first();
 
-  await expect(card).toHaveCount(1, { timeout: 30000 });
+  await expect(cards).toHaveCount(1, { timeout: 30000 });
   await expect(card).toBeVisible({ timeout: 30000 });
   await expect(card.locator('[data-testid^="row-document-icon-"]')).toHaveCount(0);
 });
@@ -165,10 +204,11 @@ Then('the other web client shows exactly one row document icon for the card', as
     throw new Error('Expected another web client to have opened the Board');
   }
 
-  const card = cardByName(secondPage, currentCardName);
+  const cards = cardsByName(secondPage, currentCardName);
+  const card = cards.first();
   const documentIcon = card.locator('[data-testid^="row-document-icon-"]');
 
-  await expect(card).toHaveCount(1, { timeout: 30000 });
+  await expect(cards).toHaveCount(1, { timeout: 30000 });
   await expect(card).toBeVisible({ timeout: 30000 });
   await expect(documentIcon).toHaveCount(1, { timeout: 30000 });
   await expect(documentIcon).toBeVisible({ timeout: 30000 });
@@ -370,7 +410,11 @@ async function focusRowDocumentEditor(page: Page) {
 }
 
 function cardByName(page: Page, cardName: string) {
-  return BoardSelectors.boardContainer(page).locator('.board-card').filter({ hasText: cardName }).first();
+  return cardsByName(page, cardName).first();
+}
+
+function cardsByName(page: Page, cardName: string) {
+  return BoardSelectors.boardContainer(page).locator('.board-card').filter({ hasText: cardName });
 }
 
 function getCurrentCardName(page: Page) {

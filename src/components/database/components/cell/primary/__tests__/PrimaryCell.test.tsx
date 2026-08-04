@@ -53,17 +53,20 @@ function renderPrimaryCell(rowDoc: YDoc, ensureRow?: DatabaseContextState['ensur
 describe('PrimaryCell', () => {
   it('shows the row document icon when non-empty metadata arrives remotely', async () => {
     const localRowDoc = new Y.Doc() as YDoc;
+    const localRoot = localRowDoc.getMap(YjsEditorKey.data_section);
     const remoteRowDoc = new Y.Doc();
     const remoteRoot = remoteRowDoc.getMap(YjsEditorKey.data_section);
     const remoteMeta = new Y.Map<unknown>();
     const isDocumentEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty);
 
     expect(isDocumentEmptyKey).toBeDefined();
+    localRoot.set(YjsEditorKey.database_row, new Y.Map());
     remoteMeta.set(isDocumentEmptyKey as string, false);
     remoteRoot.set(YjsEditorKey.meta, remoteMeta);
 
     renderPrimaryCell(localRowDoc);
 
+    expect(screen.getByText('Row title')).toBeTruthy();
     expect(screen.queryByTestId(`row-document-icon-${rowId}`)).toBeNull();
 
     act(() => {

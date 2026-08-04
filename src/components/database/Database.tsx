@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
+import { APP_EVENTS } from '@/application/constants';
 import {
   getDatabaseRowDocFromSeed,
   peekDatabaseRowDocSeed,
@@ -9,9 +10,9 @@ import {
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
-import { APP_EVENTS } from '@/application/constants';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
+import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -64,9 +65,12 @@ function createDeferredGate() {
 type RowSyncRegistration = {
   rowKey: string;
   status: 'pending' | 'registered' | 'release-pending' | 'released';
+  revision: number;
   cleanup?: (objectId: string, delayMs?: number) => void;
   promise?: Promise<YDoc | undefined>;
   forceSyncPromise?: Promise<YDoc | undefined>;
+  forceSyncedDoc?: YDoc;
+  reconciliationPromise?: Promise<void>;
 };
 
 function cleanupRegisteredRowSync(registration: RowSyncRegistration) {
@@ -82,6 +86,8 @@ function cleanupRegisteredRowSync(registration: RowSyncRegistration) {
 }
 
 function releaseRowSyncRegistration(registration: RowSyncRegistration) {
+  registration.revision += 1;
+
   if (registration.status === 'pending') {
     // createRow registers the sync context before resolving. Defer the matching
     // release until that async registration has actually completed.
@@ -258,6 +264,7 @@ function Database(props: Database2Props) {
   const blobPrefetchPromiseRef = useRef<Promise<void> | null>(null);
   const localCachePrimedRef = useRef(false);
   const rowSyncRegistrationsRef = useRef<Map<string, RowSyncRegistration>>(new Map());
+  const remoteRowsNeedingReconciliationRef = useRef<Set<RowId>>(new Set());
   const batchPreloadDoneRef = useRef(false);
   // Async blob work is scoped to one workspace/database lifecycle. A later
   // generation makes completions from the previous lifecycle inert.
@@ -407,7 +414,7 @@ function Database(props: Database2Props) {
   );
 
   const registerRowSync = useCallback(
-    (rowKey: string, forceSync = false) => {
+    (rowKey: string, forceSync = false, refreshForceSync = false) => {
       if (!createRow) {
         return;
       }
@@ -421,32 +428,33 @@ function Database(props: Database2Props) {
 
       if (existingRegistration) {
         if (forceSync && existingRegistration.status === 'registered') {
+          if (!refreshForceSync && existingRegistration.forceSyncedDoc) {
+            return Promise.resolve(existingRegistration.forceSyncedDoc);
+          }
+
           if (!existingRegistration.forceSyncPromise) {
-            const forceSyncPromise = createRow(rowKey, { forceSync: true })
-              .catch((error) => {
-                console.error('[Database] row sync retry failed', rowKey, error);
-                return undefined;
-              });
+            const registrationRevision = existingRegistration.revision;
+            const forceSyncPromise = createRow(rowKey, { forceSync: true }).catch((error) => {
+              console.error('[Database] row sync retry failed', rowKey, error);
+              return undefined;
+            });
 
             existingRegistration.forceSyncPromise = forceSyncPromise;
             void forceSyncPromise.then((doc) => {
               if (
                 lifecycleRegistrations.get(rowKey) !== existingRegistration ||
-                existingRegistration.forceSyncPromise !== forceSyncPromise
+                existingRegistration.forceSyncPromise !== forceSyncPromise ||
+                existingRegistration.revision !== registrationRevision
               ) {
                 return;
               }
 
               if (doc) {
                 existingRegistration.promise = Promise.resolve(doc);
+                existingRegistration.forceSyncedDoc = hasRowConditionData(doc) ? doc : undefined;
               }
 
-              // Keep a hydrated canonical result cached so mounted cells do not
-              // emit duplicate manifests. Empty/failed results must remain
-              // retryable: row_orders can arrive before its DatabaseRow collab.
-              if (!hasRowConditionData(doc)) {
-                existingRegistration.forceSyncPromise = undefined;
-              }
+              existingRegistration.forceSyncPromise = undefined;
             });
           }
 
@@ -459,6 +467,7 @@ function Database(props: Database2Props) {
       const registration: RowSyncRegistration = {
         rowKey,
         status: 'pending',
+        revision: 0,
         cleanup: props.scheduleDeferredCleanup,
       };
 
@@ -487,6 +496,64 @@ function Database(props: Database2Props) {
     [createRow, databaseLifecycleIdentity, props.scheduleDeferredCleanup]
   );
 
+  const scheduleRowSyncReconciliation = useCallback(
+    (rowId: string) => {
+      const lifecycleReconciliationRows = remoteRowsNeedingReconciliationRef.current;
+
+      if (!lifecycleReconciliationRows.has(rowId)) return;
+      if (activeDatabaseLifecycleRef.current !== databaseLifecycleIdentity) return;
+
+      const rowKey = getRowKey(getDatabaseId(), rowId);
+      const registrations = rowSyncRegistrationsRef.current;
+      const registration = registrations.get(rowKey);
+
+      // Reconciliation is started by ensureRow after the visible row has
+      // acquired its one sync owner. Off-screen rows remain seed-only.
+      if (!registration || registration.status !== 'registered' || registration.reconciliationPromise) return;
+
+      const registrationRevision = registration.revision;
+      const reconciliationPromise = (async () => {
+        for (const delayMs of ROW_SYNC_RETRY_DELAYS_MS) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+          if (
+            !lifecycleReconciliationRows.has(rowId) ||
+            activeDatabaseLifecycleRef.current !== databaseLifecycleIdentity ||
+            registrations.get(rowKey) !== registration ||
+            registration.status !== 'registered' ||
+            registration.revision !== registrationRevision
+          ) {
+            return;
+          }
+
+          const canonicalDoc = await registerRowSync(rowKey, true, true);
+
+          if (
+            !canonicalDoc ||
+            activeDatabaseLifecycleRef.current !== databaseLifecycleIdentity ||
+            registrations.get(rowKey) !== registration ||
+            registration.revision !== registrationRevision
+          ) {
+            continue;
+          }
+
+          setRowMap((prev) => (prev[rowId] === canonicalDoc ? prev : { ...prev, [rowId]: canonicalDoc }));
+        }
+      })();
+
+      registration.reconciliationPromise = reconciliationPromise;
+      const clearReconciliationPromise = () => {
+        if (registration.reconciliationPromise === reconciliationPromise) {
+          registration.reconciliationPromise = undefined;
+          lifecycleReconciliationRows.delete(rowId);
+        }
+      };
+
+      void reconciliationPromise.then(clearReconciliationPromise, clearReconciliationPromise);
+    },
+    [databaseLifecycleIdentity, getDatabaseId, registerRowSync]
+  );
+
   useEffect(() => {
     const eventEmitter = props.eventEmitter;
 
@@ -508,8 +575,11 @@ function Database(props: Database2Props) {
       const registration = rowSyncRegistrationsRef.current.get(rowKey);
 
       if (registration?.status === 'registered') {
+        registration.revision += 1;
         registration.promise = Promise.resolve(canonicalDoc);
-        registration.forceSyncPromise = hasRowConditionData(canonicalDoc) ? registration.promise : undefined;
+        registration.forceSyncPromise = undefined;
+        registration.forceSyncedDoc = hasRowConditionData(canonicalDoc) ? canonicalDoc : undefined;
+        registration.reconciliationPromise = undefined;
       }
     };
 
@@ -612,87 +682,90 @@ function Database(props: Database2Props) {
     [getDatabaseId]
   );
 
-  const runBatchPreload = useCallback((prefetchGeneration: number) => {
-    if (blobPrefetchGenerationRef.current !== prefetchGeneration) return;
-    if (batchPreloadDoneRef.current) return;
-    batchPreloadDoneRef.current = true;
-    const gate = seedsGateRef.current;
-    const isCurrentPreload = () =>
-      blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
-    const databaseId = getDatabaseId();
-    const priorityRowIds = getPriorityRowIds();
+  const runBatchPreload = useCallback(
+    (prefetchGeneration: number) => {
+      if (blobPrefetchGenerationRef.current !== prefetchGeneration) return;
+      if (batchPreloadDoneRef.current) return;
+      batchPreloadDoneRef.current = true;
+      const gate = seedsGateRef.current;
+      const isCurrentPreload = () =>
+        blobPrefetchGenerationRef.current === prefetchGeneration && seedsGateRef.current === gate;
+      const databaseId = getDatabaseId();
+      const priorityRowIds = getPriorityRowIds();
 
-    if (priorityRowIds.length === 0) {
-      gate.resolve();
-      return;
-    }
-
-    // Collect seeds for the first N priority rows (visible + overscan) in a single pass
-    const BATCH_SIZE = 30;
-    const rowsWithSeeds: {
-      rowId: string;
-      rowKey: string;
-      seed: NonNullable<ReturnType<typeof peekDatabaseRowDocSeed>>;
-    }[] = [];
-
-    for (const rowId of priorityRowIds) {
-      if (rowsWithSeeds.length >= BATCH_SIZE) break;
-      if (hasRowConditionData(rowMapRef.current[rowId])) continue;
-
-      const rowKey = getRowKey(databaseId, rowId);
-      const seed = peekDatabaseRowDocSeed(rowKey);
-
-      if (seed) {
-        rowsWithSeeds.push({ rowId, rowKey, seed });
+      if (priorityRowIds.length === 0) {
+        gate.resolve();
+        return;
       }
-    }
 
-    if (rowsWithSeeds.length === 0) {
-      gate.resolve();
-      return;
-    }
+      // Collect seeds for the first N priority rows (visible + overscan) in a single pass
+      const BATCH_SIZE = 30;
+      const rowsWithSeeds: {
+        rowId: string;
+        rowKey: string;
+        seed: NonNullable<ReturnType<typeof peekDatabaseRowDocSeed>>;
+      }[] = [];
 
-    Promise.all(
-      rowsWithSeeds.map(async ({ rowId, rowKey, seed }) => {
-        try {
-          const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
+      for (const rowId of priorityRowIds) {
+        if (rowsWithSeeds.length >= BATCH_SIZE) break;
+        if (hasRowConditionData(rowMapRef.current[rowId])) continue;
 
-          return { rowId, rowDoc };
-        } catch {
-          return null;
+        const rowKey = getRowKey(databaseId, rowId);
+        const seed = peekDatabaseRowDocSeed(rowKey);
+
+        if (seed) {
+          rowsWithSeeds.push({ rowId, rowKey, seed });
         }
-      })
-    )
-      .then((results) => {
-        if (!isCurrentPreload()) return;
+      }
 
-        const newEntries: Record<string, YDoc> = {};
+      if (rowsWithSeeds.length === 0) {
+        gate.resolve();
+        return;
+      }
 
-        for (const result of results) {
-          if (result?.rowDoc && !rowMapRef.current[result.rowId]) {
-            newEntries[result.rowId] = result.rowDoc;
+      Promise.all(
+        rowsWithSeeds.map(async ({ rowId, rowKey, seed }) => {
+          try {
+            const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
+
+            return { rowId, rowDoc };
+          } catch {
+            return null;
           }
-        }
+        })
+      )
+        .then((results) => {
+          if (!isCurrentPreload()) return;
 
-        const count = Object.keys(newEntries).length;
+          const newEntries: Record<string, YDoc> = {};
 
-        if (count > 0) {
-          // Keep seed-only rows local. ensureRow attaches realtime only when a
-          // row is actually rendered, preserving the viewport boundary.
-          setRowMap((prev) => ({ ...prev, ...newEntries }));
-        }
+          for (const result of results) {
+            if (result?.rowDoc && !rowMapRef.current[result.rowId]) {
+              newEntries[result.rowId] = result.rowDoc;
+            }
+          }
 
-        // Open the gate — ensureRow calls can now proceed
-        gate.resolve();
-      })
-      .catch(() => {
-        if (!isCurrentPreload()) return;
+          const count = Object.keys(newEntries).length;
 
-        // Ensure the gate always resolves even on unexpected errors,
-        // otherwise ensureRow calls would be permanently blocked.
-        gate.resolve();
-      });
-  }, [getDatabaseId, getPriorityRowIds]);
+          if (count > 0) {
+            // Keep seed-only rows local. ensureRow attaches realtime only when a
+            // row is actually rendered, preserving the viewport boundary.
+            setRowMap((prev) => ({ ...prev, ...newEntries }));
+          }
+
+          // Open the gate — ensureRow calls can now proceed
+          gate.resolve();
+        })
+        .catch(() => {
+          if (!isCurrentPreload()) return;
+
+          // Ensure the gate always resolves even on unexpected errors,
+          // otherwise ensureRow calls would be permanently blocked.
+          gate.resolve();
+        });
+    },
+    [getDatabaseId, getPriorityRowIds]
+  );
 
   const ensureBlobPrefetch = useCallback(() => {
     const prefetchGeneration = blobPrefetchGenerationRef.current;
@@ -823,6 +896,13 @@ function Database(props: Database2Props) {
         getDatabaseId() === ensureLifecycleIdentity.databaseId &&
         blobPrefetchGenerationRef.current === ensureGeneration &&
         seedsGateRef.current === gate;
+      const finishEnsure = (rowDoc: YDoc | undefined) => {
+        if (rowDoc && isCurrentEnsure()) {
+          scheduleRowSyncReconciliation(rowId);
+        }
+
+        return rowDoc;
+      };
 
       if (!isCurrentEnsure()) return;
 
@@ -847,7 +927,7 @@ function Database(props: Database2Props) {
           setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
         }
 
-        return canonicalRowDoc;
+        return finishEnsure(canonicalRowDoc);
       }
 
       // Wait for batch preload to finish — it loads visible rows from seeds
@@ -872,7 +952,7 @@ function Database(props: Database2Props) {
           setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
         }
 
-        return canonicalRowDoc;
+        return finishEnsure(canonicalRowDoc);
       }
 
       const pending = pendingRowDocsRef.current.get(rowId);
@@ -880,7 +960,7 @@ function Database(props: Database2Props) {
       if (pending) {
         const rowDoc = await pending;
 
-        return isCurrentEnsure() ? rowDoc : undefined;
+        return finishEnsure(isCurrentEnsure() ? rowDoc : undefined);
       }
 
       const promise = (async () => {
@@ -937,7 +1017,7 @@ function Database(props: Database2Props) {
           });
         }
 
-        return isCurrentEnsure() ? rowDoc : undefined;
+        return finishEnsure(isCurrentEnsure() ? rowDoc : undefined);
       } finally {
         if (pendingRowDocsRef.current.get(rowId) === promise) {
           pendingRowDocsRef.current.delete(rowId);
@@ -947,8 +1027,65 @@ function Database(props: Database2Props) {
     // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
     // localCachePrimedRef), and module-level imports (openRowDoc, getCachedRowDoc, peekDatabaseRowDocSeed, getRowKey).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, readOnly, registerRowSync]
+    [
+      createRow,
+      databaseLifecycleIdentity,
+      getDatabaseId,
+      ensureBlobPrefetch,
+      readOnly,
+      registerRowSync,
+      scheduleRowSyncReconciliation,
+    ]
   );
+
+  // Row orders and DatabaseRow collabs are independent objects. Remember
+  // remote additions here, but defer all transport work to ensureRow so an
+  // off-screen bulk import does not acquire thousands of sync owners.
+  useEffect(() => {
+    if (!createRow || readOnly) return;
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+    const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+    const lifecycleReconciliationRows = remoteRowsNeedingReconciliationRef.current;
+
+    if (!rowOrders) return;
+
+    let knownOrderedRowIds = new Set(
+      (rowOrders.toJSON() as { id: string; is_deleted?: boolean }[])
+        .filter((row) => !row.is_deleted)
+        .map((row) => row.id)
+    );
+
+    const handleRowOrdersChange: Parameters<typeof rowOrders.observeDeep>[0] = (_events, transaction) => {
+      const nextOrderedRowIds = new Set(
+        (rowOrders.toJSON() as { id: string; is_deleted?: boolean }[])
+          .filter((row) => !row.is_deleted)
+          .map((row) => row.id)
+      );
+
+      if (!transaction.local) {
+        nextOrderedRowIds.forEach((rowId) => {
+          if (!knownOrderedRowIds.has(rowId)) {
+            lifecycleReconciliationRows.add(rowId);
+          }
+        });
+      }
+
+      knownOrderedRowIds.forEach((rowId) => {
+        if (!nextOrderedRowIds.has(rowId)) {
+          lifecycleReconciliationRows.delete(rowId);
+        }
+      });
+      knownOrderedRowIds = nextOrderedRowIds;
+    };
+
+    rowOrders.observeDeep(handleRowOrdersChange);
+    return () => {
+      rowOrders.unobserveDeep(handleRowOrdersChange);
+    };
+  }, [activeViewId, createRow, doc, readOnly]);
 
   useLayoutEffect(() => {
     activeDatabaseLifecycleRef.current = databaseLifecycleIdentity;
@@ -963,6 +1100,7 @@ function Database(props: Database2Props) {
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
     prefetchPromisesRef.current.clear();
+    remoteRowsNeedingReconciliationRef.current = new Set();
     blobPrefetchPromiseRef.current = null;
     localCachePrimedRef.current = false;
     rowSyncRegistrationsRef.current = lifecycleRowSyncRegistrations;
