@@ -65,7 +65,7 @@ export function PrimaryCell(props: CellProps<CellType>) {
             {icon ? (
               <div className={cn('flex h-5 w-5 items-center justify-center', isFlag && 'icon')}>{icon}</div>
             ) : (
-              <DocumentSvg className={'h-5 w-5'} />
+              <DocumentSvg className={'h-5 w-5'} data-testid={`row-document-icon-${rowId}`} />
             )}
           </Button>
         ) : null}
@@ -75,11 +75,7 @@ export function PrimaryCell(props: CellProps<CellType>) {
         {isRowLoaded ? (
           <DatabaseCell {...props} />
         ) : (
-          <CircularProgress
-            size={14}
-            className={'text-icon-secondary'}
-            data-testid={`primary-cell-loading-${rowId}`}
-          />
+          <CircularProgress size={14} className={'text-icon-secondary'} data-testid={`primary-cell-loading-${rowId}`} />
         )}
       </div>
     </div>

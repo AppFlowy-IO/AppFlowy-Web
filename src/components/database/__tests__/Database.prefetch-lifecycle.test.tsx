@@ -1,12 +1,16 @@
+import EventEmitter from 'events';
+
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { APP_EVENTS } from '@/application/constants';
 import { peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import Database, { Database2Props } from '@/components/database/Database';
 
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
+const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockLoadSeedOnLifecycleChange = false;
 
 jest.mock('@/application/database-blob', () => ({
@@ -29,8 +33,9 @@ jest.mock('@/components/database/DatabaseRow', () => ({
 jest.mock('@/components/database/DatabaseRowModal', () => () => null);
 jest.mock('@/components/database/DatabaseContext', () => {
   const React = jest.requireActual<typeof import('react')>('react');
-  const { DatabaseContext } =
-    jest.requireActual<typeof import('@/application/database-yjs/context')>('@/application/database-yjs/context');
+  const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
 
   return {
     DatabaseContextProvider: ({
@@ -44,11 +49,12 @@ jest.mock('@/components/database/DatabaseContext', () => {
 });
 jest.mock('@/components/database/DatabaseViews', () => {
   const React = jest.requireActual<typeof import('react')>('react');
-  const { useDatabaseContext } =
-    jest.requireActual<typeof import('@/application/database-yjs/context')>('@/application/database-yjs/context');
+  const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
 
   return function MockDatabaseViews() {
-    const { bindRowSync, loadRowFromSeed, rowMap } = useDatabaseContext();
+    const { bindRowSync, ensureRow, loadRowFromSeed, rowMap } = useDatabaseContext();
     const initialLoadRowFromSeed = React.useRef(loadRowFromSeed).current;
     const previousLoadRowFromSeed = React.useRef(loadRowFromSeed);
 
@@ -79,6 +85,17 @@ jest.mock('@/components/database/DatabaseViews', () => {
         'button',
         {
           onClick: () => {
+            if (!loadRowFromSeed) throw new Error('loadRowFromSeed is not available');
+            mockSeedLoadPromises.push(loadRowFromSeed('remote-row-id'));
+          },
+          type: 'button',
+        },
+        'Load remote seeded row'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
             if (!initialLoadRowFromSeed) throw new Error('initial loadRowFromSeed is not available');
             mockSeedLoadPromises.push(initialLoadRowFromSeed('row-id'));
           },
@@ -93,6 +110,28 @@ jest.mock('@/components/database/DatabaseViews', () => {
           type: 'button',
         },
         'Bind row sync'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!ensureRow) throw new Error('ensureRow is not available');
+            mockEnsureRowPromises.push(ensureRow('row-id'));
+          },
+          type: 'button',
+        },
+        'Ensure row'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!ensureRow) throw new Error('ensureRow is not available');
+            mockEnsureRowPromises.push(ensureRow('remote-row-id'));
+          },
+          type: 'button',
+        },
+        'Ensure remote row'
       )
     );
   };
@@ -134,6 +173,20 @@ function createDatabaseDoc(guid: string, databaseId = 'database-id') {
   return doc;
 }
 
+function insertRemoteRowOrder(doc: YDoc, rowId: string) {
+  const remoteDoc = new Y.Doc();
+
+  Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+  const beforeInsert = Y.encodeStateVector(remoteDoc);
+  const database = remoteDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+  rowOrders?.push([{ id: rowId }]);
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc, beforeInsert));
+  remoteDoc.destroy();
+}
+
 function databaseProps(doc: YDoc): Database2Props {
   return {
     workspaceId: 'workspace-id',
@@ -156,6 +209,16 @@ function requestSeedLoad() {
   return request;
 }
 
+function requestRemoteSeedLoad() {
+  const requestIndex = mockSeedLoadPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Load remote seeded row' }));
+  const request = mockSeedLoadPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request the remote seeded row');
+  return request;
+}
+
 function requestSeedLoadFromInitialLifecycle() {
   const requestIndex = mockSeedLoadPromises.length;
 
@@ -166,10 +229,39 @@ function requestSeedLoadFromInitialLifecycle() {
   return request;
 }
 
+function requestEnsureRow() {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ensure row' }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request an ensured row');
+  return request;
+}
+
+function requestRemoteRowEnsure() {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ensure remote row' }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request the remote row');
+  return request;
+}
+
+function createHydratedRowDoc(guid: string) {
+  const doc = new Y.Doc({ guid }) as YDoc;
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+
+  sharedRoot.set(YjsEditorKey.database_row, new Y.Map());
+  return doc;
+}
+
 describe('Database blob prefetch lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSeedLoadPromises.length = 0;
+    mockEnsureRowPromises.length = 0;
     mockLoadSeedOnLifecycleChange = false;
     mockedPeekSeed.mockReset();
     mockedGetCachedRowDoc.mockReset();
@@ -199,6 +291,241 @@ describe('Database blob prefetch lifecycle', () => {
 
     unmount();
     doc.destroy();
+  });
+
+  it('sequentially rebinds a visible remote row after its initial registration settles', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const seededRowDoc = createHydratedRowDoc('remote-row-id');
+    const initialRegistration = createDeferred<YDoc>();
+    const createRow = jest.fn((_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? Promise.resolve(seededRowDoc) : initialRegistration.promise
+    );
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'remote-row-id': seededRowDoc }} />
+    );
+
+    try {
+      await act(async () => {
+        insertRemoteRowOrder(doc, 'remote-row-id');
+        await Promise.resolve();
+      });
+
+      const ensuredRow = requestRemoteRowEnsure();
+
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+
+      // Retry deadlines must not be consumed while IndexedDB/sync-context
+      // registration is still pending.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(9_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        initialRegistration.resolve(seededRowDoc);
+        await ensuredRow;
+      });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(2);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(4);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+    } finally {
+      unmount();
+      doc.destroy();
+      seededRowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('retains remote reconciliation when a visible ensure joins a seed-only load', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const seededRowDoc = createHydratedRowDoc('remote-row-id');
+    const seedLoad = createDeferred<YDoc>();
+    const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
+    const createRow = jest.fn(async () => seededRowDoc);
+
+    mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : undefined));
+    mockedOpenRowDoc.mockImplementation((rowKey) => {
+      if (rowKey === 'database-id_rows_remote-row-id') return seedLoad.promise;
+      throw new Error(`unexpected row key: ${rowKey}`);
+    });
+
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+    try {
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      act(() => {
+        mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+      });
+      await act(async () => {
+        insertRemoteRowOrder(doc, 'remote-row-id');
+        await Promise.resolve();
+      });
+
+      const seedRequest = requestRemoteSeedLoad();
+      const firstEnsure = requestRemoteRowEnsure();
+
+      await act(async () => {
+        seedLoad.resolve(seededRowDoc);
+        await Promise.all([seedRequest, firstEnsure]);
+      });
+      expect(createRow).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(2);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+    } finally {
+      unmount();
+      doc.destroy();
+      seededRowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('cancels remote reconciliation when the row order is removed', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('remote-row-id');
+    const createRow = jest.fn(async () => rowDoc);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'remote-row-id': rowDoc }} />
+    );
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+    try {
+      await act(async () => {
+        insertRemoteRowOrder(doc, 'remote-row-id');
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        const index = rowOrders?.toArray().findIndex((row) => row.id === 'remote-row-id') ?? -1;
+
+        if (index >= 0) rowOrders?.delete(index, 1);
+      });
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps reconciliation markers isolated across database document lifecycles', async () => {
+    jest.useFakeTimers();
+    const firstDoc = createDatabaseDoc('database-id');
+    const secondDoc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('remote-row-id');
+    const createRow = jest.fn(async () => rowDoc);
+    const initialRowMap = { 'remote-row-id': rowDoc };
+    const { rerender, unmount } = render(
+      <Database {...databaseProps(firstDoc)} createRow={createRow} initialRowMap={initialRowMap} />
+    );
+
+    try {
+      await act(async () => {
+        insertRemoteRowOrder(firstDoc, 'remote-row-id');
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+
+      rerender(<Database {...databaseProps(secondDoc)} createRow={createRow} initialRowMap={initialRowMap} />);
+      await act(async () => {
+        insertRemoteRowOrder(secondDoc, 'remote-row-id');
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(2);
+
+      // The first lifecycle's timer resolves first. Its cleanup must not
+      // remove the replacement lifecycle's marker for the same row id.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+    } finally {
+      unmount();
+      firstDoc.destroy();
+      secondDoc.destroy();
+      rowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not schedule reconciliation for a locally inserted row', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('remote-row-id');
+    const createRow = jest.fn(async () => rowDoc);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'remote-row-id': rowDoc }} />
+    );
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+    try {
+      await act(async () => {
+        rowOrders?.push([{ id: 'remote-row-id' }]);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+      jest.useRealTimers();
+    }
   });
 
   it('starts a new prefetch when the Y.Doc instance changes but its guid stays the same', async () => {
@@ -385,11 +712,7 @@ describe('Database blob prefetch lifecycle', () => {
     await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
 
     rerender(
-      <Database
-        {...databaseProps(secondDoc)}
-        createRow={createRow}
-        scheduleDeferredCleanup={scheduleDeferredCleanup}
-      />
+      <Database {...databaseProps(secondDoc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
     );
 
     await waitFor(() => expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1));
@@ -408,6 +731,196 @@ describe('Database blob prefetch lifecycle', () => {
     rowDoc.destroy();
   });
 
+  it('replaces a hydrated seed shell with the canonical force-synced row doc', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const createRow = jest.fn(async (_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? canonicalRowDoc : seedShell
+    );
+    const props = {
+      ...databaseProps(doc),
+      createRow,
+      initialRowMap: { 'row-id': seedShell },
+    };
+    const { unmount } = render(<Database {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => {
+      expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+    });
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('seed-shell');
+
+    let ensuredRow: YDoc | undefined;
+
+    await act(async () => {
+      ensuredRow = await requestEnsureRow();
+    });
+
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+    expect(ensuredRow).toBe(canonicalRowDoc);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe(
+        'canonical-row'
+      );
+    });
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
+  it('deduplicates concurrent force sync requests for a registered row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const forceSync = createDeferred<YDoc>();
+    const createRow = jest.fn((_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? forceSync.promise : Promise.resolve(seedShell)
+    );
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    const firstEnsure = requestEnsureRow();
+    const secondEnsure = requestEnsureRow();
+
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(2));
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+
+    let ensuredRows: Array<YDoc | undefined> = [];
+
+    await act(async () => {
+      forceSync.resolve(canonicalRowDoc);
+      ensuredRows = await Promise.all([firstEnsure, secondEnsure]);
+    });
+
+    expect(ensuredRows).toEqual([canonicalRowDoc, canonicalRowDoc]);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    let cachedEnsure: YDoc | undefined;
+
+    await act(async () => {
+      cachedEnsure = await requestEnsureRow();
+    });
+
+    expect(cachedEnsure).toBe(canonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
+  it('retries force sync after a settled request returns an unhydrated row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const unhydratedCanonicalRowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const hydratedCanonicalRowDoc = createHydratedRowDoc('row-id');
+    let forceSyncAttempts = 0;
+    const createRow = jest.fn(async (_rowKey: string, options?: { forceSync?: boolean }) => {
+      if (!options?.forceSync) return unhydratedCanonicalRowDoc;
+
+      forceSyncAttempts += 1;
+      return forceSyncAttempts === 1 ? unhydratedCanonicalRowDoc : hydratedCanonicalRowDoc;
+    });
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+    act(() => {
+      mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    let firstEnsure: YDoc | undefined;
+
+    await act(async () => {
+      firstEnsure = await requestEnsureRow();
+    });
+
+    expect(firstEnsure).toBe(unhydratedCanonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    let secondEnsure: YDoc | undefined;
+
+    await act(async () => {
+      secondEnsure = await requestEnsureRow();
+    });
+
+    expect(secondEnsure).toBe(hydratedCanonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(3);
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    unhydratedCanonicalRowDoc.destroy();
+    hydratedCanonicalRowDoc.destroy();
+  });
+
+  it('keeps hydrated snapshot rows local in a read-only database', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const snapshotRowDoc = createHydratedRowDoc('snapshot-row');
+    const transportRowDoc = new Y.Doc({ guid: 'empty-transport-row' }) as YDoc;
+    const createRow = jest.fn().mockResolvedValue(transportRowDoc);
+    const props = {
+      ...databaseProps(doc),
+      readOnly: true,
+      createRow,
+      initialRowMap: { 'row-id': snapshotRowDoc },
+    };
+    const { unmount } = render(<Database {...props} />);
+    let ensuredRow: YDoc | undefined;
+
+    await act(async () => {
+      ensuredRow = await requestEnsureRow();
+    });
+
+    expect(ensuredRow).toBe(snapshotRowDoc);
+    expect(createRow).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('snapshot-row');
+
+    unmount();
+    doc.destroy();
+    snapshotRowDoc.destroy();
+    transportRowDoc.destroy();
+  });
+
+  it('adopts a replacement DatabaseRow doc emitted by a version reset', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const eventEmitter = new EventEmitter();
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} eventEmitter={eventEmitter} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('seed-shell');
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+        objectId: 'row-id',
+        doc: canonicalRowDoc,
+      });
+    });
+
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('canonical-row');
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
   it('releases a row sync that finishes registering after its lifecycle ended', async () => {
     const firstDoc = createDatabaseDoc('shared-guid');
     const secondDoc = createDatabaseDoc('shared-guid');
@@ -416,22 +929,14 @@ describe('Database blob prefetch lifecycle', () => {
     const createRow = jest.fn().mockReturnValue(pendingRowSync.promise);
     const scheduleDeferredCleanup = jest.fn();
     const { rerender, unmount } = render(
-      <Database
-        {...databaseProps(firstDoc)}
-        createRow={createRow}
-        scheduleDeferredCleanup={scheduleDeferredCleanup}
-      />
+      <Database {...databaseProps(firstDoc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
     expect(createRow).toHaveBeenCalledTimes(1);
 
     rerender(
-      <Database
-        {...databaseProps(secondDoc)}
-        createRow={createRow}
-        scheduleDeferredCleanup={scheduleDeferredCleanup}
-      />
+      <Database {...databaseProps(secondDoc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
     );
 
     expect(scheduleDeferredCleanup).not.toHaveBeenCalled();

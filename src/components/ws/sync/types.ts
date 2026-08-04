@@ -76,6 +76,11 @@ export interface QueuedCollabMessage {
 export type SyncContextType = {
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
   /**
+   * Return the canonical live document and, while online, re-send its
+   * state-vector exchange without changing context ownership.
+   */
+  rebindSyncContext: (objectId: string) => YDoc | undefined;
+  /**
    * Wait until all pending updates for every registered sync context have
    * been drained to the WebSocket from the persistent sync_outbox. Resolves
    * `true` when fully drained, `false` on timeout (e.g. WS remained closed).

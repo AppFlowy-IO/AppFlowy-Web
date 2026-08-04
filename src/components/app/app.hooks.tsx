@@ -570,6 +570,13 @@ export function useEventEmitter() {
   return context;
 }
 
+/** The app-wide event bus, or undefined when rendered outside AppProvider. Safe for publish pages. */
+export function useEventEmitterOptional() {
+  const context = useContext(AppEventEmitterContext);
+
+  return context ?? undefined;
+}
+
 /** Schedule deferred cleanup of a sync object (e.g. Yjs doc) after a delay. */
 export function useScheduleDeferredCleanup() {
   const context = useContext(AppSyncContext);

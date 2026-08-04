@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { invalidateDatabaseRowDocSeed } from '@/application/database-blob';
 import { APP_EVENTS } from '@/application/constants';
 import {
   openCollabDB,
@@ -12,6 +13,7 @@ import {
   collabIndexedDBExists,
 } from '@/application/db';
 import * as httpApi from '@/application/services/js-services/http/http_api';
+import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { handleMessage, type SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, User, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -20,6 +22,10 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { BroadcastChannelType } from '../useBroadcastChannel';
 import { AppflowyWebSocketType } from '../useAppflowyWebSocket';
 import { useSync } from '../useSync';
+
+jest.mock('@/application/database-blob', () => ({
+  invalidateDatabaseRowDocSeed: jest.fn(),
+}));
 
 jest.mock('@/application/db', () => {
   return {
@@ -236,6 +242,9 @@ const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMe
 const mockedCollabFullSyncBatch = httpApi.collabFullSyncBatch as jest.MockedFunction<typeof httpApi.collabFullSyncBatch>;
 const mockedRevertCollabVersion = httpApi.revertCollabVersion as jest.MockedFunction<typeof httpApi.revertCollabVersion>;
 const mockedUseCurrentUserOptional = useCurrentUserOptional as jest.MockedFunction<typeof useCurrentUserOptional>;
+const mockedInvalidateDatabaseRowDocSeed = invalidateDatabaseRowDocSeed as jest.MockedFunction<
+  typeof invalidateDatabaseRowDocSeed
+>;
 
 const createUser = (workspaceId = 'workspace-from-user'): User => ({
   uid: 'user-1',
@@ -261,6 +270,7 @@ const resetCommonMocks = () => {
   mockedHandleMessage.mockReset();
   mockedCollabFullSyncBatch.mockReset();
   mockedRevertCollabVersion.mockReset();
+  mockedInvalidateDatabaseRowDocSeed.mockReset();
 };
 
 describe('useSync reconnect binding', () => {
@@ -452,6 +462,63 @@ describe('useSync deferred cleanup', () => {
     });
 
     expect(afterCleanupRegistration).not.toBe(firstRegistration);
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('rebinds a row sync context without acquiring another owner', () => {
+    const ws = {
+      ...createWs(),
+      readyState: WebSocket.OPEN,
+    };
+    const bc = createBroadcastChannel();
+    const rowId = '23232323-2323-4232-8232-232323232323';
+    const doc = createDoc(rowId);
+    const { result, rerender, unmount } = renderHook(
+      ({ transport }) => useSync(transport, bc, defaultEventEmitter, defaultWorkspaceId),
+      { initialProps: { transport: ws } }
+    );
+    const sendMessage = ws.sendMessage as jest.Mock;
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+    sendMessage.mockClear();
+
+    expect(result.current.rebindSyncContext('24242424-2424-4242-8242-242424242424')).toBeUndefined();
+    expect(result.current.rebindSyncContext(rowId)).toBe(doc);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collabMessage: expect.objectContaining({
+          objectId: rowId,
+          collabType: Types.DatabaseRow,
+          syncRequest: expect.any(Object),
+        }),
+      })
+    );
+
+    const openRebindSyncContext = result.current.rebindSyncContext;
+
+    rerender({
+      transport: {
+        ...ws,
+        readyState: WebSocket.CLOSED,
+      },
+    });
+    expect(result.current.rebindSyncContext).toBe(openRebindSyncContext);
+    sendMessage.mockClear();
+
+    expect(result.current.rebindSyncContext(rowId)).toBe(doc);
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.scheduleDeferredCleanup(rowId, 0);
+      jest.runOnlyPendingTimers();
+    });
+
+    expect(result.current.rebindSyncContext(rowId)).toBeUndefined();
 
     unmount();
     doc.destroy();
@@ -869,6 +936,70 @@ describe('useSync version-gated message handling', () => {
       currentUser: undefined,
     });
     expect(doc.version).toBeUndefined();
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
+  });
+
+  it('reopens a DatabaseRow version reset through shared row storage', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const eventEmitter = new EventEmitter();
+    const emitSpy = jest.spyOn(eventEmitter, 'emit');
+    const objectId = '56565656-5656-4656-8656-565656565656';
+    const incomingVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b013';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+    const provider = { destroy: jest.fn().mockResolvedValue(undefined) };
+
+    nextDoc.version = incomingVersion;
+    mockedOpenRowCollabDBWithProvider.mockResolvedValueOnce({ doc: nextDoc, provider } as never);
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+
+    act(() => {
+      ws.lastMessage = {
+        collabMessage: {
+          objectId,
+          collabType: Types.DatabaseRow,
+          update: { version: incomingVersion },
+        },
+      } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedOpenRowCollabDBWithProvider).toHaveBeenCalledWith(objectId, {
+        expectedVersion: incomingVersion,
+        currentUser: undefined,
+      });
+    });
+    expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+    expect(mockedInvalidateDatabaseRowDocSeed).toHaveBeenCalledWith(objectId);
+    expect(mockedInvalidateDatabaseRowDocSeed.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedOpenRowCollabDBWithProvider.mock.invocationCallOrder[0]
+    );
+    await waitFor(() => {
+      expect(emitSpy).toHaveBeenCalledWith(
+        APP_EVENTS.COLLAB_DOC_RESET,
+        expect.objectContaining({ objectId, doc: nextDoc })
+      );
+    });
+    expect(getCachedRowDoc(`database-id_rows_${objectId}`)).toBe(nextDoc);
+
+    act(() => {
+      result.current.scheduleDeferredCleanup(objectId, 0);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(result.current.rebindSyncContext(objectId)).toBe(nextDoc);
 
     unmount();
     doc.destroy();

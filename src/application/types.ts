@@ -1148,7 +1148,7 @@ export interface PublishViewMetaData {
 
 export type AppendBreadcrumb = (view?: View) => void;
 
-export type CreateRow = (rowKey: string) => Promise<YDoc>;
+export type CreateRow = (rowKey: string, options?: { forceSync?: boolean }) => Promise<YDoc>;
 export interface LoadViewOptions {
   databaseId?: string | null;
   forceFetch?: boolean;

@@ -2,9 +2,9 @@ import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
+import { resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
-import { resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
@@ -1159,6 +1159,8 @@ export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
+  const viewId = useDatabaseViewId();
+  const { databaseDoc } = useDatabaseContext();
   const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -1175,15 +1177,18 @@ export function useRowsByGroup(groupId: string) {
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
   const [groupResult, setGroupResult] = useState<Map<string, Row[]>>(new Map());
-  const [groupRowsReady, setGroupRowsReady] = useState(false);
+  const [hydratedGroupingIdentity, setHydratedGroupingIdentity] = useState<{
+    databaseDoc: YDoc;
+    groupingKey: string;
+  } | null>(null);
   const view = useDatabaseView();
   const filters = view?.get(YjsDatabaseKey.filters);
   const { hideEmptyGroups, hideUnGroup, shownEmptyGroupIds } = useBoardLayoutSettings();
+  const groupingKey = fieldId ? `${viewId ?? ''}:${groupId}:${fieldId}` : null;
 
   useEffect(() => {
     if (!fieldId || !rowOrders) {
       setGroupResult(new Map());
-      setGroupRowsReady(false);
       return;
     }
 
@@ -1195,7 +1200,6 @@ export function useRowsByGroup(groupId: string) {
       if (!field) {
         setNotFound(true);
         setGroupResult(newResult);
-        setGroupRowsReady(true);
         return;
       }
 
@@ -1206,7 +1210,6 @@ export function useRowsByGroup(groupId: string) {
       if (![FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType)) {
         setNotFound(true);
         setGroupResult(newResult);
-        setGroupRowsReady(true);
         return;
       }
 
@@ -1216,12 +1219,19 @@ export function useRowsByGroup(groupId: string) {
 
       if (!groupResult) {
         setGroupResult(newResult);
-        setGroupRowsReady(true);
         return;
       }
 
       setGroupResult(groupResult);
-      setGroupRowsReady(areGroupRowsHydrated(rowOrders, groupingRows));
+      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
+
+      if (rowsHydrated && groupingKey) {
+        setHydratedGroupingIdentity((current) =>
+          current?.databaseDoc === databaseDoc && current.groupingKey === groupingKey
+            ? current
+            : { databaseDoc, groupingKey }
+        );
+      }
     };
 
     onConditionsChange();
@@ -1247,7 +1257,16 @@ export function useRowsByGroup(groupId: string) {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [fieldId, fields, rowOrders, groupingRows, filters]);
+  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey]);
+
+  // Cold Boards must wait for their first complete grouping before empty
+  // columns can be classified safely. Once that baseline exists, a later
+  // row_order arriving before its separate DatabaseRow collab must not
+  // temporarily disable Hide empty groups for every column.
+  const groupVisibilityReady =
+    groupingKey !== null &&
+    hydratedGroupingIdentity?.databaseDoc === databaseDoc &&
+    hydratedGroupingIdentity.groupingKey === groupingKey;
 
   const visibleColumns = useMemo(
     () =>
@@ -1255,19 +1274,19 @@ export function useRowsByGroup(groupId: string) {
         columns,
         fieldId,
         getRowCount: (columnId) => groupResult.get(columnId)?.length ?? 0,
-        groupRowsReady,
+        groupRowsReady: groupVisibilityReady,
         hideEmptyGroups,
         hideUngroupedColumn: hideUnGroup,
         shownEmptyGroupIds,
       }).visibleColumns,
-    [columns, fieldId, groupResult, groupRowsReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
+    [columns, fieldId, groupResult, groupVisibilityReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
   );
 
   return {
     fieldId,
     groupResult,
     columns: visibleColumns,
-    groupRowsReady,
+    groupRowsReady: groupVisibilityReady,
     hideEmptyGroups,
     notFound,
   };
@@ -2226,22 +2245,39 @@ export function usePrimaryFieldId() {
   return primaryFieldId;
 }
 
-export const useRowMetaSelector = (rowId: string) => {
-  const [meta, setMeta] = useState<RowMeta | null>();
-  const { rowMap, ensureRow } = useDatabaseContext();
-  const [rowDoc, setRowDoc] = useState<YDoc | null>(null);
+function readRowMeta(rowId: string, rowDoc: YDoc | null): RowMeta | null {
+  if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return null;
 
-  // Ensure the row document is loaded and track it directly
+  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+  const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
+
+  return yMeta ? getMetaJSON(rowId, yMeta) : null;
+}
+
+export const useRowMetaSelector = (rowId: string) => {
+  const { rowMap, ensureRow } = useDatabaseContext();
+  const mappedRowDoc = rowMap?.[rowId] ?? null;
+  const [resolvedRowDoc, setResolvedRowDoc] = useState<{
+    rowId: string;
+    mappedRowDoc: YDoc | null;
+    rowDoc: YDoc;
+  } | null>(null);
+  const rowDoc =
+    resolvedRowDoc?.rowId === rowId && resolvedRowDoc.mappedRowDoc === mappedRowDoc
+      ? resolvedRowDoc.rowDoc
+      : mappedRowDoc;
+  const [observedMeta, setObservedMeta] = useState<{
+    rowId: string;
+    rowDoc: YDoc;
+    value: RowMeta | null;
+  } | null>(null);
+  const meta =
+    observedMeta?.rowId === rowId && observedMeta.rowDoc === rowDoc ? observedMeta.value : readRowMeta(rowId, rowDoc);
+
+  // A seeded row is sufficient for the first paint but is not necessarily the
+  // canonical realtime document. Resolve it even when rowMap already has data.
   useEffect(() => {
     let cancelled = false;
-
-    // Check if already available in rowMap
-    const existing = rowMap?.[rowId];
-
-    if (existing) {
-      setRowDoc(existing);
-      return;
-    }
 
     if (ensureRow && rowId) {
       const promise = ensureRow(rowId);
@@ -2250,7 +2286,7 @@ export const useRowMetaSelector = (rowId: string) => {
         promise
           .then((doc) => {
             if (!cancelled && doc) {
-              setRowDoc(doc);
+              setResolvedRowDoc({ rowId, mappedRowDoc, rowDoc: doc });
             }
           })
           .catch((error: unknown) => {
@@ -2264,14 +2300,17 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRow, rowId, rowMap]);
+  }, [ensureRow, mappedRowDoc, rowId]);
 
   // Read meta and observe changes on the row doc.
   // The meta key may not exist initially (empty Y.Map before sync completes),
   // so we observe the shared root to detect when the meta key is added.
   useEffect(() => {
-    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
+    if (!rowDoc) return;
 
+    // Create the named root before realtime hydration. A remote update mutates
+    // this same Y.Map without replacing rowDoc, so waiting for share.has here
+    // leaves the hook with no observer and no React state change to retry it.
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
     let metaObserverCleanup: (() => void) | null = null;
 
@@ -2284,12 +2323,13 @@ export const useRowMetaSelector = (rowId: string) => {
 
       const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
 
-      if (!yMeta) return;
+      if (!yMeta) {
+        setObservedMeta({ rowId, rowDoc, value: null });
+        return;
+      }
 
       const updateMeta = () => {
-        const meta = getMetaJSON(rowId, yMeta);
-
-        setMeta(meta);
+        setObservedMeta({ rowId, rowDoc, value: getMetaJSON(rowId, yMeta) });
       };
 
       updateMeta();
@@ -2303,9 +2343,9 @@ export const useRowMetaSelector = (rowId: string) => {
       };
     };
 
-    // Watch for the meta key being added to the shared root (arrives via sync)
-    const handleRootChange = () => {
-      if (rowSharedRoot.has(YjsEditorKey.meta)) {
+    // Watch for the meta key being added, replaced, or removed.
+    const handleRootChange = (event: { keysChanged?: Set<string> }) => {
+      if (event.keysChanged?.has(YjsEditorKey.meta)) {
         attachMetaObserver();
       }
     };

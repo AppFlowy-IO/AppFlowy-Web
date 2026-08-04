@@ -1,14 +1,17 @@
 import {
   prefetchDatabaseBlobDiff,
   clearDatabaseRowDocSeedCache,
+  invalidateDatabaseRowDocSeed,
   takeDatabaseRowDocSeed,
 } from '@/application/database-blob';
 import * as pageStageModule from '@/application/database-blob/page-stage';
 import type { DatabaseBlobDiffPageStage } from '@/application/database-blob/page-stage';
+import { isDatabaseRowDocSeedCurrent } from '@/application/database-blob/row-seed-fence';
 import { deleteCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { deleteRow } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { deleteOutboxByObjectId, getCurrentOutboxSession } from '@/application/sync-outbox';
+import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
 
 jest.mock('@/application/db', () => ({
@@ -51,6 +54,7 @@ const mockedOpenRowCollabDB = openRowCollabDBWithProvider as jest.MockedFunction
 const mockedDeleteRow = deleteRow as jest.MockedFunction<typeof deleteRow>;
 const mockedDeleteOutbox = deleteOutboxByObjectId as jest.MockedFunction<typeof deleteOutboxByObjectId>;
 const mockedGetCurrentOutboxSession = getCurrentOutboxSession as jest.MockedFunction<typeof getCurrentOutboxSession>;
+const mockedApplyYDoc = applyYDoc as jest.MockedFunction<typeof applyYDoc>;
 const databaseIds = new Set<string>();
 
 /** Drains the promise chain the page walk runs on, without advancing timers. */
@@ -569,6 +573,68 @@ describe('database blob prefetch deduplication', () => {
     expect(Array.from(seed?.bytes ?? [])).toEqual([1, 2, 3]);
     expect(seed?.bytes.byteLength).toBe(3);
     expect(seed?.bytes.buffer.byteLength).toBe(3);
+  });
+
+  it('fences a reset row out of a blob request that is still in flight', async () => {
+    const databaseId = 'database-reset-fence';
+    const deferred = createDeferred<database_blob.DatabaseBlobDiffResponse>();
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockReturnValueOnce(deferred.promise);
+
+    const prefetch = prefetchDatabaseBlobDiff('workspace-reset-fence', databaseId);
+
+    invalidateDatabaseRowDocSeed(VALID_ROW_ID);
+    deferred.resolve(persistablePage({ timestamp: 16, seqNo: 1 }));
+    await prefetch;
+
+    expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
+    expect(mockedOpenRowCollabDB).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a seed reference that a row loader already captured', async () => {
+    const databaseId = 'database-captured-reset-seed';
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 16, seqNo: 2 }));
+
+    await prefetchDatabaseBlobDiff('workspace-captured-reset-seed', databaseId);
+
+    const capturedSeed = takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`);
+
+    if (!capturedSeed) throw new Error('expected the row loader to capture a seed');
+    expect(isDatabaseRowDocSeedCurrent(capturedSeed)).toBe(true);
+
+    invalidateDatabaseRowDocSeed(VALID_ROW_ID);
+
+    expect(isDatabaseRowDocSeedCurrent(capturedSeed)).toBe(false);
+  });
+
+  it('rechecks the reset fence after an asynchronous row storage open', async () => {
+    const databaseId = 'database-reset-open-fence';
+    const deferredOpen = createDeferred<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>();
+    const doc = { destroy: jest.fn() };
+    const provider = { destroy: jest.fn().mockResolvedValue(undefined) };
+
+    databaseIds.add(databaseId);
+    mockedDatabaseBlobDiff.mockResolvedValueOnce(persistablePage({ timestamp: 17, seqNo: 1 }));
+    mockedOpenRowCollabDB.mockReturnValueOnce(deferredOpen.promise);
+
+    const prefetch = prefetchDatabaseBlobDiff('workspace-reset-open-fence', databaseId);
+
+    for (let attempt = 0; attempt < 5 && mockedOpenRowCollabDB.mock.calls.length === 0; attempt += 1) {
+      await flushPendingWork();
+    }
+
+    expect(mockedOpenRowCollabDB).toHaveBeenCalledTimes(1);
+    invalidateDatabaseRowDocSeed(VALID_ROW_ID);
+    deferredOpen.resolve({ doc, provider } as unknown as Awaited<ReturnType<typeof openRowCollabDBWithProvider>>);
+    await prefetch;
+
+    expect(mockedApplyYDoc).not.toHaveBeenCalled();
+    expect(provider.destroy).toHaveBeenCalledTimes(1);
+    expect(doc.destroy).toHaveBeenCalledTimes(1);
+    expect(takeDatabaseRowDocSeed(`${databaseId}_rows_${VALID_ROW_ID}`)).toBeNull();
   });
 
   it('falls back to row sync when provisional page staging fails', async () => {

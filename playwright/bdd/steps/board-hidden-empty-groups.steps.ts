@@ -17,6 +17,16 @@ const stateByPage = new WeakMap<Page, BoardHiddenGroupsState>();
 After(async ({ page }) => {
   const state = stateByPage.get(page);
 
+  if (state?.secondPage && !state.secondPage.isClosed()) {
+    await state.secondPage.evaluate(() => {
+      const watchedWindow = window as typeof window & {
+        __boardVisibilityWatches?: Record<string, { observer: MutationObserver }>;
+      };
+
+      Object.values(watchedWindow.__boardVisibilityWatches ?? {}).forEach(({ observer }) => observer.disconnect());
+      delete watchedWindow.__boardVisibilityWatches;
+    });
+  }
   await state?.secondContext?.close();
   stateByPage.delete(page);
 });
@@ -244,6 +254,94 @@ When('I add another Board view from the database tab bar', async ({ page }) => {
   await expect(BoardSelectors.boardContainer(page)).toBeVisible();
   await expect(BoardSelectors.mainColumns(page)).toHaveCount(1);
   await expect(BoardSelectors.mainColumns(page)).toBeVisible();
+});
+
+When(
+  'I add a Board card named {string} to the {string} column',
+  async ({ page }, cardName: string, groupName: string) => {
+    const column = BoardSelectors.columnByName(page, groupName);
+
+    await expect(column).toHaveCount(1);
+    await expect(column).toBeVisible();
+    await column.getByText('New', { exact: true }).click();
+    await page.keyboard.type(cardName);
+    await page.keyboard.press('Enter');
+    await expect(column.locator('.board-card').filter({ hasText: cardName })).toHaveCount(1, { timeout: 15_000 });
+  }
+);
+
+Then(
+  'the other web client has exactly one {string} card in the {string} column',
+  async ({ page }, cardName: string, groupName: string) => {
+    const column = BoardSelectors.columnByName(requireSecondPage(page), groupName);
+
+    await expect(column).toHaveCount(1, { timeout: 30_000 });
+    await expect(column).toBeVisible({ timeout: 30_000 });
+    await expect(column.locator('.board-card').filter({ hasText: cardName })).toHaveCount(1, { timeout: 30_000 });
+  }
+);
+
+When(
+  'the other web client starts watching Board group {string} for visibility flicker',
+  async ({ page }, groupName: string) => {
+    const secondPage = requireSecondPage(page);
+
+    await expect(BoardSelectors.columnByName(secondPage, groupName)).toHaveCount(0);
+    await secondPage.evaluate((watchedGroupName) => {
+      const watchedWindow = window as typeof window & {
+        __boardVisibilityWatches?: Record<string, { everVisible: boolean; observer: MutationObserver }>;
+      };
+      const isVisible = () =>
+        [...document.querySelectorAll<HTMLElement>('[data-testid="board-column"]')].some((column) => {
+          const name = column.querySelector<HTMLElement>('[data-testid="board-column-name"]');
+
+          return name?.textContent?.trim() === watchedGroupName && column.getClientRects().length > 0;
+        });
+      const containsWatchedColumn = (node: Node) => {
+        if (!(node instanceof Element)) return false;
+        const columns = [
+          ...(node.matches('[data-testid="board-column"]') ? [node] : []),
+          ...node.querySelectorAll('[data-testid="board-column"]'),
+        ];
+
+        return columns.some(
+          (column) =>
+            column.querySelector<HTMLElement>('[data-testid="board-column-name"]')?.textContent?.trim() ===
+            watchedGroupName
+        );
+      };
+      const watch = {
+        everVisible: false,
+        observer: new MutationObserver((records) => {
+          const added = records.some((record) => [...record.addedNodes].some(containsWatchedColumn));
+
+          watch.everVisible ||= added || isVisible();
+        }),
+      };
+
+      watch.everVisible = isVisible();
+      watch.observer.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
+        childList: true,
+        subtree: true,
+      });
+      watchedWindow.__boardVisibilityWatches ??= {};
+      watchedWindow.__boardVisibilityWatches[watchedGroupName] = watch;
+    }, groupName);
+  }
+);
+
+Then('Board group {string} never became visible on the other web client', async ({ page }, groupName: string) => {
+  const everVisible = await requireSecondPage(page).evaluate((watchedGroupName) => {
+    const watchedWindow = window as typeof window & {
+      __boardVisibilityWatches?: Record<string, { everVisible: boolean }>;
+    };
+
+    return watchedWindow.__boardVisibilityWatches?.[watchedGroupName]?.everVisible;
+  }, groupName);
+
+  expect(everVisible, `Board group "${groupName}" became visible during remote row hydration`).toBe(false);
 });
 
 async function expectExactEmptyBoardColumn(page: Page, groupName: string, timeout = 5000) {

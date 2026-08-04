@@ -3,9 +3,11 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { deleteCollabDB, openCollabDB } from '@/application/db';
+import { invalidateDatabaseRowDocSeed } from '@/application/database-blob';
+import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
+import { cacheCanonicalRowDoc } from '@/application/services/js-services/cache';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { YDoc } from '@/application/types';
+import { Types, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -189,6 +191,7 @@ export function useCollabMessageHandler(
             messageHandled = handleOnActiveContext();
           } else {
             const hadPendingDeferredCleanup = refs.pendingCleanups.current.has(previousDoc.guid);
+            const ownerCount = Math.max(1, refs.contextRefCounts.current.get(objectId) ?? 0);
             const previousDocSnapshot = Y.encodeStateAsUpdate(previousDoc);
 
             // Tear down the currently active doc first to stop stale edits from being
@@ -200,6 +203,13 @@ export function useCollabMessageHandler(
             refs.resettingObjectIds.current.add(objectId);
 
             try {
+              if (context.collabType === Types.DatabaseRow) {
+                // Blob snapshots and seed-derived docs predate this reset. Fence
+                // the row before awaiting teardown so mounted cell loaders cannot
+                // observe or merge that stale state into the replacement doc.
+                invalidateDatabaseRowDocSeed(objectId);
+              }
+
               // Discard and destroy live inside the try so a rejection
               // (e.g. IDB blocked/closing) still runs the finally that
               // clears `resettingObjectIds`. Without this, a failed discard
@@ -221,6 +231,7 @@ export function useCollabMessageHandler(
                 registerSyncContext,
                 scheduleDeferredCleanup,
                 hadPendingDeferredCleanup,
+                ownerCount,
                 isExternalRevert: true,
                 openDoc: async () => {
                   let nextDoc: YDoc & SyncDocMeta;
@@ -250,9 +261,16 @@ export function useCollabMessageHandler(
                       previousDoc.version,
                       newVersion
                     );
-                    nextDoc = (await openCollabDB(previousDoc.guid, {
-                      ...openOptions,
-                    })) as YDoc & SyncDocMeta;
+                    if (localContext.collabType === Types.DatabaseRow) {
+                      const rowEntry = await openRowCollabDBWithProvider(previousDoc.guid, openOptions);
+
+                      nextDoc = rowEntry.doc as YDoc & SyncDocMeta;
+                    } else {
+                      nextDoc = (await openCollabDB(previousDoc.guid, {
+                        ...openOptions,
+                      })) as YDoc & SyncDocMeta;
+                    }
+
                     Log.debug('[Version] opened new doc: objectId=%s, nextDocVersion=%s', objectId, nextDoc.version);
                     if (!isCollabVersionId(newVersion)) {
                       // Align with desktop Option<version> semantics after mismatch reset:
@@ -283,6 +301,10 @@ export function useCollabMessageHandler(
                   return nextDoc;
                 },
               });
+
+              if (localContext.collabType === Types.DatabaseRow) {
+                cacheCanonicalRowDoc(objectId, context.doc);
+              }
             } finally {
               // If discard threw before destroy fired, the doc.on('destroy')
               // handler never consumed this flag — clean it up defensively so

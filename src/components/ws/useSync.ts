@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { bindSyncContext, UpdateFlags } from '@/application/services/js-services/sync-protocol';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -229,6 +229,13 @@ export const useSync = (
   // a full registration: existing observers and owner ref-counts stay intact.
   const previousReadyStateRef = useRef(readyState);
   const hasOpenedRef = useRef(readyState === WS_READY_STATE_OPEN);
+  const readyStateRef = useRef(readyState);
+
+  // Keep the public rebind callback stable so a transport state change does
+  // not invalidate SyncInternalContext and every downstream database callback.
+  useLayoutEffect(() => {
+    readyStateRef.current = readyState;
+  }, [readyState]);
 
   useEffect(() => {
     const previousReadyState = previousReadyStateRef.current;
@@ -245,6 +252,23 @@ export const useSync = (
 
     refs.registeredContexts.current.forEach((context) => bindSyncContext(context));
   }, [readyState, refs]);
+
+  const rebindSyncContext = useCallback(
+    (objectId: string) => {
+      const context = refs.registeredContexts.current.get(objectId);
+
+      if (!context) return undefined;
+
+      // Reconnect already rebinds every registered context. Avoid filling the
+      // transport's offline queue with repeated retry manifests.
+      if (readyStateRef.current === WS_READY_STATE_OPEN) {
+        bindSyncContext(context);
+      }
+
+      return context.doc;
+    },
+    [refs]
+  );
 
   // ── Incoming collab messages ─────────────────────────────────────────
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
@@ -329,6 +353,7 @@ export const useSync = (
   return useMemo(
     () => ({
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       flushAllSync,
       syncAllToServer,
@@ -337,6 +362,7 @@ export const useSync = (
     }),
     [
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       flushAllSync,
       syncAllToServer,

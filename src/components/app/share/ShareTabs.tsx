@@ -25,17 +25,20 @@ enum TabKey {
 function ShareTabs({
   opened,
   viewId,
+  hidePublish = false,
   onClose,
   onOpenPublishManage,
 }: {
   opened: boolean;
   viewId: string;
+  hidePublish?: boolean;
   onClose: () => void;
   onOpenPublishManage?: () => void;
 }) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
+  const activeValue = hidePublish && value === TabKey.PUBLISH ? TabKey.SHARE : value;
   const currentUser = useCurrentUser();
   const {
     people,
@@ -54,12 +57,14 @@ function ShareTabs({
         label: t('shareAction.shareTab'),
         Panel: SharePanel,
       },
-      {
-        value: TabKey.PUBLISH,
-        label: t('shareAction.publish'),
-        icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
-        Panel: PublishPanel,
-      },
+      hidePublish
+        ? false
+        : {
+            value: TabKey.PUBLISH,
+            label: t('shareAction.publish'),
+            icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
+            Panel: PublishPanel,
+          },
       {
         value: TabKey.EXPORT_AS,
         label: t('shareAction.exportAsTab'),
@@ -83,7 +88,7 @@ function ShareTabs({
         onOpenPublishManage?: () => void;
       }>;
     }>;
-  }, [currentUser?.email, t, view?.is_published]);
+  }, [currentUser?.email, hidePublish, t, view?.is_published]);
 
   useEffect(() => {
     if (opened) {
@@ -92,7 +97,7 @@ function ShareTabs({
   }, [opened]);
 
   return (
-    <Tabs value={value} className='gap-0' onValueChange={(newValue) => setValue(newValue as TabKey)}>
+    <Tabs value={activeValue} className='gap-0' onValueChange={(newValue) => setValue(newValue as TabKey)}>
       <TabsList className={'flex w-full items-center justify-start px-3 pt-3'}>
         {opened &&
           options.map((option) => (

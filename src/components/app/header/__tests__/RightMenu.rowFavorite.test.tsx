@@ -28,7 +28,9 @@ jest.mock('@/components/app/app.hooks', () => ({
 
 jest.mock('src/components/app/share/ShareButton', () => ({
   __esModule: true,
-  default: () => <div data-testid='share-button' />,
+  default: ({ hidePublish = false }: { hidePublish?: boolean }) => (
+    <div data-testid='share-button' data-publish-hidden={String(hidePublish)} />
+  ),
 }));
 
 jest.mock('@/components/app/header/FavoriteButton', () => ({
@@ -45,7 +47,7 @@ jest.mock('@/components/app/header/Users', () => ({
   Users: () => <div data-testid='users' />,
 }));
 
-describe('RightMenu row favorite action', () => {
+describe('RightMenu row-page actions', () => {
   beforeEach(() => {
     mockActiveRowPage = null;
   });
@@ -97,6 +99,27 @@ describe('RightMenu row favorite action', () => {
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('row-document');
   });
 
+  it('keeps sharing available but hides publishing on a row-page route', () => {
+    mockActiveRowPage = {
+      rowId: 'requested-row',
+      documentId: 'row-document',
+      title: 'Requested row',
+      source: null,
+      hasDocument: false,
+    };
+
+    render(
+      <MemoryRouter
+        initialEntries={['/app/workspace-1/database-container?r=requested-row']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <RightMenu />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('true');
+  });
+
   it('continues targeting the route view outside row-page routes', () => {
     render(
       <MemoryRouter
@@ -108,5 +131,6 @@ describe('RightMenu row favorite action', () => {
     );
 
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('database-container');
+    expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('false');
   });
 });

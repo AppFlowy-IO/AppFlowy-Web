@@ -1,5 +1,9 @@
 import * as Y from 'yjs';
 
+import {
+  type DatabaseRowDocSeed,
+  isDatabaseRowDocSeedCurrent,
+} from '@/application/database-blob/row-seed-fence';
 import { installLegacyCellFieldTypeNormalizer } from '@/application/database-yjs/cell.field-type';
 import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
@@ -488,6 +492,29 @@ function getRowObjectId(rowKey: string) {
   return rowObjectId || rowKey;
 }
 
+function storeRowDocEntry(rowObjectId: string, entry: RowDocEntry) {
+  const existing = rowDocs.get(rowObjectId);
+
+  if (existing?.doc === entry.doc) return existing;
+
+  rowDocs.set(rowObjectId, entry);
+  entry.doc.on('destroy', () => {
+    if (rowDocs.get(rowObjectId) === entry) {
+      rowDocs.delete(rowObjectId);
+    }
+  });
+  return entry;
+}
+
+/** Keep RowService consumers on the document selected by sync version reset. */
+export function cacheCanonicalRowDoc(rowId: string, doc: YDoc) {
+  installLegacyCellFieldTypeNormalizer(doc);
+  storeRowDocEntry(getRowObjectId(rowId), {
+    doc,
+    whenSynced: Promise.resolve(),
+  });
+}
+
 function hasDatabaseRow(doc: YDoc) {
   return doc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.database_row);
 }
@@ -766,8 +793,7 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
       return raceWinner;
     }
 
-    rowDocs.set(rowObjectId, entry);
-    return entry;
+    return storeRowDocEntry(rowObjectId, entry);
   })();
 
   pendingRowDocEntries.set(rowObjectId, promise);
@@ -839,7 +865,7 @@ export async function createRow(rowKey: string) {
   return entry.doc;
 }
 
-export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; encoderVersion: number }) {
+export async function openRowDoc(rowKey: string, seed?: DatabaseRowDocSeed) {
   Log.debug('[Database] createRowDocFast start', {
     rowKey,
     hasSeed: Boolean(seed),
@@ -852,7 +878,7 @@ export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; enc
   const rowSharedRootBefore = entry.doc.getMap(YjsEditorKey.data_section);
   const hasRowDataBefore = rowSharedRootBefore.has(YjsEditorKey.database_row);
 
-  if (seed && !hasAppliedSeed(entry.doc, seed.bytes)) {
+  if (seed && isDatabaseRowDocSeedCurrent(seed) && !hasAppliedSeed(entry.doc, seed.bytes)) {
     Log.debug('[Database] createRowDocFast applying seed', {
       rowKey,
       seedBytes: seed.bytes.length,
