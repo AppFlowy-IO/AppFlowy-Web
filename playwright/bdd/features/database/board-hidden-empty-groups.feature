@@ -43,6 +43,7 @@ Feature: Board hidden empty groups
     And I expand the Board Hidden Groups section
     Then the other web client has no visible column named "BDD Shared Empty Group"
     And the other web client's Hidden Groups has exactly one "BDD Shared Empty Group" row with only a show action
+
     When I click the show action for hidden Board group "BDD Shared Empty Group"
     Then the Board has exactly one visible empty column named "BDD Shared Empty Group"
     And Hidden Groups has exactly one "BDD Shared Empty Group" row with only a hide action
@@ -53,3 +54,13 @@ Feature: Board hidden empty groups
     And Hidden Groups has exactly one "BDD Shared Empty Group" row with only a show action
     And the other web client has no visible column named "BDD Shared Empty Group"
     And the other web client's Hidden Groups has exactly one "BDD Shared Empty Group" row with only a show action
+
+  Scenario: A remotely created card appears without revealing empty groups
+    Given a Board database is open for group behavior testing
+    And an empty Board group named "BDD Remote Empty Group" exists
+    And another web client opens the same Board database
+    When I enable Hide empty groups for the Board
+    And I add a Board card named "BDD Remote Card" to the "To Do" column
+    Then the other web client has exactly one "BDD Remote Card" card in the "To Do" column
+    And the other web client has no visible column named "BDD Remote Empty Group"
+    And the other web client's Hidden Groups has exactly one "BDD Remote Empty Group" row with only a show action

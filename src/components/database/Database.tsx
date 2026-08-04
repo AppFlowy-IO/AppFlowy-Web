@@ -64,6 +64,7 @@ type RowSyncRegistration = {
   rowKey: string;
   status: 'pending' | 'registered' | 'release-pending' | 'released';
   cleanup?: (objectId: string, delayMs?: number) => void;
+  promise?: Promise<YDoc | undefined>;
 };
 
 function cleanupRegisteredRowSync(registration: RowSyncRegistration) {
@@ -404,7 +405,7 @@ function Database(props: Database2Props) {
   );
 
   const registerRowSync = useCallback(
-    (rowKey: string) => {
+    (rowKey: string, forceSync = false) => {
       if (!createRow) {
         return;
       }
@@ -414,8 +415,18 @@ function Database(props: Database2Props) {
       }
 
       const lifecycleRegistrations = rowSyncRegistrationsRef.current;
+      const existingRegistration = lifecycleRegistrations.get(rowKey);
 
-      if (lifecycleRegistrations.has(rowKey)) return;
+      if (existingRegistration) {
+        if (forceSync && existingRegistration.status === 'registered') {
+          return createRow(rowKey, { forceSync: true }).catch((error) => {
+            console.error('[Database] row sync retry failed', rowKey, error);
+            return undefined;
+          });
+        }
+
+        return existingRegistration.promise;
+      }
 
       const registration: RowSyncRegistration = {
         rowKey,
@@ -424,9 +435,10 @@ function Database(props: Database2Props) {
       };
 
       lifecycleRegistrations.set(rowKey, registration);
-      void createRow(rowKey)
-        .then(() => {
+      const promise = createRow(rowKey)
+        .then((doc) => {
           completeRowSyncRegistration(registration);
+          return doc;
         })
         .catch((e) => {
           registration.status = 'released';
@@ -437,7 +449,12 @@ function Database(props: Database2Props) {
           if (lifecycleRegistrations.get(rowKey) === registration) {
             lifecycleRegistrations.delete(rowKey);
           }
+
+          return undefined;
         });
+
+      registration.promise = promise;
+      return promise;
     },
     [createRow, databaseLifecycleIdentity, props.scheduleDeferredCleanup]
   );
@@ -448,7 +465,7 @@ function Database(props: Database2Props) {
       const databaseId = getDatabaseId();
       const rowKey = getRowKey(databaseId, rowId);
 
-      registerRowSync(rowKey);
+      void registerRowSync(rowKey);
     },
     [createRow, getDatabaseId, registerRowSync]
   );
@@ -757,7 +774,7 @@ function Database(props: Database2Props) {
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
 
-        registerRowSync(rowKey);
+        void registerRowSync(rowKey);
         return existing;
       }
 
@@ -773,7 +790,7 @@ function Database(props: Database2Props) {
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
 
-        registerRowSync(rowKey);
+        void registerRowSync(rowKey);
         return existingAfterGate;
       }
 
@@ -792,7 +809,7 @@ function Database(props: Database2Props) {
         const seed = peekDatabaseRowDocSeed(rowKey);
 
         if (hasRowConditionData(cachedRowDoc)) {
-          registerRowSync(rowKey);
+          void registerRowSync(rowKey);
           return cachedRowDoc;
         }
 
@@ -803,14 +820,14 @@ function Database(props: Database2Props) {
 
           // Bind sync for this row - only visible rows call ensureRow
           // Non-visible rows rely on blob diff cached data
-          registerRowSync(rowKey);
+          const syncedRowDoc = await registerRowSync(rowKey, true);
 
           if (!localCachePrimedRef.current) {
             localCachePrimedRef.current = true;
             void ensureBlobPrefetch();
           }
 
-          return rowDoc;
+          return syncedRowDoc ?? rowDoc;
         } catch {
           if (!isCurrentEnsure()) return undefined;
 
@@ -830,7 +847,10 @@ function Database(props: Database2Props) {
 
         if (rowDoc && isCurrentEnsure()) {
           setRowMap((prev) => {
-            if (prev[rowId]) return prev;
+            // A version reset may replace the sync context's Y.Doc while the
+            // row map still points at the old instance. The canonical doc must
+            // win so future remote updates reach selectors and Board cards.
+            if (prev[rowId] === rowDoc) return prev;
             return { ...prev, [rowId]: rowDoc };
           });
         }

@@ -246,6 +246,23 @@ export const useSync = (
     refs.registeredContexts.current.forEach((context) => bindSyncContext(context));
   }, [readyState, refs]);
 
+  const rebindSyncContext = useCallback(
+    (objectId: string) => {
+      const context = refs.registeredContexts.current.get(objectId);
+
+      if (!context) return undefined;
+
+      // Reconnect already rebinds every registered context. Avoid filling the
+      // transport's offline queue with repeated retry manifests.
+      if (readyState === WS_READY_STATE_OPEN) {
+        bindSyncContext(context);
+      }
+
+      return context.doc;
+    },
+    [readyState, refs]
+  );
+
   // ── Incoming collab messages ─────────────────────────────────────────
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
   // sequential queue.  Handles version mismatch detection and triggers doc rebuild
@@ -329,6 +346,7 @@ export const useSync = (
   return useMemo(
     () => ({
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       flushAllSync,
       syncAllToServer,
@@ -337,6 +355,7 @@ export const useSync = (
     }),
     [
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       flushAllSync,
       syncAllToServer,

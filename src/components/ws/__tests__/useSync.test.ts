@@ -457,6 +457,60 @@ describe('useSync deferred cleanup', () => {
     doc.destroy();
   });
 
+  it('rebinds a row sync context without acquiring another owner', () => {
+    const ws = {
+      ...createWs(),
+      readyState: WebSocket.OPEN,
+    };
+    const bc = createBroadcastChannel();
+    const rowId = '23232323-2323-4232-8232-232323232323';
+    const doc = createDoc(rowId);
+    const { result, rerender, unmount } = renderHook(
+      ({ transport }) => useSync(transport, bc, defaultEventEmitter, defaultWorkspaceId),
+      { initialProps: { transport: ws } }
+    );
+    const sendMessage = ws.sendMessage as jest.Mock;
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+    sendMessage.mockClear();
+
+    expect(result.current.rebindSyncContext('24242424-2424-4242-8242-242424242424')).toBeUndefined();
+    expect(result.current.rebindSyncContext(rowId)).toBe(doc);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collabMessage: expect.objectContaining({
+          objectId: rowId,
+          collabType: Types.DatabaseRow,
+          syncRequest: expect.any(Object),
+        }),
+      })
+    );
+
+    rerender({
+      transport: {
+        ...ws,
+        readyState: WebSocket.CLOSED,
+      },
+    });
+    sendMessage.mockClear();
+
+    expect(result.current.rebindSyncContext(rowId)).toBe(doc);
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.scheduleDeferredCleanup(rowId, 0);
+      jest.runOnlyPendingTimers();
+    });
+
+    expect(result.current.rebindSyncContext(rowId)).toBeUndefined();
+
+    unmount();
+    doc.destroy();
+  });
+
   it('enqueues local updates to the outbox and drains to sendMessage', () => {
     const outboxMock = jest.requireMock('@/application/sync-outbox');
 

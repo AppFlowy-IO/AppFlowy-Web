@@ -120,6 +120,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // Initialize sync context for collaborative editing
   const {
     registerSyncContext,
+    rebindSyncContext,
     flushAllSync,
     syncAllToServer,
     applyHttpFullSyncResult,
@@ -610,6 +611,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   const syncContextValue: SyncInternalContextType = useMemo(
     () => ({
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       eventEmitter,
       awarenessMap,
@@ -620,6 +622,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     [
       eventEmitter,
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       awarenessMap,
       flushAllSync,

@@ -246,6 +246,31 @@ When('I add another Board view from the database tab bar', async ({ page }) => {
   await expect(BoardSelectors.mainColumns(page)).toBeVisible();
 });
 
+When(
+  'I add a Board card named {string} to the {string} column',
+  async ({ page }, cardName: string, groupName: string) => {
+    const column = BoardSelectors.columnByName(page, groupName);
+
+    await expect(column).toHaveCount(1);
+    await expect(column).toBeVisible();
+    await column.getByText('New', { exact: true }).click();
+    await page.keyboard.type(cardName);
+    await page.keyboard.press('Enter');
+    await expect(column.locator('.board-card').filter({ hasText: cardName })).toHaveCount(1, { timeout: 15_000 });
+  }
+);
+
+Then(
+  'the other web client has exactly one {string} card in the {string} column',
+  async ({ page }, cardName: string, groupName: string) => {
+    const column = BoardSelectors.columnByName(requireSecondPage(page), groupName);
+
+    await expect(column).toHaveCount(1, { timeout: 30_000 });
+    await expect(column).toBeVisible({ timeout: 30_000 });
+    await expect(column.locator('.board-card').filter({ hasText: cardName })).toHaveCount(1, { timeout: 30_000 });
+  }
+);
+
 async function expectExactEmptyBoardColumn(page: Page, groupName: string, timeout = 5000) {
   const column = BoardSelectors.columnByName(page, groupName);
 
