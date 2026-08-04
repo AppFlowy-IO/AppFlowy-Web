@@ -803,6 +803,11 @@ function Database(props: Database2Props) {
       const existing = rowMapRef.current[rowId];
 
       if (hasRowConditionData(existing)) {
+        // Published JSON snapshots already contain the authoritative static
+        // row docs. Opening a local transport doc would replace them with an
+        // empty Y.Doc because publish pages do not establish realtime sync.
+        if (readOnly && ensureLifecycleIdentity.hasInitialRowMap) return existing;
+
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
         const syncedRowDoc = await registerRowSync(rowKey, true);
@@ -826,6 +831,8 @@ function Database(props: Database2Props) {
       const existingAfterGate = rowMapRef.current[rowId];
 
       if (hasRowConditionData(existingAfterGate)) {
+        if (readOnly && ensureLifecycleIdentity.hasInitialRowMap) return existingAfterGate;
+
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
         const syncedRowDoc = await registerRowSync(rowKey, true);
@@ -912,7 +919,7 @@ function Database(props: Database2Props) {
     // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
     // localCachePrimedRef), and module-level imports (openRowDoc, getCachedRowDoc, peekDatabaseRowDocSeed, getRowKey).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, registerRowSync]
+    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, readOnly, registerRowSync]
   );
 
   useLayoutEffect(() => {

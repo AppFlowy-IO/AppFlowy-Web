@@ -84,4 +84,72 @@ describe('useRowMetaSelector', () => {
       expect(result.current?.isEmptyDocument).toBe(false);
     });
   });
+
+  it('clears metadata when the canonical row doc is replaced by an empty doc', async () => {
+    const initialRowDoc = new Y.Doc() as YDoc;
+    const initialRoot = initialRowDoc.getMap(YjsEditorKey.data_section);
+    const initialMeta = new Y.Map<unknown>();
+    const replacementRowDoc = new Y.Doc() as YDoc;
+    const databaseDoc = new Y.Doc() as YDoc;
+    const isDocumentEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty);
+
+    expect(isDocumentEmptyKey).toBeDefined();
+    initialMeta.set(isDocumentEmptyKey as string, false);
+    initialRoot.set(YjsEditorKey.meta, initialMeta);
+
+    let contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: 'database-page-id',
+      activeViewId: 'board-view-id',
+      rowMap: { [rowId]: initialRowDoc },
+      workspaceId: 'workspace-id',
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, rerender, unmount } = renderHook(() => useRowMetaSelector(rowId), { wrapper });
+
+    expect(result.current?.isEmptyDocument).toBe(false);
+
+    contextValue = { ...contextValue, rowMap: { [rowId]: replacementRowDoc } };
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current).toBeNull();
+    });
+
+    unmount();
+    initialRowDoc.destroy();
+    replacementRowDoc.destroy();
+    databaseDoc.destroy();
+  });
+
+  it('clears metadata when the active row doc removes its metadata map', async () => {
+    const rowDoc = new Y.Doc() as YDoc;
+    const rowRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    const rowMeta = new Y.Map<unknown>();
+    const isDocumentEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty);
+
+    expect(isDocumentEmptyKey).toBeDefined();
+    rowMeta.set(isDocumentEmptyKey as string, false);
+    rowRoot.set(YjsEditorKey.meta, rowMeta);
+
+    const { result, unmount } = renderHook(() => useRowMetaSelector(rowId), {
+      wrapper: createWrapper(rowDoc),
+    });
+
+    expect(result.current?.isEmptyDocument).toBe(false);
+
+    act(() => {
+      rowRoot.delete(YjsEditorKey.meta);
+    });
+
+    await waitFor(() => {
+      expect(result.current).toBeNull();
+    });
+
+    unmount();
+    rowDoc.destroy();
+  });
 });

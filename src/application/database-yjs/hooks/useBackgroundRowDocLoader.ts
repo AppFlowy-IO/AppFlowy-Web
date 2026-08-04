@@ -1,10 +1,18 @@
-import { startTransition, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import * as Y from 'yjs';
 
-import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
-import { openRowCollabDBWithProvider } from '@/application/db';
+import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { openRowCollabDBWithProvider } from '@/application/db';
 import { YDatabaseRowOrders, YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
@@ -272,13 +280,16 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
   const [rowOrderRevision, setRowOrderRevision] = useState(0);
 
-  store.rows = rows;
   // A background run is shared by consumers and can outlive the render that
-  // started it. Always read transport-sensitive operations from the store so
-  // a WebSocket transition cannot leave the run using a stale callback.
-  store.rowOrders = rowOrders;
-  store.ensureRow = ensureRow;
-  store.loadRowFromSeed = loadRowFromSeed;
+  // started it. Publish transport-sensitive operations only after commit so an
+  // interrupted render cannot replace an active run's callbacks with values
+  // from a database lifecycle that never became active.
+  useLayoutEffect(() => {
+    store.rows = rows;
+    store.rowOrders = rowOrders;
+    store.ensureRow = ensureRow;
+    store.loadRowFromSeed = loadRowFromSeed;
+  }, [ensureRow, loadRowFromSeed, rowOrders, rows, store]);
 
   const cachedRowDocs = useSyncExternalStore(
     useCallback(

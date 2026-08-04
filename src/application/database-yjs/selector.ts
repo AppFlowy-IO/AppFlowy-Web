@@ -2,9 +2,9 @@ import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
+import { resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
-import { resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
@@ -2234,18 +2234,34 @@ export function usePrimaryFieldId() {
   return primaryFieldId;
 }
 
+function readRowMeta(rowId: string, rowDoc: YDoc | null): RowMeta | null {
+  if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return null;
+
+  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+  const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
+
+  return yMeta ? getMetaJSON(rowId, yMeta) : null;
+}
+
 export const useRowMetaSelector = (rowId: string) => {
-  const [meta, setMeta] = useState<RowMeta | null>();
   const { rowMap, ensureRow } = useDatabaseContext();
-  const [rowDoc, setRowDoc] = useState<YDoc | null>(null);
-
   const mappedRowDoc = rowMap?.[rowId] ?? null;
-
-  // Keep the selector attached to the document owned by Database. A version
-  // reset can replace a prefetched row doc without changing the row id.
-  useEffect(() => {
-    setRowDoc(mappedRowDoc);
-  }, [mappedRowDoc]);
+  const [resolvedRowDoc, setResolvedRowDoc] = useState<{
+    rowId: string;
+    mappedRowDoc: YDoc | null;
+    rowDoc: YDoc;
+  } | null>(null);
+  const rowDoc =
+    resolvedRowDoc?.rowId === rowId && resolvedRowDoc.mappedRowDoc === mappedRowDoc
+      ? resolvedRowDoc.rowDoc
+      : mappedRowDoc;
+  const [observedMeta, setObservedMeta] = useState<{
+    rowId: string;
+    rowDoc: YDoc;
+    value: RowMeta | null;
+  } | null>(null);
+  const meta =
+    observedMeta?.rowId === rowId && observedMeta.rowDoc === rowDoc ? observedMeta.value : readRowMeta(rowId, rowDoc);
 
   // A seeded row is sufficient for the first paint but is not necessarily the
   // canonical realtime document. Resolve it even when rowMap already has data.
@@ -2259,7 +2275,7 @@ export const useRowMetaSelector = (rowId: string) => {
         promise
           .then((doc) => {
             if (!cancelled && doc) {
-              setRowDoc(doc);
+              setResolvedRowDoc({ rowId, mappedRowDoc, rowDoc: doc });
             }
           })
           .catch((error: unknown) => {
@@ -2273,7 +2289,7 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRow, rowId]);
+  }, [ensureRow, mappedRowDoc, rowId]);
 
   // Read meta and observe changes on the row doc.
   // The meta key may not exist initially (empty Y.Map before sync completes),
@@ -2296,12 +2312,13 @@ export const useRowMetaSelector = (rowId: string) => {
 
       const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
 
-      if (!yMeta) return;
+      if (!yMeta) {
+        setObservedMeta({ rowId, rowDoc, value: null });
+        return;
+      }
 
       const updateMeta = () => {
-        const meta = getMetaJSON(rowId, yMeta);
-
-        setMeta(meta);
+        setObservedMeta({ rowId, rowDoc, value: getMetaJSON(rowId, yMeta) });
       };
 
       updateMeta();
@@ -2315,9 +2332,9 @@ export const useRowMetaSelector = (rowId: string) => {
       };
     };
 
-    // Watch for the meta key being added to the shared root (arrives via sync)
-    const handleRootChange = () => {
-      if (rowSharedRoot.has(YjsEditorKey.meta)) {
+    // Watch for the meta key being added, replaced, or removed.
+    const handleRootChange = (event: { keysChanged?: Set<string> }) => {
+      if (event.keysChanged?.has(YjsEditorKey.meta)) {
         attachMetaObserver();
       }
     };

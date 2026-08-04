@@ -482,6 +482,34 @@ describe('Database blob prefetch lifecycle', () => {
     canonicalRowDoc.destroy();
   });
 
+  it('keeps hydrated snapshot rows local in a read-only database', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const snapshotRowDoc = createHydratedRowDoc('snapshot-row');
+    const transportRowDoc = new Y.Doc({ guid: 'empty-transport-row' }) as YDoc;
+    const createRow = jest.fn().mockResolvedValue(transportRowDoc);
+    const props = {
+      ...databaseProps(doc),
+      readOnly: true,
+      createRow,
+      initialRowMap: { 'row-id': snapshotRowDoc },
+    };
+    const { unmount } = render(<Database {...props} />);
+    let ensuredRow: YDoc | undefined;
+
+    await act(async () => {
+      ensuredRow = await requestEnsureRow();
+    });
+
+    expect(ensuredRow).toBe(snapshotRowDoc);
+    expect(createRow).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('snapshot-row');
+
+    unmount();
+    doc.destroy();
+    snapshotRowDoc.destroy();
+    transportRowDoc.destroy();
+  });
+
   it('adopts a replacement DatabaseRow doc emitted by a version reset', async () => {
     const doc = createDatabaseDoc('database-id');
     const seedShell = createHydratedRowDoc('seed-shell');

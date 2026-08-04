@@ -490,12 +490,15 @@ describe('useSync deferred cleanup', () => {
       })
     );
 
+    const openRebindSyncContext = result.current.rebindSyncContext;
+
     rerender({
       transport: {
         ...ws,
         readyState: WebSocket.CLOSED,
       },
     });
+    expect(result.current.rebindSyncContext).toBe(openRebindSyncContext);
     sendMessage.mockClear();
 
     expect(result.current.rebindSyncContext(rowId)).toBe(doc);

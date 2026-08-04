@@ -1,5 +1,5 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
+import { startTransition, Suspense, type ReactNode } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
@@ -37,16 +37,28 @@ function createDatabaseFixture() {
   return { databaseDoc, databaseId, rowOrders, viewId };
 }
 
-function BackgroundLoaderHarness({ contextValue, scope }: { contextValue: DatabaseContextState; scope: string }) {
+const neverResolvingPromise = new Promise<never>(() => undefined);
+
+function BackgroundLoaderHarness({
+  contextValue,
+  scope,
+  suspend = false,
+}: {
+  contextValue: DatabaseContextState;
+  scope: string;
+  suspend?: boolean;
+}) {
   return (
     <DatabaseContext.Provider value={contextValue}>
-      <BackgroundLoader scope={scope} />
+      <BackgroundLoader scope={scope} suspend={suspend} />
     </DatabaseContext.Provider>
   );
 }
 
-function BackgroundLoader({ scope }: { scope: string }) {
+function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?: boolean }) {
   useBackgroundRowDocLoader(true, scope);
+
+  if (suspend) throw neverResolvingPromise;
   return null;
 }
 
@@ -69,7 +81,7 @@ describe('useBackgroundRowDocLoader', () => {
       seedsReady: false,
       workspaceId: 'workspace-id',
     };
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
+    const wrapper = ({ children }: { children: ReactNode }) => (
       <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
     );
     const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'board-grouping'), { wrapper });
@@ -123,7 +135,7 @@ describe('useBackgroundRowDocLoader', () => {
       seedsReady: false,
       workspaceId: 'workspace-id',
     };
-    const wrapper = ({ children }: { children: React.ReactNode }) => (
+    const wrapper = ({ children }: { children: ReactNode }) => (
       <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
     );
     const { unmount } = renderHook(() => useBackgroundRowDocLoader(true, 'board-grouping-retry'), { wrapper });
@@ -207,6 +219,67 @@ describe('useBackgroundRowDocLoader', () => {
     unmount();
     initialRowDoc.destroy();
     remoteRowDoc.destroy();
+    unresolvedRowDoc.destroy();
+    databaseDoc.destroy();
+  });
+
+  it('keeps the committed row loader callback when a replacement render suspends', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const initialRowDoc = createRowDoc('initial-row', databaseId, {});
+    const unresolvedRowDoc = new Y.Doc({ guid: 'inserted-row' }) as YDoc;
+    const loadRowFromSeed = jest.fn(async () => undefined);
+    const committedEnsureRow = jest.fn(async () => unresolvedRowDoc);
+    const uncommittedEnsureRow = jest.fn(async () => unresolvedRowDoc);
+    const baseContextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: true,
+      databaseDoc,
+      databasePageId: viewId,
+      ensureRow: committedEnsureRow,
+      loadRowFromSeed,
+      readOnly: false,
+      rowMap: { 'initial-row': initialRowDoc },
+      seedsReady: false,
+      workspaceId: 'workspace-id',
+    };
+    const { rerender, unmount } = render(
+      <Suspense fallback={null}>
+        <BackgroundLoaderHarness contextValue={baseContextValue} scope='board-grouping-suspended-callback' />
+      </Suspense>
+    );
+
+    act(() => {
+      rowOrders.push([{ id: 'inserted-row', height: 44 }]);
+    });
+
+    await waitFor(() => {
+      expect(committedEnsureRow).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      startTransition(() => {
+        rerender(
+          <Suspense fallback={null}>
+            <BackgroundLoaderHarness
+              contextValue={{ ...baseContextValue, ensureRow: uncommittedEnsureRow }}
+              scope='board-grouping-suspended-callback'
+              suspend
+            />
+          </Suspense>
+        );
+      });
+    });
+
+    await waitFor(
+      () => {
+        expect(committedEnsureRow).toHaveBeenCalledTimes(2);
+      },
+      { timeout: 5_000 }
+    );
+    expect(uncommittedEnsureRow).not.toHaveBeenCalled();
+
+    unmount();
+    initialRowDoc.destroy();
     unresolvedRowDoc.destroy();
     databaseDoc.destroy();
   });

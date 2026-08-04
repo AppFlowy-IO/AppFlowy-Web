@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { bindSyncContext, UpdateFlags } from '@/application/services/js-services/sync-protocol';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -229,6 +229,13 @@ export const useSync = (
   // a full registration: existing observers and owner ref-counts stay intact.
   const previousReadyStateRef = useRef(readyState);
   const hasOpenedRef = useRef(readyState === WS_READY_STATE_OPEN);
+  const readyStateRef = useRef(readyState);
+
+  // Keep the public rebind callback stable so a transport state change does
+  // not invalidate SyncInternalContext and every downstream database callback.
+  useLayoutEffect(() => {
+    readyStateRef.current = readyState;
+  }, [readyState]);
 
   useEffect(() => {
     const previousReadyState = previousReadyStateRef.current;
@@ -254,13 +261,13 @@ export const useSync = (
 
       // Reconnect already rebinds every registered context. Avoid filling the
       // transport's offline queue with repeated retry manifests.
-      if (readyState === WS_READY_STATE_OPEN) {
+      if (readyStateRef.current === WS_READY_STATE_OPEN) {
         bindSyncContext(context);
       }
 
       return context.doc;
     },
-    [readyState, refs]
+    [refs]
   );
 
   // ── Incoming collab messages ─────────────────────────────────────────
