@@ -1,4 +1,4 @@
-import { expect, Locator, Page, Route } from '@playwright/test';
+import { BrowserContext, expect, Locator, Page, Route } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,10 +22,16 @@ import {
 } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
-const { Given, When, Then } = createBdd();
+const { Given, When, Then, After } = createBdd();
 
 const cardNamesByPage = new WeakMap<Page, string>();
 const rowInlineGridStateByPage = new WeakMap<Page, RowInlineGridState>();
+const secondCardClientByPage = new WeakMap<Page, { context: BrowserContext; page: Page }>();
+
+After(async ({ page }) => {
+  await secondCardClientByPage.get(page)?.context.close();
+  secondCardClientByPage.delete(page);
+});
 
 interface DatabaseBlockState {
   blockId?: string;
@@ -60,6 +66,24 @@ Given('a board database with a card is open', async ({ page, request }) => {
 
   await addNewCard(page, currentCardName);
   await expect(cardByName(page, currentCardName)).toBeVisible({ timeout: 15000 });
+});
+
+Given('another web client opens the same card Board', async ({ page, browser }) => {
+  const currentCardName = getCurrentCardName(page);
+  const context = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: await page.context().storageState({ indexedDB: true }),
+    viewport: { width: 1440, height: 900 },
+  });
+  const secondPage = await context.newPage();
+
+  secondCardClientByPage.set(page, { context, page: secondPage });
+  setupPageErrorHandling(secondPage);
+
+  await secondPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+  await expect(BoardSelectors.boardContainer(secondPage)).toHaveCount(1, { timeout: 30000 });
+  await expect(cardByName(secondPage, currentCardName)).toHaveCount(1, { timeout: 30000 });
+  await expect(cardByName(secondPage, currentCardName)).toBeVisible({ timeout: 30000 });
 });
 
 When('I add image link {string} to the card row page', async ({ page }, imageUrl: string) => {
@@ -116,6 +140,38 @@ Then('the grid primary cell shows a row document icon', async ({ page }) => {
 
   await expect(row).toBeVisible({ timeout: 15000 });
   await expect(row.locator('.custom-icon')).toBeVisible({ timeout: 15000 });
+});
+
+Then('the other web client shows no row document icon for the card', async ({ page }) => {
+  const currentCardName = getCurrentCardName(page);
+  const secondPage = secondCardClientByPage.get(page)?.page;
+
+  if (!secondPage) {
+    throw new Error('Expected another web client to have opened the Board');
+  }
+
+  const card = cardByName(secondPage, currentCardName);
+
+  await expect(card).toHaveCount(1, { timeout: 30000 });
+  await expect(card).toBeVisible({ timeout: 30000 });
+  await expect(card.locator('[data-testid^="row-document-icon-"]')).toHaveCount(0);
+});
+
+Then('the other web client shows exactly one row document icon for the card', async ({ page }) => {
+  const currentCardName = getCurrentCardName(page);
+  const secondPage = secondCardClientByPage.get(page)?.page;
+
+  if (!secondPage) {
+    throw new Error('Expected another web client to have opened the Board');
+  }
+
+  const card = cardByName(secondPage, currentCardName);
+  const documentIcon = card.locator('[data-testid^="row-document-icon-"]');
+
+  await expect(card).toHaveCount(1, { timeout: 30000 });
+  await expect(card).toBeVisible({ timeout: 30000 });
+  await expect(documentIcon).toHaveCount(1, { timeout: 30000 });
+  await expect(documentIcon).toBeVisible({ timeout: 30000 });
 });
 
 Given('a grid database is open for row-page inline grid duplication', async ({ page, request }) => {

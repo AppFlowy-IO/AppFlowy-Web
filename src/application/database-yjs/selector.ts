@@ -2270,8 +2270,11 @@ export const useRowMetaSelector = (rowId: string) => {
   // The meta key may not exist initially (empty Y.Map before sync completes),
   // so we observe the shared root to detect when the meta key is added.
   useEffect(() => {
-    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
+    if (!rowDoc) return;
 
+    // Create the named root before realtime hydration. A remote update mutates
+    // this same Y.Map without replacing rowDoc, so waiting for share.has here
+    // leaves the hook with no observer and no React state change to retry it.
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
     let metaObserverCleanup: (() => void) | null = null;
 
