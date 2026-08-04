@@ -1159,6 +1159,7 @@ export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
+  const viewId = useDatabaseViewId();
   const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -1175,15 +1176,15 @@ export function useRowsByGroup(groupId: string) {
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
   const [groupResult, setGroupResult] = useState<Map<string, Row[]>>(new Map());
-  const [groupRowsReady, setGroupRowsReady] = useState(false);
+  const [hydratedGroupingIdentity, setHydratedGroupingIdentity] = useState<string | null>(null);
   const view = useDatabaseView();
   const filters = view?.get(YjsDatabaseKey.filters);
   const { hideEmptyGroups, hideUnGroup, shownEmptyGroupIds } = useBoardLayoutSettings();
+  const groupingIdentity = fieldId ? `${viewId ?? ''}:${groupId}:${fieldId}` : null;
 
   useEffect(() => {
     if (!fieldId || !rowOrders) {
       setGroupResult(new Map());
-      setGroupRowsReady(false);
       return;
     }
 
@@ -1195,7 +1196,6 @@ export function useRowsByGroup(groupId: string) {
       if (!field) {
         setNotFound(true);
         setGroupResult(newResult);
-        setGroupRowsReady(true);
         return;
       }
 
@@ -1206,7 +1206,6 @@ export function useRowsByGroup(groupId: string) {
       if (![FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType)) {
         setNotFound(true);
         setGroupResult(newResult);
-        setGroupRowsReady(true);
         return;
       }
 
@@ -1216,12 +1215,15 @@ export function useRowsByGroup(groupId: string) {
 
       if (!groupResult) {
         setGroupResult(newResult);
-        setGroupRowsReady(true);
         return;
       }
 
       setGroupResult(groupResult);
-      setGroupRowsReady(areGroupRowsHydrated(rowOrders, groupingRows));
+      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
+
+      if (rowsHydrated && groupingIdentity) {
+        setHydratedGroupingIdentity(groupingIdentity);
+      }
     };
 
     onConditionsChange();
@@ -1247,7 +1249,13 @@ export function useRowsByGroup(groupId: string) {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [fieldId, fields, rowOrders, groupingRows, filters]);
+  }, [fieldId, fields, rowOrders, groupingRows, filters, groupingIdentity]);
+
+  // Cold Boards must wait for their first complete grouping before empty
+  // columns can be classified safely. Once that baseline exists, a later
+  // row_order arriving before its separate DatabaseRow collab must not
+  // temporarily disable Hide empty groups for every column.
+  const groupVisibilityReady = groupingIdentity !== null && hydratedGroupingIdentity === groupingIdentity;
 
   const visibleColumns = useMemo(
     () =>
@@ -1255,19 +1263,19 @@ export function useRowsByGroup(groupId: string) {
         columns,
         fieldId,
         getRowCount: (columnId) => groupResult.get(columnId)?.length ?? 0,
-        groupRowsReady,
+        groupRowsReady: groupVisibilityReady,
         hideEmptyGroups,
         hideUngroupedColumn: hideUnGroup,
         shownEmptyGroupIds,
       }).visibleColumns,
-    [columns, fieldId, groupResult, groupRowsReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
+    [columns, fieldId, groupResult, groupVisibilityReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
   );
 
   return {
     fieldId,
     groupResult,
     columns: visibleColumns,
-    groupRowsReady,
+    groupRowsReady: groupVisibilityReady,
     hideEmptyGroups,
     notFound,
   };

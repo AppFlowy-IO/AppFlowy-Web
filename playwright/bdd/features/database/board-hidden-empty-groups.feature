@@ -60,7 +60,10 @@ Feature: Board hidden empty groups
     And an empty Board group named "BDD Remote Empty Group" exists
     And another web client opens the same Board database
     When I enable Hide empty groups for the Board
+    Then the other web client has no visible column named "BDD Remote Empty Group"
+    When the other web client starts watching Board group "BDD Remote Empty Group" for visibility flicker
     And I add a Board card named "BDD Remote Card" to the "To Do" column
     Then the other web client has exactly one "BDD Remote Card" card in the "To Do" column
+    And Board group "BDD Remote Empty Group" never became visible on the other web client
     And the other web client has no visible column named "BDD Remote Empty Group"
     And the other web client's Hidden Groups has exactly one "BDD Remote Empty Group" row with only a show action
