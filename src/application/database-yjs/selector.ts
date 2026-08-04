@@ -1062,6 +1062,7 @@ export function useBoardLayoutSettings() {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
   const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
+  const [shownEmptyGroupIds, setShownEmptyGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
 
@@ -1075,6 +1076,22 @@ export function useBoardLayoutSettings() {
       setIsCollapsed(collapseHiddenGroups === undefined ? true : Boolean(collapseHiddenGroups));
       setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
       setHideEmptyGroups(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_empty_groups)));
+      const rawShownEmptyGroupIds = layoutSetting?.get(YjsDatabaseKey.shown_empty_group_ids) as unknown;
+      const shownIds: unknown[] = Array.isArray(rawShownEmptyGroupIds)
+        ? rawShownEmptyGroupIds
+        : rawShownEmptyGroupIds &&
+          typeof rawShownEmptyGroupIds === 'object' &&
+          'toArray' in rawShownEmptyGroupIds &&
+          typeof rawShownEmptyGroupIds.toArray === 'function'
+        ? (rawShownEmptyGroupIds.toArray() as unknown[])
+        : [];
+      const nextShownEmptyGroupIds = new Set<string>(shownIds.filter((id): id is string => typeof id === 'string'));
+
+      setShownEmptyGroupIds((currentIds) =>
+        currentIds.size === nextShownEmptyGroupIds.size && [...currentIds].every((id) => nextShownEmptyGroupIds.has(id))
+          ? currentIds
+          : nextShownEmptyGroupIds
+      );
     };
 
     observerEvent();
@@ -1108,6 +1125,7 @@ export function useBoardLayoutSettings() {
     isCollapsed,
     hideUnGroup,
     hideEmptyGroups,
+    shownEmptyGroupIds,
     fieldId,
   };
 }
@@ -1137,7 +1155,7 @@ export function useGetBoardHiddenGroup(
   };
 }
 
-export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: ReadonlySet<string>) {
+export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
@@ -1160,7 +1178,7 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
   const [groupRowsReady, setGroupRowsReady] = useState(false);
   const view = useDatabaseView();
   const filters = view?.get(YjsDatabaseKey.filters);
-  const { hideEmptyGroups, hideUnGroup } = useBoardLayoutSettings();
+  const { hideEmptyGroups, hideUnGroup, shownEmptyGroupIds } = useBoardLayoutSettings();
 
   useEffect(() => {
     if (!fieldId || !rowOrders) {
@@ -1240,9 +1258,9 @@ export function useRowsByGroup(groupId: string, temporarilyShownColumnIds?: Read
         groupRowsReady,
         hideEmptyGroups,
         hideUngroupedColumn: hideUnGroup,
-        temporarilyShownColumnIds,
+        shownEmptyGroupIds,
       }).visibleColumns,
-    [columns, fieldId, groupResult, groupRowsReady, hideEmptyGroups, hideUnGroup, temporarilyShownColumnIds]
+    [columns, fieldId, groupResult, groupRowsReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
   );
 
   return {

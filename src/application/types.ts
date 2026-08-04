@@ -610,6 +610,7 @@ export enum YjsDatabaseKey {
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
   hide_empty_groups = 'hide_empty_groups',
+  shown_empty_group_ids = 'shown_empty_group_ids',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
   show_week_numbers = 'show_week_numbers',
@@ -907,6 +908,7 @@ export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
   get(
     key: YjsDatabaseKey.hide_ungrouped_column | YjsDatabaseKey.hide_empty_groups | YjsDatabaseKey.collapse_hidden_groups
   ): boolean;
+  get(key: YjsDatabaseKey.shown_empty_group_ids): string[];
 }
 
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {

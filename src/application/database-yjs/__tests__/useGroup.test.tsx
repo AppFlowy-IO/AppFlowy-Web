@@ -9,7 +9,11 @@ import {
   useBoardLayoutSettings,
   useGroup,
 } from '@/application/database-yjs';
-import { useToggleHiddenGroupColumnDispatch, useToggleHideEmptyGroups } from '@/application/database-yjs/dispatch';
+import {
+  useSetBoardColumnRenderedDispatch,
+  useToggleHiddenGroupColumnDispatch,
+  useToggleHideEmptyGroups,
+} from '@/application/database-yjs/dispatch';
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -260,5 +264,53 @@ describe('useGroup', () => {
     await waitFor(() => {
       expect(result.current.layoutSettings.hideEmptyGroups).toBe(true);
     });
+  });
+
+  it('persists and observes explicitly shown empty Board groups', async () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const emptyGroupId = 'empty-group-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: emptyGroupId, visible: true }],
+      viewId,
+    });
+
+    const { result } = renderHook(
+      () => ({
+        layoutSettings: useBoardLayoutSettings(),
+        setColumnRendered: useSetBoardColumnRenderedDispatch(groupId, fieldId),
+        toggleHideEmptyGroups: useToggleHideEmptyGroups(),
+      }),
+      {
+        wrapper: createWrapper(databaseDoc, viewId),
+      }
+    );
+
+    act(() => {
+      result.current.toggleHideEmptyGroups(true);
+      result.current.setColumnRendered(emptyGroupId, true, true);
+    });
+
+    await waitFor(() => {
+      expect(result.current.layoutSettings.shownEmptyGroupIds).toEqual(new Set([emptyGroupId]));
+    });
+
+    act(() => {
+      result.current.setColumnRendered(emptyGroupId, false, true);
+    });
+
+    await waitFor(() => {
+      expect(result.current.layoutSettings.shownEmptyGroupIds).toEqual(new Set());
+    });
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const groups = view?.get(YjsDatabaseKey.groups) as Y.Array<Y.Map<unknown>>;
+    const columns = groups.get(0).get(YjsDatabaseKey.groups) as Y.Array<{ id: string; visible: boolean }>;
+
+    expect(columns.toJSON()).toEqual([{ id: emptyGroupId, visible: false }]);
   });
 });

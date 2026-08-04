@@ -22,11 +22,7 @@ export interface GroupProps {
 }
 
 export const Group = ({ groupId }: GroupProps) => {
-  const [temporarilyShownColumnIds, setTemporarilyShownColumnIds] = useState<ReadonlySet<string>>(() => new Set());
-  const { columns, groupResult, fieldId, groupRowsReady, hideEmptyGroups, notFound } = useRowsByGroup(
-    groupId,
-    temporarilyShownColumnIds
-  );
+  const { columns, groupResult, fieldId, groupRowsReady, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
   const { paddingStart, paddingEnd, navigateToRow } = context;
@@ -43,31 +39,6 @@ export const Group = ({ groupId }: GroupProps) => {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);
-  const previousHideEmptyGroupsRef = useRef(hideEmptyGroups);
-
-  const setColumnTemporarilyShown = useCallback((columnId: string, shown: boolean) => {
-    setTemporarilyShownColumnIds((currentIds) => {
-      if (currentIds.has(columnId) === shown) return currentIds;
-
-      const nextIds = new Set(currentIds);
-
-      if (shown) {
-        nextIds.add(columnId);
-      } else {
-        nextIds.delete(columnId);
-      }
-
-      return nextIds;
-    });
-  }, []);
-
-  useEffect(() => {
-    if (previousHideEmptyGroupsRef.current === hideEmptyGroups) return;
-
-    previousHideEmptyGroupsRef.current = hideEmptyGroups;
-    setTemporarilyShownColumnIds(new Set());
-  }, [hideEmptyGroups]);
-
   const onDeleteCards = useCallback((ids: string[]) => {
     const rowIds = ids.map((id) => id.split('/')[1]);
 
@@ -120,15 +91,18 @@ export const Group = ({ groupId }: GroupProps) => {
   const innerRef = useRef<HTMLDivElement | null>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
-  const handleRefCallback = useCallback((el: HTMLDivElement | null) => {
-    ref.current = el;
-    if (!el) return;
-    const container = getVerticalScrollContainer(el);
+  const handleRefCallback = useCallback(
+    (el: HTMLDivElement | null) => {
+      ref.current = el;
+      if (!el) return;
+      const container = getVerticalScrollContainer(el);
 
-    if (!container) return;
-    setVerticalScrollContainer(container);
-    setElement(el);
-  }, [getVerticalScrollContainer, ref]);
+      if (!container) return;
+      setVerticalScrollContainer(container);
+      setElement(el);
+    },
+    [getVerticalScrollContainer, ref]
+  );
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
@@ -149,12 +123,15 @@ export const Group = ({ groupId }: GroupProps) => {
     });
   }, []);
 
-  const handleScrollLeft = useCallback((scrollLeft: number) => {
-    ref.current?.scrollTo({
-      left: scrollLeft,
-      behavior: 'auto',
-    });
-  }, [ref]);
+  const handleScrollLeft = useCallback(
+    (scrollLeft: number) => {
+      ref.current?.scrollTo({
+        left: scrollLeft,
+        behavior: 'auto',
+      });
+    },
+    [ref]
+  );
 
   const handleCloseDeleteConfirm = useCallback(() => {
     setDeleteConfirm(false);
@@ -273,7 +250,6 @@ export const Group = ({ groupId }: GroupProps) => {
             columns={columns}
             ref={innerRef}
             addCardBefore={addCardBefore}
-            onColumnTemporarilyShownChange={setColumnTemporarilyShown}
           />
         </div>
         <DatabaseStickyTopOverlay>

@@ -14,9 +14,8 @@ const Columns = forwardRef<
     addCardBefore: (id: string) => void;
     groupId: string;
     groupRowsReady: boolean;
-    onColumnTemporarilyShownChange: (columnId: string, shown: boolean) => void;
   }
->(({ columns, groupResult, fieldId, groupRowsReady, onColumnTemporarilyShownChange, ...props }, ref) => {
+>(({ columns, groupResult, fieldId, groupRowsReady, ...props }, ref) => {
   const fieldType = useFieldType(fieldId);
   const isSelectField = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
@@ -58,7 +57,6 @@ const Columns = forwardRef<
           getRows={getRows}
           groupRowsReady={groupRowsReady}
           shownColumnIds={shownColumnIds}
-          onColumnTemporarilyShownChange={onColumnTemporarilyShownChange}
         />
       )}
 
