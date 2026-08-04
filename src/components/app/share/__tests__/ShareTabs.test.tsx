@@ -46,22 +46,22 @@ jest.mock('@/components/app/share/ExportPanel', () => ({
   default: () => <div data-testid='export-panel' />,
 }));
 
-function renderShareTabs(disablePublish: boolean) {
-  return render(<ShareTabs opened viewId='database-view' disablePublish={disablePublish} onClose={() => undefined} />);
+function renderShareTabs(hidePublish: boolean) {
+  return render(<ShareTabs opened viewId='database-view' hidePublish={hidePublish} onClose={() => undefined} />);
 }
 
 describe('ShareTabs publish availability', () => {
-  it('keeps Share enabled while disabling Publish when requested', () => {
+  it('keeps Share available while removing Publish when requested', () => {
     renderShareTabs(true);
 
-    expect(screen.getByRole('tab', { name: 'shareAction.shareTab' }).disabled).toBe(false);
-    expect(screen.getByTestId('publish-tab').disabled).toBe(true);
+    expect(screen.getByRole('tab', { name: 'shareAction.shareTab' })).toBeTruthy();
+    expect(screen.queryByTestId('publish-tab')).toBeNull();
     expect(screen.getByTestId('share-panel')).toBeTruthy();
   });
 
-  it('keeps Publish enabled by default', () => {
+  it('keeps Publish available by default', () => {
     renderShareTabs(false);
 
-    expect(screen.getByTestId('publish-tab').disabled).toBe(false);
+    expect(screen.getByTestId('publish-tab')).toBeTruthy();
   });
 });

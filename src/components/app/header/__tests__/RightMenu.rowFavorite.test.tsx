@@ -28,8 +28,8 @@ jest.mock('@/components/app/app.hooks', () => ({
 
 jest.mock('src/components/app/share/ShareButton', () => ({
   __esModule: true,
-  default: ({ disablePublish = false }: { disablePublish?: boolean }) => (
-    <div data-testid='share-button' data-publish-disabled={String(disablePublish)} />
+  default: ({ hidePublish = false }: { hidePublish?: boolean }) => (
+    <div data-testid='share-button' data-publish-hidden={String(hidePublish)} />
   ),
 }));
 
@@ -99,7 +99,7 @@ describe('RightMenu row-page actions', () => {
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('row-document');
   });
 
-  it('keeps sharing available but disables publishing on a row-page route', () => {
+  it('keeps sharing available but hides publishing on a row-page route', () => {
     mockActiveRowPage = {
       rowId: 'requested-row',
       documentId: 'row-document',
@@ -117,7 +117,7 @@ describe('RightMenu row-page actions', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByTestId('share-button').getAttribute('data-publish-disabled')).toBe('true');
+    expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('true');
   });
 
   it('continues targeting the route view outside row-page routes', () => {
@@ -131,6 +131,6 @@ describe('RightMenu row-page actions', () => {
     );
 
     expect(screen.getByTestId('favorite-button').getAttribute('data-view-id')).toBe('database-container');
-    expect(screen.getByTestId('share-button').getAttribute('data-publish-disabled')).toBe('false');
+    expect(screen.getByTestId('share-button').getAttribute('data-publish-hidden')).toBe('false');
   });
 });

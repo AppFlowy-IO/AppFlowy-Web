@@ -25,13 +25,13 @@ enum TabKey {
 function ShareTabs({
   opened,
   viewId,
-  disablePublish = false,
+  hidePublish = false,
   onClose,
   onOpenPublishManage,
 }: {
   opened: boolean;
   viewId: string;
-  disablePublish?: boolean;
+  hidePublish?: boolean;
   onClose: () => void;
   onOpenPublishManage?: () => void;
 }) {
@@ -56,12 +56,14 @@ function ShareTabs({
         label: t('shareAction.shareTab'),
         Panel: SharePanel,
       },
-      {
-        value: TabKey.PUBLISH,
-        label: t('shareAction.publish'),
-        icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
-        Panel: PublishPanel,
-      },
+      hidePublish
+        ? false
+        : {
+            value: TabKey.PUBLISH,
+            label: t('shareAction.publish'),
+            icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
+            Panel: PublishPanel,
+          },
       {
         value: TabKey.EXPORT_AS,
         label: t('shareAction.exportAsTab'),
@@ -85,7 +87,7 @@ function ShareTabs({
         onOpenPublishManage?: () => void;
       }>;
     }>;
-  }, [currentUser?.email, t, view?.is_published]);
+  }, [currentUser?.email, hidePublish, t, view?.is_published]);
 
   useEffect(() => {
     if (opened) {
@@ -102,7 +104,6 @@ function ShareTabs({
               className={'flex flex-row items-center justify-center gap-3 px-1.5 pb-1.5'}
               key={option.value}
               value={option.value}
-              disabled={disablePublish && option.value === TabKey.PUBLISH}
               data-testid={option.value === TabKey.PUBLISH ? 'publish-tab' : undefined}
             >
               {option.icon}
