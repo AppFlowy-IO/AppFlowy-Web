@@ -1,12 +1,16 @@
+import EventEmitter from 'events';
+
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { APP_EVENTS } from '@/application/constants';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import Database, { Database2Props } from '@/components/database/Database';
 
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
+const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
 let mockLoadSeedOnLifecycleChange = false;
 
 jest.mock('@/application/database-blob', () => ({
@@ -48,7 +52,7 @@ jest.mock('@/components/database/DatabaseViews', () => {
     jest.requireActual<typeof import('@/application/database-yjs/context')>('@/application/database-yjs/context');
 
   return function MockDatabaseViews() {
-    const { bindRowSync, loadRowFromSeed, rowMap } = useDatabaseContext();
+    const { bindRowSync, ensureRow, loadRowFromSeed, rowMap } = useDatabaseContext();
     const initialLoadRowFromSeed = React.useRef(loadRowFromSeed).current;
     const previousLoadRowFromSeed = React.useRef(loadRowFromSeed);
 
@@ -93,6 +97,17 @@ jest.mock('@/components/database/DatabaseViews', () => {
           type: 'button',
         },
         'Bind row sync'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!ensureRow) throw new Error('ensureRow is not available');
+            mockEnsureRowPromises.push(ensureRow('row-id'));
+          },
+          type: 'button',
+        },
+        'Ensure row'
       )
     );
   };
@@ -166,10 +181,29 @@ function requestSeedLoadFromInitialLifecycle() {
   return request;
 }
 
+function requestEnsureRow() {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ensure row' }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request an ensured row');
+  return request;
+}
+
+function createHydratedRowDoc(guid: string) {
+  const doc = new Y.Doc({ guid }) as YDoc;
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+
+  sharedRoot.set(YjsEditorKey.database_row, new Y.Map());
+  return doc;
+}
+
 describe('Database blob prefetch lifecycle', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSeedLoadPromises.length = 0;
+    mockEnsureRowPromises.length = 0;
     mockLoadSeedOnLifecycleChange = false;
     mockedPeekSeed.mockReset();
     mockedGetCachedRowDoc.mockReset();
@@ -406,6 +440,72 @@ describe('Database blob prefetch lifecycle', () => {
     firstDoc.destroy();
     secondDoc.destroy();
     rowDoc.destroy();
+  });
+
+  it('replaces a hydrated seed shell with the canonical force-synced row doc', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const createRow = jest.fn(async (_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? canonicalRowDoc : seedShell
+    );
+    const props = {
+      ...databaseProps(doc),
+      createRow,
+      initialRowMap: { 'row-id': seedShell },
+    };
+    const { unmount } = render(<Database {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => {
+      expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+    });
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('seed-shell');
+
+    let ensuredRow: YDoc | undefined;
+
+    await act(async () => {
+      ensuredRow = await requestEnsureRow();
+    });
+
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+    expect(ensuredRow).toBe(canonicalRowDoc);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe(
+        'canonical-row'
+      );
+    });
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
+  it('adopts a replacement DatabaseRow doc emitted by a version reset', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const eventEmitter = new EventEmitter();
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} eventEmitter={eventEmitter} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('seed-shell');
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+        objectId: 'row-id',
+        doc: canonicalRowDoc,
+      });
+    });
+
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('canonical-row');
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
   });
 
   it('releases a row sync that finishes registering after its lifecycle ended', async () => {

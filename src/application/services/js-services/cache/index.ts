@@ -767,6 +767,11 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
     }
 
     rowDocs.set(rowObjectId, entry);
+    entry.doc.on('destroy', () => {
+      if (rowDocs.get(rowObjectId) === entry) {
+        rowDocs.delete(rowObjectId);
+      }
+    });
     return entry;
   })();
 

@@ -8,7 +8,7 @@ import { YDoc, YjsEditorKey } from '@/application/types';
 
 const rowId = 'c570d6fd-4ec2-4ce9-9c2f-2bca48174007';
 
-function createWrapper(rowDoc: YDoc) {
+function createWrapper(rowDoc: YDoc, ensureRow?: DatabaseContextState['ensureRow']) {
   const databaseDoc = new Y.Doc() as YDoc;
   const contextValue: DatabaseContextState = {
     readOnly: false,
@@ -17,6 +17,7 @@ function createWrapper(rowDoc: YDoc) {
     activeViewId: 'board-view-id',
     rowMap: { [rowId]: rowDoc },
     workspaceId: 'workspace-id',
+    ensureRow,
   };
 
   return ({ children }: { children: ReactNode }) => (
@@ -44,6 +45,39 @@ describe('useRowMetaSelector', () => {
 
     act(() => {
       Y.applyUpdate(localRowDoc, Y.encodeStateAsUpdate(remoteRowDoc));
+    });
+
+    await waitFor(() => {
+      expect(result.current?.isEmptyDocument).toBe(false);
+    });
+  });
+
+  it('observes row-page metadata from the canonical doc when a seed shell is already present', async () => {
+    const shellRowDoc = new Y.Doc() as YDoc;
+    const shellRoot = shellRowDoc.getMap(YjsEditorKey.data_section);
+    const shellMeta = new Y.Map<unknown>();
+    const canonicalRowDoc = new Y.Doc() as YDoc;
+    const canonicalRoot = canonicalRowDoc.getMap(YjsEditorKey.data_section);
+    const canonicalMeta = new Y.Map<unknown>();
+    const isDocumentEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty);
+
+    expect(isDocumentEmptyKey).toBeDefined();
+    shellMeta.set(isDocumentEmptyKey as string, true);
+    shellRoot.set(YjsEditorKey.meta, shellMeta);
+    canonicalMeta.set(isDocumentEmptyKey as string, true);
+    canonicalRoot.set(YjsEditorKey.meta, canonicalMeta);
+
+    const ensureRow = jest.fn(async () => canonicalRowDoc);
+    const { result } = renderHook(() => useRowMetaSelector(rowId), {
+      wrapper: createWrapper(shellRowDoc, ensureRow),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.isEmptyDocument).toBe(true);
+    });
+
+    act(() => {
+      canonicalMeta.set(isDocumentEmptyKey as string, false);
     });
 
     await waitFor(() => {

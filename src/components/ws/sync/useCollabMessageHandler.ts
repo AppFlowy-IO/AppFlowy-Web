@@ -3,9 +3,9 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { deleteCollabDB, openCollabDB } from '@/application/db';
+import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { YDoc } from '@/application/types';
+import { Types, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -250,9 +250,16 @@ export function useCollabMessageHandler(
                       previousDoc.version,
                       newVersion
                     );
-                    nextDoc = (await openCollabDB(previousDoc.guid, {
-                      ...openOptions,
-                    })) as YDoc & SyncDocMeta;
+                    if (localContext.collabType === Types.DatabaseRow) {
+                      const rowEntry = await openRowCollabDBWithProvider(previousDoc.guid, openOptions);
+
+                      nextDoc = rowEntry.doc as YDoc & SyncDocMeta;
+                    } else {
+                      nextDoc = (await openCollabDB(previousDoc.guid, {
+                        ...openOptions,
+                      })) as YDoc & SyncDocMeta;
+                    }
+
                     Log.debug('[Version] opened new doc: objectId=%s, nextDocVersion=%s', objectId, nextDoc.version);
                     if (!isCollabVersionId(newVersion)) {
                       // Align with desktop Option<version> semantics after mismatch reset:

@@ -9,6 +9,7 @@ import {
   releaseDatabaseRowDocSeedCache,
   retainDatabaseRowDocSeedCache,
 } from '@/application/database-blob';
+import { APP_EVENTS } from '@/application/constants';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -459,6 +460,37 @@ function Database(props: Database2Props) {
     [createRow, databaseLifecycleIdentity, props.scheduleDeferredCleanup]
   );
 
+  useEffect(() => {
+    const eventEmitter = props.eventEmitter;
+
+    if (!eventEmitter) return;
+
+    const handleCollabDocReset = (payload: { objectId?: string; doc?: YDoc }) => {
+      const { objectId, doc: canonicalDoc } = payload;
+
+      if (!objectId || !canonicalDoc) return;
+
+      setRowMap((prev) => {
+        // This Database owns only the row ids already present in its map. The
+        // same app-wide event also carries resets for pages and databases.
+        if (!prev[objectId] || prev[objectId] === canonicalDoc) return prev;
+        return { ...prev, [objectId]: canonicalDoc };
+      });
+
+      const rowKey = getRowKey(getDatabaseId(), objectId);
+      const registration = rowSyncRegistrationsRef.current.get(rowKey);
+
+      if (registration?.status === 'registered') {
+        registration.promise = Promise.resolve(canonicalDoc);
+      }
+    };
+
+    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    return () => {
+      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    };
+  }, [getDatabaseId, props.eventEmitter]);
+
   const bindRowSync = useCallback(
     (rowId: string) => {
       if (!createRow || !rowId) return;
@@ -773,9 +805,16 @@ function Database(props: Database2Props) {
       if (hasRowConditionData(existing)) {
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
+        const syncedRowDoc = await registerRowSync(rowKey, true);
 
-        void registerRowSync(rowKey);
-        return existing;
+        if (!isCurrentEnsure()) return;
+        const canonicalRowDoc = syncedRowDoc ?? existing;
+
+        if (canonicalRowDoc !== existing) {
+          setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
+        }
+
+        return canonicalRowDoc;
       }
 
       // Wait for batch preload to finish — it loads visible rows from seeds
@@ -789,9 +828,16 @@ function Database(props: Database2Props) {
       if (hasRowConditionData(existingAfterGate)) {
         const databaseId = getDatabaseId();
         const rowKey = getRowKey(databaseId, rowId);
+        const syncedRowDoc = await registerRowSync(rowKey, true);
 
-        void registerRowSync(rowKey);
-        return existingAfterGate;
+        if (!isCurrentEnsure()) return;
+        const canonicalRowDoc = syncedRowDoc ?? existingAfterGate;
+
+        if (canonicalRowDoc !== existingAfterGate) {
+          setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
+        }
+
+        return canonicalRowDoc;
       }
 
       const pending = pendingRowDocsRef.current.get(rowId);
@@ -809,8 +855,9 @@ function Database(props: Database2Props) {
         const seed = peekDatabaseRowDocSeed(rowKey);
 
         if (hasRowConditionData(cachedRowDoc)) {
-          void registerRowSync(rowKey);
-          return cachedRowDoc;
+          const syncedRowDoc = await registerRowSync(rowKey, true);
+
+          return syncedRowDoc ?? cachedRowDoc;
         }
 
         try {

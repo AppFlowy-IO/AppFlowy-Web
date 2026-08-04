@@ -2239,17 +2239,18 @@ export const useRowMetaSelector = (rowId: string) => {
   const { rowMap, ensureRow } = useDatabaseContext();
   const [rowDoc, setRowDoc] = useState<YDoc | null>(null);
 
-  // Ensure the row document is loaded and track it directly
+  const mappedRowDoc = rowMap?.[rowId] ?? null;
+
+  // Keep the selector attached to the document owned by Database. A version
+  // reset can replace a prefetched row doc without changing the row id.
+  useEffect(() => {
+    setRowDoc(mappedRowDoc);
+  }, [mappedRowDoc]);
+
+  // A seeded row is sufficient for the first paint but is not necessarily the
+  // canonical realtime document. Resolve it even when rowMap already has data.
   useEffect(() => {
     let cancelled = false;
-
-    // Check if already available in rowMap
-    const existing = rowMap?.[rowId];
-
-    if (existing) {
-      setRowDoc(existing);
-      return;
-    }
 
     if (ensureRow && rowId) {
       const promise = ensureRow(rowId);
@@ -2272,7 +2273,7 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRow, rowId, rowMap]);
+  }, [ensureRow, rowId]);
 
   // Read meta and observe changes on the row doc.
   // The meta key may not exist initially (empty Y.Map before sync completes),

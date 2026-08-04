@@ -929,6 +929,56 @@ describe('useSync version-gated message handling', () => {
     nextDoc.destroy();
   });
 
+  it('reopens a DatabaseRow version reset through shared row storage', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const eventEmitter = new EventEmitter();
+    const emitSpy = jest.spyOn(eventEmitter, 'emit');
+    const objectId = '56565656-5656-4656-8656-565656565656';
+    const incomingVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b013';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+    const provider = { destroy: jest.fn().mockResolvedValue(undefined) };
+
+    nextDoc.version = incomingVersion;
+    mockedOpenRowCollabDBWithProvider.mockResolvedValueOnce({ doc: nextDoc, provider } as never);
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+
+    act(() => {
+      ws.lastMessage = {
+        collabMessage: {
+          objectId,
+          collabType: Types.DatabaseRow,
+          update: { version: incomingVersion },
+        },
+      } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedOpenRowCollabDBWithProvider).toHaveBeenCalledWith(objectId, {
+        expectedVersion: incomingVersion,
+        currentUser: undefined,
+      });
+    });
+    expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(emitSpy).toHaveBeenCalledWith(
+        APP_EVENTS.COLLAB_DOC_RESET,
+        expect.objectContaining({ objectId, doc: nextDoc })
+      );
+    });
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
+  });
+
   it('processes versioned updates sequentially during reset handling', async () => {
     const ws = createWs();
     const bc = createBroadcastChannel();

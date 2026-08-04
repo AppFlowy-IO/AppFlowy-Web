@@ -4,12 +4,21 @@ import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYj
 import { expect } from '@jest/globals';
 import {
   collabTypeToDBType,
+  createRow,
+  getCachedRowDoc,
   getPublishView,
   getPublishViewMeta,
   mergeLegacyRowDocIfExists,
 } from '@/application/services/js-services/cache';
 import { applyYDoc } from '@/application/ydoc/apply';
-import { openCollabDB, openCollabDBWithProvider, collabIndexedDBExists, db, deleteCollabDB } from '@/application/db';
+import {
+  openCollabDB,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+  collabIndexedDBExists,
+  db,
+  deleteCollabDB,
+} from '@/application/db';
 import { StrategyType } from '@/application/services/js-services/cache/types';
 
 jest.mock('@/application/ydoc/apply', () => ({
@@ -40,6 +49,9 @@ const normalDoc = withTestingYDoc('1');
 const mockFetcher = jest.fn();
 const mockedApplyYDoc = applyYDoc as jest.MockedFunction<typeof applyYDoc>;
 const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
+const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<
+  typeof openRowCollabDBWithProvider
+>;
 const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
 const mockedDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 
@@ -279,6 +291,40 @@ describe('database row legacy cache migration', () => {
     expect(db.collab_custom.put).not.toHaveBeenCalled();
     expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
     expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+  });
+});
+
+describe('database row document cache', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedCollabIndexedDBExists.mockResolvedValue(false);
+    (db.collab_custom.get as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('evicts a destroyed row document before the next open', async () => {
+    const rowId = 'row-cache-destroyed';
+    const rowKey = `database-cache-destroyed_rows_${rowId}`;
+    const firstDoc = createRowDoc(rowId, 'database-cache-destroyed', {});
+    const secondDoc = createRowDoc(rowId, 'database-cache-destroyed', {});
+    const provider = {
+      synced: true,
+      destroy: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockedOpenRowCollabDBWithProvider
+      .mockResolvedValueOnce({ doc: firstDoc, provider } as never)
+      .mockResolvedValueOnce({ doc: secondDoc, provider } as never);
+
+    await expect(createRow(rowKey)).resolves.toBe(firstDoc);
+    expect(getCachedRowDoc(rowKey)).toBe(firstDoc);
+
+    firstDoc.destroy();
+
+    expect(getCachedRowDoc(rowKey)).toBeUndefined();
+    await expect(createRow(rowKey)).resolves.toBe(secondDoc);
+    expect(mockedOpenRowCollabDBWithProvider).toHaveBeenCalledTimes(2);
+
+    secondDoc.destroy();
   });
 });
 

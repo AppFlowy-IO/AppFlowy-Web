@@ -21,7 +21,7 @@ jest.mock('@/utils/platform', () => ({
 
 const rowId = '43ed1aeb-a8bd-4039-be1d-92f33f3c1c03';
 
-function renderPrimaryCell(rowDoc: YDoc) {
+function renderPrimaryCell(rowDoc: YDoc, ensureRow?: DatabaseContextState['ensureRow']) {
   const contextValue: DatabaseContextState = {
     readOnly: false,
     databaseDoc: new Y.Doc() as YDoc,
@@ -29,6 +29,7 @@ function renderPrimaryCell(rowDoc: YDoc) {
     activeViewId: 'board-view-id',
     rowMap: { [rowId]: rowDoc },
     workspaceId: 'workspace-id',
+    ensureRow,
   };
 
   return render(
@@ -67,6 +68,34 @@ describe('PrimaryCell', () => {
 
     act(() => {
       Y.applyUpdate(localRowDoc, Y.encodeStateAsUpdate(remoteRowDoc));
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId(`row-document-icon-${rowId}`)).toHaveLength(1);
+    });
+  });
+
+  it('shows the row document icon when realtime replaces an existing seed shell', async () => {
+    const shellRowDoc = new Y.Doc() as YDoc;
+    const shellRoot = shellRowDoc.getMap(YjsEditorKey.data_section);
+    const shellMeta = new Y.Map<unknown>();
+    const canonicalRowDoc = new Y.Doc() as YDoc;
+    const canonicalRoot = canonicalRowDoc.getMap(YjsEditorKey.data_section);
+    const canonicalMeta = new Y.Map<unknown>();
+    const isDocumentEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty);
+
+    expect(isDocumentEmptyKey).toBeDefined();
+    shellMeta.set(isDocumentEmptyKey as string, true);
+    shellRoot.set(YjsEditorKey.meta, shellMeta);
+    canonicalMeta.set(isDocumentEmptyKey as string, true);
+    canonicalRoot.set(YjsEditorKey.meta, canonicalMeta);
+
+    renderPrimaryCell(shellRowDoc, async () => canonicalRowDoc);
+
+    expect(screen.queryByTestId(`row-document-icon-${rowId}`)).toBeNull();
+
+    act(() => {
+      canonicalMeta.set(isDocumentEmptyKey as string, false);
     });
 
     await waitFor(() => {
