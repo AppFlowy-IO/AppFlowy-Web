@@ -132,6 +132,20 @@ jest.mock('@/components/database/DatabaseViews', () => {
           type: 'button',
         },
         'Ensure remote row'
+      ),
+      ...['remote-row-a', 'remote-row-b', 'remote-row-c'].map((rowId) =>
+        React.createElement(
+          'button',
+          {
+            key: rowId,
+            onClick: () => {
+              if (!ensureRow) throw new Error('ensureRow is not available');
+              mockEnsureRowPromises.push(ensureRow(rowId));
+            },
+            type: 'button',
+          },
+          `Ensure ${rowId}`
+        )
       )
     );
   };
@@ -184,6 +198,23 @@ function insertRemoteRowOrder(doc: YDoc, rowId: string) {
 
   rowOrders?.push([{ id: rowId }]);
   Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc, beforeInsert));
+  remoteDoc.destroy();
+}
+
+function hydrateDatabaseIdWithRemoteRowOrders(doc: YDoc, databaseId: string, rowIds: string[]) {
+  const remoteDoc = new Y.Doc();
+
+  Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+  const beforeHydration = Y.encodeStateVector(remoteDoc);
+  const database = remoteDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+  remoteDoc.transact(() => {
+    database?.set(YjsDatabaseKey.id, databaseId);
+    rowOrders?.push(rowIds.map((id) => ({ id })));
+  });
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc, beforeHydration));
   remoteDoc.destroy();
 }
 
@@ -246,6 +277,16 @@ function requestRemoteRowEnsure() {
   const request = mockEnsureRowPromises[requestIndex];
 
   if (!request) throw new Error('DatabaseViews did not request the remote row');
+  return request;
+}
+
+function requestNamedRemoteRowEnsure(rowId: string) {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: `Ensure ${rowId}` }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error(`DatabaseViews did not request remote row ${rowId}`);
   return request;
 }
 
@@ -490,6 +531,93 @@ describe('Database blob prefetch lifecycle', () => {
       firstDoc.destroy();
       secondDoc.destroy();
       rowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('reconciles every remote row after the database id hydrates on the same document', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-doc-id', 'temporary-database-id');
+    const rowIds = ['remote-row-a', 'remote-row-b', 'remote-row-c'];
+    const rowDocs = Object.fromEntries(rowIds.map((rowId) => [rowId, createHydratedRowDoc(rowId)]));
+    const createRow = jest.fn(async (rowKey: string) => {
+      const rowId = rowKey.split('_rows_')[1];
+
+      return rowDocs[rowId];
+    });
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} initialRowMap={rowDocs} />);
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+
+    try {
+      await act(async () => {
+        database?.set(YjsDatabaseKey.id, 'hydrated-database-id');
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        rowIds.forEach((rowId) => insertRemoteRowOrder(doc, rowId));
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await Promise.all(rowIds.map(requestNamedRemoteRowEnsure));
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+      expect(createRow.mock.calls.map(([rowKey]) => rowKey)).toEqual(
+        rowIds.map((rowId) => `hydrated-database-id_rows_${rowId}`)
+      );
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(6);
+      rowIds.forEach((rowId) => {
+        expect(createRow).toHaveBeenCalledWith(`hydrated-database-id_rows_${rowId}`, { forceSync: true });
+      });
+    } finally {
+      unmount();
+      doc.destroy();
+      Object.values(rowDocs).forEach((rowDoc) => rowDoc.destroy());
+      jest.useRealTimers();
+    }
+  });
+
+  it('reconciles remote rows when the database id and row orders hydrate together', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-doc-id', 'temporary-database-id');
+    const rowIds = ['remote-row-a', 'remote-row-b', 'remote-row-c'];
+    const rowDocs = Object.fromEntries(rowIds.map((rowId) => [rowId, createHydratedRowDoc(rowId)]));
+    const createRow = jest.fn(async (rowKey: string) => {
+      const rowId = rowKey.split('_rows_')[1];
+
+      return rowDocs[rowId];
+    });
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} initialRowMap={rowDocs} />);
+
+    try {
+      await act(async () => {
+        hydrateDatabaseIdWithRemoteRowOrders(doc, 'hydrated-database-id', rowIds);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await Promise.all(rowIds.map(requestNamedRemoteRowEnsure));
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(6);
+      rowIds.forEach((rowId) => {
+        expect(createRow).toHaveBeenCalledWith(`hydrated-database-id_rows_${rowId}`, { forceSync: true });
+      });
+    } finally {
+      unmount();
+      doc.destroy();
+      Object.values(rowDocs).forEach((rowDoc) => rowDoc.destroy());
       jest.useRealTimers();
     }
   });

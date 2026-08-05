@@ -344,6 +344,7 @@ function Database(props: Database2Props) {
     [workspaceId, doc, currentDatabaseId, props.initialRowMap]
   );
   const activeDatabaseLifecycleRef = useRef<typeof databaseLifecycleIdentity | null>(databaseLifecycleIdentity);
+  const previousDatabaseLifecycleRef = useRef(databaseLifecycleIdentity);
 
   const getPriorityRowIds = useCallback(() => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -1048,7 +1049,6 @@ function Database(props: Database2Props) {
     const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
     const rowOrders = view?.get(YjsDatabaseKey.row_orders);
-    const lifecycleReconciliationRows = remoteRowsNeedingReconciliationRef.current;
 
     if (!rowOrders) return;
 
@@ -1064,6 +1064,7 @@ function Database(props: Database2Props) {
           .filter((row) => !row.is_deleted)
           .map((row) => row.id)
       );
+      const lifecycleReconciliationRows = remoteRowsNeedingReconciliationRef.current;
 
       if (!transaction.local) {
         nextOrderedRowIds.forEach((rowId) => {
@@ -1088,6 +1089,14 @@ function Database(props: Database2Props) {
   }, [activeViewId, createRow, doc, readOnly]);
 
   useLayoutEffect(() => {
+    const previousLifecycleIdentity = previousDatabaseLifecycleRef.current;
+    const nextRemoteRowsNeedingReconciliation =
+      previousLifecycleIdentity?.doc === databaseLifecycleIdentity.doc &&
+      previousLifecycleIdentity.databaseId !== databaseLifecycleIdentity.databaseId
+        ? new Set(remoteRowsNeedingReconciliationRef.current)
+        : new Set<RowId>();
+
+    previousDatabaseLifecycleRef.current = databaseLifecycleIdentity;
     activeDatabaseLifecycleRef.current = databaseLifecycleIdentity;
     const lifecycleRowSyncRegistrations = new Map<string, RowSyncRegistration>();
     const prefetchGeneration = blobPrefetchGenerationRef.current + 1;
@@ -1100,7 +1109,10 @@ function Database(props: Database2Props) {
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
     prefetchPromisesRef.current.clear();
-    remoteRowsNeedingReconciliationRef.current = new Set();
+    // A remote update can hydrate the database id and append row orders in the
+    // same Yjs transaction. Carry those markers into the real-id lifecycle;
+    // unrelated document/workspace lifecycle changes still start empty.
+    remoteRowsNeedingReconciliationRef.current = nextRemoteRowsNeedingReconciliation;
     blobPrefetchPromiseRef.current = null;
     localCachePrimedRef.current = false;
     rowSyncRegistrationsRef.current = lifecycleRowSyncRegistrations;
