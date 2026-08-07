@@ -358,7 +358,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
               }}
               onDeleted={handleClose}
               viewId={effectiveViewId}
-              enableVersionHistory={false}
             />
           )}
 
