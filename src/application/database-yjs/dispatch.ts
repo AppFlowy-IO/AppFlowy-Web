@@ -614,6 +614,7 @@ export function useToggleCollapsedHiddenGroupColumnDispatch() {
 
 export function useToggleHideUnGrouped() {
   const view = useDatabaseView();
+  const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
@@ -626,13 +627,31 @@ export function useToggleHideUnGrouped() {
               throw new Error(`Unable to toggle hide ungrouped column`);
             }
 
+            const group = view.get(YjsDatabaseKey.groups)?.toArray()?.[0];
+            const fieldId = group?.get(YjsDatabaseKey.field_id);
+
+            // Desktop only reads the ungrouped column's `visible` flag, so the
+            // canonical write must go through it; setGroupColumnHidden also
+            // mirrors hide_ungrouped_column for older web clients.
+            if (group && fieldId) {
+              setGroupColumnHidden({
+                columnId: fieldId,
+                fieldId,
+                fields,
+                groupId: group.get(YjsDatabaseKey.id),
+                hidden: hide,
+                view,
+              });
+              return;
+            }
+
             getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.hide_ungrouped_column, hide);
           },
         ],
         'toggleHideUnGrouped'
       );
     },
-    [sharedRoot, view]
+    [fields, sharedRoot, view]
   );
 }
 
