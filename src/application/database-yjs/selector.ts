@@ -672,6 +672,7 @@ export function useAdvancedFiltersSelector() {
           ...parsed,
           operator: draft.operator,
           fieldType: ft,
+          rollupTargetFieldType: draft.rollupTargetFieldType,
         } as Filter;
       });
 

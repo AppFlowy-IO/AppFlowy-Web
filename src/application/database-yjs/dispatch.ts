@@ -47,7 +47,7 @@ import { createRelationField } from '@/application/database-yjs/fields/relation/
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
-import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
+import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { getGroupColumns } from '@/application/database-yjs/group';
 import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
@@ -3658,6 +3658,11 @@ export function useAddFilter() {
 
             filter.set(YjsDatabaseKey.type, fieldType);
             filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+            const rollupTargetFieldType = resolveRollupFilterTargetFieldType(fieldType, field);
+
+            if (rollupTargetFieldType !== undefined) {
+              filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
+            }
 
             filters.push([filter]);
 

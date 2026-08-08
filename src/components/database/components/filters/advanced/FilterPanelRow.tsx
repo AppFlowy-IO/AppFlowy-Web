@@ -67,7 +67,8 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const removeFilter = useRemoveAdvancedFilterAndRebuild();
-  const updateFilter = useUpdateAdvancedFilterAndRebuild();
+  const updateFilterValue = useUpdateAdvancedFilter();
+  const updateFilterAndRebuild = useUpdateAdvancedFilterAndRebuild();
   const { field } = useFieldSelector(filter.fieldId);
 
   const [fieldSelectorOpen, setFieldSelectorOpen] = useState(false);
@@ -83,24 +84,26 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
 
   const handleFieldChange = useCallback(
     (newFieldId: string) => {
-      updateFilter({
+      updateFilterAndRebuild({
         filterId: filter.id,
         fieldId: newFieldId,
       });
       setFieldSelectorOpen(false);
     },
-    [filter.id, updateFilter]
+    [filter.id, updateFilterAndRebuild]
   );
 
   const handleConditionChange = useCallback(
     (condition: number) => {
-      updateFilter({
+      // Condition changes are scalar CRDT updates. Rebuilding the tree here
+      // would let this edit overwrite unrelated filters from another client.
+      updateFilterValue({
         filterId: filter.id,
         fieldId: filter.fieldId,
         condition,
       });
     },
-    [filter.id, filter.fieldId, updateFilter]
+    [filter.id, filter.fieldId, updateFilterValue]
   );
 
   if (!field) return null;
