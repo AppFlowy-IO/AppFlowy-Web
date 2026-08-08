@@ -898,12 +898,12 @@ function Database(props: Database2Props) {
   const scheduleMissingRowRecovery = useCallback(() => {
     if (readOnly) return;
     if (missingRowRecoveryLifecycleRef.current === databaseLifecycleIdentity) return;
-    missingRowRecoveryLifecycleRef.current = databaseLifecycleIdentity;
 
     const databaseId = getDatabaseId();
     const recoveryGeneration = blobPrefetchGenerationRef.current;
 
     if (!workspaceId || !databaseId) return;
+    missingRowRecoveryLifecycleRef.current = databaseLifecycleIdentity;
 
     Log.warn('[Database] visible row has no local data after blob prefetch; forcing full blob resync', {
       workspaceId,
