@@ -2,7 +2,7 @@ import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
-import { resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
+import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -977,10 +977,13 @@ export function useGroupsSelector() {
 export interface GroupColumn {
   id: string;
   visible: boolean;
+  /** Whether `visible` was explicitly persisted rather than defaulted to true. */
+  visibleExplicit?: boolean;
 }
 
 function normalizeGroupColumn(column: unknown): GroupColumn | null {
   const parseVisible = (value: unknown) => value !== false && value !== 'false';
+  const isExplicitVisible = (value: unknown) => value !== undefined && value !== null;
 
   if (!column || typeof column !== 'object') return null;
 
@@ -990,9 +993,12 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
 
     if (typeof id !== 'string' || !id) return null;
 
+    const rawVisible = mapColumn.get(YjsDatabaseKey.visible);
+
     return {
       id,
-      visible: parseVisible(mapColumn.get(YjsDatabaseKey.visible)),
+      visible: parseVisible(rawVisible),
+      visibleExplicit: isExplicitVisible(rawVisible),
     };
   }
 
@@ -1003,6 +1009,7 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
   return {
     id: plainColumn.id,
     visible: parseVisible(plainColumn.visible),
+    visibleExplicit: isExplicitVisible(plainColumn.visible),
   };
 }
 
@@ -1012,6 +1019,7 @@ function getFallbackGroupColumns(field?: YDatabaseField): GroupColumn[] {
   return (getGroupColumns(field) ?? []).map((column) => ({
     id: column.id,
     visible: true,
+    visibleExplicit: false,
   }));
 }
 
@@ -1066,6 +1074,7 @@ export function useBoardLayoutSettings() {
   const [shownEmptyGroupIds, setShownEmptyGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
+  const [ungroupedColumn, setUngroupedColumn] = useState<GroupColumn | null>(null);
 
   useEffect(() => {
     if (!view) return;
@@ -1112,6 +1121,19 @@ export function useBoardLayoutSettings() {
       const groupFieldId = group.get(YjsDatabaseKey.field_id);
 
       setFieldId(groupFieldId);
+
+      const next =
+        (group.get(YjsDatabaseKey.groups)?.toArray() ?? [])
+          .map(normalizeGroupColumn)
+          .find((column): column is GroupColumn => column?.id === groupFieldId) ?? null;
+
+      setUngroupedColumn((current) =>
+        current?.id === next?.id &&
+        current?.visible === next?.visible &&
+        current?.visibleExplicit === next?.visibleExplicit
+          ? current
+          : next
+      );
     };
 
     observerEvent();
@@ -1122,12 +1144,18 @@ export function useBoardLayoutSettings() {
     };
   }, [groups]);
 
+  const ungroupedColumnHidden = isUngroupedColumnHidden({
+    column: ungroupedColumn,
+    hideUngroupedColumn: hideUnGroup,
+  });
+
   return {
     isCollapsed,
     hideUnGroup,
     hideEmptyGroups,
     shownEmptyGroupIds,
     fieldId,
+    ungroupedColumnHidden,
   };
 }
 

@@ -22,7 +22,7 @@ function BoardSettingGroup () {
   const { t } = useTranslation();
   const {
     hideEmptyGroups,
-    hideUnGroup,
+    ungroupedColumnHidden,
     fieldId,
   } = useBoardLayoutSettings();
   const fieldType = useFieldType(fieldId || '');
@@ -79,13 +79,13 @@ function BoardSettingGroup () {
                 className={'w-full'}
                 onSelect={(e) => {
                   e.preventDefault();
-                  toggle(!hideUnGroup);
+                  toggle(!ungroupedColumnHidden);
                 }}
               >
                 {t('board.showUngrouped')}
                 <Switch
                   className={'ml-auto'}
-                  checked={!hideUnGroup}
+                  checked={!ungroupedColumnHidden}
                 />
 
               </DropdownMenuItem>
