@@ -1122,10 +1122,17 @@ export function useBoardLayoutSettings() {
 
       setFieldId(groupFieldId);
 
-      const next =
-        (group.get(YjsDatabaseKey.groups)?.toArray() ?? [])
-          .map(normalizeGroupColumn)
-          .find((column): column is GroupColumn => column?.id === groupFieldId) ?? null;
+      const rawColumns = group.get(YjsDatabaseKey.groups)?.toArray() ?? [];
+      let next: GroupColumn | null = null;
+
+      for (const rawColumn of rawColumns) {
+        const column = normalizeGroupColumn(rawColumn);
+
+        if (column?.id === groupFieldId) {
+          next = column;
+          break;
+        }
+      }
 
       setUngroupedColumn((current) =>
         current?.id === next?.id &&
