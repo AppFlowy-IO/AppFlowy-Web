@@ -276,7 +276,13 @@
     "changeIcon": "Change icon",
     "collapseAllPages": "Collapse all subpages",
     "movePageTo": "Move page to",
-    "move": "Move"
+    "move": "Move",
+    "moveToWorkspace": "Move to another workspace",
+    "moveToWorkspaceSelect": "Select a workspace",
+    "noOtherWorkspaces": "You don't have any other workspaces",
+    "movingToWorkspace": "Moving to {{workspace}}...",
+    "moveToWorkspaceSuccess": "Moved to {{workspace}}",
+    "moveToWorkspaceSourceNotRemoved": "Copied to {{workspace}}, but removing the page from this workspace failed — it now exists in both. Delete it here to finish the move."
   },
   "blankPageTitle": "Blank page",
   "newPageText": "New page",

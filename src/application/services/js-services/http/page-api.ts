@@ -15,7 +15,7 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
-import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, handleAPIError } from './core';
 
 export async function addAppPage(
   workspaceId: string,
@@ -126,6 +126,138 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
       prev_view_id: prevViewId,
     })
   );
+}
+
+const DUPLICATE_TASK_ID_HEADER = 'x-appflowy-duplicate-task-id';
+
+/** Wire format: serde serializes the Rust enum as its variant name. */
+export type DuplicateTaskStatus = 'Pending' | 'Completed' | 'Failed' | 'Expired' | 'Cancelled' | 'Running';
+
+export interface DuplicatePageTaskResult {
+  duplicated_view_id: string;
+  /** Present when the page landed in a different workspace than the source. */
+  dest_workspace_id?: string;
+  /** Subtree branches skipped because the requester could not read them. */
+  skipped_view_ids?: string[];
+  /**
+   * Move tasks only: false means the copy committed but trashing the source
+   * failed, so the page exists in both workspaces.
+   */
+  source_removed?: boolean;
+}
+
+export interface DuplicatePageTaskState {
+  job_id: string;
+  status: DuplicateTaskStatus;
+  retry_after_secs: number;
+  error?: string | null;
+  result?: DuplicatePageTaskResult | null;
+}
+
+/**
+ * Moves a page (and its children) into another workspace. The server runs
+ * this as an async duplicate task with move semantics: deep-copy into the
+ * destination, then trash the source. Returns the task id (from the
+ * `x-appflowy-duplicate-task-id` response header) to poll with
+ * {@link getDuplicatePageTask}, scoped by the SOURCE workspace and view.
+ */
+export async function movePageToWorkspace(
+  workspaceId: string,
+  viewId: string,
+  destWorkspaceId: string,
+  destParentViewId: string
+): Promise<string> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/move-to-workspace`;
+
+  Log.debug('[movePageToWorkspace] request', { url, destWorkspaceId, destParentViewId });
+
+  try {
+    const response = await getAxios()?.post<APIResponse>(url, {
+      dest_workspace_id: destWorkspaceId,
+      dest_parent_view_id: destParentViewId,
+      wait_for_completion: false,
+    });
+
+    if (!response) {
+      return Promise.reject({ code: -1, message: 'API service not initialized' });
+    }
+
+    if (response.data.code !== 0) {
+      return Promise.reject({
+        code: response.data.code,
+        message: response.data.message || 'Request failed',
+        retryAfterSecs: response.data.retry_after_secs,
+      });
+    }
+
+    const taskId = response.headers[DUPLICATE_TASK_ID_HEADER];
+
+    if (typeof taskId !== 'string' || !taskId) {
+      return Promise.reject({ code: -1, message: 'Move task id missing from response' });
+    }
+
+    return taskId;
+  } catch (error) {
+    return Promise.reject(handleAPIError(error));
+  }
+}
+
+export async function getDuplicatePageTask(
+  workspaceId: string,
+  viewId: string,
+  taskId: string
+): Promise<DuplicatePageTaskState> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/duplicate/${taskId}`;
+
+  return executeAPIRequest<DuplicatePageTaskState>(() =>
+    getAxios()?.get<APIResponse<DuplicatePageTaskState>>(url)
+  );
+}
+
+/**
+ * Polls a duplicate/move task until it reaches a terminal state and returns
+ * its result. Rejects on Failed/Expired/Cancelled or when `timeoutMs` passes.
+ */
+export async function waitForDuplicatePageTask(
+  workspaceId: string,
+  viewId: string,
+  taskId: string,
+  timeoutMs = 180_000
+): Promise<DuplicatePageTaskResult> {
+  const deadline = Date.now() + timeoutMs;
+  let delayMs = 1000;
+
+  for (;;) {
+    const state = await getDuplicatePageTask(workspaceId, viewId, taskId);
+
+    switch (state.status) {
+      case 'Completed': {
+        if (!state.result) {
+          throw new Error('Move task completed without a result');
+        }
+
+        return state.result;
+      }
+
+      case 'Failed':
+        throw new Error(state.error || 'Move task failed');
+      case 'Expired':
+        throw new Error('Move task expired');
+      case 'Cancelled':
+        throw new Error('Move task was cancelled');
+      default:
+        break;
+    }
+
+    if (Date.now() >= deadline) {
+      throw new Error('Timed out waiting for the move task to finish');
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+    // Back off gently; the server's retry_after_secs is advisory (~10s) and
+    // this endpoint is cheap, so short polls keep the UX responsive.
+    delayMs = Math.min(delayMs + 1000, 3000);
+  }
 }
 
 export async function createSpace(workspaceId: string, payload: CreateSpacePayload) {

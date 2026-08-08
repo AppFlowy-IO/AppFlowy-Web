@@ -22,6 +22,7 @@ import {
 } from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
+import MoveToWorkspacePopover from '@/components/app/view-actions/MoveToWorkspacePopover';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
@@ -199,6 +200,29 @@ function MoreActionsContent({
             {t('disclosureAction.moveTo')}
           </DropdownMenuItem>
         </MovePagePopover>
+      )}
+      {canManageActions && container && (
+        <MoveToWorkspacePopover
+          viewId={viewId}
+          onMoved={itemClicked}
+          popoverContentProps={{
+            side: 'right',
+            align: 'start',
+            container,
+          }}
+        >
+          <DropdownMenuItem
+            data-testid={'more-page-move-to-workspace'}
+            className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
+            onSelect={(e) => {
+              e.preventDefault();
+            }}
+            disabled={!canBeMoved(view, parentView)}
+          >
+            <MoveToIcon />
+            {t('disclosureAction.moveToWorkspace')}
+          </DropdownMenuItem>
+        </MoveToWorkspacePopover>
       )}
 
       {isDocument && onFindAndReplace && (
