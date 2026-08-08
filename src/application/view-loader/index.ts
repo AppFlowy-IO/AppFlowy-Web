@@ -10,8 +10,9 @@
  * before the component finishes rendering.
  */
 
-import { openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
+import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import {
@@ -323,9 +324,24 @@ export async function openView(
         await fetchAndApply(workspaceId, viewId, doc);
         break;
       } catch (e) {
-        // Permission denials are permanent — retrying cannot succeed.
+        // Permission denials are permanent for this attempt — retrying cannot
+        // succeed. Evict every local copy keyed to this load before rethrowing:
+        // a cached collab (or the positive view-meta cache) would otherwise pin
+        // the failure and suppress the refetch after the server grants access.
         // (404s must keep retrying: they cover the post-duplication race.)
-        if (attempt === MAX_RETRIES || determineErrorType(e).type === ErrorType.Forbidden) throw e;
+        if (determineErrorType(e).type === ErrorType.Forbidden) {
+          const docKey = options.databaseId ?? viewId;
+
+          Log.debug('[ViewLoader] permission denial — evicting local caches', {
+            viewId,
+            docKey,
+          });
+          invalidateViewCache(workspaceId, viewId);
+          await deleteCollabDB(docKey, { destroyDoc: true }).catch(() => undefined);
+          throw e;
+        }
+
+        if (attempt === MAX_RETRIES) throw e;
         Log.debug('[ViewLoader] openView fetch retry', {
           viewId,
           attempt,

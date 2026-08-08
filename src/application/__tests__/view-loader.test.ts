@@ -1,8 +1,9 @@
 import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
-import { openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
+import { invalidateViewCache } from '@/application/services/js-services/cached-api';
 import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -11,6 +12,11 @@ import { getDatabaseIdFromDoc, openRowSubDocument, openView } from '@/applicatio
 jest.mock('@/application/db', () => ({
   openCollabDB: jest.fn(),
   openCollabDBWithProvider: jest.fn(),
+  deleteCollabDB: jest.fn(),
+}));
+
+jest.mock('@/application/services/js-services/cached-api', () => ({
+  invalidateViewCache: jest.fn(),
 }));
 
 jest.mock('@/application/services/js-services/cache', () => ({
@@ -32,6 +38,8 @@ jest.mock('@/application/sync-outbox', () => ({
 
 const mockOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
 const mockOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
+const mockDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
+const mockInvalidateViewCache = invalidateViewCache as jest.MockedFunction<typeof invalidateViewCache>;
 const mockGetOrCreateRowSubDoc = getOrCreateRowSubDoc as jest.MockedFunction<typeof getOrCreateRowSubDoc>;
 const mockFetchPageCollab = fetchPageCollab as jest.MockedFunction<typeof fetchPageCollab>;
 const mockEnqueueOutboxUpdate = enqueueOutboxUpdate as jest.MockedFunction<typeof enqueueOutboxUpdate>;
@@ -156,6 +164,59 @@ describe('view-loader database cache identity', () => {
     expect(result.doc).toBe(canonicalDoc);
     expect(result.fromCache).toBe(true);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
+  });
+});
+
+describe('view-loader permission error cache eviction', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockDeleteCollabDB.mockResolvedValue(undefined);
+  });
+
+  it('evicts the collab and view caches instead of retrying when the fetch is denied', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000005';
+    const databaseId = '00000000-0000-4000-8000-000000000006';
+    const canonicalDoc = createEmptyDoc(databaseId);
+    const legacyDoc = createEmptyDoc(viewId);
+    const docs = new Map([
+      [databaseId, canonicalDoc],
+      [viewId, legacyDoc],
+    ]);
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) => {
+      const doc = docs.get(name);
+
+      if (!doc) throw new Error(`Unexpected open ${name}`);
+      return createProvider(doc) as never;
+    });
+    mockOpenCollabDB.mockImplementation(async (name: string) => {
+      const doc = docs.get(name);
+
+      if (!doc) throw new Error(`Unexpected open ${name}`);
+      return doc;
+    });
+    mockFetchPageCollab.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
+
+    await expect(openView('workspace-id', viewId, ViewLayout.Grid, { databaseId })).rejects.toMatchObject({
+      code: 1012,
+    });
+
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockDeleteCollabDB).toHaveBeenCalledWith(databaseId, { destroyDoc: true });
+    expect(mockInvalidateViewCache).toHaveBeenCalledWith('workspace-id', viewId);
+  });
+
+  it('does not evict caches for non-permission fetch failures', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000007';
+    const doc = createEmptyDoc(viewId);
+
+    mockOpenCollabDB.mockResolvedValue(doc);
+    mockFetchPageCollab.mockRejectedValue({ code: -2, message: 'Record not found' });
+
+    await expect(openView('workspace-id', viewId, ViewLayout.Document)).rejects.toMatchObject({ code: -2 });
+
+    expect(mockDeleteCollabDB).not.toHaveBeenCalled();
+    expect(mockInvalidateViewCache).not.toHaveBeenCalled();
   });
 });
 

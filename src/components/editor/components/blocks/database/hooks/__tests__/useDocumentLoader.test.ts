@@ -4,9 +4,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
 import { YDoc } from '@/application/types';
 
 import { useDocumentLoader } from '../useDocumentLoader';
+
+jest.mock('@/application/db', () => ({
+  deleteCollabDB: jest.fn().mockResolvedValue(undefined),
+}));
+
+const mockDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 
 function createDoc(guid: string): YDoc {
   return new Y.Doc({ guid }) as YDoc;
@@ -53,6 +60,23 @@ describe('useDocumentLoader', () => {
 
     expect(result.current.notFound).toBe(true);
     expect(loadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('evicts the cached collab when loadView fails with a permission error', async () => {
+    mockDeleteCollabDB.mockClear();
+    const loadView = jest.fn(async () => {
+      return Promise.reject({ code: 1012, message: 'user is not allowed to access this view' });
+    });
+
+    renderHook(() => useDocumentLoader({
+      viewId: 'view-id',
+      databaseId: 'database-id',
+      loadView,
+    }));
+
+    await waitFor(() => {
+      expect(mockDeleteCollabDB).toHaveBeenCalledWith('database-id', { destroyDoc: true });
+    });
   });
 
   it('reports notFound but not noAccess for non-permission errors', async () => {

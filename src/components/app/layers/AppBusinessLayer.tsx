@@ -473,6 +473,17 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       }
 
       void probe.then((result) => {
+        // A denied verdict is a permission error and must not be served from the
+        // probe cache for the rest of its TTL: the server can grant access at any
+        // moment, and a retained denial keeps suppressing the re-probe. Evict it
+        // as soon as it resolves (before any supersession guard), keyed on the
+        // promise identity so a newer probe is never dropped by an older one.
+        if (result.verdict === 'denied') {
+          const retained = permissionProbeCache.get(cacheKey);
+
+          if (retained && retained.promise === probe) permissionProbeCache.delete(cacheKey);
+        }
+
         // Ignore a result superseded by an auth transition or an explicit
         // revoke/restore notification. Route-only navigation does not change
         // the revision, so a confirmed revoke still purges an off-screen page.
