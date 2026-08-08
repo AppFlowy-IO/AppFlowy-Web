@@ -2022,7 +2022,8 @@
   "document": {
     "inlineDatabase": {
       "viewInTrash": "This referenced database is in Trash",
-      "viewDeleted": "This referenced database was permanently deleted"
+      "viewDeleted": "This referenced database was permanently deleted",
+      "noAccess": "You don't have permission to view this database"
     },
     "callout": {
       "changeIcon": "Icon",

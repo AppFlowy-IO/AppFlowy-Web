@@ -61,7 +61,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
 
   // Compose focused hooks instead of one monolithic hook
   // 1. Document loading
-  const { doc, notFound, setNotFound } = useDocumentLoader({
+  const { doc, notFound, noAccess, setNotFound } = useDocumentLoader({
     viewId,
     databaseId,
     loadView,
@@ -386,6 +386,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
           selectedViewId={selectedViewId}
           hasDatabase={hasDatabase}
           notFound={notFound}
+          noAccess={noAccess}
           deletionStatus={effectiveDeletionStatus}
           paddingStart={paddingStart}
           paddingEnd={paddingEnd}

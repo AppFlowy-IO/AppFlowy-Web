@@ -37,6 +37,42 @@ describe('useDocumentLoader', () => {
     });
   });
 
+  it('reports noAccess without retrying when loadView fails with a permission error', async () => {
+    const loadView = jest.fn(async () => {
+      return Promise.reject({ code: 1012, message: 'user is not allowed to access this view' });
+    });
+
+    const { result } = renderHook(() => useDocumentLoader({
+      viewId: 'view-id',
+      loadView,
+    }));
+
+    await waitFor(() => {
+      expect(result.current.noAccess).toBe(true);
+    });
+
+    expect(result.current.notFound).toBe(true);
+    expect(loadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports notFound but not noAccess for non-permission errors', async () => {
+    const loadView = jest.fn(async () => {
+      return Promise.reject(new Error('network down'));
+    });
+
+    const { result } = renderHook(() => useDocumentLoader({
+      viewId: 'view-id',
+      loadView,
+    }));
+
+    await waitFor(() => {
+      expect(result.current.notFound).toBe(true);
+    });
+
+    expect(result.current.noAccess).toBe(false);
+    expect(loadView).toHaveBeenCalledTimes(3);
+  });
+
   it('shares one reset event listener across loader instances for the same emitter', async () => {
     const eventEmitter = new EventEmitter();
     const loadView = jest.fn(async (viewId: string) => createDoc(viewId));

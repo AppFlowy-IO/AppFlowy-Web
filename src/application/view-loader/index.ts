@@ -23,6 +23,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 import * as Y from 'yjs';
@@ -322,7 +323,9 @@ export async function openView(
         await fetchAndApply(workspaceId, viewId, doc);
         break;
       } catch (e) {
-        if (attempt === MAX_RETRIES) throw e;
+        // Permission denials are permanent — retrying cannot succeed.
+        // (404s must keep retrying: they cover the post-duplication race.)
+        if (attempt === MAX_RETRIES || determineErrorType(e).type === ErrorType.Forbidden) throw e;
         Log.debug('[ViewLoader] openView fetch retry', {
           viewId,
           attempt,
