@@ -48,6 +48,7 @@ import DatabaseViews from '@/components/database/DatabaseViews';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { cn } from '@/lib/utils';
+import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
 
@@ -885,6 +886,57 @@ function Database(props: Database2Props) {
     [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch]
   );
 
+  // Self-healing for a lying delta watermark: the RID cursor lives in
+  // localStorage while row data lives in IndexedDB, so the two can diverge
+  // (storage eviction, partial clears). The delta diff then reports "no
+  // changes", no seeds exist, and a visible row opens as an empty doc whose
+  // only remaining data path is per-row realtime sync — slow or never on
+  // rows without a live collab. When that happens, force one full blob
+  // resync per database lifecycle and re-seed the already-open row docs.
+  const missingRowRecoveryLifecycleRef = useRef<unknown>(null);
+
+  const scheduleMissingRowRecovery = useCallback(() => {
+    if (readOnly) return;
+    if (missingRowRecoveryLifecycleRef.current === databaseLifecycleIdentity) return;
+
+    const databaseId = getDatabaseId();
+    const recoveryGeneration = blobPrefetchGenerationRef.current;
+
+    if (!workspaceId || !databaseId) return;
+    missingRowRecoveryLifecycleRef.current = databaseLifecycleIdentity;
+
+    Log.warn('[Database] visible row has no local data after blob prefetch; forcing full blob resync', {
+      workspaceId,
+      databaseId,
+    });
+
+    void prefetchDatabaseBlobDiff(workspaceId, databaseId, {
+      forceFullSync: true,
+      priorityRowIds: getPriorityRowIds(),
+      onSeedsReady: () => {
+        if (blobPrefetchGenerationRef.current !== recoveryGeneration) return;
+        if (activeDatabaseLifecycleRef.current !== databaseLifecycleIdentity) return;
+
+        // openRowDoc reuses the cached doc entry, so applying the fresh seed
+        // mutates the same Y.Doc instances the UI already observes — spinners
+        // clear through the row observers without touching rowMap.
+        const currentDatabaseId = getDatabaseId();
+
+        for (const [rowId, rowDoc] of Object.entries(rowMapRef.current)) {
+          if (hasRowConditionData(rowDoc)) continue;
+
+          const rowKey = getRowKey(currentDatabaseId, rowId);
+          const seed = peekDatabaseRowDocSeed(rowKey);
+
+          if (!seed) continue;
+          void openRowDoc(rowKey, seed).catch(() => undefined);
+        }
+      },
+    }).catch((error) => {
+      Log.warn('[Database] full blob resync for missing rows failed', { workspaceId, databaseId, error });
+    });
+  }, [readOnly, workspaceId, databaseLifecycleIdentity, getDatabaseId, getPriorityRowIds]);
+
   const ensureRow = useCallback(
     async (rowId: string) => {
       if (!createRow || !rowId) return;
@@ -900,6 +952,13 @@ function Database(props: Database2Props) {
       const finishEnsure = (rowDoc: YDoc | undefined) => {
         if (rowDoc && isCurrentEnsure()) {
           scheduleRowSyncReconciliation(rowId);
+
+          // The local pipeline (seed cache + IndexedDB) produced no row data —
+          // the delta watermark is ahead of the local store. Trigger the
+          // one-shot full resync instead of leaving the row to realtime sync.
+          if (!hasRowConditionData(rowDoc)) {
+            scheduleMissingRowRecovery();
+          }
         }
 
         return rowDoc;
@@ -1036,6 +1095,7 @@ function Database(props: Database2Props) {
       readOnly,
       registerRowSync,
       scheduleRowSyncReconciliation,
+      scheduleMissingRowRecovery,
     ]
   );
 

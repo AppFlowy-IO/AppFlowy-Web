@@ -14,5 +14,7 @@ export {
   getCachedAppViewFromDisk as getCachedFromDisk,
   invalidateViewCache as invalidateCache,
   refreshAppViewCache as refresh,
+  getAppTrashCached as getTrashCached,
+  refreshAppTrashCache as refreshTrash,
   getAppDatabaseViewRelationsFromCollab as getDatabaseRelations,
 } from '../js-services/cached-api';
