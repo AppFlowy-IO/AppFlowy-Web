@@ -18,7 +18,13 @@ import * as Y from 'yjs';
 
 import { useDatabaseFields, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { FilterType, SortCondition } from '@/application/database-yjs/database.type';
-import { FilterDraft, flattenFilterTree, getDefaultFilterCondition, groupByConsecutiveOperator } from '@/application/database-yjs/filter';
+import {
+  FilterDraft,
+  flattenFilterTree,
+  getDefaultFilterCondition,
+  groupByConsecutiveOperator,
+  resolveRollupFilterTargetFieldType,
+} from '@/application/database-yjs/filter';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -274,7 +280,7 @@ export function useAddFilter() {
 
             filter.set(YjsDatabaseKey.id, id);
             filter.set(YjsDatabaseKey.field_id, fieldId);
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (!conditionData) {
               Log.warn('[useAddFilter] No default condition for fieldType:', fieldType);
@@ -296,6 +302,11 @@ export function useAddFilter() {
 
             filter.set(YjsDatabaseKey.type, fieldType);
             filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+            const rollupTargetFieldType = resolveRollupFilterTargetFieldType(fieldType, field);
+
+            if (rollupTargetFieldType !== undefined) {
+              filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
+            }
 
             filters.push([filter]);
 
@@ -634,13 +645,19 @@ export function useAddAdvancedFilter() {
             filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
             filter.set(YjsDatabaseKey.type, fieldType);
 
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (conditionData) {
               filter.set(YjsDatabaseKey.condition, conditionData.condition);
               if (conditionData.content !== undefined) {
                 filter.set(YjsDatabaseKey.content, conditionData.content);
               }
+            }
+
+            const rollupTargetFieldType = resolveRollupFilterTargetFieldType(fieldType, field);
+
+            if (rollupTargetFieldType !== undefined) {
+              filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
             }
 
             children.push([filter]);
@@ -982,6 +999,10 @@ function createDataFilterNode(draft: FilterDraft): YDatabaseFilter {
   node.set(YjsDatabaseKey.type, draft.fieldType);
   node.set(YjsDatabaseKey.condition, draft.condition);
 
+  if (draft.rollupTargetFieldType !== undefined) {
+    node.set(YjsDatabaseKey.rollup_target_type, draft.rollupTargetFieldType);
+  }
+
   if (draft.content !== undefined) {
     node.set(YjsDatabaseKey.content, draft.content);
   }
@@ -1121,7 +1142,7 @@ export function useAddAdvancedFilterAndRebuild() {
             if (!field) return;
 
             const fieldType = Number(field.get(YjsDatabaseKey.type));
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (!conditionData) return;
 
@@ -1160,6 +1181,7 @@ export function useAddAdvancedFilterAndRebuild() {
               id,
               fieldId,
               fieldType,
+              rollupTargetFieldType: resolveRollupFilterTargetFieldType(fieldType, field),
               condition: conditionData.condition,
               content: conditionData.content ?? '',
               operator: defaultOperator,
@@ -1273,6 +1295,7 @@ export function useUpdateAdvancedFilterAndRebuild() {
 
               if (field) {
                 draft.fieldType = Number(field.get(YjsDatabaseKey.type));
+                draft.rollupTargetFieldType = resolveRollupFilterTargetFieldType(draft.fieldType, field);
               }
             }
 
