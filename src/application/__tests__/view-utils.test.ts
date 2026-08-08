@@ -635,6 +635,63 @@ describe('view-utils', () => {
           })
         ).toBe('board-view');
       });
+
+      it('falls back to a real database view when visible ids include the container id', () => {
+        // Published pages can carry the folder container id inside
+        // visibleViewIds; the container is not a view in the database collab.
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['container', 'grid-view'],
+            existingViewIds: ['inline-view', 'grid-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('keeps the resolved id when it exists in the database', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'grid-view',
+            tabViewId: null,
+            visibleViewIds: ['grid-view', 'board-view'],
+            existingViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('falls back from a tab query pointing at a non-database view', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: 'container',
+            visibleViewIds: ['container', 'grid-view'],
+            existingViewIds: ['grid-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('keeps the resolved id when no visible id exists in the database', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['container'],
+            existingViewIds: ['grid-view'],
+          })
+        ).toBe('container');
+      });
+
+      it('ignores an empty existing view list', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['container', 'grid-view'],
+            existingViewIds: [],
+          })
+        ).toBe('container');
+      });
     });
 
     /**
