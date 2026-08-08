@@ -16,12 +16,14 @@ export function Title({
   rowId,
   fieldId,
   hasCover,
+  onEdited,
 }: {
   rowId: string;
   icon?: string;
   name?: string;
   hasCover: boolean;
   fieldId: string;
+  onEdited?: (value: string) => void;
 }) {
   const readOnly = useReadOnly();
   const [value, setValue] = useState(name || '');
@@ -129,6 +131,7 @@ export function Title({
                 updateCell(e.target.value);
 
                 setValue(e.target.value);
+                onEdited?.(e.target.value);
               }}
               onKeyDown={(e) => {
                 if (createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) {

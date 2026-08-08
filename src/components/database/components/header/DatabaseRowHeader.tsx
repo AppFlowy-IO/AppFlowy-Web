@@ -24,7 +24,6 @@ import {
 } from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
 import {
-  createRowDocumentViewNameBaseline,
   normalizeRowDocumentViewName,
   shouldSyncRowDocumentViewName,
 } from '@/components/database/components/header/rowDocumentViewName';
@@ -189,33 +188,37 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
   }, [isDatabaseRowPage, rowId, documentId, title, hasDocument, databaseId, databaseViewId]);
 
   // Keep the row-document view name in sync with the primary cell so
-  // favorites/trash entries show the row title. Baseline on first run:
-  // an existing title is already current (explicit actions like favorite/delete
-  // push it themselves), while an initially blank title must sync its first value.
-  const titleSyncBaselineRef = useRef(createRowDocumentViewNameBaseline(documentId, title));
+  // favorites/trash entries show the row title. Sync only from title edits
+  // made in this header: observing cell state cannot distinguish a user edit
+  // from the loading sequence (empty placeholder doc → loaded title), which
+  // used to push a spurious update-name on every row page open. Loads and
+  // remote renames never sync — the editing client pushes its own rename, and
+  // explicit actions (favorite/delete) push the current title themselves.
+  const titleSyncTimerRef = useRef<number | undefined>(undefined);
+  const lastSyncedTitleRef = useRef<string>('');
+
+  const onTitleEdited = useCallback(
+    (editedTitle: string) => {
+      if (readOnly || !hasDocument || !documentId || !workspaceId) return;
+
+      const name = normalizeRowDocumentViewName(editedTitle);
+
+      if (!shouldSyncRowDocumentViewName(lastSyncedTitleRef.current, name)) return;
+
+      window.clearTimeout(titleSyncTimerRef.current);
+      titleSyncTimerRef.current = window.setTimeout(() => {
+        lastSyncedTitleRef.current = name;
+        void syncRowDocumentViewName(workspaceId, documentId, name);
+      }, 500);
+    },
+    [readOnly, hasDocument, documentId, workspaceId]
+  );
 
   useEffect(() => {
-    const name = normalizeRowDocumentViewName(title);
-    const baseline = titleSyncBaselineRef.current;
-
-    if (baseline.documentId !== documentId) {
-      titleSyncBaselineRef.current = createRowDocumentViewNameBaseline(documentId, name);
-      return;
-    }
-
-    if (readOnly || !hasDocument || !documentId || !workspaceId) return;
-
-    if (!shouldSyncRowDocumentViewName(baseline.title, name)) return;
-
-    const timer = window.setTimeout(() => {
-      titleSyncBaselineRef.current = createRowDocumentViewNameBaseline(documentId, name);
-      void syncRowDocumentViewName(workspaceId, documentId, name);
-    }, 500);
-
     return () => {
-      window.clearTimeout(timer);
+      window.clearTimeout(titleSyncTimerRef.current);
     };
-  }, [readOnly, hasDocument, documentId, workspaceId, title]);
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -266,7 +269,14 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
           </div>
         )}
       </div>
-      <Title rowId={rowId} fieldId={fieldId} icon={meta?.icon} name={cell?.data as string} hasCover={!!cover} />
+      <Title
+        rowId={rowId}
+        fieldId={fieldId}
+        icon={meta?.icon}
+        name={cell?.data as string}
+        hasCover={!!cover}
+        onEdited={onTitleEdited}
+      />
     </div>
   );
 }
