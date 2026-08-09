@@ -136,6 +136,52 @@ describe('usePageOperations publish', () => {
     expect(getDatabaseIdForViewId).not.toHaveBeenCalled();
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
   });
+
+  it('publishes metadata for visible database views under a database container', async () => {
+    const containerViewId = 'database-container-id';
+    const gridViewId = 'grid-view-id';
+    const databaseId = 'database-id';
+    const gridView = createView({
+      view_id: gridViewId,
+      name: 'Grid',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const containerView = createView({
+      view_id: containerViewId,
+      name: 'Publish database',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId, is_database_container: true },
+      children: [gridView],
+    });
+    const { result, workspaceId } = renderUsePageOperations();
+
+    await act(async () => {
+      await result.current.publish(containerView, undefined, [containerViewId, gridViewId]);
+    });
+
+    expect(gatherDatabasePublishData).toHaveBeenCalledWith(
+      containerViewId,
+      [containerViewId, gridViewId],
+      databaseId
+    );
+    expect(publishCollabs).toHaveBeenCalledWith(workspaceId, [
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          view_id: containerViewId,
+          metadata: expect.objectContaining({
+            child_views: [
+              expect.objectContaining({
+                view_id: gridViewId,
+                name: 'Grid',
+                layout: ViewLayout.Grid,
+              }),
+            ],
+          }),
+        }),
+      }),
+    ]);
+  });
 });
 
 describe('usePageOperations addPage', () => {

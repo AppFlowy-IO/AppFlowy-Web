@@ -430,23 +430,32 @@ export function usePageOperations({
           return isNaN(t) ? 0 : Math.floor(t / 1000);
         };
 
+        const toPublishViewInfo = (publishView: View): PublishCollabMetadata['metadata']['view'] => ({
+          view_id: publishView.view_id,
+          name: publishView.name,
+          icon: publishView.icon,
+          layout: publishView.layout,
+          extra: publishView.extra
+            ? typeof publishView.extra === 'string'
+              ? publishView.extra
+              : JSON.stringify(publishView.extra)
+            : null,
+          created_by: null,
+          last_edited_by: null,
+          last_edited_time: toTimestamp(publishView.last_edited_time),
+          created_at: toTimestamp(publishView.created_at),
+          child_views: null,
+        });
+        const visibleViewIdSet = new Set(resolvedVisibleViewIds ?? []);
+
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
           metadata: {
-            view: {
-              view_id: viewId,
-              name: view.name,
-              icon: view.icon,
-              layout: view.layout,
-              extra: view.extra ? (typeof view.extra === 'string' ? view.extra : JSON.stringify(view.extra)) : null,
-              created_by: null,
-              last_edited_by: null,
-              last_edited_time: toTimestamp(view.last_edited_time),
-              created_at: toTimestamp(view.created_at),
-              child_views: null,
-            },
-            child_views: [],
+            view: toPublishViewInfo(view),
+            child_views: view.children
+              .filter((child) => visibleViewIdSet.has(child.view_id))
+              .map(toPublishViewInfo),
             ancestor_views: [],
           },
         };
