@@ -12,6 +12,7 @@ import { BlockType, CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { Log } from '@/utils/log';
@@ -84,10 +85,12 @@ function CollaborativeEditor({
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
   const context = useEditorContext();
+  const inlineComments = useInlineCommentEditorBridgeOptional();
   const readSummary = context.readSummary;
   const onRendered = context.onRendered;
   const uploadFile = context.uploadFile;
   const readOnly = context.readOnly;
+  const canComment = context.canComment ?? false;
   const viewId = context.viewId;
   const onWordCountChange = context.onWordCountChange;
   const deletePage = context.deletePage;
@@ -267,14 +270,29 @@ function CollaborativeEditor({
   const handleSlateChange = useCallback(() => {
     ensureValidSelection(editor);
     handleDatabaseBlockLifecycle(editor);
-  }, [editor, handleDatabaseBlockLifecycle]);
+    inlineComments?.handleEditorChange(editor);
+  }, [editor, handleDatabaseBlockLifecycle, inlineComments]);
 
   const [, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    inlineComments?.updateEditorAccess(editor, {
+      canComment,
+      readOnly,
+      viewId,
+    });
+  }, [canComment, editor, inlineComments, readOnly, viewId]);
 
   useEffect(() => {
     if (!editor) return;
 
     editor.connect();
+    const unregisterInlineComments = inlineComments?.registerEditor(editor, {
+      canComment,
+      readOnly,
+      viewId,
+    });
+
     setIsConnected(true);
     onEditorConnected?.(editor);
     databaseBlocksRef.current = collectDatabaseBlocks(editor);
@@ -302,6 +320,7 @@ function CollaborativeEditor({
     }
 
     return () => {
+      unregisterInlineComments?.();
       for (const timeoutId of pendingDatabaseViewDeletion.values()) {
         clearTimeout(timeoutId);
       }

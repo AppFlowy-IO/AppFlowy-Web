@@ -7,11 +7,14 @@ import { Href } from '@/components/editor/components/leaf/href';
 import MentionLeaf from '@/components/editor/components/leaf/mention/MentionLeaf';
 import { InlineReference } from '@/components/editor/components/leaf/reference/InlineReference';
 import { parseInlineReference } from '@/components/editor/components/leaf/reference/utils';
+import { getInlineCommentIds } from '@/components/inline-comment/editor/anchors';
+import { useInlineCommentLeafContextOptional } from '@/components/inline-comment/InlineCommentContext';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { getFontFamily } from '@/utils/font';
 
 export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
+  const inlineComments = useInlineCommentLeafContextOptional();
   let newChildren = children;
 
   const classList = [leaf.prism_token, leaf.prism_token && 'token', leaf.class_name].filter(Boolean);
@@ -33,6 +36,18 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   }
 
   const style: CSSProperties = {};
+  const inlineCommentIds = inlineComments?.active ? getInlineCommentIds(leaf) : [];
+
+  if (inlineCommentIds.length > 0) {
+    classList.push('inline-comment-anchor');
+    style['backgroundColor'] = 'var(--fill-warning-light)';
+    style['boxShadow'] = `inset 0 -2px ${
+      inlineCommentIds.includes(inlineComments?.focusedCommentId ?? '')
+        ? 'var(--border-warning-thick-hover)'
+        : 'var(--border-warning-thick)'
+    }`;
+    style['cursor'] = 'pointer';
+  }
 
   if (leaf.font_color) {
     classList.push('text-color');
@@ -106,7 +121,16 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   }
 
   return (
-    <span {...attributes} style={style} className={`${classList.join(' ')}`}>
+    <span
+      {...attributes}
+      data-inline-comment-ids={inlineCommentIds.length > 0 ? inlineCommentIds.join(',') : undefined}
+      style={style}
+      className={`${classList.join(' ')}`}
+      onClick={() => {
+        if (inlineCommentIds.length === 0 || !window.getSelection()?.isCollapsed) return;
+        inlineComments?.openCommentFromAnchor(inlineCommentIds);
+      }}
+    >
       {newChildren}
     </span>
   );

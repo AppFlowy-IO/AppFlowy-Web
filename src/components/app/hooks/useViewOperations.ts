@@ -68,6 +68,28 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
   return false;
 }
 
+/**
+ * Comment permission is independent from editor writeability: a locked page
+ * and Read-and-comment access both use a read-only Slate editor but still
+ * permit inline comments.
+ */
+export function getViewCanCommentStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+  if (outline) {
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel >= AccessLevel.ReadAndComment;
+    }
+  }
+
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level >= AccessLevel.ReadAndComment;
+  }
+
+  // Views outside "Shared with me" belong to the current workspace user.
+  return true;
+}
+
 // Hook for managing view-related operations
 export function useViewOperations() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();

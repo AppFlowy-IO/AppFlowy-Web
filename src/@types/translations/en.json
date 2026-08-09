@@ -3329,6 +3329,28 @@
     "commentAddedSuccessfully": "Comment added successfully.",
     "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?"
   },
+  "inlineComment": {
+    "comments": "Comments",
+    "addComment": "Add a comment",
+    "addCommentShortcut": "Add a comment (Mod+Shift+M)",
+    "submitHint": "Enter to send · Shift+Enter for a new line",
+    "open": "Open",
+    "resolved": "Resolved",
+    "all": "All",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "reply": "Reply",
+    "addReply": "Add a reply...",
+    "delete": "Delete comment",
+    "addReaction": "Add reaction",
+    "addReactionLabel": "Add {{emoji}} reaction ({{count}})",
+    "removeReaction": "Remove {{emoji}} reaction ({{count}})",
+    "reactedBy": "Reacted by {{names}}",
+    "loadingReactions": "Loading reactions...",
+    "noComments": "No comments in this view",
+    "loading": "Loading comments...",
+    "anonymous": "Anonymous"
+  },
   "rowComment": {
     "comments": "Comments",
     "addComment": "Add a comment...",

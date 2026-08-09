@@ -1626,6 +1626,7 @@ export interface ViewComponentProps {
   doc: YDoc;
   workspaceId: string;
   readOnly: boolean;
+  canComment?: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;

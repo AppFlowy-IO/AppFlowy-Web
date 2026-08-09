@@ -3622,6 +3622,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.IFolderChanged|null} [folderChanged] WorkspaceNotification folderChanged
          * @property {notification.IFolderViewChanged|null} [folderViewChanged] WorkspaceNotification folderViewChanged
          * @property {notification.IInboxNotification|null} [inboxNotification] WorkspaceNotification inboxNotification
+         * @property {notification.ICommentChanged|null} [commentChanged] WorkspaceNotification commentChanged
          */
 
         /**
@@ -3719,17 +3720,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.inboxNotification = null;
 
+        /**
+         * WorkspaceNotification commentChanged.
+         * @member {notification.ICommentChanged|null|undefined} commentChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.commentChanged = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3777,6 +3786,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.FolderViewChanged.encode(message.folderViewChanged, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
             if (message.inboxNotification != null && Object.hasOwnProperty.call(message, "inboxNotification"))
                 $root.notification.InboxNotification.encode(message.inboxNotification, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
+            if (message.commentChanged != null && Object.hasOwnProperty.call(message, "commentChanged"))
+                $root.notification.CommentChanged.encode(message.commentChanged, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
             return writer;
         };
 
@@ -3851,6 +3862,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 10: {
                         message.inboxNotification = $root.notification.InboxNotification.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 11: {
+                        message.commentChanged = $root.notification.CommentChanged.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -3987,6 +4002,16 @@ export const notification = $root.notification = (() => {
                         return "inboxNotification." + error;
                 }
             }
+            if (message.commentChanged != null && message.hasOwnProperty("commentChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.CommentChanged.verify(message.commentChanged);
+                    if (error)
+                        return "commentChanged." + error;
+                }
+            }
             return null;
         };
 
@@ -4051,6 +4076,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.inboxNotification !== "object")
                     throw TypeError(".notification.WorkspaceNotification.inboxNotification: object expected");
                 message.inboxNotification = $root.notification.InboxNotification.fromObject(object.inboxNotification);
+            }
+            if (object.commentChanged != null) {
+                if (typeof object.commentChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.commentChanged: object expected");
+                message.commentChanged = $root.notification.CommentChanged.fromObject(object.commentChanged);
             }
             return message;
         };
@@ -4117,6 +4147,11 @@ export const notification = $root.notification = (() => {
                 object.inboxNotification = $root.notification.InboxNotification.toObject(message.inboxNotification, options);
                 if (options.oneofs)
                     object.payload = "inboxNotification";
+            }
+            if (message.commentChanged != null && message.hasOwnProperty("commentChanged")) {
+                object.commentChanged = $root.notification.CommentChanged.toObject(message.commentChanged, options);
+                if (options.oneofs)
+                    object.payload = "commentChanged";
             }
             return object;
         };
@@ -8091,6 +8126,235 @@ export const notification = $root.notification = (() => {
         };
 
         return InboxNotification;
+    })();
+
+    notification.CommentChanged = (function() {
+
+        /**
+         * Properties of a CommentChanged.
+         * @memberof notification
+         * @interface ICommentChanged
+         * @property {string|null} [workspaceId] CommentChanged workspaceId
+         * @property {string|null} [viewId] CommentChanged viewId
+         */
+
+        /**
+         * Constructs a new CommentChanged.
+         * @memberof notification
+         * @classdesc Represents a CommentChanged.
+         * @implements ICommentChanged
+         * @constructor
+         * @param {notification.ICommentChanged=} [properties] Properties to set
+         */
+        function CommentChanged(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CommentChanged workspaceId.
+         * @member {string} workspaceId
+         * @memberof notification.CommentChanged
+         * @instance
+         */
+        CommentChanged.prototype.workspaceId = "";
+
+        /**
+         * CommentChanged viewId.
+         * @member {string} viewId
+         * @memberof notification.CommentChanged
+         * @instance
+         */
+        CommentChanged.prototype.viewId = "";
+
+        /**
+         * Creates a new CommentChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.ICommentChanged=} [properties] Properties to set
+         * @returns {notification.CommentChanged} CommentChanged instance
+         */
+        CommentChanged.create = function create(properties) {
+            return new CommentChanged(properties);
+        };
+
+        /**
+         * Encodes the specified CommentChanged message. Does not implicitly {@link notification.CommentChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.ICommentChanged} message CommentChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CommentChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.workspaceId != null && Object.hasOwnProperty.call(message, "workspaceId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.workspaceId);
+            if (message.viewId != null && Object.hasOwnProperty.call(message, "viewId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.viewId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CommentChanged message, length delimited. Does not implicitly {@link notification.CommentChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.ICommentChanged} message CommentChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CommentChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CommentChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.CommentChanged} CommentChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CommentChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.CommentChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.workspaceId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.viewId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CommentChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.CommentChanged} CommentChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CommentChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CommentChanged message.
+         * @function verify
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CommentChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                if (!$util.isString(message.workspaceId))
+                    return "workspaceId: string expected";
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                if (!$util.isString(message.viewId))
+                    return "viewId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a CommentChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.CommentChanged} CommentChanged
+         */
+        CommentChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.CommentChanged)
+                return object;
+            let message = new $root.notification.CommentChanged();
+            if (object.workspaceId != null)
+                message.workspaceId = String(object.workspaceId);
+            if (object.viewId != null)
+                message.viewId = String(object.viewId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CommentChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.CommentChanged} message CommentChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CommentChanged.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.workspaceId = "";
+                object.viewId = "";
+            }
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                object.workspaceId = message.workspaceId;
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                object.viewId = message.viewId;
+            return object;
+        };
+
+        /**
+         * Converts this CommentChanged to JSON.
+         * @function toJSON
+         * @memberof notification.CommentChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CommentChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CommentChanged
+         * @function getTypeUrl
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CommentChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.CommentChanged";
+        };
+
+        return CommentChanged;
     })();
 
     return notification;

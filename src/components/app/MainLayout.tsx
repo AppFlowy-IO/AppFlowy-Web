@@ -6,7 +6,13 @@ import { ErrorType } from '@/application/utils/error-utils';
 import { useOutlineDrawer } from '@/components/_shared/outline/outline.hooks';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useAIChatContextOptional } from '@/components/ai-chat/AIChatProvider';
-import { useOpenModalViewId, useAppViewId, useViewErrorStatus } from '@/components/app/app.hooks';
+import {
+  useAppViewId,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useOpenModalViewId,
+  useViewErrorStatus,
+} from '@/components/app/app.hooks';
 import { ConnectBanner } from '@/components/app/ConnectBanner';
 import { AppHeader } from '@/components/app/header';
 import Main from '@/components/app/Main';
@@ -14,12 +20,20 @@ import SideBar from '@/components/app/SideBar';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import SomethingError from '@/components/error/SomethingError';
+import { InlineCommentComposer } from '@/components/inline-comment/InlineCommentComposer';
+import {
+  INLINE_COMMENT_DRAWER_WIDTH,
+  InlineCommentProvider,
+  useInlineCommentContext,
+} from '@/components/inline-comment/InlineCommentContext';
+import { InlineCommentSidebar } from '@/components/inline-comment/InlineCommentSidebar';
 
-function MainLayout() {
+function MainLayoutContent() {
   const { drawerOpened, drawerWidth, setDrawerWidth, toggleOpenDrawer } = useOutlineDrawer();
   const aiChatContext = useAIChatContextOptional();
   const chatViewDrawerOpen = aiChatContext?.drawerOpen ?? false;
   const openViewDrawerWidth = aiChatContext?.drawerWidth ?? 0;
+  const { isPanelOpen } = useInlineCommentContext();
 
   const openPageModalViewId = useOpenModalViewId();
   const viewId = useAppViewId();
@@ -54,8 +68,12 @@ function MainLayout() {
       diff += openViewDrawerWidth;
     }
 
+    if (isPanelOpen) {
+      diff += INLINE_COMMENT_DRAWER_WIDTH;
+    }
+
     return `calc(100% - ${diff}px)`;
-  }, [drawerOpened, drawerWidth, openViewDrawerWidth, chatViewDrawerOpen]);
+  }, [chatViewDrawerOpen, drawerOpened, drawerWidth, isPanelOpen, openViewDrawerWidth]);
 
   return (
     <div className={'h-screen w-screen'}>
@@ -103,7 +121,26 @@ function MainLayout() {
         drawerOpened={drawerOpened}
         toggleOpenDrawer={toggleOpenDrawer}
       />
+      <InlineCommentSidebar rightOffset={chatViewDrawerOpen ? openViewDrawerWidth : 0} />
     </div>
+  );
+}
+
+function MainLayout() {
+  const eventEmitter = useEventEmitter();
+  const viewId = useAppViewId();
+  const workspaceId = useCurrentWorkspaceId();
+
+  return (
+    <InlineCommentProvider
+      key={`${workspaceId ?? ''}:${viewId ?? ''}`}
+      eventEmitter={eventEmitter}
+      viewId={viewId}
+      workspaceId={workspaceId}
+    >
+      <MainLayoutContent />
+      <InlineCommentComposer />
+    </InlineCommentProvider>
   );
 }
 
