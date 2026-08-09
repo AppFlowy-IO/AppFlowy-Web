@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
+import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
@@ -32,7 +33,7 @@ import {
   hasEffectiveFilters,
   parseFilter,
 } from '@/application/database-yjs/filter';
-import { getGroupColumns, groupByField } from '@/application/database-yjs/group';
+import { areGroupRowsHydrated, getGroupColumns, groupByField } from '@/application/database-yjs/group';
 import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
 import {
   invalidateRelationCell,
@@ -97,6 +98,10 @@ export interface Column {
 export interface Row {
   id: string;
   height: number;
+  // Soft-delete tombstone mirroring collab-database's RowOrder.is_deleted.
+  // Tombstoned rows stay in row_orders (restorable from trash) but must be
+  // hidden from every rendered view.
+  is_deleted?: boolean;
 }
 
 function shouldLogDatabaseConditionPerformance() {
@@ -667,6 +672,7 @@ export function useAdvancedFiltersSelector() {
           ...parsed,
           operator: draft.operator,
           fieldType: ft,
+          rollupTargetFieldType: draft.rollupTargetFieldType,
         } as Filter;
       });
 
@@ -971,10 +977,13 @@ export function useGroupsSelector() {
 export interface GroupColumn {
   id: string;
   visible: boolean;
+  /** Whether `visible` was explicitly persisted rather than defaulted to true. */
+  visibleExplicit?: boolean;
 }
 
 function normalizeGroupColumn(column: unknown): GroupColumn | null {
   const parseVisible = (value: unknown) => value !== false && value !== 'false';
+  const isExplicitVisible = (value: unknown) => value !== undefined && value !== null;
 
   if (!column || typeof column !== 'object') return null;
 
@@ -984,9 +993,12 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
 
     if (typeof id !== 'string' || !id) return null;
 
+    const rawVisible = mapColumn.get(YjsDatabaseKey.visible);
+
     return {
       id,
-      visible: parseVisible(mapColumn.get(YjsDatabaseKey.visible)),
+      visible: parseVisible(rawVisible),
+      visibleExplicit: isExplicitVisible(rawVisible),
     };
   }
 
@@ -997,6 +1009,7 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
   return {
     id: plainColumn.id,
     visible: parseVisible(plainColumn.visible),
+    visibleExplicit: isExplicitVisible(plainColumn.visible),
   };
 }
 
@@ -1006,6 +1019,7 @@ function getFallbackGroupColumns(field?: YDatabaseField): GroupColumn[] {
   return (getGroupColumns(field) ?? []).map((column) => ({
     id: column.id,
     visible: true,
+    visibleExplicit: false,
   }));
 }
 
@@ -1054,27 +1068,49 @@ export function useGroup(groupId: string) {
 
 export function useBoardLayoutSettings() {
   const view = useDatabaseView();
-  const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
+  const [hideEmptyGroups, setHideEmptyGroups] = useState(false);
+  const [shownEmptyGroupIds, setShownEmptyGroupIds] = useState<ReadonlySet<string>>(() => new Set());
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
+  const [ungroupedColumn, setUngroupedColumn] = useState<GroupColumn | null>(null);
 
   useEffect(() => {
-    if (!layoutSetting) return;
+    if (!view) return;
 
     const observerEvent = () => {
-      setIsCollapsed(Boolean(layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups)));
+      const layoutSetting = view.get(YjsDatabaseKey.layout_settings)?.get('1');
+      const collapseHiddenGroups = layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups);
+
+      setIsCollapsed(collapseHiddenGroups === undefined ? true : Boolean(collapseHiddenGroups));
       setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
+      setHideEmptyGroups(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_empty_groups)));
+      const rawShownEmptyGroupIds = layoutSetting?.get(YjsDatabaseKey.shown_empty_group_ids) as unknown;
+      const shownIds: unknown[] = Array.isArray(rawShownEmptyGroupIds)
+        ? rawShownEmptyGroupIds
+        : rawShownEmptyGroupIds &&
+          typeof rawShownEmptyGroupIds === 'object' &&
+          'toArray' in rawShownEmptyGroupIds &&
+          typeof rawShownEmptyGroupIds.toArray === 'function'
+        ? (rawShownEmptyGroupIds.toArray() as unknown[])
+        : [];
+      const nextShownEmptyGroupIds = new Set<string>(shownIds.filter((id): id is string => typeof id === 'string'));
+
+      setShownEmptyGroupIds((currentIds) =>
+        currentIds.size === nextShownEmptyGroupIds.size && [...currentIds].every((id) => nextShownEmptyGroupIds.has(id))
+          ? currentIds
+          : nextShownEmptyGroupIds
+      );
     };
 
     observerEvent();
-    layoutSetting.observe(observerEvent);
+    view.observeDeep(observerEvent);
 
     return () => {
-      layoutSetting.unobserve(observerEvent);
+      view.unobserveDeep(observerEvent);
     };
-  }, [view, layoutSetting]);
+  }, [view]);
 
   useEffect(() => {
     const observerEvent = () => {
@@ -1085,6 +1121,26 @@ export function useBoardLayoutSettings() {
       const groupFieldId = group.get(YjsDatabaseKey.field_id);
 
       setFieldId(groupFieldId);
+
+      const rawColumns = group.get(YjsDatabaseKey.groups)?.toArray() ?? [];
+      let next: GroupColumn | null = null;
+
+      for (const rawColumn of rawColumns) {
+        const column = normalizeGroupColumn(rawColumn);
+
+        if (column?.id === groupFieldId) {
+          next = column;
+          break;
+        }
+      }
+
+      setUngroupedColumn((current) =>
+        current?.id === next?.id &&
+        current?.visible === next?.visible &&
+        current?.visibleExplicit === next?.visibleExplicit
+          ? current
+          : next
+      );
     };
 
     observerEvent();
@@ -1095,29 +1151,40 @@ export function useBoardLayoutSettings() {
     };
   }, [groups]);
 
+  const ungroupedColumnHidden = isUngroupedColumnHidden({
+    column: ungroupedColumn,
+    hideUngroupedColumn: hideUnGroup,
+  });
+
   return {
     isCollapsed,
     hideUnGroup,
+    hideEmptyGroups,
+    shownEmptyGroupIds,
     fieldId,
+    ungroupedColumnHidden,
   };
 }
 
-export function useGetBoardHiddenGroup(groupId: string) {
+export function useGetBoardHiddenGroup(
+  groupId: string,
+  getRowCount: (columnId: string) => number,
+  groupRowsReady: boolean
+) {
   const { columns, fieldId } = useGroup(groupId);
-  const [hiddenColumns, setHiddenColumns] = useState<GroupColumn[]>([]);
-  const { hideUnGroup } = useBoardLayoutSettings();
-
-  useEffect(() => {
-    if (!columns) return;
-
-    const hiddenColumns = columns.filter((column) => {
-      if (column.id === fieldId) return hideUnGroup;
-
-      return !column.visible;
-    });
-
-    setHiddenColumns(hiddenColumns);
-  }, [columns, fieldId, hideUnGroup]);
+  const { hideEmptyGroups, hideUnGroup } = useBoardLayoutSettings();
+  const hiddenColumns = useMemo(
+    () =>
+      resolveBoardColumnVisibility({
+        columns,
+        fieldId,
+        getRowCount,
+        groupRowsReady,
+        hideEmptyGroups,
+        hideUngroupedColumn: hideUnGroup,
+      }).hiddenColumns,
+    [columns, fieldId, getRowCount, groupRowsReady, hideEmptyGroups, hideUnGroup]
+  );
 
   return {
     hiddenColumns,
@@ -1128,18 +1195,38 @@ export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
   const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
+  const viewId = useDatabaseViewId();
+  const { databaseDoc } = useDatabaseContext();
+  const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'board-grouping');
+  const groupingRows = useMemo(() => {
+    const next = { ...cachedRowDocs };
 
-  const [visibleColumns, setVisibleColumns] = useState<GroupColumn[]>([]);
+    Object.entries(rows ?? {}).forEach(([rowId, rowDoc]) => {
+      if (hasRowConditionData(rowDoc) || !next[rowId]) {
+        next[rowId] = rowDoc;
+      }
+    });
+
+    return next;
+  }, [cachedRowDocs, rows]);
 
   const fields = useDatabaseFields();
   const [notFound, setNotFound] = useState(false);
   const [groupResult, setGroupResult] = useState<Map<string, Row[]>>(new Map());
+  const [hydratedGroupingIdentity, setHydratedGroupingIdentity] = useState<{
+    databaseDoc: YDoc;
+    groupingKey: string;
+  } | null>(null);
   const view = useDatabaseView();
-  const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
   const filters = view?.get(YjsDatabaseKey.filters);
+  const { hideEmptyGroups, hideUnGroup, shownEmptyGroupIds } = useBoardLayoutSettings();
+  const groupingKey = fieldId ? `${viewId ?? ''}:${groupId}:${fieldId}` : null;
 
   useEffect(() => {
-    if (!fieldId || !rowOrders || !rows) return;
+    if (!fieldId || !rowOrders) {
+      setGroupResult(new Map());
+      return;
+    }
 
     const onConditionsChange = () => {
       const newResult = new Map<string, Row[]>();
@@ -1152,6 +1239,8 @@ export function useRowsByGroup(groupId: string) {
         return;
       }
 
+      setNotFound(false);
+
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
       if (![FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType)) {
@@ -1162,7 +1251,7 @@ export function useRowsByGroup(groupId: string) {
 
       const filter = filters?.toArray().find((filter) => filter.get(YjsDatabaseKey.field_id) === fieldId);
 
-      const groupResult = groupByField(rowOrders, rows, field, filter);
+      const groupResult = groupByField(rowOrders, groupingRows, field, filter);
 
       if (!groupResult) {
         setGroupResult(newResult);
@@ -1170,6 +1259,15 @@ export function useRowsByGroup(groupId: string) {
       }
 
       setGroupResult(groupResult);
+      const rowsHydrated = areGroupRowsHydrated(rowOrders, groupingRows);
+
+      if (rowsHydrated && groupingKey) {
+        setHydratedGroupingIdentity((current) =>
+          current?.databaseDoc === databaseDoc && current.groupingKey === groupingKey
+            ? current
+            : { databaseDoc, groupingKey }
+        );
+      }
     };
 
     onConditionsChange();
@@ -1183,7 +1281,7 @@ export function useRowsByGroup(groupId: string) {
       debouncedConditionsChange();
     };
 
-    Object.values(rows).forEach((row) => {
+    Object.values(groupingRows).forEach((row) => {
       row.getMap(YjsEditorKey.data_section).observeDeep(observerRowsEvent);
     });
     return () => {
@@ -1191,35 +1289,41 @@ export function useRowsByGroup(groupId: string) {
 
       fields.unobserveDeep(onConditionsChange);
       filters?.unobserveDeep(onConditionsChange);
-      Object.values(rows).forEach((row) => {
+      Object.values(groupingRows).forEach((row) => {
         row.getMap(YjsEditorKey.data_section).unobserveDeep(observerRowsEvent);
       });
     };
-  }, [fieldId, fields, rowOrders, rows, filters]);
+  }, [databaseDoc, fieldId, fields, rowOrders, groupingRows, filters, groupingKey]);
 
-  useEffect(() => {
-    const observeEvent = () => {
-      const newVisibleColumns = columns.filter((column) => {
-        if (column.id === fieldId) return !layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column);
-        return column.visible;
-      });
+  // Cold Boards must wait for their first complete grouping before empty
+  // columns can be classified safely. Once that baseline exists, a later
+  // row_order arriving before its separate DatabaseRow collab must not
+  // temporarily disable Hide empty groups for every column.
+  const groupVisibilityReady =
+    groupingKey !== null &&
+    hydratedGroupingIdentity?.databaseDoc === databaseDoc &&
+    hydratedGroupingIdentity.groupingKey === groupingKey;
 
-      setVisibleColumns(newVisibleColumns);
-    };
-
-    observeEvent();
-
-    layoutSetting?.observe(observeEvent);
-
-    return () => {
-      layoutSetting?.unobserve(observeEvent);
-    };
-  }, [layoutSetting, columns, fieldId]);
+  const visibleColumns = useMemo(
+    () =>
+      resolveBoardColumnVisibility({
+        columns,
+        fieldId,
+        getRowCount: (columnId) => groupResult.get(columnId)?.length ?? 0,
+        groupRowsReady: groupVisibilityReady,
+        hideEmptyGroups,
+        hideUngroupedColumn: hideUnGroup,
+        shownEmptyGroupIds,
+      }).visibleColumns,
+    [columns, fieldId, groupResult, groupVisibilityReady, hideEmptyGroups, hideUnGroup, shownEmptyGroupIds]
+  );
 
   return {
     fieldId,
     groupResult,
     columns: visibleColumns,
+    groupRowsReady: groupVisibilityReady,
+    hideEmptyGroups,
     notFound,
   };
 }
@@ -1374,7 +1478,8 @@ export function useRowOrdersSelector() {
   );
 
   const syncUnconditionedRowOrders = useCallback(() => {
-    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
 
     if (!originalRowOrders) return false;
 
@@ -1461,7 +1566,8 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
-    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
 
     if (!originalRowOrders) return;
 
@@ -1525,6 +1631,25 @@ export function useRowOrdersSelector() {
 
       if (!filtersAppliedRef.current) {
         setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
+      } else {
+        // New rows cannot be filtered until their docs load, but removals are
+        // authoritative in row_orders. Prune them from the last complete result
+        // so a remotely deleted row cannot remain visible during hydration.
+        const sourceRowIds = new Set(originalRowOrders.map(({ id }) => id));
+
+        setRowOrdersState((previousState) => {
+          if (previousState.conditionSignature !== conditionStateKey || !previousState.rows) {
+            return previousState;
+          }
+
+          const retainedRows = previousState.rows.filter(({ id }) => sourceRowIds.has(id));
+
+          if (retainedRows.length === previousState.rows.length) {
+            return previousState;
+          }
+
+          return { rows: retainedRows, conditionSignature: conditionStateKey };
+        });
       }
 
       logConditionCompute(rowsWithDocs.length);
@@ -2156,22 +2281,39 @@ export function usePrimaryFieldId() {
   return primaryFieldId;
 }
 
-export const useRowMetaSelector = (rowId: string) => {
-  const [meta, setMeta] = useState<RowMeta | null>();
-  const { rowMap, ensureRow } = useDatabaseContext();
-  const [rowDoc, setRowDoc] = useState<YDoc | null>(null);
+function readRowMeta(rowId: string, rowDoc: YDoc | null): RowMeta | null {
+  if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return null;
 
-  // Ensure the row document is loaded and track it directly
+  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+  const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
+
+  return yMeta ? getMetaJSON(rowId, yMeta) : null;
+}
+
+export const useRowMetaSelector = (rowId: string) => {
+  const { rowMap, ensureRow } = useDatabaseContext();
+  const mappedRowDoc = rowMap?.[rowId] ?? null;
+  const [resolvedRowDoc, setResolvedRowDoc] = useState<{
+    rowId: string;
+    mappedRowDoc: YDoc | null;
+    rowDoc: YDoc;
+  } | null>(null);
+  const rowDoc =
+    resolvedRowDoc?.rowId === rowId && resolvedRowDoc.mappedRowDoc === mappedRowDoc
+      ? resolvedRowDoc.rowDoc
+      : mappedRowDoc;
+  const [observedMeta, setObservedMeta] = useState<{
+    rowId: string;
+    rowDoc: YDoc;
+    value: RowMeta | null;
+  } | null>(null);
+  const meta =
+    observedMeta?.rowId === rowId && observedMeta.rowDoc === rowDoc ? observedMeta.value : readRowMeta(rowId, rowDoc);
+
+  // A seeded row is sufficient for the first paint but is not necessarily the
+  // canonical realtime document. Resolve it even when rowMap already has data.
   useEffect(() => {
     let cancelled = false;
-
-    // Check if already available in rowMap
-    const existing = rowMap?.[rowId];
-
-    if (existing) {
-      setRowDoc(existing);
-      return;
-    }
 
     if (ensureRow && rowId) {
       const promise = ensureRow(rowId);
@@ -2180,7 +2322,7 @@ export const useRowMetaSelector = (rowId: string) => {
         promise
           .then((doc) => {
             if (!cancelled && doc) {
-              setRowDoc(doc);
+              setResolvedRowDoc({ rowId, mappedRowDoc, rowDoc: doc });
             }
           })
           .catch((error: unknown) => {
@@ -2194,14 +2336,17 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRow, rowId, rowMap]);
+  }, [ensureRow, mappedRowDoc, rowId]);
 
   // Read meta and observe changes on the row doc.
   // The meta key may not exist initially (empty Y.Map before sync completes),
   // so we observe the shared root to detect when the meta key is added.
   useEffect(() => {
-    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
+    if (!rowDoc) return;
 
+    // Create the named root before realtime hydration. A remote update mutates
+    // this same Y.Map without replacing rowDoc, so waiting for share.has here
+    // leaves the hook with no observer and no React state change to retry it.
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
     let metaObserverCleanup: (() => void) | null = null;
 
@@ -2214,12 +2359,13 @@ export const useRowMetaSelector = (rowId: string) => {
 
       const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
 
-      if (!yMeta) return;
+      if (!yMeta) {
+        setObservedMeta({ rowId, rowDoc, value: null });
+        return;
+      }
 
       const updateMeta = () => {
-        const meta = getMetaJSON(rowId, yMeta);
-
-        setMeta(meta);
+        setObservedMeta({ rowId, rowDoc, value: getMetaJSON(rowId, yMeta) });
       };
 
       updateMeta();
@@ -2233,9 +2379,9 @@ export const useRowMetaSelector = (rowId: string) => {
       };
     };
 
-    // Watch for the meta key being added to the shared root (arrives via sync)
-    const handleRootChange = () => {
-      if (rowSharedRoot.has(YjsEditorKey.meta)) {
+    // Watch for the meta key being added, replaced, or removed.
+    const handleRootChange = (event: { keysChanged?: Set<string> }) => {
+      if (event.keysChanged?.has(YjsEditorKey.meta)) {
         attachMetaObserver();
       }
     };

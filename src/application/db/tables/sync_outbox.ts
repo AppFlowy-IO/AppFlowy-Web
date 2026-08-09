@@ -15,6 +15,12 @@ export interface SyncOutboxRecord {
   // schema version bump is needed. We intentionally don't store an after vector —
   // the server derives the post-update state itself and never trusts a client one.
   beforeStateVector?: Uint8Array;
+  /**
+   * Server-directed manifest snapshots supersede older pending manifest
+   * snapshots for the same object. Local edit records intentionally leave this
+   * unset so they are never removed by manifest coalescing.
+   */
+  source?: 'manifest';
 }
 
 export type SyncOutboxTable = {

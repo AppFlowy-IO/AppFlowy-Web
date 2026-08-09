@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
+import { useTranslation } from 'react-i18next';
 
+import { ErrorType } from '@/application/utils/error-utils';
 import { useOutlineDrawer } from '@/components/_shared/outline/outline.hooks';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useAIChatContextOptional } from '@/components/ai-chat/AIChatProvider';
@@ -21,15 +23,25 @@ function MainLayout() {
 
   const openPageModalViewId = useOpenModalViewId();
   const viewId = useAppViewId();
-  const { notFound, deleted } = useViewErrorStatus();
+  const { notFound, deleted, noAccess } = useViewErrorStatus();
+  const { t } = useTranslation();
 
   const main = useMemo(() => {
     if (deleted) {
       return <DeletedPageComponent />;
     }
 
+    if (noAccess) {
+      return (
+        <RecordNotFound
+          viewId={viewId}
+          error={{ type: ErrorType.Forbidden, message: t('requestAccess.title') }}
+        />
+      );
+    }
+
     return notFound ? <RecordNotFound isViewNotFound viewId={viewId} /> : <Main />;
-  }, [deleted, notFound, viewId]);
+  }, [deleted, noAccess, notFound, t, viewId]);
 
   const width = useMemo(() => {
     let diff = 0;

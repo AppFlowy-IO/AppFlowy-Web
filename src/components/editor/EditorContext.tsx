@@ -24,8 +24,11 @@ import {
   TestDatabasePromptConfig,
   Subscription,
   MentionablePerson,
+  MentionSearchContext,
+  SearchMentions,
   DatabaseRelations,
   RowDocumentSourcePayload,
+  UpdatePagePayload,
   YDoc,
 } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
@@ -88,6 +91,7 @@ export interface EditorContextState {
   variant?: UIVariant;
   onRendered?: () => void;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
+  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
@@ -102,6 +106,8 @@ export interface EditorContextState {
   getSubscriptions?: (() => Promise<Subscription[]>) | undefined;
   eventEmitter?: EventEmitter;
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   awareness?: Awareness;
   getDeviceId?: () => string;
   databaseRelations?: DatabaseRelations;
@@ -135,6 +141,7 @@ export const EditorContextProvider = ({
   variant,
   onRendered,
   addPage,
+  updatePage,
   deletePage,
   duplicatePage,
   openPageModal,
@@ -149,6 +156,8 @@ export const EditorContextProvider = ({
   getSubscriptions,
   eventEmitter,
   getMentionUser,
+  searchMentions,
+  mentionContext,
   awareness,
   getDeviceId,
   databaseRelations,
@@ -220,6 +229,7 @@ export const EditorContextProvider = ({
       variant,
       onRendered,
       addPage,
+      updatePage,
       deletePage,
       duplicatePage,
       openPageModal,
@@ -234,6 +244,8 @@ export const EditorContextProvider = ({
       getSubscriptions,
       eventEmitter,
       getMentionUser,
+      searchMentions,
+      mentionContext,
       awareness,
       getDeviceId,
       databaseRelations,
@@ -262,6 +274,7 @@ export const EditorContextProvider = ({
       variant,
       onRendered,
       addPage,
+      updatePage,
       deletePage,
       duplicatePage,
       openPageModal,
@@ -276,6 +289,8 @@ export const EditorContextProvider = ({
       getSubscriptions,
       eventEmitter,
       getMentionUser,
+      searchMentions,
+      mentionContext,
       awareness,
       getDeviceId,
       databaseRelations,

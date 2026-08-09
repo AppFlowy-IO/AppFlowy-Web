@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
+import { type ReactNode, useEffect } from 'react';
 import * as Y from 'yjs';
 
 import {
@@ -7,13 +7,23 @@ import {
   DatabaseContextState,
   FieldType,
   FilterType,
+  NumberFilterCondition,
   TextFilterCondition,
+  useFieldCellsByRowsSelector,
   useRowOrdersSelector,
 } from '@/application/database-yjs';
-import { useUpdateAdvancedFilter } from '@/application/database-yjs/dispatch';
+import { CalculationType } from '@/application/database-yjs/database.type';
+import {
+  useAddAdvancedFilterAndRebuild,
+  useCalculateFieldDispatch,
+  useUpdateAdvancedFilter,
+} from '@/application/database-yjs/dispatch';
+import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import * as databaseFilter from '@/application/database-yjs/filter';
 import {
   RowId,
+  YDatabaseCalculation,
+  YDatabaseCalculations,
   YDatabaseField,
   YDatabaseFilter,
   YDatabaseFilters,
@@ -33,6 +43,7 @@ jest.mock('@/utils/runtime-config', () => ({
 
 type DatabaseFixture = {
   databaseDoc: YDoc;
+  fields: Y.Map<YDatabaseField>;
   filters: YDatabaseFilters;
   rowMap: Record<RowId, YDoc>;
   rowOrders: YDatabaseRowOrders;
@@ -53,10 +64,10 @@ function createTextField() {
   return field;
 }
 
-function createTextFilter(content: string) {
+function createTextFilter(content: string, id = 'filter-id') {
   const filter = new Y.Map() as YDatabaseFilter;
 
-  filter.set(YjsDatabaseKey.id, 'filter-id');
+  filter.set(YjsDatabaseKey.id, id);
   filter.set(YjsDatabaseKey.field_id, fieldId);
   filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
   filter.set(YjsDatabaseKey.condition, TextFilterCondition.TextContains);
@@ -70,7 +81,7 @@ function createDatabaseFixture(): DatabaseFixture {
   const databaseDoc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map();
-  const fields = new Y.Map();
+  const fields = new Y.Map<YDatabaseField>();
   const views = new Y.Map();
   const view = new Y.Map() as YDatabaseView;
   const rowOrders = new Y.Array<{ id: RowId; height: number }>();
@@ -96,6 +107,7 @@ function createDatabaseFixture(): DatabaseFixture {
 
   return {
     databaseDoc,
+    fields,
     filters,
     rowMap: {
       'row-a': createRowDoc('row-a', databaseId, {
@@ -125,7 +137,7 @@ function createWrapper(fixture: DatabaseFixture, contextOverrides: Partial<Datab
     ...contextOverrides,
   };
 
-  return ({ children }: { children: React.ReactNode }) => (
+  return ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 }
@@ -349,6 +361,74 @@ describe('useRowOrdersSelector', () => {
     expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
   });
 
+  it('prunes a deleted row and updates calculations while another conditioned row is still hydrating', async () => {
+    const fixture = createDatabaseFixture();
+    const ensureRow = jest.fn(() => new Promise<YDoc | undefined>(() => undefined));
+    const calculation = new Y.Map() as YDatabaseCalculation;
+    const calculations = new Y.Array() as YDatabaseCalculations;
+
+    calculation.set(YjsDatabaseKey.id, 'calculation-id');
+    calculation.set(YjsDatabaseKey.field_id, fieldId);
+    calculation.set(YjsDatabaseKey.type, CalculationType.Count);
+    calculation.set(YjsDatabaseKey.calculation_value, 0);
+    calculations.push([calculation]);
+    fixture.view.set(YjsDatabaseKey.calculations, calculations);
+
+    const { result } = renderHook(
+      () => {
+        const rows = useRowOrdersSelector();
+        const { cells } = useFieldCellsByRowsSelector(fieldId, rows);
+        const calculate = useCalculateFieldDispatch(fieldId);
+
+        useEffect(() => {
+          if (cells) {
+            calculate(cells);
+          }
+        }, [calculate, cells]);
+
+        return rows;
+      },
+      {
+        wrapper: createWrapper(fixture, { ensureRow }),
+      }
+    );
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe(3);
+    });
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe(2);
+    });
+
+    act(() => {
+      fixture.rowOrders.push([{ id: 'row-hydrating', height: 44 }]);
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(ensureRow).toHaveBeenCalledWith('row-hydrating');
+    expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+
+    act(() => {
+      const rowAIndex = fixture.rowOrders.toJSON().findIndex(({ id }) => id === 'row-a');
+
+      fixture.rowOrders.delete(rowAIndex);
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-b']);
+      expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe(1);
+    });
+  });
+
   it('requests missing row docs while a conditioned view is loading', async () => {
     const fixture = createDatabaseFixture();
     const ensureRow = jest.fn(async () => undefined);
@@ -454,6 +534,94 @@ describe('useRowOrdersSelector', () => {
 });
 
 describe('useUpdateAdvancedFilter', () => {
+  it('updates a nested condition without replacing the filter tree', () => {
+    const fixture = createDatabaseFixture();
+    const root = new Y.Map() as YDatabaseFilter;
+    const children = new Y.Array<YDatabaseFilter>() as YDatabaseFilters;
+    const target = createTextFilter('match', 'filter-id');
+    const sibling = createTextFilter('other', 'sibling-filter');
+
+    root.set(YjsDatabaseKey.id, 'root-filter');
+    root.set(YjsDatabaseKey.filter_type, FilterType.And);
+    children.push([target, sibling]);
+    root.set(YjsDatabaseKey.children, children);
+    fixture.filters.push([root]);
+
+    const { result } = renderHook(() => useUpdateAdvancedFilter(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    act(() => {
+      result.current({
+        filterId: 'filter-id',
+        fieldId,
+        condition: TextFilterCondition.TextDoesNotContain,
+      });
+    });
+
+    expect(fixture.filters.get(0)).toBe(root);
+    expect(root.get(YjsDatabaseKey.children)).toBe(children);
+    expect(target.get(YjsDatabaseKey.condition)).toBe(TextFilterCondition.TextDoesNotContain);
+    expect(sibling.get(YjsDatabaseKey.condition)).toBe(TextFilterCondition.TextContains);
+  });
+
+  it('preserves a numeric Rollup variant when a Desktop tree must be rebuilt', () => {
+    const fixture = createDatabaseFixture();
+    const rollupFieldId = 'rollup-field';
+    const rollupField = new Y.Map() as YDatabaseField;
+
+    rollupField.set(YjsDatabaseKey.id, rollupFieldId);
+    rollupField.set(YjsDatabaseKey.name, 'Total');
+    rollupField.set(YjsDatabaseKey.type, FieldType.Rollup);
+    fixture.fields.set(rollupFieldId, rollupField);
+
+    fixture.filters.push([
+      {
+        id: 'desktop-root',
+        filter_type: FilterType.And,
+        children: [
+          {
+            id: 'filter-id',
+            field_id: fieldId,
+            filter_type: FilterType.Data,
+            ty: FieldType.RichText,
+            condition: TextFilterCondition.TextContains,
+            content: 'match',
+          },
+          {
+            id: 'rollup-filter',
+            field_id: rollupFieldId,
+            filter_type: FilterType.Data,
+            ty: FieldType.Rollup,
+            condition: NumberFilterCondition.Equal,
+            content: '10',
+            rollup_target_ty: FieldType.Number,
+          },
+        ],
+      } as unknown as YDatabaseFilter,
+    ]);
+
+    const { result } = renderHook(() => useUpdateAdvancedFilter(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    act(() => {
+      result.current({
+        filterId: 'filter-id',
+        fieldId,
+        condition: TextFilterCondition.TextIs,
+      });
+    });
+
+    const rebuiltRoot = fixture.filters.get(0);
+    const rebuiltChildren = rebuiltRoot.get(YjsDatabaseKey.children) as YDatabaseFilters;
+    const rebuiltTextFilter = rebuiltChildren.get(0);
+    const rebuiltRollupFilter = rebuiltChildren.get(1);
+
+    expect(rebuiltTextFilter.get(YjsDatabaseKey.condition)).toBe(TextFilterCondition.TextIs);
+    expect(rebuiltRollupFilter.get(YjsDatabaseKey.rollup_target_type)).toBe(FieldType.Number);
+  });
+
   it('ignores a delayed update targeting a previous field', () => {
     const fixture = createDatabaseFixture();
     const filter = createTextFilter('');
@@ -475,5 +643,29 @@ describe('useUpdateAdvancedFilter', () => {
 
     expect(filter.get(YjsDatabaseKey.field_id)).toBe('replacement-field');
     expect(filter.get(YjsDatabaseKey.content)).toBe('');
+  });
+});
+
+describe('useAddAdvancedFilterAndRebuild', () => {
+  it('persists the numeric Rollup variant and Number default condition', () => {
+    const fixture = createDatabaseFixture();
+    const rollupFieldId = 'numeric-rollup-field';
+
+    fixture.fields.set(rollupFieldId, createRollupField(rollupFieldId));
+
+    const { result } = renderHook(() => useAddAdvancedFilterAndRebuild(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    act(() => {
+      result.current(rollupFieldId);
+    });
+
+    const root = fixture.filters.get(0);
+    const children = root.get(YjsDatabaseKey.children) as YDatabaseFilters;
+    const rollupFilter = children.get(0);
+
+    expect(rollupFilter.get(YjsDatabaseKey.condition)).toBe(NumberFilterCondition.Equal);
+    expect(rollupFilter.get(YjsDatabaseKey.rollup_target_type)).toBe(FieldType.Number);
   });
 });

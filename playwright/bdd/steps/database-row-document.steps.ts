@@ -1,4 +1,4 @@
-import { expect, Locator, Page, Route } from '@playwright/test';
+import { BrowserContext, expect, Locator, Page, Route } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,10 +22,17 @@ import {
 } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
-const { Given, When, Then } = createBdd();
+const { Given, When, Then, After } = createBdd();
 
 const cardNamesByPage = new WeakMap<Page, string>();
+const synchronizedCardNamesByPage = new WeakMap<Page, string[]>();
 const rowInlineGridStateByPage = new WeakMap<Page, RowInlineGridState>();
+const secondCardClientByPage = new WeakMap<Page, { context: BrowserContext; page: Page; loadsAfterOpen: number }>();
+
+After(async ({ page }) => {
+  await secondCardClientByPage.get(page)?.context.close();
+  secondCardClientByPage.delete(page);
+});
 
 interface DatabaseBlockState {
   blockId?: string;
@@ -62,36 +69,112 @@ Given('a board database with a card is open', async ({ page, request }) => {
   await expect(cardByName(page, currentCardName)).toBeVisible({ timeout: 15000 });
 });
 
-When('I add image link {string} to the card row page', async ({ page }, imageUrl: string) => {
+Given('a board database is open before the synchronized card is created', async ({ page, request }) => {
+  const currentCardName = `NewRemoteCard-${uuidv4().slice(0, 6)}`;
+
+  cardNamesByPage.set(page, currentCardName);
+
+  await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
+    createWaitMs: 7000,
+    verify: async (p) => {
+      await expect(BoardSelectors.boardContainer(p)).toHaveCount(1, { timeout: 15000 });
+      await expect(BoardSelectors.boardContainer(p)).toBeVisible({ timeout: 15000 });
+    },
+  });
+});
+
+Given('a board database is open before three synchronized cards are created', async ({ page, request }) => {
+  const cardNamePrefix = `NewRemoteCards-${uuidv4().slice(0, 6)}`;
+
+  synchronizedCardNamesByPage.set(
+    page,
+    Array.from({ length: 3 }, (_, index) => `${cardNamePrefix}-${index + 1}`)
+  );
+
+  await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
+    createWaitMs: 7000,
+    verify: async (p) => {
+      await expect(BoardSelectors.boardContainer(p)).toHaveCount(1, { timeout: 15000 });
+      await expect(BoardSelectors.boardContainer(p)).toBeVisible({ timeout: 15000 });
+    },
+  });
+});
+
+Given('another web client opens the same card Board', async ({ page, browser }) => {
+  const currentCardName = getCurrentCardName(page);
+  const context = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: await page.context().storageState({ indexedDB: true }),
+    viewport: { width: 1440, height: 900 },
+  });
+  const secondPage = await context.newPage();
+  const secondClient = { context, page: secondPage, loadsAfterOpen: 0 };
+
+  secondCardClientByPage.set(page, secondClient);
+  setupPageErrorHandling(secondPage);
+
+  await secondPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+  await expect(BoardSelectors.boardContainer(secondPage)).toHaveCount(1, { timeout: 30000 });
+  await expect(cardsByName(secondPage, currentCardName)).toHaveCount(1, { timeout: 30000 });
+  await expect(cardByName(secondPage, currentCardName)).toBeVisible({ timeout: 30000 });
+  await secondPage.waitForLoadState('load');
+  secondPage.on('load', () => {
+    secondClient.loadsAfterOpen += 1;
+  });
+});
+
+Given('another web client opens the Board before the synchronized card is created', async ({ page, browser }) => {
+  const context = await browser.newContext({
+    baseURL: new URL(page.url()).origin,
+    storageState: await page.context().storageState({ indexedDB: true }),
+    viewport: { width: 1440, height: 900 },
+  });
+  const secondPage = await context.newPage();
+  const secondClient = { context, page: secondPage, loadsAfterOpen: 0 };
+
+  secondCardClientByPage.set(page, secondClient);
+  setupPageErrorHandling(secondPage);
+
+  await secondPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+  await expect(BoardSelectors.boardContainer(secondPage)).toHaveCount(1, { timeout: 30000 });
+  await expect(BoardSelectors.boardContainer(secondPage)).toBeVisible({ timeout: 30000 });
+  await secondPage.waitForLoadState('load');
+  secondPage.on('load', () => {
+    secondClient.loadsAfterOpen += 1;
+  });
+});
+
+When('I create the synchronized card', async ({ page }) => {
   const currentCardName = getCurrentCardName(page);
 
-  await cardByName(page, currentCardName).click({ force: true });
-  await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15000 });
+  await addNewCard(page, currentCardName);
+  await expect(cardsByName(page, currentCardName)).toHaveCount(1, { timeout: 15000 });
+  await expect(cardByName(page, currentCardName)).toBeVisible({ timeout: 15000 });
+});
 
-  await focusRowDocumentEditor(page);
-  await page.keyboard.type('/image', { delay: 30 });
+When('I create three synchronized cards', async ({ page }) => {
+  for (const cardName of getSynchronizedCardNames(page)) {
+    await addNewCard(page, cardName);
+    await expect(cardsByName(page, cardName)).toHaveCount(1, { timeout: 15000 });
+    await expect(cardByName(page, cardName)).toBeVisible({ timeout: 15000 });
+  }
+});
 
-  const imageCommand = page.getByTestId('slash-menu-image');
-
-  await expect(imageCommand).toBeVisible({ timeout: 10000 });
-  await imageCommand.click({ force: true });
-
-  const popover = page.locator('.MuiPopover-root:visible').last();
-
-  await expect(popover).toBeVisible({ timeout: 10000 });
-  await popover.getByText('Embed link', { exact: true }).click({ force: true });
-
-  const input = popover.getByPlaceholder('Paste or type an image link');
-
-  await expect(input).toBeVisible({ timeout: 10000 });
-  await input.fill(imageUrl);
-  await input.press('Enter');
-  await expect(popover).toBeHidden({ timeout: 10000 });
+When('I add image link {string} to the card row page', async ({ page }, imageUrl: string) => {
+  await addImageLinkToCardRowPage(page, getCurrentCardName(page), imageUrl);
 });
 
 When('I close the card row page', async ({ page }) => {
-  await closeRowDetailWithEscape(page);
-  await page.waitForTimeout(2000);
+  await closeCardRowPage(page);
+});
+
+When('I add row page content to all three synchronized cards', async ({ page }) => {
+  const cardNames = getSynchronizedCardNames(page);
+
+  for (const [index, cardName] of cardNames.entries()) {
+    await addImageLinkToCardRowPage(page, cardName, `https://example.com/newly-ordered-row-page-image-${index + 1}.png`);
+    await closeCardRowPage(page);
+  }
 });
 
 When('I switch the database to a new Grid view', async ({ page }) => {
@@ -117,6 +200,72 @@ Then('the grid primary cell shows a row document icon', async ({ page }) => {
   await expect(row).toBeVisible({ timeout: 15000 });
   await expect(row.locator('.custom-icon')).toBeVisible({ timeout: 15000 });
 });
+
+Then('the other web client shows no row document icon for the card', async ({ page }) => {
+  const currentCardName = getCurrentCardName(page);
+  const secondPage = secondCardClientByPage.get(page)?.page;
+
+  if (!secondPage) {
+    throw new Error('Expected another web client to have opened the Board');
+  }
+
+  const cards = cardsByName(secondPage, currentCardName);
+  const card = cards.first();
+
+  await expect(cards).toHaveCount(1, { timeout: 30000 });
+  await expect(card).toBeVisible({ timeout: 30000 });
+  await expect(card.locator('[data-testid^="row-document-icon-"]')).toHaveCount(0);
+});
+
+Then('the other web client shows exactly one row document icon for the card', async ({ page }) => {
+  const currentCardName = getCurrentCardName(page);
+  const secondPage = secondCardClientByPage.get(page)?.page;
+
+  if (!secondPage) {
+    throw new Error('Expected another web client to have opened the Board');
+  }
+
+  const cards = cardsByName(secondPage, currentCardName);
+  const card = cards.first();
+  const documentIcon = card.locator('[data-testid^="row-document-icon-"]');
+
+  await expect(cards).toHaveCount(1, { timeout: 30000 });
+  await expect(card).toBeVisible({ timeout: 30000 });
+  await expect(documentIcon).toHaveCount(1, { timeout: 30000 });
+  await expect(documentIcon).toBeVisible({ timeout: 30000 });
+});
+
+Then('the other web client shows no row document icons for the synchronized cards', async ({ page }) => {
+  const secondPage = getSecondCardClient(page).page;
+
+  for (const cardName of getSynchronizedCardNames(page)) {
+    const cards = cardsByName(secondPage, cardName);
+
+    await expect(cards).toHaveCount(1, { timeout: 30000 });
+    await expect(cards.first()).toBeVisible({ timeout: 30000 });
+    await expect(cards.first().locator('[data-testid^="row-document-icon-"]')).toHaveCount(0);
+  }
+});
+
+Then(
+  'the other web client shows exactly three synchronized cards with document icons without reload',
+  async ({ page }) => {
+    const secondClient = getSecondCardClient(page);
+    const board = BoardSelectors.boardContainer(secondClient.page);
+
+    for (const cardName of getSynchronizedCardNames(page)) {
+      const cards = cardsByName(secondClient.page, cardName);
+      const documentIcon = cards.first().locator('[data-testid^="row-document-icon-"]');
+
+      await expect(cards).toHaveCount(1, { timeout: 30000 });
+      await expect(documentIcon).toHaveCount(1, { timeout: 30000 });
+      await expect(documentIcon).toBeVisible({ timeout: 30000 });
+    }
+
+    await expect(board.locator('[data-testid^="row-document-icon-"]')).toHaveCount(3, { timeout: 30000 });
+    expect(secondClient.loadsAfterOpen).toBe(0);
+  }
+);
 
 Given('a grid database is open for row-page inline grid duplication', async ({ page, request }) => {
   setupPageErrorHandling(page);
@@ -298,6 +447,36 @@ async function addNewCard(page: Page, cardName: string) {
   await page.waitForTimeout(2000);
 }
 
+async function addImageLinkToCardRowPage(page: Page, cardName: string, imageUrl: string) {
+  await cardByName(page, cardName).click({ force: true });
+  await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15000 });
+
+  await focusRowDocumentEditor(page);
+  await page.keyboard.type('/image', { delay: 30 });
+
+  const imageCommand = page.getByTestId('slash-menu-image');
+
+  await expect(imageCommand).toBeVisible({ timeout: 10000 });
+  await imageCommand.click({ force: true });
+
+  const popover = page.locator('.MuiPopover-root:visible').last();
+
+  await expect(popover).toBeVisible({ timeout: 10000 });
+  await popover.getByText('Embed link', { exact: true }).click({ force: true });
+
+  const input = popover.getByPlaceholder('Paste or type an image link');
+
+  await expect(input).toBeVisible({ timeout: 10000 });
+  await input.fill(imageUrl);
+  await input.press('Enter');
+  await expect(popover).toBeHidden({ timeout: 10000 });
+}
+
+async function closeCardRowPage(page: Page) {
+  await closeRowDetailWithEscape(page);
+  await page.waitForTimeout(2000);
+}
+
 async function focusRowDocumentEditor(page: Page) {
   const dialog = page.locator('[role="dialog"]');
   const scrollContainer = dialog.locator('.appflowy-scroll-container');
@@ -314,7 +493,11 @@ async function focusRowDocumentEditor(page: Page) {
 }
 
 function cardByName(page: Page, cardName: string) {
-  return BoardSelectors.boardContainer(page).locator('.board-card').filter({ hasText: cardName }).first();
+  return cardsByName(page, cardName).first();
+}
+
+function cardsByName(page: Page, cardName: string) {
+  return BoardSelectors.boardContainer(page).locator('.board-card').filter({ hasText: cardName });
 }
 
 function getCurrentCardName(page: Page) {
@@ -325,6 +508,26 @@ function getCurrentCardName(page: Page) {
   }
 
   return cardName;
+}
+
+function getSynchronizedCardNames(page: Page) {
+  const cardNames = synchronizedCardNamesByPage.get(page);
+
+  if (!cardNames) {
+    throw new Error('No synchronized card names are available for this scenario');
+  }
+
+  return cardNames;
+}
+
+function getSecondCardClient(page: Page) {
+  const secondClient = secondCardClientByPage.get(page);
+
+  if (!secondClient) {
+    throw new Error('Expected another web client to have opened the Board');
+  }
+
+  return secondClient;
 }
 
 function initializeRowInlineGridState(page: Page): RowInlineGridState {

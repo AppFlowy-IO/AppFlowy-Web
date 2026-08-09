@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { YDoc } from '@/application/types';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { RegisterSyncContext } from '@/components/ws/useSync';
 
@@ -13,6 +14,7 @@ import { RegisterSyncContext } from '@/components/ws/useSync';
 // which receives the transports directly in AppSyncLayer.
 export interface SyncInternalContextType {
   registerSyncContext: (params: RegisterSyncContext) => SyncContext;
+  rebindSyncContext: (objectId: string) => YDoc | undefined;
   revertCollabVersion: (viewId: string, version: string) => Promise<void>;
   eventEmitter: AppEventEmitter;
   awarenessMap: Record<string, Awareness>;

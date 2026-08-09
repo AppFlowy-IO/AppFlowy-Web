@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 
-import { YDatabaseView } from '@/application/types';
+import { View, YDatabaseView } from '@/application/types';
 import { ReactComponent as ChevronLeft } from '@/assets/icons/alt_arrow_left.svg';
 import { ReactComponent as ChevronRight } from '@/assets/icons/alt_arrow_right.svg';
 import { type ReorderResult, useReorderMonitor } from '@/components/_shared/reorder/useReorderMonitor';
@@ -31,7 +31,7 @@ export interface DatabaseViewTabsProps {
   menuViewId: string | null;
   setMenuViewId: (id: string | null) => void;
   setDeleteConfirmOpen: (id: string | null) => void;
-  setRenameViewId: (id: string | null) => void;
+  setRenameView: (view: View) => void;
   pendingScrollToViewId?: string | null;
   setPendingScrollToViewId?: (id: string | null) => void;
   onBeforeViewAdded?: () => void;
@@ -53,7 +53,7 @@ export function DatabaseViewTabs({
   menuViewId,
   setMenuViewId,
   setDeleteConfirmOpen,
-  setRenameViewId,
+  setRenameView,
   pendingScrollToViewId,
   setPendingScrollToViewId,
   onBeforeViewAdded,
@@ -247,7 +247,7 @@ export function DatabaseViewTabs({
                     visibleViewIds={visibleViewIds}
                     onSetMenuViewId={setMenuViewId}
                     onOpenDeleteModal={setDeleteConfirmOpen}
-                    onOpenRenameModal={setRenameViewId}
+                    onOpenRenameModal={setRenameView}
                     setTabRef={setTabRef}
                     reorderInstanceId={reorderEnabled ? reorderInstanceId : undefined}
                   />

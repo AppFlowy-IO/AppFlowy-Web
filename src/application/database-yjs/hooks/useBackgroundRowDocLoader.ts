@@ -1,17 +1,28 @@
-import { startTransition, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import * as Y from 'yjs';
 
-import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
-import { openRowCollabDBWithProvider } from '@/application/db';
+import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
+import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { YDoc, YjsDatabaseKey } from '@/application/types';
+import { openRowCollabDBWithProvider } from '@/application/db';
+import { YDatabaseRowOrders, YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
 const BACKGROUND_CONCURRENCY = 12;
 const SEED_HYDRATE_BATCH_SIZE = 128;
 
 type RowDocMap = Record<string, YDoc>;
+type EnsureRow = (rowId: string) => Promise<YDoc | undefined> | void;
+type LoadRowFromSeed = (rowId: string) => Promise<YDoc | undefined>;
 
 const pendingEphemeralRowDocs = new Map<string, Promise<YDoc>>();
 const retainedEphemeralRowDocs = new WeakMap<YDoc, number>();
@@ -61,11 +72,16 @@ async function openLegacyReadOnlyRowDoc(rowKey: string) {
     const updates = await getAllStoreValues<Uint8Array>(db, 'updates');
     const doc = new Y.Doc({ guid: rowKey }) as YDoc;
 
-    Y.transact(doc, () => {
-      updates.forEach((update) => {
-        Y.applyUpdate(doc, update);
-      });
-    }, null, false);
+    Y.transact(
+      doc,
+      () => {
+        updates.forEach((update) => {
+          Y.applyUpdate(doc, update);
+        });
+      },
+      null,
+      false
+    );
 
     return doc;
   } finally {
@@ -95,11 +111,13 @@ function openEphemeralRowDoc(rowKey: string, rowId: string) {
   const promise = openReadOnlyRowDoc(rowKey, rowId);
 
   pendingEphemeralRowDocs.set(pendingKey, promise);
-  promise.finally(() => {
-    if (pendingEphemeralRowDocs.get(pendingKey) === promise) {
-      pendingEphemeralRowDocs.delete(pendingKey);
-    }
-  }).catch(() => undefined);
+  promise
+    .finally(() => {
+      if (pendingEphemeralRowDocs.get(pendingKey) === promise) {
+        pendingEphemeralRowDocs.delete(pendingKey);
+      }
+    })
+    .catch(() => undefined);
 
   return promise;
 }
@@ -140,6 +158,9 @@ type LoaderStore = {
   seedHydrateRun: number;
   seedHydrateActive: boolean;
   rows: RowDocMap | null | undefined;
+  rowOrders: YDatabaseRowOrders | undefined;
+  ensureRow: EnsureRow | undefined;
+  loadRowFromSeed: LoadRowFromSeed | undefined;
 };
 
 const loaderStores = new Map<string, LoaderStore>();
@@ -162,6 +183,9 @@ function createLoaderStore(key: string): LoaderStore {
     seedHydrateRun: 0,
     seedHydrateActive: false,
     rows: undefined,
+    rowOrders: undefined,
+    ensureRow: undefined,
+    loadRowFromSeed: undefined,
   };
 }
 
@@ -236,25 +260,37 @@ function destroyStore(store: LoaderStore) {
 }
 
 /**
- * Hook that handles background loading of row documents for sorting/filtering.
- * When sorts or filters are active, row docs need to be loaded to apply conditions.
+ * Loads row documents for consumers that need values across the complete view,
+ * including sorting, filtering, and Board grouping.
  *
- * The loader state is shared per database view because useRowOrdersSelector is
- * consumed by several grid subcomponents. Without this store, each consumer
- * starts its own row hydration pass.
+ * Loader state is shared per database view and consumer scope. The scope keeps
+ * independently activated consumers from cancelling each other's hydration.
  *
- * @param hasConditions - Whether there are active sorts or filters
- * @returns Object containing cached row docs and merged row docs for conditions
+ * @param active - Whether this consumer needs complete row data
+ * @param scope - Isolates independently activated consumers sharing a view
+ * @returns Cached read-only row docs that are not already in the main row map
  */
-export function useBackgroundRowDocLoader(hasConditions: boolean) {
+export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions') {
   const rows = useRowMap();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
-  const { databaseDoc, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } = useDatabaseContext();
-  const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}`;
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+  const { databaseDoc, ensureRow, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } =
+    useDatabaseContext();
+  const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}:${scope}`;
   const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
+  const [rowOrderRevision, setRowOrderRevision] = useState(0);
 
-  store.rows = rows;
+  // A background run is shared by consumers and can outlive the render that
+  // started it. Publish transport-sensitive operations only after commit so an
+  // interrupted render cannot replace an active run's callbacks with values
+  // from a database lifecycle that never became active.
+  useLayoutEffect(() => {
+    store.rows = rows;
+    store.rowOrders = rowOrders;
+    store.ensureRow = ensureRow;
+    store.loadRowFromSeed = loadRowFromSeed;
+  }, [ensureRow, loadRowFromSeed, rowOrders, rows, store]);
 
   const cachedRowDocs = useSyncExternalStore(
     useCallback(
@@ -269,6 +305,22 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
     useCallback(() => store.cachedRowDocs, [store]),
     useCallback(() => store.cachedRowDocs, [store])
   );
+
+  // Y.Array identity is stable when collaborative edits insert rows. Track a
+  // primitive revision so the loading effects also process rows added after
+  // the initial Board hydration pass.
+  useEffect(() => {
+    if (!active || !rowOrders) return;
+
+    const handleRowOrdersChange = () => {
+      setRowOrderRevision((revision) => revision + 1);
+    };
+
+    rowOrders.observeDeep(handleRowOrdersChange);
+    return () => {
+      rowOrders.unobserveDeep(handleRowOrdersChange);
+    };
+  }, [active, rowOrders]);
 
   const scheduleFlush = useCallback(() => {
     if (store.flushHandle !== null) return;
@@ -340,12 +392,14 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
   }, [rows, store]);
 
   // Fast path: as soon as seeds are cached in memory, read shared in-memory
-  // row docs without IndexedDB. Hydrate in frame-sized chunks so large filtered
+  // row docs without IndexedDB. Hydrate in frame-sized chunks so large
   // databases do not spend one long task resolving every row.
   useEffect(() => {
-    if (!hasConditions || !seedsReady || !peekRowDocFromSeed || store.seedHydrateActive) return;
+    if (!active || !seedsReady || !peekRowDocFromSeed || store.seedHydrateActive) return;
 
-    const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
+    const rowOrdersData = (rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
+      (row) => !row.is_deleted
+    );
 
     if (!rowOrdersData) return;
 
@@ -428,21 +482,23 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
         store.seedHydrateFrame = null;
       }
     };
-  }, [hasConditions, seedsReady, peekRowDocFromSeed, store, view, viewId]);
+  }, [active, seedsReady, peekRowDocFromSeed, store, rowOrders, rowOrderRevision]);
 
   useEffect(() => {
-    if (hasConditions) return;
+    if (active) return;
     cancelBackgroundRun(store);
-  }, [hasConditions, store]);
+  }, [active, store]);
 
-  // Background loading of row docs for sorting/filtering.
+  // Background loading of complete-view row docs.
   // Waits for blob prefetch to complete so seeds are available, then uses
   // loadRowFromSeed (fast, in-memory seed application) for each row.
   // Falls back to IndexedDB for rows without seeds.
   useEffect(() => {
-    if (!hasConditions || !blobPrefetchComplete) return;
+    if (!active || !blobPrefetchComplete) return;
 
-    const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
+    const rowOrdersData = (rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.filter(
+      (row) => !row.is_deleted
+    );
 
     if (!rowOrdersData) return;
 
@@ -460,113 +516,196 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
 
     const runId = store.backgroundRun + 1;
     const isRunActive = () => store.backgroundRun === runId && !store.backgroundCancelled;
+    const retryAttempts = new Map<string, number>();
+    const isRowStillOrdered = (rowId: string) =>
+      (store.rowOrders?.toJSON() as { id: string; is_deleted?: boolean }[] | undefined)?.some(
+        (row) => row.id === rowId && !row.is_deleted
+      ) ?? false;
+    const retryMissingRow = async (rowId: string) => {
+      if (!store.ensureRow) return;
+
+      const attempt = retryAttempts.get(rowId) ?? 0;
+
+      if (attempt >= ROW_SYNC_RETRY_DELAYS_MS.length) {
+        retryAttempts.delete(rowId);
+        return;
+      }
+
+      const delayMs = ROW_SYNC_RETRY_DELAYS_MS[attempt];
+
+      retryAttempts.set(rowId, attempt + 1);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+      if (!isRunActive() || hasReadyRowDoc(rowId) || !isRowStillOrdered(rowId)) {
+        retryAttempts.delete(rowId);
+        return;
+      }
+
+      store.backgroundQueue.add(rowId);
+    };
 
     store.backgroundRun = runId;
     store.backgroundLoading = true;
     store.backgroundCancelled = false;
 
+    const loadMissingRow = async (rowId: string) => {
+      if (!isRunActive() || hasReadyRowDoc(rowId)) {
+        retryAttempts.delete(rowId);
+        return;
+      }
+
+      const retryAttempt = retryAttempts.get(rowId) ?? 0;
+
+      if (store.cachedRowDocPending.has(rowId)) {
+        try {
+          await store.cachedRowDocPending.get(rowId);
+        } catch {
+          // Treat another consumer's missing-row result as transient.
+        }
+
+        if (!hasReadyRowDoc(rowId)) await retryMissingRow(rowId);
+        return;
+      }
+
+      // Try fast path: use blob diff seeds via loadRowFromSeed.
+      // This adds the doc directly to the main rowMap (no separate cache needed).
+      const currentLoadRowFromSeed = store.loadRowFromSeed;
+
+      if (retryAttempt === 0 && currentLoadRowFromSeed) {
+        const pending = currentLoadRowFromSeed(rowId);
+
+        store.cachedRowDocPending.set(rowId, pending);
+
+        try {
+          const doc = await pending;
+
+          if (!isRunActive()) return;
+          if (hasRowConditionData(doc)) {
+            retryAttempts.delete(rowId);
+            return;
+          }
+        } catch {
+          // A new row may not be present in the database blob yet.
+        } finally {
+          store.cachedRowDocPending.delete(rowId);
+        }
+      }
+
+      if (!isRunActive()) return;
+
+      // A row inserted after the blob snapshot has no seed yet. Open its live
+      // row document so collaborative inserts hydrate before a card mounts.
+      const currentEnsureRow = store.ensureRow;
+
+      if (currentEnsureRow) {
+        try {
+          const doc = await currentEnsureRow(rowId);
+
+          if (!isRunActive()) return;
+          if (doc && hasRowConditionData(doc)) {
+            retryAttempts.delete(rowId);
+            return;
+          }
+        } catch {
+          // Fall through to the read-only IndexedDB path.
+        }
+      }
+
+      if (!isRunActive()) return;
+
+      // The first pass checks every local cache. Later passes only re-request
+      // the live collab; repeating skip-cache opens cannot make remote data appear.
+      if (retryAttempt > 0) {
+        await retryMissingRow(rowId);
+        return;
+      }
+
+      // Fallback: open from IndexedDB for rows without seeds. The module-level
+      // pending map dedupes concurrent opens without retaining the doc globally.
+      const rowKey = getRowKey(databaseDoc.guid, rowId);
+      const pending = openEphemeralRowDoc(rowKey, rowId);
+
+      store.cachedRowDocPending.set(rowId, pending);
+
+      try {
+        const doc = await pending;
+
+        retainEphemeralRowDoc(doc);
+
+        if (!isRunActive()) {
+          releaseOwnedRowDoc(doc);
+          return;
+        }
+
+        if (!hasRowConditionData(doc)) {
+          releaseOwnedRowDoc(doc);
+          await retryMissingRow(rowId);
+          return;
+        }
+
+        if (hasReadyRowDoc(rowId) || hasRowConditionData(store.pendingDocs[rowId])) {
+          releaseOwnedRowDoc(doc);
+          return;
+        }
+
+        store.pendingDocs[rowId] = doc;
+        retryAttempts.delete(rowId);
+        scheduleFlush();
+      } catch {
+        // row_orders and DatabaseRow collabs are independent. A transient
+        // record-not-found must remain retryable.
+        await retryMissingRow(rowId);
+      } finally {
+        store.cachedRowDocPending.delete(rowId);
+      }
+    };
+
     const drainQueue = async () => {
       while (isRunActive()) {
         if (store.backgroundQueue.size === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
-          if (store.backgroundQueue.size === 0 || !isRunActive()) {
-            break;
-          }
+          if (store.backgroundQueue.size === 0 || !isRunActive()) break;
         }
 
         const batch = Array.from(store.backgroundQueue).slice(0, BACKGROUND_BATCH_SIZE);
 
-        batch.forEach((rowId) => {
-          store.backgroundQueue.delete(rowId);
-        });
+        batch.forEach((rowId) => store.backgroundQueue.delete(rowId));
 
         for (let i = 0; i < batch.length; i += BACKGROUND_CONCURRENCY) {
           if (!isRunActive()) break;
-          const slice = batch.slice(i, i + BACKGROUND_CONCURRENCY);
-
-          await Promise.all(
-            slice.map(async (rowId) => {
-              if (!isRunActive() || hasReadyRowDoc(rowId)) return;
-
-              if (store.cachedRowDocPending.has(rowId)) {
-                await store.cachedRowDocPending.get(rowId);
-                return;
-              }
-
-              // Try fast path: use blob diff seeds via loadRowFromSeed.
-              // This adds the doc directly to the main rowMap (no separate cache needed).
-              if (loadRowFromSeed) {
-                const pending = loadRowFromSeed(rowId);
-
-                store.cachedRowDocPending.set(rowId, pending);
-
-                try {
-                  const doc = await pending;
-
-                  if (!isRunActive()) return;
-                  if (hasRowConditionData(doc)) return;
-                } finally {
-                  store.cachedRowDocPending.delete(rowId);
-                }
-              }
-
-              if (!isRunActive()) return;
-
-              // Fallback: open from IndexedDB for rows without seeds. The
-              // module-level pending map dedupes concurrent opens across views
-              // without retaining the doc in the process-wide row cache.
-              const rowKey = getRowKey(databaseDoc.guid, rowId);
-              const pending = openEphemeralRowDoc(rowKey, rowId);
-
-              store.cachedRowDocPending.set(rowId, pending);
-
-              try {
-                const doc = await pending;
-
-                retainEphemeralRowDoc(doc);
-
-                if (!isRunActive()) {
-                  releaseOwnedRowDoc(doc);
-                  return;
-                }
-
-                if (!hasRowConditionData(doc)) {
-                  releaseOwnedRowDoc(doc);
-                  return;
-                }
-
-                if (hasReadyRowDoc(rowId) || hasRowConditionData(store.pendingDocs[rowId])) {
-                  releaseOwnedRowDoc(doc);
-                  return;
-                }
-
-                store.pendingDocs[rowId] = doc;
-                scheduleFlush();
-              } finally {
-                store.cachedRowDocPending.delete(rowId);
-              }
-            })
-          );
+          await Promise.all(batch.slice(i, i + BACKGROUND_CONCURRENCY).map(loadMissingRow));
         }
 
         if (!isRunActive()) break;
-
         await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-
-      if (store.backgroundRun === runId) {
-        store.backgroundLoading = false;
       }
     };
 
-    void drainQueue();
+    void drainQueue()
+      .catch(() => undefined)
+      .finally(() => {
+        if (store.backgroundRun === runId) {
+          store.backgroundLoading = false;
+        }
+      });
 
     return () => {
       if (store.refCount <= 0) {
         cancelBackgroundRun(store, runId);
       }
     };
-  }, [databaseDoc.guid, hasConditions, blobPrefetchComplete, rows, view, viewId, loadRowFromSeed, scheduleFlush, store]);
+  }, [
+    databaseDoc.guid,
+    active,
+    blobPrefetchComplete,
+    rows,
+    rowOrders,
+    rowOrderRevision,
+    loadRowFromSeed,
+    ensureRow,
+    scheduleFlush,
+    store,
+  ]);
 
   return {
     cachedRowDocs,

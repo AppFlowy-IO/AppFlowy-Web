@@ -1,3 +1,4 @@
+import { getTokenParsed } from '@/application/session/token';
 import {
   AccessLevel,
   AFWebUser,
@@ -6,6 +7,7 @@ import {
   RequestAccessInfoStatus,
   Role,
   ShareAccessDetails,
+  Types,
   View,
   Workspace,
   WorkspaceGroupViewPermission,
@@ -126,9 +128,18 @@ async function getLegacyShareDetail(
 let shareDetailV2Unsupported = false;
 
 const SHARE_DETAIL_CACHE_TTL_MS = 10_000;
+const SHARE_DETAIL_CACHE_MAX_ENTRIES = 200;
 const shareDetailCache = new Map<string, { promise: Promise<ShareAccessDetails>; cachedAt: number }>();
 
-function invalidateShareDetailCache(workspaceId: string) {
+function pruneExpiredShareDetailCacheEntries(now: number) {
+  for (const [key, cached] of shareDetailCache) {
+    if (now - cached.cachedAt >= SHARE_DETAIL_CACHE_TTL_MS) {
+      shareDetailCache.delete(key);
+    }
+  }
+}
+
+export function invalidateShareDetailCache(workspaceId: string) {
   // Sharing changes on one view can alter effective permissions of its
   // descendants, so drop every cached view in the workspace.
   for (const key of shareDetailCache.keys()) {
@@ -161,14 +172,19 @@ async function fetchShareDetail(
     const url = `/api/sharing/workspace/${workspaceId}/access-details/v2?${params.toString()}`;
 
     try {
-      return await withRetry(() =>
-        executeAPIRequest<ShareAccessDetails>(() => getAxios()?.get<APIResponse<ShareAccessDetails>>(url))
+      // No withRetry here: the shared axios interceptor already retries GETs on
+      // transient failures, and stacking a second retry ladder keeps the share
+      // panel blocked for many seconds before the legacy fallback below runs.
+      return await executeAPIRequest<ShareAccessDetails>(() =>
+        getAxios()?.get<APIResponse<ShareAccessDetails>>(url)
       );
     } catch (error) {
       const code = getErrorCode(error);
 
       if (code === 404 || code === 405) {
         shareDetailV2Unsupported = true;
+      } else {
+        throw error;
       }
     }
   }
@@ -186,11 +202,26 @@ export async function getShareDetail(
     return Promise.reject({ code: -1, message: 'Request aborted' });
   }
 
-  const key = `${workspaceId}:${viewId}`;
+  // Access details are requester-specific, and older legacy servers can use
+  // the supplied ancestry. Keep both dimensions in the short-lived cache key
+  // so an in-app account switch or a different legacy ancestry cannot reuse
+  // another requester's response.
+  const requesterId = getTokenParsed()?.user?.id ?? 'anonymous';
+  const key = `${workspaceId}:${requesterId}:${viewId}:${ancestorViewIds.join(',')}`;
+  const now = Date.now();
+
+  pruneExpiredShareDetailCacheEntries(now);
   const cached = shareDetailCache.get(key);
 
-  if (cached && Date.now() - cached.cachedAt < SHARE_DETAIL_CACHE_TTL_MS) {
+  if (cached) {
     return cached.promise;
+  }
+
+  while (shareDetailCache.size >= SHARE_DETAIL_CACHE_MAX_ENTRIES) {
+    const oldestKey = shareDetailCache.keys().next().value;
+
+    if (oldestKey === undefined) break;
+    shareDetailCache.delete(oldestKey);
   }
 
   // The in-flight promise is shared between callers (share panel, view action
@@ -198,7 +229,7 @@ export async function getShareDetail(
   // callers simply ignore the settled result.
   const promise = fetchShareDetail(workspaceId, viewId, ancestorViewIds);
 
-  shareDetailCache.set(key, { promise, cachedAt: Date.now() });
+  shareDetailCache.set(key, { promise, cachedAt: now });
   promise.catch(() => {
     if (shareDetailCache.get(key)?.promise === promise) {
       shareDetailCache.delete(key);
@@ -206,6 +237,31 @@ export async function getShareDetail(
   });
 
   return promise;
+}
+
+/** Effective permission of the current user on a single collab object. */
+export interface CollabObjectPermission {
+  object_id?: string;
+  access_level?: AccessLevel | null;
+  governing_view_id?: string | null;
+  can_read?: boolean;
+  can_write?: boolean;
+  can_comment?: boolean;
+  can_share?: boolean;
+}
+
+export async function getObjectPermission(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types = Types.Document
+) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+
+  return executeAPIRequest<CollabObjectPermission>(() =>
+    getAxios()?.get<APIResponse<CollabObjectPermission>>(url, {
+      params: { collab_type: collabType },
+    })
+  );
 }
 
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {

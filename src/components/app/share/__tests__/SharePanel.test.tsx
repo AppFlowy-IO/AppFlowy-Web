@@ -8,6 +8,7 @@ import { ShareSectionType } from '../shareSectionType';
 
 const mockGetSubscriptions = jest.fn(async () => []);
 const mockLoadMentionableUsers = jest.fn(async () => []);
+const mockPeopleWithAccessProps = jest.fn();
 let mockIsHosted = false;
 
 jest.mock('@/components/app/app.hooks', () => ({
@@ -36,7 +37,10 @@ jest.mock('../InviteGuest', () => ({
 }));
 
 jest.mock('../PeopleWithAccess', () => ({
-  PeopleWithAccess: () => <div data-testid='people-with-access' />,
+  PeopleWithAccess: (props: unknown) => {
+    mockPeopleWithAccessProps(props);
+    return <div data-testid='people-with-access' />;
+  },
 }));
 
 jest.mock('../GeneralAccess', () => ({
@@ -47,13 +51,16 @@ jest.mock('../CopyLink', () => ({
   CopyLink: () => <div data-testid='copy-link' />,
 }));
 
-function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined) {
+function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined, updateGroupInAccessList = jest.fn()) {
   return render(
     <SharePanel
       viewId='view-1'
       people={[]}
+      groups={[]}
       isLoadingPeople={false}
       onPeopleChange={async () => undefined}
+      onPersonRemoved={() => undefined}
+      updateGroupInAccessList={updateGroupInAccessList}
       hasFullAccess={currentUserAccessLevel === AccessLevel.FullAccess}
       currentUserAccessLevel={currentUserAccessLevel}
       sectionType={ShareSectionType.Private}
@@ -65,6 +72,7 @@ describe('SharePanel', () => {
   beforeEach(() => {
     mockGetSubscriptions.mockClear();
     mockLoadMentionableUsers.mockClear();
+    mockPeopleWithAccessProps.mockClear();
     mockIsHosted = false;
   });
 
@@ -92,5 +100,13 @@ describe('SharePanel', () => {
 
     expect(screen.queryByTestId('invite-guest')).toBeNull();
     expect(mockGetSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it('forwards the optimistic group updater to the access list', () => {
+    const updateGroupInAccessList = jest.fn();
+
+    renderSharePanel(AccessLevel.ReadOnly, updateGroupInAccessList);
+
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ updateGroupInAccessList }));
   });
 });

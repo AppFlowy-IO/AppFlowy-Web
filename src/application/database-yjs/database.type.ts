@@ -83,6 +83,8 @@ export interface Filter {
   operator?: FilterType.And | FilterType.Or | null;
   /** The actual field column type (RichText, Number, etc.) */
   fieldType?: FieldType;
+  /** Persisted Rollup filter variant used by Desktop to distinguish Number from Text filters. */
+  rollupTargetFieldType?: FieldType;
 }
 
 export enum CalendarLayout {

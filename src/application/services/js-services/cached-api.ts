@@ -28,6 +28,7 @@ import {
   fetchViewInfo,
 } from '@/application/services/js-services/fetch';
 import {
+  getAppTrash,
   getView,
   signInWithUrl,
   uploadFileMultipart,
@@ -51,6 +52,8 @@ import {
   signInGoogle,
   signInOTP,
   signInSaml,
+  signInCustomProvider,
+  signInWithLdap,
   signInWithMagicLink,
   signInWithPassword,
   signUpWithPassword,
@@ -99,6 +102,10 @@ const _getAppViewInFlight = new Map<string, Promise<View>>();
 const _getAppViewCache = new Map<string, { data: View; expiresAt: number }>();
 const VIEW_CACHE_TTL_MS = 5000;
 const ANONYMOUS_VIEW_CACHE_SCOPE = 'anonymous';
+
+const _getAppTrashInFlight = new Map<string, Promise<View[]>>();
+const _getAppTrashCache = new Map<string, { data: View[]; expiresAt: number }>();
+const TRASH_CACHE_TTL_MS = 5000;
 
 // ============================================================================
 // Simple getters
@@ -226,6 +233,60 @@ export function invalidateViewCache(workspaceId: string, viewId: string) {
       error,
     });
   });
+}
+
+/**
+ * In-flight dedup + short-lived result cache for getAppTrash.
+ * Every embedded DatabaseBlock probes the trash list to detect deleted
+ * containers, so a page with several embedded databases would otherwise fire
+ * one trash request per block.
+ */
+function getAppTrashCacheKey(userId: string | undefined, workspaceId: string) {
+  return `${userId ?? ANONYMOUS_VIEW_CACHE_SCOPE}:${workspaceId}`;
+}
+
+function requestAppTrash(workspaceId: string, userId = getCurrentAppViewCacheUserId()) {
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const existing = _getAppTrashInFlight.get(key);
+
+  if (existing) {
+    return existing;
+  }
+
+  const request = getAppTrash(workspaceId)
+    .then((views) => {
+      _getAppTrashCache.set(key, {
+        data: views,
+        expiresAt: Date.now() + TRASH_CACHE_TTL_MS,
+      });
+      return views;
+    })
+    .finally(() => {
+      _getAppTrashInFlight.delete(key);
+    });
+
+  _getAppTrashInFlight.set(key, request);
+  return request;
+}
+
+export async function getAppTrashCached(workspaceId: string) {
+  const userId = getCurrentAppViewCacheUserId();
+  const cached = _getAppTrashCache.get(getAppTrashCacheKey(userId, workspaceId));
+
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  return requestAppTrash(workspaceId, userId);
+}
+
+/**
+ * Bypasses the TTL cache but still shares any in-flight request, so
+ * concurrent refreshers (e.g. every embedded database re-checking on
+ * OUTLINE_LOADED) collapse into a single network call.
+ */
+export async function refreshAppTrashCache(workspaceId: string) {
+  return requestAppTrash(workspaceId);
 }
 
 export async function getPageDocCached(
@@ -573,6 +634,29 @@ export async function signInDiscordWithRedirect(params: { redirectTo: string }) 
 export async function signInSamlWithRedirect(params: { redirectTo: string; domain: string }): Promise<void> {
   saveRedirectTo(params.redirectTo);
   return signInSaml(AUTH_CALLBACK_URL, params.domain);
+}
+
+export async function signInCustomProviderWithRedirect(params: {
+  redirectTo: string;
+  identifier: string;
+}): Promise<void> {
+  saveRedirectTo(params.redirectTo);
+  return signInCustomProvider(params.identifier, AUTH_CALLBACK_URL);
+}
+
+/**
+ * LDAP completes server-side, so unlike the redirect providers above there is
+ * no callback to come back through — the tokens are already in hand and the
+ * flow finishes here, exactly as a password sign-in does.
+ */
+export async function signInWithLdapWithRedirect(params: {
+  username: string;
+  password: string;
+  connectionId?: string;
+  redirectTo: string;
+}) {
+  saveRedirectTo(params.redirectTo);
+  return finishAuthFlow('signInWithLdap', () => signInWithLdap(params.username, params.password, params.connectionId));
 }
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {

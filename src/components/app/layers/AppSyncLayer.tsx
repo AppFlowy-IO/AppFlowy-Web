@@ -1,13 +1,27 @@
 import EventEmitter from 'events';
 
-import { type FC, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type FC, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { APP_EVENTS } from '@/application/constants';
 import { db } from '@/application/db';
 import { CollabService, UserService } from '@/application/services/domains';
+import {
+  collabFullSyncBatch,
+  getSlowSyncUploadTimeoutMs,
+  SLOW_SYNC_PROBE_TIMEOUT_MS,
+  type CollabFullSyncBatchResult,
+} from '@/application/services/js-services/http/collab-api';
 import { getTokenParsed } from '@/application/session/token';
-import { clearDrainConfig, configureDrain, setCurrentSession, startDrainAll } from '@/application/sync-outbox';
+import {
+  clearDrainConfig,
+  configureDrain,
+  resumePermissionBlockedSync,
+  setCurrentSession,
+  type SlowSyncBlockedReason,
+  type SlowSyncOutboxItem,
+  startDrainAll,
+} from '@/application/sync-outbox';
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
@@ -21,11 +35,54 @@ interface AppSyncLayerProps {
 
 const WS_READY_STATE_OPEN = 1;
 
+function exactSlowSyncResult(item: SlowSyncOutboxItem, results: CollabFullSyncBatchResult[]): CollabFullSyncBatchResult {
+  if (results.length !== 1 || results[0].objectId !== item.objectId || results[0].collabType !== item.collabType) {
+    throw new Error(`Slow-sync response did not exactly match collab ${item.objectId}`);
+  }
+
+  return results[0];
+}
+
+function blockedSlowSyncReason(error: string | undefined): SlowSyncBlockedReason | undefined {
+  const normalized = error?.trim().toLowerCase();
+
+  if (normalized?.includes('permission_denied')) return 'permission_denied';
+  if (normalized?.includes('update_too_large')) return 'update_too_large';
+  return undefined;
+}
+
+function hasDurableMessageId(result: CollabFullSyncBatchResult): boolean {
+  return Boolean(result.messageId && Number(result.messageId.timestamp ?? 0) > 0);
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  if (signal.reason !== undefined) throw signal.reason;
+
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+  throw error;
+}
+
+function isAuthoritativeVersionChange(
+  result: CollabFullSyncBatchResult,
+  requestedVersion: string | null | undefined
+): boolean {
+  return Boolean(result.collabVersion && result.collabVersion !== requestedVersion);
+}
+
 // Second layer: WebSocket connection and synchronization
 // Handles WebSocket connection, broadcast channel, sync context, and event management
 // Depends on workspace ID and service from auth layer
 export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
-  const { currentWorkspaceId, isAuthenticated } = useAuthInternal();
+  const {
+    currentWorkspaceId,
+    isAuthenticated,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded = false,
+  } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
   // Lazy-init so a throwaway EventEmitter isn't constructed on every render
   // (useRef keeps only the first value but still evaluates its argument each time).
@@ -61,12 +118,15 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   });
 
   // Initialize sync context for collaborative editing
-  const { registerSyncContext, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
-    webSocket,
-    broadcastChannel,
-    eventEmitter,
-    currentWorkspaceId!
-  );
+  const {
+    registerSyncContext,
+    rebindSyncContext,
+    flushAllSync,
+    syncAllToServer,
+    applyHttpFullSyncResult,
+    revertCollabVersion,
+    scheduleDeferredCleanup,
+  } = useSync(webSocket, broadcastChannel, eventEmitter, currentWorkspaceId!);
 
   // Handle WebSocket reconnection. Depend on the stable `reconnect` function,
   // not the webSocket container whose identity changes per incoming message.
@@ -94,10 +154,11 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocketReadyState);
   }, [eventEmitter, webSocketReadyState]);
 
-  // Wire the persistent sync_outbox drain to this WebSocket. The drain loop
-  // runs whenever a record is enqueued AND the socket is OPEN. The drain is
-  // scoped to `currentWorkspaceId` so pending rows from one workspace are not
-  // accidentally replayed on a different workspace's WebSocket after switch.
+  // Wire the persistent sync_outbox drain to the active transport owner. Fast
+  // records still wait for an OPEN WebSocket, while oversized records may use
+  // the HTTP slow lane during reconnects. The drain is scoped to
+  // `currentWorkspaceId` so pending rows from one workspace are not
+  // accidentally replayed on a different workspace's transport after switch.
   // The drain also fans out to BroadcastChannel so sibling tabs in the same
   // workspace receive local edits immediately, without waiting for a server
   // round-trip (matches the behaviour of the pre-outbox `emit` callback).
@@ -122,8 +183,110 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   // burns a localStorage read + JSON.parse. Token-refresh still flows in
   // because `isAuthenticated` gates AppSyncLayer's mount via the auth layer.
   const currentUserId = useMemo(() => (isAuthenticated ? getTokenParsed()?.user?.id ?? null : null), [isAuthenticated]);
+  const slowSync = useCallback(
+    async (item: SlowSyncOutboxItem, signal: AbortSignal) => {
+      if (!currentWorkspaceId) {
+        throw new Error('Cannot slow-sync without an active workspace');
+      }
 
-  useEffect(() => {
+      const request = async (docState: Uint8Array, syncLane?: 'slow') =>
+        exactSlowSyncResult(
+          item,
+          await collabFullSyncBatch(
+            currentWorkspaceId,
+            [
+              {
+                objectId: item.objectId,
+                collabType: item.collabType,
+                stateVector: item.stateVector,
+                docState,
+                collabVersion: item.version,
+              },
+            ],
+            {
+              syncLane,
+              signal,
+              timeoutMs:
+                syncLane === 'slow'
+                  ? getSlowSyncUploadTimeoutMs(item.stateVector.byteLength + docState.byteLength)
+                  : SLOW_SYNC_PROBE_TIMEOUT_MS,
+            }
+          )
+        );
+      const applyResult = async (result: CollabFullSyncBatchResult) => {
+        // Axios cannot cancel a response that has already resolved. Recheck
+        // the outbox lifecycle at the last possible point before enqueueing,
+        // then carry the same signal through the per-object apply queue.
+        throwIfAborted(signal);
+        await applyHttpFullSyncResult(
+          {
+            objectId: result.objectId,
+            collabType: result.collabType,
+            missingUpdate: result.missingUpdate,
+            serverStateVector: result.serverStateVector,
+            collabVersion: result.collabVersion,
+            messageId: result.messageId,
+          },
+          item.version,
+          signal
+        );
+        throwIfAborted(signal);
+      };
+
+      // Pull server-side changes through the ordinary lightweight lane before
+      // attempting the oversized upload. A state-vector match is not proof
+      // that the queued update is durable: Yjs deletions do not advance state
+      // vectors. Only an authoritative collab-version change can supersede it.
+      const probe = await request(new Uint8Array());
+      const probeBlocked = blockedSlowSyncReason(probe.error);
+
+      if (probeBlocked) return { outcome: 'blocked' as const, reason: probeBlocked };
+      if (probe.error) throw new Error(`Slow-sync probe failed for ${item.objectId}: ${probe.error}`);
+
+      const probeSuperseded = isAuthoritativeVersionChange(probe, item.version);
+
+      await applyResult(probe);
+      if (probeSuperseded) {
+        return { outcome: 'confirmed' as const, messageId: probe.messageId };
+      }
+
+      const uploaded = await request(item.docState, 'slow');
+      const uploadBlocked = blockedSlowSyncReason(uploaded.error);
+
+      if (uploadBlocked) return { outcome: 'blocked' as const, reason: uploadBlocked };
+      if (uploaded.error) throw new Error(`Slow-sync upload failed for ${item.objectId}: ${uploaded.error}`);
+
+      const uploadSuperseded = isAuthoritativeVersionChange(uploaded, item.version);
+
+      await applyResult(uploaded);
+      if (!uploadSuperseded && !hasDurableMessageId(uploaded)) {
+        throw new Error(`Slow-sync response for ${item.objectId} did not include a durable message id`);
+      }
+
+      return { outcome: 'confirmed' as const, messageId: uploaded.messageId };
+    },
+    [applyHttpFullSyncResult, currentWorkspaceId]
+  );
+
+  // `clearDrainConfig` aborts in-flight oversized uploads, so anything in the
+  // configuration effect's dep array can kill a multi-MB request mid-flight.
+  // `slowSync`'s identity is derived through five useCallback hops
+  // (applyHttpFullSyncResult -> enqueueIncomingCollabMessage -> ... ->
+  // registerSyncContext), all stable today but not enforced by anything. Route
+  // it through a latest-ref so the drain rebuilds only when ownership actually
+  // changes (user, workspace, leadership, advertised limits).
+  const slowSyncRef = useRef(slowSync);
+
+  useLayoutEffect(() => {
+    slowSyncRef.current = slowSync;
+  }, [slowSync]);
+
+  const stableSlowSync = useCallback(
+    (item: SlowSyncOutboxItem, signal: AbortSignal) => slowSyncRef.current(item, signal),
+    []
+  );
+
+  useLayoutEffect(() => {
     if (currentUserId && currentWorkspaceId) {
       setCurrentSession({ userId: currentUserId, workspaceId: currentWorkspaceId });
     } else {
@@ -163,13 +326,18 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
       // buffers on the leader socket or forwards a follower update to the
       // leader over BroadcastChannel.
       sendBestEffort,
+      // The conservative realtime fallback remains usable while server-info
+      // loads; only the opt-in HTTP slow lane depends on advertised limits.
       isReady: () => canSendToServer && wsReadyStateRef.current === WS_READY_STATE_OPEN,
       onPersisted: bcPostOutboxReady,
+      maxUpdateBytes,
+      maxSlowSyncUpdateBytes,
+      syncLimitsLoaded,
+      // IndexedDB is shared by sibling tabs. Only the elected socket owner
+      // may run the global low-concurrency HTTP lane; followers persist and
+      // wake that owner through onPersisted.
+      slowSync: syncLimitsLoaded && canSendToServer ? stableSlowSync : undefined,
     });
-
-    if (canSendToServer && wsReadyState === WS_READY_STATE_OPEN) {
-      startDrainAll();
-    }
 
     return () => {
       clearDrainConfig();
@@ -178,12 +346,56 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     currentUserId,
     currentWorkspaceId,
     wsSendMessage,
-    wsReadyState,
     bcPostDurableMessage,
     bcPostOutboxReady,
     canSendToServer,
     sendBestEffort,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded,
+    stableSlowSync,
   ]);
+
+  // Transport readiness only wakes the already-configured drain. Keeping it
+  // out of the configuration effect avoids aborting slow HTTP work and
+  // resetting retry state on every CONNECTING/OPEN/CLOSED transition.
+  //
+  // The wake key is a dep the effect body does not read: every value in it can
+  // make a previously undrainable record drainable, so the drain must be poked
+  // when any of them changes. Keeping them in one named key stops
+  // `react-hooks/exhaustive-deps` autofix from silently stripping them as
+  // unused.
+  const drainWakeKey = [
+    currentUserId,
+    currentWorkspaceId,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded,
+    wsReadyState,
+  ].join('|');
+
+  useEffect(() => {
+    if (canSendToServer) {
+      startDrainAll();
+    }
+  }, [canSendToServer, drainWakeKey]);
+
+  // Access changes do not rebuild the transport configuration. Wake only a
+  // permission-blocked object so a restored grant can retry immediately,
+  // while update-too-large blocks remain terminal until limits change.
+  useEffect(() => {
+    const handlePermissionChange = (permissionChange: notification.IPermissionChanged) => {
+      if (permissionChange.objectId) {
+        resumePermissionBlockedSync(permissionChange.objectId);
+      }
+    };
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+    };
+  }, [eventEmitter]);
 
   // Handle user profile change notifications
   // This provides automatic UI updates when user profile changes occur via WebSocket.
@@ -399,6 +611,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   const syncContextValue: SyncInternalContextType = useMemo(
     () => ({
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       eventEmitter,
       awarenessMap,
@@ -409,6 +622,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     [
       eventEmitter,
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
       awarenessMap,
       flushAllSync,

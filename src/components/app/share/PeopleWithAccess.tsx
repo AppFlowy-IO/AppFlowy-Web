@@ -4,15 +4,16 @@ import { useNavigate } from 'react-router-dom';
 import { Users } from 'lucide-react';
 
 import { APP_EVENTS } from '@/application/constants';
+import { AccessService } from '@/application/services/domains';
 import { AccessLevel, IPeopleWithAccessType, Role, WorkspaceGroupViewPermission } from '@/application/types';
 import { useEventEmitter, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { AccessService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 
 import { GroupAccessLevelDropdown } from './GroupAccessLevelDropdown';
 import { PersonItem } from './PersonItem';
+import { isInheritedWorkspaceAccess, ShareSectionType } from './shareSectionType';
 
 interface PeopleWithAccessProps {
   viewId: string;
@@ -20,18 +21,24 @@ interface PeopleWithAccessProps {
   groups: WorkspaceGroupViewPermission[];
   isLoading: boolean;
   onPeopleChange: () => Promise<void>;
+  onPersonRemoved: (email: string) => void;
+  updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
   canGrantFullAccess: boolean;
+  sectionType: ShareSectionType;
 }
 
 export function PeopleWithAccess({
   viewId,
   people,
-  groups,
+  groups = [],
   onPeopleChange,
+  onPersonRemoved,
+  updateGroupInAccessList,
   isLoading,
   hasFullAccess,
   canGrantFullAccess,
+  sectionType,
 }: PeopleWithAccessProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
@@ -80,7 +87,10 @@ export function PeopleWithAccess({
 
       await AccessService.revokeAccess(currentWorkspaceId, viewId, [personEmail]);
 
-      // Refresh the people list after removal
+      // The mutation response is authoritative for this direct row. The share
+      // hook keeps a revocation tombstone while related access is revalidated,
+      // so every overlapping response is filtered consistently.
+      onPersonRemoved(personEmail);
       await onPeopleChange();
 
       // Wait for outline refresh to complete before navigating
@@ -90,7 +100,7 @@ export function PeopleWithAccess({
         navigate('/app');
       }
     },
-    [onPeopleChange, currentWorkspaceId, viewId, navigate, currentUser?.email, eventEmitter]
+    [onPeopleChange, onPersonRemoved, currentWorkspaceId, viewId, navigate, currentUser?.email, eventEmitter]
   );
 
   const handleTurnIntoMember = useCallback(
@@ -108,18 +118,20 @@ export function PeopleWithAccess({
     async (groupId: string, newAccessLevel: AccessLevel) => {
       if (!currentWorkspaceId) return;
       await AccessService.sharePageToGroup(currentWorkspaceId, viewId, groupId, newAccessLevel);
+      updateGroupInAccessList(groupId, newAccessLevel);
       await onPeopleChange();
     },
-    [currentWorkspaceId, onPeopleChange, viewId]
+    [currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
   );
 
   const handleRemoveGroupAccess = useCallback(
     async (groupId: string) => {
       if (!currentWorkspaceId) return;
       await AccessService.revokeGroupAccess(currentWorkspaceId, viewId, groupId);
+      updateGroupInAccessList(groupId, null);
       await onPeopleChange();
     },
-    [currentWorkspaceId, onPeopleChange, viewId]
+    [currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
   );
 
   const currentUserRole = people.find((p) => p.email === currentUser?.email)?.role;
@@ -140,6 +152,7 @@ export function PeopleWithAccess({
               key={person.email}
               person={person}
               isYou={isYou}
+              isInheritedWorkspaceAccess={isInheritedWorkspaceAccess(sectionType, person)}
               currentUserHasFullAccess={hasFullAccess}
               currentUserIsOwner={currentUserIsOwner}
               currentUserCanGrantFullAccess={canGrantFullAccess}

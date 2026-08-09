@@ -8,6 +8,10 @@ export enum ShareSectionType {
   Unknown = 'unknown',
 }
 
+export function isInheritedWorkspaceAccess(sectionType: ShareSectionType, person: IPeopleWithAccessType) {
+  return sectionType === ShareSectionType.Public && !person.pending_invitation && person.role !== Role.Guest;
+}
+
 export function resolveShareSectionType({
   outline,
   viewId,

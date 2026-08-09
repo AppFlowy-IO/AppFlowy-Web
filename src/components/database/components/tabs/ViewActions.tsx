@@ -13,7 +13,7 @@ export function DatabaseViewActions({
 }: {
   deleteDisabled: boolean;
   view: View;
-  onOpenRenameModal: (viewId: string) => void;
+  onOpenRenameModal: (view: View) => void;
   onOpenDeleteModal: (viewId: string) => void;
 }) {
   const { t } = useTranslation();
@@ -21,16 +21,16 @@ export function DatabaseViewActions({
   return (
     <DropdownMenuGroup>
       <DropdownMenuItem
-        data-testid="database-view-action-rename"
+        data-testid='database-view-action-rename'
         onSelect={() => {
-          onOpenRenameModal(view.view_id);
+          onOpenRenameModal(view);
         }}
       >
         <EditIcon />
         {t('button.rename')}
       </DropdownMenuItem>
       <DropdownMenuItem
-        data-testid="database-view-action-delete"
+        data-testid='database-view-action-delete'
         disabled={deleteDisabled}
         variant={'destructive'}
         onSelect={() => {

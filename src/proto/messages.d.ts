@@ -937,6 +937,9 @@ export namespace collab {
 
         /** CollabDocStateParams docState */
         docState?: (Uint8Array|null);
+
+        /** CollabDocStateParams collabVersion */
+        collabVersion?: (string|null);
     }
 
     /** Parameters for a single collab document state in batch sync. */
@@ -962,6 +965,9 @@ export namespace collab {
 
         /** CollabDocStateParams docState. */
         public docState: Uint8Array;
+
+        /** CollabDocStateParams collabVersion. */
+        public collabVersion: string;
 
         /**
          * Creates a new CollabDocStateParams instance using the specified properties.
@@ -1167,6 +1173,12 @@ export namespace collab {
 
         /** CollabBatchSyncResult serverStateVector */
         serverStateVector?: (Uint8Array|null);
+
+        /** CollabBatchSyncResult collabVersion */
+        collabVersion?: (string|null);
+
+        /** CollabBatchSyncResult messageId */
+        messageId?: (collab.IRid|null);
     }
 
     /** Result for a single collab in batch sync response. */
@@ -1195,6 +1207,12 @@ export namespace collab {
 
         /** CollabBatchSyncResult serverStateVector. */
         public serverStateVector: Uint8Array;
+
+        /** CollabBatchSyncResult collabVersion. */
+        public collabVersion: string;
+
+        /** CollabBatchSyncResult messageId. */
+        public messageId?: (collab.IRid|null);
 
         /**
          * Creates a new CollabBatchSyncResult instance using the specified properties.

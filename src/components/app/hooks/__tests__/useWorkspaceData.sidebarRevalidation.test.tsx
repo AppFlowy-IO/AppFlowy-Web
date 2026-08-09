@@ -5,11 +5,13 @@ import { type ReactNode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
-import { Role, View, ViewLayout } from '@/application/types';
+import { Role, User, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
 import { MAX_SIDEBAR_OUTLINE_REVALIDATION_EXPANDED_IDS } from '@/components/app/outline/sidebarRevalidation';
+import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { useWorkspaceData } from '../useWorkspaceData';
 
@@ -32,6 +34,7 @@ jest.mock('lodash-es', () => ({
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getShareWithMe: jest.fn(),
+    invalidateShareDetailCache: jest.fn(),
   },
   ViewService: {
     get: jest.fn(),
@@ -48,6 +51,10 @@ jest.mock('@/application/services/domains', () => ({
   WorkspaceService: {
     getMentionableUsers: jest.fn(),
   },
+}));
+
+jest.mock('@/application/db', () => ({
+  deleteCollabDB: jest.fn(),
 }));
 
 const workspaceId = 'workspace-id';
@@ -68,7 +75,8 @@ const createView = (viewId: string, overrides: Partial<View> = {}): View => ({
 function createWrapper(
   eventEmitter: EventEmitter,
   getWorkspaceId = () => workspaceId,
-  getSelectedWorkspaceId = getWorkspaceId
+  getSelectedWorkspaceId = getWorkspaceId,
+  currentUserEmail = 'current-user@appflowy.io'
 ) {
   const authContext: AuthInternalContextType = {
     currentWorkspaceId: getWorkspaceId(),
@@ -95,6 +103,17 @@ function createWrapper(
     syncAllToServer: jest.fn(),
     webSocket: {},
   } as unknown as SyncInternalContextType;
+  const currentUser = {
+    email: currentUserEmail,
+    uid: 'user-id',
+    uuid: 'user-uuid',
+  } as User;
+  const appConfigContext = {
+    currentUser,
+    isAuthenticated: true,
+    openLoginModal: jest.fn(),
+    updateCurrentUser: jest.fn(),
+  };
 
   return function Wrapper({ children }: { children: ReactNode }) {
     const activeWorkspaceId = getWorkspaceId();
@@ -114,11 +133,13 @@ function createWrapper(
     };
 
     return (
-      <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
-        <AuthInternalContext.Provider value={activeAuthContext}>
-          <SyncInternalContext.Provider value={syncContext}>{children}</SyncInternalContext.Provider>
-        </AuthInternalContext.Provider>
-      </MemoryRouter>
+      <AFConfigContext.Provider value={appConfigContext}>
+        <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+          <AuthInternalContext.Provider value={activeAuthContext}>
+            <SyncInternalContext.Provider value={syncContext}>{children}</SyncInternalContext.Provider>
+          </AuthInternalContext.Provider>
+        </MemoryRouter>
+      </AFConfigContext.Provider>
     );
   };
 }
@@ -152,6 +173,184 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       ViewService.get(activeWorkspaceId, viewId)
     );
     (ViewService.getTrash as jest.Mock).mockResolvedValue([]);
+    (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('invalidates cached access details for every remote share change', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('space-id')];
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: initialOutline, folderRid: '1-1' });
+    const { result, unmount } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+    (AccessService.invalidateShareDetailCache as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: 'shared-view-id',
+        emails: ['other-user@appflowy.io'],
+      });
+    });
+
+    expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
+    unmount();
+  });
+
+  it('evicts a disk-only canonical database collab when the current user loses access', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      extra: {
+        database_id: 'database-collab-id',
+        is_database_container: true,
+        is_space: false,
+      },
+    });
+    const shallowOutline = [createView('space-id', { extra: { is_space: true } })];
+    const revokedListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, revokedListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowOutline, folderRid: '1-1' });
+    (ViewService.getCachedFromDisk as jest.Mock).mockResolvedValueOnce(databaseView);
+    (ViewService.getNavigation as jest.Mock).mockRejectedValueOnce({
+      code: ERROR_CODE.NOT_HAS_PERMISSION,
+      message: 'no permission',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowOutline));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: databaseView.view_id,
+        emails: ['CURRENT-USER@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
+      expect(deleteCollabDB).toHaveBeenCalledWith('database-collab-id', { destroyDoc: true });
+    });
+    expect(ViewService.getCachedFromDisk).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
+    expect(revokedListener).toHaveBeenCalledWith({ viewId: databaseView.view_id });
+  });
+
+  it('announces restored access after a successful share-change probe', async () => {
+    const eventEmitter = new EventEmitter();
+    const sharedView = createView('shared-view-id');
+    const restoredListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, restoredListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [sharedView], folderRid: '1-1' });
+    (ViewService.getNavigation as jest.Mock).mockResolvedValueOnce(sharedView);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([sharedView]));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(restoredListener).toHaveBeenCalledWith({ viewId: sharedView.view_id });
+    });
+    expect(deleteCollabDB).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older grant response after a newer revocation', async () => {
+    const eventEmitter = new EventEmitter();
+    const sharedView = createView('shared-view-id');
+    const olderGrant = createDeferred<View>();
+    const restoredListener = jest.fn();
+    const revokedListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, restoredListener);
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, revokedListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [sharedView], folderRid: '1-1' });
+    (ViewService.getNavigation as jest.Mock)
+      .mockReturnValueOnce(olderGrant.promise)
+      .mockRejectedValueOnce({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'no permission' });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([sharedView]));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => expect(revokedListener).toHaveBeenCalledWith({ viewId: sharedView.view_id }));
+
+    await act(async () => {
+      olderGrant.resolve(sharedView);
+      await olderGrant.promise;
+    });
+
+    expect(restoredListener).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older revoke response after a newer grant', async () => {
+    const eventEmitter = new EventEmitter();
+    const sharedView = createView('shared-view-id');
+    const olderRevoke = createDeferred<View>();
+    const restoredListener = jest.fn();
+    const revokedListener = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_RESTORED, restoredListener);
+    eventEmitter.on(APP_EVENTS.VIEW_ACCESS_REVOKED, revokedListener);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [sharedView], folderRid: '1-1' });
+    (ViewService.getNavigation as jest.Mock)
+      .mockReturnValueOnce(olderRevoke.promise)
+      .mockResolvedValueOnce(sharedView);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([sharedView]));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: sharedView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => expect(restoredListener).toHaveBeenCalledWith({ viewId: sharedView.view_id }));
+
+    await act(async () => {
+      olderRevoke.reject({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'no permission' });
+      await olderRevoke.promise.catch(() => undefined);
+    });
+
+    expect(revokedListener).not.toHaveBeenCalled();
+    expect(deleteCollabDB).not.toHaveBeenCalled();
   });
 
   it('hydrates missing selected view path from navigation context', async () => {
@@ -512,11 +711,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       await loadPromise;
     });
 
-    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([
-      'child-a',
-      'child-b',
-      'child-c',
-    ]);
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b', 'child-c']);
   });
 
   it('keeps transient fallback children visible without marking the subtree loaded', async () => {
@@ -732,6 +927,212 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(revalidationResult).toBe('changed');
     expect(result.current.outline?.[0]?.name).toBe('server space');
+  });
+
+  it('applies a granular folder change after its complementary outline change at the same revision', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      last_edited_time: 1,
+      name: 'old space',
+    });
+    const updatedRoot = createView('space-id', {
+      last_edited_time: 2,
+      name: 'renamed space',
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({
+      outline: [root],
+      folderRid: '1-1',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('old space');
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline/0/last_edited_time',
+            value: 2,
+          },
+        ]),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(updatedRoot),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify({ ...updatedRoot, name: 'duplicate should be ignored' }),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+  });
+
+  it('publishes metadata updates for views outside the loaded outline', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id');
+    const nestedView = createView('nested-view-id', { name: 'renamed nested view' });
+    const handleViewMetaChanged = jest.fn();
+
+    eventEmitter.on(APP_EVENTS.VIEW_META_CHANGED, handleViewMetaChanged);
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({
+      outline: [root],
+      folderRid: '1-1',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.view_id).toBe(root.view_id);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(nestedView),
+      });
+    });
+
+    expect(handleViewMetaChanged).toHaveBeenCalledWith(nestedView);
+    expect(result.current.outline).toEqual([root]);
+  });
+
+  it('preserves a granular view update when a stale full outline arrives afterward', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', { name: 'old space' });
+    const renamedRoot = createView('space-id', { name: 'renamed space' });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({
+      outline: [root],
+      folderRid: '1-1',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('old space');
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        viewJson: JSON.stringify(renamedRoot),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline',
+            value: [root],
+          },
+        ]),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline',
+            value: [renamedRoot],
+          },
+        ]),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'replace',
+            path: '/outline',
+            value: [{ ...renamedRoot, name: 'later server rename' }],
+          },
+        ]),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('later server rename');
+  });
+
+  it('preserves a granular update across an older in-flight outline response', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', { name: 'old space' });
+    const renamedRoot = createView('space-id', { name: 'renamed space' });
+    const olderOutlineResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [root], folderRid: '1-1' })
+      .mockReturnValueOnce(olderOutlineResponse.promise)
+      .mockResolvedValueOnce({
+        outline: [createView('space-id', { name: 'newer server name' })],
+        folderRid: '4-1',
+      });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('old space');
+    });
+
+    let olderLoadPromise: Promise<void> = Promise.resolve();
+
+    act(() => {
+      olderLoadPromise = result.current.loadOutline?.(workspaceId, false) ?? Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalledTimes(2);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '3-1',
+        viewJson: JSON.stringify(renamedRoot),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      olderOutlineResponse.resolve({
+        outline: [root],
+        folderRid: '2-1',
+      });
+      await olderLoadPromise;
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('renamed space');
+
+    await act(async () => {
+      await result.current.loadOutline?.(workspaceId, false);
+    });
+
+    expect(result.current.outline?.[0]?.name).toBe('newer server name');
   });
 
   it('repairs relaxed outline patches with same-rid root revalidation', async () => {

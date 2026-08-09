@@ -691,6 +691,7 @@
     "addToFavorites": "Add to Favorites",
     "favoriteSuccessfully": "Favorited success",
     "unfavoriteSuccessfully": "Unfavorited success",
+    "favoriteFailed": "Couldn't update favorite",
     "duplicateSuccessfully": "Duplicated successfully",
     "rename": "Rename",
     "helpCenter": "Help Center",
@@ -2089,7 +2090,8 @@
   "document": {
     "inlineDatabase": {
       "viewInTrash": "This referenced database is in Trash",
-      "viewDeleted": "This referenced database was permanently deleted"
+      "viewDeleted": "This referenced database was permanently deleted",
+      "noAccess": "You don't have permission to view this database"
     },
     "callout": {
       "changeIcon": "Icon",
@@ -2646,6 +2648,7 @@
     "setting": "Setting",
     "propertyName": "Property name",
     "menuName": "Board",
+    "hideEmptyGroups": "Hide empty groups",
     "showUngrouped": "Show ungrouped items",
     "ungroupedButtonText": "Ungrouped",
     "ungroupedButtonTooltip": "Contains cards that don't belong in any group",
@@ -3352,6 +3355,13 @@
     "continueWithDiscord": "Continue with Discord",
     "continueWithApple": "Continue with Apple ",
     "continueWithSaml": "Continue with SSO",
+    "ldapLogin": "LDAP Login",
+    "ldapLoginDescription": "Sign in with the login or email and password from your organization’s directory.",
+    "ldapUsernamePlaceholder": "Directory login or email",
+    "ldapPasswordPlaceholder": "Password",
+    "ldapCredentialsRequired": "Enter your directory login or email and password",
+    "continueWithLdap": "Continue with LDAP",
+    "continueWithProvider": "Continue with {{provider}}",
     "continueWithSso": "Continue",
     "ssoLogin": "SSO Login",
     "ssoLoginDescription": "Enter your work email to sign in with your organization's identity provider.",

@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useMemo, useRef } from 'react';
 
 import { PADDING_END } from '@/application/database-yjs';
 import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
@@ -35,7 +35,6 @@ function CardList({
   setScrollElement?: (element: HTMLDivElement | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const parentOffsetRef = useRef(0);
   const { creatingColumnId } = useBoardSelection();
   const { setCreatingColumnId } = useBoardActions();
 
@@ -61,37 +60,21 @@ function CardList({
     return parentRef.current;
   }, []);
 
-  // Board columns have local scroll, so scrollMargin should always be 0
-  // No need for RAF measurement like Grid - layout is stable within the column
-  useLayoutEffect(() => {
-    parentOffsetRef.current = 0;
-  }, []);
-
   const virtualizer = useVirtualizer({
     count: data.length,
     scrollMargin: 0, // Always 0 for Board - items are positioned relative to column top
     overscan: 5,
     getScrollElement,
-    estimateSize: () => 36,
+    estimateSize: () => 72,
     paddingStart: 0,
     paddingEnd: PADDING_END,
     getItemKey: (index) => data[index].id || String(index),
   });
 
-  const virtualItems = virtualizer.getVirtualItems();
-  const viewportHeight = Math.min(
-    parentRef.current?.clientHeight || CARD_LIST_MAX_HEIGHT,
-    CARD_LIST_MAX_HEIGHT
-  );
-  const scrollTop = parentRef.current?.scrollTop ?? 0;
-  const renderStart = Math.max(0, scrollTop - 5 * 36);
-  const renderEnd = scrollTop + viewportHeight + 5 * 36;
-  const maxRenderedItems = Math.ceil(viewportHeight / 36) + 12;
-  const items = virtualItems.length > maxRenderedItems
-    ? virtualItems
-      .filter((item) => item.end >= renderStart && item.start <= renderEnd)
-      .slice(0, maxRenderedItems)
-    : virtualItems;
+  // TanStack Virtual already applies viewport bounds and overscan using the
+  // measured card heights. A second fixed-height cap could discard valid
+  // virtual items and remount a card during a pointer gesture.
+  const items = virtualizer.getVirtualItems();
 
   return (
     <div

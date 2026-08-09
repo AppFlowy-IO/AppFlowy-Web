@@ -418,9 +418,18 @@ export interface FilterDraft {
   id: string;
   fieldId: string;
   fieldType: number;
+  rollupTargetFieldType?: FieldType;
   condition: number;
   content: string;
   operator: FilterType.And | FilterType.Or | null;
+}
+
+export function resolveRollupFilterTargetFieldType(fieldType: FieldType, field?: YDatabaseField): FieldType | undefined {
+  if (fieldType !== FieldType.Rollup) return undefined;
+
+  // Desktop persists the evaluated filter variant, not the Rollup's raw target
+  // field type. Every non-numeric Rollup is evaluated as text.
+  return isNumericRollupField(field) ? FieldType.Number : FieldType.RichText;
 }
 
 /**
@@ -527,10 +536,21 @@ function collectFiltersRecursive(
     fieldTypeNum = tyValue !== undefined ? Number(tyValue) : FieldType.RichText;
   }
 
+  const persistedRollupTargetFieldType = node.get(YjsDatabaseKey.rollup_target_type);
+  let rollupTargetFieldType: FieldType | undefined;
+
+  if (fieldTypeNum === FieldType.Rollup) {
+    rollupTargetFieldType =
+      persistedRollupTargetFieldType !== undefined
+        ? (Number(persistedRollupTargetFieldType) as FieldType)
+        : resolveRollupFilterTargetFieldType(FieldType.Rollup, field);
+  }
+
   result.push({
     id: String(node.get(YjsDatabaseKey.id) ?? ''),
     fieldId,
     fieldType: fieldTypeNum,
+    rollupTargetFieldType,
     condition: Number(node.get(YjsDatabaseKey.condition)),
     content: String(node.get(YjsDatabaseKey.content) ?? ''),
     operator: inheritedOperator,

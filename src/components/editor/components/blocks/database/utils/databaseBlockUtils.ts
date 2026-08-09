@@ -117,3 +117,25 @@ export function parseDatabaseNodeData(jsonString: string): DatabaseNodeData {
 export function serializeDatabaseNodeData(data: DatabaseNodeData): string {
   return JSON.stringify(data);
 }
+
+const VIEW_GONE_MESSAGE_PATTERN = /\b(not\s*found|not\s*exist)\b/i;
+
+/**
+ * True when a view fetch failed because the record no longer exists on the
+ * server (RecordNotFound = -2 / HTTP 404, RecordDeleted = -4 / HTTP 410),
+ * as opposed to a transient network/server error.
+ */
+export function isViewGoneError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, httpStatus, message } = error as {
+    code?: number;
+    httpStatus?: number;
+    message?: string;
+  };
+
+  if (httpStatus === 404 || httpStatus === 410) return true;
+  if (code === 404 || code === -2 || code === -4) return true;
+
+  return typeof message === 'string' && VIEW_GONE_MESSAGE_PATTERN.test(message);
+}

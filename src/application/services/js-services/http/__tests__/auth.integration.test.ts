@@ -67,7 +67,8 @@ describe('HTTP API - Auth & User Operations', () => {
         it('should get auth providers', async () => {
             const result = await APIService.getAuthProviders();
 
-            expect(Array.isArray(result)).toBe(true);
+            expect(Array.isArray(result.providers)).toBe(true);
+            expect(Array.isArray(result.customProviders)).toBe(true);
         }, 30000);
     });
 

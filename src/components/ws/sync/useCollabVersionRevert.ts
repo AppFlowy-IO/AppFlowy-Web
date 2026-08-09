@@ -31,7 +31,7 @@ export type CollabVersionRevertDeps = {
       user?: User;
       isCancelled?: () => boolean;
     }
-  ) => Promise<void>;
+  ) => Promise<unknown>;
 };
 
 export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
@@ -52,6 +52,7 @@ export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
     if (currentUser && context) {
       const previousDoc = context.doc as YDoc & SyncDocMeta;
       const objectId = previousDoc.guid;
+      const ownerCount = Math.max(1, refs.contextRefCounts.current.get(objectId) ?? 0);
 
       // Drop stale pending edits and pause active sync before restore/open.
       // Mark the objectId as "resetting" *before* awaiting so that any
@@ -87,6 +88,7 @@ export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
             registerSyncContext,
             scheduleDeferredCleanup,
             hadPendingDeferredCleanup: false,
+            ownerCount,
             openDoc: async () => {
               let doc: (YDoc & SyncDocMeta) | null = null;
 
@@ -106,11 +108,14 @@ export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
           });
         } catch (error) {
           // Restore previous context if version restore fails.
-          registerSyncContext({
-            doc: previousDoc,
-            awareness: context.awareness,
-            collabType: context.collabType,
-          });
+          for (let ownerIndex = 0; ownerIndex < ownerCount; ownerIndex += 1) {
+            registerSyncContext({
+              doc: previousDoc,
+              awareness: context.awareness,
+              collabType: context.collabType,
+            });
+          }
+
           throw error;
         }
       } finally {

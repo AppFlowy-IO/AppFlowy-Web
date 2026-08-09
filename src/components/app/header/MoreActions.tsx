@@ -87,12 +87,10 @@ function MoreActions({
   viewId,
   onDeleted,
   menuContentProps,
-  enableVersionHistory = true,
 }: {
   viewId: string;
   onDeleted?: () => void;
   menuContentProps?: ComponentProps<typeof DropdownMenuContent>;
-  enableVersionHistory?: boolean;
 } & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
   const aiEnabled = useAIEnabled();
@@ -162,7 +160,7 @@ function MoreActions({
   }, [viewId]);
 
   const pageHistoryEnabled = usePageHistoryEnabled();
-  const showHistory = enableVersionHistory && pageHistoryEnabled && view?.layout === ViewLayout.Document;
+  const showHistory = pageHistoryEnabled && view?.layout === ViewLayout.Document;
 
   const eventEmitter = useEventEmitter();
   const isDocument = view?.layout === ViewLayout.Document;

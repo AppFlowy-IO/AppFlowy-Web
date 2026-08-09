@@ -2,7 +2,7 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { usePublishContext } from '@/application/publish';
-import { UIVariant, ViewLayout, YjsEditorKey } from '@/application/types';
+import { UIVariant, ViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { resolveActiveDatabaseViewId } from '@/application/view-utils';
 import type {
   AppendBreadcrumb,
@@ -86,6 +86,18 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
    */
   const databasePageId = viewMeta.viewId;
 
+  const doc = props.doc;
+  const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
+
+  // View ids that actually exist in the database collab. Published pages may
+  // list the folder container id among visibleViewIds even though it is not a
+  // database view; resolution below must never land on such an id.
+  const existingViewIds = useMemo(() => {
+    const views = database?.get(YjsDatabaseKey.views);
+
+    return views ? Array.from(views.keys()) : [];
+  }, [database]);
+
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
    * Comes from URL param 'v', defaults to the route id for direct child-view
@@ -97,8 +109,9 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       databasePageId,
       tabViewId: search.get('v'),
       visibleViewIds,
+      existingViewIds,
     });
-  }, [search, databasePageId, visibleViewIds]);
+  }, [search, databasePageId, visibleViewIds, existingViewIds]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
@@ -145,8 +158,6 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   );
 
   const rowId = search.get('r') || undefined;
-  const doc = props.doc;
-  const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
   const isPublishVariant = props.variant === UIVariant.Publish;
 
   const skeleton = useMemo(() => {

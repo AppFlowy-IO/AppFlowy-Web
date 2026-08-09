@@ -1,15 +1,31 @@
 import * as Y from 'yjs';
+import {
+  createDatabaseRowDocSeed,
+  invalidateDatabaseRowDocSeedGeneration,
+} from '@/application/database-blob/row-seed-fence';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { Types, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { expect } from '@jest/globals';
 import {
+  cacheCanonicalRowDoc,
   collabTypeToDBType,
+  createRow,
+  getCachedRowDoc,
   getPublishView,
   getPublishViewMeta,
   mergeLegacyRowDocIfExists,
+  openRowDoc,
 } from '@/application/services/js-services/cache';
 import { applyYDoc } from '@/application/ydoc/apply';
-import { openCollabDB, openCollabDBWithProvider, collabIndexedDBExists, db, deleteCollabDB } from '@/application/db';
+import {
+  openCollabDB,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+  collabIndexedDBExists,
+  db,
+  deleteCollabDB,
+} from '@/application/db';
 import { StrategyType } from '@/application/services/js-services/cache/types';
 
 jest.mock('@/application/ydoc/apply', () => ({
@@ -40,6 +56,9 @@ const normalDoc = withTestingYDoc('1');
 const mockFetcher = jest.fn();
 const mockedApplyYDoc = applyYDoc as jest.MockedFunction<typeof applyYDoc>;
 const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
+const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<
+  typeof openRowCollabDBWithProvider
+>;
 const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
 const mockedDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 
@@ -279,6 +298,103 @@ describe('database row legacy cache migration', () => {
     expect(db.collab_custom.put).not.toHaveBeenCalled();
     expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
     expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+  });
+});
+
+describe('database row document cache', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedCollabIndexedDBExists.mockResolvedValue(false);
+    (db.collab_custom.get as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('evicts a destroyed row document before the next open', async () => {
+    const rowId = 'row-cache-destroyed';
+    const rowKey = `database-cache-destroyed_rows_${rowId}`;
+    const firstDoc = createRowDoc(rowId, 'database-cache-destroyed', {});
+    const secondDoc = createRowDoc(rowId, 'database-cache-destroyed', {});
+    const provider = {
+      synced: true,
+      destroy: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockedOpenRowCollabDBWithProvider
+      .mockResolvedValueOnce({ doc: firstDoc, provider } as never)
+      .mockResolvedValueOnce({ doc: secondDoc, provider } as never);
+
+    await expect(createRow(rowKey)).resolves.toBe(firstDoc);
+    expect(getCachedRowDoc(rowKey)).toBe(firstDoc);
+
+    firstDoc.destroy();
+
+    expect(getCachedRowDoc(rowKey)).toBeUndefined();
+    await expect(createRow(rowKey)).resolves.toBe(secondDoc);
+    expect(mockedOpenRowCollabDBWithProvider).toHaveBeenCalledTimes(2);
+
+    secondDoc.destroy();
+  });
+
+  it('does not apply a row seed invalidated while its canonical doc is opening', async () => {
+    const rowId = 'row-cache-reset-seed';
+    const rowKey = `database-cache-reset-seed_rows_${rowId}`;
+    const canonicalDoc = createRowDoc(rowId, 'database-cache-reset-seed', {});
+    const provider = {
+      synced: true,
+      destroy: jest.fn().mockResolvedValue(undefined),
+    };
+    const seed = createDatabaseRowDocSeed(rowId, {
+      bytes: new Uint8Array([1, 2, 3]),
+      encoderVersion: 1,
+    });
+    let resolveOpen!: (value: Awaited<ReturnType<typeof openRowCollabDBWithProvider>>) => void;
+    const pendingOpen = new Promise<Awaited<ReturnType<typeof openRowCollabDBWithProvider>>>((resolve) => {
+      resolveOpen = resolve;
+    });
+
+    mockedOpenRowCollabDBWithProvider.mockReturnValueOnce(pendingOpen);
+
+    const opening = openRowDoc(rowKey, seed);
+
+    invalidateDatabaseRowDocSeedGeneration(rowId);
+    resolveOpen({ doc: canonicalDoc, provider } as never);
+
+    await expect(opening).resolves.toBe(canonicalDoc);
+    expect(mockedApplyYDoc).not.toHaveBeenCalled();
+
+    canonicalDoc.destroy();
+  });
+
+  it('adopts the canonical row document selected by version reset', () => {
+    const rowId = 'row-cache-reset';
+    const rowKey = `database-cache-reset_rows_${rowId}`;
+    const canonicalDoc = createRowDoc(rowId, 'database-cache-reset', {});
+
+    cacheCanonicalRowDoc(rowId, canonicalDoc);
+
+    expect(getCachedRowDoc(rowKey)).toBe(canonicalDoc);
+
+    canonicalDoc.destroy();
+    expect(getCachedRowDoc(rowKey)).toBeUndefined();
+  });
+
+  it('normalizes legacy cell field types on a canonical reset document', () => {
+    const rowId = 'row-cache-reset-normalizer';
+    const rowKey = `database-cache-reset-normalizer_rows_${rowId}`;
+    const canonicalDoc = createRowDoc(rowId, 'database-cache-reset-normalizer', { 'field-id': '42' });
+    const row = canonicalDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown>;
+    const cells = row.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>>;
+    const cell = cells.get('field-id');
+
+    cell?.set(YjsDatabaseKey.field_type, String(FieldType.RichText));
+    cell?.set(YjsDatabaseKey.source_field_type, FieldType.Number);
+
+    cacheCanonicalRowDoc(rowId, canonicalDoc);
+
+    expect(getCachedRowDoc(rowKey)).toBe(canonicalDoc);
+    expect(cell?.get(YjsDatabaseKey.field_type)).toBe(FieldType.Number);
+    expect(cell?.has(YjsDatabaseKey.source_field_type)).toBe(false);
+
+    canonicalDoc.destroy();
   });
 });
 

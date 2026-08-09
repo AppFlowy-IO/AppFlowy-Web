@@ -50,6 +50,7 @@ export function AdvancedFilterPanel() {
         id: f.id,
         fieldId: f.fieldId,
         fieldType: f.fieldType ?? 0,
+        rollupTargetFieldType: f.rollupTargetFieldType,
         condition: f.condition,
         content: f.content,
         operator: f.id === filterId ? newOperator : (index === 0 ? null : f.operator ?? FilterType.And),

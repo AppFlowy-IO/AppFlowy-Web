@@ -8,6 +8,8 @@ import {
   GuestConversionCodeInfo,
   GuestInvitation,
   MentionablePerson,
+  MentionSearchRequest,
+  MentionSearchResponse,
   Role,
   SpaceMember,
   SpaceMembers,
@@ -453,6 +455,14 @@ export async function getMentionableUsers(workspaceId: string) {
   );
 
   return payload.persons;
+}
+
+export async function searchMentions(workspaceId: string, payload: MentionSearchRequest): Promise<MentionSearchResponse> {
+  const url = `/api/workspace/${workspaceId}/mentions/search`;
+
+  return executeAPIRequest<MentionSearchResponse>(() =>
+    getAxios()?.post<APIResponse<MentionSearchResponse>>(url, payload)
+  );
 }
 
 export interface PageMentionUpdate {

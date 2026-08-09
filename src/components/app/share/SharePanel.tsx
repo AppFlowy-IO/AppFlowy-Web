@@ -24,6 +24,8 @@ function SharePanel({
   groups,
   isLoadingPeople,
   onPeopleChange,
+  onPersonRemoved,
+  updateGroupInAccessList,
   hasFullAccess,
   currentUserAccessLevel,
   sectionType,
@@ -33,6 +35,8 @@ function SharePanel({
   groups: WorkspaceGroupViewPermission[];
   isLoadingPeople: boolean;
   onPeopleChange: () => Promise<void>;
+  onPersonRemoved: (email: string) => void;
+  updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
   currentUserAccessLevel?: AccessLevel;
   sectionType: ShareSectionType;
@@ -79,8 +83,7 @@ function SharePanel({
   // Refresh people list after invite or other changes
   const refreshPeople = useCallback(async () => {
     try {
-      await loadMentionableData();
-      await onPeopleChange();
+      await Promise.all([loadMentionableData(), onPeopleChange()]);
       // eslint-disable-next-line
     } catch (error: any) {
       notify.error(error.message);
@@ -146,8 +149,11 @@ function SharePanel({
           groups={groups}
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
+          onPersonRemoved={onPersonRemoved}
+          updateGroupInAccessList={updateGroupInAccessList}
           hasFullAccess={hasFullAccess}
           canGrantFullAccess={hasFullAccess}
+          sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} />
         <CopyLink />

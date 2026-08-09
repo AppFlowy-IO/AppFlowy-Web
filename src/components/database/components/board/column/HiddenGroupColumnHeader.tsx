@@ -27,6 +27,11 @@ function HiddenGroupColumnHeader () {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            data-testid={'board-hidden-groups-toggle'}
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed
+              ? t('board.hiddenGroupSection.expandTooltip')
+              : t('board.hiddenGroupSection.collapseTooltip')}
             onClick={() => {
               onToggleCollapse(!isCollapsed);
             }}

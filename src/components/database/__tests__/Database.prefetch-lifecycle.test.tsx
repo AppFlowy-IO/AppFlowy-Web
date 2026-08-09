@@ -1,0 +1,1085 @@
+import EventEmitter from 'events';
+
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import * as Y from 'yjs';
+
+import { APP_EVENTS } from '@/application/constants';
+import { peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
+import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import Database, { Database2Props } from '@/components/database/Database';
+
+const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
+const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
+let mockLoadSeedOnLifecycleChange = false;
+
+jest.mock('@/application/database-blob', () => ({
+  getDatabaseRowDocFromSeed: jest.fn(),
+  peekDatabaseRowDocSeed: jest.fn(),
+  prefetchDatabaseBlobDiff: jest.fn(),
+  releaseDatabaseRowDocSeedCache: jest.fn(),
+  retainDatabaseRowDocSeedCache: jest.fn(),
+}));
+
+jest.mock('@/application/services/js-services/cache', () => ({
+  getCachedRowDoc: jest.fn(),
+  openRowDoc: jest.fn(),
+}));
+
+jest.mock('@/components/database/DatabaseRow', () => ({
+  DatabaseRow: () => null,
+}));
+
+jest.mock('@/components/database/DatabaseRowModal', () => () => null);
+jest.mock('@/components/database/DatabaseContext', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
+
+  return {
+    DatabaseContextProvider: ({
+      children,
+      value,
+    }: {
+      children: React.ReactNode;
+      value: React.ContextType<typeof DatabaseContext>;
+    }) => React.createElement(DatabaseContext.Provider, { value }, children),
+  };
+});
+jest.mock('@/components/database/DatabaseViews', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const { useDatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
+    '@/application/database-yjs/context'
+  );
+
+  return function MockDatabaseViews() {
+    const { bindRowSync, ensureRow, loadRowFromSeed, rowMap } = useDatabaseContext();
+    const initialLoadRowFromSeed = React.useRef(loadRowFromSeed).current;
+    const previousLoadRowFromSeed = React.useRef(loadRowFromSeed);
+
+    React.useEffect(() => {
+      const previous = previousLoadRowFromSeed.current;
+
+      previousLoadRowFromSeed.current = loadRowFromSeed;
+      if (!mockLoadSeedOnLifecycleChange || previous === loadRowFromSeed || !loadRowFromSeed) return;
+      mockSeedLoadPromises.push(loadRowFromSeed('row-id'));
+    }, [loadRowFromSeed]);
+
+    return React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(
+        'button',
+        {
+          'data-row-guid': rowMap?.['row-id']?.guid ?? '',
+          onClick: () => {
+            if (!loadRowFromSeed) throw new Error('loadRowFromSeed is not available');
+            mockSeedLoadPromises.push(loadRowFromSeed('row-id'));
+          },
+          type: 'button',
+        },
+        'Load seeded row'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!loadRowFromSeed) throw new Error('loadRowFromSeed is not available');
+            mockSeedLoadPromises.push(loadRowFromSeed('remote-row-id'));
+          },
+          type: 'button',
+        },
+        'Load remote seeded row'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!initialLoadRowFromSeed) throw new Error('initial loadRowFromSeed is not available');
+            mockSeedLoadPromises.push(initialLoadRowFromSeed('row-id'));
+          },
+          type: 'button',
+        },
+        'Load seeded row with initial lifecycle'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => bindRowSync?.('row-id'),
+          type: 'button',
+        },
+        'Bind row sync'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!ensureRow) throw new Error('ensureRow is not available');
+            mockEnsureRowPromises.push(ensureRow('row-id'));
+          },
+          type: 'button',
+        },
+        'Ensure row'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => {
+            if (!ensureRow) throw new Error('ensureRow is not available');
+            mockEnsureRowPromises.push(ensureRow('remote-row-id'));
+          },
+          type: 'button',
+        },
+        'Ensure remote row'
+      ),
+      ...['remote-row-a', 'remote-row-b', 'remote-row-c'].map((rowId) =>
+        React.createElement(
+          'button',
+          {
+            key: rowId,
+            onClick: () => {
+              if (!ensureRow) throw new Error('ensureRow is not available');
+              mockEnsureRowPromises.push(ensureRow(rowId));
+            },
+            type: 'button',
+          },
+          `Ensure ${rowId}`
+        )
+      )
+    );
+  };
+});
+
+jest.mock('@/utils/runtime-config', () => ({
+  getConfigValue: (_key: string, fallback: string) => fallback,
+}));
+
+const mockedPrefetch = prefetchDatabaseBlobDiff as jest.MockedFunction<typeof prefetchDatabaseBlobDiff>;
+const mockedPeekSeed = peekDatabaseRowDocSeed as jest.MockedFunction<typeof peekDatabaseRowDocSeed>;
+const mockedGetCachedRowDoc = getCachedRowDoc as jest.MockedFunction<typeof getCachedRowDoc>;
+const mockedOpenRowDoc = openRowDoc as jest.MockedFunction<typeof openRowDoc>;
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
+function createDatabaseDoc(guid: string, databaseId = 'database-id') {
+  const doc = new Y.Doc({ guid }) as YDoc;
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+  const database = new Y.Map();
+  const views = new Y.Map();
+  const view = new Y.Map();
+  const rowOrders = new Y.Array();
+
+  rowOrders.push([{ id: 'row-id' }]);
+  view.set(YjsDatabaseKey.row_orders, rowOrders);
+  views.set('view-id', view);
+  database.set(YjsDatabaseKey.id, databaseId);
+  database.set(YjsDatabaseKey.views, views);
+  sharedRoot.set(YjsEditorKey.database, database);
+
+  return doc;
+}
+
+function insertRemoteRowOrder(doc: YDoc, rowId: string) {
+  const remoteDoc = new Y.Doc();
+
+  Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+  const beforeInsert = Y.encodeStateVector(remoteDoc);
+  const database = remoteDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+  rowOrders?.push([{ id: rowId }]);
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc, beforeInsert));
+  remoteDoc.destroy();
+}
+
+function hydrateDatabaseIdWithRemoteRowOrders(doc: YDoc, databaseId: string, rowIds: string[]) {
+  const remoteDoc = new Y.Doc();
+
+  Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(doc));
+  const beforeHydration = Y.encodeStateVector(remoteDoc);
+  const database = remoteDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+  remoteDoc.transact(() => {
+    database?.set(YjsDatabaseKey.id, databaseId);
+    rowOrders?.push(rowIds.map((id) => ({ id })));
+  });
+  Y.applyUpdate(doc, Y.encodeStateAsUpdate(remoteDoc, beforeHydration));
+  remoteDoc.destroy();
+}
+
+function databaseProps(doc: YDoc): Database2Props {
+  return {
+    workspaceId: 'workspace-id',
+    doc,
+    readOnly: false,
+    activeViewId: 'view-id',
+    databaseName: '',
+    databasePageId: '',
+    onChangeView: jest.fn(),
+  };
+}
+
+function requestSeedLoad() {
+  const requestIndex = mockSeedLoadPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Load seeded row' }));
+  const request = mockSeedLoadPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request a seeded row');
+  return request;
+}
+
+function requestRemoteSeedLoad() {
+  const requestIndex = mockSeedLoadPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Load remote seeded row' }));
+  const request = mockSeedLoadPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request the remote seeded row');
+  return request;
+}
+
+function requestSeedLoadFromInitialLifecycle() {
+  const requestIndex = mockSeedLoadPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Load seeded row with initial lifecycle' }));
+  const request = mockSeedLoadPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request a seeded row from its initial lifecycle');
+  return request;
+}
+
+function requestEnsureRow() {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ensure row' }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request an ensured row');
+  return request;
+}
+
+function requestRemoteRowEnsure() {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: 'Ensure remote row' }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error('DatabaseViews did not request the remote row');
+  return request;
+}
+
+function requestNamedRemoteRowEnsure(rowId: string) {
+  const requestIndex = mockEnsureRowPromises.length;
+
+  fireEvent.click(screen.getByRole('button', { name: `Ensure ${rowId}` }));
+  const request = mockEnsureRowPromises[requestIndex];
+
+  if (!request) throw new Error(`DatabaseViews did not request remote row ${rowId}`);
+  return request;
+}
+
+function createHydratedRowDoc(guid: string) {
+  const doc = new Y.Doc({ guid }) as YDoc;
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+
+  sharedRoot.set(YjsEditorKey.database_row, new Y.Map());
+  return doc;
+}
+
+describe('Database blob prefetch lifecycle', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSeedLoadPromises.length = 0;
+    mockEnsureRowPromises.length = 0;
+    mockLoadSeedOnLifecycleChange = false;
+    mockedPeekSeed.mockReset();
+    mockedGetCachedRowDoc.mockReset();
+    mockedOpenRowDoc.mockReset();
+    mockedPrefetch.mockReset();
+    mockedGetCachedRowDoc.mockReturnValue(undefined);
+    mockedPrefetch.mockImplementation(() => new Promise(() => undefined));
+  });
+
+  it('requests a complete row seed set for a grouped Board view', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+    const groups = new Y.Array();
+
+    groups.push([new Y.Map()]);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    view?.set(YjsDatabaseKey.groups, groups);
+
+    const { unmount } = render(<Database {...databaseProps(doc)} />);
+
+    await waitFor(() => {
+      expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedPrefetch.mock.calls[0][2]?.forceFullSync).toBe(true);
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('sequentially rebinds a visible remote row after its initial registration settles', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const seededRowDoc = createHydratedRowDoc('remote-row-id');
+    const initialRegistration = createDeferred<YDoc>();
+    const createRow = jest.fn((_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? Promise.resolve(seededRowDoc) : initialRegistration.promise
+    );
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'remote-row-id': seededRowDoc }} />
+    );
+
+    try {
+      await act(async () => {
+        insertRemoteRowOrder(doc, 'remote-row-id');
+        await Promise.resolve();
+      });
+
+      const ensuredRow = requestRemoteRowEnsure();
+
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+
+      // Retry deadlines must not be consumed while IndexedDB/sync-context
+      // registration is still pending.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(9_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        initialRegistration.resolve(seededRowDoc);
+        await ensuredRow;
+      });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(2);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(3_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(5_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(4);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+    } finally {
+      unmount();
+      doc.destroy();
+      seededRowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('retains remote reconciliation when a visible ensure joins a seed-only load', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const seededRowDoc = createHydratedRowDoc('remote-row-id');
+    const seedLoad = createDeferred<YDoc>();
+    const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
+    const createRow = jest.fn(async () => seededRowDoc);
+
+    mockedPeekSeed.mockImplementation((rowKey) => (rowKey === 'database-id_rows_remote-row-id' ? seed : undefined));
+    mockedOpenRowDoc.mockImplementation((rowKey) => {
+      if (rowKey === 'database-id_rows_remote-row-id') return seedLoad.promise;
+      throw new Error(`unexpected row key: ${rowKey}`);
+    });
+
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} />);
+
+    try {
+      await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+      act(() => {
+        mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+      });
+      await act(async () => {
+        insertRemoteRowOrder(doc, 'remote-row-id');
+        await Promise.resolve();
+      });
+
+      const seedRequest = requestRemoteSeedLoad();
+      const firstEnsure = requestRemoteRowEnsure();
+
+      await act(async () => {
+        seedLoad.resolve(seededRowDoc);
+        await Promise.all([seedRequest, firstEnsure]);
+      });
+      expect(createRow).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(2);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+    } finally {
+      unmount();
+      doc.destroy();
+      seededRowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('cancels remote reconciliation when the row order is removed', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('remote-row-id');
+    const createRow = jest.fn(async () => rowDoc);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'remote-row-id': rowDoc }} />
+    );
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+    try {
+      await act(async () => {
+        insertRemoteRowOrder(doc, 'remote-row-id');
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        const index = rowOrders?.toArray().findIndex((row) => row.id === 'remote-row-id') ?? -1;
+
+        if (index >= 0) rowOrders?.delete(index, 1);
+      });
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(1);
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps reconciliation markers isolated across database document lifecycles', async () => {
+    jest.useFakeTimers();
+    const firstDoc = createDatabaseDoc('database-id');
+    const secondDoc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('remote-row-id');
+    const createRow = jest.fn(async () => rowDoc);
+    const initialRowMap = { 'remote-row-id': rowDoc };
+    const { rerender, unmount } = render(
+      <Database {...databaseProps(firstDoc)} createRow={createRow} initialRowMap={initialRowMap} />
+    );
+
+    try {
+      await act(async () => {
+        insertRemoteRowOrder(firstDoc, 'remote-row-id');
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(1);
+
+      rerender(<Database {...databaseProps(secondDoc)} createRow={createRow} initialRowMap={initialRowMap} />);
+      await act(async () => {
+        insertRemoteRowOrder(secondDoc, 'remote-row-id');
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      expect(createRow).toHaveBeenCalledTimes(2);
+
+      // The first lifecycle's timer resolves first. Its cleanup must not
+      // remove the replacement lifecycle's marker for the same row id.
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id', { forceSync: true });
+    } finally {
+      unmount();
+      firstDoc.destroy();
+      secondDoc.destroy();
+      rowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('reconciles every remote row after the database id hydrates on the same document', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-doc-id', 'temporary-database-id');
+    const rowIds = ['remote-row-a', 'remote-row-b', 'remote-row-c'];
+    const rowDocs = Object.fromEntries(rowIds.map((rowId) => [rowId, createHydratedRowDoc(rowId)]));
+    const createRow = jest.fn(async (rowKey: string) => {
+      const rowId = rowKey.split('_rows_')[1];
+
+      return rowDocs[rowId];
+    });
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} initialRowMap={rowDocs} />);
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+
+    try {
+      await act(async () => {
+        database?.set(YjsDatabaseKey.id, 'hydrated-database-id');
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        rowIds.forEach((rowId) => insertRemoteRowOrder(doc, rowId));
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await Promise.all(rowIds.map(requestNamedRemoteRowEnsure));
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+      expect(createRow.mock.calls.map(([rowKey]) => rowKey)).toEqual(
+        rowIds.map((rowId) => `hydrated-database-id_rows_${rowId}`)
+      );
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(6);
+      rowIds.forEach((rowId) => {
+        expect(createRow).toHaveBeenCalledWith(`hydrated-database-id_rows_${rowId}`, { forceSync: true });
+      });
+    } finally {
+      unmount();
+      doc.destroy();
+      Object.values(rowDocs).forEach((rowDoc) => rowDoc.destroy());
+      jest.useRealTimers();
+    }
+  });
+
+  it('reconciles remote rows when the database id and row orders hydrate together', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-doc-id', 'temporary-database-id');
+    const rowIds = ['remote-row-a', 'remote-row-b', 'remote-row-c'];
+    const rowDocs = Object.fromEntries(rowIds.map((rowId) => [rowId, createHydratedRowDoc(rowId)]));
+    const createRow = jest.fn(async (rowKey: string) => {
+      const rowId = rowKey.split('_rows_')[1];
+
+      return rowDocs[rowId];
+    });
+    const { unmount } = render(<Database {...databaseProps(doc)} createRow={createRow} initialRowMap={rowDocs} />);
+
+    try {
+      await act(async () => {
+        hydrateDatabaseIdWithRemoteRowOrders(doc, 'hydrated-database-id', rowIds);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await Promise.all(rowIds.map(requestNamedRemoteRowEnsure));
+      });
+      expect(createRow).toHaveBeenCalledTimes(3);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(6);
+      rowIds.forEach((rowId) => {
+        expect(createRow).toHaveBeenCalledWith(`hydrated-database-id_rows_${rowId}`, { forceSync: true });
+      });
+    } finally {
+      unmount();
+      doc.destroy();
+      Object.values(rowDocs).forEach((rowDoc) => rowDoc.destroy());
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not schedule reconciliation for a locally inserted row', async () => {
+    jest.useFakeTimers();
+    const doc = createDatabaseDoc('database-id');
+    const rowDoc = createHydratedRowDoc('remote-row-id');
+    const createRow = jest.fn(async () => rowDoc);
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'remote-row-id': rowDoc }} />
+    );
+    const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+    try {
+      await act(async () => {
+        rowOrders?.push([{ id: 'remote-row-id' }]);
+        await Promise.resolve();
+      });
+      await act(async () => {
+        await requestRemoteRowEnsure();
+      });
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(createRow).toHaveBeenLastCalledWith('database-id_rows_remote-row-id');
+    } finally {
+      unmount();
+      doc.destroy();
+      rowDoc.destroy();
+      jest.useRealTimers();
+    }
+  });
+
+  it('starts a new prefetch when the Y.Doc instance changes but its guid stays the same', async () => {
+    const firstDoc = createDatabaseDoc('database-id');
+    const secondDoc = createDatabaseDoc('database-id');
+    const { rerender, unmount } = render(<Database {...databaseProps(firstDoc)} />);
+
+    await waitFor(() => {
+      expect(mockedPrefetch).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(<Database {...databaseProps(secondDoc)} />);
+
+    await waitFor(() => {
+      expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+    });
+
+    act(() => {
+      mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+    });
+
+    expect(mockedPeekSeed).not.toHaveBeenCalled();
+
+    act(() => {
+      mockedPrefetch.mock.calls[1][2]?.onSeedsReady?.();
+    });
+
+    expect(mockedPeekSeed).toHaveBeenCalledWith('database-id_rows_row-id');
+
+    unmount();
+    firstDoc.destroy();
+    secondDoc.destroy();
+  });
+
+  it('isolates pending seed loads across database lifecycles', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid', 'database-a');
+    const secondDoc = createDatabaseDoc('shared-guid', 'database-b');
+    // An empty stale doc keeps the later request on the pending-load path, so
+    // stale row injection cannot mask stale cleanup deleting the newer promise.
+    const firstRowDoc = new Y.Doc({ guid: 'row-a' }) as YDoc;
+    const secondRowDoc = new Y.Doc({ guid: 'row-b' }) as YDoc;
+    const firstLoad = createDeferred<YDoc>();
+    const secondLoad = createDeferred<YDoc>();
+    const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
+
+    mockedPeekSeed.mockReturnValue(seed);
+    mockedOpenRowDoc.mockImplementation((rowKey) => {
+      if (rowKey === 'database-a_rows_row-id') return firstLoad.promise;
+      if (rowKey === 'database-b_rows_row-id') return secondLoad.promise;
+      throw new Error(`unexpected row key: ${rowKey}`);
+    });
+
+    const { rerender, unmount } = render(<Database {...databaseProps(firstDoc)} />);
+    const firstOwner = requestSeedLoad();
+    const firstFollower = requestSeedLoad();
+
+    expect(mockedOpenRowDoc).toHaveBeenCalledTimes(1);
+    expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-a_rows_row-id', seed);
+
+    rerender(<Database {...databaseProps(secondDoc)} />);
+
+    await waitFor(() => {
+      expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+    });
+
+    const secondOwner = requestSeedLoad();
+
+    expect(mockedOpenRowDoc).toHaveBeenCalledTimes(2);
+    expect(mockedOpenRowDoc).toHaveBeenLastCalledWith('database-b_rows_row-id', seed);
+
+    let firstResults: Array<YDoc | undefined> = [];
+
+    await act(async () => {
+      firstLoad.resolve(firstRowDoc);
+      firstResults = await Promise.all([firstOwner, firstFollower]);
+    });
+
+    expect(firstResults).toEqual([undefined, undefined]);
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('');
+
+    const secondFollower = requestSeedLoad();
+
+    expect(mockedOpenRowDoc).toHaveBeenCalledTimes(2);
+
+    let secondResults: Array<YDoc | undefined> = [];
+
+    await act(async () => {
+      secondLoad.resolve(secondRowDoc);
+      secondResults = await Promise.all([secondOwner, secondFollower]);
+    });
+
+    expect(secondResults).toEqual([secondRowDoc, secondRowDoc]);
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('row-b');
+
+    unmount();
+    firstDoc.destroy();
+    secondDoc.destroy();
+    firstRowDoc.destroy();
+    secondRowDoc.destroy();
+  });
+
+  it('ignores a seed loader retained from a previous database lifecycle', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid', 'database-a');
+    const secondDoc = createDatabaseDoc('shared-guid', 'database-b');
+    const staleRowDoc = new Y.Doc({ guid: 'row-a' }) as YDoc;
+    const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
+
+    mockedPeekSeed.mockReturnValue(seed);
+    mockedOpenRowDoc.mockResolvedValue(staleRowDoc);
+
+    const { rerender, unmount } = render(<Database {...databaseProps(firstDoc)} />);
+
+    rerender(<Database {...databaseProps(secondDoc)} />);
+
+    await waitFor(() => {
+      expect(mockedPrefetch).toHaveBeenCalledTimes(2);
+    });
+
+    let staleResult: YDoc | undefined;
+
+    await act(async () => {
+      staleResult = await requestSeedLoadFromInitialLifecycle();
+    });
+
+    expect(staleResult).toBeUndefined();
+    expect(mockedOpenRowDoc).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('');
+
+    unmount();
+    firstDoc.destroy();
+    secondDoc.destroy();
+    staleRowDoc.destroy();
+  });
+
+  it('activates a new seed loader before descendant effects run', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid', 'database-a');
+    const secondDoc = createDatabaseDoc('shared-guid', 'database-b');
+    const secondRowDoc = new Y.Doc({ guid: 'row-b' }) as YDoc;
+    const seed = { bytes: new Uint8Array([1, 2, 3]), encoderVersion: 1 };
+
+    mockLoadSeedOnLifecycleChange = true;
+    mockedPeekSeed.mockReturnValue(seed);
+    mockedOpenRowDoc.mockResolvedValue(secondRowDoc);
+
+    const { rerender, unmount } = render(<Database {...databaseProps(firstDoc)} />);
+
+    rerender(<Database {...databaseProps(secondDoc)} />);
+
+    await waitFor(() => {
+      expect(mockedOpenRowDoc).toHaveBeenCalledWith('database-b_rows_row-id', seed);
+    });
+
+    let results: Array<YDoc | undefined> = [];
+
+    await act(async () => {
+      results = await Promise.all(mockSeedLoadPromises);
+    });
+
+    expect(results).toEqual([secondRowDoc]);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('row-b');
+    });
+
+    unmount();
+    firstDoc.destroy();
+    secondDoc.destroy();
+    secondRowDoc.destroy();
+  });
+
+  it('releases each lifecycle row-sync owner when the Y.Doc instance changes', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid');
+    const secondDoc = createDatabaseDoc('shared-guid');
+    const rowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const createRow = jest.fn().mockResolvedValue(rowDoc);
+    const scheduleDeferredCleanup = jest.fn();
+    const firstProps = {
+      ...databaseProps(firstDoc),
+      createRow,
+      scheduleDeferredCleanup,
+    };
+    const { rerender, unmount } = render(<Database {...firstProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    rerender(
+      <Database {...databaseProps(secondDoc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
+    );
+
+    await waitFor(() => expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1));
+    expect(scheduleDeferredCleanup).toHaveBeenLastCalledWith('row-id');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(2));
+
+    unmount();
+
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(2);
+    expect(scheduleDeferredCleanup).toHaveBeenLastCalledWith('row-id');
+
+    firstDoc.destroy();
+    secondDoc.destroy();
+    rowDoc.destroy();
+  });
+
+  it('replaces a hydrated seed shell with the canonical force-synced row doc', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const createRow = jest.fn(async (_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? canonicalRowDoc : seedShell
+    );
+    const props = {
+      ...databaseProps(doc),
+      createRow,
+      initialRowMap: { 'row-id': seedShell },
+    };
+    const { unmount } = render(<Database {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => {
+      expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+    });
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('seed-shell');
+
+    let ensuredRow: YDoc | undefined;
+
+    await act(async () => {
+      ensuredRow = await requestEnsureRow();
+    });
+
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+    expect(ensuredRow).toBe(canonicalRowDoc);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe(
+        'canonical-row'
+      );
+    });
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
+  it('deduplicates concurrent force sync requests for a registered row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const forceSync = createDeferred<YDoc>();
+    const createRow = jest.fn((_rowKey: string, options?: { forceSync?: boolean }) =>
+      options?.forceSync ? forceSync.promise : Promise.resolve(seedShell)
+    );
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    const firstEnsure = requestEnsureRow();
+    const secondEnsure = requestEnsureRow();
+
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(2));
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+
+    let ensuredRows: Array<YDoc | undefined> = [];
+
+    await act(async () => {
+      forceSync.resolve(canonicalRowDoc);
+      ensuredRows = await Promise.all([firstEnsure, secondEnsure]);
+    });
+
+    expect(ensuredRows).toEqual([canonicalRowDoc, canonicalRowDoc]);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    let cachedEnsure: YDoc | undefined;
+
+    await act(async () => {
+      cachedEnsure = await requestEnsureRow();
+    });
+
+    expect(cachedEnsure).toBe(canonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
+  it('retries force sync after a settled request returns an unhydrated row', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const unhydratedCanonicalRowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const hydratedCanonicalRowDoc = createHydratedRowDoc('row-id');
+    let forceSyncAttempts = 0;
+    const createRow = jest.fn(async (_rowKey: string, options?: { forceSync?: boolean }) => {
+      if (!options?.forceSync) return unhydratedCanonicalRowDoc;
+
+      forceSyncAttempts += 1;
+      return forceSyncAttempts === 1 ? unhydratedCanonicalRowDoc : hydratedCanonicalRowDoc;
+    });
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} createRow={createRow} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    await waitFor(() => expect(mockedPrefetch).toHaveBeenCalledTimes(1));
+    act(() => {
+      mockedPrefetch.mock.calls[0][2]?.onSeedsReady?.();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+
+    let firstEnsure: YDoc | undefined;
+
+    await act(async () => {
+      firstEnsure = await requestEnsureRow();
+    });
+
+    expect(firstEnsure).toBe(unhydratedCanonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    let secondEnsure: YDoc | undefined;
+
+    await act(async () => {
+      secondEnsure = await requestEnsureRow();
+    });
+
+    expect(secondEnsure).toBe(hydratedCanonicalRowDoc);
+    expect(createRow).toHaveBeenCalledTimes(3);
+    expect(createRow).toHaveBeenLastCalledWith('database-id_rows_row-id', { forceSync: true });
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    unhydratedCanonicalRowDoc.destroy();
+    hydratedCanonicalRowDoc.destroy();
+  });
+
+  it('keeps hydrated snapshot rows local in a read-only database', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const snapshotRowDoc = createHydratedRowDoc('snapshot-row');
+    const transportRowDoc = new Y.Doc({ guid: 'empty-transport-row' }) as YDoc;
+    const createRow = jest.fn().mockResolvedValue(transportRowDoc);
+    const props = {
+      ...databaseProps(doc),
+      readOnly: true,
+      createRow,
+      initialRowMap: { 'row-id': snapshotRowDoc },
+    };
+    const { unmount } = render(<Database {...props} />);
+    let ensuredRow: YDoc | undefined;
+
+    await act(async () => {
+      ensuredRow = await requestEnsureRow();
+    });
+
+    expect(ensuredRow).toBe(snapshotRowDoc);
+    expect(createRow).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('snapshot-row');
+
+    unmount();
+    doc.destroy();
+    snapshotRowDoc.destroy();
+    transportRowDoc.destroy();
+  });
+
+  it('adopts a replacement DatabaseRow doc emitted by a version reset', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const seedShell = createHydratedRowDoc('seed-shell');
+    const canonicalRowDoc = createHydratedRowDoc('canonical-row');
+    const eventEmitter = new EventEmitter();
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} eventEmitter={eventEmitter} initialRowMap={{ 'row-id': seedShell }} />
+    );
+
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('seed-shell');
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+        objectId: 'row-id',
+        doc: canonicalRowDoc,
+      });
+    });
+
+    expect(screen.getByRole('button', { name: 'Load seeded row' }).getAttribute('data-row-guid')).toBe('canonical-row');
+
+    unmount();
+    doc.destroy();
+    seedShell.destroy();
+    canonicalRowDoc.destroy();
+  });
+
+  it('releases a row sync that finishes registering after its lifecycle ended', async () => {
+    const firstDoc = createDatabaseDoc('shared-guid');
+    const secondDoc = createDatabaseDoc('shared-guid');
+    const rowDoc = new Y.Doc({ guid: 'row-id' }) as YDoc;
+    const pendingRowSync = createDeferred<YDoc>();
+    const createRow = jest.fn().mockReturnValue(pendingRowSync.promise);
+    const scheduleDeferredCleanup = jest.fn();
+    const { rerender, unmount } = render(
+      <Database {...databaseProps(firstDoc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bind row sync' }));
+    expect(createRow).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <Database {...databaseProps(secondDoc)} createRow={createRow} scheduleDeferredCleanup={scheduleDeferredCleanup} />
+    );
+
+    expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pendingRowSync.resolve(rowDoc);
+      await pendingRowSync.promise;
+    });
+
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith('row-id');
+
+    unmount();
+    firstDoc.destroy();
+    secondDoc.destroy();
+    rowDoc.destroy();
+  });
+});

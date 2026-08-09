@@ -18,7 +18,13 @@ import { useDocumentLoader } from './hooks/useDocumentLoader';
 import { useResizePositioning } from './hooks/useResizePositioning';
 import { useViewMeta } from './hooks/useViewMeta';
 import { useViewSelection } from './hooks/useViewSelection';
-import { addViewId, getViewIds, isDatabaseDuplicatePlaceholder, removeViewId } from './utils/databaseBlockUtils';
+import {
+  addViewId,
+  getViewIds,
+  isDatabaseDuplicatePlaceholder,
+  isViewGoneError,
+  removeViewId,
+} from './utils/databaseBlockUtils';
 
 function DatabaseDuplicatePlaceholder() {
   const { t } = useTranslation();
@@ -61,7 +67,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
 
   // Compose focused hooks instead of one monolithic hook
   // 1. Document loading
-  const { doc, notFound, setNotFound } = useDocumentLoader({
+  const { doc, notFound, noAccess, setNotFound } = useDocumentLoader({
     viewId,
     databaseId,
     loadView,
@@ -113,22 +119,24 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
 
     let cancelled = false;
 
-    const checkView = async () => {
+    // On mount, go through the short-lived view/trash caches so the fetch
+    // coalesces with useViewMeta's request (and with other embedded blocks on
+    // the same page). When OUTLINE_LOADED fires the folder just changed, so
+    // force fresh fetches — refresh() bypasses the TTL but still shares any
+    // in-flight request, keeping N blocks at one request per resource.
+    const checkView = async (refresh: boolean) => {
       try {
-        // Invalidate the view cache to get an authoritative answer from the server.
-        // Without this, the 5-second cache could return stale data for a permanently
-        // deleted view, causing it to be misclassified as "restored".
-        ViewService.invalidateCache(workspaceId, viewId);
-
         // Fetch view metadata and trash list in parallel (async-parallel rule).
-        // Only treat 404-like failures (record not found) as permanent deletion.
         const [viewResult, trashResult] = await Promise.allSettled([
-          ViewService.get(workspaceId, viewId),
-          ViewService.getTrash(workspaceId),
+          refresh ? ViewService.refresh(workspaceId, viewId) : ViewService.get(workspaceId, viewId),
+          refresh ? ViewService.refreshTrash(workspaceId) : ViewService.getTrashCached(workspaceId),
         ]);
 
         const viewMeta = viewResult.status === 'fulfilled' ? viewResult.value : null;
-        const viewGone = viewResult.status === 'rejected';
+        // Only a confirmed record-not-found/deleted response means the view is
+        // gone; transient network/server errors must not flip the block into
+        // the "deleted" state (the trash list may still resolve from cache).
+        const viewGone = viewResult.status === 'rejected' && isViewGoneError(viewResult.reason);
         const trashItems = trashResult.status === 'fulfilled' ? trashResult.value : null;
 
         // If both requests failed, optimistically allow rendering rather than
@@ -199,12 +207,14 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
     };
 
     // Check immediately on mount (covers navigating back to a page after deletion)
-    void checkView();
+    void checkView(false);
 
-    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, checkView);
+    const handleOutlineLoaded = () => void checkView(true);
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
     return () => {
       cancelled = true;
-      eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, checkView);
+      eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- node.data excluded to avoid re-subscribing on every block edit
   }, [context.eventEmitter, viewId, workspaceId, hasDatabase, setNotFound]);
@@ -386,6 +396,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
           selectedViewId={selectedViewId}
           hasDatabase={hasDatabase}
           notFound={notFound}
+          noAccess={noAccess}
           deletionStatus={effectiveDeletionStatus}
           paddingStart={paddingStart}
           paddingEnd={paddingEnd}

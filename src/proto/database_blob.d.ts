@@ -106,6 +106,115 @@ export namespace database_blob {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a DatabaseBlobDiffPageRequest. */
+    interface IDatabaseBlobDiffPageRequest {
+
+        /** DatabaseBlobDiffPageRequest maxItems */
+        maxItems?: (number|null);
+
+        /** DatabaseBlobDiffPageRequest maxBytes */
+        maxBytes?: (number|Long|null);
+
+        /** DatabaseBlobDiffPageRequest cursor */
+        cursor?: (Uint8Array|null);
+    }
+
+    /** Represents a DatabaseBlobDiffPageRequest. */
+    class DatabaseBlobDiffPageRequest implements IDatabaseBlobDiffPageRequest {
+
+        /**
+         * Constructs a new DatabaseBlobDiffPageRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: database_blob.IDatabaseBlobDiffPageRequest);
+
+        /** DatabaseBlobDiffPageRequest maxItems. */
+        public maxItems: number;
+
+        /** DatabaseBlobDiffPageRequest maxBytes. */
+        public maxBytes: (number|Long);
+
+        /** DatabaseBlobDiffPageRequest cursor. */
+        public cursor: Uint8Array;
+
+        /**
+         * Creates a new DatabaseBlobDiffPageRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns DatabaseBlobDiffPageRequest instance
+         */
+        public static create(properties?: database_blob.IDatabaseBlobDiffPageRequest): database_blob.DatabaseBlobDiffPageRequest;
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageRequest message. Does not implicitly {@link database_blob.DatabaseBlobDiffPageRequest.verify|verify} messages.
+         * @param message DatabaseBlobDiffPageRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: database_blob.IDatabaseBlobDiffPageRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageRequest message, length delimited. Does not implicitly {@link database_blob.DatabaseBlobDiffPageRequest.verify|verify} messages.
+         * @param message DatabaseBlobDiffPageRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: database_blob.IDatabaseBlobDiffPageRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a DatabaseBlobDiffPageRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns DatabaseBlobDiffPageRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): database_blob.DatabaseBlobDiffPageRequest;
+
+        /**
+         * Decodes a DatabaseBlobDiffPageRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns DatabaseBlobDiffPageRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): database_blob.DatabaseBlobDiffPageRequest;
+
+        /**
+         * Verifies a DatabaseBlobDiffPageRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a DatabaseBlobDiffPageRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns DatabaseBlobDiffPageRequest
+         */
+        public static fromObject(object: { [k: string]: any }): database_blob.DatabaseBlobDiffPageRequest;
+
+        /**
+         * Creates a plain object from a DatabaseBlobDiffPageRequest message. Also converts values to other types if specified.
+         * @param message DatabaseBlobDiffPageRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: database_blob.DatabaseBlobDiffPageRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this DatabaseBlobDiffPageRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for DatabaseBlobDiffPageRequest
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a DatabaseBlobDiffRequest. */
     interface IDatabaseBlobDiffRequest {
 
@@ -114,6 +223,12 @@ export namespace database_blob {
 
         /** DatabaseBlobDiffRequest version */
         version?: (number|null);
+
+        /** DatabaseBlobDiffRequest includeDocuments */
+        includeDocuments?: (boolean|null);
+
+        /** DatabaseBlobDiffRequest page */
+        page?: (database_blob.IDatabaseBlobDiffPageRequest|null);
     }
 
     /** Represents a DatabaseBlobDiffRequest. */
@@ -131,8 +246,20 @@ export namespace database_blob {
         /** DatabaseBlobDiffRequest version. */
         public version: number;
 
+        /** DatabaseBlobDiffRequest includeDocuments. */
+        public includeDocuments?: (boolean|null);
+
+        /** DatabaseBlobDiffRequest page. */
+        public page?: (database_blob.IDatabaseBlobDiffPageRequest|null);
+
         /** DatabaseBlobDiffRequest _maxKnownRid. */
         public _maxKnownRid?: "maxKnownRid";
+
+        /** DatabaseBlobDiffRequest _includeDocuments. */
+        public _includeDocuments?: "includeDocuments";
+
+        /** DatabaseBlobDiffRequest _page. */
+        public _page?: "page";
 
         /**
          * Creates a new DatabaseBlobDiffRequest instance using the specified properties.
@@ -212,6 +339,157 @@ export namespace database_blob {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a DatabaseBlobDiffPageCursor. */
+    interface IDatabaseBlobDiffPageCursor {
+
+        /** DatabaseBlobDiffPageCursor formatVersion */
+        formatVersion?: (number|null);
+
+        /** DatabaseBlobDiffPageCursor workspaceId */
+        workspaceId?: (Uint8Array|null);
+
+        /** DatabaseBlobDiffPageCursor databaseId */
+        databaseId?: (Uint8Array|null);
+
+        /** DatabaseBlobDiffPageCursor manifestVersion */
+        manifestVersion?: (string|null);
+
+        /** DatabaseBlobDiffPageCursor maxKnownRid */
+        maxKnownRid?: (database_blob.IDatabaseBlobRowRid|null);
+
+        /** DatabaseBlobDiffPageCursor nextOffset */
+        nextOffset?: (number|Long|null);
+
+        /** DatabaseBlobDiffPageCursor planHash */
+        planHash?: (Uint8Array|null);
+
+        /** DatabaseBlobDiffPageCursor maxObservedRid */
+        maxObservedRid?: (database_blob.IDatabaseBlobRowRid|null);
+
+        /** DatabaseBlobDiffPageCursor signature */
+        signature?: (Uint8Array|null);
+    }
+
+    /** Represents a DatabaseBlobDiffPageCursor. */
+    class DatabaseBlobDiffPageCursor implements IDatabaseBlobDiffPageCursor {
+
+        /**
+         * Constructs a new DatabaseBlobDiffPageCursor.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: database_blob.IDatabaseBlobDiffPageCursor);
+
+        /** DatabaseBlobDiffPageCursor formatVersion. */
+        public formatVersion: number;
+
+        /** DatabaseBlobDiffPageCursor workspaceId. */
+        public workspaceId: Uint8Array;
+
+        /** DatabaseBlobDiffPageCursor databaseId. */
+        public databaseId: Uint8Array;
+
+        /** DatabaseBlobDiffPageCursor manifestVersion. */
+        public manifestVersion: string;
+
+        /** DatabaseBlobDiffPageCursor maxKnownRid. */
+        public maxKnownRid?: (database_blob.IDatabaseBlobRowRid|null);
+
+        /** DatabaseBlobDiffPageCursor nextOffset. */
+        public nextOffset: (number|Long);
+
+        /** DatabaseBlobDiffPageCursor planHash. */
+        public planHash: Uint8Array;
+
+        /** DatabaseBlobDiffPageCursor maxObservedRid. */
+        public maxObservedRid?: (database_blob.IDatabaseBlobRowRid|null);
+
+        /** DatabaseBlobDiffPageCursor signature. */
+        public signature: Uint8Array;
+
+        /** DatabaseBlobDiffPageCursor _maxKnownRid. */
+        public _maxKnownRid?: "maxKnownRid";
+
+        /** DatabaseBlobDiffPageCursor _maxObservedRid. */
+        public _maxObservedRid?: "maxObservedRid";
+
+        /**
+         * Creates a new DatabaseBlobDiffPageCursor instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns DatabaseBlobDiffPageCursor instance
+         */
+        public static create(properties?: database_blob.IDatabaseBlobDiffPageCursor): database_blob.DatabaseBlobDiffPageCursor;
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageCursor message. Does not implicitly {@link database_blob.DatabaseBlobDiffPageCursor.verify|verify} messages.
+         * @param message DatabaseBlobDiffPageCursor message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: database_blob.IDatabaseBlobDiffPageCursor, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageCursor message, length delimited. Does not implicitly {@link database_blob.DatabaseBlobDiffPageCursor.verify|verify} messages.
+         * @param message DatabaseBlobDiffPageCursor message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: database_blob.IDatabaseBlobDiffPageCursor, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a DatabaseBlobDiffPageCursor message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns DatabaseBlobDiffPageCursor
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): database_blob.DatabaseBlobDiffPageCursor;
+
+        /**
+         * Decodes a DatabaseBlobDiffPageCursor message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns DatabaseBlobDiffPageCursor
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): database_blob.DatabaseBlobDiffPageCursor;
+
+        /**
+         * Verifies a DatabaseBlobDiffPageCursor message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a DatabaseBlobDiffPageCursor message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns DatabaseBlobDiffPageCursor
+         */
+        public static fromObject(object: { [k: string]: any }): database_blob.DatabaseBlobDiffPageCursor;
+
+        /**
+         * Creates a plain object from a DatabaseBlobDiffPageCursor message. Also converts values to other types if specified.
+         * @param message DatabaseBlobDiffPageCursor
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: database_blob.DatabaseBlobDiffPageCursor, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this DatabaseBlobDiffPageCursor to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for DatabaseBlobDiffPageCursor
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a CollabDocState. */
     interface ICollabDocState {
 
@@ -220,6 +498,9 @@ export namespace database_blob {
 
         /** CollabDocState encoderVersion */
         encoderVersion?: (number|null);
+
+        /** CollabDocState collabVersion */
+        collabVersion?: (string|null);
     }
 
     /** Represents a CollabDocState. */
@@ -236,6 +517,9 @@ export namespace database_blob {
 
         /** CollabDocState encoderVersion. */
         public encoderVersion: number;
+
+        /** CollabDocState collabVersion. */
+        public collabVersion: string;
 
         /**
          * Creates a new CollabDocState instance using the specified properties.
@@ -651,6 +935,115 @@ export namespace database_blob {
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
 
+    /** Properties of a DatabaseBlobDiffPageInfo. */
+    interface IDatabaseBlobDiffPageInfo {
+
+        /** DatabaseBlobDiffPageInfo nextCursor */
+        nextCursor?: (Uint8Array|null);
+
+        /** DatabaseBlobDiffPageInfo hasMore */
+        hasMore?: (boolean|null);
+
+        /** DatabaseBlobDiffPageInfo restartRequired */
+        restartRequired?: (boolean|null);
+    }
+
+    /** Represents a DatabaseBlobDiffPageInfo. */
+    class DatabaseBlobDiffPageInfo implements IDatabaseBlobDiffPageInfo {
+
+        /**
+         * Constructs a new DatabaseBlobDiffPageInfo.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: database_blob.IDatabaseBlobDiffPageInfo);
+
+        /** DatabaseBlobDiffPageInfo nextCursor. */
+        public nextCursor: Uint8Array;
+
+        /** DatabaseBlobDiffPageInfo hasMore. */
+        public hasMore: boolean;
+
+        /** DatabaseBlobDiffPageInfo restartRequired. */
+        public restartRequired: boolean;
+
+        /**
+         * Creates a new DatabaseBlobDiffPageInfo instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns DatabaseBlobDiffPageInfo instance
+         */
+        public static create(properties?: database_blob.IDatabaseBlobDiffPageInfo): database_blob.DatabaseBlobDiffPageInfo;
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageInfo message. Does not implicitly {@link database_blob.DatabaseBlobDiffPageInfo.verify|verify} messages.
+         * @param message DatabaseBlobDiffPageInfo message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: database_blob.IDatabaseBlobDiffPageInfo, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified DatabaseBlobDiffPageInfo message, length delimited. Does not implicitly {@link database_blob.DatabaseBlobDiffPageInfo.verify|verify} messages.
+         * @param message DatabaseBlobDiffPageInfo message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: database_blob.IDatabaseBlobDiffPageInfo, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a DatabaseBlobDiffPageInfo message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns DatabaseBlobDiffPageInfo
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): database_blob.DatabaseBlobDiffPageInfo;
+
+        /**
+         * Decodes a DatabaseBlobDiffPageInfo message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns DatabaseBlobDiffPageInfo
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): database_blob.DatabaseBlobDiffPageInfo;
+
+        /**
+         * Verifies a DatabaseBlobDiffPageInfo message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a DatabaseBlobDiffPageInfo message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns DatabaseBlobDiffPageInfo
+         */
+        public static fromObject(object: { [k: string]: any }): database_blob.DatabaseBlobDiffPageInfo;
+
+        /**
+         * Creates a plain object from a DatabaseBlobDiffPageInfo message. Also converts values to other types if specified.
+         * @param message DatabaseBlobDiffPageInfo
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: database_blob.DatabaseBlobDiffPageInfo, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this DatabaseBlobDiffPageInfo to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for DatabaseBlobDiffPageInfo
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a DatabaseBlobDiffResponse. */
     interface IDatabaseBlobDiffResponse {
 
@@ -677,6 +1070,12 @@ export namespace database_blob {
 
         /** DatabaseBlobDiffResponse message */
         message?: (string|null);
+
+        /** DatabaseBlobDiffResponse missingRowIds */
+        missingRowIds?: (Uint8Array[]|null);
+
+        /** DatabaseBlobDiffResponse page */
+        page?: (database_blob.IDatabaseBlobDiffPageInfo|null);
     }
 
     /** Represents a DatabaseBlobDiffResponse. */
@@ -712,6 +1111,12 @@ export namespace database_blob {
         /** DatabaseBlobDiffResponse message. */
         public message?: (string|null);
 
+        /** DatabaseBlobDiffResponse missingRowIds. */
+        public missingRowIds: Uint8Array[];
+
+        /** DatabaseBlobDiffResponse page. */
+        public page?: (database_blob.IDatabaseBlobDiffPageInfo|null);
+
         /** DatabaseBlobDiffResponse _headBlobKey. */
         public _headBlobKey?: "headBlobKey";
 
@@ -720,6 +1125,9 @@ export namespace database_blob {
 
         /** DatabaseBlobDiffResponse _message. */
         public _message?: "message";
+
+        /** DatabaseBlobDiffResponse _page. */
+        public _page?: "page";
 
         /**
          * Creates a new DatabaseBlobDiffResponse instance using the specified properties.
@@ -1055,6 +1463,9 @@ export namespace database_blob {
 
         /** ManifestRowPointer document */
         document?: (database_blob.IManifestRowDocumentPointer|null);
+
+        /** ManifestRowPointer segmentLen */
+        segmentLen?: (number|null);
     }
 
     /** Represents a ManifestRowPointer. */
@@ -1083,6 +1494,9 @@ export namespace database_blob {
 
         /** ManifestRowPointer document. */
         public document?: (database_blob.IManifestRowDocumentPointer|null);
+
+        /** ManifestRowPointer segmentLen. */
+        public segmentLen: number;
 
         /** ManifestRowPointer _document. */
         public _document?: "document";
@@ -1188,6 +1602,9 @@ export namespace database_blob {
 
         /** DatabaseBlobManifest lockEpoch */
         lockEpoch?: (number|Long|null);
+
+        /** DatabaseBlobManifest generationIncomplete */
+        generationIncomplete?: (boolean|null);
     }
 
     /** Represents a DatabaseBlobManifest. */
@@ -1219,6 +1636,9 @@ export namespace database_blob {
 
         /** DatabaseBlobManifest lockEpoch. */
         public lockEpoch: (number|Long);
+
+        /** DatabaseBlobManifest generationIncomplete. */
+        public generationIncomplete: boolean;
 
         /**
          * Creates a new DatabaseBlobManifest instance using the specified properties.

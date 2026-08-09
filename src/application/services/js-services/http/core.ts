@@ -1,4 +1,4 @@
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import dayjs from 'dayjs';
 
 import { AFCloudConfig } from '@/application/services/services.type';
@@ -13,6 +13,68 @@ export function getAxiosInstance() {
   return axiosInstance;
 }
 
+type EtagCacheConfig = Pick<InternalAxiosRequestConfig, 'data' | 'headers' | 'method' | 'params' | 'url'>;
+
+function stableSerialize(value: unknown): string {
+  if (value === undefined || value === null) return '';
+
+  const parsed = typeof value === 'string' ? tryParseJson(value) : value;
+
+  try {
+    return JSON.stringify(sortJsonKeys(parsed));
+  } catch {
+    return String(value);
+  }
+}
+
+function tryParseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function sortJsonKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonKeys);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.keys(value)
+    .sort()
+    .reduce<Record<string, unknown>>((sorted, key) => {
+      sorted[key] = sortJsonKeys((value as Record<string, unknown>)[key]);
+      return sorted;
+    }, {});
+}
+
+function getEtagCacheKey(config: EtagCacheConfig): string | undefined {
+  const method = config.method?.toLowerCase() ?? 'get';
+  const url = config.url;
+
+  if (!url) return undefined;
+
+  if (method === 'get') {
+    const params = stableSerialize(config.params);
+
+    return params ? `GET ${url}?${params}` : `GET ${url}`;
+  }
+
+  return undefined;
+}
+
+function setIfNoneMatchHeader(config: InternalAxiosRequestConfig, etag: string) {
+  if (typeof config.headers?.set === 'function') {
+    config.headers.set('If-None-Match', etag);
+  } else {
+    Object.assign(config.headers, { 'If-None-Match': etag });
+  }
+}
+
 /**
  * Standard API response format from AppFlowy server
  */
@@ -20,6 +82,7 @@ export interface APIResponse<T = unknown> {
   code: number;
   data?: T;
   message: string;
+  retry_after_secs?: number;
 }
 
 /**
@@ -28,8 +91,15 @@ export interface APIResponse<T = unknown> {
 export interface APIError {
   code: number;
   message: string;
+  /** HTTP response status when the error came from the transport layer. */
+  httpStatus?: number;
   /** Server-suggested retry delay parsed from the HTTP Retry-After header (seconds). */
   retryAfterSecs?: number;
+}
+
+export interface ExecuteAPIRequestOptions {
+  /** Omit response bodies and full Axios responses when they may contain credentials or secrets. */
+  suppressResponseDataLogging?: boolean;
 }
 
 /**
@@ -71,6 +141,7 @@ export function handleAPIError(error: unknown): APIError {
     return {
       code: errorData?.code ?? error.response.status,
       message: errorData?.message || error.message || 'Request failed',
+      httpStatus: error.response.status,
       retryAfterSecs,
     };
   }
@@ -87,6 +158,7 @@ export function handleAPIError(error: unknown): APIError {
     return {
       code: apiError.code,
       message: apiError.message || 'Request failed',
+      httpStatus: apiError.httpStatus,
       retryAfterSecs: apiError.retryAfterSecs,
     };
   }
@@ -103,7 +175,8 @@ export function handleAPIError(error: unknown): APIError {
  * Returns the response data if successful, or rejects with a standardized error
  */
 export async function executeAPIRequest<TResponseData = unknown>(
-  request: () => Promise<AxiosResponse<APIResponse<TResponseData>> | undefined> | undefined
+  request: () => Promise<AxiosResponse<APIResponse<TResponseData>> | undefined> | undefined,
+  options: ExecuteAPIRequestOptions = {}
 ): Promise<TResponseData> {
   try {
     if (!axiosInstance) {
@@ -131,10 +204,26 @@ export async function executeAPIRequest<TResponseData = unknown>(
 
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
 
-    Log.debug('[executeAPIRequest]', { method, url: requestUrl, response_data: response.data?.data, response_code: response.data?.code, response_message: response.data?.message });
+    Log.debug('[executeAPIRequest]', {
+      method,
+      url: requestUrl,
+      ...(options.suppressResponseDataLogging ? {} : { response_data: response.data?.data }),
+      response_code: response.data?.code,
+      response_message: response.data?.message,
+    });
 
     if (!response.data) {
-      console.error('[executeAPIRequest] No response data received', response);
+      console.error(
+        '[executeAPIRequest] No response data received',
+        options.suppressResponseDataLogging
+          ? {
+              method,
+              url: requestUrl,
+              status: response.status,
+              statusText: response.statusText,
+            }
+          : response
+      );
       return Promise.reject({
         code: -1,
         message: 'No response data received',
@@ -150,6 +239,7 @@ export async function executeAPIRequest<TResponseData = unknown>(
     return Promise.reject({
       code: response.data.code,
       message: response.data.message || 'Request failed',
+      retryAfterSecs: response.data.retry_after_secs,
     });
   } catch (error) {
     return Promise.reject(handleAPIError(error));
@@ -198,6 +288,7 @@ export async function executeAPIVoidRequest(
         return Promise.reject({
           code: data.code,
           message: data.message || 'Request failed',
+          retryAfterSecs: data.retry_after_secs,
         });
       }
 
@@ -248,7 +339,17 @@ export async function withRetry<T>(
       // handleAPIError handles AxiosError (string codes like "ERR_NETWORK"),
       // raw Error, and unknown shapes — always returns { code, message }.
       const normalized = handleAPIError(error);
-      const isRetryable = normalized.code === -1 || normalized.code >= 500 || normalized.code === 429;
+      // AppFlowy application error codes (for example 1012 for permission
+      // denied) share this numeric field with HTTP statuses. Only the actual
+      // HTTP 5xx range is retryable; treating every value above 500 as a
+      // transport failure makes permanent denials wait through all backoffs.
+      const httpStatus =
+        normalized.httpStatus ??
+        (normalized.code >= 100 && normalized.code <= 599 ? normalized.code : undefined);
+      const isRetryable =
+        normalized.code === -1 ||
+        httpStatus === 429 ||
+        (httpStatus !== undefined && httpStatus >= 500 && httpStatus <= 599);
 
       if (!isRetryable) break;
 
@@ -384,25 +485,26 @@ export function initAPIService(config: AFCloudConfig) {
   // ---------------------------------------------------------------------------
   // ETag / 304 Not Modified caching
   //
-  // Stores ETags from server responses keyed by URL. On subsequent GET requests,
-  // sends If-None-Match so the server can return 304 (empty body) when the data
-  // hasn't changed. The browser's HTTP cache handles body storage — on 304, axios
-  // receives the cached body transparently.
+  // Stores ETags from server responses keyed by request identity. On subsequent
+  // cacheable requests, sends If-None-Match so the server can return 304 (empty body)
+  // when the data hasn't changed. The browser's HTTP cache handles body storage — on
+  // 304, axios receives the cached body transparently.
   //
   // For programmatic requests (axios.get), the browser doesn't always use its HTTP
-  // cache, so we also keep a lightweight JS response cache as fallback.
+  // cache, so we also keep a lightweight JS response cache as fallback. Query params
+  // are part of the key so GET endpoints with different targets cannot collide.
   // ---------------------------------------------------------------------------
   const etagStore = new Map<string, string>();
   const responseStore = new Map<string, unknown>();
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
-    if (config.method?.toLowerCase() === 'get' && config.url) {
-      const etag = etagStore.get(config.url);
+    const cacheKey = getEtagCacheKey(config);
 
-      if (etag) {
-        config.headers.set('If-None-Match', etag);
-      }
+    if (cacheKey) {
+      const etag = etagStore.get(cacheKey);
+
+      if (etag) setIfNoneMatchHeader(config, etag);
     }
 
     return config;
@@ -412,18 +514,19 @@ export function initAPIService(config: AFCloudConfig) {
   axiosInstance.interceptors.response.use(
     (response) => {
       const etag = response.headers?.['etag'];
+      const cacheKey = getEtagCacheKey(response.config);
 
-      if (etag && response.config.url) {
-        etagStore.set(response.config.url, etag);
-        responseStore.set(response.config.url, response.data);
+      if (etag && cacheKey) {
+        etagStore.set(cacheKey, etag);
+        responseStore.set(cacheKey, response.data);
       }
 
       return response;
     },
     (error) => {
       if (axios.isAxiosError(error) && error.response?.status === 304) {
-        const url = error.config?.url;
-        const cached = url ? responseStore.get(url) : undefined;
+        const cacheKey = error.config ? getEtagCacheKey(error.config) : undefined;
+        const cached = cacheKey ? responseStore.get(cacheKey) : undefined;
 
         if (cached) {
           // Return the cached response as if it were a 200
