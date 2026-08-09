@@ -5,6 +5,8 @@ import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  CopyPageToWorkspacePayload,
+  CrossWorkspaceCopyResult,
   CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
@@ -75,6 +77,11 @@ export interface AppOperationsContextType {
   deletePage?: (viewId: string) => Promise<void>;
   /** Duplicate a page, optionally refreshing its parent children in the outline. */
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
+  /** Copy a page to another workspace's Private section while retaining its source. */
+  copyPageToWorkspace?: (
+    viewId: string,
+    payload: CopyPageToWorkspacePayload
+  ) => Promise<CrossWorkspaceCopyResult>;
   /** Update page properties (name, cover, etc.). */
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   /** Update just the page icon. */

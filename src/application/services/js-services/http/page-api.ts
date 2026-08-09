@@ -3,6 +3,9 @@ import { omit } from 'lodash-es';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  CopyPageToWorkspacePayload,
+  CrossWorkspaceCopyResult,
+  CrossWorkspaceCopyTaskState,
   DuplicatePageOptions,
   CreatePagePayload,
   CreatePageResponse,
@@ -15,7 +18,7 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
-import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, handleAPIError } from './core';
+import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
 export async function addAppPage(
   workspaceId: string,
@@ -128,135 +131,121 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
   );
 }
 
-const DUPLICATE_TASK_ID_HEADER = 'x-appflowy-duplicate-task-id';
-
-/** Wire format: serde serializes the Rust enum as its variant name. */
-export type DuplicateTaskStatus = 'Pending' | 'Completed' | 'Failed' | 'Expired' | 'Cancelled' | 'Running';
-
-export interface DuplicatePageTaskResult {
-  duplicated_view_id: string;
-  /** Present when the page landed in a different workspace than the source. */
-  dest_workspace_id?: string;
-  /** Subtree branches skipped because the requester could not read them. */
-  skipped_view_ids?: string[];
-  /**
-   * Move tasks only: false means the copy committed but trashing the source
-   * failed, so the page exists in both workspaces.
-   */
-  source_removed?: boolean;
-}
-
-export interface DuplicatePageTaskState {
-  job_id: string;
-  status: DuplicateTaskStatus;
-  retry_after_secs: number;
-  error?: string | null;
-  result?: DuplicatePageTaskResult | null;
-}
-
 /**
- * Moves a page (and its children) into another workspace. The server runs
- * this as an async duplicate task with move semantics: deep-copy into the
- * destination, then trash the source. Returns the task id (from the
- * `x-appflowy-duplicate-task-id` response header) to poll with
- * {@link getDuplicatePageTask}, scoped by the SOURCE workspace and view.
+ * Starts a Notion-compatible cross-workspace copy. The source is retained and
+ * an omitted destination parent asks the server to use the actor's Private
+ * section. The caller must reuse the idempotency key when retrying one action.
  */
-export async function movePageToWorkspace(
+export async function copyPageToWorkspace(
   workspaceId: string,
   viewId: string,
-  destWorkspaceId: string,
-  destParentViewId: string
-): Promise<string> {
-  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/move-to-workspace`;
+  payload: CopyPageToWorkspacePayload
+): Promise<CrossWorkspaceCopyTaskState> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/copy-to-workspace/v2`;
 
-  Log.debug('[movePageToWorkspace] request', { url, destWorkspaceId, destParentViewId });
-
-  try {
-    const response = await getAxios()?.post<APIResponse>(url, {
-      dest_workspace_id: destWorkspaceId,
-      dest_parent_view_id: destParentViewId,
+  return executeAPIRequest<CrossWorkspaceCopyTaskState>(() =>
+    getAxios()?.post<APIResponse<CrossWorkspaceCopyTaskState>>(url, {
+      ...payload,
       wait_for_completion: false,
-    });
-
-    if (!response) {
-      return Promise.reject({ code: -1, message: 'API service not initialized' });
-    }
-
-    if (response.data.code !== 0) {
-      return Promise.reject({
-        code: response.data.code,
-        message: response.data.message || 'Request failed',
-        retryAfterSecs: response.data.retry_after_secs,
-      });
-    }
-
-    const taskId = response.headers[DUPLICATE_TASK_ID_HEADER];
-
-    if (typeof taskId !== 'string' || !taskId) {
-      return Promise.reject({ code: -1, message: 'Move task id missing from response' });
-    }
-
-    return taskId;
-  } catch (error) {
-    return Promise.reject(handleAPIError(error));
-  }
-}
-
-export async function getDuplicatePageTask(
-  workspaceId: string,
-  viewId: string,
-  taskId: string
-): Promise<DuplicatePageTaskState> {
-  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/duplicate/${taskId}`;
-
-  return executeAPIRequest<DuplicatePageTaskState>(() =>
-    getAxios()?.get<APIResponse<DuplicatePageTaskState>>(url)
+    })
   );
 }
 
-/**
- * Polls a duplicate/move task until it reaches a terminal state and returns
- * its result. Rejects on Failed/Expired/Cancelled or when `timeoutMs` passes.
- */
-export async function waitForDuplicatePageTask(
+export async function getCrossWorkspaceCopyTask(
   workspaceId: string,
   viewId: string,
-  taskId: string,
-  timeoutMs = 180_000
-): Promise<DuplicatePageTaskResult> {
+  taskId: string
+): Promise<CrossWorkspaceCopyTaskState> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/copy-to-workspace/v2/${taskId}`;
+
+  return executeAPIRequest<CrossWorkspaceCopyTaskState>(() =>
+    getAxios()?.get<APIResponse<CrossWorkspaceCopyTaskState>>(url)
+  );
+}
+
+function completedCrossWorkspaceCopyResult(state: CrossWorkspaceCopyTaskState): CrossWorkspaceCopyResult {
+  const result = state.result;
+
+  if (!result) {
+    throw new Error('Copy task completed without a result');
+  }
+
+  if (result.operation !== 'cross_workspace_copy' || result.source_retained !== true) {
+    throw new Error('Copy task returned an incompatible result');
+  }
+
+  return result;
+}
+
+function waitForDelay(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+export type CrossWorkspaceCopyTerminalStatus = 'Failed' | 'Expired' | 'Cancelled';
+
+/** A durable copy task reached a server-confirmed terminal failure state. */
+export class CrossWorkspaceCopyTerminalError extends Error {
+  readonly status: CrossWorkspaceCopyTerminalStatus;
+
+  constructor(status: CrossWorkspaceCopyTerminalStatus, message: string) {
+    super(message);
+    this.name = 'CrossWorkspaceCopyTerminalError';
+    this.status = status;
+  }
+}
+
+const MAX_TRANSIENT_COPY_TASK_POLL_FAILURES = 5;
+
+function isTransientCopyTaskPollError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, httpStatus } = error as { code?: number; httpStatus?: number };
+  const status = httpStatus ?? (typeof code === 'number' && code >= 100 && code <= 599 ? code : undefined);
+
+  return code === -1 || status === 408 || status === 425 || status === 429 || (status !== undefined && status >= 500);
+}
+
+/** Wait for a source-retaining cross-workspace copy to reach a terminal state. */
+export async function waitForCrossWorkspaceCopyTask(
+  workspaceId: string,
+  viewId: string,
+  initialState: CrossWorkspaceCopyTaskState,
+  timeoutMs = 60 * 60 * 1000
+): Promise<CrossWorkspaceCopyResult> {
   const deadline = Date.now() + timeoutMs;
-  let delayMs = 1000;
+  let state = initialState;
+  let consecutivePollFailures = 0;
 
   for (;;) {
-    const state = await getDuplicatePageTask(workspaceId, viewId, taskId);
-
     switch (state.status) {
-      case 'Completed': {
-        if (!state.result) {
-          throw new Error('Move task completed without a result');
-        }
-
-        return state.result;
-      }
-
+      case 'Completed':
+        return completedCrossWorkspaceCopyResult(state);
       case 'Failed':
-        throw new Error(state.error || 'Move task failed');
+        throw new CrossWorkspaceCopyTerminalError('Failed', state.error || 'Copy task failed');
       case 'Expired':
-        throw new Error('Move task expired');
+        throw new CrossWorkspaceCopyTerminalError('Expired', 'Copy task expired');
       case 'Cancelled':
-        throw new Error('Move task was cancelled');
+        throw new CrossWorkspaceCopyTerminalError('Cancelled', 'Copy task was cancelled');
       default:
         break;
     }
 
     if (Date.now() >= deadline) {
-      throw new Error('Timed out waiting for the move task to finish');
+      throw new Error('Timed out waiting for the copy task to finish');
     }
 
-    await new Promise((resolve) => window.setTimeout(resolve, delayMs));
-    // Back off gently; the server's retry_after_secs is advisory (~10s) and
-    // this endpoint is cheap, so short polls keep the UX responsive.
-    delayMs = Math.min(delayMs + 1000, 3000);
+    const delayMs = Math.max(1, Math.min(state.retry_after_secs || 1, 10)) * 1000;
+
+    await waitForDelay(delayMs);
+    try {
+      state = await getCrossWorkspaceCopyTask(workspaceId, viewId, state.job_id);
+      consecutivePollFailures = 0;
+    } catch (error) {
+      if (!isTransientCopyTaskPollError(error)) throw error;
+
+      consecutivePollFailures += 1;
+      if (consecutivePollFailures > MAX_TRANSIENT_COPY_TASK_POLL_FAILURES) throw error;
+    }
   }
 }
 

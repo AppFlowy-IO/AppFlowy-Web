@@ -9,6 +9,8 @@ import { publishCollabs, PublishCollabMetadata } from '@/application/services/js
 import {
   CreateDatabaseViewPayload,
   CreateOrphanedViewPayload,
+  CopyPageToWorkspacePayload,
+  CrossWorkspaceCopyResult,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreateSpacePayload,
@@ -45,6 +47,24 @@ export function usePageOperations({
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
+
+  const syncBeforePageCopy = useCallback(async () => {
+    if (!currentWorkspaceId) {
+      throw new Error('No workspace or service found');
+    }
+
+    if (syncAllToServer) {
+      await Promise.race([
+        syncAllToServer(currentWorkspaceId),
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, DUPLICATE_PRE_SYNC_TIMEOUT_MS);
+        }),
+      ]);
+      return;
+    }
+
+    await flushAllSync?.();
+  }, [currentWorkspaceId, flushAllSync, syncAllToServer]);
 
   // Add a new page
   const addPage = useCallback(
@@ -161,19 +181,8 @@ export function usePageOperations({
       const { afterPreSync, ...duplicateOptions } = options;
 
       try {
-        // Sync all collab documents to the server via HTTP API before duplicating.
-        // This ensures the server has the latest data (including unregistered row
-        // documents) before the duplicate operation, matching MoreActionsContent behavior.
-        if (syncAllToServer) {
-          await Promise.race([
-            syncAllToServer(currentWorkspaceId),
-            new Promise<void>((resolve) => {
-              window.setTimeout(resolve, DUPLICATE_PRE_SYNC_TIMEOUT_MS);
-            }),
-          ]);
-        } else {
-          await flushAllSync?.();
-        }
+        // The worker reads server state, so flush locally edited documents first.
+        await syncBeforePageCopy();
 
         await afterPreSync?.();
 
@@ -188,7 +197,21 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, syncAllToServer, flushAllSync, loadOutline, loadViewChildren]
+    [currentWorkspaceId, syncBeforePageCopy, loadOutline, loadViewChildren]
+  );
+
+  const copyPageToWorkspace = useCallback(
+    async (viewId: string, payload: CopyPageToWorkspacePayload): Promise<CrossWorkspaceCopyResult> => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      await syncBeforePageCopy();
+      const task = await PageService.copyToWorkspace(currentWorkspaceId, viewId, payload);
+
+      return PageService.waitForCrossWorkspaceCopy(currentWorkspaceId, viewId, task);
+    },
+    [currentWorkspaceId, syncBeforePageCopy]
   );
 
   // Move page
@@ -430,23 +453,32 @@ export function usePageOperations({
           return isNaN(t) ? 0 : Math.floor(t / 1000);
         };
 
+        const toPublishViewInfo = (publishView: View): PublishCollabMetadata['metadata']['view'] => ({
+          view_id: publishView.view_id,
+          name: publishView.name,
+          icon: publishView.icon,
+          layout: publishView.layout,
+          extra: publishView.extra
+            ? typeof publishView.extra === 'string'
+              ? publishView.extra
+              : JSON.stringify(publishView.extra)
+            : null,
+          created_by: null,
+          last_edited_by: null,
+          last_edited_time: toTimestamp(publishView.last_edited_time),
+          created_at: toTimestamp(publishView.created_at),
+          child_views: null,
+        });
+        const visibleViewIdSet = new Set(resolvedVisibleViewIds ?? []);
+
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
           metadata: {
-            view: {
-              view_id: viewId,
-              name: view.name,
-              icon: view.icon,
-              layout: view.layout,
-              extra: view.extra ? (typeof view.extra === 'string' ? view.extra : JSON.stringify(view.extra)) : null,
-              created_by: null,
-              last_edited_by: null,
-              last_edited_time: toTimestamp(view.last_edited_time),
-              created_at: toTimestamp(view.created_at),
-              child_views: null,
-            },
-            child_views: [],
+            view: toPublishViewInfo(view),
+            child_views: view.children
+              .filter((child) => visibleViewIdSet.has(child.view_id))
+              .map(toPublishViewInfo),
             ancestor_views: [],
           },
         };
@@ -498,6 +530,7 @@ export function usePageOperations({
     addPage,
     deletePage,
     duplicatePage,
+    copyPageToWorkspace,
     updatePage,
     updatePageIcon,
     updatePageName,

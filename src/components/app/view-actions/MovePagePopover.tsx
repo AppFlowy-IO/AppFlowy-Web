@@ -1,118 +1,140 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { v4 as uuidv4 } from 'uuid';
 
-import { PageService, ViewService } from '@/application/services/domains';
+import { CrossWorkspaceCopyTerminalError } from '@/application/services/domains/page';
 import { View, ViewLayout, Workspace } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as SelectedIcon } from '@/assets/icons/tick.svg';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import { filterOutByCondition } from '@/components/_shared/outline/utils';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import {
   useAppOperations,
   useAppOutline,
   useAppView,
   useCurrentWorkspaceId,
-  useRefreshOutline,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import SpaceItem from '@/components/app/outline/SpaceItem';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
 import { Separator } from '@/components/ui/separator';
 
-/**
- * Rows of the destination tree when another workspace is selected: spaces and
- * document pages of the target workspace. Deliberately NOT SpaceItem/ViewItem —
- * those are wired to the current workspace's drag-reorder machinery, which must
- * stay inert against a foreign workspace's outline.
- */
-function TargetViewRow({
-  view,
-  depth,
-  expandedViewIds,
-  toggleExpandView,
-  selectedViewId,
+const CROSS_WORKSPACE_COPY_ACTION_PREFIX = 'appflowy:cross-workspace-copy:v2:';
+const inMemoryCopyActionKeys = new Map<string, string>();
+
+function crossWorkspaceCopyActionStorageKey(
+  sourceWorkspaceId: string,
+  sourceViewId: string,
+  destinationWorkspaceId: string
+) {
+  return `${CROSS_WORKSPACE_COPY_ACTION_PREFIX}${sourceWorkspaceId}:${sourceViewId}:${destinationWorkspaceId}`;
+}
+
+function getOrCreateCrossWorkspaceCopyActionKey(storageKey: string) {
+  try {
+    const storedKey = window.sessionStorage.getItem(storageKey);
+
+    if (storedKey) {
+      inMemoryCopyActionKeys.set(storageKey, storedKey);
+      return storedKey;
+    }
+  } catch {
+    // The in-memory fallback still preserves retries across component unmounts.
+  }
+
+  const existingKey = inMemoryCopyActionKeys.get(storageKey);
+
+  if (existingKey) return existingKey;
+
+  const idempotencyKey = uuidv4();
+
+  inMemoryCopyActionKeys.set(storageKey, idempotencyKey);
+  try {
+    window.sessionStorage.setItem(storageKey, idempotencyKey);
+  } catch {
+    // Some privacy modes disable sessionStorage; keep the tab-scoped fallback.
+  }
+
+  return idempotencyKey;
+}
+
+function clearCrossWorkspaceCopyActionKey(storageKey: string) {
+  inMemoryCopyActionKeys.delete(storageKey);
+  try {
+    window.sessionStorage.removeItem(storageKey);
+  } catch {
+    // The fallback was cleared even when browser storage is unavailable.
+  }
+}
+
+function WorkspaceSelector({
+  selectedWorkspace,
+  workspaces,
   onSelect,
 }: {
-  view: View;
-  depth: number;
-  expandedViewIds: ReadonlySet<string>;
-  toggleExpandView: (id: string, isExpanded: boolean) => void;
-  selectedViewId: string | null;
-  onSelect: (viewId: string) => void;
+  selectedWorkspace: Workspace;
+  workspaces: Workspace[];
+  onSelect: (workspace: Workspace) => void;
 }) {
-  const isExpanded = expandedViewIds.has(view.view_id);
-  const hasChildren = view.children.length > 0;
-  const isSpace = Boolean(view.is_space);
+  const { t } = useTranslation();
 
   return (
-    <div className={'flex flex-col'}>
-      <div
-        data-testid={`move-to-workspace-target-${view.view_id}`}
-        style={{ paddingLeft: depth * 16 }}
-        className={
-          'flex min-h-[30px] cursor-pointer select-none items-center gap-1 rounded-[8px] px-1 py-0.5 text-sm hover:bg-fill-content-hover'
-        }
-        onClick={() => {
-          toggleExpandView(view.view_id, !isExpanded);
-          onSelect(view.view_id);
+    <div className='relative flex h-8 min-w-0 items-center gap-2 rounded-300 border border-border-primary px-2 focus-within:border-border-theme-thick focus-within:ring-[0.5px] focus-within:ring-border-theme-thick hover:border-border-primary-hover'>
+      <Avatar shape='square' size='xs'>
+        <AvatarFallback name={selectedWorkspace.name}>
+          {selectedWorkspace.icon ? <span className='text-sm'>{selectedWorkspace.icon}</span> : selectedWorkspace.name}
+        </AvatarFallback>
+      </Avatar>
+      <span className='min-w-0 flex-1 truncate text-sm'>{selectedWorkspace.name}</span>
+      <ArrowDownIcon className='h-4 w-4 shrink-0 text-icon-secondary' />
+      <select
+        data-testid='move-page-workspace-selector'
+        aria-label={t('disclosureAction.moveToWorkspaceSelect')}
+        className='absolute inset-0 cursor-pointer opacity-0'
+        value={selectedWorkspace.id}
+        onChange={(event) => {
+          const workspace = workspaces.find((candidate) => candidate.id === event.target.value);
+
+          if (workspace) onSelect(workspace);
         }}
       >
-        <div className={hasChildren ? '' : 'pointer-events-none opacity-0'}>
-          <OutlineIcon
-            isExpanded={isExpanded}
-            setIsExpanded={(status) => {
-              toggleExpandView(view.view_id, status);
-            }}
-            level={0}
-          />
-        </div>
-        {isSpace ? (
-          <SpaceIcon
-            className={'icon mr-1 !h-5 !w-5 !min-w-5'}
-            bgColor={view.extra?.space_icon_color}
-            value={view.extra?.space_icon || ''}
-            char={view.extra?.space_icon ? undefined : (view.name || '').slice(0, 1)}
-          />
-        ) : (
-          <PageIcon view={view} className={'mr-1 flex h-5 w-5 min-w-5 items-center justify-center'} />
-        )}
-        <div className={'flex-1 truncate'}>{view.name}</div>
-        {view.view_id === selectedViewId && <SelectedIcon className={'mx-2 h-5 w-5 min-w-5 text-text-action'} />}
-      </div>
-      {isExpanded &&
-        view.children.map((child) => (
-          <TargetViewRow
-            key={child.view_id}
-            view={child}
-            depth={depth + 1}
-            expandedViewIds={expandedViewIds}
-            toggleExpandView={toggleExpandView}
-            selectedViewId={selectedViewId}
-            onSelect={onSelect}
-          />
+        {workspaces.map((workspace) => (
+          <option key={workspace.id} value={workspace.id} data-testid={`move-to-workspace-option-${workspace.id}`}>
+            {workspace.name}
+          </option>
         ))}
+      </select>
+    </div>
+  );
+}
+
+function CrossWorkspaceCopyConfirmation({ workspace }: { workspace: Workspace }) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      data-testid='cross-workspace-copy-confirmation'
+      className='flex min-h-[180px] flex-col justify-center gap-2 rounded-300 bg-fill-content px-4 py-5 text-sm'
+    >
+      <p className='font-medium text-text-primary'>
+        {t('disclosureAction.copyToWorkspacePrivate', { workspace: workspace.name })}
+      </p>
+      <p className='text-text-secondary'>{t('disclosureAction.copyToWorkspaceSourceRetained')}</p>
+      <p className='text-text-secondary'>{t('disclosureAction.copyToWorkspaceDependencies')}</p>
     </div>
   );
 }
 
 /**
- * "Move to" picker. The workspace selector at the right of the search input
- * switches the destination tree between the current workspace's outline and
- * another workspace's outline.
- *
- * Within the current workspace the move is the plain reorder operation; into
- * another workspace it runs as an async server task (deep copy into the
- * destination, then the source page is trashed) — progress is covered by the
- * blocking loader and the result is surfaced via toasts.
+ * Same-workspace destinations preserve page identity and use the ordinary
+ * move endpoint. Selecting another workspace deliberately changes the action
+ * into a source-retaining copy placed in that workspace's Private section.
  */
 function MovePagePopover({
   viewId,
@@ -134,12 +156,22 @@ function MovePagePopover({
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const outline = useAppOutline();
   const view = useAppView(viewId);
-  const { movePage } = useAppOperations();
-  const refreshOutline = useRefreshOutline();
+  const { copyPageToWorkspace, movePage } = useAppOperations();
   const { showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
 
   const [internalOpen, setInternalOpen] = useState(false);
   const open = openProp ?? internalOpen;
+  const [search, setSearch] = useState('');
+  const [expandViewIds, setExpandViewIds] = useState<string[]>([]);
+  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
+  const workspaces = userWorkspaceInfo?.workspaces ?? [];
+  const currentWorkspace =
+    workspaces.find((workspace) => workspace.id === currentWorkspaceId) ?? userWorkspaceInfo?.selectedWorkspace;
+  const [targetWorkspaceId, setTargetWorkspaceId] = useState(currentWorkspaceId);
+  const targetWorkspace = workspaces.find((workspace) => workspace.id === targetWorkspaceId) ?? currentWorkspace;
+  const isCrossWorkspace = Boolean(targetWorkspace && targetWorkspace.id !== currentWorkspaceId);
+  const showWorkspaceSelector = workspaces.length > 1 && view?.layout !== ViewLayout.AIChat;
+
   const handleOpenChange = useCallback(
     (next: boolean) => {
       setInternalOpen(next);
@@ -148,318 +180,178 @@ function MovePagePopover({
     [onOpenChange]
   );
 
-  const [search, setSearch] = useState('');
-  const [expandViewIds, setExpandViewIds] = useState<string[]>([]);
-  const [selectedViewId, setSelectedViewId] = useState<string | null>(null);
-
-  // null = the current workspace (plain in-workspace move).
-  const [targetWorkspace, setTargetWorkspace] = useState<Workspace | null>(null);
-  const [selectorOpen, setSelectorOpen] = useState(false);
-  const [foreignOutline, setForeignOutline] = useState<View[] | null>(null);
-  const isCrossWorkspace = Boolean(targetWorkspace && targetWorkspace.id !== currentWorkspaceId);
-
-  const workspaces = userWorkspaceInfo?.workspaces ?? [];
-  const currentWorkspace = workspaces.find((workspace) => workspace.id === currentWorkspaceId) ?? null;
-  const displayedWorkspace = targetWorkspace ?? currentWorkspace;
-  // AI chat pages cannot be deep-copied into another workspace.
-  const showWorkspaceSelector = workspaces.length > 1 && view?.layout !== ViewLayout.AIChat;
-
-  // Guards against a stale outline landing after the user switched to yet
-  // another workspace: only the latest request may render.
-  const outlineRequestRef = useRef<string | null>(null);
-  // Outlines already fetched while this popover is open, so switching back to
-  // a workspace doesn't refetch its full tree. Cleared on close to avoid
-  // showing a stale tree next time.
-  const outlineCacheRef = useRef<Map<string, View[]>>(new Map());
-
   useEffect(() => {
     if (open) return;
-    outlineRequestRef.current = null;
-    outlineCacheRef.current.clear();
     setSearch('');
     setExpandViewIds([]);
     setSelectedViewId(null);
-    setTargetWorkspace(null);
-    setForeignOutline(null);
-    setSelectorOpen(false);
-  }, [open]);
-
-  const handleSelectWorkspace = useCallback(
-    async (workspace: Workspace) => {
-      setSelectorOpen(false);
-      setSearch('');
-      setExpandViewIds([]);
-      setSelectedViewId(null);
-
-      if (workspace.id === currentWorkspaceId) {
-        outlineRequestRef.current = null;
-        setTargetWorkspace(null);
-        setForeignOutline(null);
-        return;
-      }
-
-      setTargetWorkspace(workspace);
-      const cached = outlineCacheRef.current.get(workspace.id);
-
-      if (cached) {
-        outlineRequestRef.current = null;
-        setForeignOutline(cached);
-        return;
-      }
-
-      outlineRequestRef.current = workspace.id;
-      setForeignOutline(null);
-      try {
-        const response = await ViewService.getOutline(workspace.id);
-
-        outlineCacheRef.current.set(workspace.id, response.outline);
-        if (outlineRequestRef.current !== workspace.id) return;
-        setForeignOutline(response.outline);
-      } catch (e) {
-        if (outlineRequestRef.current !== workspace.id) return;
-        setForeignOutline([]);
-        toast.error((e as { message?: string }).message || 'Failed to load workspace pages');
-      }
-    },
-    [currentWorkspaceId]
-  );
+    setTargetWorkspaceId(currentWorkspaceId);
+  }, [currentWorkspaceId, open]);
 
   const views = useMemo(() => {
-    const source = isCrossWorkspace ? foreignOutline : outline;
-
-    if (!source) return [];
+    if (!outline) return [];
     const query = search.toLowerCase();
 
-    return filterOutByCondition(source, (view) => ({
+    return filterOutByCondition(outline, (candidate) => ({
       remove:
-        view.view_id === viewId ||
-        view.layout !== ViewLayout.Document ||
-        Boolean(query && !view.name.toLowerCase().includes(query)),
+        candidate.view_id === viewId ||
+        candidate.layout !== ViewLayout.Document ||
+        Boolean(query && !candidate.name.toLowerCase().includes(query)),
     }));
-  }, [isCrossWorkspace, foreignOutline, outline, search, viewId]);
+  }, [outline, search, viewId]);
 
   const toggleExpandView = useCallback((id: string, isExpanded: boolean) => {
-    setExpandViewIds((prev) => {
-      return isExpanded ? [...prev, id] : prev.filter((v) => v !== id);
-    });
+    setExpandViewIds((previous) =>
+      isExpanded ? [...new Set([...previous, id])] : previous.filter((candidate) => candidate !== id)
+    );
   }, []);
-
-  // SpaceItem's API wants the array; the cross-workspace tree probes per row,
-  // so give it O(1) lookups instead.
-  const expandedViewIdSet = useMemo(() => new Set(expandViewIds), [expandViewIds]);
 
   const handleMoveInWorkspace = useCallback(async () => {
     if (!selectedViewId) return;
+
     try {
       await movePage?.(viewId, selectedViewId);
       onMoved?.();
       setSelectedViewId(null);
-      // eslint-disable-next-line
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (error) {
+      toast.error((error as { message?: string }).message || t('disclosureAction.moveFailed'));
     }
-  }, [movePage, onMoved, selectedViewId, viewId]);
+  }, [movePage, onMoved, selectedViewId, t, viewId]);
 
-  const handleMoveToWorkspace = useCallback(async () => {
-    if (!targetWorkspace || !selectedViewId || !currentWorkspaceId) return;
-    const destWorkspace = targetWorkspace;
-    const destParentViewId = selectedViewId;
+  const handleCopyToWorkspace = useCallback(async () => {
+    if (!copyPageToWorkspace || !currentWorkspaceId || !targetWorkspace || targetWorkspace.id === currentWorkspaceId) {
+      return;
+    }
 
-    handleOpenChange(false);
-    onMoved?.();
-    showBlockingLoader(t('disclosureAction.movingToWorkspace', { workspace: destWorkspace.name }));
+    const destination = targetWorkspace;
+    const actionStorageKey = crossWorkspaceCopyActionStorageKey(currentWorkspaceId, viewId, destination.id);
+    const idempotencyKey = getOrCreateCrossWorkspaceCopyActionKey(actionStorageKey);
+
+    showBlockingLoader(t('disclosureAction.copyingToWorkspace', { workspace: destination.name }));
+
     try {
-      const taskId = await PageService.moveToWorkspace(
-        currentWorkspaceId,
-        viewId,
-        destWorkspace.id,
-        destParentViewId
-      );
-      const result = await PageService.waitForDuplicateTask(currentWorkspaceId, viewId, taskId);
+      const result = await copyPageToWorkspace(viewId, {
+        dest_workspace_id: destination.id,
+        idempotency_key: idempotencyKey,
+      });
 
-      void refreshOutline?.();
-      if (result.source_removed === false) {
-        toast.warning(t('disclosureAction.moveToWorkspaceSourceNotRemoved', { workspace: destWorkspace.name }));
+      clearCrossWorkspaceCopyActionKey(actionStorageKey);
+      const warningCount = (result.warnings ?? []).reduce((total, warning) => total + warning.count, 0);
+
+      if (warningCount > 0) {
+        toast.warning(
+          t('disclosureAction.copyToWorkspaceWarning', {
+            count: warningCount,
+            workspace: destination.name,
+          })
+        );
       } else {
-        toast.success(t('disclosureAction.moveToWorkspaceSuccess', { workspace: destWorkspace.name }));
+        toast.success(t('disclosureAction.copyToWorkspaceSuccess', { workspace: destination.name }));
       }
 
-      // The page left this workspace; if it is the one currently open,
-      // follow it to its new home.
-      if (window.location.pathname.includes(viewId)) {
-        navigate(`/app/${destWorkspace.id}/${result.duplicated_view_id}`);
+      handleOpenChange(false);
+      onMoved?.();
+      navigate(`/app/${result.dest_workspace_id}/${result.duplicated_view_id}`);
+    } catch (error) {
+      if (error instanceof CrossWorkspaceCopyTerminalError) {
+        clearCrossWorkspaceCopyActionKey(actionStorageKey);
       }
-    } catch (e) {
-      toast.error((e as { message?: string }).message || 'Failed to move the page');
+
+      toast.error((error as { message?: string }).message || t('disclosureAction.copyToWorkspaceFailed'));
     } finally {
       hideBlockingLoader();
     }
   }, [
-    targetWorkspace,
-    selectedViewId,
+    copyPageToWorkspace,
     currentWorkspaceId,
     handleOpenChange,
+    hideBlockingLoader,
+    navigate,
     onMoved,
     showBlockingLoader,
-    hideBlockingLoader,
-    refreshOutline,
-    navigate,
     t,
+    targetWorkspace,
     viewId,
   ]);
 
   const renderExtra = useCallback(
-    ({ view }: { view: View }) => {
-      if (view.view_id !== selectedViewId) return null;
-      return <SelectedIcon className={'mx-2 text-text-action'} />;
-    },
+    ({ view: candidate }: { view: View }) =>
+      candidate.view_id === selectedViewId ? <SelectedIcon className='mx-2 text-text-action' /> : null,
     [selectedViewId]
   );
-
-  // The workspace list portals into a node inside the popover content so the
-  // outer (modal) popover doesn't treat clicks on it as outside interactions.
-  const [selectorContainer, setSelectorContainer] = useState<HTMLDivElement | null>(null);
-
-  const workspaceSelector = displayedWorkspace ? (
-    <Popover open={selectorOpen} onOpenChange={setSelectorOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type={'button'}
-          data-testid={'move-page-workspace-selector'}
-          aria-label={t('disclosureAction.moveToWorkspaceSelect')}
-          className={'flex items-center gap-0.5 rounded-[6px] p-0.5 hover:bg-fill-content-hover'}
-        >
-          <Avatar shape={'square'} size={'xs'}>
-            <AvatarFallback name={displayedWorkspace.name}>
-              {displayedWorkspace.icon ? (
-                <span className={'text-sm'}>{displayedWorkspace.icon}</span>
-              ) : (
-                displayedWorkspace.name
-              )}
-            </AvatarFallback>
-          </Avatar>
-          <ArrowDownIcon className={'h-4 w-4 text-icon-secondary'} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        container={selectorContainer}
-        align={'end'}
-        className={'w-[260px] p-2'}
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
-        }}
-      >
-        <div className={'appflowy-custom-scroller flex max-h-[320px] flex-col gap-0.5 overflow-y-auto'}>
-          {workspaces.map((workspace) => {
-            const isSelected = workspace.id === (targetWorkspace?.id ?? currentWorkspaceId);
-
-            return (
-              <button
-                key={workspace.id}
-                type={'button'}
-                data-testid={`move-to-workspace-option-${workspace.id}`}
-                className={'flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-fill-content-hover'}
-                onClick={() => void handleSelectWorkspace(workspace)}
-              >
-                <Avatar shape={'square'} size={'xs'}>
-                  <AvatarFallback name={workspace.name}>
-                    {workspace.icon ? <span className={'text-sm'}>{workspace.icon}</span> : workspace.name}
-                  </AvatarFallback>
-                </Avatar>
-                <span className={'flex-1 truncate text-left'}>{workspace.name}</span>
-                {isSelected && <SelectedIcon className={'h-5 w-5 min-w-5 text-text-action'} />}
-              </button>
-            );
-          })}
-        </div>
-      </PopoverContent>
-    </Popover>
-  ) : null;
 
   return (
     <Popover modal open={open} onOpenChange={handleOpenChange} {...props}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
         }}
         {...popoverContentProps}
       >
-        {/* Fixed size so the dialog doesn't jump when switching the destination
-            workspace swaps the tree (or shows the loading state). */}
-        <div className={'folder-views flex w-[320px] flex-col gap-2 p-2'}>
-          <div ref={setSelectorContainer} />
-          <SearchInput
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-            }}
-            autoFocus={true}
-            placeholder={t('disclosureAction.movePageTo')}
-            endAdornment={showWorkspaceSelector ? workspaceSelector : undefined}
-          />
-          <div className={'appflowy-custom-scroller h-[360px] overflow-y-auto overflow-x-hidden'}>
-            {isCrossWorkspace ? (
-              foreignOutline === null ? (
-                <div className={'flex items-center justify-center p-4'}>
-                  <Progress variant={'primary'} />
-                </div>
-              ) : (
-                views.map((view) => (
-                  <TargetViewRow
-                    key={view.view_id}
-                    view={view}
-                    depth={0}
-                    expandedViewIds={expandedViewIdSet}
-                    toggleExpandView={toggleExpandView}
-                    selectedViewId={selectedViewId}
-                    onSelect={setSelectedViewId}
-                  />
-                ))
-              )
-            ) : (
-              views.map((view) => {
-                const isExpanded = expandViewIds.includes(view.view_id);
+        <div className='folder-views flex w-[320px] flex-col gap-2 p-2'>
+          {showWorkspaceSelector && currentWorkspaceId && currentWorkspace && targetWorkspace && (
+            <WorkspaceSelector
+              selectedWorkspace={targetWorkspace}
+              workspaces={workspaces}
+              onSelect={(workspace) => {
+                setTargetWorkspaceId(workspace.id);
+                setSelectedViewId(null);
+                setSearch('');
+              }}
+            />
+          )}
 
-                return (
-                  <div key={view.view_id} className={'flex items-start gap-1'}>
-                    <div className={'flex h-[30px] items-center'}>
-                      <OutlineIcon
-                        isExpanded={isExpanded}
-                        setIsExpanded={(status) => {
-                          toggleExpandView(view.view_id, status);
+          {isCrossWorkspace && targetWorkspace ? (
+            <CrossWorkspaceCopyConfirmation workspace={targetWorkspace} />
+          ) : (
+            <>
+              <SearchInput
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                autoFocus
+                placeholder={t('disclosureAction.movePageTo')}
+              />
+              <div className='appflowy-custom-scroller max-h-[360px] min-h-[180px] overflow-y-auto overflow-x-hidden'>
+                {views.map((candidate) => {
+                  const isExpanded = expandViewIds.includes(candidate.view_id);
+
+                  return (
+                    <div key={candidate.view_id} className='flex items-start gap-1'>
+                      <div className='flex h-[30px] items-center'>
+                        <OutlineIcon
+                          isExpanded={isExpanded}
+                          setIsExpanded={(status) => toggleExpandView(candidate.view_id, status)}
+                          level={0}
+                        />
+                      </div>
+                      <SpaceItem
+                        view={candidate}
+                        width={268}
+                        expandIds={expandViewIds}
+                        toggleExpand={toggleExpandView}
+                        onClickView={(candidateId) => {
+                          toggleExpandView(candidateId, !expandViewIds.includes(candidateId));
+                          setSelectedViewId(candidateId);
                         }}
-                        level={0}
+                        onClickSpace={setSelectedViewId}
+                        renderExtra={renderExtra}
                       />
                     </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
 
-                    <SpaceItem
-                      view={view}
-                      key={view.view_id}
-                      width={268}
-                      expandIds={expandViewIds}
-                      toggleExpand={toggleExpandView}
-                      onClickView={(viewId) => {
-                        toggleExpandView(viewId, !expandViewIds.includes(viewId));
-                        setSelectedViewId(viewId);
-                      }}
-                      onClickSpace={setSelectedViewId}
-                      renderExtra={renderExtra}
-                    />
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          <Separator className={'mb-1'} />
-          <div className={'flex items-center justify-end'}>
+          <Separator className='mb-1' />
+          <div className='flex items-center justify-end'>
             <Button
-              data-testid={'move-page-confirm'}
-              disabled={!selectedViewId}
-              onClick={() => void (isCrossWorkspace ? handleMoveToWorkspace() : handleMoveInWorkspace())}
+              data-testid='move-page-confirm'
+              disabled={isCrossWorkspace ? !copyPageToWorkspace : !selectedViewId}
+              onClick={() => void (isCrossWorkspace ? handleCopyToWorkspace() : handleMoveInWorkspace())}
             >
-              {t('disclosureAction.move')}
+              {isCrossWorkspace ? t('button.duplicate') : t('disclosureAction.move')}
             </Button>
           </div>
         </div>

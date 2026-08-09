@@ -97,8 +97,8 @@ Given(
     await waitForDocumentToReference(request, token, sourceId, state.pageId, grid.viewId);
 
     await openWorkspace(request, token, targetId);
-    const targetSpaceName = `BDD Target Space ${runId}`;
-    const targetSpaceId = await createSpace(request, token, targetId, targetSpaceName);
+    const targetSpaceName = `BDD Target Private ${runId}`;
+    const targetSpaceId = await createSpace(request, token, targetId, targetSpaceName, 1);
 
     await openWorkspace(request, token, sourceId);
 
@@ -112,7 +112,7 @@ Given(
   }
 );
 
-When('I move the page to the target workspace space', async ({ page }) => {
+When('I copy the page to the target workspace', async ({ page }) => {
   const state = requireState(page);
   const target = requireTarget(state);
   const pageName = requirePageName(state);
@@ -122,28 +122,28 @@ When('I move the page to the target workspace space', async ({ page }) => {
   await PageSelectors.moreActionsButton(page, pageName).click();
   await expect(ViewActionSelectors.popover(page)).toBeVisible({ timeout: 15000 });
 
-  // Open the "Move to" picker and switch the destination workspace via the
-  // selector at the right of the search input.
+  // Cross-workspace selection changes the action into a source-retaining copy
+  // whose destination is selected by the server from the actor's Private spaces.
   await ViewActionSelectors.moveToButton(page).click();
-  await ViewActionSelectors.moveWorkspaceSelector(page).click({ timeout: 15000 });
-  await page.getByTestId(`move-to-workspace-option-${target.id}`).click({ timeout: 15000 });
-
-  // Then the destination space inside the target workspace.
-  await page.getByTestId(`move-to-workspace-target-${target.spaceId}`).click({ timeout: 30000 });
+  await ViewActionSelectors.moveWorkspaceSelector(page).selectOption(target.id);
   await ViewActionSelectors.moveConfirmButton(page).click();
 
-  // The move runs as an async server task; the success toast marks completion.
-  await expect(page.getByText(`Moved to ${target.name}`)).toBeVisible({ timeout: 90000 });
+  // The copy runs as an async server task; the success toast marks completion.
+  await expect(page.getByText(`Copied to ${target.name}. The original is still here.`)).toBeVisible({ timeout: 90000 });
 });
 
-Then('the page is no longer listed in the source workspace sidebar', async ({ page }) => {
+Then('the original page remains listed in the source workspace sidebar', async ({ page }) => {
   const state = requireState(page);
   const pageName = requirePageName(state);
+  const source = requireSource(state);
 
-  await expect(PageSelectors.nameContaining(page, pageName)).toHaveCount(0, { timeout: 30000 });
+  await page.goto(`/app/${source.id}`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('current-workspace-name')).toHaveText(source.name, { timeout: 30000 });
+  await expandSpaceByName(page, source.spaceName);
+  await expect(PageSelectors.nameContaining(page, pageName).first()).toBeVisible({ timeout: 30000 });
 });
 
-Then('the page is listed under the target workspace space', async ({ page }) => {
+Then('the copied page is listed under the target workspace private space', async ({ page }) => {
   const state = requireState(page);
   const target = requireTarget(state);
   const pageName = requirePageName(state);
@@ -154,7 +154,7 @@ Then('the page is listed under the target workspace space', async ({ page }) => 
   await expect(PageSelectors.nameContaining(page, pageName).first()).toBeVisible({ timeout: 30000 });
 });
 
-Then('the embedded database is listed under the moved page', async ({ page }) => {
+Then('the embedded database is listed under the copied page', async ({ page }) => {
   const state = requireState(page);
   const pageName = requirePageName(state);
 
@@ -184,13 +184,14 @@ async function createSpace(
   request: APIRequestContext,
   token: string,
   workspaceId: string,
-  name: string
+  name: string,
+  spacePermission = 0
 ): Promise<string> {
   const data = await apiRequest<{ view_id: string }>(request, token, 'post', `/api/workspace/${workspaceId}/space`, {
     name,
     space_icon: '',
     space_icon_color: '#00BCF0',
-    space_permission: 0,
+    space_permission: spacePermission,
   });
 
   if (!data.view_id) {
@@ -207,17 +208,11 @@ async function createDocumentPage(
   parentViewId: string,
   name: string
 ): Promise<string> {
-  const data = await apiRequest<{ view_id: string }>(
-    request,
-    token,
-    'post',
-    `/api/workspace/${workspaceId}/page-view`,
-    {
-      parent_view_id: parentViewId,
-      layout: VIEW_LAYOUT_DOCUMENT,
-      name,
-    }
-  );
+  const data = await apiRequest<{ view_id: string }>(request, token, 'post', `/api/workspace/${workspaceId}/page-view`, {
+    parent_view_id: parentViewId,
+    layout: VIEW_LAYOUT_DOCUMENT,
+    name,
+  });
 
   if (!data.view_id) {
     throw new Error(`Page creation returned no view id for "${name}"`);
@@ -268,19 +263,25 @@ async function appendGridBlock(
   pageViewId: string,
   grid: EmbeddedGrid
 ): Promise<void> {
-  await apiRequest<unknown>(request, token, 'post', `/api/workspace/${workspaceId}/page-view/${pageViewId}/append-block`, {
-    blocks: [
-      {
-        type: 'grid',
-        data: {
-          view_id: grid.viewId,
-          view_ids: [grid.viewId],
-          database_id: grid.databaseId,
-          parent_id: pageViewId,
+  await apiRequest<unknown>(
+    request,
+    token,
+    'post',
+    `/api/workspace/${workspaceId}/page-view/${pageViewId}/append-block`,
+    {
+      blocks: [
+        {
+          type: 'grid',
+          data: {
+            view_id: grid.viewId,
+            view_ids: [grid.viewId],
+            database_id: grid.databaseId,
+            parent_id: pageViewId,
+          },
         },
-      },
-    ],
-  });
+      ],
+    }
+  );
 }
 
 /**
@@ -316,11 +317,7 @@ async function waitForDocumentToReference(
 
       // Yrs stores block attributes as UTF-8 runs, so the referenced view id
       // appears as a contiguous ASCII substring once the append landed.
-      if (
-        body.code === 0 &&
-        docState &&
-        Buffer.from(docState).toString('latin1').includes(referencedViewId)
-      ) {
+      if (body.code === 0 && docState && Buffer.from(docState).toString('latin1').includes(referencedViewId)) {
         return;
       }
     }
@@ -417,6 +414,14 @@ function requireTarget(state: MovePageToWorkspaceState): TestWorkspace {
   }
 
   return state.target;
+}
+
+function requireSource(state: MovePageToWorkspaceState): TestWorkspace {
+  if (!state.source) {
+    throw new Error('Source workspace was not initialized');
+  }
+
+  return state.source;
 }
 
 function requirePageName(state: MovePageToWorkspaceState): string {

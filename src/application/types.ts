@@ -1715,6 +1715,47 @@ export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
   afterPreSync?: () => Promise<void>;
 }
 
+export type DuplicatePageTaskStatus =
+  | 'Pending'
+  | 'Completed'
+  | 'Failed'
+  | 'Expired'
+  | 'Cancelled'
+  | 'Running';
+
+export type CrossWorkspaceCopyWarningCode =
+  | 'external_linked_database'
+  | 'external_relation_target'
+  | 'external_page_reference'
+  | 'unreadable_subtree';
+
+export interface CrossWorkspaceCopyWarning {
+  code: CrossWorkspaceCopyWarningCode;
+  count: number;
+}
+
+export interface CrossWorkspaceCopyResult {
+  duplicated_view_id: string;
+  dest_workspace_id: string;
+  operation: 'cross_workspace_copy';
+  source_retained: true;
+  warnings?: CrossWorkspaceCopyWarning[];
+}
+
+export interface CrossWorkspaceCopyTaskState {
+  job_id: string;
+  status: DuplicatePageTaskStatus;
+  retry_after_secs: number;
+  error?: string | null;
+  result?: CrossWorkspaceCopyResult | null;
+}
+
+export interface CopyPageToWorkspacePayload {
+  dest_workspace_id: string;
+  dest_parent_view_id?: string;
+  idempotency_key: string;
+}
+
 export interface CreateDatabaseViewPayload {
   parent_view_id: string;
   /**
