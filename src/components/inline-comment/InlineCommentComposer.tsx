@@ -2,7 +2,7 @@ import { Portal } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ReactComponent as ArrowUpIcon } from '@/assets/icons/arrow_up.svg';
+import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.svg';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
@@ -75,6 +75,8 @@ export function InlineCommentComposer() {
         <TextareaAutosize
           ref={inputRef}
           autoFocus
+          // Desktop's compose field is borderless inside the menu shell.
+          variant={'ghost'}
           data-testid={'inline-comment-input'}
           disabled={submitting}
           maxLength={2000}
@@ -104,13 +106,13 @@ export function InlineCommentComposer() {
           disabled={!content.trim() || submitting}
           onClick={submit}
           className={cn(
-            'mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
-            content.trim() && !submitting
-              ? 'bg-fill-theme-thick text-text-on-fill hover:opacity-90'
-              : 'bg-border-primary text-text-tertiary'
+            'mb-0.5 flex shrink-0 items-center justify-center p-1 transition-colors',
+            // Desktop keeps the send glyph in its brand color while it can be
+            // submitted and greys it out otherwise.
+            content.trim() && !submitting ? 'text-brand-skyline hover:opacity-90' : 'text-icon-tertiary'
           )}
         >
-          <ArrowUpIcon className={'h-4 w-4'} />
+          <SendCommentIcon className={'h-5 w-5'} />
         </button>
       </div>
     </Portal>

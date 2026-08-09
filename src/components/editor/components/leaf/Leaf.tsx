@@ -13,6 +13,32 @@ import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { getFontFamily } from '@/utils/font';
 
+// Inline comment highlight, ported from the desktop
+// `buildOverlapAwareCommentTextSpanDecorator`: one amber base color whose alpha
+// deepens with the number of overlapping comments, and a stronger underline
+// while the comment is focused.
+const HIGHLIGHT_BASE_RGB = '255, 193, 7';
+const HIGHLIGHT_ALPHA_STOPS = [0.11, 0.3, 0.5];
+const FOCUSED_HIGHLIGHT_ALPHA = 0.38;
+const FOCUSED_UNDERLINE_ALPHA = 0.75;
+
+function inlineCommentHighlightAlpha(overlapCount: number, focused: boolean): number {
+  const count = Math.max(1, overlapCount);
+  let alpha = HIGHLIGHT_ALPHA_STOPS[Math.min(count, HIGHLIGHT_ALPHA_STOPS.length) - 1];
+
+  // Past the tuned stops each extra layer halves the gap to opaque, so the
+  // curve keeps rising without saturating.
+  for (let index = HIGHLIGHT_ALPHA_STOPS.length; index < count; index++) {
+    alpha += (1 - alpha) / 2;
+  }
+
+  return focused ? Math.max(alpha, FOCUSED_HIGHLIGHT_ALPHA) : alpha;
+}
+
+function inlineCommentHighlightColor(alpha: number): string {
+  return `rgba(${HIGHLIGHT_BASE_RGB}, ${alpha})`;
+}
+
 export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   const inlineComments = useInlineCommentLeafContextOptional();
   let newChildren = children;
@@ -39,13 +65,14 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   const inlineCommentIds = inlineComments?.active ? getInlineCommentIds(leaf) : [];
 
   if (inlineCommentIds.length > 0) {
+    const focused = inlineCommentIds.includes(inlineComments?.focusedCommentId ?? '');
+    const alpha = inlineCommentHighlightAlpha(inlineCommentIds.length, focused);
+
     classList.push('inline-comment-anchor');
-    style['backgroundColor'] = 'var(--fill-warning-light)';
-    style['boxShadow'] = `inset 0 -2px ${
-      inlineCommentIds.includes(inlineComments?.focusedCommentId ?? '')
-        ? 'var(--border-warning-thick-hover)'
-        : 'var(--border-warning-thick)'
-    }`;
+    style['backgroundColor'] = inlineCommentHighlightColor(alpha);
+    style['textDecoration'] = 'underline';
+    style['textDecorationColor'] = inlineCommentHighlightColor(focused ? FOCUSED_UNDERLINE_ALPHA : alpha);
+    if (focused) style['textDecorationThickness'] = '1.5px';
     style['cursor'] = 'pointer';
   }
 

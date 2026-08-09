@@ -1,11 +1,11 @@
 import { Portal } from '@mui/material';
-import { MessageSquarePlus } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Range } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { ReactComponent as AddCommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { useInlineCommentContextOptional } from '../InlineCommentContext';
@@ -153,10 +153,10 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
           <TooltipTrigger asChild>
             <button
               aria-label={t('inlineComment.addComment')}
-              className={'rounded p-1.5 text-icon-on-toolbar hover:text-text-action'}
+              className={'rounded p-1.5 text-comment-icon hover:opacity-80'}
               onClick={startComment}
             >
-              <MessageSquarePlus size={18} />
+              <AddCommentIcon className={'h-5 w-5'} />
             </button>
           </TooltipTrigger>
           <TooltipContent side={'top'}>{t('inlineComment.addCommentShortcut')}</TooltipContent>

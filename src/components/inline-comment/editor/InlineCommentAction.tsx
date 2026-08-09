@@ -1,9 +1,9 @@
-import { MessageSquarePlus } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlate } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { ReactComponent as AddCommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -42,7 +42,8 @@ export function InlineCommentAction() {
       tooltip={t('inlineComment.addCommentShortcut')}
       onClick={handleClick}
     >
-      <MessageSquarePlus size={18} />
+      {/* Desktop tints the toolbar comment icon with commentColorScheme.icon. */}
+      <AddCommentIcon className={'h-5 w-5 text-comment-icon'} />
     </ActionButton>
   );
 }

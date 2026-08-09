@@ -1,10 +1,20 @@
 import dayjs from 'dayjs';
-import { CheckCircle2, ChevronDown, ChevronUp, MessageSquare, MoreHorizontal, Reply, RotateCcw, SmilePlus, Trash2, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { InlineComment, InlineCommentReaction } from '@/application/inline-comment';
+// The same glyphs the desktop card uses (FlowySvgs.comment_* / three_dots).
+import { ReactComponent as AddReactionIcon } from '@/assets/icons/add_comment_reaction.svg';
+import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as ChevronUpIcon } from '@/assets/icons/alt_arrow_up.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as ReopenIcon } from '@/assets/icons/comment_reopen.svg';
+import { ReactComponent as ReplyIcon } from '@/assets/icons/comment_reply.svg';
+import { ReactComponent as ResolveIcon } from '@/assets/icons/comment_resolve.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as EmptyCommentIcon } from '@/assets/icons/empty_comment.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -151,7 +161,7 @@ function AddReactionButton({ commentId, disabled, testId }: { commentId: string;
               className={'rounded p-1 text-icon-secondary hover:bg-fill-content-hover hover:text-icon-primary'}
               onClick={(event) => event.stopPropagation()}
             >
-              <SmilePlus size={18} />
+              <AddReactionIcon className={'h-5 w-5'} />
             </button>
           </PopoverTrigger>
         </TooltipTrigger>
@@ -212,7 +222,7 @@ function DeleteMenu({
         testId={`inline-comment-action-menu-button${testIdSuffix}`}
         onClick={() => setMenuOpen((value) => !value)}
       >
-        <MoreHorizontal size={18} />
+        <MoreIcon className={'h-5 w-5'} />
       </ActionIconButton>
 
       {menuOpen && (
@@ -235,7 +245,7 @@ function DeleteMenu({
               setConfirmOpen(true);
             }}
           >
-            <Trash2 size={16} />
+            <DeleteIcon className={'h-4 w-4'} />
             {t(isReply ? 'inlineComment.deleteReply' : 'inlineComment.delete')}
           </button>
         </div>
@@ -293,11 +303,9 @@ function ReactionBar({ comment, reactions }: { comment: InlineComment; reactions
                 })}
                 disabled={!canComment || mutating}
                 className={cn(
-                  'flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors',
-                  hasReacted
-                    ? 'bg-fill-theme-light text-text-theme border-border-theme-thick'
-                    : 'border-border-primary text-text-secondary',
-                  canComment && 'hover:bg-fill-content-hover',
+                  'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs transition-colors',
+                  hasReacted ? 'bg-fill-button-active text-text-info-on-fill' : 'bg-surface-layer-01 text-text-secondary',
+                  canComment && !hasReacted && 'hover:bg-fill-content-hover',
                   !canComment && 'cursor-default'
                 )}
                 onClick={() => void toggleReaction(comment.commentId, reaction.reactionType).catch(() => undefined)}
@@ -417,7 +425,7 @@ function CommentEntry({
                 testId={`inline-comment-reply-button${testIdSuffix}`}
                 onClick={() => onReply?.()}
               >
-                <Reply size={18} />
+                <ReplyIcon className={'h-5 w-5'} />
               </ActionIconButton>
             )}
             <ActionIconButton
@@ -426,7 +434,7 @@ function CommentEntry({
               testId={`inline-comment-resolve-button${testIdSuffix}`}
               onClick={() => void resolveComment(comment.commentId, !comment.isResolved).catch(() => undefined)}
             >
-              {comment.isResolved ? <RotateCcw size={18} /> : <CheckCircle2 size={18} />}
+              {comment.isResolved ? <ReopenIcon className={'h-5 w-5'} /> : <ResolveIcon className={'h-5 w-5'} />}
             </ActionIconButton>
             {comment.canBeDeleted && (
               <DeleteMenu
@@ -441,7 +449,7 @@ function CommentEntry({
       </div>
 
       {quote ? (
-        <div className={'mt-2 truncate border-l-[3px] border-border-warning-thick pl-2 text-sm text-text-secondary'}>
+        <div className={'mt-2 truncate border-l-[3px] border-brand-lemon pl-2 text-sm text-text-secondary'}>
           {quote}
         </div>
       ) : null}
@@ -475,6 +483,8 @@ function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onC
       <div className={'rounded-lg border border-border-primary bg-background-primary px-2 py-1'}>
         <TextareaAutosize
           autoFocus
+          // The bordered shell around it is the field frame, as on desktop.
+          variant={'ghost'}
           data-testid={'inline-comment-reply-input'}
           disabled={submitting}
           maxLength={2000}
@@ -562,7 +572,7 @@ function CommentThread({
               {t(repliesVisible ? 'inlineComment.hideReplies' : 'inlineComment.showReplies', {
                 count: replies.length,
               })}
-              {repliesVisible ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {repliesVisible ? <ChevronUpIcon className={'h-4 w-4'} /> : <ChevronDownIcon className={'h-4 w-4'} />}
             </button>
             <span className={'h-px flex-1 bg-border-primary'} />
           </div>
@@ -673,7 +683,7 @@ export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { el
           className={'rounded p-1 text-icon-secondary hover:bg-fill-content-hover'}
           onClick={() => setPanelOpen(false)}
         >
-          <X size={18} />
+          <CloseIcon className={'h-5 w-5'} />
         </button>
       </div>
 
@@ -701,7 +711,7 @@ export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { el
             data-testid={'inline-comment-empty'}
             className={'flex flex-col items-center py-16 text-center text-text-secondary'}
           >
-            <MessageSquare size={48} className={'mb-4 text-icon-tertiary'} />
+            <EmptyCommentIcon className={'mb-4 h-12 w-12 text-icon-quaternary'} />
             <span className={'text-base font-medium'}>{t(`inlineComment.${EMPTY_STATE_KEY[filter]}`)}</span>
           </div>
         ) : (

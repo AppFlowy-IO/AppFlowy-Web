@@ -1,6 +1,6 @@
-import { MessageSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { ReactComponent as TitlebarCommentIcon } from '@/assets/icons/titlebar_comment.svg';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +25,7 @@ export function InlineCommentToggleButton() {
           )}
           onClick={() => inlineComments.setPanelOpen(!inlineComments.isPanelOpen)}
         >
-          <MessageSquare size={18} />
+          <TitlebarCommentIcon className={'h-5 w-5'} />
         </button>
       </TooltipTrigger>
       <TooltipContent>{t('inlineComment.comments')}</TooltipContent>
