@@ -1,6 +1,6 @@
 import { Portal } from '@mui/material';
 import { MessageSquarePlus } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Range } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
@@ -16,8 +16,31 @@ interface TriggerPosition {
   top: number;
 }
 
-function getTriggerPosition(editor: YjsEditor): TriggerPosition | null {
-  const selection = getInlineCommentSelection(editor);
+/**
+ * A read-only editor is not focusable, so slate-react never mirrors the browser
+ * selection into `editor.selection`. Resolve the Slate range from the DOM
+ * selection instead — that is the only way a Read-and-comment (or locked) page
+ * can start a comment, which desktop allows.
+ */
+function getReadOnlyRange(editor: YjsEditor): Range | null {
+  const domSelection = window.getSelection();
+
+  if (!domSelection || domSelection.isCollapsed || domSelection.rangeCount === 0) return null;
+
+  try {
+    const range = ReactEditor.toSlateRange(editor, domSelection, {
+      exactMatch: false,
+      suppressThrow: true,
+    });
+
+    return range && Range.isExpanded(range) ? range : null;
+  } catch {
+    return null;
+  }
+}
+
+function getTriggerPosition(editor: YjsEditor, range: Range): TriggerPosition | null {
+  const selection = getInlineCommentSelection(editor, range);
 
   if (!selection) return null;
 
@@ -40,31 +63,50 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
   const editor = useSlate() as YjsEditor;
   const inlineComments = useInlineCommentContextOptional();
   const [position, setPosition] = useState<TriggerPosition | null>(null);
+  const rangeRef = useRef<Range | null>(null);
 
   const updatePosition = useCallback(() => {
-    if (!readOnly || !inlineComments?.active || !editor.selection || !Range.isExpanded(editor.selection)) {
+    if (!readOnly || !inlineComments?.active) {
+      rangeRef.current = null;
       setPosition(null);
       return;
     }
 
-    if (window.getSelection()?.isCollapsed) {
+    const range = getReadOnlyRange(editor) ?? (editor.selection && Range.isExpanded(editor.selection) ? editor.selection : null);
+
+    if (!range) {
+      rangeRef.current = null;
       setPosition(null);
       return;
     }
 
-    setPosition(getTriggerPosition(editor));
+    rangeRef.current = range;
+    setPosition(getTriggerPosition(editor, range));
   }, [editor, inlineComments?.active, readOnly]);
+
+  const startComment = useCallback(() => {
+    if (!inlineComments) return;
+
+    const range = rangeRef.current ?? getReadOnlyRange(editor) ?? undefined;
+
+    if (inlineComments.startComment(editor, range)) {
+      rangeRef.current = null;
+      setPosition(null);
+    }
+  }, [editor, inlineComments]);
 
   useEffect(() => {
     updatePosition();
     document.addEventListener('selectionchange', updatePosition);
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition, { passive: true });
+    // Capture phase to follow scrolling containers; passive because the trigger
+    // only repositions itself and never cancels the scroll.
+    window.addEventListener('scroll', updatePosition, { capture: true, passive: true });
 
     return () => {
       document.removeEventListener('selectionchange', updatePosition);
       window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('scroll', updatePosition, { capture: true });
     };
   }, [updatePosition]);
 
@@ -81,9 +123,10 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'm') {
-        if (inlineComments.startComment(editor)) {
+        if (inlineComments.startComment(editor, rangeRef.current ?? undefined)) {
           event.preventDefault();
           event.stopPropagation();
+          rangeRef.current = null;
           setPosition(null);
         }
       }
@@ -111,9 +154,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
             <button
               aria-label={t('inlineComment.addComment')}
               className={'rounded p-1.5 text-icon-on-toolbar hover:text-text-action'}
-              onClick={() => {
-                if (inlineComments.startComment(editor)) setPosition(null);
-              }}
+              onClick={startComment}
             >
               <MessageSquarePlus size={18} />
             </button>

@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 
+import { useActiveRowPage } from '@/application/row-document/row-page-state';
 import { ErrorType } from '@/application/utils/error-utils';
 import { useOutlineDrawer } from '@/components/_shared/outline/outline.hooks';
 import { AFScroller } from '@/components/_shared/scroller';
@@ -24,7 +26,7 @@ import { InlineCommentComposer } from '@/components/inline-comment/InlineComment
 import {
   INLINE_COMMENT_DRAWER_WIDTH,
   InlineCommentProvider,
-  useInlineCommentContext,
+  useInlineCommentPanel,
 } from '@/components/inline-comment/InlineCommentContext';
 import { InlineCommentSidebar } from '@/components/inline-comment/InlineCommentSidebar';
 
@@ -33,7 +35,9 @@ function MainLayoutContent() {
   const aiChatContext = useAIChatContextOptional();
   const chatViewDrawerOpen = aiChatContext?.drawerOpen ?? false;
   const openViewDrawerWidth = aiChatContext?.drawerWidth ?? 0;
-  const { isPanelOpen } = useInlineCommentContext();
+  // Panel-only subscription: comment/anchor/mutation updates must not re-render
+  // the header and outline sidebar.
+  const { isPanelOpen } = useInlineCommentPanel();
 
   const openPageModalViewId = useOpenModalViewId();
   const viewId = useAppViewId();
@@ -128,12 +132,23 @@ function MainLayoutContent() {
 
 function MainLayout() {
   const eventEmitter = useEventEmitter();
-  const viewId = useAppViewId();
+  const routeViewId = useAppViewId();
   const workspaceId = useCurrentWorkspaceId();
+  const [searchParams] = useSearchParams();
+  const rowPageRowId = searchParams.get('r');
+  const activeRowPage = useActiveRowPage();
+  // On a full-page row (?r=), the comments belong to the row document — the
+  // route view is the containing database. Matches the desktop row page,
+  // which hosts the inline comment panel for the row's document.
+  const rowPageDocumentId = rowPageRowId && activeRowPage?.rowId === rowPageRowId ? activeRowPage.documentId : undefined;
+  const viewId = rowPageDocumentId ?? routeViewId;
 
   return (
     <InlineCommentProvider
-      key={`${workspaceId ?? ''}:${viewId ?? ''}`}
+      // Keyed by the route view only: a full-page row swaps `viewId` to its row
+      // document while staying on the same route, and remounting here would
+      // tear down the whole layout underneath it.
+      key={`${workspaceId ?? ''}:${routeViewId ?? ''}`}
       eventEmitter={eventEmitter}
       viewId={viewId}
       workspaceId={workspaceId}

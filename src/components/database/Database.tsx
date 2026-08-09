@@ -119,6 +119,12 @@ export interface Database2Props {
   doc: YDoc;
   initialRowMap?: Record<RowId, YDoc>;
   readOnly?: boolean;
+  /**
+   * Comment permission for the containing view. Independent from [readOnly]:
+   * Read-and-comment access renders a read-only database but still allows
+   * inline comments inside a row document.
+   */
+  canComment?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
@@ -231,6 +237,7 @@ function Database(props: Database2Props) {
     onOpenRowPage,
     appendBreadcrumb,
     readOnly = true,
+    canComment = false,
     loadView,
     bindViewSync,
     checkIfRowDocumentExists,
@@ -1306,6 +1313,7 @@ function Database(props: Database2Props) {
   const sharedContextProps = useMemo(
     () => ({
       readOnly,
+      canComment,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,
@@ -1349,6 +1357,7 @@ function Database(props: Database2Props) {
     }),
     [
       readOnly,
+      canComment,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,

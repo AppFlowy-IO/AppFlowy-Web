@@ -37,6 +37,7 @@ jest.mock('@/components/app/app.hooks', () => {
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
   getViewReadOnlyStatus: () => false,
+  getViewCanCommentStatus: () => true,
   useViewOperations: () => ({
     getViewReadOnlyStatus: () => false,
   }),

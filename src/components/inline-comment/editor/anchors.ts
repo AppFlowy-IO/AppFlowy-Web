@@ -1,8 +1,9 @@
 import { Editor, Element, Node, NodeEntry, Path, Point, Range, Text, Transforms } from 'slate';
 
+import { INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import { BlockType } from '@/application/types';
 
-export const INLINE_COMMENT_IDS_KEY = 'comment-ids';
+export { INLINE_COMMENT_IDS_KEY };
 
 export interface InlineCommentSelection {
   range: Range;

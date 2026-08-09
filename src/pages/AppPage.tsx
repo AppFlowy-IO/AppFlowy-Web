@@ -554,6 +554,7 @@ function AppPage() {
         workspaceId={workspaceId}
         doc={docForCurrentView}
         readOnly={isReadOnly}
+        canComment={canComment}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}

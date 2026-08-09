@@ -24,6 +24,16 @@ import {
 
 export const INLINE_COMMENT_DRAWER_WIDTH = 352;
 
+const ANCHOR_REFRESH_RETRY_INTERVAL = 300;
+const ANCHOR_REFRESH_MAX_ATTEMPTS = 20;
+
+function hasAnchorsForTopLevelComments(
+  comments: InlineComment[],
+  anchors: ReadonlyMap<string, InlineCommentAnchor>
+): boolean {
+  return comments.every((comment) => comment.replyCommentId || comment.isDeleted || anchors.has(comment.commentId));
+}
+
 export type InlineCommentFilter = 'open' | 'resolved' | 'all';
 
 interface PendingInlineComment {
@@ -40,6 +50,7 @@ interface RegisterInlineCommentEditorOptions {
 
 interface InlineCommentEditorBridgeValue {
   handleEditorChange: (editor: YjsEditor) => void;
+  refreshAnchors: (editor: YjsEditor) => void;
   registerEditor: (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => () => void;
   updateEditorAccess: (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => void;
 }
@@ -48,6 +59,17 @@ interface InlineCommentLeafContextValue {
   active: boolean;
   focusedCommentId: string | null;
   openCommentFromAnchor: (commentIds: string[]) => void;
+}
+
+/**
+ * The app shell (layout width, header toggle) only cares whether the panel is
+ * open. Keeping it out of the full context stops every comment/anchor/mutation
+ * update from re-rendering the sidebar tree and header.
+ */
+interface InlineCommentPanelContextValue {
+  active: boolean;
+  isPanelOpen: boolean;
+  setPanelOpen: (open: boolean) => void;
 }
 
 interface InlineCommentContextValue {
@@ -74,7 +96,7 @@ interface InlineCommentContextValue {
   resolveComment: (commentId: string, isResolved: boolean) => Promise<void>;
   setFilter: (filter: InlineCommentFilter) => void;
   setPanelOpen: (open: boolean) => void;
-  startComment: (editor: YjsEditor) => boolean;
+  startComment: (editor: YjsEditor, at?: Range) => boolean;
   submitPendingComment: (content: string) => Promise<void>;
   toggleReaction: (commentId: string, reactionType: string) => Promise<void>;
   updateEditorAccess: (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => void;
@@ -83,6 +105,7 @@ interface InlineCommentContextValue {
 const InlineCommentContext = createContext<InlineCommentContextValue | null>(null);
 const InlineCommentEditorBridgeContext = createContext<InlineCommentEditorBridgeValue | null>(null);
 const InlineCommentLeafContext = createContext<InlineCommentLeafContextValue | null>(null);
+const InlineCommentPanelContext = createContext<InlineCommentPanelContextValue | null>(null);
 
 function getErrorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -170,6 +193,7 @@ export function InlineCommentProvider({
   const [pendingComment, setPendingComment] = useState<PendingInlineComment | null>(null);
   const [reactions, setReactions] = useState<InlineCommentReaction[]>([]);
 
+  const anchorRetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const anchorsRef = useRef(anchors);
   const canCommentRef = useRef(canComment);
   const commentsRef = useRef(comments);
@@ -211,6 +235,47 @@ export function InlineCommentProvider({
 
     return { nextAnchors, previousAnchors };
   }, []);
+
+  const stopAnchorRefreshRetry = useCallback(() => {
+    if (anchorRetryTimerRef.current === null) return;
+
+    clearInterval(anchorRetryTimerRef.current);
+    anchorRetryTimerRef.current = null;
+  }, []);
+
+  /**
+   * The comment list can arrive before the document delta that carries the
+   * anchors — a freshly opened page loads its comments over HTTP while the
+   * collab document is still syncing. Mirrors the desktop bloc's anchor
+   * refresh retry so those threads are not dropped from the panel.
+   */
+  const scheduleAnchorRefreshRetry = useCallback(
+    (nextComments: InlineComment[]) => {
+      if (!editorRef.current || hasAnchorsForTopLevelComments(nextComments, anchorsRef.current)) return;
+
+      stopAnchorRefreshRetry();
+
+      let attempts = 0;
+
+      anchorRetryTimerRef.current = setInterval(() => {
+        attempts += 1;
+
+        const editor = editorRef.current;
+
+        if (!editor) {
+          stopAnchorRefreshRetry();
+          return;
+        }
+
+        const { nextAnchors } = updateAnchors(editor);
+
+        if (attempts >= ANCHOR_REFRESH_MAX_ATTEMPTS || hasAnchorsForTopLevelComments(commentsRef.current, nextAnchors)) {
+          stopAnchorRefreshRetry();
+        }
+      }, ANCHOR_REFRESH_RETRY_INTERVAL);
+    },
+    [stopAnchorRefreshRetry, updateAnchors]
+  );
 
   const removeAnchorWithoutDeletingComment = useCallback(
     (commentId: string) => {
@@ -258,6 +323,8 @@ export function InlineCommentProvider({
           }
         }
 
+        scheduleAnchorRefreshRetry(nextComments);
+
         return nextComments;
       } catch (error) {
         if (showLoading) toast.error(getErrorMessage(error));
@@ -268,7 +335,7 @@ export function InlineCommentProvider({
         }
       }
     },
-    [removeAnchorWithoutDeletingComment, viewId, workspaceId]
+    [removeAnchorWithoutDeletingComment, scheduleAnchorRefreshRetry, viewId, workspaceId]
   );
 
   const cancelPendingComment = useCallback(() => {
@@ -278,10 +345,12 @@ export function InlineCommentProvider({
   }, []);
 
   const startComment = useCallback(
-    (editor: YjsEditor) => {
+    (editor: YjsEditor, at?: Range) => {
       if (editor !== editorRef.current || !canCommentRef.current) return false;
 
-      const selection = getInlineCommentSelection(editor);
+      // A read-only editor never receives a Slate selection, so the caller
+      // passes the range resolved from the browser selection instead.
+      const selection = getInlineCommentSelection(editor, at ?? editor.selection);
 
       if (!selection) return false;
 
@@ -555,6 +624,21 @@ export function InlineCommentProvider({
     [runCommentMutation, updateAnchors, viewId, workspaceId]
   );
 
+  /**
+   * A document whose content arrives after connect (row documents, a version
+   * reset) replaces `editor.children` wholesale instead of applying Slate
+   * operations, so no change event reaches [handleEditorChange]. Rescan the
+   * anchors without the change handler's delete-orphaned-comment side effect.
+   */
+  const refreshAnchors = useCallback(
+    (editor: YjsEditor) => {
+      if (editor !== editorRef.current) return;
+
+      updateAnchors(editor);
+    },
+    [updateAnchors]
+  );
+
   const registerEditor = useCallback(
     (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => {
       if (options.viewId !== viewId) return () => undefined;
@@ -570,6 +654,7 @@ export function InlineCommentProvider({
         if (editorRef.current !== editor) return;
 
         cancelPendingComment();
+        stopAnchorRefreshRetry();
         requestIdRef.current += 1;
         editorRef.current = null;
         editorReadOnlyRef.current = false;
@@ -588,7 +673,7 @@ export function InlineCommentProvider({
         setFocusedCommentId(null);
       };
     },
-    [cancelPendingComment, updateAnchors, viewId]
+    [cancelPendingComment, stopAnchorRefreshRetry, updateAnchors, viewId]
   );
 
   const updateEditorAccess = useCallback(
@@ -636,9 +721,10 @@ export function InlineCommentProvider({
   useEffect(() => {
     return () => {
       requestIdRef.current += 1;
+      stopAnchorRefreshRetry();
       pendingCommentRef.current?.rangeRef.unref();
     };
-  }, []);
+  }, [stopAnchorRefreshRetry]);
 
   const value = useMemo<InlineCommentContextValue>(
     () => ({
@@ -702,10 +788,11 @@ export function InlineCommentProvider({
   const editorBridgeValue = useMemo<InlineCommentEditorBridgeValue>(
     () => ({
       handleEditorChange,
+      refreshAnchors,
       registerEditor,
       updateEditorAccess,
     }),
-    [handleEditorChange, registerEditor, updateEditorAccess]
+    [handleEditorChange, refreshAnchors, registerEditor, updateEditorAccess]
   );
 
   const leafContextValue = useMemo<InlineCommentLeafContextValue>(
@@ -717,11 +804,22 @@ export function InlineCommentProvider({
     [active, focusedCommentId, openCommentFromAnchor]
   );
 
+  const panelContextValue = useMemo<InlineCommentPanelContextValue>(
+    () => ({
+      active,
+      isPanelOpen,
+      setPanelOpen,
+    }),
+    [active, isPanelOpen]
+  );
+
   return (
     <InlineCommentEditorBridgeContext.Provider value={editorBridgeValue}>
-      <InlineCommentLeafContext.Provider value={leafContextValue}>
-        <InlineCommentContext.Provider value={value}>{children}</InlineCommentContext.Provider>
-      </InlineCommentLeafContext.Provider>
+      <InlineCommentPanelContext.Provider value={panelContextValue}>
+        <InlineCommentLeafContext.Provider value={leafContextValue}>
+          <InlineCommentContext.Provider value={value}>{children}</InlineCommentContext.Provider>
+        </InlineCommentLeafContext.Provider>
+      </InlineCommentPanelContext.Provider>
     </InlineCommentEditorBridgeContext.Provider>
   );
 }
@@ -746,4 +844,18 @@ export function useInlineCommentEditorBridgeOptional(): InlineCommentEditorBridg
 
 export function useInlineCommentLeafContextOptional(): InlineCommentLeafContextValue | null {
   return useContext(InlineCommentLeafContext);
+}
+
+export function useInlineCommentPanel(): InlineCommentPanelContextValue {
+  const context = useContext(InlineCommentPanelContext);
+
+  if (!context) {
+    throw new Error('useInlineCommentPanel must be used within InlineCommentProvider');
+  }
+
+  return context;
+}
+
+export function useInlineCommentPanelOptional(): InlineCommentPanelContextValue | null {
+  return useContext(InlineCommentPanelContext);
 }

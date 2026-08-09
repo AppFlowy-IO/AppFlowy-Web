@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { InlineComment } from '@/application/inline-comment';
 
@@ -6,11 +6,17 @@ import { InlineCommentSidebar } from '../InlineCommentSidebar';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    // Interpolation values are appended so plural counts and reactor names stay
+    // assertable while the key itself remains the readable label.
+    t: (key: string, options?: Record<string, unknown>) =>
+      options ? `${key}:${Object.values(options).join(',')}` : key,
   }),
 }));
 
+const createReply = jest.fn().mockResolvedValue(undefined);
+const deleteComment = jest.fn().mockResolvedValue(undefined);
 const resolveComment = jest.fn().mockResolvedValue(undefined);
+const toggleReaction = jest.fn().mockResolvedValue(undefined);
 const setFilter = jest.fn();
 const setPanelOpen = jest.fn();
 
@@ -90,13 +96,13 @@ function setContext(overrides: Record<string, unknown> = {}) {
     loading: false,
     mutatingCommentIds: new Set(),
     reactions: [],
-    createReply: jest.fn().mockResolvedValue(undefined),
-    deleteComment: jest.fn().mockResolvedValue(undefined),
+    createReply,
+    deleteComment,
     focusComment: jest.fn(),
     resolveComment,
     setFilter,
     setPanelOpen,
-    toggleReaction: jest.fn().mockResolvedValue(undefined),
+    toggleReaction,
     ...overrides,
   };
 }
@@ -107,11 +113,10 @@ describe('InlineCommentSidebar', () => {
     setContext();
   });
 
-  it('shows anchored open threads, their replies, and live selected text', () => {
+  it('shows anchored open threads and live selected text', () => {
     render(<InlineCommentSidebar />);
 
     expect(screen.getByText('Open thread')).not.toBeNull();
-    expect(screen.getByText('Chronological reply')).not.toBeNull();
     expect(screen.getByText('selected text')).not.toBeNull();
     expect(screen.queryByText('Resolved thread')).toBeNull();
     expect(screen.queryByText('Missing anchor')).toBeNull();
@@ -120,17 +125,202 @@ describe('InlineCommentSidebar', () => {
     expect(setFilter).toHaveBeenCalledWith('resolved');
   });
 
+  it('keeps replies behind the show replies toggle, like desktop', () => {
+    render(<InlineCommentSidebar />);
+
+    expect(screen.queryByText('Chronological reply')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('inline-comment-replies-toggle'));
+    expect(screen.getByText('Chronological reply')).not.toBeNull();
+    expect(screen.getByTestId('inline-comment-replies-toggle').textContent).toContain('inlineComment.hideReplies');
+
+    fireEvent.click(screen.getByTestId('inline-comment-replies-toggle'));
+    expect(screen.queryByText('Chronological reply')).toBeNull();
+  });
+
+  it('expands replies automatically when a reply is focused', () => {
+    setContext({ focusedCommentId: 'reply-comment' });
+    render(<InlineCommentSidebar />);
+
+    expect(screen.getByText('Chronological reply')).not.toBeNull();
+  });
+
   it('resolves an open thread and reopens a resolved thread', () => {
     const { rerender } = render(<InlineCommentSidebar />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'inlineComment.resolve' }));
+    fireEvent.click(screen.getByTestId('inline-comment-resolve-button'));
     expect(resolveComment).toHaveBeenCalledWith('open-comment', true);
 
     setContext({ filter: 'resolved' });
     rerender(<InlineCommentSidebar />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'inlineComment.reopen' }));
+    fireEvent.click(screen.getByTestId('inline-comment-resolve-button'));
     expect(resolveComment).toHaveBeenCalledWith('resolved-comment', false);
+  });
+
+  it('opens a reply composer from the thread reply action', async () => {
+    render(<InlineCommentSidebar />);
+
+    fireEvent.click(screen.getByTestId('inline-comment-reply-button'));
+
+    const input = screen.getByTestId('inline-comment-reply-input');
+
+    fireEvent.change(input, { target: { value: 'Sounds good' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    expect(createReply).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+    expect(createReply).toHaveBeenCalledWith('open-comment', 'Sounds good');
+  });
+
+  it('deletes a thread through the action menu and its confirmation', async () => {
+    render(<InlineCommentSidebar />);
+
+    expect(screen.queryByTestId('inline-comment-delete-button')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('inline-comment-action-menu-button'));
+    fireEvent.click(screen.getByTestId('inline-comment-delete-button'));
+    expect(deleteComment).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('inline-comment-delete-confirm-button'));
+    });
+    expect(deleteComment).toHaveBeenCalledWith('open-comment');
+  });
+
+  it('labels the reply toggle by count and expands when a new reply arrives', () => {
+    const { rerender } = render(<InlineCommentSidebar />);
+
+    expect(screen.getByTestId('inline-comment-replies-toggle').textContent).toContain('inlineComment.showReplies:1');
+
+    setContext({
+      comments: [
+        ...comments,
+        comment({
+          commentId: 'second-reply',
+          content: 'Another reply',
+          replyCommentId: 'open-comment',
+          createdAt: '2026-08-09T00:02:00Z',
+        }),
+      ],
+    });
+    rerender(<InlineCommentSidebar />);
+
+    // Desktop expands the thread as soon as a reply lands.
+    expect(screen.getByTestId('inline-comment-replies-toggle').textContent).toContain('inlineComment.hideReplies:2');
+    expect(screen.getByText('Another reply')).not.toBeNull();
+  });
+
+  it('renders reaction chips and toggles a reaction', () => {
+    setContext({
+      reactions: [
+        {
+          commentId: 'open-comment',
+          reactionType: '👍',
+          reactUsers: [
+            { uuid: 'user-1', name: 'Ada', avatarUrl: null },
+            { uuid: 'user-2', name: 'Linus', avatarUrl: null },
+          ],
+        },
+        // A reaction nobody holds anymore must not leave an empty chip behind.
+        { commentId: 'open-comment', reactionType: '🎉', reactUsers: [] },
+      ],
+    });
+    render(<InlineCommentSidebar />);
+
+    const chip = screen.getByTestId('inline-comment-reaction-👍');
+
+    expect(chip.textContent).toContain('2');
+    expect(screen.queryByTestId('inline-comment-reaction-🎉')).toBeNull();
+    // The current user already reacted, so the label offers to remove it.
+    expect(chip.getAttribute('aria-label')).toContain('inlineComment.removeReaction');
+
+    fireEvent.click(chip);
+    expect(toggleReaction).toHaveBeenCalledWith('open-comment', '👍');
+  });
+
+  it('renders reaction chips as read-only without comment permission', () => {
+    setContext({
+      canComment: false,
+      reactions: [
+        {
+          commentId: 'open-comment',
+          reactionType: '👍',
+          reactUsers: [{ uuid: 'user-2', name: 'Linus', avatarUrl: null }],
+        },
+      ],
+    });
+    render(<InlineCommentSidebar />);
+
+    const chip = screen.getByTestId('inline-comment-reaction-👍');
+
+    expect(chip.hasAttribute('disabled')).toBe(true);
+    expect(chip.getAttribute('aria-label')).toContain('inlineComment.addReactionLabel');
+  });
+
+  it('renders desktop person mentions inside the comment body', () => {
+    setContext({
+      comments: [comment({ content: 'Ping @[Ada Lovelace](user-2) about the layout' })],
+    });
+    render(<InlineCommentSidebar />);
+
+    const mention = screen.getByText('@Ada Lovelace');
+
+    expect(mention.getAttribute('data-mention-id')).toBe('user-2');
+    // The raw desktop mention syntax must not leak into the rendered body.
+    expect(screen.queryByText(/@\[Ada Lovelace\]/)).toBeNull();
+  });
+
+  it('renders the deleted placeholder instead of the original content', () => {
+    setContext({
+      comments: [
+        comment(),
+        comment({
+          commentId: 'deleted-reply',
+          content: 'Reply that was removed',
+          replyCommentId: 'open-comment',
+          isDeleted: true,
+          createdAt: '2026-08-09T00:01:00Z',
+        }),
+      ],
+    });
+    render(<InlineCommentSidebar />);
+
+    // A deleted reply drops out of the thread entirely, like desktop.
+    expect(screen.queryByText('Reply that was removed')).toBeNull();
+    expect(screen.queryByTestId('inline-comment-replies-toggle')).toBeNull();
+  });
+
+  it('truncates a long comment behind see more', () => {
+    const longContent = 'x'.repeat(200);
+
+    setContext({ comments: [comment({ content: longContent })] });
+    render(<InlineCommentSidebar />);
+
+    const truncated = screen.getByTestId('inline-comment-see-more');
+
+    expect(truncated.textContent).toContain('inlineComment.seeMore');
+    expect(truncated.textContent).not.toContain(longContent);
+
+    fireEvent.click(truncated);
+    expect(screen.getByText(longContent)).not.toBeNull();
+  });
+
+  it('shows the empty state matching the active filter', () => {
+    setContext({ comments: [] });
+    const { rerender } = render(<InlineCommentSidebar />);
+
+    expect(screen.getByTestId('inline-comment-empty').textContent).toContain('inlineComment.noOpenComments');
+
+    setContext({ comments: [], filter: 'resolved' });
+    rerender(<InlineCommentSidebar />);
+    expect(screen.getByTestId('inline-comment-empty').textContent).toContain('inlineComment.noResolvedComments');
+
+    setContext({ comments: [], filter: 'all' });
+    rerender(<InlineCommentSidebar />);
+    expect(screen.getByTestId('inline-comment-empty').textContent).toContain('inlineComment.noComments');
   });
 
   it('keeps the list visible but hides mutation controls without comment permission', () => {
@@ -138,9 +328,9 @@ describe('InlineCommentSidebar', () => {
     render(<InlineCommentSidebar />);
 
     expect(screen.getByText('Open thread')).not.toBeNull();
-    expect(screen.queryByRole('button', { name: 'inlineComment.resolve' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'inlineComment.reply' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'inlineComment.delete' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'inlineComment.addReaction' })).toBeNull();
+    expect(screen.queryByTestId('inline-comment-resolve-button')).toBeNull();
+    expect(screen.queryByTestId('inline-comment-reply-button')).toBeNull();
+    expect(screen.queryByTestId('inline-comment-action-menu-button')).toBeNull();
+    expect(screen.queryByTestId('inline-comment-add-reaction-button')).toBeNull();
   });
 });

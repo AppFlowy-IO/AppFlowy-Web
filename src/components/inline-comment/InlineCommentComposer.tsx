@@ -3,14 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ArrowUpIcon } from '@/assets/icons/arrow_up.svg';
-import { Button } from '@/components/ui/button';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
 import { useInlineCommentContext } from './InlineCommentContext';
 
+// Matches the desktop compose menu: a 320px wide single-row popup anchored to
+// the selection (inline_comment_compose_menu.dart).
 const COMPOSER_WIDTH = 320;
-const COMPOSER_ESTIMATED_HEIGHT = 196;
+const COMPOSER_ESTIMATED_HEIGHT = 56;
 
 export function InlineCommentComposer() {
   const { t } = useTranslation();
@@ -65,21 +66,21 @@ export function InlineCommentComposer() {
       <div
         ref={composerRef}
         data-testid={'inline-comment-composer'}
-        className={'fixed z-[1500] rounded-lg border border-border-primary bg-background-primary p-3 shadow-lg'}
+        className={
+          'fixed z-[1500] flex items-end gap-1 rounded-lg border border-border-primary bg-background-primary px-2 py-1.5 shadow-lg'
+        }
         style={{ left: position.left, top: position.top, width: COMPOSER_WIDTH }}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className={'mb-2 truncate border-l-2 border-border-warning-thick pl-2 text-xs text-text-secondary'}>
-          {pendingComment.selection.quotedText}
-        </div>
         <TextareaAutosize
           ref={inputRef}
           autoFocus
           data-testid={'inline-comment-input'}
+          disabled={submitting}
           maxLength={2000}
           maxRows={8}
-          minRows={3}
-          placeholder={t('inlineComment.addComment')}
+          minRows={1}
+          placeholder={t('inlineComment.writeComment')}
           value={content}
           onChange={(event) => setContent(event.target.value)}
           onKeyDown={(event) => {
@@ -95,30 +96,22 @@ export function InlineCommentComposer() {
               submit();
             }
           }}
-          className={'w-full rounded-md bg-fill-content px-2 py-2'}
+          className={'w-full flex-1 bg-transparent px-1 py-1.5 text-sm'}
         />
-        <div className={'mt-2 flex items-center justify-between'}>
-          <span className={'text-xs text-text-tertiary'}>{t('inlineComment.submitHint')}</span>
-          <div className={'flex items-center gap-2'}>
-            <Button variant={'ghost'} size={'sm'} disabled={submitting} onClick={cancelPendingComment}>
-              {t('button.cancel')}
-            </Button>
-            <button
-              aria-label={t('inlineComment.addComment')}
-              data-testid={'inline-comment-submit'}
-              disabled={!content.trim() || submitting}
-              onClick={submit}
-              className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-full transition-colors',
-                content.trim() && !submitting
-                  ? 'bg-fill-theme-thick text-text-on-fill hover:opacity-90'
-                  : 'bg-border-primary text-text-tertiary'
-              )}
-            >
-              <ArrowUpIcon className={'h-4 w-4'} />
-            </button>
-          </div>
-        </div>
+        <button
+          aria-label={t('inlineComment.addComment')}
+          data-testid={'inline-comment-submit'}
+          disabled={!content.trim() || submitting}
+          onClick={submit}
+          className={cn(
+            'mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors',
+            content.trim() && !submitting
+              ? 'bg-fill-theme-thick text-text-on-fill hover:opacity-90'
+              : 'bg-border-primary text-text-tertiary'
+          )}
+        >
+          <ArrowUpIcon className={'h-4 w-4'} />
+        </button>
       </div>
     </Portal>
   );

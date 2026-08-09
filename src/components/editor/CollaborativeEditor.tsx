@@ -95,7 +95,7 @@ function CollaborativeEditor({
   const onWordCountChange = context.onWordCountChange;
   const deletePage = context.deletePage;
   const loadViewMeta = context.loadViewMeta;
-  const [, setClock] = useState(0);
+  const [contentClock, setClock] = useState(0);
   const databaseBlocksRef = useRef<Map<string, DatabaseBlockInfo>>(new Map());
   const pendingDatabaseViewDeletionRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const onContentChange = useCallback(
@@ -282,6 +282,15 @@ function CollaborativeEditor({
       viewId,
     });
   }, [canComment, editor, inlineComments, readOnly, viewId]);
+
+  // A wholesale content swap (the doc arriving after connect, a version reset)
+  // bumps the content clock without emitting Slate operations, so the comment
+  // anchors have to be rescanned from the new children.
+  useEffect(() => {
+    if (!editor) return;
+
+    inlineComments?.refreshAnchors(editor);
+  }, [contentClock, editor, inlineComments]);
 
   useEffect(() => {
     if (!editor) return;

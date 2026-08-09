@@ -39,6 +39,15 @@ describe('InlineCommentComposer', () => {
     jest.clearAllMocks();
   });
 
+  it('renders the compact desktop compose menu', () => {
+    render(<InlineCommentComposer />);
+
+    expect(screen.getByTestId('inline-comment-input').getAttribute('placeholder')).toBe('inlineComment.writeComment');
+    // Desktop's compose menu is a single input row: no quote preview, no cancel.
+    expect(screen.queryByText('selected text')).toBeNull();
+    expect(screen.queryByText('button.cancel')).toBeNull();
+  });
+
   it('submits with Enter while Shift+Enter remains a newline action', () => {
     render(<InlineCommentComposer />);
     const input = screen.getByTestId('inline-comment-input');
