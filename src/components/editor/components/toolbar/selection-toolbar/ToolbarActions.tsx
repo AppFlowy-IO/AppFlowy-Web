@@ -24,7 +24,10 @@ import TextColor from '@/components/editor/components/toolbar/selection-toolbar/
 import Underline from '@/components/editor/components/toolbar/selection-toolbar/actions/Underline';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { useEditorLocalState } from '@/components/editor/EditorContext';
-import { InlineCommentAction } from '@/components/inline-comment/editor/InlineCommentAction';
+import {
+  InlineCommentAction,
+  useInlineCommentActionEnabled,
+} from '@/components/inline-comment/editor/InlineCommentAction';
 
 import BgColor from './actions/BgColor';
 import Paragraph from './actions/Paragraph';
@@ -35,6 +38,7 @@ function ToolbarActions() {
   const { forceShow, visible: toolbarVisible } = useSelectionToolbarContext();
   const { removeDecorate } = useEditorLocalState();
   const aiEnabled = useAIEnabled();
+  const inlineCommentEnabled = useInlineCommentActionEnabled();
 
   const refocusTimeout = useRef<NodeJS.Timeout | null>(null);
   const disableFocusRef = useRef<boolean>(false);
@@ -124,6 +128,14 @@ function ToolbarActions() {
   return (
     <div className={'flex w-fit flex-grow items-center gap-1'}>
       {aiEnabled && !isCodeBlock && <AIAssistant />}
+      {/* Desktop puts the comment item in group 1 — directly after the AI
+          group and before the text styles (custom_comment_toolbar_item.dart). */}
+      {inlineCommentEnabled && !isAcrossBlock && !isCodeBlock && (
+        <>
+          <InlineCommentAction />
+          <Divider className={'my-1.5 bg-line-on-toolbar'} orientation={'vertical'} flexItem={true} />
+        </>
+      )}
       {!isAcrossBlock && !isCodeBlock && (
         <>
           <Paragraph />
@@ -152,12 +164,6 @@ function ToolbarActions() {
       {!isCodeBlock && <Align enabled={toolbarVisible} />}
       <TextColor focusEditor={focusEditor} toggleDisableEditorFocus={toggleDisableEditorFocus} />
       <BgColor focusEditor={focusEditor} toggleDisableEditorFocus={toggleDisableEditorFocus} />
-      {!isAcrossBlock && !isCodeBlock && (
-        <>
-          <Divider className={'my-1.5 bg-line-on-toolbar'} orientation={'vertical'} flexItem={true} />
-          <InlineCommentAction />
-        </>
-      )}
     </div>
   );
 }

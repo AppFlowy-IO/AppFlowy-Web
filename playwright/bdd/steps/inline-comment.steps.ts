@@ -2,6 +2,7 @@ import { expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
+import { AddPageSelectors } from '../../support/selectors';
 import { setupPageErrorHandling } from '../../support/test-config';
 
 // Reused steps defined elsewhere:
@@ -26,6 +27,24 @@ const EMPTY_STATE_TEXT: Record<string, string> = {
 };
 
 const documentEditor = (page: Page) => page.locator('[data-slate-editor="true"]').first();
+
+const pageModal = (page: Page) => page.locator('[role="dialog"]').last();
+
+const modalEditor = (page: Page) => pageModal(page).locator('[data-slate-editor="true"]').first();
+
+/**
+ * The page behind an open modal keeps its own selection toolbar mounted, so the
+ * comment action has to be resolved against the surface that owns the selection.
+ */
+async function commentToolbarAction(page: Page): Promise<Locator> {
+  const modalOpen = await pageModal(page)
+    .isVisible()
+    .catch(() => false);
+
+  return modalOpen
+    ? pageModal(page).getByTestId('inline-comment-toolbar-action')
+    : page.getByTestId('inline-comment-toolbar-action');
+}
 
 const sidebar = (page: Page) => page.getByTestId('inline-comment-sidebar');
 
@@ -80,8 +99,32 @@ Given('I have created and opened a document for inline comments', async ({ page 
   await expect(documentEditor(page)).toBeVisible({ timeout: 15000 });
 });
 
+Given('I have created a document that stays open in the page modal', async ({ page }) => {
+  await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
+  await page.waitForTimeout(1000);
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
+  await page.waitForTimeout(1000);
+
+  // Unlike createDocumentPageAndNavigate, the modal is left as-is: this is the
+  // surface a freshly created page lands on.
+  await expect(pageModal(page)).toBeVisible({ timeout: 15000 });
+  await expect(modalEditor(page)).toBeVisible({ timeout: 15000 });
+});
+
 When('I type {string} in the document', async ({ page }, text: string) => {
   await typeInEditor(page, documentEditor(page), text);
+});
+
+When('I type {string} in the page modal document', async ({ page }, text: string) => {
+  await typeInEditor(page, modalEditor(page), text);
+});
+
+Then('the inline comment action is visible in the selection toolbar', async ({ page }) => {
+  await expect(await commentToolbarAction(page)).toBeVisible({ timeout: 15000 });
+});
+
+Then('the commented text is highlighted in the page modal document', async ({ page }) => {
+  await expect(modalEditor(page).locator('[data-inline-comment-ids]').first()).toBeVisible({ timeout: 15000 });
 });
 
 When('I select the first {int} characters in the document', async ({ page }, count: number) => {
@@ -144,7 +187,7 @@ When('I open the inline comment composer from the read-only trigger', async ({ p
 });
 
 When('I open the inline comment composer', async ({ page }) => {
-  const action = page.getByTestId('inline-comment-toolbar-action');
+  const action = await commentToolbarAction(page);
 
   await expect(action).toBeVisible({ timeout: 10000 });
   await action.click();

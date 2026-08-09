@@ -35,6 +35,20 @@ Feature: Document inline comments
     And the comments panel shows the "Open" empty state
     And the commented text is no longer highlighted in the document
 
+  # The page modal is the first surface a new page opens in, so the selection
+  # toolbar there must offer the same comment entry point as the full page.
+  Scenario: Comment on a page opened in the page modal
+    Given I have created a document that stays open in the page modal
+    When I type "Modal pages accept inline comments." in the page modal document
+    And I select the first 5 characters in the document
+    Then the inline comment action is visible in the selection toolbar
+    When I open the inline comment composer
+    And I enter "Comment from the page modal" in the inline comment composer
+    And I submit the inline comment composer
+    Then the inline comment sidebar is visible
+    And the inline comment "Comment from the page modal" is visible in the sidebar
+    And the commented text is highlighted in the page modal document
+
   Scenario: An inline comment and its anchor survive a reload
     Given I have created and opened a document for inline comments
     When I type "Persisted anchors keep the thread visible." in the document

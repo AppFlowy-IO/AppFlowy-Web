@@ -9,6 +9,17 @@ import { useSelectionToolbarContext } from '@/components/editor/components/toolb
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useInlineCommentContextOptional } from '@/components/inline-comment/InlineCommentContext';
 
+/**
+ * Whether the selection toolbar should show the comment entry point. Exposed so
+ * the toolbar can drop the surrounding divider when the action is hidden.
+ */
+export function useInlineCommentActionEnabled(): boolean {
+  const { canComment } = useEditorContext();
+  const inlineComments = useInlineCommentContextOptional();
+
+  return Boolean(canComment && inlineComments?.active);
+}
+
 export function InlineCommentAction() {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;

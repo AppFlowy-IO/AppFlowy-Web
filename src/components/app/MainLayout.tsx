@@ -1,20 +1,12 @@
 import { useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
 
-import { useActiveRowPage } from '@/application/row-document/row-page-state';
 import { ErrorType } from '@/application/utils/error-utils';
 import { useOutlineDrawer } from '@/components/_shared/outline/outline.hooks';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useAIChatContextOptional } from '@/components/ai-chat/AIChatProvider';
-import {
-  useAppViewId,
-  useCurrentWorkspaceId,
-  useEventEmitter,
-  useOpenModalViewId,
-  useViewErrorStatus,
-} from '@/components/app/app.hooks';
+import { useAppViewId, useOpenModalViewId, useViewErrorStatus } from '@/components/app/app.hooks';
 import { ConnectBanner } from '@/components/app/ConnectBanner';
 import { AppHeader } from '@/components/app/header';
 import Main from '@/components/app/Main';
@@ -22,12 +14,7 @@ import SideBar from '@/components/app/SideBar';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import SomethingError from '@/components/error/SomethingError';
-import { InlineCommentComposer } from '@/components/inline-comment/InlineCommentComposer';
-import {
-  INLINE_COMMENT_DRAWER_WIDTH,
-  InlineCommentProvider,
-  useInlineCommentPanel,
-} from '@/components/inline-comment/InlineCommentContext';
+import { INLINE_COMMENT_DRAWER_WIDTH, useInlineCommentPanel } from '@/components/inline-comment/InlineCommentContext';
 import { InlineCommentSidebar } from '@/components/inline-comment/InlineCommentSidebar';
 
 function MainLayoutContent() {
@@ -125,38 +112,14 @@ function MainLayoutContent() {
         drawerOpened={drawerOpened}
         toggleOpenDrawer={toggleOpenDrawer}
       />
-      <InlineCommentSidebar rightOffset={chatViewDrawerOpen ? openViewDrawerWidth : 0} />
+      <InlineCommentSidebar
+        // The page modal is a MUI dialog: the panel has to sit above it to stay
+        // usable while commenting on a page opened in the modal.
+        elevated={!!openPageModalViewId}
+        rightOffset={chatViewDrawerOpen ? openViewDrawerWidth : 0}
+      />
     </div>
   );
 }
 
-function MainLayout() {
-  const eventEmitter = useEventEmitter();
-  const routeViewId = useAppViewId();
-  const workspaceId = useCurrentWorkspaceId();
-  const [searchParams] = useSearchParams();
-  const rowPageRowId = searchParams.get('r');
-  const activeRowPage = useActiveRowPage();
-  // On a full-page row (?r=), the comments belong to the row document — the
-  // route view is the containing database. Matches the desktop row page,
-  // which hosts the inline comment panel for the row's document.
-  const rowPageDocumentId = rowPageRowId && activeRowPage?.rowId === rowPageRowId ? activeRowPage.documentId : undefined;
-  const viewId = rowPageDocumentId ?? routeViewId;
-
-  return (
-    <InlineCommentProvider
-      // Keyed by the route view only: a full-page row swaps `viewId` to its row
-      // document while staying on the same route, and remounting here would
-      // tear down the whole layout underneath it.
-      key={`${workspaceId ?? ''}:${routeViewId ?? ''}`}
-      eventEmitter={eventEmitter}
-      viewId={viewId}
-      workspaceId={workspaceId}
-    >
-      <MainLayoutContent />
-      <InlineCommentComposer />
-    </InlineCommentProvider>
-  );
-}
-
-export default MainLayout;
+export default MainLayoutContent;

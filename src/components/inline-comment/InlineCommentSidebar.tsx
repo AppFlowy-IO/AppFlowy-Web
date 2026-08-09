@@ -597,7 +597,7 @@ const EMPTY_STATE_KEY: Record<InlineCommentFilter, 'noComments' | 'noOpenComment
   resolved: 'noResolvedComments',
 };
 
-export function InlineCommentSidebar({ rightOffset = 0 }: { rightOffset?: number }) {
+export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { elevated?: boolean; rightOffset?: number }) {
   const { t } = useTranslation();
   const { active, anchors, comments, filter, isPanelOpen, loading, reactions, setFilter, setPanelOpen } =
     useInlineCommentContext();
@@ -658,9 +658,11 @@ export function InlineCommentSidebar({ rightOffset = 0 }: { rightOffset?: number
     <aside
       aria-label={t('inlineComment.comments')}
       data-testid={'inline-comment-sidebar'}
-      className={
-        'fixed bottom-0 top-0 z-[60] flex flex-col border-l border-border-primary bg-background-primary shadow-lg'
-      }
+      className={cn(
+        'fixed bottom-0 top-0 flex flex-col border-l border-border-primary bg-background-primary shadow-lg',
+        // Above the MUI page-modal dialog (z-index 1300) when commenting there.
+        elevated ? 'z-[1350]' : 'z-[60]'
+      )}
       style={{ right: rightOffset, width: INLINE_COMMENT_DRAWER_WIDTH }}
     >
       <div className={'flex h-9 shrink-0 items-center bg-surface-container-layer-01 px-4'}>
