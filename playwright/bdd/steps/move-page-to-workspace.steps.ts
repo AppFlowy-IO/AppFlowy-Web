@@ -122,13 +122,15 @@ When('I move the page to the target workspace space', async ({ page }) => {
   await PageSelectors.moreActionsButton(page, pageName).click();
   await expect(ViewActionSelectors.popover(page)).toBeVisible({ timeout: 15000 });
 
-  // Open the cross-workspace picker: workspace pane first.
-  await ViewActionSelectors.moveToWorkspaceButton(page).click();
+  // Open the "Move to" picker and switch the destination workspace via the
+  // selector at the right of the search input.
+  await ViewActionSelectors.moveToButton(page).click();
+  await ViewActionSelectors.moveWorkspaceSelector(page).click({ timeout: 15000 });
   await page.getByTestId(`move-to-workspace-option-${target.id}`).click({ timeout: 15000 });
 
   // Then the destination space inside the target workspace.
   await page.getByTestId(`move-to-workspace-target-${target.spaceId}`).click({ timeout: 30000 });
-  await page.getByTestId('move-to-workspace-confirm').click();
+  await ViewActionSelectors.moveConfirmButton(page).click();
 
   // The move runs as an async server task; the success toast marks completion.
   await expect(page.getByText(`Moved to ${target.name}`)).toBeVisible({ timeout: 90000 });

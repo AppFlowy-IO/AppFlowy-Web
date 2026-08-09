@@ -61,6 +61,7 @@ export interface InputProps
     VariantProps<typeof inputVariants> {
   inputProps?: React.InputHTMLAttributes<HTMLInputElement>;
   inputRef?: React.Ref<HTMLInputElement>;
+  endAdornment?: React.ReactNode;
 }
 
 const SearchInput = forwardRef<HTMLInputElement, InputProps>(({
@@ -70,6 +71,7 @@ const SearchInput = forwardRef<HTMLInputElement, InputProps>(({
   size,
   inputProps,
   inputRef,
+  endAdornment,
   ...props
 }, ref) => {
   const [focused, setFocused] = React.useState(false);
@@ -107,6 +109,7 @@ const SearchInput = forwardRef<HTMLInputElement, InputProps>(({
           props?.onBlur?.(e);
         }}
       />
+      {endAdornment}
     </div>
 
   );

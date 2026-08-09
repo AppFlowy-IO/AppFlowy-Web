@@ -132,7 +132,8 @@ export const ViewActionSelectors = {
   openNewTabButton: (page: Page) => page.getByTestId('more-page-open-new-tab'),
   duplicateButton: (page: Page) => page.getByTestId('more-page-duplicate'),
   moveToButton: (page: Page) => page.getByTestId('more-page-move-to'),
-  moveToWorkspaceButton: (page: Page) => page.getByTestId('more-page-move-to-workspace'),
+  moveWorkspaceSelector: (page: Page) => page.getByTestId('move-page-workspace-selector'),
+  moveConfirmButton: (page: Page) => page.getByTestId('move-page-confirm'),
 };
 
 /**
