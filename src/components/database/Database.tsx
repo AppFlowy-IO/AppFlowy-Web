@@ -125,6 +125,8 @@ export interface Database2Props {
    * inline comments inside a row document.
    */
   canComment?: boolean;
+  /** Canonical server write permission for row-document comment anchors. */
+  canWrite?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
@@ -238,6 +240,7 @@ function Database(props: Database2Props) {
     appendBreadcrumb,
     readOnly = true,
     canComment = false,
+    canWrite = !readOnly,
     loadView,
     bindViewSync,
     checkIfRowDocumentExists,
@@ -1314,6 +1317,7 @@ function Database(props: Database2Props) {
     () => ({
       readOnly,
       canComment,
+      canWrite,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,
@@ -1358,6 +1362,7 @@ function Database(props: Database2Props) {
     [
       readOnly,
       canComment,
+      canWrite,
       ensureRow,
       loadRowFromSeed,
       peekRowDocFromSeed,

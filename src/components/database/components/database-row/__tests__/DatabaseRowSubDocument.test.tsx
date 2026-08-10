@@ -46,8 +46,27 @@ jest.mock('@/components/_shared/skeleton/EditorSkeleton', () => ({
 }));
 
 jest.mock('@/components/editor', () => ({
-  Editor: ({ viewId, doc }: { viewId: string; doc: { guid: string } }) => (
-    <div data-testid='row-document-editor' data-view-id={viewId} data-doc-id={doc.guid} />
+  Editor: ({
+    viewId,
+    doc,
+    readOnly,
+    canComment,
+    canWrite,
+  }: {
+    viewId: string;
+    doc: { guid: string };
+    readOnly: boolean;
+    canComment?: boolean;
+    canWrite?: boolean;
+  }) => (
+    <div
+      data-testid='row-document-editor'
+      data-view-id={viewId}
+      data-doc-id={doc.guid}
+      data-read-only={String(readOnly)}
+      data-can-comment={String(canComment)}
+      data-can-write={String(canWrite)}
+    />
   ),
 }));
 
@@ -95,12 +114,18 @@ function configureRowDocumentTest({
   loadRowDocument,
   createRowDocument,
   checkIfRowDocumentExists,
+  readOnly = false,
+  canComment = false,
+  canWrite = !readOnly,
 }: {
   documentIds: Record<string, string>;
   cachedDocs: Map<string, YDoc>;
   loadRowDocument: jest.Mock;
   createRowDocument: jest.Mock;
   checkIfRowDocumentExists: jest.Mock;
+  readOnly?: boolean;
+  canComment?: boolean;
+  canWrite?: boolean;
 }) {
   const databaseDoc = new Y.Doc({ guid: 'database-id' }) as YDoc;
   const database = databaseDoc.getMap('database') as YDatabase;
@@ -147,7 +172,9 @@ function configureRowDocumentTest({
     loadRowDocument,
     createRowDocument,
     checkIfRowDocumentExists,
-    readOnly: false,
+    readOnly,
+    canComment,
+    canWrite,
     rowMap: null,
     workspaceId: 'workspace-id',
   });
@@ -280,5 +307,30 @@ describe('DatabaseRowSubDocument', () => {
     expect(editor.getAttribute('data-view-id')).toBe(secondDocumentId);
     expect(editor.getAttribute('data-doc-id')).toBe(secondDocumentId);
     expect(firstCachedDoc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.document)).toBe(false);
+  });
+
+  it('preserves inherited comment-only access in the row document editor', async () => {
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument: jest.fn().mockResolvedValue(cachedDoc),
+      createRowDocument: jest.fn().mockResolvedValue(createRowDocumentState(documentId)),
+      checkIfRowDocumentExists: jest.fn().mockResolvedValue(true),
+      readOnly: true,
+      canComment: true,
+      canWrite: false,
+    });
+
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+
+    const editor = await screen.findByTestId('row-document-editor');
+
+    expect(editor.getAttribute('data-read-only')).toBe('true');
+    expect(editor.getAttribute('data-can-comment')).toBe('true');
+    expect(editor.getAttribute('data-can-write')).toBe('false');
   });
 });

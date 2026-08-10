@@ -1,11 +1,19 @@
 import { createEditor, Editor, Element, Point, Range, Text } from 'slate';
 import { withReact } from 'slate-react';
+import * as Y from 'yjs';
 
+import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
+import { withYjs } from '@/application/slate-yjs/plugins/withYjs';
 import { deltaInsertToSlateNode, slateNodeToDeltaInsert } from '@/application/slate-yjs/utils/convert';
-import { BlockType } from '@/application/types';
+import { CollabOrigin, BlockType } from '@/application/types';
+import {
+  insertBlock,
+  withTestingYDoc,
+} from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 
 import {
   addInlineCommentAnchor,
+  applyAuthorizedInlineCommentUpdate,
   collectInlineCommentAnchors,
   getInlineCommentIds,
   getInlineCommentSelection,
@@ -143,5 +151,84 @@ describe('desktop-compatible inline comment anchors', () => {
     expect(getInlineCommentIds({ text: 'selected', 'comment-ids': 'legacy-comment' } as unknown as Text)).toEqual([
       'legacy-comment',
     ]);
+  });
+
+  it('keeps anchor add/remove transactions out of text undo history', () => {
+    const doc = withTestingYDoc('page-1');
+    const { applyDelta } = insertBlock({
+      doc,
+      blockObject: {
+        id: 'block-1',
+        ty: BlockType.Paragraph,
+        relation_id: 'block-1',
+        text_id: 'text-1',
+        data: '{}',
+      },
+    });
+
+    applyDelta([{ insert: 'abcdefghij' }]);
+
+    const editor = withYHistory(
+      withYjs(withReact(createEditor()), doc, {
+        localOrigin: CollabOrigin.Local,
+        readOnly: false,
+      })
+    );
+
+    editor.connect();
+
+    const selection = getInlineCommentSelection(editor, rangeAtTextOffsets(editor, 2, 8));
+
+    addInlineCommentAnchor(editor, selection!, 'comment-1');
+    expect(editor.undoManager.undoStack).toHaveLength(0);
+    expect(collectInlineCommentAnchors(editor).has('comment-1')).toBe(true);
+
+    removeInlineCommentAnchor(editor, 'comment-1');
+    expect(editor.undoManager.undoStack).toHaveLength(0);
+    expect(collectInlineCommentAnchors(editor).has('comment-1')).toBe(false);
+
+    editor.disconnect();
+  });
+
+  it('does not consume live Yjs clocks until an authorized update is accepted', () => {
+    const doc = withTestingYDoc('page-1');
+    const { applyDelta } = insertBlock({
+      doc,
+      blockObject: {
+        id: 'block-1',
+        ty: BlockType.Paragraph,
+        relation_id: 'block-1',
+        text_id: 'text-1',
+        data: '{}',
+      },
+    });
+
+    applyDelta([{ insert: 'abcdefghij' }]);
+
+    const editor = withYjs(withReact(createEditor()), doc, {
+      localOrigin: CollabOrigin.Local,
+      readOnly: true,
+    });
+
+    editor.connect();
+
+    const beforeStateVector = Y.encodeStateVector(doc);
+    const selection = getInlineCommentSelection(editor, rangeAtTextOffsets(editor, 2, 5));
+    const rejectedUpdate = addInlineCommentAnchor(editor, selection!, 'comment-1', true);
+
+    expect(rejectedUpdate).not.toBeNull();
+    expect(Y.encodeStateVector(doc)).toEqual(beforeStateVector);
+    expect(collectInlineCommentAnchors(editor).has('comment-1')).toBe(false);
+
+    // Discarding a failed request leaves the live document untouched, so the
+    // next independently generated update has no dependency on the failure.
+    const acceptedUpdate = addInlineCommentAnchor(editor, selection!, 'comment-2', true);
+
+    expect(acceptedUpdate).not.toBeNull();
+    expect(applyAuthorizedInlineCommentUpdate(editor, acceptedUpdate!)).toBe(true);
+    expect(collectInlineCommentAnchors(editor).get('comment-2')?.quotedText).toBe('cde');
+    expect(collectInlineCommentAnchors(editor).has('comment-1')).toBe(false);
+
+    editor.disconnect();
   });
 });

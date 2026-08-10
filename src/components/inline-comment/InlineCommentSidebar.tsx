@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -31,7 +31,13 @@ import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-import { INLINE_COMMENT_DRAWER_WIDTH, InlineCommentFilter, useInlineCommentContext } from './InlineCommentContext';
+import {
+  INLINE_COMMENT_DRAWER_WIDTH,
+  InlineCommentFilter,
+  useInlineCommentActions,
+  useInlineCommentContext,
+  useInlineCommentStatus,
+} from './InlineCommentContext';
 
 const DESKTOP_PERSON_MENTION_PATTERN = /@\[([^\]\n]+)\]\(([^)\s]+)\)/g;
 // Desktop truncates a comment body past this many characters behind a
@@ -41,6 +47,7 @@ const TRUNCATE_THRESHOLD = 150;
 const EMPTY_REACTIONS: InlineCommentReaction[] = [];
 const EMPTY_REPLIES: InlineComment[] = [];
 const EmojiPicker = lazy(() => import('@/components/_shared/emoji-picker/EmojiPicker'));
+const InlineCommentPortalContainerContext = createContext<HTMLElement | null>(null);
 
 function renderCommentContent(content: string): ReactNode {
   const parts: ReactNode[] = [];
@@ -70,19 +77,37 @@ function renderCommentContent(content: string): ReactNode {
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
+const INVALID_COMMENT_DATE = { label: '', tooltip: '' };
+
+interface ParsedCommentTimestamp {
+  absolute: string;
+  tooltip: string;
+  value: number;
+}
+
+function parseCommentTimestamp(createdAt: string): ParsedCommentTimestamp | null {
+  const parsed = dayjs(createdAt);
+
+  return parsed.isValid()
+    ? {
+        absolute: parsed.format('MMM D, YYYY'),
+        tooltip: parsed.format('YYYY-MM-DD HH:mm:ss'),
+        value: parsed.valueOf(),
+      }
+    : null;
+}
 
 /**
  * Mirrors the desktop `formatCommentDate`: relative within the last week,
- * absolute afterwards. One `dayjs` parse plus integer math — a comment list
- * re-renders on every mutation, so this runs for every visible entry.
+ * absolute afterwards. Integer math over a cached parse.
  */
 function useCommentDate(createdAt: string) {
   const { t } = useTranslation();
-  const timestamp = dayjs(createdAt);
+  const timestamp = useMemo(() => parseCommentTimestamp(createdAt), [createdAt]);
 
-  if (!timestamp.isValid()) return { label: '', tooltip: '' };
+  if (!timestamp) return INVALID_COMMENT_DATE;
 
-  const elapsed = Math.max(0, Date.now() - timestamp.valueOf());
+  const elapsed = Math.max(0, Date.now() - timestamp.value);
   const days = Math.floor(elapsed / DAY_MS);
 
   const label =
@@ -94,9 +119,9 @@ function useCommentDate(createdAt: string) {
         : t('globalComment.showHours', { count: Math.floor(elapsed / HOUR_MS) })
       : days < 7
       ? t('globalComment.showDays', { count: days })
-      : timestamp.format('MMM D, YYYY');
+      : timestamp.absolute;
 
-  return { label, tooltip: timestamp.format('YYYY-MM-DD HH:mm:ss') };
+  return { label, tooltip: timestamp.tooltip };
 }
 
 function CommentAvatar({ comment }: { comment: InlineComment }) {
@@ -146,8 +171,9 @@ function ActionIconButton({
 
 function AddReactionButton({ commentId, disabled, testId }: { commentId: string; disabled: boolean; testId: string }) {
   const { t } = useTranslation();
-  const { toggleReaction } = useInlineCommentContext();
+  const { toggleReaction } = useInlineCommentActions();
   const [open, setOpen] = useState(false);
+  const portalContainer = useContext(InlineCommentPortalContainerContext);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -167,7 +193,7 @@ function AddReactionButton({ commentId, disabled, testId }: { commentId: string;
         </TooltipTrigger>
         <TooltipContent>{t('inlineComment.addReaction')}</TooltipContent>
       </Tooltip>
-      <PopoverContent align={'end'} className={'z-[80] w-auto min-w-0 p-0'}>
+      <PopoverContent container={portalContainer} align={'end'} className={'z-[80] w-auto min-w-0 p-0'}>
         <Suspense
           fallback={
             <div className={'flex h-[360px] w-[320px] items-center justify-center text-sm text-text-tertiary'}>
@@ -199,10 +225,11 @@ function DeleteMenu({
   testIdSuffix: string;
 }) {
   const { t } = useTranslation();
-  const { deleteComment } = useInlineCommentContext();
+  const { deleteComment } = useInlineCommentActions();
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const portalContainer = useContext(InlineCommentPortalContainerContext);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -252,7 +279,7 @@ function DeleteMenu({
       )}
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent onClick={(event) => event.stopPropagation()}>
+        <AlertDialogContent container={portalContainer} onClick={(event) => event.stopPropagation()}>
           <AlertDialogHeader>
             <AlertDialogTitle className={'text-sm font-medium text-text-primary'}>
               {t(isReply ? 'inlineComment.deleteReplyTitle' : 'inlineComment.delete')}
@@ -277,11 +304,15 @@ function DeleteMenu({
 
 function ReactionBar({ comment, reactions }: { comment: InlineComment; reactions: InlineCommentReaction[] }) {
   const { t } = useTranslation();
-  const { canComment, currentUserUuid, mutatingCommentIds, toggleReaction } = useInlineCommentContext();
+  const { canComment, currentUserUuid, mutatingCommentIds } = useInlineCommentStatus();
+  const { toggleReaction } = useInlineCommentActions();
+
+  if (comment.isDeleted || reactions.length === 0) return null;
+
   const mutating = mutatingCommentIds.has(comment.commentId);
   const commentReactions = reactions.filter((reaction) => reaction.reactUsers.length > 0);
 
-  if (comment.isDeleted || commentReactions.length === 0) return null;
+  if (commentReactions.length === 0) return null;
 
   return (
     <div className={'mt-2 flex flex-wrap items-center gap-1'} onClick={(event) => event.stopPropagation()}>
@@ -374,12 +405,18 @@ function CommentEntry({
   reactions?: InlineCommentReaction[];
 }) {
   const { t } = useTranslation();
-  const { canComment, mutatingCommentIds, resolveComment } = useInlineCommentContext();
+  const { canComment, canResolveAllComments, currentUserUuid, mutatingCommentIds } = useInlineCommentStatus();
+  const { resolveComment } = useInlineCommentActions();
   const { label: timeLabel, tooltip: timeTooltip } = useCommentDate(comment.createdAt);
   const mutating = mutatingCommentIds.has(comment.commentId);
   const testIdSuffix = isReply ? `-${comment.commentId}` : '';
   const showActions = canComment && !comment.isDeleted;
   const canReply = Boolean(onReply) && !comment.isResolved;
+  const canResolve =
+    !isReply &&
+    (canResolveAllComments ||
+      comment.canBeDeleted ||
+      (Boolean(currentUserUuid) && comment.user?.uuid === currentUserUuid));
 
   // Desktop reveals the thread root's actions while the pointer is anywhere on
   // the card, and each reply's actions only while that reply is hovered.
@@ -428,14 +465,16 @@ function CommentEntry({
                 <ReplyIcon className={'h-5 w-5'} />
               </ActionIconButton>
             )}
-            <ActionIconButton
-              disabled={mutating}
-              label={t(comment.isResolved ? 'inlineComment.reopen' : 'inlineComment.resolve')}
-              testId={`inline-comment-resolve-button${testIdSuffix}`}
-              onClick={() => void resolveComment(comment.commentId, !comment.isResolved).catch(() => undefined)}
-            >
-              {comment.isResolved ? <ReopenIcon className={'h-5 w-5'} /> : <ResolveIcon className={'h-5 w-5'} />}
-            </ActionIconButton>
+            {canResolve && (
+              <ActionIconButton
+                disabled={mutating}
+                label={t(comment.isResolved ? 'inlineComment.reopen' : 'inlineComment.resolve')}
+                testId={`inline-comment-resolve-button${testIdSuffix}`}
+                onClick={() => void resolveComment(comment.commentId, !comment.isResolved).catch(() => undefined)}
+              >
+                {comment.isResolved ? <ReopenIcon className={'h-5 w-5'} /> : <ResolveIcon className={'h-5 w-5'} />}
+              </ActionIconButton>
+            )}
             {comment.canBeDeleted && (
               <DeleteMenu
                 commentId={comment.commentId}
@@ -462,7 +501,8 @@ function CommentEntry({
 
 function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onClose: () => void }) {
   const { t } = useTranslation();
-  const { createReply, mutatingCommentIds } = useInlineCommentContext();
+  const { mutatingCommentIds } = useInlineCommentStatus();
+  const { createReply } = useInlineCommentActions();
   const [content, setContent] = useState('');
   const submitting = mutatingCommentIds.has(parentCommentId);
 
@@ -511,31 +551,38 @@ function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onC
 
 function CommentThread({
   comment,
+  focusedCommentId,
+  quote,
   reactionsByComment,
   replies,
 }: {
   comment: InlineComment;
+  focusedCommentId: string | null;
+  quote?: string;
   reactionsByComment: ReadonlyMap<string, InlineCommentReaction[]>;
   replies: InlineComment[];
 }) {
   const { t } = useTranslation();
-  const { anchors, canComment, focusComment, focusedCommentId } = useInlineCommentContext();
-  const [replying, setReplying] = useState(false);
-  const [repliesExpanded, setRepliesExpanded] = useState(false);
-  const replyCountRef = useRef(replies.length);
+  const { canComment } = useInlineCommentStatus();
+  const { focusComment } = useInlineCommentActions();
   const focused = focusedCommentId === comment.commentId;
-  const quote = anchors.get(comment.commentId)?.quotedText;
   const hasFocusedReply = replies.some((reply) => reply.commentId === focusedCommentId);
+  const [replying, setReplying] = useState(false);
+  const [repliesExpanded, setRepliesExpanded] = useState(hasFocusedReply);
+  const previousReplyCount = useRef(replies.length);
 
-  // Desktop expands the thread as soon as a reply lands, and collapses again
-  // once the last reply is gone.
+  // Desktop expands the thread as soon as a reply lands or one of its replies
+  // becomes the focus target, and collapses again once the last reply is gone.
   useEffect(() => {
-    if (replies.length > replyCountRef.current) setRepliesExpanded(true);
-    if (replies.length === 0) setRepliesExpanded(false);
-    replyCountRef.current = replies.length;
+    if (replies.length > previousReplyCount.current) setRepliesExpanded(true);
+    else if (replies.length === 0) setRepliesExpanded(false);
+    previousReplyCount.current = replies.length;
   }, [replies.length]);
 
-  const repliesVisible = repliesExpanded || hasFocusedReply;
+  useEffect(() => {
+    if (hasFocusedReply) setRepliesExpanded(true);
+  }, [hasFocusedReply]);
+
   const canReply = canComment && !comment.isDeleted && !comment.isResolved;
 
   return (
@@ -567,17 +614,17 @@ function CommentThread({
               className={
                 'flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium text-text-secondary hover:bg-fill-content-hover'
               }
-              onClick={() => setRepliesExpanded(!repliesVisible)}
+              onClick={() => setRepliesExpanded((value) => !value)}
             >
-              {t(repliesVisible ? 'inlineComment.hideReplies' : 'inlineComment.showReplies', {
+              {t(repliesExpanded ? 'inlineComment.hideReplies' : 'inlineComment.showReplies', {
                 count: replies.length,
               })}
-              {repliesVisible ? <ChevronUpIcon className={'h-4 w-4'} /> : <ChevronDownIcon className={'h-4 w-4'} />}
+              {repliesExpanded ? <ChevronUpIcon className={'h-4 w-4'} /> : <ChevronDownIcon className={'h-4 w-4'} />}
             </button>
             <span className={'h-px flex-1 bg-border-primary'} />
           </div>
 
-          {repliesVisible &&
+          {repliesExpanded &&
             replies.map((reply) => (
               <CommentEntry
                 key={reply.commentId}
@@ -609,8 +656,19 @@ const EMPTY_STATE_KEY: Record<InlineCommentFilter, 'noComments' | 'noOpenComment
 
 export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { elevated?: boolean; rightOffset?: number }) {
   const { t } = useTranslation();
-  const { active, anchors, comments, filter, isPanelOpen, loading, reactions, setFilter, setPanelOpen } =
-    useInlineCommentContext();
+  const {
+    active,
+    anchors,
+    comments,
+    filter,
+    focusedCommentId,
+    isPanelOpen,
+    loading,
+    reactions,
+    setFilter,
+    setPanelOpen,
+  } = useInlineCommentContext();
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
 
   // One pass over the reaction list instead of a filter per rendered entry.
   const reactionsByComment = useMemo(() => {
@@ -629,104 +687,125 @@ export function InlineCommentSidebar({ elevated = false, rightOffset = 0 }: { el
     return result;
   }, [reactions]);
 
+  // Both lists sort by creation time. Parse each timestamp once up front rather
+  // than the O(n log n) times a `Date.parse` comparator would.
+  const createdAtMs = useMemo(() => {
+    const result = new Map<string, number>();
+
+    for (const comment of comments) {
+      result.set(comment.commentId, Date.parse(comment.createdAt));
+    }
+
+    return result;
+  }, [comments]);
+
   const repliesByParent = useMemo(() => {
     const result = new Map<string, InlineComment[]>();
 
     for (const comment of comments) {
       if (!comment.replyCommentId || comment.isDeleted) continue;
 
-      const replies = result.get(comment.replyCommentId) ?? [];
+      const replies = result.get(comment.replyCommentId);
 
-      replies.push(comment);
-      result.set(comment.replyCommentId, replies);
+      if (replies) {
+        replies.push(comment);
+      } else {
+        result.set(comment.replyCommentId, [comment]);
+      }
     }
 
     for (const replies of result.values()) {
-      replies.sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+      replies.sort((left, right) => (createdAtMs.get(left.commentId) ?? 0) - (createdAtMs.get(right.commentId) ?? 0));
     }
 
     return result;
-  }, [comments]);
+  }, [comments, createdAtMs]);
 
-  const threads = useMemo(
-    () =>
-      comments
-        .filter(
-          (comment) =>
-            !comment.replyCommentId &&
-            !comment.isDeleted &&
-            anchors.has(comment.commentId) &&
-            (filter === 'all' || (filter === 'resolved' ? comment.isResolved : !comment.isResolved))
-        )
-        .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)),
-    [anchors, comments, filter]
-  );
+  const threads = useMemo(() => {
+    const result: InlineComment[] = [];
+
+    for (const comment of comments) {
+      if (comment.replyCommentId || comment.isDeleted || !anchors.has(comment.commentId)) continue;
+      if (filter !== 'all' && (filter === 'resolved' ? !comment.isResolved : comment.isResolved)) continue;
+
+      result.push(comment);
+    }
+
+    return result.sort((left, right) => (createdAtMs.get(right.commentId) ?? 0) - (createdAtMs.get(left.commentId) ?? 0));
+  }, [anchors, comments, createdAtMs, filter]);
 
   if (!active || !isPanelOpen) return null;
 
   return (
-    <aside
-      aria-label={t('inlineComment.comments')}
-      data-testid={'inline-comment-sidebar'}
-      className={cn(
-        'fixed bottom-0 top-0 flex flex-col border-l border-border-primary bg-background-primary shadow-lg',
-        // Above the MUI page-modal dialog (z-index 1300) when commenting there.
-        elevated ? 'z-[1350]' : 'z-[60]'
-      )}
-      style={{ right: rightOffset, width: INLINE_COMMENT_DRAWER_WIDTH }}
-    >
-      <div className={'flex h-9 shrink-0 items-center bg-surface-container-layer-01 px-4'}>
-        <h2 className={'flex-1 truncate text-sm font-semibold text-text-primary'}>{t('inlineComment.comments')}</h2>
-        <button
-          aria-label={t('button.close')}
-          data-testid={'inline-comment-sidebar-close'}
-          className={'rounded p-1 text-icon-secondary hover:bg-fill-content-hover'}
-          onClick={() => setPanelOpen(false)}
-        >
-          <CloseIcon className={'h-5 w-5'} />
-        </button>
-      </div>
-
-      <div className={'flex shrink-0 gap-2 px-4 pb-2 pt-4'}>
-        {FILTERS.map((item) => (
-          <button
-            key={item}
-            data-testid={`inline-comment-filter-${item}`}
-            className={cn(
-              'rounded-md px-3 py-1 text-sm text-text-primary',
-              filter === item ? 'bg-fill-info-light font-semibold' : 'hover:bg-fill-content-hover'
-            )}
-            onClick={() => setFilter(item)}
-          >
-            {t(`inlineComment.${item}`)}
-          </button>
-        ))}
-      </div>
-
-      <div className={'flex-1 overflow-y-auto px-4 py-2'} aria-live={'polite'}>
-        {loading && threads.length === 0 ? (
-          <div className={'py-10 text-center text-sm text-text-tertiary'}>{t('inlineComment.loading')}</div>
-        ) : threads.length === 0 ? (
-          <div
-            data-testid={'inline-comment-empty'}
-            className={'flex flex-col items-center py-16 text-center text-text-secondary'}
-          >
-            <EmptyCommentIcon className={'mb-4 h-12 w-12 text-icon-quaternary'} />
-            <span className={'text-base font-medium'}>{t(`inlineComment.${EMPTY_STATE_KEY[filter]}`)}</span>
-          </div>
-        ) : (
-          <div className={'flex flex-col gap-3'}>
-            {threads.map((comment) => (
-              <CommentThread
-                key={comment.commentId}
-                comment={comment}
-                reactionsByComment={reactionsByComment}
-                replies={repliesByParent.get(comment.commentId) ?? EMPTY_REPLIES}
-              />
-            ))}
-          </div>
+    <InlineCommentPortalContainerContext.Provider value={portalContainer}>
+      <aside
+        ref={setPortalContainer}
+        aria-label={t('inlineComment.comments')}
+        data-testid={'inline-comment-sidebar'}
+        className={cn(
+          'fixed bottom-0 top-0 flex flex-col border-l border-border-primary bg-background-primary shadow-lg',
+          // Above the MUI page-modal dialog (z-index 1300) when commenting there.
+          elevated ? 'z-[1350]' : 'z-[60]'
         )}
-      </div>
-    </aside>
+        style={{ right: rightOffset, width: INLINE_COMMENT_DRAWER_WIDTH }}
+      >
+        <div className={'flex h-9 shrink-0 items-center bg-surface-container-layer-01 px-4'}>
+          <h2 className={'flex-1 truncate text-sm font-semibold text-text-primary'}>{t('inlineComment.comments')}</h2>
+          <button
+            aria-label={t('button.close')}
+            data-testid={'inline-comment-sidebar-close'}
+            className={'rounded p-1 text-icon-secondary hover:bg-fill-content-hover'}
+            onClick={() => setPanelOpen(false)}
+          >
+            <CloseIcon className={'h-5 w-5'} />
+          </button>
+        </div>
+
+        <div className={'flex shrink-0 gap-2 px-4 pb-2 pt-4'}>
+          {FILTERS.map((item) => (
+            <button
+              key={item}
+              data-testid={`inline-comment-filter-${item}`}
+              className={cn(
+                'rounded-md px-3 py-1 text-sm text-text-primary',
+                filter === item ? 'bg-fill-info-light font-semibold' : 'hover:bg-fill-content-hover'
+              )}
+              onClick={() => setFilter(item)}
+            >
+              {t(`inlineComment.${item}`)}
+            </button>
+          ))}
+        </div>
+
+        <div className={'flex-1 overflow-y-auto px-4 py-2'} aria-live={'polite'}>
+          {loading && threads.length === 0 ? (
+            <div data-testid={'inline-comment-loading'} className={'py-10 text-center text-sm text-text-tertiary'}>
+              {t('inlineComment.loading')}
+            </div>
+          ) : threads.length === 0 ? (
+            <div
+              data-testid={'inline-comment-empty'}
+              className={'flex flex-col items-center py-16 text-center text-text-secondary'}
+            >
+              <EmptyCommentIcon className={'mb-4 h-12 w-12 text-icon-quaternary'} />
+              <span className={'text-base font-medium'}>{t(`inlineComment.${EMPTY_STATE_KEY[filter]}`)}</span>
+            </div>
+          ) : (
+            <div className={'flex flex-col gap-3'}>
+              {threads.map((comment) => (
+                <CommentThread
+                  key={comment.commentId}
+                  comment={comment}
+                  focusedCommentId={focusedCommentId}
+                  quote={anchors.get(comment.commentId)?.quotedText}
+                  reactionsByComment={reactionsByComment}
+                  replies={repliesByParent.get(comment.commentId) ?? EMPTY_REPLIES}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+    </InlineCommentPortalContainerContext.Provider>
   );
 }

@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   createBlock,
   createEmptyDocument,
+  deepCopyBlock,
   deleteBlock,
   getBlock,
   getChildrenArray,
@@ -310,6 +311,84 @@ describe('initializeDocumentStructure', () => {
     expect(paragraphBlock.get(YjsEditorKey.block_type)).toBe(BlockType.HeadingBlock);
     expect(JSON.parse(paragraphBlock.get(YjsEditorKey.block_data))).toEqual({ level: 2 });
     expect(textMap.get(paragraphId).toDelta()).toEqual([{ insert: 'Hello AppFlowy' }]);
+  });
+});
+
+describe('deepCopyBlock', () => {
+  it('strips view-scoped comment ids from a duplicated block and its descendants', () => {
+    const doc = new Y.Doc();
+
+    initializeDocumentStructure(doc, false);
+
+    const { sharedRoot, pageId } = getDocumentData(doc);
+    const page = getBlock(pageId, sharedRoot);
+    const source = createTextBlock({
+      sharedRoot,
+      parent: page,
+      type: BlockType.Paragraph,
+      data: {},
+      text: '',
+    });
+    const sourceText = getRequiredText(source, sharedRoot);
+
+    sourceText.applyDelta([
+      { insert: 'plain ' },
+      { insert: 'commented', attributes: { bold: true, 'comment-ids': ['comment-1'] } },
+    ]);
+
+    const child = createTextBlock({
+      sharedRoot,
+      parent: source,
+      type: BlockType.Paragraph,
+      data: {},
+      text: '',
+    });
+
+    getRequiredText(child, sharedRoot).applyDelta([
+      { insert: 'nested', attributes: { 'comment-ids': ['comment-2'] } },
+    ]);
+
+    const copiedId = deepCopyBlock(sharedRoot, source, undefined, true);
+    const copied = getBlock(copiedId!, sharedRoot);
+    const copiedChildren = getChildrenArray(copied.get(YjsEditorKey.block_children), sharedRoot);
+    const copiedChild = getBlock(copiedChildren.get(0), sharedRoot);
+
+    expect(getRequiredText(copied, sharedRoot).toDelta()).toEqual([
+      { insert: 'plain ' },
+      { insert: 'commented', attributes: { bold: true } },
+    ]);
+    expect(getRequiredText(copiedChild, sharedRoot).toDelta()).toEqual([{ insert: 'nested' }]);
+    expect(sourceText.toDelta()).toEqual([
+      { insert: 'plain ' },
+      { insert: 'commented', attributes: { bold: true, 'comment-ids': ['comment-1'] } },
+    ]);
+  });
+
+  it('preserves comment ids when the deep copy is used to move content', () => {
+    const doc = new Y.Doc();
+
+    initializeDocumentStructure(doc, false);
+
+    const { sharedRoot, pageId } = getDocumentData(doc);
+    const page = getBlock(pageId, sharedRoot);
+    const source = createTextBlock({
+      sharedRoot,
+      parent: page,
+      type: BlockType.Paragraph,
+      data: {},
+      text: '',
+    });
+
+    getRequiredText(source, sharedRoot).applyDelta([
+      { insert: 'commented', attributes: { 'comment-ids': ['comment-1'] } },
+    ]);
+
+    const copiedId = deepCopyBlock(sharedRoot, source);
+    const copied = getBlock(copiedId!, sharedRoot);
+
+    expect(getRequiredText(copied, sharedRoot).toDelta()).toEqual([
+      { insert: 'commented', attributes: { 'comment-ids': ['comment-1'] } },
+    ]);
   });
 });
 

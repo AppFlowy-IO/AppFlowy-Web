@@ -7,7 +7,7 @@ import { ReactComponent as AddCommentIcon } from '@/assets/icons/toolbar_add_com
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { useInlineCommentContextOptional } from '@/components/inline-comment/InlineCommentContext';
+import { useInlineCommentComposeOptional } from '@/components/inline-comment/InlineCommentContext';
 
 /**
  * Whether the selection toolbar should show the comment entry point. Exposed so
@@ -15,7 +15,7 @@ import { useInlineCommentContextOptional } from '@/components/inline-comment/Inl
  */
 export function useInlineCommentActionEnabled(): boolean {
   const { canComment } = useEditorContext();
-  const inlineComments = useInlineCommentContextOptional();
+  const inlineComments = useInlineCommentComposeOptional();
 
   return Boolean(canComment && inlineComments?.active);
 }
@@ -24,7 +24,7 @@ export function InlineCommentAction() {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;
   const { canComment } = useEditorContext();
-  const inlineComments = useInlineCommentContextOptional();
+  const inlineComments = useInlineCommentComposeOptional();
   const { forceShow } = useSelectionToolbarContext();
 
   const handleClick = useCallback(() => {

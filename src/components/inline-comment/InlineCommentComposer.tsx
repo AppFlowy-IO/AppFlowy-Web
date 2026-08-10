@@ -6,7 +6,7 @@ import { ReactComponent as SendCommentIcon } from '@/assets/icons/send_comment.s
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { cn } from '@/lib/utils';
 
-import { useInlineCommentContext } from './InlineCommentContext';
+import { useInlineCommentCompose, useInlineCommentStatus } from './InlineCommentContext';
 
 // Matches the desktop compose menu: a 320px wide single-row popup anchored to
 // the selection (inline_comment_compose_menu.dart).
@@ -15,7 +15,8 @@ const COMPOSER_ESTIMATED_HEIGHT = 56;
 
 export function InlineCommentComposer() {
   const { t } = useTranslation();
-  const { cancelPendingComment, mutatingCommentIds, pendingComment, submitPendingComment } = useInlineCommentContext();
+  const { cancelPendingComment, pendingComment, submitPendingComment } = useInlineCommentCompose();
+  const { mutatingCommentIds } = useInlineCommentStatus();
   const [content, setContent] = useState('');
   const composerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);

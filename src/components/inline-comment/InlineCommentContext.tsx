@@ -2,7 +2,7 @@ import type EventEmitter from 'events';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Editor, Range, RangeRef, Transforms } from 'slate';
+import { Editor, Operation, Range, RangeRef, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 import { validate as uuidValidate } from 'uuid';
 
@@ -14,8 +14,10 @@ import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import {
   addInlineCommentAnchor,
+  applyAuthorizedInlineCommentUpdate,
   collectInlineCommentAnchors,
   getInlineCommentSelection,
+  INLINE_COMMENT_IDS_KEY,
   InlineCommentAnchor,
   InlineCommentSelection,
   inlineCommentAnchorsEqual,
@@ -34,6 +36,34 @@ function hasAnchorsForTopLevelComments(
   return comments.every((comment) => comment.replyCommentId || comment.isDeleted || anchors.has(comment.commentId));
 }
 
+/**
+ * Collecting the anchors walks every text node in the document, and Slate calls
+ * `onChange` for every operation batch — including caret moves. Skip the walk
+ * whenever the batch provably cannot have touched an anchor, so a document
+ * without comments pays nothing for having the feature available.
+ */
+export function operationsCanAffectAnchors(operations: readonly Operation[], hasAnchors: boolean): boolean {
+  for (const operation of operations) {
+    // Moving the selection never adds, moves or drops an anchor.
+    if (operation.type === 'set_selection') continue;
+
+    // Once anchors exist any content change can shift or delete one.
+    if (hasAnchors) return true;
+
+    // With no anchors in the document, the only ways one can appear are an
+    // explicit id write and content arriving from a paste or a remote peer.
+    if (operation.type === 'insert_node') return true;
+    if (operation.type === 'set_node' && INLINE_COMMENT_IDS_KEY in operation.newProperties) return true;
+    // Partial Y.Text formats are translated into split_node operations. In
+    // particular, the leading split carries the new attributes and may be the
+    // only evidence that the first remote anchor arrived.
+    if (operation.type === 'split_node' && INLINE_COMMENT_IDS_KEY in operation.properties) return true;
+    if (operation.type === 'merge_node') return true;
+  }
+
+  return false;
+}
+
 export type InlineCommentFilter = 'open' | 'resolved' | 'all';
 
 interface PendingInlineComment {
@@ -44,6 +74,7 @@ interface PendingInlineComment {
 
 interface RegisterInlineCommentEditorOptions {
   canComment: boolean;
+  canWrite: boolean;
   readOnly: boolean;
   viewId: string;
 }
@@ -58,7 +89,45 @@ interface InlineCommentEditorBridgeValue {
 interface InlineCommentLeafContextValue {
   active: boolean;
   focusedCommentId: string | null;
-  openCommentFromAnchor: (commentIds: string[]) => void;
+  openCommentFromAnchor: (commentIds: readonly string[]) => void;
+}
+
+/**
+ * The card actions. Every callback here reads its mutable inputs from a ref, so
+ * this value only changes identity when the provider is pointed at a different
+ * document — a comment card's buttons never re-render for an unrelated anchor,
+ * filter or mutation update.
+ */
+interface InlineCommentActionsContextValue {
+  createReply: (parentCommentId: string, content: string) => Promise<void>;
+  deleteComment: (commentId: string) => Promise<void>;
+  focusComment: (commentId: string) => void;
+  resolveComment: (commentId: string, isResolved: boolean) => Promise<void>;
+  toggleReaction: (commentId: string, reactionType: string) => Promise<void>;
+}
+
+/**
+ * The state a card needs to decide what is enabled — changes only when a
+ * mutation starts or finishes, which is exactly when those cards should update.
+ */
+interface InlineCommentStatusContextValue {
+  canComment: boolean;
+  canResolveAllComments: boolean;
+  currentUserUuid: string | null;
+  mutatingCommentIds: ReadonlySet<string>;
+}
+
+/**
+ * The comment entry points (selection toolbar, read-only trigger) and the
+ * compose popup. Kept apart from the full context because the composer is
+ * mounted for the whole app shell.
+ */
+interface InlineCommentComposeContextValue {
+  active: boolean;
+  pendingComment: PendingInlineComment | null;
+  cancelPendingComment: () => void;
+  startComment: (editor: YjsEditor, at?: Range) => boolean;
+  submitPendingComment: (content: string) => Promise<void>;
 }
 
 /**
@@ -90,7 +159,7 @@ interface InlineCommentContextValue {
   deleteComment: (commentId: string) => Promise<void>;
   focusComment: (commentId: string) => void;
   handleEditorChange: (editor: YjsEditor) => void;
-  openCommentFromAnchor: (commentIds: string[]) => void;
+  openCommentFromAnchor: (commentIds: readonly string[]) => void;
   registerEditor: (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => () => void;
   reload: (showLoading?: boolean) => Promise<InlineComment[]>;
   resolveComment: (commentId: string, isResolved: boolean) => Promise<void>;
@@ -102,10 +171,13 @@ interface InlineCommentContextValue {
   updateEditorAccess: (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => void;
 }
 
+const InlineCommentActionsContext = createContext<InlineCommentActionsContextValue | null>(null);
+const InlineCommentComposeContext = createContext<InlineCommentComposeContextValue | null>(null);
 const InlineCommentContext = createContext<InlineCommentContextValue | null>(null);
 const InlineCommentEditorBridgeContext = createContext<InlineCommentEditorBridgeValue | null>(null);
 const InlineCommentLeafContext = createContext<InlineCommentLeafContextValue | null>(null);
 const InlineCommentPanelContext = createContext<InlineCommentPanelContextValue | null>(null);
+const InlineCommentStatusContext = createContext<InlineCommentStatusContextValue | null>(null);
 
 function getErrorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
@@ -184,45 +256,45 @@ export function InlineCommentProvider({
   const [active, setActive] = useState(false);
   const [anchors, setAnchors] = useState<Map<string, InlineCommentAnchor>>(() => new Map());
   const [canComment, setCanComment] = useState(false);
+  const [canResolveAllComments, setCanResolveAllComments] = useState(false);
   const [comments, setComments] = useState<InlineComment[]>([]);
-  const [filter, setFilter] = useState<InlineCommentFilter>('open');
-  const [focusedCommentId, setFocusedCommentId] = useState<string | null>(null);
+  const [filter, setFilterState] = useState<InlineCommentFilter>('open');
+  const [focusedCommentId, setFocusedCommentIdState] = useState<string | null>(null);
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mutatingCommentIds, setMutatingCommentIds] = useState<Set<string>>(() => new Set());
   const [pendingComment, setPendingComment] = useState<PendingInlineComment | null>(null);
   const [reactions, setReactions] = useState<InlineCommentReaction[]>([]);
 
-  const anchorRetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /**
+   * Mirrors of the state above, so the callbacks below can stay referentially
+   * stable. Invariant: every `setX` in this file writes `xRef.current` in the
+   * same statement group — never mirror them from an effect, which would leave
+   * the ref a render behind for anything reading it synchronously.
+   */
   const anchorsRef = useRef(anchors);
   const canCommentRef = useRef(canComment);
   const commentsRef = useRef(comments);
-  const editorRef = useRef<YjsEditor | null>(null);
-  const editorReadOnlyRef = useRef(false);
+  const filterRef = useRef(filter);
+  const focusedCommentIdRef = useRef(focusedCommentId);
   const pendingCommentRef = useRef(pendingComment);
   const reactionsRef = useRef(reactions);
+
+  const anchorRetryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const editorRef = useRef<YjsEditor | null>(null);
+  const editorCanWriteRef = useRef(false);
+  const editorReadOnlyRef = useRef(false);
   const requestIdRef = useRef(0);
-  const suppressedAnchorDeletionsRef = useRef(new Set<string>());
 
-  useEffect(() => {
-    anchorsRef.current = anchors;
-  }, [anchors]);
+  const setFilter = useCallback((next: InlineCommentFilter) => {
+    filterRef.current = next;
+    setFilterState(next);
+  }, []);
 
-  useEffect(() => {
-    commentsRef.current = comments;
-  }, [comments]);
-
-  useEffect(() => {
-    canCommentRef.current = canComment;
-  }, [canComment]);
-
-  useEffect(() => {
-    pendingCommentRef.current = pendingComment;
-  }, [pendingComment]);
-
-  useEffect(() => {
-    reactionsRef.current = reactions;
-  }, [reactions]);
+  const setFocusedCommentId = useCallback((next: string | null) => {
+    focusedCommentIdRef.current = next;
+    setFocusedCommentIdState(next);
+  }, []);
 
   const updateAnchors = useCallback((editor: YjsEditor) => {
     const nextAnchors = collectInlineCommentAnchors(editor);
@@ -278,20 +350,32 @@ export function InlineCommentProvider({
   );
 
   const removeAnchorWithoutDeletingComment = useCallback(
-    (commentId: string) => {
+    async (commentId: string) => {
       const editor = editorRef.current;
+      const requiresAuthorizedPersistence = !editorCanWriteRef.current;
 
-      if (!editor || !anchorsRef.current.has(commentId)) return;
+      if (!editor) return;
 
-      suppressedAnchorDeletionsRef.current.add(commentId);
-      try {
-        removeInlineCommentAnchor(editor, commentId);
+      if (!anchorsRef.current.has(commentId)) return;
+
+      const anchorUpdate = removeInlineCommentAnchor(editor, commentId, requiresAuthorizedPersistence);
+
+      if (!requiresAuthorizedPersistence) {
         updateAnchors(editor);
-      } finally {
-        suppressedAnchorDeletionsRef.current.delete(commentId);
+        return;
       }
+
+      if (!anchorUpdate || !workspaceId || !viewId) return;
+
+      await InlineCommentService.applyAnchorUpdate(workspaceId, viewId, {
+        commentId,
+        update: anchorUpdate,
+      });
+
+      applyAuthorizedInlineCommentUpdate(editor, anchorUpdate);
+      updateAnchors(editor);
     },
-    [updateAnchors]
+    [updateAnchors, viewId, workspaceId]
   );
 
   const reload = useCallback(
@@ -317,11 +401,13 @@ export function InlineCommentProvider({
 
         // A remote delete leaves the Yjs anchor behind. The server retains a
         // tombstone, so remove only ids explicitly reported as deleted.
-        for (const comment of nextComments) {
-          if (!comment.replyCommentId && comment.isDeleted) {
-            removeAnchorWithoutDeletingComment(comment.commentId);
-          }
-        }
+        await Promise.all(
+          nextComments.map((comment) =>
+            !comment.replyCommentId && comment.isDeleted
+              ? removeAnchorWithoutDeletingComment(comment.commentId)
+              : Promise.resolve()
+          )
+        );
 
         scheduleAnchorRefreshRetry(nextComments);
 
@@ -381,25 +467,25 @@ export function InlineCommentProvider({
 
       if (!workspaceId || !viewId || !editor || !pending || !trimmedContent || !canCommentRef.current) return;
 
-      const range = pending.rangeRef.unref();
-
       pendingCommentRef.current = null;
 
-      if (!range) {
-        setPendingComment(null);
-        toast.error('The selected text is no longer available.');
-        return;
-      }
+      const initialRange = pending.rangeRef.current;
+      const initialSelection = initialRange && getInlineCommentSelection(editor, initialRange);
 
-      const liveSelection = getInlineCommentSelection(editor, range);
-
-      if (!liveSelection || liveSelection.blockId !== pending.selection.blockId) {
+      if (!initialSelection || initialSelection.blockId !== pending.selection.blockId) {
+        pending.rangeRef.unref();
         setPendingComment(null);
         toast.error('The selected text is no longer available.');
         return;
       }
 
       const existingCommentIds = new Set(commentsRef.current.map((comment) => comment.commentId));
+      let createdCommentId: string | null = null;
+      let rangeRefReleased = false;
+      let anchorPersisted = false;
+      let requiresAuthorizedPersistence = false;
+      let createError: unknown;
+      let commentsReloaded = false;
 
       // Desktop opens the thread panel before the cloud round-trip completes
       // so submission has immediate spatial feedback.
@@ -407,41 +493,100 @@ export function InlineCommentProvider({
       setMutatingCommentIds((previous) => new Set(previous).add('new'));
 
       try {
-        await InlineCommentService.create(workspaceId, viewId, {
-          content: trimmedContent,
-          blockId: liveSelection.blockId,
-          mentionedUserUuids: getMentionedUserUuids(trimmedContent),
-        });
-
-        const nextComments = await reload(false);
-        const createdComment = findCreatedComment(nextComments, existingCommentIds, {
-          blockId: liveSelection.blockId,
-          content: trimmedContent,
-          currentUserUuid: currentUser?.uuid,
-          replyCommentId: null,
-        });
-
-        if (!createdComment) {
-          throw new Error('The newly created inline comment could not be loaded.');
+        try {
+          createdCommentId = await InlineCommentService.create(workspaceId, viewId, {
+            content: trimmedContent,
+            blockId: initialSelection.blockId,
+            mentionedUserUuids: getMentionedUserUuids(trimmedContent),
+          });
+        } catch (error) {
+          // A transport error does not prove the POST failed. Reconcile the
+          // server list before deciding whether the thread needs cleanup.
+          createError = error;
         }
 
         try {
-          addInlineCommentAnchor(editor, liveSelection, createdComment.commentId);
-          updateAnchors(editor);
+          const nextComments = await reload(false);
+
+          commentsReloaded = true;
+          createdCommentId ??=
+            findCreatedComment(nextComments, existingCommentIds, {
+              blockId: initialSelection.blockId,
+              content: trimmedContent,
+              currentUserUuid: currentUser?.uuid,
+              replyCommentId: null,
+            })?.commentId ?? null;
         } catch (error) {
-          // The cloud comment must not outlive a failed local anchor write.
-          await InlineCommentService.remove(workspaceId, viewId, createdComment.commentId);
-          throw error;
+          if (!createdCommentId) throw createError ?? error;
         }
+
+        if (!createdCommentId) throw createError ?? new Error('The newly created inline comment could not be loaded.');
+
+        // Keep the RangeRef registered throughout both network round trips so
+        // local and remote edits continue transforming it. Resolve it only at
+        // the instant the anchor is written.
+        const liveRange = pending.rangeRef.unref();
+
+        rangeRefReleased = true;
+        const liveSelection =
+          editorRef.current === editor && liveRange ? getInlineCommentSelection(editor, liveRange) : null;
+
+        if (!liveSelection || liveSelection.blockId !== initialSelection.blockId) {
+          throw new Error('The selected text is no longer available.');
+        }
+
+        requiresAuthorizedPersistence = !editorCanWriteRef.current;
+        const anchorUpdate = addInlineCommentAnchor(
+          editor,
+          liveSelection,
+          createdCommentId,
+          requiresAuthorizedPersistence
+        );
+
+        if (requiresAuthorizedPersistence) {
+          if (!anchorUpdate) {
+            throw new Error('The inline comment anchor could not be persisted.');
+          }
+
+          await InlineCommentService.applyAnchorUpdate(workspaceId, viewId, {
+            commentId: createdCommentId,
+            update: anchorUpdate,
+          });
+
+          if (!applyAuthorizedInlineCommentUpdate(editor, anchorUpdate)) {
+            throw new Error('The inline comment anchor could not be applied.');
+          }
+        }
+
+        anchorPersisted = true;
+        if (editorRef.current !== editor) return;
+
+        updateAnchors(editor);
 
         setPendingComment(null);
         setFilter('open');
         setPanelOpen(true);
-        setFocusedCommentId(createdComment.commentId);
+        setFocusedCommentId(createdCommentId);
+
+        // If creation returned its id but the list request was transiently
+        // unavailable, refresh opportunistically so the visible anchor gains
+        // its sidebar card without requiring a page reload.
+        if (!commentsReloaded) void reload(false).catch(() => undefined);
       } catch (error) {
+        if (createdCommentId && !anchorPersisted) {
+          // The cloud thread must never outlive a failed anchor write. Also
+          // undo local formatting from the normal write lane. Authorized
+          // updates are isolated and do not touch the live Y.Doc until the
+          // server accepts them, so they need no rollback transaction.
+          if (!requiresAuthorizedPersistence) removeInlineCommentAnchor(editor, createdCommentId);
+          await InlineCommentService.remove(workspaceId, viewId, createdCommentId).catch(() => undefined);
+          updateAnchors(editor);
+        }
+
         setPendingComment(null);
         toast.error(getErrorMessage(error));
       } finally {
+        if (!rangeRefReleased) pending.rangeRef.unref();
         setMutatingCommentIds((previous) => {
           const next = new Set(previous);
 
@@ -450,7 +595,7 @@ export function InlineCommentProvider({
         });
       }
     },
-    [currentUser?.uuid, reload, updateAnchors, viewId, workspaceId]
+    [currentUser?.uuid, reload, setFilter, setFocusedCommentId, updateAnchors, viewId, workspaceId]
   );
 
   const runCommentMutation = useCallback(
@@ -478,15 +623,25 @@ export function InlineCommentProvider({
     async (commentId: string, isResolved: boolean) => {
       if (!workspaceId || !viewId || !canCommentRef.current) return;
 
+      const comment = commentsRef.current.find((item) => item.commentId === commentId);
+      const canResolve =
+        comment &&
+        !comment.replyCommentId &&
+        ((Boolean(currentUser?.uuid) && comment.user?.uuid === currentUser?.uuid) ||
+          comment.canBeDeleted ||
+          editorCanWriteRef.current);
+
+      if (!canResolve) return;
+
       await runCommentMutation(commentId, () =>
         InlineCommentService.resolve(workspaceId, viewId, commentId, isResolved)
       );
 
-      if (isResolved && filter === 'open') {
+      if (isResolved && filterRef.current === 'open') {
         setFocusedCommentId(null);
       }
     },
-    [filter, runCommentMutation, viewId, workspaceId]
+    [currentUser?.uuid, runCommentMutation, setFocusedCommentId, viewId, workspaceId]
   );
 
   const deleteComment = useCallback(
@@ -498,12 +653,12 @@ export function InlineCommentProvider({
       await runCommentMutation(commentId, () => InlineCommentService.remove(workspaceId, viewId, commentId));
 
       if (comment && !comment.replyCommentId) {
-        removeAnchorWithoutDeletingComment(commentId);
+        await removeAnchorWithoutDeletingComment(commentId);
       }
 
-      if (focusedCommentId === commentId) setFocusedCommentId(null);
+      if (focusedCommentIdRef.current === commentId) setFocusedCommentId(null);
     },
-    [focusedCommentId, removeAnchorWithoutDeletingComment, runCommentMutation, viewId, workspaceId]
+    [removeAnchorWithoutDeletingComment, runCommentMutation, setFocusedCommentId, viewId, workspaceId]
   );
 
   const createReply = useCallback(
@@ -516,14 +671,14 @@ export function InlineCommentProvider({
 
       if (!parent) return;
 
-      await runCommentMutation(parentCommentId, () =>
-        InlineCommentService.create(workspaceId, viewId, {
+      await runCommentMutation(parentCommentId, async () => {
+        await InlineCommentService.create(workspaceId, viewId, {
           content: trimmedContent,
           blockId: parent.blockId ?? undefined,
           replyCommentId: parentCommentId,
           mentionedUserUuids: getMentionedUserUuids(trimmedContent),
-        })
-      );
+        });
+      });
     },
     [runCommentMutation, viewId, workspaceId]
   );
@@ -548,36 +703,39 @@ export function InlineCommentProvider({
     [currentUser?.uuid, runCommentMutation, viewId, workspaceId]
   );
 
-  const focusComment = useCallback((commentId: string) => {
-    const comment = commentsRef.current.find((item) => item.commentId === commentId);
-    const anchor = anchorsRef.current.get(commentId);
-    const editor = editorRef.current;
+  const focusComment = useCallback(
+    (commentId: string) => {
+      const comment = commentsRef.current.find((item) => item.commentId === commentId);
+      const anchor = anchorsRef.current.get(commentId);
+      const editor = editorRef.current;
 
-    if (!comment || !anchor || !editor) return;
+      if (!comment || !anchor || !editor) return;
 
-    setFocusedCommentId(commentId);
-    setFilter(comment.isResolved ? 'resolved' : 'open');
-    setPanelOpen(true);
+      setFocusedCommentId(commentId);
+      setFilter(comment.isResolved ? 'resolved' : 'open');
+      setPanelOpen(true);
 
-    try {
-      Transforms.select(editor, anchor.range);
-      if (!editorReadOnlyRef.current) ReactEditor.focus(editor);
-      ReactEditor.toDOMRange(editor, anchor.range).startContainer.parentElement?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
+      try {
+        Transforms.select(editor, anchor.range);
+        if (!editorReadOnlyRef.current) ReactEditor.focus(editor);
+        ReactEditor.toDOMRange(editor, anchor.range).startContainer.parentElement?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      } catch {
+        // The anchor can move between a remote update and this click. The next
+        // Slate change will rebuild it; keeping the card focused is still useful.
+      }
+
+      requestAnimationFrame(() => {
+        document.getElementById(`inline-comment-${commentId}`)?.scrollIntoView({ block: 'nearest' });
       });
-    } catch {
-      // The anchor can move between a remote update and this click. The next
-      // Slate change will rebuild it; keeping the card focused is still useful.
-    }
-
-    requestAnimationFrame(() => {
-      document.getElementById(`inline-comment-${commentId}`)?.scrollIntoView({ block: 'nearest' });
-    });
-  }, []);
+    },
+    [setFilter, setFocusedCommentId]
+  );
 
   const openCommentFromAnchor = useCallback(
-    (commentIds: string[]) => {
+    (commentIds: readonly string[]) => {
       const candidates = commentIds
         .map((id) => commentsRef.current.find((comment) => comment.commentId === id))
         .filter((comment): comment is InlineComment =>
@@ -600,28 +758,15 @@ export function InlineCommentProvider({
   const handleEditorChange = useCallback(
     (editor: YjsEditor) => {
       if (editor !== editorRef.current) return;
+      if (!operationsCanAffectAnchors(editor.operations, anchorsRef.current.size > 0)) return;
 
-      const { nextAnchors, previousAnchors } = updateAnchors(editor);
-
-      if (!canCommentRef.current) return;
-
-      for (const commentId of previousAnchors.keys()) {
-        if (nextAnchors.has(commentId) || suppressedAnchorDeletionsRef.current.has(commentId)) continue;
-
-        const comment = commentsRef.current.find(
-          (item) => item.commentId === commentId && !item.replyCommentId && !item.isDeleted
-        );
-
-        if (!comment || !workspaceId || !viewId) continue;
-
-        // Deleting the last selected character removes the anchor. Match the
-        // desktop service by deleting the corresponding cloud thread as well.
-        void runCommentMutation(commentId, () => InlineCommentService.remove(workspaceId, viewId, commentId)).catch(
-          () => undefined
-        );
-      }
+      // Text deletion is part of Slate's undo history while cloud comment
+      // deletion is irreversible. Keep the thread tombstone-free here: undo
+      // can then restore the text and its metadata without producing a ghost
+      // anchor. Explicit comment deletion still removes both sides together.
+      updateAnchors(editor);
     },
-    [runCommentMutation, updateAnchors, viewId, workspaceId]
+    [updateAnchors]
   );
 
   /**
@@ -644,9 +789,11 @@ export function InlineCommentProvider({
       if (options.viewId !== viewId) return () => undefined;
 
       editorRef.current = editor;
+      editorCanWriteRef.current = options.canWrite;
       editorReadOnlyRef.current = options.readOnly;
       canCommentRef.current = options.canComment;
       setCanComment(options.canComment);
+      setCanResolveAllComments(options.canWrite);
       setActive(true);
       updateAnchors(editor);
 
@@ -657,9 +804,11 @@ export function InlineCommentProvider({
         stopAnchorRefreshRetry();
         requestIdRef.current += 1;
         editorRef.current = null;
+        editorCanWriteRef.current = false;
         editorReadOnlyRef.current = false;
         canCommentRef.current = false;
         setCanComment(false);
+        setCanResolveAllComments(false);
         setLoading(false);
         setMutatingCommentIds(new Set());
         commentsRef.current = [];
@@ -673,16 +822,18 @@ export function InlineCommentProvider({
         setFocusedCommentId(null);
       };
     },
-    [cancelPendingComment, stopAnchorRefreshRetry, updateAnchors, viewId]
+    [cancelPendingComment, setFocusedCommentId, stopAnchorRefreshRetry, updateAnchors, viewId]
   );
 
   const updateEditorAccess = useCallback(
     (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => {
       if (editor !== editorRef.current || options.viewId !== viewId) return;
 
+      editorCanWriteRef.current = options.canWrite;
       editorReadOnlyRef.current = options.readOnly;
       canCommentRef.current = options.canComment;
       setCanComment(options.canComment);
+      setCanResolveAllComments(options.canWrite);
 
       if (!options.canComment) cancelPendingComment();
     },
@@ -778,6 +929,7 @@ export function InlineCommentProvider({
       registerEditor,
       reload,
       resolveComment,
+      setFilter,
       startComment,
       submitPendingComment,
       toggleReaction,
@@ -813,15 +965,87 @@ export function InlineCommentProvider({
     [active, isPanelOpen]
   );
 
+  const actionsContextValue = useMemo<InlineCommentActionsContextValue>(
+    () => ({
+      createReply,
+      deleteComment,
+      focusComment,
+      resolveComment,
+      toggleReaction,
+    }),
+    [createReply, deleteComment, focusComment, resolveComment, toggleReaction]
+  );
+
+  const statusContextValue = useMemo<InlineCommentStatusContextValue>(
+    () => ({
+      canComment,
+      canResolveAllComments,
+      currentUserUuid: currentUser?.uuid ?? null,
+      mutatingCommentIds,
+    }),
+    [canComment, canResolveAllComments, currentUser?.uuid, mutatingCommentIds]
+  );
+
+  const composeContextValue = useMemo<InlineCommentComposeContextValue>(
+    () => ({
+      active,
+      cancelPendingComment,
+      pendingComment,
+      startComment,
+      submitPendingComment,
+    }),
+    [active, cancelPendingComment, pendingComment, startComment, submitPendingComment]
+  );
+
   return (
     <InlineCommentEditorBridgeContext.Provider value={editorBridgeValue}>
       <InlineCommentPanelContext.Provider value={panelContextValue}>
-        <InlineCommentLeafContext.Provider value={leafContextValue}>
-          <InlineCommentContext.Provider value={value}>{children}</InlineCommentContext.Provider>
-        </InlineCommentLeafContext.Provider>
+        <InlineCommentActionsContext.Provider value={actionsContextValue}>
+          <InlineCommentStatusContext.Provider value={statusContextValue}>
+            <InlineCommentComposeContext.Provider value={composeContextValue}>
+              <InlineCommentLeafContext.Provider value={leafContextValue}>
+                <InlineCommentContext.Provider value={value}>{children}</InlineCommentContext.Provider>
+              </InlineCommentLeafContext.Provider>
+            </InlineCommentComposeContext.Provider>
+          </InlineCommentStatusContext.Provider>
+        </InlineCommentActionsContext.Provider>
       </InlineCommentPanelContext.Provider>
     </InlineCommentEditorBridgeContext.Provider>
   );
+}
+
+export function useInlineCommentActions(): InlineCommentActionsContextValue {
+  const context = useContext(InlineCommentActionsContext);
+
+  if (!context) {
+    throw new Error('useInlineCommentActions must be used within InlineCommentProvider');
+  }
+
+  return context;
+}
+
+export function useInlineCommentStatus(): InlineCommentStatusContextValue {
+  const context = useContext(InlineCommentStatusContext);
+
+  if (!context) {
+    throw new Error('useInlineCommentStatus must be used within InlineCommentProvider');
+  }
+
+  return context;
+}
+
+export function useInlineCommentCompose(): InlineCommentComposeContextValue {
+  const context = useContext(InlineCommentComposeContext);
+
+  if (!context) {
+    throw new Error('useInlineCommentCompose must be used within InlineCommentProvider');
+  }
+
+  return context;
+}
+
+export function useInlineCommentComposeOptional(): InlineCommentComposeContextValue | null {
+  return useContext(InlineCommentComposeContext);
 }
 
 export function useInlineCommentContext(): InlineCommentContextValue {

@@ -121,7 +121,11 @@ const TABLE_CONTAINER_TYPES = [
  * to avoid creating unwanted text nodes that shift child indices.
  * Content blocks (paragraphs, etc.) inside cells are copied normally with text nodes.
  */
-function deepCopyTableBlock(sharedRoot: ReturnType<typeof getSharedRoot>, sourceBlock: YBlock): string | null {
+function deepCopyTableBlock(
+  sharedRoot: ReturnType<typeof getSharedRoot>,
+  sourceBlock: YBlock,
+  stripInlineCommentIds = false
+): string | null {
   try {
     const blockType = sourceBlock.get(YjsEditorKey.block_type);
     const data = dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data));
@@ -133,7 +137,7 @@ function deepCopyTableBlock(sharedRoot: ReturnType<typeof getSharedRoot>, source
 
     // Copy text content only for non-container blocks
     if (!TABLE_CONTAINER_TYPES.includes(blockType)) {
-      copyBlockText(sharedRoot, sourceBlock, newBlock);
+      copyBlockText(sharedRoot, sourceBlock, newBlock, stripInlineCommentIds);
     }
 
     // Recursively copy children
@@ -147,7 +151,7 @@ function deepCopyTableBlock(sharedRoot: ReturnType<typeof getSharedRoot>, source
 
         if (!childBlock) continue;
 
-        const newChildId = deepCopyTableBlock(sharedRoot, childBlock);
+        const newChildId = deepCopyTableBlock(sharedRoot, childBlock, stripInlineCommentIds);
 
         if (!newChildId) continue;
 
@@ -316,7 +320,7 @@ export function duplicateRow(editor: YjsEditor, tableBlockId: string, rowIndex: 
 
     if (!sourceRow) return;
 
-    const newRowId = deepCopyTableBlock(sharedRoot, sourceRow);
+    const newRowId = deepCopyTableBlock(sharedRoot, sourceRow, true);
 
     if (!newRowId) return;
 
@@ -475,7 +479,7 @@ export function duplicateColumn(editor: YjsEditor, tableBlockId: string, colInde
 
       if (!cellEntry) continue;
 
-      const newCellId = deepCopyTableBlock(sharedRoot, cellEntry.block);
+      const newCellId = deepCopyTableBlock(sharedRoot, cellEntry.block, true);
 
       if (!newCellId) continue;
 

@@ -1,4 +1,5 @@
 export {
+  applyInlineCommentAnchorUpdate as applyAnchorUpdate,
   createInlineComment as create,
   createInlineCommentReaction as createReaction,
   deleteInlineComment as remove,

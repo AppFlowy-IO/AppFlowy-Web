@@ -26,7 +26,11 @@ import {
   useScheduleDeferredCleanup,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
-import { getViewCanCommentStatus, getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
+import {
+  getViewCanCommentStatus,
+  getViewCanWriteStatus,
+  getViewReadOnlyStatus,
+} from '@/components/app/hooks/useViewOperations';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -477,6 +481,11 @@ function AppPage() {
     return getViewCanCommentStatus(viewId, outline, view);
   }, [outline, view, viewId]);
 
+  const canWrite = useMemo(() => {
+    if (!viewId) return false;
+    return getViewCanWriteStatus(viewId, outline, view);
+  }, [outline, view, viewId]);
+
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
     const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
@@ -509,6 +518,7 @@ function AppPage() {
           doc={docForCurrentView}
           readOnly={isReadOnly}
           canComment={canComment}
+          canWrite={canWrite}
           viewMeta={viewMeta}
           navigateToView={toView}
           loadViewMeta={loadViewMeta}
@@ -555,6 +565,7 @@ function AppPage() {
         doc={docForCurrentView}
         readOnly={isReadOnly}
         canComment={canComment}
+        canWrite={canWrite}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -601,6 +612,7 @@ function AppPage() {
     requestInstance,
     isReadOnly,
     canComment,
+    canWrite,
     toView,
     loadViewMeta,
     createRow,

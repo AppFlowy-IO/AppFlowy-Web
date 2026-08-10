@@ -90,6 +90,31 @@ export function getViewCanCommentStatus(viewId: string, outline?: View[], fallba
   return true;
 }
 
+/**
+ * Return the canonical document-write capability for a view.
+ *
+ * This deliberately ignores presentation-only read-only states such as a
+ * locked page or the mobile layout. Those states prevent editing in the UI,
+ * but they do not require comment anchors to use the narrow
+ * Read-and-comment persistence lane.
+ */
+export function getViewCanWriteStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+  if (outline) {
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel >= AccessLevel.ReadAndWrite;
+    }
+  }
+
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level >= AccessLevel.ReadAndWrite;
+  }
+
+  // Views outside "Shared with me" belong to a writable workspace context.
+  return true;
+}
+
 // Hook for managing view-related operations
 export function useViewOperations() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();

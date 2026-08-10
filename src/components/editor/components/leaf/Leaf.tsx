@@ -17,6 +17,8 @@ import { getFontFamily } from '@/utils/font';
 // `buildOverlapAwareCommentTextSpanDecorator`: one amber base color whose alpha
 // deepens with the number of overlapping comments, and a stronger underline
 // while the comment is focused.
+// Hoisted: this runs for every text node in the document on every render.
+const EMPTY_COMMENT_IDS: string[] = [];
 const HIGHLIGHT_BASE_RGB = '255, 193, 7';
 const HIGHLIGHT_ALPHA_STOPS = [0.11, 0.3, 0.5];
 const FOCUSED_HIGHLIGHT_ALPHA = 0.38;
@@ -62,19 +64,7 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   }
 
   const style: CSSProperties = {};
-  const inlineCommentIds = inlineComments?.active ? getInlineCommentIds(leaf) : [];
-
-  if (inlineCommentIds.length > 0) {
-    const focused = inlineCommentIds.includes(inlineComments?.focusedCommentId ?? '');
-    const alpha = inlineCommentHighlightAlpha(inlineCommentIds.length, focused);
-
-    classList.push('inline-comment-anchor');
-    style['backgroundColor'] = inlineCommentHighlightColor(alpha);
-    style['textDecoration'] = 'underline';
-    style['textDecorationColor'] = inlineCommentHighlightColor(focused ? FOCUSED_UNDERLINE_ALPHA : alpha);
-    if (focused) style['textDecorationThickness'] = '1.5px';
-    style['cursor'] = 'pointer';
-  }
+  const inlineCommentIds = inlineComments?.active ? getInlineCommentIds(leaf) : EMPTY_COMMENT_IDS;
 
   if (leaf.font_color) {
     classList.push('text-color');
@@ -100,6 +90,21 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
     }
 
     style['backgroundColor'] = renderColor(leaf.af_background_color);
+  }
+
+  // The comment decorator is an interaction state, so it must win over
+  // persisted text background marks. Applying it last keeps overlap/focus
+  // visible on highlighted text while retaining the underlying mark in data.
+  if (inlineCommentIds.length > 0) {
+    const focused = inlineCommentIds.includes(inlineComments?.focusedCommentId ?? '');
+    const alpha = inlineCommentHighlightAlpha(inlineCommentIds.length, focused);
+
+    classList.push('inline-comment-anchor');
+    style['backgroundColor'] = inlineCommentHighlightColor(alpha);
+    style['textDecoration'] = 'underline';
+    style['textDecorationColor'] = inlineCommentHighlightColor(focused ? FOCUSED_UNDERLINE_ALPHA : alpha);
+    if (focused) style['textDecorationThickness'] = '1.5px';
+    style['cursor'] = 'pointer';
   }
 
   if (leaf.code && !(leaf.formula || leaf.mention || leaf.reference)) {

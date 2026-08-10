@@ -1,4 +1,5 @@
 import {
+  ApplyInlineCommentAnchorUpdateParams,
   CreateInlineCommentParams,
   InlineComment,
   InlineCommentReaction,
@@ -121,13 +122,36 @@ export async function createInlineComment(
   workspaceId: string,
   viewId: string,
   params: CreateInlineCommentParams
-): Promise<void> {
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(getInlineCommentUrl(workspaceId, viewId), {
+): Promise<string | null> {
+  const response = await executeAPIRequest<{ comment_id: string } | undefined>(() =>
+    getAxios()?.post<APIResponse<{ comment_id: string }>>(getInlineCommentUrl(workspaceId, viewId), {
       content: params.content,
       block_id: params.blockId,
       reply_comment_id: params.replyCommentId,
       mentioned_user_uuids: params.mentionedUserUuids ?? [],
+    })
+  );
+
+  // During a rolling deploy an older Cloud node can still return the legacy
+  // success envelope without data. Top-level creation reconciles that case
+  // through the comment list; replies only need the request to succeed.
+  return response?.comment_id ?? null;
+}
+
+/**
+ * Persist an anchor-only Yjs update for a user whose effective access permits
+ * comments but not arbitrary document writes. The server validates that this
+ * update only formats text with the supplied comment id before applying it.
+ */
+export async function applyInlineCommentAnchorUpdate(
+  workspaceId: string,
+  viewId: string,
+  params: ApplyInlineCommentAnchorUpdateParams
+): Promise<void> {
+  return executeAPIVoidRequest(() =>
+    getAxios()?.put<APIResponse>(`${getInlineCommentUrl(workspaceId, viewId)}/anchor`, {
+      comment_id: params.commentId,
+      doc_state: Array.from(params.update),
     })
   );
 }

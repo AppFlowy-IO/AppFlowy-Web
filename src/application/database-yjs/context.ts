@@ -46,6 +46,8 @@ export interface DatabaseContextState {
    * still permits inline comments.
    */
   canComment?: boolean;
+  /** Canonical server write permission, independent from database UI state. */
+  canWrite?: boolean;
   databaseDoc: YDoc;
   /**
    * The database's page ID in the folder/outline structure.

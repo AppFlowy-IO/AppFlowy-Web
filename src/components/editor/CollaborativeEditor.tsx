@@ -13,6 +13,7 @@ import { FindReplaceProvider } from '@/components/editor/components/find-replace
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
+import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { Log } from '@/utils/log';
@@ -91,6 +92,7 @@ function CollaborativeEditor({
   const uploadFile = context.uploadFile;
   const readOnly = context.readOnly;
   const canComment = context.canComment ?? false;
+  const canWrite = context.canWrite ?? !readOnly;
   const viewId = context.viewId;
   const onWordCountChange = context.onWordCountChange;
   const deletePage = context.deletePage;
@@ -278,10 +280,11 @@ function CollaborativeEditor({
   useEffect(() => {
     inlineComments?.updateEditorAccess(editor, {
       canComment,
+      canWrite,
       readOnly,
       viewId,
     });
-  }, [canComment, editor, inlineComments, readOnly, viewId]);
+  }, [canComment, canWrite, editor, inlineComments, readOnly, viewId]);
 
   // A wholesale content swap (the doc arriving after connect, a version reset)
   // bumps the content clock without emitting Slate operations, so the comment
@@ -292,15 +295,17 @@ function CollaborativeEditor({
     inlineComments?.refreshAnchors(editor);
   }, [contentClock, editor, inlineComments]);
 
+  useInlineCommentEditorRegistration(editor, inlineComments, {
+    canComment,
+    canWrite,
+    readOnly,
+    viewId,
+  });
+
   useEffect(() => {
     if (!editor) return;
 
     editor.connect();
-    const unregisterInlineComments = inlineComments?.registerEditor(editor, {
-      canComment,
-      readOnly,
-      viewId,
-    });
 
     setIsConnected(true);
     onEditorConnected?.(editor);
@@ -329,7 +334,6 @@ function CollaborativeEditor({
     }
 
     return () => {
-      unregisterInlineComments?.();
       for (const timeoutId of pendingDatabaseViewDeletion.values()) {
         clearTimeout(timeoutId);
       }

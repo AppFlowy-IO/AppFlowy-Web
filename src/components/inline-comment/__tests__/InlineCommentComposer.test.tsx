@@ -2,8 +2,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { InlineCommentComposer } from '../InlineCommentComposer';
 
+const mockPortal = jest.fn(({ children }: { children: React.ReactNode; container?: HTMLElement }) => children);
+
 jest.mock('@mui/material', () => ({
-  Portal: ({ children }: { children: React.ReactNode }) => children,
+  Portal: (props: { children: React.ReactNode; container?: HTMLElement }) => mockPortal(props),
 }));
 
 jest.mock('react-i18next', () => ({
@@ -16,9 +18,9 @@ const cancelPendingComment = jest.fn();
 const submitPendingComment = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('../InlineCommentContext', () => ({
-  useInlineCommentContext: () => ({
+  useInlineCommentStatus: () => ({ mutatingCommentIds: new Set() }),
+  useInlineCommentCompose: () => ({
     cancelPendingComment,
-    mutatingCommentIds: new Set(),
     pendingComment: {
       selection: {
         blockId: 'block-1',
@@ -42,6 +44,7 @@ describe('InlineCommentComposer', () => {
   it('renders the compact desktop compose menu', () => {
     render(<InlineCommentComposer />);
 
+    expect(mockPortal).toHaveBeenCalledWith(expect.not.objectContaining({ container: expect.anything() }));
     expect(screen.getByTestId('inline-comment-input').getAttribute('placeholder')).toBe('inlineComment.writeComment');
     // Desktop's compose menu is a single input row: no quote preview, no cancel.
     expect(screen.queryByText('selected text')).toBeNull();

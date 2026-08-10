@@ -8,7 +8,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { ReactComponent as AddCommentIcon } from '@/assets/icons/toolbar_add_comment.svg';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import { useInlineCommentContextOptional } from '../InlineCommentContext';
+import { useInlineCommentComposeOptional } from '../InlineCommentContext';
 import { getInlineCommentSelection } from './anchors';
 
 interface TriggerPosition {
@@ -61,7 +61,7 @@ function getTriggerPosition(editor: YjsEditor, range: Range): TriggerPosition | 
 export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;
-  const inlineComments = useInlineCommentContextOptional();
+  const inlineComments = useInlineCommentComposeOptional();
   const [position, setPosition] = useState<TriggerPosition | null>(null);
   const rangeRef = useRef<Range | null>(null);
 
@@ -96,17 +96,32 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
   }, [editor, inlineComments]);
 
   useEffect(() => {
+    // `updatePosition` resolves a DOM range and measures it, so running it once
+    // per scroll event would force a layout read per event. Coalesce to one read
+    // per frame instead.
+    let frame: number | null = null;
+
+    const scheduleUpdate = () => {
+      if (frame !== null) return;
+
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        updatePosition();
+      });
+    };
+
     updatePosition();
-    document.addEventListener('selectionchange', updatePosition);
-    window.addEventListener('resize', updatePosition, { passive: true });
+    document.addEventListener('selectionchange', scheduleUpdate);
+    window.addEventListener('resize', scheduleUpdate, { passive: true });
     // Capture phase to follow scrolling containers; passive because the trigger
     // only repositions itself and never cancels the scroll.
-    window.addEventListener('scroll', updatePosition, { capture: true, passive: true });
+    window.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true });
 
     return () => {
-      document.removeEventListener('selectionchange', updatePosition);
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, { capture: true });
+      if (frame !== null) cancelAnimationFrame(frame);
+      document.removeEventListener('selectionchange', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
+      window.removeEventListener('scroll', scheduleUpdate, { capture: true });
     };
   }, [updatePosition]);
 
@@ -142,7 +157,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
     <Portal>
       <div
         data-testid={'inline-comment-readonly-trigger'}
-        className={'fixed z-[1200] rounded-lg bg-[var(--fill-toolbar)] p-1 shadow-lg'}
+        className={'fixed z-[1500] rounded-lg bg-[var(--fill-toolbar)] p-1 shadow-lg'}
         style={position}
         onMouseDown={(event) => {
           event.preventDefault();

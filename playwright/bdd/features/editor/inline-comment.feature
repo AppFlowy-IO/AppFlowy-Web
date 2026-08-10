@@ -48,6 +48,9 @@ Feature: Document inline comments
     Then the inline comment sidebar is visible
     And the inline comment "Comment from the page modal" is visible in the sidebar
     And the commented text is highlighted in the page modal document
+    When I close the comments panel
+    And I close the page modal
+    Then inline commenting remains active for the routed document
 
   Scenario: An inline comment and its anchor survive a reload
     Given I have created and opened a document for inline comments
@@ -57,7 +60,7 @@ Feature: Document inline comments
     And I enter "Still here after reload" in the inline comment composer
     And I submit the inline comment composer
     Then the inline comment "Still here after reload" is visible in the sidebar
-    When I reload the page and open the comments panel
+    When I open the page in a clean browser context and open the comments panel
     Then the commented text is highlighted in the document
     And the inline comment "Still here after reload" is visible in the sidebar
 
@@ -97,10 +100,14 @@ Feature: Document inline comments
     And the inline comment "Comment on a locked page" is visible in the sidebar
 
   Scenario: Opening the comments panel on a newly created page reports no missing record
-    Given I have created and opened a document for inline comments
+    Given inline comment loading is paused
+    And I have created and opened a document for inline comments
     Then the comments panel is closed
     When I open the comments panel from the page header
     Then the inline comment sidebar is visible
+    And the comments panel remains loading
+    And no record not found error is shown
+    When I resume inline comment loading
     And the comments panel shows the "Open" empty state
     And no record not found error is shown
     When I close the comments panel
@@ -110,6 +117,12 @@ Feature: Document inline comments
     Given I have created a grid page named "Row Page Inline Comment Grid"
     When I set the first grid cell to "Row Comment Target"
     And I open the grid row named "Row Comment Target" as a full row page
+    Then the comments panel is closed
+    When I open the comments panel from the page header
+    Then the inline comment sidebar is visible
+    And the comments panel shows the "Open" empty state
+    And no record not found error is shown
+    When I close the comments panel
     And I type "Row page supports inline comments." into the row document
     And I select the first 8 characters in the document
     And I open the inline comment composer
@@ -119,6 +132,6 @@ Feature: Document inline comments
     Then the inline comment sidebar is visible
     And the inline comment "Comment from full-page row document" is visible in the sidebar
     And the commented text is highlighted in the document
-    When I reload the page and open the comments panel
+    When I open the page in a clean browser context and open the comments panel
     Then the commented text is highlighted in the document
     And the inline comment "Comment from full-page row document" is visible in the sidebar

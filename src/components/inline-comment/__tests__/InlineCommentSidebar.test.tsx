@@ -13,6 +13,11 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
+jest.mock('@/components/_shared/emoji-picker/EmojiPicker', () => ({
+  __esModule: true,
+  default: () => <div data-testid={'emoji-picker'} />,
+}));
+
 const createReply = jest.fn().mockResolvedValue(undefined);
 const deleteComment = jest.fn().mockResolvedValue(undefined);
 const resolveComment = jest.fn().mockResolvedValue(undefined);
@@ -22,9 +27,13 @@ const setPanelOpen = jest.fn();
 
 let mockInlineCommentContext: Record<string, unknown>;
 
+// The sidebar reads from three narrowed contexts; one fixture object satisfies
+// all of them because they are disjoint slices of the same provider state.
 jest.mock('../InlineCommentContext', () => ({
   INLINE_COMMENT_DRAWER_WIDTH: 352,
+  useInlineCommentActions: () => mockInlineCommentContext,
   useInlineCommentContext: () => mockInlineCommentContext,
+  useInlineCommentStatus: () => mockInlineCommentContext,
 }));
 
 function comment(overrides: Partial<InlineComment> = {}): InlineComment {
@@ -88,6 +97,7 @@ function setContext(overrides: Record<string, unknown> = {}) {
     active: true,
     anchors,
     canComment: true,
+    canResolveAllComments: true,
     comments,
     currentUserUuid: 'user-1',
     filter: 'open',
@@ -158,6 +168,27 @@ describe('InlineCommentSidebar', () => {
     expect(resolveComment).toHaveBeenCalledWith('resolved-comment', false);
   });
 
+  it('never offers resolve for replies', () => {
+    render(<InlineCommentSidebar />);
+
+    fireEvent.click(screen.getByTestId('inline-comment-replies-toggle'));
+
+    expect(screen.getByTestId('inline-comment-resolve-button')).not.toBeNull();
+    expect(screen.queryByTestId('inline-comment-resolve-button-reply-comment')).toBeNull();
+  });
+
+  it('hides resolve from a non-author with comment-only access', () => {
+    setContext({
+      canResolveAllComments: false,
+      comments: [comment({ canBeDeleted: false })],
+      currentUserUuid: 'user-2',
+    });
+    render(<InlineCommentSidebar />);
+
+    expect(screen.queryByTestId('inline-comment-resolve-button')).toBeNull();
+    expect(screen.getByTestId('inline-comment-reply-button')).not.toBeNull();
+  });
+
   it('opens a reply composer from the thread reply action', async () => {
     render(<InlineCommentSidebar />);
 
@@ -183,6 +214,9 @@ describe('InlineCommentSidebar', () => {
     fireEvent.click(screen.getByTestId('inline-comment-action-menu-button'));
     fireEvent.click(screen.getByTestId('inline-comment-delete-button'));
     expect(deleteComment).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId('inline-comment-sidebar').contains(document.querySelector('[data-slot="alert-dialog-content"]'))
+    ).toBe(true);
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('inline-comment-delete-confirm-button'));
@@ -239,6 +273,20 @@ describe('InlineCommentSidebar', () => {
 
     fireEvent.click(chip);
     expect(toggleReaction).toHaveBeenCalledWith('open-comment', '👍');
+  });
+
+  it('keeps the reaction portal inside the elevated sidebar stack', async () => {
+    render(<InlineCommentSidebar elevated={true} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('inline-comment-add-reaction-button'));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('emoji-picker')).not.toBeNull();
+    expect(
+      screen.getByTestId('inline-comment-sidebar').contains(document.querySelector('[data-slot="popover-content"]'))
+    ).toBe(true);
   });
 
   it('renders reaction chips as read-only without comment permission', () => {

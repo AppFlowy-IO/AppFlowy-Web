@@ -1,4 +1,4 @@
-import { expect, Locator, Page } from '@playwright/test';
+import { BrowserContext, expect, Locator, Page, Route } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
@@ -12,7 +12,24 @@ import { setupPageErrorHandling } from '../../support/test-config';
 // - 'I open the grid row named {string} as a full row page' (row-page-lifecycle.steps.ts)
 // - 'I type {string} into the row document' (row-page-lifecycle.steps.ts)
 
-const { Given, When, Then, Before } = createBdd();
+const { Given, When, Then, Before, After } = createBdd();
+
+const PAUSED_COMMENT_ROUTE = '**/api/workspace/**/inline-comment*';
+
+interface PausedCommentLoad {
+  handler: (route: Route) => Promise<void>;
+  release: () => void;
+}
+
+interface RemoteVerificationPage {
+  context: BrowserContext;
+  page: Page;
+}
+
+const pausedCommentLoads = new WeakMap<Page, PausedCommentLoad>();
+const remoteVerificationPages = new WeakMap<Page, RemoteVerificationPage>();
+
+const activePage = (page: Page) => remoteVerificationPages.get(page)?.page ?? page;
 
 const FILTER_TEST_IDS: Record<string, string> = {
   Open: 'inline-comment-filter-open',
@@ -26,9 +43,9 @@ const EMPTY_STATE_TEXT: Record<string, string> = {
   All: 'No comments',
 };
 
-const documentEditor = (page: Page) => page.locator('[data-slate-editor="true"]').first();
+const documentEditor = (page: Page) => activePage(page).locator('[data-slate-editor="true"]').first();
 
-const pageModal = (page: Page) => page.locator('[role="dialog"]').last();
+const pageModal = (page: Page) => activePage(page).locator('[role="dialog"]').last();
 
 const modalEditor = (page: Page) => pageModal(page).locator('[data-slate-editor="true"]').first();
 
@@ -37,16 +54,17 @@ const modalEditor = (page: Page) => pageModal(page).locator('[data-slate-editor=
  * comment action has to be resolved against the surface that owns the selection.
  */
 async function commentToolbarAction(page: Page): Promise<Locator> {
+  const surface = activePage(page);
   const modalOpen = await pageModal(page)
     .isVisible()
     .catch(() => false);
 
   return modalOpen
     ? pageModal(page).getByTestId('inline-comment-toolbar-action')
-    : page.getByTestId('inline-comment-toolbar-action');
+    : surface.getByTestId('inline-comment-toolbar-action');
 }
 
-const sidebar = (page: Page) => page.getByTestId('inline-comment-sidebar');
+const sidebar = (page: Page) => activePage(page).getByTestId('inline-comment-sidebar');
 
 const threadByContent = (page: Page, content: string) =>
   sidebar(page).getByTestId('inline-comment-thread').filter({ hasText: content }).first();
@@ -92,6 +110,38 @@ async function typeInEditor(page: Page, editor: Locator, text: string): Promise<
 Before({ tags: '@inline-comment' }, async ({ page }) => {
   setupPageErrorHandling(page);
   await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+After({ tags: '@inline-comment' }, async ({ page }) => {
+  const paused = pausedCommentLoads.get(page);
+
+  paused?.release();
+  pausedCommentLoads.delete(page);
+
+  const verification = remoteVerificationPages.get(page);
+
+  remoteVerificationPages.delete(page);
+  await verification?.context.close();
+});
+
+Given('inline comment loading is paused', async ({ page }) => {
+  let release = () => undefined;
+  const resumed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const handler = async (route: Route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+
+    if (request.method() === 'GET' && pathname.endsWith('/inline-comment')) {
+      await resumed;
+    }
+
+    await route.continue();
+  };
+
+  pausedCommentLoads.set(page, { handler, release });
+  await page.route(PAUSED_COMMENT_ROUTE, handler);
 });
 
 Given('I have created and opened a document for inline comments', async ({ page }) => {
@@ -311,9 +361,14 @@ When(
     const emojiButton = picker.locator('button').filter({ hasText: emoji }).first();
 
     // The picker mounts its virtualized grid asynchronously, so re-apply the
-    // search until the target emoji is rendered.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      await searchInput.fill(emoji === '👍' ? 'thumbs up' : emoji);
+    // search until the target emoji is rendered. Clear between attempts:
+    // re-filling the same value is a no-op that never re-triggers the search.
+    const query = emoji === '👍' ? 'thumbs up' : emoji;
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await searchInput.fill('');
+      await page.waitForTimeout(200);
+      await searchInput.fill(query);
       await page.waitForTimeout(1000);
 
       if (await emojiButton.isVisible().catch(() => false)) break;
@@ -391,18 +446,67 @@ When('I close the comments panel', async ({ page }) => {
   await sidebar(page).getByTestId('inline-comment-sidebar-close').click();
 });
 
-Then('no record not found error is shown', async ({ page }) => {
-  await expect(page.getByText('Page not found')).toHaveCount(0);
-  await expect(page.getByText('Something went wrong')).toHaveCount(0);
-  await expect(page.locator('[data-sonner-toast][data-type="error"]')).toHaveCount(0);
+When('I close the page modal', async ({ page }) => {
+  await pageModal(page).getByTestId('view-modal-close').click();
+  await expect(pageModal(page)).toHaveCount(0, { timeout: 15000 });
 });
 
-When('I reload the page and open the comments panel', async ({ page }) => {
-  // The anchor is a document mark: give the collab update time to reach the
-  // server before dropping the local doc.
-  await page.waitForTimeout(4000);
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await expect(documentEditor(page)).toBeVisible({ timeout: 30000 });
-  await page.waitForTimeout(2000);
-  await openCommentsPanel(page);
+Then('inline commenting remains active for the routed document', async ({ page }) => {
+  await expect(page.getByTestId('inline-comment-toggle')).toBeVisible({ timeout: 15000 });
+});
+
+Then('no record not found error is shown', async ({ page }) => {
+  const surface = activePage(page);
+  const assertNoError = async () => {
+    await expect(surface.getByText('Page not found')).toHaveCount(0);
+    await expect(surface.getByText('Something went wrong')).toHaveCount(0);
+    await expect(surface.locator('[data-sonner-toast][data-type="error"]')).toHaveCount(0);
+  };
+
+  await assertNoError();
+  // Preserve the desktop regression's observation window: a late async
+  // failure is just as important as an error rendered on the first frame.
+  await surface.waitForTimeout(2000);
+  await assertNoError();
+});
+
+Then('the comments panel remains loading', async ({ page }) => {
+  await expect(sidebar(page).getByTestId('inline-comment-loading')).toBeVisible({ timeout: 15000 });
+});
+
+When('I resume inline comment loading', async ({ page }) => {
+  const paused = pausedCommentLoads.get(page);
+
+  expect(paused, 'inline comment loading was not paused').toBeDefined();
+  paused!.release();
+  await expect(sidebar(page).getByTestId('inline-comment-loading')).toHaveCount(0, { timeout: 30000 });
+  // Keep the handler registered until the paused request has actually resumed.
+  // Removing it while route.continue() is still pending lets Playwright dispose
+  // the interception first and produces "Route is already handled".
+  await page.unroute(PAUSED_COMMENT_ROUTE, paused!.handler);
+  pausedCommentLoads.delete(page);
+});
+
+When('I open the page in a clean browser context and open the comments panel', async ({ browser, page }) => {
+  const flushed = await page.evaluate(async () => {
+    const flush = (window as typeof window & { __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean> })
+      .__TEST_FLUSH_ALL_SYNC__;
+
+    if (!flush) throw new Error('The E2E sync flush hook is unavailable');
+    return flush();
+  });
+
+  expect(flushed, 'the source browser still had unsent collaboration updates').toBe(true);
+
+  const context = await browser.newContext({
+    storageState: await page.context().storageState(),
+    viewport: { width: 1440, height: 900 },
+  });
+  const cleanPage = await context.newPage();
+
+  setupPageErrorHandling(cleanPage);
+  await cleanPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+  await expect(documentEditor(cleanPage)).toBeVisible({ timeout: 30000 });
+  await openCommentsPanel(cleanPage);
+  remoteVerificationPages.set(page, { context, page: cleanPage });
 });

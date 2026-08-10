@@ -21,6 +21,7 @@ jest.mock('../core', () => ({
 }));
 
 import {
+  applyInlineCommentAnchorUpdate,
   createInlineComment,
   createInlineCommentReaction,
   deleteInlineCommentReaction,
@@ -90,15 +91,17 @@ describe('inline comment HTTP API', () => {
   });
 
   it('sends the desktop-compatible create and resolve payloads', async () => {
-    mockPost.mockResolvedValue({ data: {} });
+    mockPost.mockResolvedValue({ data: { data: { comment_id: 'comment-1' } } });
     mockPut.mockResolvedValue({ data: {} });
 
-    await createInlineComment('workspace-1', 'view-1', {
-      content: 'Review this',
-      blockId: 'block-1',
-      replyCommentId: 'parent-1',
-      mentionedUserUuids: ['user-2'],
-    });
+    await expect(
+      createInlineComment('workspace-1', 'view-1', {
+        content: 'Review this',
+        blockId: 'block-1',
+        replyCommentId: 'parent-1',
+        mentionedUserUuids: ['user-2'],
+      })
+    ).resolves.toBe('comment-1');
     await resolveInlineComment('workspace-1', 'view-1', 'comment-1', true);
 
     expect(mockPost).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment', {
@@ -110,6 +113,31 @@ describe('inline comment HTTP API', () => {
     expect(mockPut).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment/resolve', {
       comment_id: 'comment-1',
       is_resolved: true,
+    });
+  });
+
+  it('accepts the legacy create response during a rolling Cloud deploy', async () => {
+    mockPost.mockResolvedValue({ data: { data: undefined } });
+
+    await expect(
+      createInlineComment('workspace-1', 'view-1', {
+        content: 'Reply',
+        replyCommentId: 'parent-1',
+      })
+    ).resolves.toBeNull();
+  });
+
+  it('persists anchor-only updates through the comment-authorized endpoint', async () => {
+    mockPut.mockResolvedValue({ data: {} });
+
+    await applyInlineCommentAnchorUpdate('workspace-1', 'view-1', {
+      commentId: 'comment-1',
+      update: new Uint8Array([1, 2, 3]),
+    });
+
+    expect(mockPut).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment/anchor', {
+      comment_id: 'comment-1',
+      doc_state: [1, 2, 3],
     });
   });
 

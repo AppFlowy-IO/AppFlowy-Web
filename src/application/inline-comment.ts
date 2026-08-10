@@ -31,6 +31,11 @@ export interface CreateInlineCommentParams {
   mentionedUserUuids?: string[];
 }
 
+export interface ApplyInlineCommentAnchorUpdateParams {
+  commentId: string;
+  update: Uint8Array;
+}
+
 export interface InlineCommentReaction {
   reactionType: string;
   reactUsers: InlineCommentUser[];
