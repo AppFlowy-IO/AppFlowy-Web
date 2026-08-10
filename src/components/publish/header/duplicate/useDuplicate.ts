@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { WorkspaceService } from '@/application/services/domains';
@@ -6,7 +6,7 @@ import { SpaceView, Workspace } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
-export function useDuplicate () {
+export function useDuplicate() {
   const isAuthenticated = useIsAuthenticatedOptional();
   const [search, setSearch] = useSearchParams();
   const [loginOpen, setLoginOpen] = React.useState(false);
@@ -48,7 +48,7 @@ export function useDuplicate () {
   };
 }
 
-export function useLoadWorkspaces () {
+export function useLoadWorkspaces() {
   const currentUser = useCurrentUserOptional();
   const isAuthenticated = useIsAuthenticatedOptional() && Boolean(currentUser);
   const [spaceLoading, setSpaceLoading] = useState<boolean>(false);
@@ -61,6 +61,15 @@ export function useLoadWorkspaces () {
   const [workspaceList, setWorkspaceList] = useState<Workspace[]>([]);
 
   const [spaceList, setSpaceList] = useState<SpaceView[]>([]);
+  const [spaceError, setSpaceError] = useState(false);
+  const spaceRequestIdRef = useRef(0);
+  const loadedSpaceWorkspaceIdRef = useRef('');
+
+  useEffect(() => {
+    return () => {
+      spaceRequestIdRef.current += 1;
+    };
+  }, []);
 
   const loadWorkspaces = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -68,10 +77,10 @@ export function useLoadWorkspaces () {
     try {
       const workspaces = await WorkspaceService.getAll();
 
-      if (workspaces) {
+      if (workspaces.length > 0) {
         setWorkspaceList(workspaces);
-        setSelectedWorkspaceId(prev => {
-          if (!prev || !workspaces.find(item => item.id === prev)) return workspaces[0].id;
+        setSelectedWorkspaceId((prev) => {
+          if (!prev || !workspaces.find((item) => item.id === prev)) return workspaces[0].id;
           return prev;
         });
       } else {
@@ -88,36 +97,50 @@ export function useLoadWorkspaces () {
   const loadSpaces = useCallback(
     async (selectedWorkspaceId: string) => {
       if (!isAuthenticated) return;
+      const requestId = ++spaceRequestIdRef.current;
+
+      if (loadedSpaceWorkspaceIdRef.current !== selectedWorkspaceId) {
+        loadedSpaceWorkspaceIdRef.current = selectedWorkspaceId;
+        setSpaceList([]);
+      }
+
+      setSpaceError(false);
+      setSelectedSpaceId('');
       setSpaceLoading(true);
       try {
-        const folder = await WorkspaceService.getFolder(selectedWorkspaceId);
+        const folder = await WorkspaceService.getFolder(selectedWorkspaceId, 2);
 
-        if (folder) {
-          const spaces = [];
+        if (requestId !== spaceRequestIdRef.current) return;
 
-          for (const child of folder.children) {
-            if (child.isSpace) {
-              spaces.push({
-                id: child.id,
-                name: child.name,
-                isPrivate: child.isPrivate,
-                extra: child.extra,
-              });
-            }
-          }
-
-          setSpaceList(spaces);
-        } else {
-          setSpaceList([]);
+        if (!folder) {
+          throw new Error('Workspace folder response is empty');
         }
+
+        const spaces = [];
+
+        for (const child of folder.children) {
+          if (child.isSpace) {
+            spaces.push({
+              id: child.id,
+              name: child.name,
+              isPrivate: child.isPrivate,
+              extra: child.extra,
+            });
+          }
+        }
+
+        setSpaceList(spaces);
       } catch (e) {
-        console.error('Failed to load spaces');
+        if (requestId !== spaceRequestIdRef.current) return;
+        console.error('Failed to load spaces', e);
+        setSpaceError(true);
       } finally {
-        setSelectedSpaceId('');
-        setSpaceLoading(false);
+        if (requestId === spaceRequestIdRef.current) {
+          setSpaceLoading(false);
+        }
       }
     },
-    [isAuthenticated],
+    [isAuthenticated]
   );
 
   return {
@@ -129,6 +152,7 @@ export function useLoadWorkspaces () {
     setSelectedSpaceId,
     workspaceLoading,
     spaceLoading,
+    spaceError,
     loadWorkspaces,
     loadSpaces,
   };

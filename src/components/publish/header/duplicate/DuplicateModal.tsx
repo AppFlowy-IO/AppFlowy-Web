@@ -42,6 +42,7 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
     selectedSpaceId,
     workspaceLoading,
     spaceLoading,
+    spaceError,
     loadWorkspaces,
     loadSpaces,
   } = useLoadWorkspaces();
@@ -110,9 +111,15 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
           />
           <SpaceList
             loading={spaceLoading}
+            error={spaceError}
             spaceList={spaceList}
             value={selectedSpaceId}
             onChange={setSelectedSpaceId}
+            onRetry={() => {
+              if (selectedWorkspaceId) {
+                void loadSpaces(selectedWorkspaceId);
+              }
+            }}
           />
         </div>
       </NormalModal>
