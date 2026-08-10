@@ -69,6 +69,23 @@ function getInlineCommentUrl(workspaceId: string, viewId: string) {
   return `/api/workspace/${workspaceId}/document/${viewId}/inline-comment`;
 }
 
+function getCreateInlineCommentPayload(params: CreateInlineCommentParams) {
+  return {
+    content: params.content,
+    block_id: params.blockId,
+    reply_comment_id: params.replyCommentId,
+    mentioned_user_uuids: params.mentionedUserUuids ?? [],
+  };
+}
+
+function isUnsupportedInlineCommentCreateV2(error: unknown): boolean {
+  if (!error || typeof error !== 'object' || !('httpStatus' in error)) return false;
+
+  const httpStatus = (error as { httpStatus?: unknown }).httpStatus;
+
+  return httpStatus === 404 || httpStatus === 405;
+}
+
 export async function getInlineComments(
   workspaceId: string,
   viewId: string,
@@ -123,19 +140,25 @@ export async function createInlineComment(
   viewId: string,
   params: CreateInlineCommentParams
 ): Promise<string | null> {
-  const response = await executeAPIRequest<{ comment_id: string } | undefined>(() =>
-    getAxios()?.post<APIResponse<{ comment_id: string }>>(getInlineCommentUrl(workspaceId, viewId), {
-      content: params.content,
-      block_id: params.blockId,
-      reply_comment_id: params.replyCommentId,
-      mentioned_user_uuids: params.mentionedUserUuids ?? [],
-    })
-  );
+  const url = getInlineCommentUrl(workspaceId, viewId);
+  const payload = getCreateInlineCommentPayload(params);
 
-  // During a rolling deploy an older Cloud node can still return the legacy
-  // success envelope without data. Top-level creation reconciles that case
-  // through the comment list; replies only need the request to succeed.
-  return response?.comment_id ?? null;
+  try {
+    const response = await executeAPIRequest<{ comment_id: string }>(() =>
+      getAxios()?.post<APIResponse<{ comment_id: string }>>(`${url}/v2`, payload)
+    );
+
+    return response.comment_id;
+  } catch (error) {
+    if (!isUnsupportedInlineCommentCreateV2(error)) throw error;
+
+    // Web may be deployed before Cloud during a rolling release. A definitive
+    // 404/405 proves v2 did not execute, so retrying the legacy endpoint cannot
+    // duplicate a committed comment. Timeouts and 5xx errors never fall back;
+    // the caller reconciles those ambiguous outcomes through the comment list.
+    await executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, payload));
+    return null;
+  }
 }
 
 /**

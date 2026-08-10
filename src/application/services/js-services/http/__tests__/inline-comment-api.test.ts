@@ -104,7 +104,7 @@ describe('inline comment HTTP API', () => {
     ).resolves.toBe('comment-1');
     await resolveInlineComment('workspace-1', 'view-1', 'comment-1', true);
 
-    expect(mockPost).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment', {
+    expect(mockPost).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment/v2', {
       content: 'Review this',
       block_id: 'block-1',
       reply_comment_id: 'parent-1',
@@ -116,8 +116,10 @@ describe('inline comment HTTP API', () => {
     });
   });
 
-  it('accepts the legacy create response during a rolling Cloud deploy', async () => {
-    mockPost.mockResolvedValue({ data: { data: undefined } });
+  it.each([404, 405])('falls back to v1 when v2 returns HTTP %s', async (httpStatus) => {
+    mockPost
+      .mockRejectedValueOnce({ code: httpStatus, message: 'Unsupported v2 route', httpStatus })
+      .mockResolvedValueOnce({ data: { data: undefined } });
 
     await expect(
       createInlineComment('workspace-1', 'view-1', {
@@ -125,6 +127,38 @@ describe('inline comment HTTP API', () => {
         replyCommentId: 'parent-1',
       })
     ).resolves.toBeNull();
+
+    const payload = {
+      content: 'Reply',
+      block_id: undefined,
+      reply_comment_id: 'parent-1',
+      mentioned_user_uuids: [],
+    };
+
+    expect(mockPost).toHaveBeenNthCalledWith(
+      1,
+      '/api/workspace/workspace-1/document/view-1/inline-comment/v2',
+      payload
+    );
+    expect(mockPost).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-1/document/view-1/inline-comment', payload);
+  });
+
+  it('does not retry v1 after an ambiguous v2 create failure', async () => {
+    const error = { code: -1, message: 'response lost' };
+
+    mockPost.mockRejectedValueOnce(error);
+
+    await expect(
+      createInlineComment('workspace-1', 'view-1', {
+        content: 'Review this',
+        blockId: 'block-1',
+      })
+    ).rejects.toBe(error);
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/document/view-1/inline-comment/v2',
+      expect.any(Object)
+    );
   });
 
   it('persists anchor-only updates through the comment-authorized endpoint', async () => {
