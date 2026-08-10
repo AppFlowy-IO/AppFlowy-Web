@@ -9,6 +9,13 @@ import { ChatMessageMetadata } from '@/components/chat/types';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+const EMPTY_MESSAGE_SOURCES: ChatMessageMetadata[] = [];
+
+export interface ResolvedMessageSource {
+  metadata: ChatMessageMetadata;
+  label: string;
+}
+
 export function getMessageSourceLabel(source: ChatMessageMetadata): string {
   return source.title?.trim() || source.name.trim() || source.id;
 }
@@ -37,23 +44,21 @@ export function getAppFlowySourceTarget(source: ChatMessageMetadata): { viewId: 
   };
 }
 
-function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
+export function useResolvedMessageSources(sources?: ChatMessageMetadata[]): ResolvedMessageSource[] {
   const { getView } = useViewLoader();
-  const { onOpenView } = useChatContext();
-  const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(true);
+  const sourceList = sources ?? EMPTY_MESSAGE_SOURCES;
   const [viewNames, setViewNames] = useState<Record<string, string>>({});
 
   const appflowySourceIds = useMemo(
     () =>
       Array.from(
         new Set(
-          sources
+          sourceList
             .filter((source) => isAppFlowySource(source) && !source.title?.trim())
             .map((source) => getAppFlowySourceTarget(source).viewId)
         )
       ),
-    [sources]
+    [sourceList]
   );
 
   useEffect(() => {
@@ -81,6 +86,25 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
     };
   }, [appflowySourceIds, getView]);
 
+  return useMemo(
+    () =>
+      sourceList.map((metadata) => {
+        const appflowyTarget = isAppFlowySource(metadata) ? getAppFlowySourceTarget(metadata) : undefined;
+        const sourceLabel = getMessageSourceLabel(metadata);
+        const label =
+          (metadata.title?.trim() ? sourceLabel : appflowyTarget && viewNames[appflowyTarget.viewId]) || sourceLabel;
+
+        return { metadata, label };
+      }),
+    [sourceList, viewNames]
+  );
+}
+
+export function ResolvedMessageSources({ sources }: { sources: ResolvedMessageSource[] }) {
+  const { onOpenView } = useChatContext();
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(true);
+
   return (
     <div className={'flex flex-col pb-2 max-sm:hidden'}>
       <Button
@@ -98,19 +122,15 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
       </Button>
       {expanded ? (
         <div className={'flex flex-wrap items-start gap-2'}>
-          {sources.map((source) => {
+          {sources.map(({ metadata: source, label }) => {
             const webUrl = getSafeWebSourceUrl(source);
             const appflowyTarget = isAppFlowySource(source) ? getAppFlowySourceTarget(source) : undefined;
-            const sourceLabel = getMessageSourceLabel(source);
-            const label =
-              (source.title?.trim() ? sourceLabel : appflowyTarget && viewNames[appflowyTarget.viewId]) ||
-              sourceLabel ||
-              t('chat.view.placeholder');
+            const displayLabel = label || t('chat.view.placeholder');
             const key = `${source.source}:${source.id}:${source.database_row_id || ''}`;
             const content = (
               <>
                 {source.source === 'web' ? <ExternalLink className={'h-4 w-4'} /> : <DocumentIcon />}
-                <span className={'truncate text-foreground'}>{label}</span>
+                <span className={'truncate text-foreground'}>{displayLabel}</span>
               </>
             );
 
@@ -144,7 +164,7 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
                     </Button>
                   )}
                 </TooltipTrigger>
-                <TooltipContent>{label}</TooltipContent>
+                <TooltipContent>{displayLabel}</TooltipContent>
               </Tooltip>
             );
           })}
@@ -152,6 +172,12 @@ function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
       ) : null}
     </div>
   );
+}
+
+function MessageSources({ sources }: { sources: ChatMessageMetadata[] }) {
+  const resolvedSources = useResolvedMessageSources(sources);
+
+  return <ResolvedMessageSources sources={resolvedSources} />;
 }
 
 export default MessageSources;

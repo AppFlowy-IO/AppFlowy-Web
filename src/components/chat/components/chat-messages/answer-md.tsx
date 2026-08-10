@@ -1,9 +1,14 @@
 import { AppFlowyEditor, Editor, useEditor } from '@appflowyinc/editor';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 import { useEditorContext } from '@/components/chat/provider/editor-provider';
+
+import { resolveCitationMarkdown } from './citation-markdown';
+import type { ResolvedMessageSource } from './message-sources';
+
+const EMPTY_RESOLVED_SOURCES: ResolvedMessageSource[] = [];
 
 function RegisterMessageEditor({ editor, id }: { editor: AppFlowyEditor; id: number }) {
   const { setEditor: setMessageEditor } = useEditorContext();
@@ -15,18 +20,27 @@ function RegisterMessageEditor({ editor, id }: { editor: AppFlowyEditor; id: num
   return null;
 }
 
-export function AnswerMd({ mdContent, id }: { mdContent: string; id?: number }) {
+export function AnswerMd({
+  mdContent,
+  id,
+  sources = EMPTY_RESOLVED_SOURCES,
+}: {
+  mdContent: string;
+  id?: number;
+  sources?: ResolvedMessageSource[];
+}) {
   const editor = useEditor();
+  const renderedContent = useMemo(() => resolveCitationMarkdown(mdContent, sources), [mdContent, sources]);
 
   useEffect(() => {
-    if (!mdContent) return;
+    if (!renderedContent) return;
 
     try {
-      editor.applyMarkdown(mdContent);
+      editor.applyMarkdown(renderedContent);
     } catch (error) {
       console.error('Failed to apply markdown', error);
     }
-  }, [editor, mdContent]);
+  }, [editor, renderedContent]);
 
   return (
     <>

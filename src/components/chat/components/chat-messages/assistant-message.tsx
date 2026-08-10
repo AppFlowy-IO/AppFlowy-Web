@@ -13,7 +13,7 @@ import { ChatInputMode } from '@/components/chat/types';
 
 import { AnswerMd } from '../chat-messages/answer-md';
 import { MessageActions } from '../chat-messages/message-actions';
-import MessageSources from '../chat-messages/message-sources';
+import { ResolvedMessageSources, useResolvedMessageSources } from '../chat-messages/message-sources';
 import { MessageSuggestions } from '../chat-messages/message-suggestions';
 
 import MessageCheckbox from './message-checkbox';
@@ -32,6 +32,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
 
   const questionId = id - 1;
   const sources = message?.meta_data;
+  const resolvedSources = useResolvedMessageSources(sources);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<boolean>(false);
@@ -129,12 +130,12 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
           <div className={'flex w-full gap-2 overflow-hidden py-1 pl-0.5'}>
             <MessageCheckbox id={id} />
             <EditorProvider>
-              <AnswerMd id={id} mdContent={content} />
+              <AnswerMd id={id} mdContent={content} sources={resolvedSources} />
             </EditorProvider>
           </div>
         )
       )}
-      {sources && sources.length > 0 ? <MessageSources sources={sources} /> : null}
+      {resolvedSources.length > 0 ? <ResolvedMessageSources sources={resolvedSources} /> : null}
       {done && <MessageActions id={id} isHovered={isHovered} />}
       {suggestions && suggestions.items.length > 0 ? <MessageSuggestions suggestions={suggestions} /> : null}
     </div>
