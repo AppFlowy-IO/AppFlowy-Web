@@ -4,20 +4,23 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { ERROR_CODE } from '@/application/constants';
+import { AccessService } from '@/application/services/domains';
 import { Invitation } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
-import { AccessService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
+import { useDesktopHandoff } from '@/components/app/hooks/useDesktopHandoff';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { buildInvitationCallbackLink } from '@/utils/open_desktop_app';
 
 function AcceptInvitationPage() {
   const currentUser = useCurrentUser();
+  const { handoff } = useDesktopHandoff();
   const [searchParams] = useSearchParams();
   const invitationId = searchParams.get('invited_id');
   const [invitation, setInvitation] = useState<Invitation>();
@@ -96,7 +99,14 @@ function AcceptInvitationPage() {
       setLoading(true);
       await AccessService.acceptInvitation(invitationId);
       toast.success(t('invitation.successMessage'));
-      window.open(`/app/${invitation?.workspace_id}`, '_self');
+      const workspaceId = invitation?.workspace_id;
+      const goWeb = () => window.open(`/app/${workspaceId}`, '_self');
+
+      // Hand off to the desktop app if the user prefers it; otherwise (or if the app isn't
+      // installed) land on the web workspace.
+      handoff(buildInvitationCallbackLink({ workspaceId: workspaceId ?? '', email: currentUser?.email }), {
+        onStayInBrowser: goWeb,
+      });
       setHasJoined(true);
       // eslint-disable-next-line
     } catch (e: any) {
@@ -116,7 +126,7 @@ function AcceptInvitationPage() {
     } finally {
       setLoading(false);
     }
-  }, [invitationId, invitation, t]);
+  }, [invitationId, invitation, t, handoff, currentUser?.email]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {

@@ -856,6 +856,10 @@
       "language": {
         "title": "Language"
       },
+      "openInDesktopApp": {
+        "title": "Open links in desktop app",
+        "description": "When enabled, opening AppFlowy invitations and shared links hands off to the desktop app if it's installed."
+      },
       "password": {
         "title": "Password",
         "description": "Your account password for signing in.",
@@ -3691,6 +3695,20 @@
   "here": "here",
   "openInBrowser": "Open in browser",
   "openInApp": "Open in app",
+  "openInDesktopApp": {
+    "notInstalled": {
+      "title": "Couldn't open the AppFlowy desktop app",
+      "description": "Make sure the desktop app is installed, or keep using AppFlowy in your browser.",
+      "download": "Download",
+      "continueInBrowser": "Continue in browser"
+    },
+    "prompt": {
+      "title": "Open in the AppFlowy desktop app?",
+      "description": "You can change this anytime in Settings.",
+      "open": "Open in app",
+      "stay": "Stay in browser"
+    }
+  },
   "comments": "Comments",
   "duplicateAsTemplate": "Duplicate as template",
   "embedVideo": "Embed video",

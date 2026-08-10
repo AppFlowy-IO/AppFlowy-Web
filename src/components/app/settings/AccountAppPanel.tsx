@@ -5,15 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { UserService } from '@/application/services/domains';
 import { clearRedirectTo } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
-import { UserService } from '@/application/services/domains';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { NormalModal } from '@/components/_shared/modal';
-import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
+import { useOpenInDesktopApp } from '@/components/app/hooks/useOpenInDesktopApp';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
 import { useAppConfig } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +24,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
 import { i18nInstance } from '@/i18n/config';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/utils/errors';
@@ -96,6 +98,7 @@ function formatDateTimeExample(dateFormat: DateFormat, timeFormat: TimeFormat): 
 export function AccountAppPanel() {
   const { t } = useTranslation();
   const { currentUser, updateCurrentUser } = useAppConfig();
+  const { enabled: openInDesktopApp, setEnabled: setOpenInDesktopApp } = useOpenInDesktopApp();
   const navigate = useNavigate();
 
   const [dateFormat, setDateFormat] = useState(
@@ -287,6 +290,24 @@ export function AccountAppPanel() {
           <Section title={t('settings.accountPage.language.title')}>
             <LanguageDropdown language={language} onSelect={handleSelectLanguage} />
           </Section>
+
+          <Divider />
+
+          <Row>
+            <div className='flex flex-col gap-1'>
+              <div className='text-sm font-semibold text-text-primary'>
+                {t('settings.accountPage.openInDesktopApp.title')}
+              </div>
+              <div className='text-xs text-text-secondary'>
+                {t('settings.accountPage.openInDesktopApp.description')}
+              </div>
+            </div>
+            <Switch
+              checked={openInDesktopApp}
+              onCheckedChange={(checked) => void setOpenInDesktopApp(checked)}
+              data-testid='open-in-desktop-app-toggle'
+            />
+          </Row>
 
           <Divider />
 
