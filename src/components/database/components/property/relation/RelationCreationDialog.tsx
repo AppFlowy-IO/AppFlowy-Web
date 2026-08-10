@@ -14,6 +14,7 @@ const MODAL_PAPER_PROPS = {
 import { useDatabaseContext } from '@/application/database-yjs';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { View } from '@/application/types';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { NormalModal } from '@/components/_shared/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,6 +30,12 @@ export type RelationCreationResult = {
   isTwoWay: boolean;
   sourceLimit: RelationLimit;
   reciprocalFieldName?: string;
+};
+
+type RelationCandidate = {
+  databaseId: string;
+  databaseViewId: string;
+  displayView: View;
 };
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
@@ -63,9 +70,9 @@ export function RelationCreationDialog({
   const [isTwoWay, setIsTwoWay] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  // Each candidate carries both view metadata (for display) and the database_id
-  // that needs to be persisted on the relation property.
-  const [candidates, setCandidates] = useState<Array<{ databaseId: string; view: View }>>([]);
+  // Keep the registered database view ID for identity, while rendering the
+  // database container so users see the database name instead of "Grid".
+  const [candidates, setCandidates] = useState<RelationCandidate[]>([]);
 
   // RelationCreationDialog itself stays mounted under PropertyMenu — only the
   // MUI Dialog subtree unmounts via `keepMounted={false}`. The useState above
@@ -114,9 +121,10 @@ export function RelationCreationDialog({
         // Mirror the desktop flow (RelationDatabaseListCubit):
         //   1. Ask the workspace for every registered database via
         //      DatabaseEventGetDatabases (here: `loadDatabaseRelations`).
-        //   2. For each `(databaseId, viewId)`, fetch the view metadata so we
-        //      get the database name. Desktop calls ViewBackendService.getView
-        //      per id; we call `loadViewMeta` per id.
+        //   2. For each `(databaseId, viewId)`, fetch the registered database
+        //      view and its container. The workspace map points to the first
+        //      internal view (usually named "Grid"), while the container owns
+        //      the user-facing database name.
         //   3. Drop entries whose view fetch failed.
         // Force a refresh so a database created earlier in this session shows
         // up — the workspace cache is otherwise only invalidated on workspace
@@ -129,9 +137,26 @@ export function RelationCreationDialog({
             if (!viewId) return null;
 
             try {
-              const view = await loadViewMetaFn(viewId);
+              const databaseView = await loadViewMetaFn(viewId);
 
-              return view ? { databaseId, view } : null;
+              if (!databaseView) return null;
+
+              let displayView = databaseView;
+
+              if (!isDatabaseContainer(databaseView) && databaseView.parent_view_id) {
+                try {
+                  const parentView = await loadViewMetaFn(databaseView.parent_view_id);
+
+                  if (isDatabaseContainer(parentView)) {
+                    displayView = parentView;
+                  }
+                } catch {
+                  // Fall back to the registered database view for legacy or
+                  // inaccessible folder structures.
+                }
+              }
+
+              return { databaseId, databaseViewId: databaseView.view_id, displayView };
             } catch {
               return null;
             }
@@ -141,7 +166,7 @@ export function RelationCreationDialog({
         if (cancelled) return;
 
         const seen = new Set<string>();
-        const resolved: Array<{ databaseId: string; view: View }> = [];
+        const resolved: RelationCandidate[] = [];
 
         for (const entry of fetched) {
           if (!entry || seen.has(entry.databaseId)) continue;
@@ -170,7 +195,7 @@ export function RelationCreationDialog({
     if (!query.trim()) return candidates;
     const lowered = query.trim().toLowerCase();
 
-    return candidates.filter(({ view }) => (view.name || '').toLowerCase().includes(lowered));
+    return candidates.filter(({ displayView }) => (displayView.name || '').toLowerCase().includes(lowered));
   }, [candidates, query]);
 
   const selectedCandidate = useMemo(
@@ -179,13 +204,17 @@ export function RelationCreationDialog({
   );
 
   const currentCandidate = useMemo(
-    () => candidates.find((entry) => entry.view.view_id === databasePageId),
+    () =>
+      candidates.find(
+        (entry) => entry.databaseViewId === databasePageId || entry.displayView.view_id === databasePageId
+      ),
     [candidates, databasePageId]
   );
 
-  const relatedDatabaseName = selectedCandidate?.view.name || t('grid.relation.relatedDatabasePlaceholder');
+  const relatedDatabaseName =
+    selectedCandidate?.displayView.name || t('grid.relation.relatedDatabasePlaceholder');
   const sourceDatabaseName =
-    currentCandidate?.view.name || t('grid.relation.thisDatabase', { defaultValue: 'This database' });
+    currentCandidate?.displayView.name || t('grid.relation.thisDatabase', { defaultValue: 'This database' });
 
   // Memoize the disabled flag so MUI's Button can bail out when only
   // unrelated state (search query, two-way toggle, …) changes.
@@ -242,7 +271,7 @@ export function RelationCreationDialog({
                 {t('grid.relation.emptySearchResult')}
               </div>
             ) : (
-              filteredCandidates.map(({ databaseId, view }) => {
+              filteredCandidates.map(({ databaseId, displayView }) => {
                 const selected = databaseId === selectedDatabaseId;
 
                 return (
@@ -256,7 +285,7 @@ export function RelationCreationDialog({
                     )}
                     onClick={() => setSelectedDatabaseId(databaseId)}
                   >
-                    <RelationView view={view} />
+                    <RelationView view={displayView} />
                   </button>
                 );
               })
