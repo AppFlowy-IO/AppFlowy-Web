@@ -64,7 +64,9 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
   }
 
   const style: CSSProperties = {};
-  const inlineCommentIds = inlineComments?.active ? getInlineCommentIds(leaf) : EMPTY_COMMENT_IDS;
+  const inlineCommentIds = inlineComments?.active
+    ? getInlineCommentIds(leaf).filter((commentId) => inlineComments.openCommentIds.has(commentId))
+    : EMPTY_COMMENT_IDS;
 
   if (leaf.font_color) {
     classList.push('text-color');

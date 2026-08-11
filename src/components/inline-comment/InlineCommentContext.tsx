@@ -89,6 +89,7 @@ interface InlineCommentEditorBridgeValue {
 interface InlineCommentLeafContextValue {
   active: boolean;
   focusedCommentId: string | null;
+  openCommentIds: ReadonlySet<string>;
   openCommentFromAnchor: (commentIds: readonly string[]) => void;
 }
 
@@ -947,13 +948,26 @@ export function InlineCommentProvider({
     [handleEditorChange, refreshAnchors, registerEditor, updateEditorAccess]
   );
 
+  // Resolved anchors stay in the document so their threads can be reopened.
+  // Give leaves only the ids that should still be interactive and highlighted.
+  const openCommentIds = useMemo(
+    () =>
+      new Set(
+        comments
+          .filter((comment) => !comment.replyCommentId && !comment.isDeleted && !comment.isResolved)
+          .map((comment) => comment.commentId)
+      ),
+    [comments]
+  );
+
   const leafContextValue = useMemo<InlineCommentLeafContextValue>(
     () => ({
       active,
       focusedCommentId,
+      openCommentIds,
       openCommentFromAnchor,
     }),
-    [active, focusedCommentId, openCommentFromAnchor]
+    [active, focusedCommentId, openCommentFromAnchor, openCommentIds]
   );
 
   const panelContextValue = useMemo<InlineCommentPanelContextValue>(

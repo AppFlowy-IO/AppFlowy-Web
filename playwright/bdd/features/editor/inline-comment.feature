@@ -25,11 +25,13 @@ Feature: Document inline comments
     Then the inline comment reply "We should add a mobile example too." is visible
     When I resolve the inline comment "Great work on the layout!"
     Then the inline comment "Great work on the layout!" is not visible in the sidebar
+    And the commented text is no longer highlighted in the document
     When I select the "Resolved" inline comment filter
     Then the inline comment "Great work on the layout!" is visible in the sidebar
     When I reopen the inline comment "Great work on the layout!"
     And I select the "Open" inline comment filter
     Then the inline comment "Great work on the layout!" is visible in the sidebar
+    And the commented text is highlighted in the document
     When I delete the inline comment "Great work on the layout!"
     Then the inline comment "Great work on the layout!" is not visible in the sidebar
     And the comments panel shows the "Open" empty state
