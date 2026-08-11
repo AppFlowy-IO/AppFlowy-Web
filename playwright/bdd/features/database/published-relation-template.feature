@@ -21,3 +21,6 @@ Feature: Published database templates preserve relations
     And the relation template duplication contains 2 database mappings
     And the duplicated relation cell shows "Related DB content"
     And the duplicated relation cell does not show "No access"
+    When I reload the duplicated relation template without its mapping query
+    Then the duplicated relation cell shows "Related DB content"
+    And the duplicated relation cell does not show "No access"

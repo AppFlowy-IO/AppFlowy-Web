@@ -316,6 +316,21 @@ Then('the duplicated relation cell does not show {string}', async ({ page }, ina
   await expect(consumerPage.getByText(inaccessibleText, { exact: true })).toHaveCount(0);
 });
 
+When('I reload the duplicated relation template without its mapping query', async ({ page }) => {
+  const consumerPage = requireConsumerPage(getState(page));
+
+  // The duplication URL seeds the mapping once. Removing that query before
+  // reload verifies the app can restore related databases from local storage.
+  await consumerPage.evaluate(() => {
+    const url = new URL(window.location.href);
+
+    url.searchParams.delete('db_mappings');
+    window.history.replaceState(null, '', url);
+  });
+  await consumerPage.reload({ waitUntil: 'domcontentloaded' });
+  await expect(DatabaseGridSelectors.grid(consumerPage)).toBeVisible({ timeout: 60000 });
+});
+
 async function openFixtureView(page: Page, viewId: string): Promise<void> {
   await page.goto(`/app/${FIXTURE_WORKSPACE_ID}/${viewId}`, { waitUntil: 'domcontentloaded' });
   await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 60000 });
