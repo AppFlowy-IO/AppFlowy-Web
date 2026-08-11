@@ -300,6 +300,30 @@ Then('the relation template duplication contains {int} database mappings', async
   expect(Object.keys(result.database_mappings)).toHaveLength(count);
 });
 
+Then('the duplicated relation database is named {string}', async ({ page, request }, expectedName: string) => {
+  const state = getState(page);
+  const result = requireDuplicateResult(state);
+  const token = requireValue(state.consumerToken, 'consumer token');
+  const workspaceId = requireValue(state.consumerWorkspaceId, 'consumer workspace id');
+  const duplicatedDatabaseViewIds = new Set(Object.values(result.database_mappings).flat());
+
+  await expect
+    .poll(
+      async () => {
+        const folder = await getWorkspaceFolder(request, token, workspaceId);
+
+        return [...duplicatedDatabaseViewIds]
+          .map((viewId) => findView(folder, viewId)?.name)
+          .filter((name): name is string => name !== undefined);
+      },
+      {
+        timeout: 30000,
+        message: `Expected a duplicated relation database view named ${expectedName}`,
+      }
+    )
+    .toContain(expectedName);
+});
+
 Then('the duplicated relation cell shows {string}', async ({ page }, expectedContent: string) => {
   const consumerPage = requireConsumerPage(getState(page));
 

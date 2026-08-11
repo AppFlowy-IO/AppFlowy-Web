@@ -19,6 +19,7 @@ Feature: Published database templates preserve relations
     When that account starts with the relation template in "General"
     Then the destination space request uses depth 2
     And the relation template duplication contains 2 database mappings
+    And the duplicated relation database is named "Related DB"
     And the duplicated relation cell shows "Related DB content"
     And the duplicated relation cell does not show "No access"
     When I clear the duplication mappings and reload the duplicated relation template
