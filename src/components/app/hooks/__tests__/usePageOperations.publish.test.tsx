@@ -1,14 +1,15 @@
 import { act, renderHook } from '@testing-library/react';
-import type { MutableRefObject } from 'react';
 
 import { PageService, PublishService } from '@/application/services/domains';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
-import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import { publishCollabs } from '@/application/services/js-services/http/publish-api';
+import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import { View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 
 import { usePageOperations } from '../usePageOperations';
+
+import type { MutableRefObject } from 'react';
 
 jest.mock('@/application/services/domains', () => ({
   BillingService: {},
@@ -142,13 +143,16 @@ describe('usePageOperations publish', () => {
 
   it('retries document publishing while the folder projection is pending', async () => {
     jest.useFakeTimers();
+
+    const syncAllToServer = jest.fn(async () => undefined);
+
     jest
       .mocked(PublishService.publish)
       .mockRejectedValueOnce({ code: -2, message: 'Record not found: view is not projected yet' })
       .mockResolvedValueOnce(undefined);
 
     try {
-      const { result } = renderUsePageOperations();
+      const { result, workspaceId } = renderUsePageOperations({ syncAllToServer });
 
       await act(async () => {
         const publishPromise = result.current.publish(createView({ view_id: 'document-view-id' }));
@@ -158,6 +162,35 @@ describe('usePageOperations publish', () => {
       });
 
       expect(PublishService.publish).toHaveBeenCalledTimes(2);
+      expect(syncAllToServer).toHaveBeenCalledTimes(1);
+      expect(syncAllToServer).toHaveBeenCalledWith(workspaceId);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('reuses the same full sync across repeated folder projection retries', async () => {
+    jest.useFakeTimers();
+    const syncAllToServer = jest.fn(async () => undefined);
+
+    jest
+      .mocked(PublishService.publish)
+      .mockRejectedValueOnce({ code: -2, message: 'Record not exist in db' })
+      .mockRejectedValueOnce({ code: -2, message: 'Record not exist in db' })
+      .mockResolvedValueOnce(undefined);
+
+    try {
+      const { result } = renderUsePageOperations({ syncAllToServer });
+
+      await act(async () => {
+        const publishPromise = result.current.publish(createView({ view_id: 'document-view-id' }));
+
+        await jest.advanceTimersByTimeAsync(750);
+        await publishPromise;
+      });
+
+      expect(PublishService.publish).toHaveBeenCalledTimes(3);
+      expect(syncAllToServer).toHaveBeenCalledTimes(1);
     } finally {
       jest.useRealTimers();
     }
