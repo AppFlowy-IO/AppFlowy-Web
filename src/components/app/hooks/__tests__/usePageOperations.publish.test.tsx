@@ -136,6 +136,143 @@ describe('usePageOperations publish', () => {
     expect(getDatabaseIdForViewId).not.toHaveBeenCalled();
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
   });
+
+  it('publishes Chart views through the client-side database endpoint', async () => {
+    const viewId = 'chart-view-id';
+    const databaseId = 'chart-database-id';
+    const { result } = renderUsePageOperations();
+
+    await act(async () => {
+      await result.current.publish(
+        createView({
+          view_id: viewId,
+          name: 'Chart',
+          layout: ViewLayout.Chart,
+          extra: { is_space: false, database_id: databaseId },
+        })
+      );
+    });
+
+    expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
+    expect(publishCollabs).toHaveBeenCalledTimes(1);
+    expect(PublishService.publish).not.toHaveBeenCalled();
+  });
+
+  it('publishes metadata for visible database views under a database container', async () => {
+    const containerViewId = 'database-container-id';
+    const gridViewId = 'grid-view-id';
+    const boardViewId = 'board-view-id';
+    const calendarViewId = 'calendar-view-id';
+    const databaseId = 'database-id';
+    const gridView = createView({
+      view_id: gridViewId,
+      name: 'Grid',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const boardView = createView({
+      view_id: boardViewId,
+      name: 'Board',
+      layout: ViewLayout.Board,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const calendarView = createView({
+      view_id: calendarViewId,
+      name: 'Calendar',
+      layout: ViewLayout.Calendar,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const containerView = createView({
+      view_id: containerViewId,
+      name: 'Publish database',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId, is_database_container: true },
+      children: [gridView, boardView, calendarView],
+    });
+    const { result, workspaceId } = renderUsePageOperations();
+
+    await act(async () => {
+      await result.current.publish(containerView, undefined, [containerViewId, calendarViewId, boardViewId, gridViewId]);
+    });
+
+    expect(gatherDatabasePublishData).toHaveBeenCalledWith(
+      containerViewId,
+      [containerViewId, gridViewId, boardViewId, calendarViewId],
+      databaseId
+    );
+    expect(publishCollabs).toHaveBeenCalledWith(workspaceId, [
+      expect.objectContaining({
+        meta: expect.objectContaining({
+          view_id: containerViewId,
+          metadata: expect.objectContaining({
+            child_views: [
+              expect.objectContaining({
+                view_id: gridViewId,
+                name: 'Grid',
+                layout: ViewLayout.Grid,
+              }),
+              expect.objectContaining({
+                view_id: boardViewId,
+                name: 'Board',
+                layout: ViewLayout.Board,
+              }),
+              expect.objectContaining({
+                view_id: calendarViewId,
+                name: 'Calendar',
+                layout: ViewLayout.Calendar,
+              }),
+            ],
+          }),
+        }),
+      }),
+    ]);
+  });
+
+  it('publishes a database child view using its container view order', async () => {
+    const databaseId = 'database-id';
+    const gridView = createView({
+      view_id: 'grid-view-id',
+      name: 'Grid',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const boardView = createView({
+      view_id: 'board-view-id',
+      name: 'Board',
+      layout: ViewLayout.Board,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const calendarView = createView({
+      view_id: 'calendar-view-id',
+      name: 'Calendar',
+      layout: ViewLayout.Calendar,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const containerView = createView({
+      view_id: 'database-container-id',
+      name: 'Publish database',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId, is_database_container: true },
+      children: [gridView, boardView, calendarView],
+    });
+    const spaceView = createView({
+      view_id: 'space-id',
+      name: 'General',
+      extra: { is_space: true },
+      children: [containerView],
+    });
+    const { result } = renderUsePageOperations({ outlineRef: { current: [spaceView] } });
+
+    await act(async () => {
+      await result.current.publish(boardView, undefined, [calendarView.view_id, boardView.view_id, gridView.view_id]);
+    });
+
+    expect(gatherDatabasePublishData).toHaveBeenCalledWith(
+      boardView.view_id,
+      [gridView.view_id, boardView.view_id, calendarView.view_id],
+      databaseId
+    );
+  });
 });
 
 describe('usePageOperations addPage', () => {

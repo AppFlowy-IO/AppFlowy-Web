@@ -4,6 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { PublishContext } from '@/application/publish';
 import { PublishService } from '@/application/services/domains';
 import { Types, ViewLayout } from '@/application/types';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import SelectWorkspace from '@/components/publish/header/duplicate/SelectWorkspace';
@@ -11,17 +12,11 @@ import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { useLoadWorkspaces } from '@/components/publish/header/duplicate/useDuplicate';
 import { downloadPage, openAppFlowySchema } from '@/utils/url';
 
-function getCollabTypeFromViewLayout(layout: ViewLayout) {
-  switch (layout) {
-    case ViewLayout.Document:
-      return Types.Document;
-    case ViewLayout.Grid:
-    case ViewLayout.Board:
-    case ViewLayout.Calendar:
-      return Types.Database;
-    default:
-      return null;
-  }
+export function getCollabTypeFromViewLayout(layout: ViewLayout) {
+  if (layout === ViewLayout.Document) return Types.Document;
+  if (isDatabaseLayout(layout)) return Types.Database;
+
+  return null;
 }
 
 function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -42,6 +37,7 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
     selectedSpaceId,
     workspaceLoading,
     spaceLoading,
+    spaceError,
     loadWorkspaces,
     loadSpaces,
   } = useLoadWorkspaces();
@@ -110,9 +106,15 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
           />
           <SpaceList
             loading={spaceLoading}
+            error={spaceError}
             spaceList={spaceList}
             value={selectedSpaceId}
             onChange={setSelectedSpaceId}
+            onRetry={() => {
+              if (selectedWorkspaceId) {
+                void loadSpaces(selectedWorkspaceId);
+              }
+            }}
           />
         </div>
       </NormalModal>

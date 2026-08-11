@@ -24,6 +24,38 @@ const getAwarenessIdentityKey = (uuid: string | undefined, uid: number, deviceId
   return `device:${deviceId}`;
 };
 
+const compareAwarenessIdentities = (aIdentity: string, bIdentity: string) => {
+  if (aIdentity === bIdentity) {
+    return 0;
+  }
+
+  return aIdentity < bIdentity ? -1 : 1;
+};
+
+const getUniqueUsersInStableOrder = (users: AwarenessUser[]) => {
+  const latestUsersByIdentity = new Map<string, AwarenessUser>();
+
+  for (const user of users) {
+    const identity = getAwarenessIdentityKey(user.uuid, user.uid, user.device_id);
+    const latestUser = latestUsersByIdentity.get(identity);
+
+    if (!latestUser || user.timestamp > latestUser.timestamp) {
+      latestUsersByIdentity.set(identity, user);
+    }
+  }
+
+  const namedUsers: Array<[string, AwarenessUser]> = [];
+
+  for (const userEntry of latestUsersByIdentity.entries()) {
+    if (userEntry[1].name) namedUsers.push(userEntry);
+  }
+
+  // Activity timestamps select the newest duplicate, but must not influence avatar positions.
+  return namedUsers
+    .sort(([aIdentity], [bIdentity]) => compareAwarenessIdentities(aIdentity, bIdentity))
+    .map(([, user]) => user);
+};
+
 const getNormalizedMetadata = (rawMetadata?: string): AwarenessMetadata | null => {
   if (!rawMetadata) {
     return null;
@@ -81,12 +113,7 @@ export function useUsersSelector(awareness?: Awareness) {
         });
       });
 
-      setUsers(
-        uniqBy(
-          users.sort((a, b) => b.timestamp - a.timestamp),
-          (user) => getAwarenessIdentityKey(user.uuid, user.uid, user.device_id)
-        ).filter((user) => !!user.name)
-      );
+      setUsers(getUniqueUsersInStableOrder(users));
     };
 
     renderUsers();

@@ -95,7 +95,7 @@ describe('PublishSnapshotView', () => {
       throw new Error('Expected database snapshot fixture');
     }
 
-    render(
+    const { unmount } = render(
       <MemoryRouter>
         <PublishSnapshotView snapshot={snapshot} />
       </MemoryRouter>
@@ -105,9 +105,7 @@ describe('PublishSnapshotView', () => {
     expect(mockDatabaseView).toHaveBeenCalledTimes(1);
 
     const databaseProps = mockDatabaseView.mock.calls[0][0] as DatabaseProps;
-    const database = databaseProps.doc
-      .getMap(YjsEditorKey.data_section)
-      .get(YjsEditorKey.database);
+    const database = databaseProps.doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
 
     expect(databaseProps.workspaceId).toBe('publish');
     expect(databaseProps.variant).toBe(UIVariant.Publish);
@@ -126,10 +124,22 @@ describe('PublishSnapshotView', () => {
 
     const rowDocument = await databaseProps.loadRowDocument?.(publishedRowDocumentId);
     const rowDocumentContent = rowDocument ? yDocToSlateContent(rowDocument) : undefined;
-    const firstRowDocumentBlock = rowDocumentContent?.children[0] as {
-      children?: Array<{ children?: Array<{ text?: string }> }>;
-    } | undefined;
+    const firstRowDocumentBlock = rowDocumentContent?.children[0] as
+      | {
+          children?: Array<{ children?: Array<{ text?: string }> }>;
+        }
+      | undefined;
 
     expect(firstRowDocumentBlock?.children?.[0]?.children?.[0]?.text).toBe('Published row document body');
+
+    const databaseDocDestroy = jest.spyOn(databaseProps.doc, 'destroy');
+    const rowDocDestroy = jest.spyOn(databaseProps.initialRowMap!['published-row-id'], 'destroy');
+    const rowDocumentDestroy = jest.spyOn(rowDocument!, 'destroy');
+
+    unmount();
+
+    expect(databaseDocDestroy).toHaveBeenCalledTimes(1);
+    expect(rowDocDestroy).toHaveBeenCalledTimes(1);
+    expect(rowDocumentDestroy).toHaveBeenCalledTimes(1);
   });
 });

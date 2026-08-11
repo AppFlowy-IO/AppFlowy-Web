@@ -880,7 +880,11 @@ export interface YDatabaseView extends Y.Map<unknown> {
 
 export type YDatabaseFieldOrders = Y.Array<{ id: FieldId }>; // [ { id: FieldId } ]
 
-export type YDatabaseRowOrders = Y.Array<{ id: RowId; height: number }>; // [ { id: RowId, height: number } ]
+export type YDatabaseRowOrders = Y.Array<{
+  id: RowId;
+  height: number;
+  is_deleted?: boolean;
+}>; // [ { id: RowId, height: number, is_deleted?: boolean } ]
 
 export type YDatabaseGroups = Y.Array<YDatabaseGroup>;
 

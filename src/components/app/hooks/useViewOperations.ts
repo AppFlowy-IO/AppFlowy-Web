@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
+  DatabaseRelations,
   LoadViewOptions,
   Types,
   View,
@@ -116,7 +117,11 @@ export function getViewCanWriteStatus(viewId: string, outline?: View[], fallback
 }
 
 // Hook for managing view-related operations
-export function useViewOperations() {
+export function useViewOperations({
+  loadDatabaseRelations,
+}: {
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+} = {}) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
@@ -156,6 +161,7 @@ export function useViewOperations() {
     currentWorkspaceId,
     databaseStorageId,
     registerSyncContext,
+    loadDatabaseRelations,
   });
 
   // Check if view should be readonly based on access permissions

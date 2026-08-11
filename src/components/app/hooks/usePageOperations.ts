@@ -18,8 +18,8 @@ import {
   UpdateSpacePayload,
   View,
   ViewIconType,
-  ViewLayout,
 } from '@/application/types';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { Log } from '@/utils/log';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 
@@ -385,10 +385,9 @@ export function usePageOperations({
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
-      const isDatabaseLayout =
-        view.layout === ViewLayout.Grid || view.layout === ViewLayout.Board || view.layout === ViewLayout.Calendar;
+      const isDatabaseView = isDatabaseLayout(view.layout);
 
-      if (isDatabaseLayout) {
+      if (isDatabaseView) {
         // Database views: gather data client-side and send via binary publish endpoint
         // (same approach as the desktop client — fixes #8464). Kick the WS
         // drain in the background — the binary publish below carries the
@@ -412,7 +411,9 @@ export function usePageOperations({
         // tab (Grid, Board, Calendar, etc.) appears on the published page.
         let resolvedVisibleViewIds = visibleViewIds;
 
-        if (outlineRef.current) {
+        if (view.extra?.is_database_container) {
+          resolvedVisibleViewIds = [viewId, ...view.children.map((child) => child.view_id)];
+        } else if (outlineRef.current) {
           const parentView = findParentView(outlineRef.current, viewId);
 
           if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
@@ -430,23 +431,30 @@ export function usePageOperations({
           return isNaN(t) ? 0 : Math.floor(t / 1000);
         };
 
+        const toPublishViewInfo = (publishView: View): PublishCollabMetadata['metadata']['view'] => ({
+          view_id: publishView.view_id,
+          name: publishView.name,
+          icon: publishView.icon,
+          layout: publishView.layout,
+          extra: publishView.extra
+            ? typeof publishView.extra === 'string'
+              ? publishView.extra
+              : JSON.stringify(publishView.extra)
+            : null,
+          created_by: null,
+          last_edited_by: null,
+          last_edited_time: toTimestamp(publishView.last_edited_time),
+          created_at: toTimestamp(publishView.created_at),
+          child_views: null,
+        });
+        const visibleViewIdSet = new Set(resolvedVisibleViewIds ?? []);
+
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
           metadata: {
-            view: {
-              view_id: viewId,
-              name: view.name,
-              icon: view.icon,
-              layout: view.layout,
-              extra: view.extra ? (typeof view.extra === 'string' ? view.extra : JSON.stringify(view.extra)) : null,
-              created_by: null,
-              last_edited_by: null,
-              last_edited_time: toTimestamp(view.last_edited_time),
-              created_at: toTimestamp(view.created_at),
-              child_views: null,
-            },
-            child_views: [],
+            view: toPublishViewInfo(view),
+            child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
             ancestor_views: [],
           },
         };

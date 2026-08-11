@@ -50,6 +50,10 @@ describe('view-utils', () => {
       expect(isDatabaseLayout(ViewLayout.Calendar)).toBe(true);
     });
 
+    it('should return true for Chart layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Chart)).toBe(true);
+    });
+
     it('should return false for Document layout', () => {
       expect(isDatabaseLayout(ViewLayout.Document)).toBe(false);
     });
@@ -804,7 +808,7 @@ describe('view-utils', () => {
     });
 
     it('returns true for all database layouts under document (non-container)', () => {
-      const databaseLayouts = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar];
+      const databaseLayouts = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.Chart];
       const parentView = createMockView({
         view_id: 'parent-doc',
         layout: ViewLayout.Document,

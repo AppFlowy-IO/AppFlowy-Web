@@ -33,18 +33,22 @@ function createRowDoc(rowId: string) {
   return doc;
 }
 
-function createDatabaseDoc() {
+type TestRowOrder = { id: string; height: number; is_deleted?: boolean };
+
+function createDatabaseDoc(
+  initialRowOrders: TestRowOrder[] = [
+    { id: 'live-row', height: 36 },
+    { id: 'trashed-row', height: 36, is_deleted: true },
+  ]
+) {
   const doc = new Y.Doc({ guid: 'database-id' });
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map() as YDatabase;
   const views = new Y.Map<YDatabaseView>();
   const view = new Y.Map() as YDatabaseView;
-  const rowOrders = new Y.Array<{ id: string; height: number; is_deleted?: boolean }>();
+  const rowOrders = new Y.Array<TestRowOrder>();
 
-  rowOrders.push([
-    { id: 'live-row', height: 36 },
-    { id: 'trashed-row', height: 36, is_deleted: true },
-  ]);
+  rowOrders.push(initialRowOrders);
   view.set(YjsDatabaseKey.row_orders, rowOrders);
   views.set('view-id', view);
   database.set(YjsDatabaseKey.id, 'database-id');
@@ -82,9 +86,7 @@ describe('gatherDatabasePublishData', () => {
     const publishedDoc = new Y.Doc();
 
     Y.applyUpdate(publishedDoc, Uint8Array.from(payload.database_collab));
-    const publishedDatabase = publishedDoc
-      .getMap(YjsEditorKey.data_section)
-      .get(YjsEditorKey.database) as YDatabase;
+    const publishedDatabase = publishedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
     const publishedRows = publishedDatabase
       .get(YjsDatabaseKey.views)
       ?.get('view-id')
@@ -96,5 +98,33 @@ describe('gatherDatabasePublishData', () => {
       { id: 'live-row', height: 36 },
       { id: 'trashed-row', height: 36, is_deleted: true },
     ]);
+  });
+
+  it('loads row collabs in bounded parallel batches while preserving row order', async () => {
+    const rowIds = Array.from({ length: 12 }, (_, index) => `row-${index}`);
+    const { doc } = createDatabaseDoc(rowIds.map((id) => ({ id, height: 36 })));
+    let activeLoads = 0;
+    let maxActiveLoads = 0;
+
+    jest.mocked(openCollabDB).mockResolvedValue(doc);
+    jest.mocked(createRow).mockImplementation(async (rowKey) => {
+      const rowId = rowKey.split('_rows_')[1];
+
+      activeLoads += 1;
+      maxActiveLoads = Math.max(maxActiveLoads, activeLoads);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      activeLoads -= 1;
+
+      return createRowDoc(rowId);
+    });
+
+    const encoded = await gatherDatabasePublishData('view-id', undefined, 'database-id');
+    const payload = JSON.parse(new TextDecoder().decode(encoded)) as {
+      database_row_collabs: Record<string, number[]>;
+    };
+
+    expect(maxActiveLoads).toBeGreaterThan(1);
+    expect(maxActiveLoads).toBeLessThan(rowIds.length);
+    expect(Object.keys(payload.database_row_collabs)).toEqual(rowIds);
   });
 });

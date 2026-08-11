@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 
+import { getRowKey } from '@/application/database-yjs/row_meta';
 import { normalizePublishedPageSnapshot } from '@/application/publish-snapshot/normalize';
 import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import {
@@ -9,6 +10,7 @@ import {
   publishedRowDocumentId,
 } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 import { PublishContextType, PublishProvider, usePublishContext } from '@/application/publish';
+import { RowService } from '@/application/services/domains';
 import { YjsEditorKey } from '@/application/types';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 
@@ -180,12 +182,18 @@ describe('PublishProvider', () => {
 
     const doc = await latestContext?.loadView(relatedSnapshot.view.viewId);
     const database = doc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const publishedRows = getPublishedDatabaseRenderRowMap(doc) ?? {};
+    const publishedRow = await latestContext?.createRow?.(
+      getRowKey(relatedSnapshot.database.databaseId, 'published-row-id')
+    );
 
     expect(mockGetPage).toHaveBeenCalledWith(relatedSnapshot.namespace, relatedSnapshot.publishName);
     expect(mockGetView).not.toHaveBeenCalled();
     expect(doc?.guid).toBe(relatedSnapshot.database.databaseId);
     expect(database).toBeDefined();
-    expect(Object.keys(getPublishedDatabaseRenderRowMap(doc) ?? {})).toEqual(['published-row-id']);
+    expect(Object.keys(publishedRows)).toEqual(['published-row-id']);
+    expect(publishedRow).toBe(publishedRows['published-row-id']);
+    expect(RowService.create).not.toHaveBeenCalled();
   });
 
   it('loads published row documents from the related database JSON snapshot', async () => {
