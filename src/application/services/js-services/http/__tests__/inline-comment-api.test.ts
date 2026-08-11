@@ -20,15 +20,26 @@ jest.mock('../core', () => ({
   },
 }));
 
+jest.mock('@/application/services/js-services/device-id', () => ({
+  getOrCreateDeviceId: () => 'web-device-1',
+}));
+
 import {
   applyInlineCommentAnchorUpdate,
   createInlineComment,
   createInlineCommentReaction,
+  deleteInlineComment,
   deleteInlineCommentReaction,
   getAllInlineComments,
   getInlineCommentReactions,
   resolveInlineComment,
 } from '../inline-comment-api';
+
+const mutationConfig = {
+  headers: {
+    'device-id': 'web-device-1',
+  },
+};
 
 function inlineCommentResponse(overrides: Record<string, unknown> = {}) {
   return {
@@ -90,9 +101,10 @@ describe('inline comment HTTP API', () => {
     });
   });
 
-  it('sends the desktop-compatible create and resolve payloads', async () => {
+  it('sends the desktop-compatible mutation payloads with the WebSocket device id', async () => {
     mockPost.mockResolvedValue({ data: { data: { comment_id: 'comment-1' } } });
     mockPut.mockResolvedValue({ data: {} });
+    mockDelete.mockResolvedValue({ data: {} });
 
     await expect(
       createInlineComment('workspace-1', 'view-1', {
@@ -103,16 +115,29 @@ describe('inline comment HTTP API', () => {
       })
     ).resolves.toBe('comment-1');
     await resolveInlineComment('workspace-1', 'view-1', 'comment-1', true);
+    await deleteInlineComment('workspace-1', 'view-1', 'comment-1');
 
-    expect(mockPost).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment/v2', {
-      content: 'Review this',
-      block_id: 'block-1',
-      reply_comment_id: 'parent-1',
-      mentioned_user_uuids: ['user-2'],
-    });
-    expect(mockPut).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment/resolve', {
-      comment_id: 'comment-1',
-      is_resolved: true,
+    expect(mockPost).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/document/view-1/inline-comment/v2',
+      {
+        content: 'Review this',
+        block_id: 'block-1',
+        reply_comment_id: 'parent-1',
+        mentioned_user_uuids: ['user-2'],
+      },
+      mutationConfig
+    );
+    expect(mockPut).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/document/view-1/inline-comment/resolve',
+      {
+        comment_id: 'comment-1',
+        is_resolved: true,
+      },
+      mutationConfig
+    );
+    expect(mockDelete).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment', {
+      data: { comment_id: 'comment-1' },
+      ...mutationConfig,
     });
   });
 
@@ -138,9 +163,15 @@ describe('inline comment HTTP API', () => {
     expect(mockPost).toHaveBeenNthCalledWith(
       1,
       '/api/workspace/workspace-1/document/view-1/inline-comment/v2',
-      payload
+      payload,
+      mutationConfig
     );
-    expect(mockPost).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-1/document/view-1/inline-comment', payload);
+    expect(mockPost).toHaveBeenNthCalledWith(
+      2,
+      '/api/workspace/workspace-1/document/view-1/inline-comment',
+      payload,
+      mutationConfig
+    );
   });
 
   it('does not retry v1 after an ambiguous v2 create failure', async () => {
@@ -157,7 +188,8 @@ describe('inline comment HTTP API', () => {
     expect(mockPost).toHaveBeenCalledTimes(1);
     expect(mockPost).toHaveBeenCalledWith(
       '/api/workspace/workspace-1/document/view-1/inline-comment/v2',
-      expect.any(Object)
+      expect.any(Object),
+      mutationConfig
     );
   });
 
@@ -169,10 +201,14 @@ describe('inline comment HTTP API', () => {
       update: new Uint8Array([1, 2, 3]),
     });
 
-    expect(mockPut).toHaveBeenCalledWith('/api/workspace/workspace-1/document/view-1/inline-comment/anchor', {
-      comment_id: 'comment-1',
-      doc_state: [1, 2, 3],
-    });
+    expect(mockPut).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/document/view-1/inline-comment/anchor',
+      {
+        comment_id: 'comment-1',
+        doc_state: [1, 2, 3],
+      },
+      mutationConfig
+    );
   });
 
   it('maps and toggles reactions with the desktop wire contract', async () => {
@@ -205,12 +241,17 @@ describe('inline comment HTTP API', () => {
     const reactionUrl = '/api/workspace/workspace-1/document/view-1/inline-comment/reaction';
 
     expect(mockGet).toHaveBeenCalledWith(reactionUrl, { params: undefined });
-    expect(mockPost).toHaveBeenCalledWith(reactionUrl, {
-      reaction_type: '👍',
-      comment_id: 'comment-1',
-    });
+    expect(mockPost).toHaveBeenCalledWith(
+      reactionUrl,
+      {
+        reaction_type: '👍',
+        comment_id: 'comment-1',
+      },
+      mutationConfig
+    );
     expect(mockDelete).toHaveBeenCalledWith(reactionUrl, {
       data: { reaction_type: '👍', comment_id: 'comment-1' },
+      ...mutationConfig,
     });
   });
 });
