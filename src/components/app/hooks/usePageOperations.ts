@@ -18,8 +18,8 @@ import {
   UpdateSpacePayload,
   View,
   ViewIconType,
-  ViewLayout,
 } from '@/application/types';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { Log } from '@/utils/log';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 
@@ -385,10 +385,9 @@ export function usePageOperations({
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
-      const isDatabaseLayout =
-        view.layout === ViewLayout.Grid || view.layout === ViewLayout.Board || view.layout === ViewLayout.Calendar;
+      const isDatabaseView = isDatabaseLayout(view.layout);
 
-      if (isDatabaseLayout) {
+      if (isDatabaseView) {
         // Database views: gather data client-side and send via binary publish endpoint
         // (same approach as the desktop client — fixes #8464). Kick the WS
         // drain in the background — the binary publish below carries the
@@ -412,7 +411,9 @@ export function usePageOperations({
         // tab (Grid, Board, Calendar, etc.) appears on the published page.
         let resolvedVisibleViewIds = visibleViewIds;
 
-        if (outlineRef.current) {
+        if (view.extra?.is_database_container) {
+          resolvedVisibleViewIds = [viewId, ...view.children.map((child) => child.view_id)];
+        } else if (outlineRef.current) {
           const parentView = findParentView(outlineRef.current, viewId);
 
           if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
@@ -453,9 +454,7 @@ export function usePageOperations({
           publish_name: name,
           metadata: {
             view: toPublishViewInfo(view),
-            child_views: view.children
-              .filter((child) => visibleViewIdSet.has(child.view_id))
-              .map(toPublishViewInfo),
+            child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
             ancestor_views: [],
           },
         };
