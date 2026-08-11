@@ -15,10 +15,15 @@
 import { View, ViewLayout } from './types';
 
 /**
- * Check if a layout is a database layout (Grid, Board, or Calendar)
+ * Check if a layout is supported as a database layout in Web.
  */
 export function isDatabaseLayout(layout: ViewLayout): boolean {
-  return layout === ViewLayout.Grid || layout === ViewLayout.Board || layout === ViewLayout.Calendar;
+  return (
+    layout === ViewLayout.Grid ||
+    layout === ViewLayout.Board ||
+    layout === ViewLayout.Calendar ||
+    layout === ViewLayout.Chart
+  );
 }
 
 /**

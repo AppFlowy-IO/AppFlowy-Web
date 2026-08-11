@@ -18,8 +18,8 @@ import {
   UpdateSpacePayload,
   View,
   ViewIconType,
-  ViewLayout,
 } from '@/application/types';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { Log } from '@/utils/log';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 
@@ -385,10 +385,9 @@ export function usePageOperations({
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
-      const isDatabaseLayout =
-        view.layout === ViewLayout.Grid || view.layout === ViewLayout.Board || view.layout === ViewLayout.Calendar;
+      const isDatabaseView = isDatabaseLayout(view.layout);
 
-      if (isDatabaseLayout) {
+      if (isDatabaseView) {
         // Database views: gather data client-side and send via binary publish endpoint
         // (same approach as the desktop client — fixes #8464). Kick the WS
         // drain in the background — the binary publish below carries the

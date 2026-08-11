@@ -25,6 +25,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 import * as Y from 'yjs';
@@ -55,6 +56,7 @@ const LAYOUT_COLLAB_TYPE_MAP: Partial<Record<ViewLayout, Types>> = {
   [ViewLayout.Grid]: Types.Database,
   [ViewLayout.Board]: Types.Database,
   [ViewLayout.Calendar]: Types.Database,
+  [ViewLayout.Chart]: Types.Database,
 };
 
 const DOC_KEY_COLLAB_TYPE_MAP: Record<string, Types> = {
@@ -100,10 +102,6 @@ function detectFromDocStructure(doc: YDoc): Types | null {
  */
 function detectCollabType(doc: YDoc, layout?: ViewLayout): Types {
   return detectFromLayout(layout) ?? detectFromDocStructure(doc) ?? Types.Document;
-}
-
-function isDatabaseLayout(layout?: ViewLayout): boolean {
-  return layout === ViewLayout.Grid || layout === ViewLayout.Board || layout === ViewLayout.Calendar;
 }
 
 function databaseDocContainsView(doc: YDoc, viewId: string): boolean | null {

@@ -137,6 +137,27 @@ describe('usePageOperations publish', () => {
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
   });
 
+  it('publishes Chart views through the client-side database endpoint', async () => {
+    const viewId = 'chart-view-id';
+    const databaseId = 'chart-database-id';
+    const { result } = renderUsePageOperations();
+
+    await act(async () => {
+      await result.current.publish(
+        createView({
+          view_id: viewId,
+          name: 'Chart',
+          layout: ViewLayout.Chart,
+          extra: { is_space: false, database_id: databaseId },
+        })
+      );
+    });
+
+    expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
+    expect(publishCollabs).toHaveBeenCalledTimes(1);
+    expect(PublishService.publish).not.toHaveBeenCalled();
+  });
+
   it('publishes metadata for visible database views under a database container', async () => {
     const containerViewId = 'database-container-id';
     const gridViewId = 'grid-view-id';
