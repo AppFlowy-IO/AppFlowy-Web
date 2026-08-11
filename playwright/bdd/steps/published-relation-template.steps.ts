@@ -177,6 +177,90 @@ When('I publish only the seeded source database as a template', async ({ page, r
     .toBe(true);
 });
 
+Then('the source database and its relation target appear in the published pages list', async ({ page, request }) => {
+  await expect
+    .poll(() => isPublished(request, SOURCE_DATABASE_VIEW_ID), {
+      timeout: 30000,
+      message: 'Expected the source database to be published before opening the published pages list',
+    })
+    .toBe(true);
+
+  await expect
+    .poll(() => isPublished(request, RELATED_GRID_VIEW_ID), {
+      timeout: 30000,
+      message: 'Expected publishing the source database to auto-publish its relation target',
+    })
+    .toBe(true);
+
+  await openPublishedPagesList(page);
+
+  await expect
+    .poll(() => publishedPageState(page, request, SOURCE_DATABASE_VIEW_ID), {
+      timeout: 30000,
+      message: 'Expected the source database to appear in the published pages list',
+    })
+    .toEqual({ published: true, visible: true });
+  await expect
+    .poll(() => publishedPageState(page, request, RELATED_GRID_VIEW_ID), {
+      timeout: 30000,
+      message: 'Expected the auto-published relation target to appear in the published pages list',
+    })
+    .toEqual({ published: true, visible: true });
+});
+
+When('I unpublish the source database from the published pages list', async ({ page }) => {
+  const sourceRow = publishedPageRow(page, SOURCE_DATABASE_VIEW_ID);
+
+  await expect(sourceRow).toBeVisible({ timeout: 30000 });
+  await sourceRow.getByTestId('published-item-actions').click();
+
+  const unpublishAction = page.locator('[data-testid="published-item-action-unpublish"]:visible');
+
+  await expect(unpublishAction).toBeVisible({ timeout: 10000 });
+
+  const unpublishResponsePromise = page.waitForResponse(
+    (response) => {
+      const url = new URL(response.url());
+
+      return (
+        response.request().method() === 'POST' &&
+        url.pathname === `/api/workspace/${FIXTURE_WORKSPACE_ID}/page-view/${SOURCE_DATABASE_VIEW_ID}/unpublish`
+      );
+    },
+    { timeout: 60000 }
+  );
+
+  await unpublishAction.click();
+
+  const unpublishResponse = await unpublishResponsePromise;
+
+  expect(
+    unpublishResponse.ok(),
+    `Unpublishing the source database failed with HTTP ${unpublishResponse.status()}`
+  ).toBeTruthy();
+});
+
+Then('the source database is removed from the published pages list', async ({ page, request }) => {
+  await expect
+    .poll(() => publishedPageState(page, request, SOURCE_DATABASE_VIEW_ID), {
+      timeout: 30000,
+      message: 'Expected the directly unpublished source database to leave the published pages list',
+    })
+    .toEqual({ published: false, visible: false });
+});
+
+Then(
+  'the automatically published relation target is removed from the published pages list',
+  async ({ page, request }) => {
+    await expect
+      .poll(() => publishedPageState(page, request, RELATED_GRID_VIEW_ID), {
+        timeout: 30000,
+        message: 'Expected unpublishing the source database to remove its automatically published relation target',
+      })
+      .toEqual({ published: false, visible: false });
+  }
+);
+
 When('another account opens the published relation template', async ({ page, request, browser }) => {
   const state = getState(page);
   const publishedUrl = requirePublishedUrl(state);
@@ -362,6 +446,30 @@ async function openFixtureView(page: Page, viewId: string): Promise<void> {
   await page.goto(`/app/${FIXTURE_WORKSPACE_ID}/${viewId}`, { waitUntil: 'domcontentloaded' });
   await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 60000 });
   await expect(DatabaseGridSelectors.cells(page).first()).toBeVisible({ timeout: 60000 });
+}
+
+async function openPublishedPagesList(page: Page): Promise<void> {
+  await expect(ShareSelectors.openPublishSettingsButton(page)).toBeVisible({ timeout: 30000 });
+  await ShareSelectors.openPublishSettingsButton(page).click({ force: true });
+  await expect(ShareSelectors.publishManageModal(page)).toBeVisible({ timeout: 30000 });
+  await expect(ShareSelectors.publishManagePanel(page)).toBeVisible({ timeout: 30000 });
+}
+
+function publishedPageRow(page: Page, viewId: string) {
+  return ShareSelectors.publishManageModal(page).getByTestId(`published-item-row-${viewId}`);
+}
+
+async function publishedPageState(
+  page: Page,
+  request: APIRequestContext,
+  viewId: string
+): Promise<{ published: boolean; visible: boolean }> {
+  return {
+    published: await isPublished(request, viewId),
+    visible: await publishedPageRow(page, viewId)
+      .isVisible()
+      .catch(() => false),
+  };
 }
 
 async function getWorkspaceFolder(request: APIRequestContext, token: string, workspaceId: string): Promise<FolderView> {
