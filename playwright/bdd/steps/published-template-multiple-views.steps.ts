@@ -11,6 +11,7 @@ const { Given, When, Then, After } = createBdd();
 type PublishedTemplateState = {
   marker: string;
   publisherEmail: string;
+  sourceViewOrder: string[];
   publishedUrl?: string;
   consumerContext?: BrowserContext;
   consumerPage?: Page;
@@ -25,7 +26,7 @@ After(async ({ page }) => {
   stateByPage.delete(page);
 });
 
-Given('a publisher has a database container with Grid and Board views', async ({ page, request }) => {
+Given('a publisher has a database container with multiple ordered views', async ({ page, request }) => {
   setupPageErrorHandling(page);
   await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -38,15 +39,21 @@ Given('a publisher has a database container with Grid and Board views', async ({
   });
   await waitForGridReady(page);
   await addDatabaseView(page, 'Board');
+  await addDatabaseView(page, 'Calendar');
 
   const gridTab = DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Grid' }).first();
 
   await gridTab.click({ force: true });
   await waitForGridReady(page);
 
+  const sourceViewOrder = await databaseViewLabels(page);
+
+  expect(sourceViewOrder).toEqual(['Grid', 'Board', 'Calendar']);
+
   stateByPage.set(page, {
     marker: `Published template row ${Date.now()}`,
     publisherEmail,
+    sourceViewOrder,
   });
 });
 
@@ -138,16 +145,16 @@ When('another account starts with the published template', async ({ page, reques
   await expect(consumerPage.locator('.appflowy-database')).toBeVisible({ timeout: 60000 });
 });
 
-Then('the duplicated database container has views {string}', async ({ page }, expectedViewLabels: string) => {
-  const consumerPage = requireConsumerPage(requireState(page));
-  const expected = expectedViewLabels.split(',').map((label) => label.trim());
+Then('the duplicated database views keep the publisher order', async ({ page }) => {
+  const state = requireState(page);
+  const consumerPage = requireConsumerPage(state);
 
   await expect
     .poll(() => databaseViewLabels(consumerPage), {
       timeout: 60000,
-      message: `Expected duplicated database views: ${expected.join(', ')}`,
+      message: `Expected duplicated database views: ${state.sourceViewOrder.join(', ')}`,
     })
-    .toEqual(expected);
+    .toEqual(state.sourceViewOrder);
 });
 
 Then('the duplicated database contains the publisher row data', async ({ page }) => {
@@ -160,7 +167,7 @@ Then('the duplicated database contains the publisher row data', async ({ page })
   await expect(DatabaseGridSelectors.grid(consumerPage)).toContainText(state.marker, { timeout: 60000 });
 });
 
-async function addDatabaseView(page: Page, viewType: 'Board'): Promise<void> {
+async function addDatabaseView(page: Page, viewType: 'Board' | 'Calendar'): Promise<void> {
   const previousCount = await DatabaseViewSelectors.viewTab(page).count();
   const addButton = DatabaseViewSelectors.addViewButton(page);
 

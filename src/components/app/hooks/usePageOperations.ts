@@ -412,7 +412,9 @@ export function usePageOperations({
         // tab (Grid, Board, Calendar, etc.) appears on the published page.
         let resolvedVisibleViewIds = visibleViewIds;
 
-        if (outlineRef.current) {
+        if (view.extra?.is_database_container) {
+          resolvedVisibleViewIds = [viewId, ...view.children.map((child) => child.view_id)];
+        } else if (outlineRef.current) {
           const parentView = findParentView(outlineRef.current, viewId);
 
           if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
@@ -453,9 +455,7 @@ export function usePageOperations({
           publish_name: name,
           metadata: {
             view: toPublishViewInfo(view),
-            child_views: view.children
-              .filter((child) => visibleViewIdSet.has(child.view_id))
-              .map(toPublishViewInfo),
+            child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
             ancestor_views: [],
           },
         };

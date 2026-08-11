@@ -140,6 +140,8 @@ describe('usePageOperations publish', () => {
   it('publishes metadata for visible database views under a database container', async () => {
     const containerViewId = 'database-container-id';
     const gridViewId = 'grid-view-id';
+    const boardViewId = 'board-view-id';
+    const calendarViewId = 'calendar-view-id';
     const databaseId = 'database-id';
     const gridView = createView({
       view_id: gridViewId,
@@ -147,22 +149,34 @@ describe('usePageOperations publish', () => {
       layout: ViewLayout.Grid,
       extra: { is_space: false, database_id: databaseId },
     });
+    const boardView = createView({
+      view_id: boardViewId,
+      name: 'Board',
+      layout: ViewLayout.Board,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const calendarView = createView({
+      view_id: calendarViewId,
+      name: 'Calendar',
+      layout: ViewLayout.Calendar,
+      extra: { is_space: false, database_id: databaseId },
+    });
     const containerView = createView({
       view_id: containerViewId,
       name: 'Publish database',
       layout: ViewLayout.Grid,
       extra: { is_space: false, database_id: databaseId, is_database_container: true },
-      children: [gridView],
+      children: [gridView, boardView, calendarView],
     });
     const { result, workspaceId } = renderUsePageOperations();
 
     await act(async () => {
-      await result.current.publish(containerView, undefined, [containerViewId, gridViewId]);
+      await result.current.publish(containerView, undefined, [containerViewId, calendarViewId, boardViewId, gridViewId]);
     });
 
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(
       containerViewId,
-      [containerViewId, gridViewId],
+      [containerViewId, gridViewId, boardViewId, calendarViewId],
       databaseId
     );
     expect(publishCollabs).toHaveBeenCalledWith(workspaceId, [
@@ -176,11 +190,67 @@ describe('usePageOperations publish', () => {
                 name: 'Grid',
                 layout: ViewLayout.Grid,
               }),
+              expect.objectContaining({
+                view_id: boardViewId,
+                name: 'Board',
+                layout: ViewLayout.Board,
+              }),
+              expect.objectContaining({
+                view_id: calendarViewId,
+                name: 'Calendar',
+                layout: ViewLayout.Calendar,
+              }),
             ],
           }),
         }),
       }),
     ]);
+  });
+
+  it('publishes a database child view using its container view order', async () => {
+    const databaseId = 'database-id';
+    const gridView = createView({
+      view_id: 'grid-view-id',
+      name: 'Grid',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const boardView = createView({
+      view_id: 'board-view-id',
+      name: 'Board',
+      layout: ViewLayout.Board,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const calendarView = createView({
+      view_id: 'calendar-view-id',
+      name: 'Calendar',
+      layout: ViewLayout.Calendar,
+      extra: { is_space: false, database_id: databaseId },
+    });
+    const containerView = createView({
+      view_id: 'database-container-id',
+      name: 'Publish database',
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: databaseId, is_database_container: true },
+      children: [gridView, boardView, calendarView],
+    });
+    const spaceView = createView({
+      view_id: 'space-id',
+      name: 'General',
+      extra: { is_space: true },
+      children: [containerView],
+    });
+    const { result } = renderUsePageOperations({ outlineRef: { current: [spaceView] } });
+
+    await act(async () => {
+      await result.current.publish(boardView, undefined, [calendarView.view_id, boardView.view_id, gridView.view_id]);
+    });
+
+    expect(gatherDatabasePublishData).toHaveBeenCalledWith(
+      boardView.view_id,
+      [gridView.view_id, boardView.view_id, calendarView.view_id],
+      databaseId
+    );
   });
 });
 
