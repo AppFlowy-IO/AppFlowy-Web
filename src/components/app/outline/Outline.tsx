@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { Role, View, ViewLayout } from '@/application/types';
+import { isSpaceView } from '@/application/view-utils';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
@@ -73,7 +74,7 @@ export function Outline({ width }: { width: number }) {
   const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
   const spaceListRef = useRef<HTMLDivElement>(null);
   const visibleSpacesFromOutline = useMemo(
-    () => outline?.filter((view) => !view.extra?.is_hidden_space) ?? [],
+    () => outline?.filter((view) => isSpaceView(view) && !view.extra?.is_hidden_space) ?? [],
     [outline]
   );
   const { orderedItems: visibleSpaces, instanceId: spaceDragInstanceId } = useReorderableSidebarList({
@@ -509,7 +510,7 @@ export function Outline({ width }: { width: number }) {
 
   const renderActions = useCallback(
     ({ hovered, view }: { hovered: boolean; view: View }) => {
-      const isSpace = view?.extra?.is_space;
+      const isSpace = isSpaceView(view);
       const layout = view?.layout;
 
       const onClick = (e: React.MouseEvent<HTMLButtonElement>, type: 'more' | 'add') => {
