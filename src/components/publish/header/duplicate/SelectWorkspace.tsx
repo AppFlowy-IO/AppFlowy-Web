@@ -9,6 +9,8 @@ import { Popover } from '@/components/_shared/popover';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { stringToColor } from '@/utils/color';
 
+import { saveDuplicateSelectedWorkspaceId } from './storage';
+
 export interface SelectWorkspaceProps {
   value: string;
   onChange?: (value: string) => void;
@@ -121,7 +123,7 @@ function SelectWorkspace({ loading, value, onChange, workspaceList }: SelectWork
                     onClick={() => {
                       onChange?.(workspace.id);
                       setSelectOpen(false);
-                      localStorage.setItem('duplicate_selected_workspace', workspace.id);
+                      saveDuplicateSelectedWorkspaceId(workspace.id);
                     }}
                     className={'w-full px-3 py-2'}
                     variant={'text'}

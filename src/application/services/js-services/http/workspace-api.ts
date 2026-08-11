@@ -120,8 +120,8 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
   };
 }
 
-export async function getWorkspaceFolder(workspaceId: string): Promise<FolderView> {
-  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
+export async function getWorkspaceFolder(workspaceId: string, depth = 50): Promise<FolderView> {
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=${depth}`;
   const payload = await executeAPIRequest<WorkspaceFolder>(() =>
     getAxios()?.get<APIResponse<WorkspaceFolder>>(url)
   );

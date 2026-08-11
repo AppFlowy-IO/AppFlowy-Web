@@ -3220,6 +3220,8 @@
     "duplicateTitle": "Where would you like to add",
     "selectWorkspace": "Select a workspace",
     "addTo": "Add to",
+    "loadSpacesFailed": "Couldn't load spaces.",
+    "noSpacesAvailable": "No spaces available.",
     "duplicateSuccessfully": "Added to your workspace",
     "duplicateSuccessfullyDescription": "Don't have AppFlowy installed? The download will start automatically after you click 'Download'.",
     "downloadIt": "Download",

@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 
 import { openCollabDB } from '@/application/db';
-import { DatabaseId, Types, ViewId, YDoc, YjsEditorKey } from '@/application/types';
+import { DatabaseId, DatabaseRelations, Types, ViewId, YDoc, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromDoc } from '@/application/view-loader';
 import type { SyncContextType } from '@/components/ws/useSync';
 import { Log } from '@/utils/log';
@@ -10,7 +10,69 @@ type UseDatabaseIdentityParams = {
   currentWorkspaceId?: string;
   databaseStorageId?: string;
   registerSyncContext: SyncContextType['registerSyncContext'];
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
 };
+
+type DatabaseMappings = Record<DatabaseId, ViewId[]>;
+
+function parseDatabaseMappings(value: string): DatabaseMappings {
+  const parsed = JSON.parse(value) as unknown;
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      (entry): entry is [DatabaseId, ViewId[]] =>
+        Array.isArray(entry[1]) && entry[1].every((viewId) => typeof viewId === 'string')
+    )
+  );
+}
+
+function getTemplateDatabaseMappings(workspaceId: string): DatabaseMappings {
+  const storageKey = `db_mappings_${workspaceId}`;
+  let storedMappings: DatabaseMappings = {};
+
+  try {
+    const cachedMappings = localStorage.getItem(storageKey);
+
+    if (cachedMappings) {
+      storedMappings = parseDatabaseMappings(cachedMappings);
+    }
+  } catch (e) {
+    console.warn('[useDatabaseIdentity] failed to read db_mappings from localStorage', e);
+  }
+
+  let urlMappings: DatabaseMappings;
+
+  try {
+    const dbMappingsParam = new URLSearchParams(window.location.search).get('db_mappings');
+
+    if (!dbMappingsParam) {
+      return storedMappings;
+    }
+
+    urlMappings = parseDatabaseMappings(dbMappingsParam);
+  } catch (e) {
+    console.warn('[useDatabaseIdentity] failed to parse db_mappings from URL', e);
+    return storedMappings;
+  }
+
+  const mergedMappings = { ...storedMappings, ...urlMappings };
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
+    Log.debug('[useDatabaseIdentity] stored db_mappings to localStorage', mergedMappings);
+  } catch (e) {
+    // URL mappings are the authoritative source for this navigation. Storage
+    // persistence is best-effort and must not break relation rendering when
+    // localStorage is unavailable or full.
+    console.warn('[useDatabaseIdentity] failed to persist db_mappings to localStorage', e);
+  }
+
+  return mergedMappings;
+}
 
 /**
  * Encapsulates database-specific collab identity mapping.
@@ -27,6 +89,7 @@ export function useDatabaseIdentity({
   currentWorkspaceId,
   databaseStorageId,
   registerSyncContext,
+  loadDatabaseRelations,
 }: UseDatabaseIdentityParams) {
   const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const databaseIdViewIdMapRef = useRef<Map<DatabaseId, ViewId>>(new Map());
@@ -53,51 +116,15 @@ export function useDatabaseIdentity({
     async (viewId: string) => {
       if (!currentWorkspaceId) return;
 
-      // First check URL params for database mappings (passed from template duplication)
-      // This allows immediate lookup without waiting for workspace database sync
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const dbMappingsParam = urlParams.get('db_mappings');
+      // Template duplication mappings are available immediately and persist
+      // across reloads, so prefer them over waiting for workspace sync.
+      const databaseMappings = getTemplateDatabaseMappings(currentWorkspaceId);
 
-        if (dbMappingsParam) {
-          const dbMappings: Record<string, string[]> = JSON.parse(decodeURIComponent(dbMappingsParam));
-          // Store in localStorage for persistence across page refreshes
-          const storageKey = `db_mappings_${currentWorkspaceId}`;
-          const existingMappings = JSON.parse(localStorage.getItem(storageKey) || '{}');
-          const mergedMappings = { ...existingMappings, ...dbMappings };
-
-          localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
-          Log.debug('[useDatabaseIdentity] stored db_mappings to localStorage', mergedMappings);
-
-          // Find the database ID that contains this view
-          for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
-            if (viewIds.includes(viewId)) {
-              Log.debug('[useDatabaseIdentity] found databaseId from URL params', { viewId, databaseId });
-              return databaseId;
-            }
-          }
+      for (const [databaseId, viewIds] of Object.entries(databaseMappings)) {
+        if (viewIds.includes(viewId)) {
+          Log.debug('[useDatabaseIdentity] found databaseId from template mappings', { viewId, databaseId });
+          return databaseId;
         }
-      } catch (e) {
-        console.warn('[useDatabaseIdentity] failed to parse db_mappings from URL', e);
-      }
-
-      // Check localStorage for cached database mappings (persists across page refreshes)
-      try {
-        const storageKey = `db_mappings_${currentWorkspaceId}`;
-        const cachedMappings = localStorage.getItem(storageKey);
-
-        if (cachedMappings) {
-          const dbMappings: Record<string, string[]> = JSON.parse(cachedMappings);
-
-          for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
-            if (viewIds.includes(viewId)) {
-              Log.debug('[useDatabaseIdentity] found databaseId from localStorage', { viewId, databaseId });
-              return databaseId;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[useDatabaseIdentity] failed to read db_mappings from localStorage', e);
       }
 
       if (databaseStorageId && !workspaceDatabaseDocMapRef.current.has(currentWorkspaceId)) {
@@ -180,6 +207,39 @@ export function useDatabaseIdentity({
 
       if (databaseIdViewIdMapRef.current.has(databaseId)) {
         return databaseIdViewIdMapRef.current.get(databaseId) || null;
+      }
+
+      const mappedViewId = getTemplateDatabaseMappings(currentWorkspaceId)[databaseId]?.[0];
+
+      if (mappedViewId) {
+        databaseIdViewIdMapRef.current.set(databaseId, mappedViewId);
+        Log.debug('[useDatabaseIdentity] found viewId from template mappings', { databaseId, viewId: mappedViewId });
+        return mappedViewId;
+      }
+
+      if (loadDatabaseRelations) {
+        try {
+          let databaseRelations = await loadDatabaseRelations();
+          let relatedViewId = databaseRelations?.[databaseId];
+
+          // The workspace cache can predate a template duplication. Refresh
+          // once before falling back to the eventually-consistent sync doc.
+          if (!relatedViewId && databaseRelations) {
+            databaseRelations = await loadDatabaseRelations({ refresh: true });
+            relatedViewId = databaseRelations?.[databaseId];
+          }
+
+          if (relatedViewId) {
+            databaseIdViewIdMapRef.current.set(databaseId, relatedViewId);
+            Log.debug('[useDatabaseIdentity] found viewId from workspace relation metadata', {
+              databaseId,
+              viewId: relatedViewId,
+            });
+            return relatedViewId;
+          }
+        } catch (e) {
+          Log.warn('[useDatabaseIdentity] failed to load workspace relation metadata', e);
+        }
       }
 
       // Lazy-load workspace database doc if not yet registered (e.g. after page refresh).
@@ -267,7 +327,7 @@ export function useDatabaseIdentity({
         }, 10000);
       });
     },
-    [currentWorkspaceId, databaseStorageId, registerWorkspaceDatabaseDoc]
+    [currentWorkspaceId, databaseStorageId, loadDatabaseRelations, registerWorkspaceDatabaseDoc]
   );
 
   const resolveCollabObjectId = useCallback(

@@ -88,14 +88,6 @@ function findViewInfoById(views: ViewInfo[] | null | undefined, viewId: string):
   }
 }
 
-function snapshotToRenderDoc(snapshot: PublishedPageSnapshot) {
-  if (snapshot.kind === 'database') {
-    return createDatabaseYjsRenderDocsFromSnapshot(snapshot).doc;
-  }
-
-  return createDocumentYjsRenderDocFromSnapshot(snapshot);
-}
-
 function rowDocumentsFromSnapshot(snapshot: PublishedPageSnapshot): Record<string, PublishedDocumentRaw> {
   if (snapshot.kind !== 'database') return {};
 
@@ -146,10 +138,22 @@ export const PublishProvider = ({
   const [snapshotDataSource] = useState(() => createPublishSnapshotDataSource());
   const rowDocumentSnapshotsRef = useRef<Record<string, PublishedDocumentRaw>>({});
   const rowDocumentDocsRef = useRef<Map<string, YDoc>>(new Map());
+  const databaseRowDocsRef = useRef<Map<string, YDoc>>(new Map());
   const viewMetaSubscribersRef = useRef<Map<string, (meta: ViewMeta) => void>>(new Map());
 
   const registerSnapshotRowDocuments = useCallback((snapshot: PublishedPageSnapshot) => {
     Object.assign(rowDocumentSnapshotsRef.current, rowDocumentsFromSnapshot(snapshot));
+  }, []);
+
+  const createSnapshotRenderDoc = useCallback((snapshot: PublishedPageSnapshot) => {
+    if (snapshot.kind === 'database') {
+      const { doc, rowMap } = createDatabaseYjsRenderDocsFromSnapshot(snapshot);
+
+      Object.values(rowMap).forEach((rowDoc) => databaseRowDocsRef.current.set(rowDoc.guid, rowDoc));
+      return doc;
+    }
+
+    return createDocumentYjsRenderDocFromSnapshot(snapshot);
   }, []);
 
   const snapshotViewMeta = useMemo(() => {
@@ -218,6 +222,7 @@ export const PublishProvider = ({
   useEffect(() => {
     rowDocumentSnapshotsRef.current = {};
     rowDocumentDocsRef.current.clear();
+    databaseRowDocsRef.current.clear();
 
     if (snapshot) {
       registerSnapshotRowDocuments(snapshot);
@@ -429,6 +434,10 @@ export const PublishProvider = ({
   const createRow = useCallback(
     async (rowKey: string) => {
       try {
+        const snapshotRow = databaseRowDocsRef.current.get(rowKey);
+
+        if (snapshotRow) return snapshotRow;
+
         const doc = await RowService.create(rowKey);
 
         if (!doc) {
@@ -473,7 +482,7 @@ export const PublishProvider = ({
 
       try {
         if (snapshot?.view.viewId === viewId) {
-          return snapshotToRenderDoc(snapshot);
+          return createSnapshotRenderDoc(snapshot);
         }
 
         const res = await PublishService.getViewInfo(viewId);
@@ -492,12 +501,12 @@ export const PublishProvider = ({
 
         registerSnapshotRowDocuments(data);
 
-        return snapshotToRenderDoc(data);
+        return createSnapshotRenderDoc(data);
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [loadRowDocument, registerSnapshotRowDocuments, snapshot, snapshotDataSource]
+    [createSnapshotRenderDoc, loadRowDocument, registerSnapshotRowDocuments, snapshot, snapshotDataSource]
   );
 
   const onRendered = useCallback(() => {
