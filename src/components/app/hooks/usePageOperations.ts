@@ -13,6 +13,7 @@ import {
   CreatePagePayload,
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
+  PublishViewPayload,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -27,6 +28,37 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
 const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
+const DOCUMENT_PUBLISH_PROJECTION_RETRY_DELAYS_MS = [250, 500, 1000, 2000] as const;
+
+function waitForDocumentPublishRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+function isPendingFolderProjection(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, message } = error as { code?: unknown; message?: unknown };
+
+  return code === -2 && typeof message === 'string' && /record not (?:found|exist)|view .* not found/i.test(message);
+}
+
+async function publishDocumentWhenProjectionIsReady(
+  workspaceId: string,
+  viewId: string,
+  payload: PublishViewPayload
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await PublishService.publish(workspaceId, viewId, payload);
+      return;
+    } catch (error) {
+      const retryDelay = DOCUMENT_PUBLISH_PROJECTION_RETRY_DELAYS_MS[attempt];
+
+      if (retryDelay === undefined || !isPendingFolderProjection(error)) throw error;
+      await waitForDocumentPublishRetry(retryDelay);
+    }
+  }
+}
 
 export function usePageOperations({
   outlineRef,
@@ -462,8 +494,16 @@ export function usePageOperations({
         await publishCollabs(currentWorkspaceId, [{ meta, data }]);
         clearPublishViewInfoCache(viewId);
       } else {
-        // Document views: use existing server-side gathering
-        await PublishService.publish(currentWorkspaceId, viewId, {
+        // Document publishing gathers the folder and collab on the server. Push
+        // the browser's current state first, then tolerate the short interval
+        // before the folder projection becomes queryable under load.
+        const outboxDrained = await flushAllSync?.();
+
+        if (outboxDrained !== true && syncAllToServer) {
+          await syncAllToServer(currentWorkspaceId);
+        }
+
+        await publishDocumentWhenProjectionIsReady(currentWorkspaceId, viewId, {
           publish_name: publishName,
           visible_database_view_ids: visibleViewIds,
         });
@@ -471,7 +511,7 @@ export function usePageOperations({
 
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef, getDatabaseIdForViewId]
+    [currentWorkspaceId, loadOutline, flushAllSync, syncAllToServer, outlineRef, getDatabaseIdForViewId]
   );
 
   // Unpublish view

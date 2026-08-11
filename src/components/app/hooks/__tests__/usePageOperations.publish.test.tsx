@@ -56,6 +56,8 @@ function createView(overrides: Partial<View>): View {
 function renderUsePageOperations(options?: {
   outlineRef?: MutableRefObject<View[] | undefined>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
+  flushAllSync?: () => Promise<boolean>;
+  syncAllToServer?: (workspaceId: string) => Promise<void>;
 }) {
   const workspaceId = 'workspace-id';
   const authContextValue: AuthInternalContextType = {
@@ -72,6 +74,8 @@ function renderUsePageOperations(options?: {
         outlineRef,
         loadOutline,
         getDatabaseIdForViewId: options?.getDatabaseIdForViewId,
+        flushAllSync: options?.flushAllSync,
+        syncAllToServer: options?.syncAllToServer,
       }),
     {
       wrapper: ({ children }) => (
@@ -90,6 +94,86 @@ function renderUsePageOperations(options?: {
 describe('usePageOperations publish', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(PublishService.publish).mockResolvedValue(undefined);
+  });
+
+  it('flushes document state before server-side publishing', async () => {
+    const calls: string[] = [];
+    const flushAllSync = jest.fn(async () => {
+      calls.push('flush');
+      return true;
+    });
+    const syncAllToServer = jest.fn(async () => {
+      calls.push('sync');
+    });
+
+    jest.mocked(PublishService.publish).mockImplementation(async () => {
+      calls.push('publish');
+    });
+
+    const { result, workspaceId } = renderUsePageOperations({ flushAllSync, syncAllToServer });
+
+    await act(async () => {
+      await result.current.publish(createView({ view_id: 'document-view-id' }));
+    });
+
+    expect(flushAllSync).toHaveBeenCalledTimes(1);
+    expect(syncAllToServer).not.toHaveBeenCalled();
+    expect(PublishService.publish).toHaveBeenCalledWith(workspaceId, 'document-view-id', {
+      publish_name: undefined,
+      visible_database_view_ids: undefined,
+    });
+    expect(calls).toEqual(['flush', 'publish']);
+  });
+
+  it('uses full HTTP sync when the document outbox does not drain', async () => {
+    const flushAllSync = jest.fn(async () => false);
+    const syncAllToServer = jest.fn(async () => undefined);
+    const { result, workspaceId } = renderUsePageOperations({ flushAllSync, syncAllToServer });
+
+    await act(async () => {
+      await result.current.publish(createView({ view_id: 'document-view-id' }));
+    });
+
+    expect(flushAllSync).toHaveBeenCalledTimes(1);
+    expect(syncAllToServer).toHaveBeenCalledWith(workspaceId);
+    expect(PublishService.publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries document publishing while the folder projection is pending', async () => {
+    jest.useFakeTimers();
+    jest
+      .mocked(PublishService.publish)
+      .mockRejectedValueOnce({ code: -2, message: 'Record not found: view is not projected yet' })
+      .mockResolvedValueOnce(undefined);
+
+    try {
+      const { result } = renderUsePageOperations();
+
+      await act(async () => {
+        const publishPromise = result.current.publish(createView({ view_id: 'document-view-id' }));
+
+        await jest.advanceTimersByTimeAsync(250);
+        await publishPromise;
+      });
+
+      expect(PublishService.publish).toHaveBeenCalledTimes(2);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not retry non-projection publish failures', async () => {
+    const publishError = { code: -3, message: 'Not enough permissions' };
+
+    jest.mocked(PublishService.publish).mockRejectedValueOnce(publishError);
+    const { result } = renderUsePageOperations();
+
+    await act(async () => {
+      await expect(result.current.publish(createView({ view_id: 'document-view-id' }))).rejects.toBe(publishError);
+    });
+
+    expect(PublishService.publish).toHaveBeenCalledTimes(1);
   });
 
   it('resolves canonical database id before publishing legacy database views', async () => {
