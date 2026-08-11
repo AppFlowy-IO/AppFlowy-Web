@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 
 import { openCollabDB } from '@/application/db';
-import { DatabaseId, Types, ViewId, YDoc, YjsEditorKey } from '@/application/types';
+import { DatabaseId, DatabaseRelations, Types, ViewId, YDoc, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromDoc } from '@/application/view-loader';
 import type { SyncContextType } from '@/components/ws/useSync';
 import { Log } from '@/utils/log';
@@ -10,6 +10,7 @@ type UseDatabaseIdentityParams = {
   currentWorkspaceId?: string;
   databaseStorageId?: string;
   registerSyncContext: SyncContextType['registerSyncContext'];
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
 };
 
 type DatabaseMappings = Record<DatabaseId, ViewId[]>;
@@ -77,6 +78,7 @@ export function useDatabaseIdentity({
   currentWorkspaceId,
   databaseStorageId,
   registerSyncContext,
+  loadDatabaseRelations,
 }: UseDatabaseIdentityParams) {
   const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const databaseIdViewIdMapRef = useRef<Map<DatabaseId, ViewId>>(new Map());
@@ -204,6 +206,31 @@ export function useDatabaseIdentity({
         return mappedViewId;
       }
 
+      if (loadDatabaseRelations) {
+        try {
+          let databaseRelations = await loadDatabaseRelations();
+          let relatedViewId = databaseRelations?.[databaseId];
+
+          // The workspace cache can predate a template duplication. Refresh
+          // once before falling back to the eventually-consistent sync doc.
+          if (!relatedViewId && databaseRelations) {
+            databaseRelations = await loadDatabaseRelations({ refresh: true });
+            relatedViewId = databaseRelations?.[databaseId];
+          }
+
+          if (relatedViewId) {
+            databaseIdViewIdMapRef.current.set(databaseId, relatedViewId);
+            Log.debug('[useDatabaseIdentity] found viewId from workspace relation metadata', {
+              databaseId,
+              viewId: relatedViewId,
+            });
+            return relatedViewId;
+          }
+        } catch (e) {
+          Log.warn('[useDatabaseIdentity] failed to load workspace relation metadata', e);
+        }
+      }
+
       // Lazy-load workspace database doc if not yet registered (e.g. after page refresh).
       // This mirrors the logic in getDatabaseIdForViewId.
       if (databaseStorageId && !workspaceDatabaseDocMapRef.current.has(currentWorkspaceId)) {
@@ -289,7 +316,7 @@ export function useDatabaseIdentity({
         }, 10000);
       });
     },
-    [currentWorkspaceId, databaseStorageId, registerWorkspaceDatabaseDoc]
+    [currentWorkspaceId, databaseStorageId, loadDatabaseRelations, registerWorkspaceDatabaseDoc]
   );
 
   const resolveCollabObjectId = useCallback(

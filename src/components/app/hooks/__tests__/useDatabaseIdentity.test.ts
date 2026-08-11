@@ -23,12 +23,17 @@ const DATABASE_MAPPINGS = {
 
 const registerSyncContext = jest.fn() as unknown as SyncContextType['registerSyncContext'];
 
-function renderDatabaseIdentity() {
+type LoadDatabaseRelations = (options?: { refresh?: boolean }) => Promise<Record<string, string> | undefined>;
+
+function renderDatabaseIdentity(loadDatabaseRelations?: LoadDatabaseRelations) {
+  const params: Parameters<typeof useDatabaseIdentity>[0] = {
+    currentWorkspaceId: WORKSPACE_ID,
+    registerSyncContext,
+    loadDatabaseRelations,
+  };
+
   return renderHook(() =>
-    useDatabaseIdentity({
-      currentWorkspaceId: WORKSPACE_ID,
-      registerSyncContext,
-    })
+    useDatabaseIdentity(params)
   );
 }
 
@@ -56,5 +61,17 @@ describe('useDatabaseIdentity', () => {
     const { result } = renderDatabaseIdentity();
 
     await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
+  });
+
+  it('refreshes workspace relation metadata when the synced mapping is unavailable', async () => {
+    const loadDatabaseRelations = jest
+      .fn<ReturnType<LoadDatabaseRelations>, Parameters<LoadDatabaseRelations>>()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ [DATABASE_ID]: PRIMARY_VIEW_ID });
+    const { result } = renderDatabaseIdentity(loadDatabaseRelations);
+
+    await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
+    expect(loadDatabaseRelations).toHaveBeenNthCalledWith(1);
+    expect(loadDatabaseRelations).toHaveBeenNthCalledWith(2, { refresh: true });
   });
 });
