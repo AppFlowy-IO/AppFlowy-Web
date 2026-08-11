@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { Transaction } from 'yjs';
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -1374,6 +1375,7 @@ export function useRowOrdersSelector() {
   const conditionComputeLogRef = useRef({ count: 0, lastLoggedAt: 0 });
   const pendingConditionRowLoadsRef = useRef(new Set<string>());
   const unavailableConditionRowsRef = useRef(new Set<string>());
+  const lastProcessedRowOrderTransactionRef = useRef<Transaction | null>(null);
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || hasEffectiveFilters(filters, fields);
@@ -1723,7 +1725,14 @@ export function useRowOrdersSelector() {
       onConditionsChange();
     }, 200);
 
-    const handleRowOrdersChange = () => {
+    const handleRowOrdersChange = (_events: unknown, transaction: Transaction) => {
+      // Row mutations normally update every view in one Yjs transaction. The
+      // selected and inline observers therefore receive the same transaction;
+      // reconcile it once instead of serializing both row-order arrays twice.
+      if (lastProcessedRowOrderTransactionRef.current === transaction) return;
+
+      lastProcessedRowOrderTransactionRef.current = transaction;
+
       if (!syncUnconditionedRowOrders()) {
         debouncedChange();
       }

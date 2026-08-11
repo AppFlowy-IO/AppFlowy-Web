@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { usePrimaryFieldId, useRowOrdersSelector } from '@/application/database-yjs';
+import { usePrimaryFieldId } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,6 @@ function NewCard({
   isCreating: boolean;
   setIsCreating: (isCreating: boolean) => void;
 }) {
-  const rows = useRowOrdersSelector();
   const primaryFieldId = usePrimaryFieldId();
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -52,10 +51,6 @@ function NewCard({
 
   const handleSubmit = useCallback(
     (inputValue: string) => {
-      if (!rows) {
-        throw new Error('Rows not found');
-      }
-
       if (!primaryFieldId) {
         throw new Error('Primary field not found');
       }
@@ -72,7 +67,7 @@ function NewCard({
       });
       scrollToBottom();
     },
-    [beforeId, columnId, fieldId, onNewCard, primaryFieldId, rows, scrollToBottom]
+    [beforeId, columnId, fieldId, onNewCard, primaryFieldId, scrollToBottom]
   );
 
   useLayoutEffect(() => {

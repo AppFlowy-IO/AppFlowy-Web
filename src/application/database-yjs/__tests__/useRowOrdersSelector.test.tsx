@@ -20,6 +20,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import * as databaseFilter from '@/application/database-yjs/filter';
+import * as rowOrderVisibility from '@/application/database-yjs/row-order-visibility';
 import {
   RowId,
   YDatabase,
@@ -363,6 +364,34 @@ describe('useRowOrdersSelector', () => {
     });
 
     expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+  });
+
+  it('reconciles all-view row-order changes once per Yjs transaction', async () => {
+    const fixture = createDatabaseFixture();
+    const inlineRowOrders = addInlineView(fixture, fixture.rowOrders.toJSON());
+    const materializeSpy = jest.spyOn(rowOrderVisibility, 'materializeVisibleRowOrders');
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    materializeSpy.mockClear();
+
+    act(() => {
+      fixture.databaseDoc.transact(() => {
+        const row = { id: 'row-new', height: 44 };
+
+        fixture.rowOrders.push([row]);
+        inlineRowOrders.push([row]);
+      });
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b', 'row-new']);
+    expect(materializeSpy).toHaveBeenCalledTimes(1);
+    materializeSpy.mockRestore();
   });
 
   it('renders a duplicate row-order ID once and keeps its last value', async () => {
