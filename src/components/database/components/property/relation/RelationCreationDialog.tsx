@@ -13,7 +13,8 @@ const MODAL_PAPER_PROPS = {
 
 import { useDatabaseContext } from '@/application/database-yjs';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
-import { View } from '@/application/types';
+import { getMultiple as getViews } from '@/application/services/domains/view';
+import { LoadViewMeta, View } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { NormalModal } from '@/components/_shared/modal';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,53 @@ type RelationCandidate = {
   databaseViewId: string;
   displayView: View;
 };
+
+function indexViews(views: View[]): Map<string, View> {
+  const indexedViews = new Map<string, View>();
+  const pending = [...views];
+  let index = 0;
+
+  while (index < pending.length) {
+    const view = pending[index];
+
+    index += 1;
+
+    if (!view || indexedViews.has(view.view_id)) continue;
+    indexedViews.set(view.view_id, view);
+    pending.push(...view.children);
+  }
+
+  return indexedViews;
+}
+
+async function loadViewsById(
+  workspaceId: string,
+  viewIds: string[],
+  loadViewMeta: LoadViewMeta
+): Promise<Map<string, View>> {
+  const uniqueViewIds = Array.from(new Set(viewIds.filter(Boolean)));
+
+  if (uniqueViewIds.length === 0) return new Map();
+
+  try {
+    // The API chunks large lists internally, replacing one request per view
+    // with one batch per 50 IDs.
+    return indexViews(await getViews(workspaceId, uniqueViewIds, 0));
+  } catch {
+    // Keep compatibility with servers that do not expose the batch endpoint.
+    const views = await Promise.all(
+      uniqueViewIds.map(async (viewId) => {
+        try {
+          return await loadViewMeta(viewId);
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    return indexViews(views.filter((view): view is View => Boolean(view)));
+  }
+}
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
   return limit === RelationLimit.OneOnly
@@ -62,7 +110,7 @@ export function RelationCreationDialog({
   onCreate: (result: RelationCreationResult) => void;
 }) {
   const { t } = useTranslation();
-  const { databasePageId, loadDatabaseRelations, loadViewMeta } = useDatabaseContext();
+  const { databaseDoc, databasePageId, loadDatabaseRelations, loadViewMeta, workspaceId } = useDatabaseContext();
   const [fieldName, setFieldName] = useState(initialFieldName);
   const [reciprocalFieldName, setReciprocalFieldName] = useState('');
   const [selectedDatabaseId, setSelectedDatabaseId] = useState('');
@@ -130,38 +178,32 @@ export function RelationCreationDialog({
         // up — the workspace cache is otherwise only invalidated on workspace
         // switch.
         const databaseRelations = (await loadDatabaseRelationsFn({ refresh: true })) ?? {};
-        const entries = Object.entries(databaseRelations);
-
-        const fetched = await Promise.all(
-          entries.map(async ([databaseId, viewId]) => {
-            if (!viewId) return null;
-
-            try {
-              const databaseView = await loadViewMetaFn(viewId);
-
-              if (!databaseView) return null;
-
-              let displayView = databaseView;
-
-              if (!isDatabaseContainer(databaseView) && databaseView.parent_view_id) {
-                try {
-                  const parentView = await loadViewMetaFn(databaseView.parent_view_id);
-
-                  if (isDatabaseContainer(parentView)) {
-                    displayView = parentView;
-                  }
-                } catch {
-                  // Fall back to the registered database view for legacy or
-                  // inaccessible folder structures.
-                }
-              }
-
-              return { databaseId, databaseViewId: databaseView.view_id, displayView };
-            } catch {
-              return null;
-            }
-          })
+        const entries = Object.entries(databaseRelations).filter((entry): entry is [string, string] => Boolean(entry[1]));
+        const databaseViews = await loadViewsById(
+          workspaceId,
+          entries.map(([, viewId]) => viewId),
+          loadViewMetaFn
         );
+        const parentViews = await loadViewsById(
+          workspaceId,
+          Array.from(databaseViews.values())
+            .filter((view) => !isDatabaseContainer(view))
+            .map((view) => view.parent_view_id)
+            .filter((viewId): viewId is string => Boolean(viewId)),
+          loadViewMetaFn
+        );
+        const fetched = entries.map(([databaseId, viewId]) => {
+          const databaseView = databaseViews.get(viewId);
+
+          if (!databaseView) return null;
+
+          const parentView = databaseView.parent_view_id
+            ? parentViews.get(databaseView.parent_view_id)
+            : undefined;
+          const displayView = isDatabaseContainer(parentView) ? parentView : databaseView;
+
+          return { databaseId, databaseViewId: databaseView.view_id, displayView };
+        });
 
         if (cancelled) return;
 
@@ -189,7 +231,7 @@ export function RelationCreationDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, workspaceId]);
 
   const filteredCandidates = useMemo(() => {
     if (!query.trim()) return candidates;
@@ -206,9 +248,12 @@ export function RelationCreationDialog({
   const currentCandidate = useMemo(
     () =>
       candidates.find(
-        (entry) => entry.databaseViewId === databasePageId || entry.displayView.view_id === databasePageId
+        (entry) =>
+          entry.databaseId === databaseDoc.guid ||
+          entry.databaseViewId === databasePageId ||
+          entry.displayView.view_id === databasePageId
       ),
-    [candidates, databasePageId]
+    [candidates, databaseDoc.guid, databasePageId]
   );
 
   const relatedDatabaseName =

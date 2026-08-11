@@ -44,6 +44,10 @@ describe('useDatabaseIdentity', () => {
     window.history.replaceState({}, '', `/app/${WORKSPACE_ID}/page`);
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('resolves a database view from template duplication URL mappings', async () => {
     const encodedMappings = encodeURIComponent(JSON.stringify(DATABASE_MAPPINGS));
 
@@ -53,6 +57,23 @@ describe('useDatabaseIdentity', () => {
 
     await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual(DATABASE_MAPPINGS);
+  });
+
+  it('uses URL mappings when localStorage persistence is unavailable', async () => {
+    const storageError = new DOMException('Storage is disabled', 'SecurityError');
+
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw storageError;
+    });
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    const encodedMappings = encodeURIComponent(JSON.stringify(DATABASE_MAPPINGS));
+
+    window.history.replaceState({}, '', `/app/${WORKSPACE_ID}/page?db_mappings=${encodedMappings}`);
+
+    const { result } = renderDatabaseIdentity();
+
+    await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
   });
 
   it('resolves a database view from persisted template mappings after reload', async () => {

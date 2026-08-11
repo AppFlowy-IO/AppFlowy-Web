@@ -6,6 +6,8 @@ import { SpaceView, Workspace } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
+import { loadDuplicateSelectedWorkspaceId } from './storage';
+
 export function useDuplicate() {
   const isAuthenticated = useIsAuthenticatedOptional();
   const [search, setSearch] = useSearchParams();
@@ -53,9 +55,7 @@ export function useLoadWorkspaces() {
   const isAuthenticated = useIsAuthenticatedOptional() && Boolean(currentUser);
   const [spaceLoading, setSpaceLoading] = useState<boolean>(false);
   const [workspaceLoading, setWorkspaceLoading] = useState<boolean>(false);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(() => {
-    return localStorage.getItem('duplicate_selected_workspace') || '';
-  });
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(loadDuplicateSelectedWorkspaceId);
   const [selectedSpaceId, setSelectedSpaceId] = useState<string>('');
 
   const [workspaceList, setWorkspaceList] = useState<Workspace[]>([]);

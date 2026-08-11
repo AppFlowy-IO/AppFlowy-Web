@@ -44,6 +44,8 @@ function getTemplateDatabaseMappings(workspaceId: string): DatabaseMappings {
     console.warn('[useDatabaseIdentity] failed to read db_mappings from localStorage', e);
   }
 
+  let urlMappings: DatabaseMappings;
+
   try {
     const dbMappingsParam = new URLSearchParams(window.location.search).get('db_mappings');
 
@@ -51,16 +53,25 @@ function getTemplateDatabaseMappings(workspaceId: string): DatabaseMappings {
       return storedMappings;
     }
 
-    const urlMappings = parseDatabaseMappings(dbMappingsParam);
-    const mergedMappings = { ...storedMappings, ...urlMappings };
-
-    localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
-    Log.debug('[useDatabaseIdentity] stored db_mappings to localStorage', mergedMappings);
-    return mergedMappings;
+    urlMappings = parseDatabaseMappings(dbMappingsParam);
   } catch (e) {
     console.warn('[useDatabaseIdentity] failed to parse db_mappings from URL', e);
     return storedMappings;
   }
+
+  const mergedMappings = { ...storedMappings, ...urlMappings };
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
+    Log.debug('[useDatabaseIdentity] stored db_mappings to localStorage', mergedMappings);
+  } catch (e) {
+    // URL mappings are the authoritative source for this navigation. Storage
+    // persistence is best-effort and must not break relation rendering when
+    // localStorage is unavailable or full.
+    console.warn('[useDatabaseIdentity] failed to persist db_mappings to localStorage', e);
+  }
+
+  return mergedMappings;
 }
 
 /**

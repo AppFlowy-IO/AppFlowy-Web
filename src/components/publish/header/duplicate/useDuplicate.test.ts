@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 
 import { WorkspaceService } from '@/application/services/domains';
 import { FolderView } from '@/application/types';
+import { saveDuplicateSelectedWorkspaceId } from '@/components/publish/header/duplicate/storage';
 import { useLoadWorkspaces } from '@/components/publish/header/duplicate/useDuplicate';
 
 jest.mock('@/application/services/domains', () => ({
@@ -59,6 +60,28 @@ describe('useLoadWorkspaces', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('renders with no saved workspace when localStorage is unavailable', () => {
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage is disabled', 'SecurityError');
+    });
+
+    const { result } = renderHook(() => useLoadWorkspaces());
+
+    expect(result.current.selectedWorkspaceId).toBe('');
+  });
+
+  it('keeps workspace selection usable when localStorage persistence fails', () => {
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage is full', 'QuotaExceededError');
+    });
+
+    expect(() => saveDuplicateSelectedWorkspaceId('workspace-a')).not.toThrow();
   });
 
   it('exposes a retryable error when loading spaces fails', async () => {
