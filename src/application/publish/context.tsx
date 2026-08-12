@@ -359,13 +359,33 @@ export const PublishProvider = ({
     async (viewId: string, blockId?: string) => {
       const outlineView = findView(outline, viewId);
       const outlineParent = findParentView(outline, viewId);
+      let currentOutlineView: View | null | undefined;
+      const getCurrentOutlineView = () => {
+        if (currentOutlineView === undefined) {
+          currentOutlineView = viewMeta ? findView(outline, viewMeta.view_id) : null;
+        }
+
+        return currentOutlineView;
+      };
+
       const databaseContainer =
         outlineView && isDatabaseLayout(outlineView.layout) && isDatabaseContainer(outlineParent)
           ? outlineParent
           : undefined;
-      const publishedDatabaseRoute = databaseContainer?.is_published
-        ? databaseContainer
-        : databaseContainer?.children.find((child) => child.is_published);
+      const currentPublishedDatabaseView = databaseContainer?.children.find(
+        (child) => child.view_id === getCurrentOutlineView()?.view_id && child.is_published
+      );
+      let publishedDatabaseRoute: View | undefined;
+
+      if (databaseContainer?.is_published) {
+        publishedDatabaseRoute = databaseContainer;
+      } else if (outlineView?.is_published) {
+        publishedDatabaseRoute = outlineView;
+      } else {
+        publishedDatabaseRoute =
+          currentPublishedDatabaseView ?? databaseContainer?.children.find((child) => child.is_published);
+      }
+
       let targetView = outlineView || undefined;
 
       try {
@@ -422,7 +442,7 @@ export const PublishProvider = ({
         // A database tab may not have its own published route. If the current
         // published page is already a database, switch tabs in place.
         const targetDatabaseId = targetView?.extra?.database_id;
-        const currentDatabaseId = viewMeta ? findView(outline, viewMeta.view_id)?.extra?.database_id : undefined;
+        const currentDatabaseId = getCurrentOutlineView()?.extra?.database_id;
         const isCurrentDatabaseTab =
           Boolean(targetDatabaseId) && targetDatabaseId === currentDatabaseId;
 

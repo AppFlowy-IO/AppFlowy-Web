@@ -11,7 +11,7 @@ import {
 } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 import { PublishContextType, PublishProvider, usePublishContext } from '@/application/publish';
 import { RowService } from '@/application/services/domains';
-import { ViewLayout, YjsEditorKey } from '@/application/types';
+import { View, ViewLayout, YjsEditorKey } from '@/application/types';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 
 const mockNavigate = jest.fn();
@@ -93,6 +93,45 @@ function ContextProbe({ onContext }: { onContext: (context: PublishContextType) 
       <div data-testid="breadcrumbs">{context?.breadcrumbs.map((crumb) => crumb.name).join('/')}</div>
     </>
   );
+}
+
+function databaseChildView({
+  viewId,
+  parentViewId,
+  name,
+  layout,
+  isPublished,
+}: {
+  viewId: string;
+  parentViewId: string;
+  name: string;
+  layout: ViewLayout;
+  isPublished: boolean;
+}): View {
+  return {
+    view_id: viewId,
+    parent_view_id: parentViewId,
+    name,
+    layout,
+    children: [],
+    icon: null,
+    extra: { database_id: 'epics-database-id' },
+    is_published: isPublished,
+    is_private: false,
+  };
+}
+
+function unpublishedDatabaseContainer(viewId: string, children: View[]): View {
+  return {
+    view_id: viewId,
+    name: '03_epics',
+    layout: ViewLayout.Grid,
+    children,
+    icon: null,
+    extra: { database_id: 'epics-database-id', is_database_container: true },
+    is_published: false,
+    is_private: false,
+  };
 }
 
 describe('PublishProvider', () => {
@@ -400,6 +439,178 @@ describe('PublishProvider', () => {
     expect(mockGetViewInfo).not.toHaveBeenCalledWith(databaseContainerId);
     expect(mockGetViewInfo).not.toHaveBeenCalledWith(targetChildId);
     expect(mockNavigate).toHaveBeenCalledWith('/published-namespace/by-status?v=board-view-id', {
+      replace: true,
+    });
+  });
+
+  it('uses the requested published child instead of the first published sibling as the route anchor', async () => {
+    const currentSnapshot = normalizePublishedPageSnapshot(publishedDocumentPayload);
+    const databaseContainerId = 'epics-container-id';
+    const firstPublishedChildId = 'by-status-view-id';
+    const requestedPublishedChildId = 'board-view-id';
+    let latestContext: PublishContextType | undefined;
+
+    mockGetOutline.mockResolvedValue([
+      unpublishedDatabaseContainer(databaseContainerId, [
+        databaseChildView({
+          viewId: firstPublishedChildId,
+          parentViewId: databaseContainerId,
+          name: 'By Status',
+          layout: ViewLayout.Grid,
+          isPublished: true,
+        }),
+        databaseChildView({
+          viewId: requestedPublishedChildId,
+          parentViewId: databaseContainerId,
+          name: 'Board',
+          layout: ViewLayout.Board,
+          isPublished: true,
+        }),
+      ]),
+    ]);
+    mockGetViewInfo.mockImplementation(async (viewId: string) => {
+      if (viewId === firstPublishedChildId) {
+        return {
+          namespace: 'published-namespace',
+          publishName: 'by-status',
+          commentEnabled: false,
+          duplicateEnabled: false,
+        };
+      }
+
+      if (viewId === requestedPublishedChildId) {
+        return {
+          namespace: 'published-namespace',
+          publishName: 'board',
+          commentEnabled: true,
+          duplicateEnabled: true,
+        };
+      }
+
+      return {
+        namespace: currentSnapshot.namespace,
+        publishName: currentSnapshot.publishName,
+        commentEnabled: true,
+        duplicateEnabled: true,
+      };
+    });
+
+    render(
+      <PublishProvider
+        namespace={currentSnapshot.namespace}
+        publishName={currentSnapshot.publishName}
+        snapshot={currentSnapshot}
+      >
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
+      </PublishProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.outline).toHaveLength(1);
+      expect(latestContext?.duplicateEnabled).toBe(true);
+    });
+
+    mockGetViewInfo.mockClear();
+    await latestContext?.toView(requestedPublishedChildId);
+
+    expect(mockGetViewInfo).toHaveBeenCalledTimes(1);
+    expect(mockGetViewInfo).toHaveBeenCalledWith(requestedPublishedChildId);
+    expect(mockNavigate).toHaveBeenCalledWith('/published-namespace/board?v=board-view-id', {
+      replace: true,
+    });
+  });
+
+  it('keeps the current published child as the route anchor for an unpublished sibling', async () => {
+    const databaseContainerId = 'epics-container-id';
+    const firstPublishedChildId = 'by-status-view-id';
+    const currentPublishedChildId = 'epics-view-id';
+    const requestedUnpublishedChildId = 'board-view-id';
+    const baseSnapshot = normalizePublishedPageSnapshot(publishedDatabasePayload);
+    const currentSnapshot = {
+      ...baseSnapshot,
+      view: {
+        ...baseSnapshot.view,
+        viewId: currentPublishedChildId,
+      },
+    };
+    let latestContext: PublishContextType | undefined;
+
+    mockGetOutline.mockResolvedValue([
+      unpublishedDatabaseContainer(databaseContainerId, [
+        databaseChildView({
+          viewId: firstPublishedChildId,
+          parentViewId: databaseContainerId,
+          name: 'By Status',
+          layout: ViewLayout.Grid,
+          isPublished: true,
+        }),
+        databaseChildView({
+          viewId: currentPublishedChildId,
+          parentViewId: databaseContainerId,
+          name: 'Epics',
+          layout: ViewLayout.Grid,
+          isPublished: true,
+        }),
+        databaseChildView({
+          viewId: requestedUnpublishedChildId,
+          parentViewId: databaseContainerId,
+          name: 'Board',
+          layout: ViewLayout.Board,
+          isPublished: false,
+        }),
+      ]),
+    ]);
+    mockGetViewInfo.mockImplementation(async (viewId: string) => {
+      if (viewId === firstPublishedChildId) {
+        return {
+          namespace: 'published-namespace',
+          publishName: 'by-status',
+          commentEnabled: false,
+          duplicateEnabled: false,
+        };
+      }
+
+      if (viewId === currentPublishedChildId) {
+        return {
+          namespace: 'published-namespace',
+          publishName: 'epics',
+          commentEnabled: true,
+          duplicateEnabled: true,
+        };
+      }
+
+      throw new Error(`Unexpected published view info request: ${viewId}`);
+    });
+
+    render(
+      <PublishProvider
+        namespace={currentSnapshot.namespace}
+        publishName={currentSnapshot.publishName}
+        snapshot={currentSnapshot}
+      >
+        <ContextProbe
+          onContext={(context) => {
+            latestContext = context;
+          }}
+        />
+      </PublishProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.outline).toHaveLength(1);
+      expect(latestContext?.duplicateEnabled).toBe(true);
+    });
+
+    mockGetViewInfo.mockClear();
+    await latestContext?.toView(requestedUnpublishedChildId);
+
+    expect(mockGetViewInfo).toHaveBeenCalledTimes(1);
+    expect(mockGetViewInfo).toHaveBeenCalledWith(currentPublishedChildId);
+    expect(mockNavigate).toHaveBeenCalledWith('/published-namespace/epics?v=board-view-id', {
       replace: true,
     });
   });
