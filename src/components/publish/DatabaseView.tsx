@@ -22,7 +22,8 @@ import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { Database } from '@/components/database';
-import { findParentView } from '@/components/_shared/outline/utils';
+import { useContainerVisibleViewIds } from '@/components/database/hooks';
+import { findParentView, findView } from '@/components/_shared/outline/utils';
 import { cn } from '@/lib/utils';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
@@ -48,10 +49,38 @@ export interface DatabaseProps {
 
 function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   const [search, setSearch] = useSearchParams();
-  const visibleViewIds = useMemo(() => viewMeta.visibleViewIds || [], [viewMeta]);
 
   const isTemplateThumb = usePublishContext()?.isTemplateThumb;
   const outline = usePublishContext()?.outline;
+  const outlineView = useMemo(() => {
+    if (!outline || !viewMeta.viewId) return;
+    return findView(outline, viewMeta.viewId) || undefined;
+  }, [outline, viewMeta.viewId]);
+  const { containerView } = useContainerVisibleViewIds({
+    view: outlineView,
+    outline,
+    parentViewId: viewMeta.parentViewId,
+    databaseId: viewMeta.extra?.database_id,
+    embedded: viewMeta.extra?.embedded,
+  });
+  const pageView = containerView || outlineView;
+  const pageMeta = useMemo<ViewMetaProps>(() => {
+    if (!pageView) return viewMeta;
+
+    return {
+      ...viewMeta,
+      viewId: pageView.view_id,
+      name: pageView.name,
+      icon: pageView.icon || undefined,
+      extra: pageView.extra,
+      cover: pageView.extra?.cover,
+      layout: pageView.layout,
+    };
+  }, [pageView, viewMeta]);
+  const visibleViewIds = useMemo(() => {
+    if (viewMeta.visibleViewIds?.length) return viewMeta.visibleViewIds;
+    return containerView?.children.map((child) => child.view_id) || [];
+  }, [containerView, viewMeta.visibleViewIds]);
 
   // Build a loadViewMeta that returns the database container from the outline
   // with correct folder names for all sibling views (used by DatabaseTabs).
@@ -63,28 +92,29 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
     return async (viewId: string, callback?: (meta: View | null) => void) => {
       // Try to find the container in the outline for this database view
       const parent = findParentView(outline, viewId);
+      const resolvedContainer = containerView?.view_id === viewId ? containerView : parent;
 
-      if (parent?.extra?.is_database_container && parent.children?.length > 0) {
-        const containerView: View = {
-          ...parent,
+      if (resolvedContainer?.extra?.is_database_container && resolvedContainer.children?.length > 0) {
+        const containerMeta: View = {
+          ...resolvedContainer,
           is_published: false,
           is_private: false,
         };
 
-        callback?.(containerView);
-        return containerView;
+        callback?.(containerMeta);
+        return containerMeta;
       }
 
       // Fall back to original loadViewMeta
       return originalLoadViewMeta(viewId, callback);
     };
-  }, [outline, props.loadViewMeta]);
+  }, [containerView, outline, props.loadViewMeta]);
 
   /**
    * The database's page ID in the folder/outline structure.
    * This is the main entry point for the database and remains constant.
    */
-  const databasePageId = viewMeta.viewId;
+  const databasePageId = containerView?.view_id || viewMeta.viewId;
 
   const doc = props.doc;
   const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
@@ -187,11 +217,11 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       }}
       className={cn('relative flex w-full flex-col', !isPublishVariant && 'h-full')}
     >
-      {rowId ? null : <ViewMetaPreview {...viewMeta} readOnly={true} />}
+      {rowId ? null : <ViewMetaPreview {...pageMeta} readOnly={true} />}
 
       <Suspense fallback={skeleton}>
         <Database
-          databaseName={viewMeta.name || ''}
+          databaseName={pageMeta.name || ''}
           databasePageId={databasePageId || ''}
           {...props}
           loadViewMeta={publishLoadViewMeta}

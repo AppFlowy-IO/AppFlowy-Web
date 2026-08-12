@@ -11,7 +11,7 @@ import {
 } from '@/application/publish-snapshot/__fixtures__/published-page-snapshots';
 import { PublishContextType, PublishProvider, usePublishContext } from '@/application/publish';
 import { RowService } from '@/application/services/domains';
-import { YjsEditorKey } from '@/application/types';
+import { ViewLayout, YjsEditorKey } from '@/application/types';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 
 const mockNavigate = jest.fn();
@@ -20,6 +20,7 @@ const mockGetView = jest.fn();
 const mockGetViewInfo = jest.fn();
 const mockGetViewMeta = jest.fn();
 const mockGetRowDocument = jest.fn();
+const mockGetOutline = jest.fn();
 
 jest.mock('dexie-react-hooks', () => ({
   useLiveQuery: jest.fn(() => undefined),
@@ -65,7 +66,7 @@ jest.mock('@/application/publish-snapshot/data-source', () => ({
 
 jest.mock('@/application/services/domains', () => ({
   PublishService: {
-    getOutline: jest.fn(async () => []),
+    getOutline: (...args: unknown[]) => mockGetOutline(...args),
     getView: (...args: unknown[]) => mockGetView(...args),
     getViewInfo: (...args: unknown[]) => mockGetViewInfo(...args),
     getViewMeta: (...args: unknown[]) => mockGetViewMeta(...args),
@@ -97,6 +98,7 @@ function ContextProbe({ onContext }: { onContext: (context: PublishContextType) 
 describe('PublishProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetOutline.mockResolvedValue([]);
     mockGetViewInfo.mockResolvedValue({
       namespace: 'published-namespace',
       publishName: 'published-document',
@@ -239,5 +241,166 @@ describe('PublishProvider', () => {
 
     expect(firstRowDocumentBlock?.children?.[0]?.children?.[0]?.text).toBe('Published row document body');
     expect(mockGetRowDocument).not.toHaveBeenCalled();
+  });
+
+  it('opens a database child through its published container route', async () => {
+    const currentSnapshot = normalizePublishedPageSnapshot(publishedDocumentPayload);
+    const databaseChildId = 'in-progress-view-id';
+    const databaseContainerId = 'projects-container-id';
+    let latestContext: PublishContextType | undefined;
+
+    mockGetOutline.mockResolvedValue([
+      {
+        view_id: databaseContainerId,
+        name: 'projects',
+        layout: ViewLayout.Grid,
+        children: [
+          {
+            view_id: databaseChildId,
+            parent_view_id: databaseContainerId,
+            name: 'In Progress',
+            layout: ViewLayout.Grid,
+            children: [],
+            icon: null,
+            extra: { database_id: 'projects-database-id' },
+            is_published: true,
+            is_private: false,
+          },
+        ],
+        icon: null,
+        extra: { database_id: 'projects-database-id', is_database_container: true },
+        is_published: true,
+        is_private: false,
+      },
+    ]);
+    mockGetViewInfo.mockImplementation(async (viewId: string) => {
+      if (viewId === databaseContainerId) {
+        return {
+          namespace: 'published-namespace',
+          publishName: 'projects',
+          commentEnabled: true,
+          duplicateEnabled: true,
+        };
+      }
+
+      return {
+        namespace: currentSnapshot.namespace,
+        publishName: currentSnapshot.publishName,
+        commentEnabled: true,
+        duplicateEnabled: true,
+      };
+    });
+
+    render(
+      <PublishProvider
+        namespace={currentSnapshot.namespace}
+        publishName={currentSnapshot.publishName}
+        snapshot={currentSnapshot}
+      >
+        <ContextProbe onContext={(context) => {
+          latestContext = context;
+        }} />
+      </PublishProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.outline).toHaveLength(1);
+    });
+
+    await latestContext?.toView(databaseChildId);
+
+    expect(mockGetViewInfo).toHaveBeenCalledWith(databaseContainerId);
+    expect(mockGetViewInfo).not.toHaveBeenCalledWith(databaseChildId);
+    expect(mockNavigate).toHaveBeenCalledWith('/published-namespace/projects?v=in-progress-view-id', {
+      replace: true,
+    });
+  });
+
+  it('opens an unpublished database container through its published child route', async () => {
+    const currentSnapshot = normalizePublishedPageSnapshot(publishedDatabasePayload);
+    const databaseContainerId = 'epics-container-id';
+    const publishedChildId = 'by-status-view-id';
+    const targetChildId = 'board-view-id';
+    let latestContext: PublishContextType | undefined;
+
+    mockGetOutline.mockResolvedValue([
+      {
+        view_id: databaseContainerId,
+        name: '03_epics',
+        layout: ViewLayout.Grid,
+        children: [
+          {
+            view_id: publishedChildId,
+            name: 'By Status',
+            layout: ViewLayout.Grid,
+            children: [],
+            icon: null,
+            extra: { database_id: 'epics-database-id' },
+            is_published: true,
+            is_private: false,
+          },
+          {
+            view_id: targetChildId,
+            name: 'Board',
+            layout: ViewLayout.Board,
+            children: [],
+            icon: null,
+            extra: { database_id: 'epics-database-id' },
+            is_published: false,
+            is_private: false,
+          },
+        ],
+        icon: null,
+        extra: { database_id: 'epics-database-id', is_database_container: true },
+        is_published: false,
+        is_private: false,
+      },
+    ]);
+    mockGetViewInfo.mockImplementation(async (viewId: string) => {
+      if (viewId === databaseContainerId) {
+        throw new Error('View has not been published yet');
+      }
+
+      if (viewId === publishedChildId) {
+        return {
+          namespace: 'published-namespace',
+          publishName: 'by-status',
+          commentEnabled: true,
+          duplicateEnabled: true,
+        };
+      }
+
+      return {
+        namespace: currentSnapshot.namespace,
+        publishName: currentSnapshot.publishName,
+        commentEnabled: true,
+        duplicateEnabled: true,
+      };
+    });
+
+    render(
+      <PublishProvider
+        namespace={currentSnapshot.namespace}
+        publishName={currentSnapshot.publishName}
+        snapshot={currentSnapshot}
+      >
+        <ContextProbe onContext={(context) => {
+          latestContext = context;
+        }} />
+      </PublishProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestContext?.outline).toHaveLength(1);
+    });
+
+    await latestContext?.toView(targetChildId);
+
+    expect(mockGetViewInfo).toHaveBeenCalledWith(publishedChildId);
+    expect(mockGetViewInfo).not.toHaveBeenCalledWith(databaseContainerId);
+    expect(mockGetViewInfo).not.toHaveBeenCalledWith(targetChildId);
+    expect(mockNavigate).toHaveBeenCalledWith('/published-namespace/by-status?v=board-view-id', {
+      replace: true,
+    });
   });
 });

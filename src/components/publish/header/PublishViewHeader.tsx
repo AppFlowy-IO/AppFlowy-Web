@@ -1,5 +1,6 @@
 import { IconButton } from '@mui/material';
 import { lazy, Suspense, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { HEADER_HEIGHT } from '@/application/constants';
 import { usePublishContext } from '@/application/publish';
@@ -10,6 +11,10 @@ import { OutlinePopover } from '@/components/_shared/outline';
 import Outline from '@/components/_shared/outline/Outline';
 import { useOutlinePopover } from '@/components/_shared/outline/outline.hooks';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
+import {
+  DATABASE_TAB_VIEW_ID_QUERY_PARAM,
+  resolveSidebarSelectedViewId,
+} from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { getPlatform } from '@/utils/platform';
 
 const RightMenu = lazy(() => import('@/components/publish/header/RightMenu'));
@@ -39,7 +44,12 @@ export function PublishViewHeader({
   const isMobile = useMemo(() => {
     return getPlatform().isMobile;
   }, []);
-  const viewId = viewMeta?.view_id;
+  const [searchParams] = useSearchParams();
+  const viewId = resolveSidebarSelectedViewId({
+    routeViewId: viewMeta?.view_id,
+    tabViewId: searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM),
+    outline,
+  });
   const rendered = usePublishContext()?.rendered;
 
   return (
