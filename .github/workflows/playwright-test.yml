@@ -187,7 +187,10 @@ jobs:
           APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
           RUST_LOG: appflowy_cloud=info
         run: |
-          docker compose -f docker-compose-web-ci.yml up -d
+          docker compose \
+            -f docker-compose-web-ci.yml \
+            -f ../.github/docker-compose-web-ci.override.yml \
+            up -d
 
           echo "Waiting for backend services..."
           timeout 180 bash -c 'until curl -sf http://localhost/api/health > /dev/null 2>&1; do

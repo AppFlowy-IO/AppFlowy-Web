@@ -1,0 +1,4 @@
+services:
+  appflowy_cloud:
+    environment:
+      APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}

@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
-import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import { publishCollabs, PublishCollabMetadata } from '@/application/services/js-services/http/publish-api';
+import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import {
   CreateDatabaseViewPayload,
   CreateOrphanedViewPayload,
@@ -13,6 +13,7 @@ import {
   CreatePagePayload,
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
+  PublishViewPayload,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -20,13 +21,46 @@ import {
   ViewIconType,
 } from '@/application/types';
 import { isDatabaseLayout } from '@/application/view-utils';
-import { Log } from '@/utils/log';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
 const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
+const DOCUMENT_PUBLISH_SERVER_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 6000] as const;
+
+function waitForDocumentPublishRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+function isPendingDocumentPublishData(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, message } = error as { code?: unknown; message?: unknown };
+
+  return code === -2 && typeof message === 'string' && /record not (?:found|exist)|view .* not found/i.test(message);
+}
+
+async function publishDocumentWhenServerStateIsReady(
+  workspaceId: string,
+  viewId: string,
+  payload: PublishViewPayload,
+  syncServerState?: () => Promise<void>
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await PublishService.publish(workspaceId, viewId, payload);
+      return;
+    } catch (error) {
+      const retryDelay = DOCUMENT_PUBLISH_SERVER_RETRY_DELAYS_MS[attempt];
+
+      if (retryDelay === undefined || !isPendingDocumentPublishData(error)) throw error;
+      await syncServerState?.();
+      await waitForDocumentPublishRetry(retryDelay);
+    }
+  }
+}
 
 export function usePageOperations({
   outlineRef,
@@ -462,16 +496,36 @@ export function usePageOperations({
         await publishCollabs(currentWorkspaceId, [{ meta, data }]);
         clearPublishViewInfoCache(viewId);
       } else {
-        // Document views: use existing server-side gathering
-        await PublishService.publish(currentWorkspaceId, viewId, {
-          publish_name: publishName,
-          visible_database_view_ids: visibleViewIds,
-        });
+        // Document publishing gathers the folder, document, and referenced
+        // dependencies on the server. Push the browser's current state first,
+        // then tolerate the provisioning/projection interval under load.
+        const outboxDrained = await flushAllSync?.();
+        let fullSyncPromise: Promise<void> | undefined;
+        const ensureServerState = syncAllToServer
+          ? () => {
+              fullSyncPromise ??= syncAllToServer(currentWorkspaceId);
+              return fullSyncPromise;
+            }
+          : undefined;
+
+        if (outboxDrained !== true) {
+          await ensureServerState?.();
+        }
+
+        await publishDocumentWhenServerStateIsReady(
+          currentWorkspaceId,
+          viewId,
+          {
+            publish_name: publishName,
+            visible_database_view_ids: visibleViewIds,
+          },
+          ensureServerState
+        );
       }
 
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef, getDatabaseIdForViewId]
+    [currentWorkspaceId, loadOutline, flushAllSync, syncAllToServer, outlineRef, getDatabaseIdForViewId]
   );
 
   // Unpublish view
