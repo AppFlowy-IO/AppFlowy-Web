@@ -5,8 +5,11 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { BaseRange, Range } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateRow,
+  CreateRowDocument,
+  DuplicateRowDocument,
   FontLayout,
   LineHeightLayout,
   LoadView,
@@ -27,11 +30,9 @@ import {
   MentionSearchContext,
   SearchMentions,
   DatabaseRelations,
-  RowDocumentSourcePayload,
   UpdatePagePayload,
   YDoc,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 export interface EditorLayoutStyle {
   fontLayout: FontLayout;
@@ -85,7 +86,8 @@ export interface EditorContextState {
   loadView?: LoadView;
   loadRowDocument?: LoadRowDocument;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+  createRowDocument?: CreateRowDocument;
+  duplicateRowDocument?: DuplicateRowDocument;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
@@ -138,6 +140,7 @@ export const EditorContextProvider = ({
   loadRowDocument,
   checkIfRowDocumentExists,
   createRowDocument,
+  duplicateRowDocument,
   createRow,
   bindViewSync,
   readSummary,
@@ -228,6 +231,7 @@ export const EditorContextProvider = ({
       loadRowDocument,
       checkIfRowDocumentExists,
       createRowDocument,
+      duplicateRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -275,6 +279,7 @@ export const EditorContextProvider = ({
       loadRowDocument,
       checkIfRowDocumentExists,
       createRowDocument,
+      duplicateRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -323,9 +328,7 @@ export const EditorContextProvider = ({
 
   return (
     <EditorContext.Provider value={configValue}>
-      <EditorLocalStateContext.Provider value={localStateValue}>
-        {children}
-      </EditorLocalStateContext.Provider>
+      <EditorLocalStateContext.Provider value={localStateValue}>{children}</EditorLocalStateContext.Provider>
     </EditorContext.Provider>
   );
 };

@@ -7,9 +7,10 @@ function RowDocumentContextProbe() {
 
   return (
     <div
-      data-testid="row-document-context"
+      data-testid='row-document-context'
       data-has-check={String(Boolean(context.checkIfRowDocumentExists))}
       data-has-create={String(Boolean(context.createRowDocument))}
+      data-has-duplicate={String(Boolean(context.duplicateRowDocument))}
       data-has-load={String(Boolean(context.loadRowDocument))}
       data-has-update={String(Boolean(context.updatePage))}
       onClick={() => void context.updatePage?.('database-view-id', { name: 'Renamed view' })}
@@ -23,11 +24,12 @@ describe('EditorContextProvider', () => {
 
     render(
       <EditorContextProvider
-        workspaceId="workspace-id"
-        viewId="view-id"
+        workspaceId='workspace-id'
+        viewId='view-id'
         readOnly={false}
         checkIfRowDocumentExists={jest.fn()}
         createRowDocument={jest.fn()}
+        duplicateRowDocument={jest.fn()}
         loadRowDocument={jest.fn()}
         updatePage={updatePage}
       >
@@ -39,6 +41,7 @@ describe('EditorContextProvider', () => {
 
     expect(probe.getAttribute('data-has-check')).toBe('true');
     expect(probe.getAttribute('data-has-create')).toBe('true');
+    expect(probe.getAttribute('data-has-duplicate')).toBe('true');
     expect(probe.getAttribute('data-has-load')).toBe('true');
     expect(probe.getAttribute('data-has-update')).toBe('true');
 

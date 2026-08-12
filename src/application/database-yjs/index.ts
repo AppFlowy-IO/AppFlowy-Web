@@ -4,5 +4,6 @@ export * from './database.type';
 export * from './dispatch';
 export * from './fields';
 export * from './selector';
+export * from './template';
 export * from './comment_dispatch';
 export * from './comment_selector';
