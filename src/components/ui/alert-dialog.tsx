@@ -26,28 +26,32 @@ function AlertDialogPortal({
   )
 }
 
-function AlertDialogOverlay({
-  className,
-  ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>) {
-  return (
-    <AlertDialogPrimitive.Overlay
-      data-slot="alert-dialog-overlay"
-      className={cn(
-        "data-[state=open]:animate-in data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-surface-overlay",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+const AlertDialogOverlay = React.forwardRef<
+  React.ElementRef<typeof AlertDialogPrimitive.Overlay>,
+  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay>
+>(({ className, ...props }, ref) => (
+  <AlertDialogPrimitive.Overlay
+    ref={ref}
+    data-slot="alert-dialog-overlay"
+    className={cn(
+      "data-[state=open]:animate-in data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-surface-overlay",
+      className
+    )}
+    {...props}
+  />
+))
+
+AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName
 
 function AlertDialogContent({
   className,
+  container,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
+  container?: React.ComponentProps<typeof AlertDialogPrimitive.Portal>["container"];
+}) {
   return (
-    <AlertDialogPortal>
+    <AlertDialogPortal container={container}>
       <AlertDialogOverlay />
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
@@ -144,4 +148,3 @@ export {
   AlertDialog, AlertDialogAction,
   AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogOverlay, AlertDialogPortal, AlertDialogTitle, AlertDialogTrigger
 }
-

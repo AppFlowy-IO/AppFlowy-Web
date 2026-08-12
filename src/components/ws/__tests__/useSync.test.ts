@@ -1177,6 +1177,7 @@ describe('useSync notifications', () => {
       folderChanged: { id: 'folder' },
       folderViewChanged: { id: 'view' },
       inboxNotification: { id: 'notif-1', type: 'mention', metadataJson: '{}', createdAt: 1 },
+      commentChanged: { workspaceId: defaultWorkspaceId, viewId: 'view-1' },
     };
     const { rerender } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
 
@@ -1201,6 +1202,7 @@ describe('useSync notifications', () => {
     expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.FOLDER_OUTLINE_CHANGED, notification.folderChanged);
     expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.FOLDER_VIEW_CHANGED, notification.folderViewChanged);
     expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.INBOX_NOTIFICATION, notification.inboxNotification);
+    expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.INLINE_COMMENT_CHANGED, notification.commentChanged);
   });
 
   it('forwards broadcast workspace notifications to app events', () => {
@@ -1213,6 +1215,7 @@ describe('useSync notifications', () => {
       folderChanged: { id: 'folder' },
       folderViewChanged: { id: 'view' },
       inboxNotification: { id: 'notif-2', type: 'page_shared', metadataJson: '{}', createdAt: 2 },
+      commentChanged: { workspaceId: defaultWorkspaceId, viewId: 'view-2' },
     };
     const { rerender } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
 
@@ -1225,6 +1228,7 @@ describe('useSync notifications', () => {
     expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.FOLDER_OUTLINE_CHANGED, notification.folderChanged);
     expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.FOLDER_VIEW_CHANGED, notification.folderViewChanged);
     expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.INBOX_NOTIFICATION, notification.inboxNotification);
+    expect(emitSpy).toHaveBeenCalledWith(APP_EVENTS.INLINE_COMMENT_CHANGED, notification.commentChanged);
   });
 });
 

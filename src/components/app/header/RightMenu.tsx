@@ -9,6 +9,7 @@ import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useAppView, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import { InlineCommentToggleButton } from '@/components/inline-comment/InlineCommentToggleButton';
 import { openOrDownload } from '@/utils/open_schema';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -62,6 +63,7 @@ function RightMenu() {
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
       {actionViewId ? <ShareButton viewId={actionViewId} hidePublish={hasRowPageRoute} /> : null}
+      <InlineCommentToggleButton />
       {favoriteViewId && (
         <FavoriteButton viewId={favoriteViewId} beforeToggle={rowPage ? prepareRowDocumentForFavorite : undefined} />
       )}

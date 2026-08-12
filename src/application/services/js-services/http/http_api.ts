@@ -213,5 +213,17 @@ export {
   archiveAllNotifications,
 } from './notification-api';
 
+// Inline comments
+export {
+  createInlineComment,
+  createInlineCommentReaction,
+  deleteInlineComment,
+  deleteInlineCommentReaction,
+  getAllInlineComments,
+  getInlineCommentReactions,
+  getInlineComments,
+  resolveInlineComment,
+} from './inline-comment-api';
+
 // Workspace types re-exports
 export type { WorkspaceFolder, PageMentionUpdate } from './workspace-api';

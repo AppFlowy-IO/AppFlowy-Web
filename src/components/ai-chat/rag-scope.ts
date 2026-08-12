@@ -1,4 +1,7 @@
+import { isSpaceView } from '@/application/view-utils';
 import { ViewLayout } from '@/components/chat/types/request';
+
+export { isSpaceView };
 
 export const RAG_SOURCE_OWNERS_METADATA_KEY = 'rag_source_owners';
 
@@ -32,10 +35,6 @@ export interface ScopedRagState {
   preservedRagIds: string[];
   ragIds: string[];
   sourceOwners: RagSourceOwners;
-}
-
-export function isSpaceView(view: Pick<RagScopeView, 'is_space' | 'extra'>): boolean {
-  return view.is_space ?? Boolean(view.extra?.is_space);
 }
 
 function visitViews(views: RagScopeView[], visit: (view: RagScopeView) => void) {

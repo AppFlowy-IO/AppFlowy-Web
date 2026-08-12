@@ -26,7 +26,7 @@ export interface NormalModalProps extends DialogProps {
   danger?: boolean;
   onClose?: () => void;
   title: string | React.ReactNode;
-  okButtonProps?: ButtonProps;
+  okButtonProps?: ButtonProps & { 'data-testid'?: string };
   cancelButtonProps?: ButtonProps;
   okLoading?: boolean;
   closable?: boolean;

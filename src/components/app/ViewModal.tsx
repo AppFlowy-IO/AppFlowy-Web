@@ -34,11 +34,20 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import {
+  getViewCanCommentStatus,
+  getViewCanWriteStatus,
+  useViewOperations,
+} from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import {
+  useInlineCommentComposeOptional,
+  useInlineCommentPanelOptional,
+} from '@/components/inline-comment/InlineCommentContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { cn } from '@/lib/utils';
 import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 
@@ -91,6 +100,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const outline = useAppOutline();
   const requestInstance = getAxiosInstance();
   const { getViewReadOnlyStatus } = useViewOperations();
+  const isCommentPanelOpen = useInlineCommentPanelOptional()?.isPanelOpen ?? false;
+  const hasPendingComment = Boolean(useInlineCommentComposeOptional()?.pendingComment);
 
   // Document state
   const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
@@ -362,7 +373,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
           )}
 
           <Divider orientation={'vertical'} className={'h-4'} />
-          <IconButton size={'small'} onClick={handleClose}>
+          <IconButton data-testid={'view-modal-close'} size={'small'} onClick={handleClose}>
             <CloseIcon />
           </IconButton>
         </div>
@@ -377,6 +388,18 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     if (!effectiveViewId) return false;
     return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
   }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
+
+  // Comment permission is independent from editability, so a locked or
+  // read-and-comment page opened in the modal still offers the comment action.
+  const canComment = useMemo(() => {
+    if (!effectiveViewId) return false;
+    return getViewCanCommentStatus(effectiveViewId, outline, resolvedView);
+  }, [effectiveViewId, outline, resolvedView]);
+
+  const canWrite = useMemo(() => {
+    if (!effectiveViewId) return false;
+    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView);
+  }, [effectiveViewId, outline, resolvedView]);
 
   const View = useMemo(() => {
     switch (layout) {
@@ -400,6 +423,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         workspaceId={workspaceId || ''}
         doc={doc.doc}
         readOnly={isReadOnly}
+        canComment={canComment}
+        canWrite={canWrite}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -443,6 +468,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     requestInstance,
     workspaceId,
     isReadOnly,
+    canComment,
+    canWrite,
     toView,
     loadViewMeta,
     createRow,
@@ -490,14 +517,21 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       fullWidth={true}
       keepMounted={false}
       disableAutoFocus={true}
-      disableEnforceFocus={false}
+      // Comment controls use viewport coordinates and therefore portal to the
+      // body. Relax focus enforcement only while an external comment surface
+      // needs focus; otherwise the modal keeps its normal focus boundary.
+      disableEnforceFocus={isCommentPanelOpen || hasPendingComment}
       disableRestoreFocus={true}
       disableScrollLock={true}
       disablePortal={false}
       TransitionComponent={Transition}
       PaperProps={{
         ref,
-        className: `max-w-[70vw] appflowy-scroll-container transform relative w-[1188px] flex flex-col h-[80vh] appflowy-scroller`,
+        // Keep the dialog clear of the comments panel while it is open.
+        className: cn(
+          'max-w-[70vw] appflowy-scroll-container transform relative w-[1188px] flex flex-col h-[80vh] appflowy-scroller',
+          isCommentPanelOpen && 'mr-[352px]'
+        ),
       }}
     >
       {renderModalTitle()}

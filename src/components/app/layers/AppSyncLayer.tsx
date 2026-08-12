@@ -25,6 +25,7 @@ import {
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
+import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '../contexts/SyncInternalContext';
@@ -127,6 +128,25 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
     revertCollabVersion,
     scheduleDeferredCleanup,
   } = useSync(webSocket, broadcastChannel, eventEmitter, currentWorkspaceId!);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const isE2ETest = isDevelopmentOrTestEnvironment() || navigator.webdriver || 'Cypress' in window;
+
+    if (!isE2ETest) return;
+
+    const testWindow = window as typeof window & {
+      __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean>;
+    };
+
+    testWindow.__TEST_FLUSH_ALL_SYNC__ = flushAllSync;
+    return () => {
+      if (testWindow.__TEST_FLUSH_ALL_SYNC__ === flushAllSync) {
+        delete testWindow.__TEST_FLUSH_ALL_SYNC__;
+      }
+    };
+  }, [flushAllSync]);
 
   // Handle WebSocket reconnection. Depend on the stable `reconnect` function,
   // not the webSocket container whose identity changes per incoming message.

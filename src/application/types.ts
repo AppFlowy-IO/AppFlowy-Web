@@ -1090,6 +1090,13 @@ export enum CollabOrigin {
   Remote = 'remote',
   // from local changes manually applied to Yjs
   LocalManual = 'local_manual',
+  // Inline-comment metadata is intentionally excluded from text undo history.
+  // Writable editors still send this origin through normal collaboration.
+  InlineComment = 'inline_comment',
+  // Read-and-comment users cannot publish ordinary document updates. Their
+  // anchor-only update is persisted by the inline-comment HTTP endpoint, so
+  // the collaboration outbox must not enqueue the same update.
+  InlineCommentAuthorized = 'inline_comment_authorized',
 }
 
 export interface PublishViewPayload {
@@ -1630,6 +1637,9 @@ export interface ViewComponentProps {
   doc: YDoc;
   workspaceId: string;
   readOnly: boolean;
+  canComment?: boolean;
+  /** Canonical server write permission, independent from locks/mobile UI. */
+  canWrite?: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;

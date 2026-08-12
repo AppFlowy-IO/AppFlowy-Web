@@ -21,6 +21,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
+import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
@@ -97,7 +98,7 @@ export const withInsertData = (editor: ReactEditor) => {
     }
 
     if (richFragment) {
-      const newFragment = convertSlateFragmentTo(richFragment.fragment);
+      const newFragment = convertSlateFragmentTo(stripInlineCommentIds(richFragment.fragment));
 
       if (insertFragmentAsSiblings(e, newFragment)) return;
 
@@ -111,7 +112,7 @@ export const withInsertData = (editor: ReactEditor) => {
       const parsed = decodeSlateFragment(rawFragment);
 
       if (parsed) {
-        const newFragment = convertSlateFragmentTo(parsed);
+        const newFragment = convertSlateFragmentTo(stripInlineCommentIds(parsed));
 
         // Slate's default insertFragment nests pasted blocks under the current
         // block when the cursor sits deep inside a text wrapper. Use the YJS

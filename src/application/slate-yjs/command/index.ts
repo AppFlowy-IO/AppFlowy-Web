@@ -977,7 +977,7 @@ export const CustomEditor = {
       sharedRoot,
       [
         () => {
-          newBlockId = deepCopyBlock(sharedRoot, block, options?.data);
+          newBlockId = deepCopyBlock(sharedRoot, block, options?.data, true);
 
           if (!newBlockId) {
             Log.warn('Copied block not found');

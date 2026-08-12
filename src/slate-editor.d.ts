@@ -1,6 +1,8 @@
 import { ReactEditor } from 'slate-react';
 
 interface EditorInlineAttributes {
+  /** Desktop-compatible ids for comments anchored to this exact Delta segment. */
+  'comment-ids'?: string[];
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;

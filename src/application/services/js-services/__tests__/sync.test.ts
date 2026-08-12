@@ -1,5 +1,5 @@
 import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types } from '@/application/types';
+import { CollabOrigin, Types } from '@/application/types';
 import { messages } from '@/proto/messages';
 import { expect } from '@jest/globals';
 import * as random from 'lib0/random';
@@ -206,6 +206,20 @@ const expectTextConvergence = (texts: Y.Text[], expectedChars: string) => {
 };
 
 describe('sync protocol', () => {
+  it('routes only writable inline-comment updates through normal collaboration', () => {
+    const [local] = mockSync(1);
+
+    initSync(local);
+    const enqueueOutboxUpdate = outboxMock.enqueueOutboxUpdate as jest.Mock;
+
+    enqueueOutboxUpdate.mockClear();
+    local.doc.transact(() => local.doc.getText('test').insert(0, 'A'), CollabOrigin.InlineCommentAuthorized);
+    expect(enqueueOutboxUpdate).not.toHaveBeenCalled();
+
+    local.doc.transact(() => local.doc.getText('test').insert(1, 'B'), CollabOrigin.InlineComment);
+    expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('should exchange updates between client and server', () => {
     const [local, remote] = mockSync(2);
 

@@ -21,6 +21,14 @@ export interface BlockJson {
   external_id?: string;
 }
 
+/**
+ * Delta attribute carrying the ids of the inline comments anchored to a text
+ * segment. Kept out of [EditorMarkFormat] because it is not a user-facing
+ * formatting mark, but it travels the same Yjs text format channel — desktop
+ * writes the identical `comment-ids` attribute.
+ */
+export const INLINE_COMMENT_IDS_KEY = 'comment-ids';
+
 export enum EditorMarkFormat {
   Bold = 'bold',
   Italic = 'italic',

@@ -1,7 +1,7 @@
 import { AccessLevel, View, ViewExtra, ViewLayout } from '@/application/types';
 import { getPlatform } from '@/utils/platform';
 
-import { getViewReadOnlyStatus } from '../useViewOperations';
+import { getViewCanCommentStatus, getViewCanWriteStatus, getViewReadOnlyStatus } from '../useViewOperations';
 
 // useViewOperations pulls in service/loader modules at import time; stub the
 // heavy ones so the pure getViewReadOnlyStatus function can be tested in isolation.
@@ -118,5 +118,39 @@ describe('getViewReadOnlyStatus (private space inherited access)', () => {
     );
 
     expect(getViewReadOnlyStatus('child-page', outline)).toBe(false);
+  });
+});
+
+describe('getViewCanCommentStatus', () => {
+  it('rejects inherited View-only access', () => {
+    const outline = shareWithMePrivateSpaceOutline(AccessLevel.ReadOnly, createView({ view_id: 'child-page' }));
+
+    expect(getViewCanCommentStatus('child-page', outline)).toBe(false);
+  });
+
+  it('allows inherited Read-and-comment access while the editor remains read-only', () => {
+    const outline = shareWithMePrivateSpaceOutline(AccessLevel.ReadAndComment, createView({ view_id: 'child-page' }));
+
+    expect(getViewReadOnlyStatus('child-page', outline)).toBe(true);
+    expect(getViewCanCommentStatus('child-page', outline)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', outline)).toBe(false);
+  });
+
+  it('allows comments on an owned locked page', () => {
+    const view = createView({ view_id: 'owned-page', is_locked: true });
+
+    expect(getViewReadOnlyStatus('owned-page', [view], view)).toBe(true);
+    expect(getViewCanCommentStatus('owned-page', [view], view)).toBe(true);
+    expect(getViewCanWriteStatus('owned-page', [view], view)).toBe(true);
+  });
+
+  it('keeps canonical write access for a locked writable shared page', () => {
+    const outline = shareWithMePrivateSpaceOutline(
+      AccessLevel.ReadAndWrite,
+      createView({ view_id: 'child-page', is_locked: true })
+    );
+
+    expect(getViewReadOnlyStatus('child-page', outline)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', outline)).toBe(true);
   });
 });

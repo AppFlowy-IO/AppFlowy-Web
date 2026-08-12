@@ -8,7 +8,7 @@ import {
   shouldRouteUpdateThroughOutbox,
   waitForDrain,
 } from '@/application/sync-outbox';
-import { Types, YDoc } from '@/application/types';
+import { CollabOrigin, Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -265,8 +265,12 @@ export const initSync = (ctx: SyncContext) => {
   ctx.discardPendingUpdates = (options) => deleteOutboxByObjectId(doc.guid, options);
 
   const onUpdate = (update: Uint8Array, origin: string, _doc: Y.Doc, transaction: Y.Transaction) => {
-    if (origin === 'remote') {
-      return; // Ignore remote updates
+    if (origin === CollabOrigin.Remote) return;
+
+    if (origin === CollabOrigin.InlineCommentAuthorized) {
+      // Read-and-comment anchors use their narrowly authorized HTTP endpoint,
+      // not the ordinary collaboration outbox that requires document writes.
+      return;
     }
 
     // Causal metadata for server-side missing-update detection: the state vector
