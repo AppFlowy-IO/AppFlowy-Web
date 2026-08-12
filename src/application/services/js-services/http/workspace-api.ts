@@ -15,7 +15,9 @@ import {
   SpaceMembers,
   SpacePermissionResponse,
   SpacePermissionSettings,
+  StructuredSpace,
   UpdateSpaceMemberPayload,
+  UpdateStructuredSpacePayload,
   UpdateWorkspaceGroupPayload,
   UpdateWorkspacePayload,
   UploadPublishNamespacePayload,
@@ -23,6 +25,7 @@ import {
   WorkspaceGroup,
   WorkspaceGroupMember,
   WorkspaceGroupMembers,
+  WorkspaceGroupSpacePermission,
   WorkspaceGroups,
   WorkspaceMember,
 } from '@/application/types';
@@ -222,6 +225,16 @@ export async function updateSpacePermission(
   );
 }
 
+export async function updateStructuredSpace(
+  workspaceId: string,
+  spaceId: string,
+  payload: UpdateStructuredSpacePayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}`;
+
+  return executeAPIRequest<StructuredSpace>(() => getAxios()?.patch<APIResponse<StructuredSpace>>(url, payload));
+}
+
 export async function getSpaceMembers(workspaceId: string, spaceId: string) {
   const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members`;
 
@@ -263,6 +276,25 @@ export async function updateSpaceMember(
 
 export async function removeSpaceMember(workspaceId: string, spaceId: string, uid: string) {
   const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function updateSpaceGroupPermission(
+  workspaceId: string,
+  spaceId: string,
+  groupId: string,
+  payload: UpdateSpaceMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/group/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroupSpacePermission>(() =>
+    getAxios()?.patch<APIResponse<WorkspaceGroupSpacePermission>>(url, payload)
+  );
+}
+
+export async function removeSpaceGroupPermission(workspaceId: string, spaceId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/group/${groupId}`;
 
   return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
 }

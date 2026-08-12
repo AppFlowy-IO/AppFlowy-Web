@@ -1370,6 +1370,17 @@ export interface SpacePermissionSettings {
   security: SpaceSecuritySettings;
 }
 
+export interface StructuredSpace {
+  view_id: string;
+}
+
+export interface UpdateStructuredSpacePayload {
+  name?: string;
+  space_icon?: string;
+  space_icon_color?: string;
+  permission?: SpacePermissionSettings;
+}
+
 export interface SpacePermissionResponse {
   space_id: string;
   permission: SpacePermissionSettings;
@@ -1815,8 +1826,11 @@ export interface ViewComponentProps {
 export interface CreatePagePayload {
   layout: ViewLayout;
   name?: string;
+  page_data?: unknown;
+  /** Use a caller-generated view ID. The backend generates one when omitted. */
+  view_id?: string;
   /** Insert the new page after this sibling. When omitted the backend prepends. */
-  prev_view_id?: string;
+  prev_view_id?: string | null;
 }
 
 export interface CreatePageResponse {
@@ -1923,11 +1937,7 @@ export interface CreateSpacePayload {
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
 }
 
-export interface CreateSpaceInitialPagePayload extends Omit<CreatePagePayload, 'prev_view_id'> {
-  page_data?: unknown;
-  view_id?: string;
-  prev_view_id?: string | null;
-}
+export type CreateSpaceInitialPagePayload = CreatePagePayload;
 
 export interface CreateSpaceWithInitialPagePayload extends CreateSpacePayload {
   initial_page: CreateSpaceInitialPagePayload;

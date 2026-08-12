@@ -6,7 +6,6 @@ import {
   AccessLevel,
   CreatePagePayload,
   SpaceInvitePolicy,
-  SpacePermission,
   SpacePermissionSettings,
   SpaceSidebarEditPolicy,
   SpaceVisibility,
@@ -64,7 +63,6 @@ function CreateSpaceModal({
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
         permission: createSpacePermissionSettings(spaceVisibility),
-        space_permission: spaceVisibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public,
       };
 
       if (initialPage) {

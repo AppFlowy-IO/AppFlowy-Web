@@ -91,7 +91,7 @@ export interface AppOperationsContextType {
   // ── Space operations ───────────────────────────────────────────────
   /** Create a new workspace space (top-level folder). */
   createSpace?: (payload: CreateSpacePayload) => Promise<string>;
-  /** Create a new workspace space and first page atomically. */
+  /** Create a new workspace space and first page. */
   createSpaceWithInitialPage?: (
     payload: CreateSpaceWithInitialPagePayload
   ) => Promise<CreateSpaceWithInitialPageResponse>;

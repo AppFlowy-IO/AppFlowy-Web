@@ -1,4 +1,5 @@
 import { omit } from 'lodash-es';
+import { v4 as uuidv4 } from 'uuid';
 
 import {
   CreateDatabaseViewPayload,
@@ -20,7 +21,7 @@ import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from 
 export async function addAppPage(
   workspaceId: string,
   parentViewId: string,
-  { layout, name, prev_view_id }: CreatePagePayload
+  { layout, name, page_data, view_id, prev_view_id }: CreatePagePayload
 ) {
   const url = `/api/workspace/${workspaceId}/page-view`;
 
@@ -31,6 +32,8 @@ export async function addAppPage(
       parent_view_id: parentViewId,
       layout,
       name,
+      page_data,
+      view_id,
       prev_view_id,
     })
   );
@@ -146,11 +149,59 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 }
 
 export async function createSpaceWithInitialPage(workspaceId: string, payload: CreateSpaceWithInitialPagePayload) {
+  if (payload.permission) {
+    // The legacy /v2/space endpoint only understands binary public/private
+    // permissions. Compose the structured endpoints instead so richer ACLs are
+    // never silently downgraded. This is compensating, not server-transactional.
+    const generatedSpaceId = payload.view_id === undefined;
+    const requestedSpaceId = payload.view_id ?? uuidv4();
+    const { initial_page, ...spacePayload } = payload;
+    let spaceId: string;
+
+    try {
+      spaceId = await createSpace(workspaceId, {
+        ...spacePayload,
+        view_id: requestedSpaceId,
+      });
+    } catch (error) {
+      // A transport failure can happen after the server commits. Because the
+      // client generated a fresh ID, a best-effort trash operation also covers
+      // that ambiguous outcome without risking a caller-owned existing space.
+      if (generatedSpaceId) await removePartiallyCreatedSpace(workspaceId, requestedSpaceId, false);
+      throw error;
+    }
+
+    try {
+      const page = await addAppPage(workspaceId, spaceId, initial_page);
+
+      return {
+        space: { view_id: spaceId },
+        page,
+      };
+    } catch (error) {
+      if (generatedSpaceId) await removePartiallyCreatedSpace(workspaceId, spaceId, true);
+      throw error;
+    }
+  }
+
   const url = `/api/workspace/${workspaceId}/v2/space`;
 
   return executeAPIRequest<CreateSpaceWithInitialPageResponse>(() =>
     getAxios()?.post<APIResponse<CreateSpaceWithInitialPageResponse>>(url, payload)
   );
+}
+
+async function removePartiallyCreatedSpace(workspaceId: string, spaceId: string, permanently: boolean) {
+  try {
+    await moveToTrash(workspaceId, spaceId);
+    if (permanently) await deleteTrash(workspaceId, spaceId);
+  } catch (cleanupError) {
+    Log.error('[createSpaceWithInitialPage] Failed to clean up partially created structured space', {
+      workspaceId,
+      spaceId,
+      cleanupError,
+    });
+  }
 }
 
 export async function updateSpace(workspaceId: string, payload: UpdateSpacePayload) {

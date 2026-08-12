@@ -231,6 +231,44 @@ Then('the share invite suggestions show the temporary share-menu group', async (
   await expect(shareInviteSuggestion(page, group.name)).toBeVisible({ timeout: 15000 });
 });
 
+When('I tag seeded spm0622 {string} in the share invite input', async ({ page }, accountAliasValue: string) => {
+  const email = spmAccountEmail(accountAliasValue);
+  const input = inviteInput(page);
+
+  await expect(input).toBeVisible({ timeout: 15000 });
+  await expect.poll(async () => input.evaluate((element) => (element as HTMLInputElement).readOnly)).toBe(false);
+  await input.fill(email);
+  await shareInviteSuggestion(page, email).click();
+  await expect(input).toHaveValue('', { timeout: 15000 });
+});
+
+When('I tag the temporary share-menu group in the share invite input', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const input = inviteInput(page);
+
+  await expect(input).toBeVisible({ timeout: 15000 });
+  await input.fill(group.name);
+  await shareInviteSuggestion(page, group.name).click();
+  await expect(ShareSelectors.emailTagInput(page).getByText(group.name, { exact: true })).toBeVisible({
+    timeout: 15000,
+  });
+});
+
+When('I send the share panel invites', async ({ page }) => {
+  await expect(ShareSelectors.inviteButton(page)).toBeEnabled({ timeout: 15000 });
+  await ShareSelectors.inviteButton(page).click();
+});
+
+Then(
+  'the share panel shows shared person {string} with {string}',
+  async ({ page }, email: string, accessText: string) => {
+    const row = sharePersonRow(page, email);
+
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.getByText(accessText, { exact: true }).first()).toBeVisible();
+  }
+);
+
 When('I invite the temporary share-menu group from the share panel', async ({ page }) => {
   const group = requireTemporaryGroup(page);
 
@@ -333,10 +371,19 @@ function shareGroupRow(page: Page, groupName: string) {
   return ShareSelectors.sharePopover(page).locator('.group').filter({ hasText: groupName }).first();
 }
 
-function shareInviteSuggestion(page: Page, groupName: string) {
-  return page.locator('[data-slot="popover-content"]').filter({ hasText: groupName }).last().getByText(groupName, {
-    exact: true,
-  });
+function sharePersonRow(page: Page, email: string) {
+  return ShareSelectors.sharePopover(page).locator('.group').filter({ hasText: email }).first();
+}
+
+function shareInviteSuggestion(page: Page, text: string) {
+  return page
+    .locator('[data-slot="popover-content"]')
+    .filter({ hasText: text })
+    .last()
+    .getByText(text, {
+      exact: true,
+    })
+    .first();
 }
 
 async function openTemporaryPage(page: Page, workspaceId: string, viewId: string, pageTitle: string) {

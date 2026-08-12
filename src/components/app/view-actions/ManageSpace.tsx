@@ -1,6 +1,5 @@
-import type { TFunction } from 'i18next';
 import { ChevronDown, Globe2, LockKeyhole, Shield, Users } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -10,14 +9,14 @@ import {
   SpaceInvitePolicy,
   SpaceMember,
   SpaceMemberRole,
-  SpacePermission,
   SpacePermissionSettings,
   SpaceSidebarEditPolicy,
   SpaceVisibility,
+  WorkspaceGroupSpacePermission,
   WorkspaceMember,
 } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
-import { useAppOperations, useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
@@ -40,6 +39,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { getErrorMessage } from '@/utils/errors';
 
+import type { TFunction } from 'i18next';
+import type { KeyboardEvent } from 'react';
+
 type ManageSpaceTab = 'general' | 'members';
 
 const ACCESS_OPTIONS = [
@@ -47,6 +49,13 @@ const ACCESS_OPTIONS = [
   AccessLevel.ReadAndComment,
   AccessLevel.ReadAndWrite,
   AccessLevel.FullAccess,
+];
+
+const VISIBILITY_OPTIONS = [
+  SpaceVisibility.Open,
+  SpaceVisibility.Closed,
+  SpaceVisibility.Private,
+  SpaceVisibility.Default,
 ];
 
 const MUTABLE_MEMBER_SOURCES = new Set(['manual']);
@@ -73,15 +82,18 @@ function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings 
 
 function normalizePermissionSettings(permission: SpacePermissionSettings, isPrivate: boolean): SpacePermissionSettings {
   const fallback = defaultPermissionSettings(isPrivate);
+  const visibility = permission.visibility ?? fallback.visibility;
+  const everyoneElseAccessLevel =
+    permission.everyone_else_access_level === undefined
+      ? fallback.everyone_else_access_level
+      : permission.everyone_else_access_level;
 
   return {
-    visibility: permission.visibility ?? fallback.visibility,
+    visibility,
     owner_access_level: permission.owner_access_level ?? fallback.owner_access_level,
     member_default_access_level: permission.member_default_access_level ?? fallback.member_default_access_level,
     everyone_else_access_level:
-      permission.everyone_else_access_level === undefined
-        ? fallback.everyone_else_access_level
-        : permission.everyone_else_access_level,
+      visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private ? null : everyoneElseAccessLevel,
     invite_policy: permission.invite_policy ?? fallback.invite_policy,
     sidebar_edit_policy: permission.sidebar_edit_policy ?? fallback.sidebar_edit_policy,
     invite_link_enabled: permission.invite_link_enabled ?? fallback.invite_link_enabled,
@@ -90,10 +102,6 @@ function normalizePermissionSettings(permission: SpacePermissionSettings, isPriv
       ...permission.security,
     },
   };
-}
-
-function legacyPermissionFromVisibility(visibility: SpaceVisibility): SpacePermission {
-  return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
 }
 
 function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction): string {
@@ -151,14 +159,17 @@ function memberInitial(member: SpaceMember, t: TFunction): string {
   return displayNameForMember(member, t).slice(0, 1).toUpperCase();
 }
 
-function matchesMemberSearch(member: SpaceMember, search: string, t: TFunction): boolean {
-  if (!search) return true;
-  const normalized = search.trim().toLowerCase();
+function matchesMemberSearch(member: SpaceMember, normalizedSearch: string, t: TFunction): boolean {
+  if (!normalizedSearch) return true;
 
   return (
-    displayNameForMember(member, t).toLowerCase().includes(normalized) ||
-    (member.email || '').toLowerCase().includes(normalized)
+    displayNameForMember(member, t).toLowerCase().includes(normalizedSearch) ||
+    (member.email || '').toLowerCase().includes(normalizedSearch)
   );
+}
+
+function matchesGroupSearch(group: WorkspaceGroupSpacePermission, normalizedSearch: string): boolean {
+  return !normalizedSearch || group.name.toLowerCase().includes(normalizedSearch);
 }
 
 function AccessDropdown({
@@ -211,18 +222,24 @@ function VisibilityDropdown({
   onChange: (value: SpaceVisibility) => void;
 }) {
   const { t } = useTranslation();
-  const options = [SpaceVisibility.Open, SpaceVisibility.Closed, SpaceVisibility.Private, SpaceVisibility.Default];
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type='button' variant='outline' size='sm' disabled={disabled} className='min-w-[140px] justify-between'>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={disabled}
+          className='min-w-[140px] justify-between'
+          data-testid='manage-space-visibility-trigger'
+        >
           {visibilityLabel(value, t)}
           <ChevronDown className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-[320px]'>
-        {options.map((option) => (
+        {VISIBILITY_OPTIONS.map((option) => (
           <DropdownMenuItem key={option} onSelect={() => onChange(option)} className='items-start justify-between gap-4'>
             <div className='flex flex-col gap-0.5'>
               <span>{visibilityLabel(option, t)}</span>
@@ -319,6 +336,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [canManageMembers, setCanManageMembers] = useState(false);
   const [canInviteMembers, setCanInviteMembers] = useState(false);
   const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([]);
+  const [spaceGroups, setSpaceGroups] = useState<WorkspaceGroupSpacePermission[]>([]);
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -327,51 +345,114 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [mutatingMemberUid, setMutatingMemberUid] = useState<string | null>(null);
+  const [mutatingGroupIds, setMutatingGroupIds] = useState<Set<string>>(() => new Set());
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [memberSearch, setMemberSearch] = useState('');
-  const { updateSpace } = useAppOperations();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const spaceRequestRef = useRef({
+    generation: 0,
+    memberRequestSequence: 0,
+    open,
+    workspaceId,
+    viewId,
+  });
 
   useEffect(() => {
-    if (!view || !open) return;
+    const currentRequestScope = spaceRequestRef.current;
+
+    spaceRequestRef.current = {
+      generation: currentRequestScope.generation + 1,
+      memberRequestSequence: currentRequestScope.memberRequestSequence + 1,
+      open,
+      workspaceId,
+      viewId,
+    };
+  }, [open, viewId, workspaceId]);
+
+  // Always hold the latest view without making it an effect dependency: `view`
+  // is recomputed whenever the outline changes identity (realtime sync, a
+  // sibling rename, expand/collapse), and we must not reset the form mid-edit.
+  const viewRef = useRef(view);
+
+  useEffect(() => {
+    viewRef.current = view;
+  });
+
+  // Seed the form only when the modal opens or the target space changes — both
+  // primitives — reading the current view snapshot from the ref.
+  useEffect(() => {
+    if (!open) return;
+    const currentView = viewRef.current;
+
+    if (!currentView) return;
     setTab('general');
-    setSpaceName(view.name || '');
-    setSpaceIcon(view.extra?.space_icon || '');
-    setSpaceIconColor(view.extra?.space_icon_color || '');
-    setPermissionSettings(defaultPermissionSettings(Boolean(view.is_private)));
+    setSpaceName(currentView.name || '');
+    setSpaceIcon(currentView.extra?.space_icon || '');
+    setSpaceIconColor(currentView.extra?.space_icon_color || '');
+    setPermissionSettings(defaultPermissionSettings(Boolean(currentView.is_private)));
     setCanManageSpace(false);
     setCanManageMembers(false);
     setCanInviteMembers(false);
     setPermissionLoaded(false);
     setPermissionLoadFailed(false);
     setSpaceMembersLoaded(false);
+    setLoadingMembers(false);
     setSpaceMembers([]);
+    setSpaceGroups([]);
     setWorkspaceMembers([]);
+    setMutatingGroupIds(new Set());
     setMemberSearch('');
     inputRef.current = null;
-  }, [open, view, viewId]);
+  }, [open, viewId]);
 
   const refreshSpaceMembers = useCallback(async (): Promise<boolean> => {
     if (!workspaceId || !viewId) return false;
+    const requestScope = spaceRequestRef.current;
+
+    if (!requestScope.open || requestScope.workspaceId !== workspaceId || requestScope.viewId !== viewId) return false;
+
+    const requestSequence = requestScope.memberRequestSequence + 1;
+    const requestGeneration = requestScope.generation;
+
+    spaceRequestRef.current = {
+      ...requestScope,
+      memberRequestSequence: requestSequence,
+    };
+
+    const isCurrentRequest = () => {
+      const current = spaceRequestRef.current;
+
+      return (
+        current.open &&
+        current.workspaceId === workspaceId &&
+        current.viewId === viewId &&
+        current.generation === requestGeneration &&
+        current.memberRequestSequence === requestSequence
+      );
+    };
+
     setLoadingMembers(true);
     try {
       const result = await WorkspaceService.getSpaceMembers(workspaceId, viewId);
 
+      if (!isCurrentRequest()) return false;
       setSpaceMembers(result.members || []);
+      setSpaceGroups(result.groups || []);
       setSpaceMembersLoaded(true);
       return true;
     } catch (error) {
+      if (!isCurrentRequest()) return false;
       setSpaceMembersLoaded(false);
       toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
       return false;
     } finally {
-      setLoadingMembers(false);
+      if (isCurrentRequest()) setLoadingMembers(false);
     }
   }, [t, workspaceId, viewId]);
 
   useEffect(() => {
-    if (!open || !workspaceId || !view) return;
+    if (!open || !workspaceId || !viewRef.current) return;
     let cancelled = false;
 
     setLoadingSettings(true);
@@ -385,13 +466,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         const permission = await WorkspaceService.getSpacePermission(workspaceId, viewId);
 
         if (cancelled) return;
-        setPermissionSettings(normalizePermissionSettings(permission.permission, Boolean(view.is_private)));
+        setPermissionSettings(normalizePermissionSettings(permission.permission, Boolean(viewRef.current?.is_private)));
         setCanManageSpace(permission.can_manage_space);
         setCanManageMembers(permission.can_manage_members);
         setCanInviteMembers(permission.can_invite_members);
         setPermissionLoaded(true);
         shouldLoadWorkspaceMembers = permission.can_manage_members || permission.can_invite_members;
-        shouldLoadSpaceMembers = permission.can_manage_members || permission.can_invite_members;
+        shouldLoadSpaceMembers = permission.can_manage_members;
       } catch (error) {
         if (!cancelled) {
           setCanManageSpace(false);
@@ -401,6 +482,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           setPermissionLoadFailed(true);
           setSpaceMembersLoaded(false);
           setSpaceMembers([]);
+          setSpaceGroups([]);
           setWorkspaceMembers([]);
           toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
         }
@@ -425,6 +507,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         } else if (!cancelled) {
           setSpaceMembersLoaded(false);
           setSpaceMembers([]);
+          setSpaceGroups([]);
         }
       };
 
@@ -434,11 +517,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     return () => {
       cancelled = true;
     };
-  }, [open, refreshSpaceMembers, t, view, viewId, workspaceId]);
+  }, [open, refreshSpaceMembers, t, viewId, workspaceId]);
+
+  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
 
   const visibleSpaceMembers = useMemo(
-    () => spaceMembers.filter((member) => matchesMemberSearch(member, memberSearch, t)),
-    [memberSearch, spaceMembers, t]
+    () => spaceMembers.filter((member) => matchesMemberSearch(member, normalizedMemberSearch, t)),
+    [normalizedMemberSearch, spaceMembers, t]
+  );
+  const visibleSpaceGroups = useMemo(
+    () => spaceGroups.filter((group) => matchesGroupSearch(group, normalizedMemberSearch)),
+    [normalizedMemberSearch, spaceGroups]
   );
 
   const explicitMemberUids = useMemo(() => new Set(spaceMembers.map((member) => member.uid)), [spaceMembers]);
@@ -452,8 +541,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     [spaceMembers]
   );
 
-  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
-
   const addableWorkspaceMembers = useAddableWorkspaceMembers({
     workspaceMembers,
     search: memberSearch,
@@ -461,7 +548,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     excludedEmails: explicitMemberEmails,
   });
   const showCurrentSpaceMemberList =
-    !normalizedMemberSearch || visibleSpaceMembers.length > 0 || addableWorkspaceMembers.length === 0;
+    !normalizedMemberSearch ||
+    visibleSpaceMembers.length > 0 ||
+    visibleSpaceGroups.length > 0 ||
+    addableWorkspaceMembers.length === 0;
 
   const updatePermission = useCallback((patch: Partial<SpacePermissionSettings>) => {
     setPermissionSettings((current) => ({
@@ -474,23 +564,22 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     }));
   }, []);
 
-  const handleVisibilityChange = useCallback(
-    (visibility: SpaceVisibility) => {
-      const nextPatch: Partial<SpacePermissionSettings> = { visibility };
+  const handleVisibilityChange = useCallback((visibility: SpaceVisibility) => {
+    setPermissionSettings((current) => {
+      const next = { ...current, visibility };
 
-      if (visibility === SpaceVisibility.Private) {
-        nextPatch.everyone_else_access_level = null;
-      } else if (permissionSettings.everyone_else_access_level === null) {
-        nextPatch.everyone_else_access_level = AccessLevel.ReadOnly;
+      if (visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private) {
+        next.everyone_else_access_level = null;
+      } else if (current.everyone_else_access_level === null) {
+        next.everyone_else_access_level = AccessLevel.ReadOnly;
       }
 
-      updatePermission(nextPatch);
-    },
-    [permissionSettings.everyone_else_access_level, updatePermission]
-  );
+      return next;
+    });
+  }, []);
 
   const handleSave = useCallback(async () => {
-    if (!updateSpace || !workspaceId) return;
+    if (!workspaceId) return;
     if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canManageSpace) {
       if (permissionLoadFailed) {
         toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
@@ -508,16 +597,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
     setSaving(true);
     try {
-      await updateSpace({
-        view_id: viewId,
+      await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
         name: trimmedName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
-        space_permission: legacyPermissionFromVisibility(permissionSettings.visibility),
+        permission: permissionSettings,
       });
-      const response = await WorkspaceService.updateSpacePermission(workspaceId, viewId, permissionSettings);
 
-      setPermissionSettings(normalizePermissionSettings(response.permission, Boolean(view?.is_private)));
       toast.success(t('space.success.updateSpace'));
       onClose();
     } catch (error) {
@@ -537,8 +623,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     spaceIconColor,
     spaceName,
     t,
-    updateSpace,
-    view?.is_private,
     viewId,
     workspaceId,
   ]);
@@ -547,14 +631,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     async (workspaceMember: WorkspaceMember) => {
       const uid = getWorkspaceMemberUid(workspaceMember);
 
-      if (
-        !uid ||
-        !permissionLoaded ||
-        permissionLoadFailed ||
-        !spaceMembersLoaded ||
-        !canInviteMembers ||
-        !workspaceId
-      ) {
+      if (!uid || !permissionLoaded || permissionLoadFailed || !canInviteMembers || !workspaceId) {
         return;
       }
 
@@ -565,7 +642,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           role: SpaceMemberRole.Member,
           access_level: permissionSettings.member_default_access_level,
         });
-        await refreshSpaceMembers();
+        if (canManageMembers) await refreshSpaceMembers();
         toast.success(t('space.permissionManager.addSpaceMemberSuccess'));
       } catch (error) {
         toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
@@ -575,11 +652,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canInviteMembers,
+      canManageMembers,
       permissionLoadFailed,
       permissionLoaded,
       permissionSettings.member_default_access_level,
       refreshSpaceMembers,
-      spaceMembersLoaded,
       t,
       viewId,
       workspaceId,
@@ -646,7 +723,119 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     [canManageMembers, permissionLoadFailed, permissionLoaded, refreshSpaceMembers, t, viewId, workspaceId]
   );
 
-  const handleMemberSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
+  const setGroupMutationPending = useCallback((groupId: string, pending: boolean) => {
+    setMutatingGroupIds((current) => {
+      const next = new Set(current);
+
+      if (pending) {
+        next.add(groupId);
+      } else {
+        next.delete(groupId);
+      }
+
+      return next;
+    });
+  }, []);
+
+  const handleUpdateGroupRole = useCallback(
+    async (group: WorkspaceGroupSpacePermission, role: SpaceMemberRole) => {
+      if (group.role === role || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) {
+        return;
+      }
+
+      const requestGeneration = spaceRequestRef.current.generation;
+      const accessLevel =
+        role === SpaceMemberRole.Owner ? AccessLevel.FullAccess : permissionSettings.member_default_access_level;
+
+      setGroupMutationPending(group.group_id, true);
+      try {
+        const updatedGroup = await WorkspaceService.updateSpaceGroupPermission(workspaceId, viewId, group.group_id, {
+          role,
+          access_level: accessLevel,
+        });
+        const currentScope = spaceRequestRef.current;
+
+        if (
+          currentScope.generation !== requestGeneration ||
+          !currentScope.open ||
+          currentScope.workspaceId !== workspaceId ||
+          currentScope.viewId !== viewId
+        ) {
+          return;
+        }
+
+        setSpaceGroups((current) =>
+          current.map((currentGroup) => (currentGroup.group_id === updatedGroup.group_id ? updatedGroup : currentGroup))
+        );
+        await refreshSpaceMembers();
+      } catch (error) {
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          toast.error(getErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed')));
+        }
+      } finally {
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          setGroupMutationPending(group.group_id, false);
+        }
+      }
+    },
+    [
+      canManageMembers,
+      permissionLoadFailed,
+      permissionLoaded,
+      permissionSettings.member_default_access_level,
+      refreshSpaceMembers,
+      setGroupMutationPending,
+      t,
+      viewId,
+      workspaceId,
+    ]
+  );
+
+  const handleRemoveGroup = useCallback(
+    async (group: WorkspaceGroupSpacePermission) => {
+      if (!permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
+      const requestGeneration = spaceRequestRef.current.generation;
+
+      setGroupMutationPending(group.group_id, true);
+      try {
+        await WorkspaceService.removeSpaceGroupPermission(workspaceId, viewId, group.group_id);
+        const currentScope = spaceRequestRef.current;
+
+        if (
+          currentScope.generation !== requestGeneration ||
+          !currentScope.open ||
+          currentScope.workspaceId !== workspaceId ||
+          currentScope.viewId !== viewId
+        ) {
+          return;
+        }
+
+        setSpaceGroups((current) => current.filter((currentGroup) => currentGroup.group_id !== group.group_id));
+        await refreshSpaceMembers();
+        toast.success(t('shareAction.removeGroupAccessSuccess', { group: group.name }));
+      } catch (error) {
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          toast.error(getErrorMessage(error, t('shareAction.removeAccessError')));
+        }
+      } finally {
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          setGroupMutationPending(group.group_id, false);
+        }
+      }
+    },
+    [
+      canManageMembers,
+      permissionLoadFailed,
+      permissionLoaded,
+      refreshSpaceMembers,
+      setGroupMutationPending,
+      t,
+      viewId,
+      workspaceId,
+    ]
+  );
+
+  const handleMemberSearchKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') event.stopPropagation();
   }, []);
 
@@ -655,7 +844,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const settingsDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
   const membersDisabled =
     loadingMembers || !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canManageMembers;
-  const addMembersDisabled = !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canInviteMembers;
+  const addMembersDisabled = !permissionLoaded || permissionLoadFailed || !canInviteMembers;
 
   return (
     <NormalModal
@@ -794,10 +983,15 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     icon={<Globe2 className='h-5 w-5 text-icon-primary' />}
                     title={t('space.permissionManager.everyoneAtWorkspace', { workspaceName: currentWorkspaceName })}
                     description={t('space.permissionManager.everyoneDescription')}
+                    testId='manage-space-workspace-fallback-row'
                     trailing={
                       <AccessDropdown
                         value={permissionSettings.everyone_else_access_level}
-                        disabled={settingsDisabled || permissionSettings.visibility === SpaceVisibility.Private}
+                        disabled={
+                          settingsDisabled ||
+                          permissionSettings.visibility === SpaceVisibility.Closed ||
+                          permissionSettings.visibility === SpaceVisibility.Private
+                        }
                         includeNoAccess
                         onChange={(value) => updatePermission({ everyone_else_access_level: value })}
                       />
@@ -831,7 +1025,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                 onAddMember={(member) => void handleAddMember(member)}
               />
 
-              {showCurrentSpaceMemberList && (
+              {canManageMembers && showCurrentSpaceMemberList && (
                 <>
                   <div
                     className='grid items-center gap-3 border-b border-border-primary pb-2 text-sm font-medium text-text-secondary'
@@ -841,11 +1035,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     <span className='text-right'>{t('space.permissionManager.role')}</span>
                   </div>
 
-                  {loadingMembers && spaceMembers.length === 0 ? (
+                  {loadingMembers && spaceMembers.length === 0 && spaceGroups.length === 0 ? (
                     <div className='flex justify-center py-8'>
                       <Progress />
                     </div>
-                  ) : visibleSpaceMembers.length === 0 ? (
+                  ) : visibleSpaceMembers.length === 0 && visibleSpaceGroups.length === 0 ? (
                     <div className='py-8 text-center text-sm text-text-secondary'>
                       {t('space.permissionManager.noSpaceMembersFound')}
                     </div>
@@ -887,6 +1081,41 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                           </div>
                         );
                       })}
+                      {visibleSpaceGroups.map((group) => (
+                        <div
+                          key={`group:${group.group_id}`}
+                          data-testid={`space-group-row-${group.group_id}`}
+                          className='grid items-center gap-3 border-b border-border-primary py-3'
+                          style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
+                        >
+                          <div className='flex min-w-0 items-center gap-3'>
+                            <Avatar size='md'>
+                              <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+                            </Avatar>
+                            <div className='min-w-0'>
+                              <div className='flex min-w-0 items-center gap-2'>
+                                <div className='truncate font-medium text-text-primary'>{group.name}</div>
+                                <span className='rounded-full bg-fill-content-hover px-2 py-[1px] text-xs text-text-secondary'>
+                                  {t('shareAction.group')}
+                                </span>
+                              </div>
+                              <div className='truncate text-sm text-text-secondary'>
+                                {t('shareAction.groupMembersCount', { count: group.member_count })}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className='flex justify-end'>
+                            <RoleDropdown
+                              value={group.role}
+                              disabled={membersDisabled || mutatingGroupIds.has(group.group_id)}
+                              canRemove={canManageMembers}
+                              onChange={(role) => void handleUpdateGroupRole(group, role)}
+                              onRemove={() => void handleRemoveGroup(group)}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </>

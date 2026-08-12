@@ -56,6 +56,12 @@ interface InviteGuestProps {
   canGrantFullAccess: boolean;
 }
 
+interface InviteSubmission {
+  id: number;
+  workspaceId: string;
+  viewId: string;
+}
+
 export function InviteGuest({
   sharedPeople,
   sharedGroups,
@@ -77,6 +83,16 @@ export function InviteGuest({
   const hoveredIndexRef = useRef<number>(-1);
   const searchValueRef = useRef<string>('');
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const latestInviteTargetRef = useRef<{ workspaceId: string | undefined; viewId: string }>({
+    workspaceId: currentWorkspaceId,
+    viewId,
+  });
+  const inviteSubmissionSequenceRef = useRef(0);
+  const activeInviteSubmissionRef = useRef<InviteSubmission | null>(null);
+
+  // Keep async completion guards current during render, before effects run.
+  latestInviteTargetRef.current = { workspaceId: currentWorkspaceId, viewId };
+
   const [inviteLoading, setInviteLoading] = useState(false);
   const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>(AccessLevel.ReadOnly);
   const [accessLevelPopoverOpen, setAccessLevelPopoverOpen] = useState(false);
@@ -90,28 +106,57 @@ export function InviteGuest({
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
 
-  const loadWorkspaceGroups = useCallback(async () => {
+  useEffect(() => {
+    latestInviteTargetRef.current = { workspaceId: currentWorkspaceId, viewId };
+    inviteSubmissionSequenceRef.current += 1;
+    activeInviteSubmissionRef.current = null;
+    setEmailTags([]);
+    setSearchValue('');
+    setIsOpen(false);
+    setHoveredIndex(-1);
+    setSelectedAccessLevel(AccessLevel.ReadOnly);
+    setAccessLevelPopoverOpen(false);
+    setUpgradeModalOpen(false);
+    setInviteLoading(false);
+    hoveredIndexRef.current = -1;
+    searchValueRef.current = '';
+
+    return () => {
+      inviteSubmissionSequenceRef.current += 1;
+      activeInviteSubmissionRef.current = null;
+      latestInviteTargetRef.current = { workspaceId: undefined, viewId: '' };
+    };
+  }, [currentWorkspaceId, viewId]);
+
+  useEffect(() => {
     if (!currentWorkspaceId || canNotInvite) {
       setWorkspaceGroups([]);
       return;
     }
 
+    // Ignore out-of-order responses after a workspace switch or unmount.
+    let cancelled = false;
+
     setIsLoadingGroups(true);
-    try {
-      const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
+    void (async () => {
+      try {
+        const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
 
-      setWorkspaceGroups(result.groups);
-    } catch (error) {
-      console.error(error);
-      setWorkspaceGroups([]);
-    } finally {
-      setIsLoadingGroups(false);
-    }
+        if (!cancelled) setWorkspaceGroups(result.groups);
+      } catch (error) {
+        if (!cancelled) {
+          console.error(error);
+          setWorkspaceGroups([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoadingGroups(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [canNotInvite, currentWorkspaceId]);
-
-  useEffect(() => {
-    void loadWorkspaceGroups();
-  }, [loadWorkspaceGroups]);
 
   // Clamp during render: a selection made before permissions resolved must
   // never let a user submit a level they cannot grant.
@@ -165,14 +210,13 @@ export function InviteGuest({
 
   // Filter mentionable users based on search and exclude already shared people
   const filteredMentionable = useMemo(() => {
-    // Get emails of people already shared
+    // Get emails of people already shared or already tagged in the input
     const sharedEmails = new Set(sharedPeople.map((person) => person.email));
+    const taggedEmails = new Set(emailTags.filter((tag) => tag.kind !== 'group').map((tag) => tag.email));
 
     // Filter out already shared people
     const unsharedMentionable = mentionable.filter((person) => {
-      return (
-        !sharedEmails.has(person.email) && !emailTags.some((tag) => tag.kind !== 'group' && tag.email === person.email)
-      );
+      return !sharedEmails.has(person.email) && !taggedEmails.has(person.email);
     });
 
     // Then filter by search query
@@ -519,50 +563,95 @@ export function InviteGuest({
     if (!currentWorkspaceId) return;
     if (emailTags.length === 0) return;
 
-    const emails = emailTags.filter((tag) => tag.kind !== 'group').map((tag) => tag.email);
-    const groupIds = emailTags
-      .map((tag) => (tag.kind === 'group' ? tag.groupId : null))
-      .filter((groupId): groupId is string => Boolean(groupId));
+    const activeSubmission = activeInviteSubmissionRef.current;
 
-    if (emails.length === 0 && groupIds.length === 0) return;
+    if (activeSubmission?.workspaceId === currentWorkspaceId && activeSubmission.viewId === viewId) {
+      return;
+    }
+
+    const pendingInvites = emailTags.filter((tag) => tag.kind !== 'group' || Boolean(tag.groupId));
+
+    if (pendingInvites.length === 0) return;
+
+    const submission: InviteSubmission = {
+      id: ++inviteSubmissionSequenceRef.current,
+      workspaceId: currentWorkspaceId,
+      viewId,
+    };
+    const isCurrentSubmission = () => {
+      const latestTarget = latestInviteTargetRef.current;
+
+      return (
+        activeInviteSubmissionRef.current?.id === submission.id &&
+        latestTarget.workspaceId === submission.workspaceId &&
+        latestTarget.viewId === submission.viewId
+      );
+    };
+
+    activeInviteSubmissionRef.current = submission;
 
     try {
       setInviteLoading(true);
-      if (emails.length > 0) {
-        await AccessService.sharePageTo(currentWorkspaceId, viewId, emails, effectiveAccessLevel);
+      const results = await Promise.allSettled(
+        pendingInvites.map(async (tag) => {
+          if (tag.kind === 'group' && tag.groupId) {
+            await AccessService.sharePageToGroup(currentWorkspaceId, viewId, tag.groupId, effectiveAccessLevel);
+          } else {
+            await AccessService.sharePageTo(currentWorkspaceId, viewId, [tag.email], effectiveAccessLevel);
+          }
+
+          return tag.id;
+        })
+      );
+      const successfulTagIds = new Set(
+        results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+      );
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+
+      if (!isCurrentSubmission()) return;
+
+      if (successfulTagIds.size > 0) {
+        setEmailTags((currentTags) => currentTags.filter((tag) => !successfulTagIds.has(tag.id)));
+        setSearchValue('');
       }
 
-      if (groupIds.length > 0) {
-        await AccessService.sharePageToGroups(currentWorkspaceId, viewId, groupIds, effectiveAccessLevel);
-      }
+      if (failures.length === 0) {
+        notify.success(t('shareAction.inviteSuccess'));
+      } else {
+        const errors = failures.map(({ reason }) =>
+          typeof reason === 'object' && reason !== null
+            ? (reason as { code?: number; message?: string })
+            : { message: String(reason) }
+        );
+        const error =
+          errors.find(
+            ({ code }) =>
+              code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
+          ) ?? errors[0];
 
-      notify.success(t('shareAction.inviteSuccess'));
-      // eslint-disable-next-line
-    } catch (error: any) {
-      if (
-        error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
-        error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
-      ) {
-        if (isAppFlowyHosted()) {
-          setUpgradeModalOpen(true);
+        if (
+          error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
+          error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
+        ) {
+          if (isAppFlowyHosted()) {
+            setUpgradeModalOpen(true);
+          } else {
+            notify.error(error.message ?? t('settings.appearance.members.inviteFailedDialogTitle'));
+          }
         } else {
-          notify.error(error.message);
+          notify.error(error.message ?? t('settings.appearance.members.inviteFailedDialogTitle'));
         }
-
-        return;
       }
 
-      notify.error(error.message);
+      if (successfulTagIds.size > 0) {
+        await onInviteSuccess();
+      }
     } finally {
-      setInviteLoading(false);
+      if (isCurrentSubmission()) {
+        activeInviteSubmissionRef.current = null;
+        setInviteLoading(false);
+      }
     }
-
-    // Clear tags after successful invite
-    setEmailTags([]);
-    setSearchValue('');
-
-    // Notify parent component to refresh the people list
-    await onInviteSuccess();
   }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, effectiveAccessLevel]);
 
   const commitCurrentSearchValue = useCallback(
@@ -633,15 +722,6 @@ export function InviteGuest({
   );
 
   const renderContent = () => {
-    // Show error if mentionable data failed to load
-    if (mentionableError) {
-      return (
-        <div className='p-4'>
-          <Label className='text-text-error'>{mentionableError}</Label>
-        </div>
-      );
-    }
-
     const hasResults = allSuggestions.length > 0;
 
     // Different label logic based on data availability and search state
@@ -659,6 +739,8 @@ export function InviteGuest({
     return (
       <div className='p-2'>
         <Label className='px-2 py-1.5'>{labelText}</Label>
+
+        {mentionableError && <Label className='block px-2 py-1.5 text-text-error'>{mentionableError}</Label>}
 
         {!hasResults && searchValue && (
           <div className='py-4 text-center text-sm text-text-tertiary'>{t('shareAction.noResults')}</div>

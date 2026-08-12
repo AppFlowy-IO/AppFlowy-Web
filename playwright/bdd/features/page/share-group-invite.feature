@@ -14,6 +14,17 @@ Feature: Share menu group invite
     When I remove the temporary share-menu group access from the share panel
     Then the temporary share-menu group is not shown in the share panel
 
+  Scenario: Owner invites a person and a group in a single send
+    Given I sign in as seeded spm0622 "owner 1"
+    When I create a temporary share-menu document page
+    And I create a temporary share-menu group
+    And I open the share panel
+    And I tag seeded spm0622 "member closed" in the share invite input
+    And I tag the temporary share-menu group in the share invite input
+    And I send the share panel invites
+    Then the share panel shows the temporary share-menu group with "Can view"
+    And the share panel shows shared person "spm0622-member-closed@appflowy.local" with "Can view"
+
   Scenario: Group member can read a private-space page shared to their group
     Given I sign in as seeded spm0622 "owner 1"
     And I create a temporary private-space share-menu page
