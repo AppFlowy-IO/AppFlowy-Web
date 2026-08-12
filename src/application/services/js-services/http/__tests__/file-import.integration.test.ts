@@ -75,7 +75,7 @@ describe('HTTP API - File Upload & Import Operations', () => {
             // Create a mock file
             const file = new File(['test content'], 'test.csv', { type: 'text/csv' });
             try {
-                const result = await APIService.createImportTask(file);
+                const result = await APIService.createImportTask(file, APIService.CreateImportTaskType.Notion);
                 expect(result).toBeDefined();
             } catch (error: any) {
                 // May fail for various reasons (file format, permissions, etc.)

@@ -33,6 +33,7 @@ import {
   signInWithUrl,
   uploadFileMultipart,
   cancelImportTask,
+  CreateImportTaskType,
   createImportTask,
   uploadImportFile,
   uploadImportFileMultipart,
@@ -526,8 +527,13 @@ export async function uploadFileWithTracking(
   }
 }
 
-export async function importFileWithUpload(file: File, onProgress: (progress: number) => void) {
-  const task = await createImportTask(file);
+export interface ImportFileWithUploadOptions {
+  taskType: CreateImportTaskType;
+  onProgress: (progress: number) => void;
+}
+
+export async function importFileWithUpload(file: File, { taskType, onProgress }: ImportFileWithUploadOptions) {
+  const task = await createImportTask(file, taskType);
 
   try {
     if (task.multipart) {

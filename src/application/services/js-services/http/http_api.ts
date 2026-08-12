@@ -154,6 +154,7 @@ export {
 
 // Import
 export {
+  CreateImportTaskType,
   createImportTask,
   uploadImportFile,
   createDatabaseCsvImportTask,
