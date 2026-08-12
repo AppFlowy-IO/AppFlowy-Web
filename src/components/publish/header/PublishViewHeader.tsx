@@ -1,4 +1,4 @@
-import { IconButton } from '@mui/material';
+import IconButton from '@mui/material/IconButton';
 import { lazy, Suspense, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 

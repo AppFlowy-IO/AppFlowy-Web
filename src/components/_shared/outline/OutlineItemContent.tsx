@@ -1,4 +1,4 @@
-import { Tooltip } from '@mui/material';
+import Tooltip from '@mui/material/Tooltip';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -33,31 +33,34 @@ function OutlineItemContent({
 
   return (
     <div
-      onClick={async() => {
-
+      onClick={async () => {
         if (
           isSpace ||
           (!item.is_published && variant === UIVariant.Publish && !isDatabaseView && !isDatabaseContainerView)
         ) {
-          setIsExpanded(prev => !prev);
+          setIsExpanded((prev) => !prev);
           return;
         }
 
         try {
-          const targetViewId =
-            variant === UIVariant.Publish ? getFirstChildView(item)?.view_id || view_id : view_id;
+          const targetViewId = variant === UIVariant.Publish ? getFirstChildView(item)?.view_id || view_id : view_id;
 
           await navigateToView?.(targetViewId);
-        } catch(e) {
+        } catch (e) {
           // do nothing
         }
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        paddingLeft: variant === 'favorite' || variant === 'recent' ? '8px' : item.children?.length ? 0 : 1.125 * (level + 1) + 'em',
+        paddingLeft:
+          variant === 'favorite' || variant === 'recent'
+            ? '8px'
+            : item.children?.length
+            ? 0
+            : 1.125 * (level + 1) + 'em',
       }}
-      className={`flex flex-1 select-none items-center pointer gap-1.5 overflow-hidden`}
+      className={`pointer flex flex-1 select-none items-center gap-1.5 overflow-hidden`}
     >
       {isSpace && extra ? (
         <SpaceIcon
@@ -72,23 +75,15 @@ function OutlineItemContent({
           </span>
         </span>
       ) : (
-        <PageIcon
-          view={item}
-          iconSize={20}
-          className={'flex !w-5 !h-5 min-w-5 text-sm items-center justify-center'}
-        />
+        <PageIcon view={item} iconSize={20} className={'flex !h-5 !w-5 min-w-5 items-center justify-center text-sm'} />
       )}
 
-      <Tooltip
-        title={name}
-        disableInteractive={true}
-      >
-        <div data-testid={isSpace ? 'space-name' : 'page-name'} className={'flex-1 truncate'}>{name || t('menuAppHeader.defaultNewPageName')}</div>
+      <Tooltip title={name} disableInteractive={true}>
+        <div data-testid={isSpace ? 'space-name' : 'page-name'} className={'flex-1 truncate'}>
+          {name || t('menuAppHeader.defaultNewPageName')}
+        </div>
       </Tooltip>
-      {hovered && variant === UIVariant.Publish && !isDatabaseView && <PublishIcon
-        variant={variant}
-        view={item}
-      />}
+      {hovered && variant === UIVariant.Publish && !isDatabaseView && <PublishIcon variant={variant} view={item} />}
     </div>
   );
 }

@@ -22,7 +22,7 @@ import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { Database } from '@/components/database';
-import { useContainerVisibleViewIds } from '@/components/database/hooks';
+import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
 import { findParentView, findView } from '@/components/_shared/outline/utils';
 import { cn } from '@/lib/utils';
 
@@ -127,6 +127,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
 
     return views ? Array.from(views.keys()) : [];
   }, [database]);
+  const tabViewId = search.get('v');
 
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
@@ -137,11 +138,11 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   const activeViewId = useMemo(() => {
     return resolveActiveDatabaseViewId({
       databasePageId,
-      tabViewId: search.get('v'),
+      tabViewId,
       visibleViewIds,
       existingViewIds,
     });
-  }, [search, databasePageId, visibleViewIds, existingViewIds]);
+  }, [databasePageId, existingViewIds, tabViewId, visibleViewIds]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
