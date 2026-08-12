@@ -127,6 +127,7 @@ interface InlineCommentComposeContextValue {
   active: boolean;
   pendingComment: PendingInlineComment | null;
   cancelPendingComment: () => void;
+  isEditorRegistered: (editor: YjsEditor) => boolean;
   startComment: (editor: YjsEditor, at?: Range) => boolean;
   submitPendingComment: (content: string) => Promise<void>;
 }
@@ -160,6 +161,7 @@ interface InlineCommentContextValue {
   deleteComment: (commentId: string) => Promise<void>;
   focusComment: (commentId: string) => void;
   handleEditorChange: (editor: YjsEditor) => void;
+  isEditorRegistered: (editor: YjsEditor) => boolean;
   openCommentFromAnchor: (commentIds: readonly string[]) => void;
   registerEditor: (editor: YjsEditor, options: RegisterInlineCommentEditorOptions) => () => void;
   reload: (showLoading?: boolean) => Promise<InlineComment[]>;
@@ -430,6 +432,8 @@ export function InlineCommentProvider({
     pendingCommentRef.current = null;
     setPendingComment(null);
   }, []);
+
+  const isEditorRegistered = useCallback((editor: YjsEditor) => editorRef.current === editor, []);
 
   const startComment = useCallback(
     (editor: YjsEditor, at?: Range) => {
@@ -897,6 +901,7 @@ export function InlineCommentProvider({
       deleteComment,
       focusComment,
       handleEditorChange,
+      isEditorRegistered,
       openCommentFromAnchor,
       registerEditor,
       reload,
@@ -921,6 +926,7 @@ export function InlineCommentProvider({
       focusComment,
       focusedCommentId,
       handleEditorChange,
+      isEditorRegistered,
       isPanelOpen,
       loading,
       mutatingCommentIds,
@@ -1004,11 +1010,12 @@ export function InlineCommentProvider({
     () => ({
       active,
       cancelPendingComment,
+      isEditorRegistered,
       pendingComment,
       startComment,
       submitPendingComment,
     }),
-    [active, cancelPendingComment, pendingComment, startComment, submitPendingComment]
+    [active, cancelPendingComment, isEditorRegistered, pendingComment, startComment, submitPendingComment]
   );
 
   return (

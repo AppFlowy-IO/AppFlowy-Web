@@ -6,6 +6,7 @@ import {
   InlineCommentsPage,
   InlineCommentUser,
 } from '@/application/inline-comment';
+import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
@@ -67,6 +68,14 @@ export function mapInlineComment(comment: InlineCommentResponse): InlineComment 
 
 function getInlineCommentUrl(workspaceId: string, viewId: string) {
   return `/api/workspace/${workspaceId}/document/${viewId}/inline-comment`;
+}
+
+function getInlineCommentMutationConfig() {
+  return {
+    headers: {
+      'device-id': getOrCreateDeviceId(),
+    },
+  };
 }
 
 function getCreateInlineCommentPayload(params: CreateInlineCommentParams) {
@@ -145,7 +154,7 @@ export async function createInlineComment(
 
   try {
     const response = await executeAPIRequest<{ comment_id: string }>(() =>
-      getAxios()?.post<APIResponse<{ comment_id: string }>>(`${url}/v2`, payload)
+      getAxios()?.post<APIResponse<{ comment_id: string }>>(`${url}/v2`, payload, getInlineCommentMutationConfig())
     );
 
     return response.comment_id;
@@ -156,7 +165,7 @@ export async function createInlineComment(
     // 404/405 proves v2 did not execute, so retrying the legacy endpoint cannot
     // duplicate a committed comment. Timeouts and 5xx errors never fall back;
     // the caller reconciles those ambiguous outcomes through the comment list.
-    await executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, payload));
+    await executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, payload, getInlineCommentMutationConfig()));
     return null;
   }
 }
@@ -172,10 +181,14 @@ export async function applyInlineCommentAnchorUpdate(
   params: ApplyInlineCommentAnchorUpdateParams
 ): Promise<void> {
   return executeAPIVoidRequest(() =>
-    getAxios()?.put<APIResponse>(`${getInlineCommentUrl(workspaceId, viewId)}/anchor`, {
-      comment_id: params.commentId,
-      doc_state: Array.from(params.update),
-    })
+    getAxios()?.put<APIResponse>(
+      `${getInlineCommentUrl(workspaceId, viewId)}/anchor`,
+      {
+        comment_id: params.commentId,
+        doc_state: Array.from(params.update),
+      },
+      getInlineCommentMutationConfig()
+    )
   );
 }
 
@@ -183,6 +196,7 @@ export async function deleteInlineComment(workspaceId: string, viewId: string, c
   return executeAPIVoidRequest(() =>
     getAxios()?.delete<APIResponse>(getInlineCommentUrl(workspaceId, viewId), {
       data: { comment_id: commentId },
+      ...getInlineCommentMutationConfig(),
     })
   );
 }
@@ -194,10 +208,14 @@ export async function resolveInlineComment(
   isResolved: boolean
 ): Promise<void> {
   return executeAPIVoidRequest(() =>
-    getAxios()?.put<APIResponse>(`${getInlineCommentUrl(workspaceId, viewId)}/resolve`, {
-      comment_id: commentId,
-      is_resolved: isResolved,
-    })
+    getAxios()?.put<APIResponse>(
+      `${getInlineCommentUrl(workspaceId, viewId)}/resolve`,
+      {
+        comment_id: commentId,
+        is_resolved: isResolved,
+      },
+      getInlineCommentMutationConfig()
+    )
   );
 }
 
@@ -227,10 +245,14 @@ export async function createInlineCommentReaction(
   reactionType: string
 ): Promise<void> {
   return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(`${getInlineCommentUrl(workspaceId, viewId)}/reaction`, {
-      reaction_type: reactionType,
-      comment_id: commentId,
-    })
+    getAxios()?.post<APIResponse>(
+      `${getInlineCommentUrl(workspaceId, viewId)}/reaction`,
+      {
+        reaction_type: reactionType,
+        comment_id: commentId,
+      },
+      getInlineCommentMutationConfig()
+    )
   );
 }
 
@@ -246,6 +268,7 @@ export async function deleteInlineCommentReaction(
         reaction_type: reactionType,
         comment_id: commentId,
       },
+      ...getInlineCommentMutationConfig(),
     })
   );
 }

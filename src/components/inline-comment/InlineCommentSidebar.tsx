@@ -1,5 +1,16 @@
 import dayjs from 'dayjs';
-import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,16 +26,7 @@ import { ReactComponent as ResolveIcon } from '@/assets/icons/comment_resolve.sv
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EmptyCommentIcon } from '@/assets/icons/empty_comment.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { NormalModal } from '@/components/_shared/modal';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
@@ -230,6 +232,8 @@ function DeleteMenu({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const portalContainer = useContext(InlineCommentPortalContainerContext);
+  const dialogTitleId = useId();
+  const dialogDescriptionId = useId();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -278,26 +282,41 @@ function DeleteMenu({
         </div>
       )}
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent container={portalContainer} onClick={(event) => event.stopPropagation()}>
-          <AlertDialogHeader>
-            <AlertDialogTitle className={'text-sm font-medium text-text-primary'}>
-              {t(isReply ? 'inlineComment.deleteReplyTitle' : 'inlineComment.delete')}
-            </AlertDialogTitle>
-          </AlertDialogHeader>
-          <AlertDialogDescription>{t('globalComment.confirmDeleteDescription')}</AlertDialogDescription>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('button.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              data-testid={`inline-comment-delete-confirm-button${testIdSuffix}`}
-              className={'bg-fill-error-thick text-text-on-fill hover:bg-fill-error-thick-hover'}
-              onClick={() => void deleteComment(commentId).catch(() => undefined)}
-            >
-              {t('button.delete')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <NormalModal
+        aria-describedby={dialogDescriptionId}
+        aria-labelledby={dialogTitleId}
+        container={portalContainer}
+        danger
+        keepMounted={false}
+        okText={t('button.delete')}
+        cancelText={t('button.cancel')}
+        open={confirmOpen}
+        onCancel={() => setConfirmOpen(false)}
+        onClose={() => setConfirmOpen(false)}
+        onClick={(event) => event.stopPropagation()}
+        onOk={() => {
+          setConfirmOpen(false);
+          void deleteComment(commentId).catch(() => undefined);
+        }}
+        okButtonProps={{
+          'data-testid': `inline-comment-delete-confirm-button${testIdSuffix}`,
+        }}
+        PaperProps={{
+          sx: {
+            width: 420,
+            maxWidth: 'calc(100vw - 32px)',
+          },
+        }}
+        title={
+          <div id={dialogTitleId} className={'text-left font-semibold'}>
+            {t(isReply ? 'inlineComment.deleteReplyTitle' : 'inlineComment.delete')}
+          </div>
+        }
+      >
+        <div id={dialogDescriptionId} className={'font-normal text-text-secondary'}>
+          {t('globalComment.confirmDeleteDescription')}
+        </div>
+      </NormalModal>
     </div>
   );
 }

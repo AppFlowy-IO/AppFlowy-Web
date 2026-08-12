@@ -214,9 +214,11 @@ describe('InlineCommentSidebar', () => {
     fireEvent.click(screen.getByTestId('inline-comment-action-menu-button'));
     fireEvent.click(screen.getByTestId('inline-comment-delete-button'));
     expect(deleteComment).not.toHaveBeenCalled();
-    expect(
-      screen.getByTestId('inline-comment-sidebar').contains(document.querySelector('[data-slot="alert-dialog-content"]'))
-    ).toBe(true);
+    const dialog = screen.getByRole('dialog', { name: 'inlineComment.delete' });
+
+    expect(screen.getByTestId('inline-comment-sidebar').contains(dialog)).toBe(true);
+    expect(dialog.getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText('globalComment.confirmDeleteDescription')).not.toBeNull();
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('inline-comment-delete-confirm-button'));

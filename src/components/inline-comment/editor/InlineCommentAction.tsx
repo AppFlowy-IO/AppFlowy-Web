@@ -9,22 +9,29 @@ import { useSelectionToolbarContext } from '@/components/editor/components/toolb
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useInlineCommentComposeOptional } from '@/components/inline-comment/InlineCommentContext';
 
+function useInlineCommentActionState() {
+  const editor = useSlate() as YjsEditor;
+  const { canComment } = useEditorContext();
+  const inlineComments = useInlineCommentComposeOptional();
+
+  return {
+    editor,
+    inlineComments,
+    enabled: Boolean(canComment && inlineComments?.active && inlineComments.isEditorRegistered(editor)),
+  };
+}
+
 /**
  * Whether the selection toolbar should show the comment entry point. Exposed so
  * the toolbar can drop the surrounding divider when the action is hidden.
  */
 export function useInlineCommentActionEnabled(): boolean {
-  const { canComment } = useEditorContext();
-  const inlineComments = useInlineCommentComposeOptional();
-
-  return Boolean(canComment && inlineComments?.active);
+  return useInlineCommentActionState().enabled;
 }
 
 export function InlineCommentAction() {
   const { t } = useTranslation();
-  const editor = useSlate() as YjsEditor;
-  const { canComment } = useEditorContext();
-  const inlineComments = useInlineCommentComposeOptional();
+  const { editor, enabled, inlineComments } = useInlineCommentActionState();
   const { forceShow } = useSelectionToolbarContext();
 
   const handleClick = useCallback(() => {
@@ -33,7 +40,7 @@ export function InlineCommentAction() {
     }
   }, [editor, forceShow, inlineComments]);
 
-  if (!canComment || !inlineComments?.active) return null;
+  if (!enabled) return null;
 
   return (
     <ActionButton

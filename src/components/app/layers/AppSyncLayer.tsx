@@ -25,6 +25,7 @@ import {
 import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
+import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '../contexts/SyncInternalContext';
@@ -131,11 +132,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const isE2ETest =
-      import.meta.env.DEV ||
-      import.meta.env.MODE === 'test' ||
-      navigator.webdriver ||
-      'Cypress' in window;
+    const isE2ETest = isDevelopmentOrTestEnvironment() || navigator.webdriver || 'Cypress' in window;
 
     if (!isE2ETest) return;
 

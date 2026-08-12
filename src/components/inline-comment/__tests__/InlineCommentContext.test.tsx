@@ -89,6 +89,46 @@ describe('InlineCommentProvider selection lifetime', () => {
     jest.restoreAllMocks();
   });
 
+  it('registers only the editor that belongs to the provider view', async () => {
+    const pageEditor = withReact(createEditor()) as YjsEditor;
+    const rowEditor = withReact(createEditor()) as YjsEditor;
+
+    render(
+      <InlineCommentProvider workspaceId={'workspace-1'} viewId={'view-1'}>
+        <Probe />
+      </InlineCommentProvider>
+    );
+
+    let unregisterPageEditor = () => undefined;
+
+    await act(async () => {
+      unregisterPageEditor = context.registerEditor(pageEditor, {
+        canComment: true,
+        canWrite: true,
+        readOnly: false,
+        viewId: 'view-1',
+      });
+    });
+
+    expect(context.isEditorRegistered(pageEditor)).toBe(true);
+    expect(context.isEditorRegistered(rowEditor)).toBe(false);
+
+    act(() => {
+      context.registerEditor(rowEditor, {
+        canComment: true,
+        canWrite: true,
+        readOnly: false,
+        viewId: 'row-view',
+      });
+    });
+
+    expect(context.isEditorRegistered(pageEditor)).toBe(true);
+    expect(context.isEditorRegistered(rowEditor)).toBe(false);
+
+    act(() => unregisterPageEditor());
+    expect(context.isEditorRegistered(pageEditor)).toBe(false);
+  });
+
   it('tracks edits that arrive while comment creation and reload are pending', async () => {
     const editor = withReact(createEditor()) as YjsEditor;
 

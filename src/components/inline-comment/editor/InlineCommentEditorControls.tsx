@@ -64,15 +64,17 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
   const inlineComments = useInlineCommentComposeOptional();
   const [position, setPosition] = useState<TriggerPosition | null>(null);
   const rangeRef = useRef<Range | null>(null);
+  const editorRegistered = Boolean(inlineComments?.active && inlineComments.isEditorRegistered(editor));
 
   const updatePosition = useCallback(() => {
-    if (!readOnly || !inlineComments?.active) {
+    if (!readOnly || !editorRegistered) {
       rangeRef.current = null;
       setPosition(null);
       return;
     }
 
-    const range = getReadOnlyRange(editor) ?? (editor.selection && Range.isExpanded(editor.selection) ? editor.selection : null);
+    const range =
+      getReadOnlyRange(editor) ?? (editor.selection && Range.isExpanded(editor.selection) ? editor.selection : null);
 
     if (!range) {
       rangeRef.current = null;
@@ -82,7 +84,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
 
     rangeRef.current = range;
     setPosition(getTriggerPosition(editor, range));
-  }, [editor, inlineComments?.active, readOnly]);
+  }, [editor, editorRegistered, readOnly]);
 
   const startComment = useCallback(() => {
     if (!inlineComments) return;
@@ -126,7 +128,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
   }, [updatePosition]);
 
   useEffect(() => {
-    if (!inlineComments?.active) return;
+    if (!editorRegistered || !inlineComments) return;
 
     let editorDom: HTMLElement;
 
@@ -149,9 +151,9 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
 
     editorDom.addEventListener('keydown', handleKeyDown);
     return () => editorDom.removeEventListener('keydown', handleKeyDown);
-  }, [editor, inlineComments]);
+  }, [editor, editorRegistered, inlineComments]);
 
-  if (!readOnly || !position || !inlineComments?.active) return null;
+  if (!readOnly || !position || !editorRegistered) return null;
 
   return (
     <Portal>
