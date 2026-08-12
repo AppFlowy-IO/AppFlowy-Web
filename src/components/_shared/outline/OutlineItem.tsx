@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { UIVariant, View, ViewLayout } from '@/application/types';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import OutlineItemContent from '@/components/_shared/outline/OutlineItemContent';
@@ -14,6 +15,7 @@ function OutlineItem({
   navigateToView,
   selectedViewId,
   variant,
+  parentView,
 }: {
   view: View;
   width?: number;
@@ -21,8 +23,11 @@ function OutlineItem({
   selectedViewId?: string;
   navigateToView?: (viewId: string) => Promise<void>;
   variant?: UIVariant;
+  parentView?: View;
 }) {
-  const selected = selectedViewId === view.view_id;
+  const selected =
+    selectedViewId === view.view_id ||
+    (isDatabaseContainer(view) && Boolean(view.children?.some((child) => child.view_id === selectedViewId)));
   const aiEnabled = useAIEnabled();
   const [isExpanded, setIsExpanded] = React.useState(() => {
     return getOutlineExpands()[view.view_id] || false;
@@ -45,6 +50,7 @@ function OutlineItem({
       return (
         <div
           data-testid={`outline-item-${item.view_id}`}
+          data-selected={selected}
           className={`flex ${
             variant === UIVariant.App ? 'folder-view-item' : ''
           } my-0.5 h-fit w-full cursor-pointer justify-between`}
@@ -67,13 +73,14 @@ function OutlineItem({
               navigateToView={navigateToView}
               level={level}
               setIsExpanded={setIsExpanded}
+              parentView={parentView}
             />
             {item.is_private && <PrivateIcon className={'h-5 w-5 text-text-secondary'} />}
           </div>
         </div>
       );
     },
-    [variant, width, selected, getIcon, navigateToView, level]
+    [variant, width, selected, getIcon, navigateToView, level, parentView]
   );
 
   const children = useMemo(() => {
@@ -89,20 +96,21 @@ function OutlineItem({
           display: isExpanded ? 'block' : 'none',
         }}
       >
-        {children.map((item, index) => (
+        {children.map((item) => (
           <OutlineItem
             selectedViewId={selectedViewId}
             navigateToView={navigateToView}
             level={level + 1}
             width={width}
-            key={index}
+            key={item.view_id}
             view={item}
             variant={variant}
+            parentView={view}
           />
         ))}
       </div>
     );
-  }, [children, isExpanded, level, navigateToView, selectedViewId, width, variant]);
+  }, [children, isExpanded, level, navigateToView, selectedViewId, view, width, variant]);
 
   if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 

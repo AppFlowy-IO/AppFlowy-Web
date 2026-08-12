@@ -22,8 +22,9 @@ import {
   ViewLayout,
   YDoc,
 } from '@/application/types';
+import { isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
 import { notify } from '@/components/_shared/notify';
-import { findAncestors, findView } from '@/components/_shared/outline/utils';
+import { findAncestors, findParentView, findView } from '@/components/_shared/outline/utils';
 import { PublishService, RowService } from '@/application/services/domains';
 
 function publishedViewToViewInfo(view: PublishedView): ViewInfo {
@@ -356,10 +357,44 @@ export const PublishProvider = ({
 
   const toView = useCallback(
     async (viewId: string, blockId?: string) => {
-      try {
-        const view = await loadViewMeta(viewId);
+      const outlineView = findView(outline, viewId);
+      const outlineParent = findParentView(outline, viewId);
+      let currentOutlineView: View | null | undefined;
+      const getCurrentOutlineView = () => {
+        if (currentOutlineView === undefined) {
+          currentOutlineView = viewMeta ? findView(outline, viewMeta.view_id) : null;
+        }
 
-        const res = await PublishService.getViewInfo(viewId);
+        return currentOutlineView;
+      };
+
+      const databaseContainer =
+        outlineView && isDatabaseLayout(outlineView.layout) && isDatabaseContainer(outlineParent)
+          ? outlineParent
+          : undefined;
+      const currentPublishedDatabaseView = databaseContainer?.children.find(
+        (child) => child.view_id === getCurrentOutlineView()?.view_id && child.is_published
+      );
+      let publishedDatabaseRoute: View | undefined;
+
+      if (databaseContainer?.is_published) {
+        publishedDatabaseRoute = databaseContainer;
+      } else if (outlineView?.is_published) {
+        publishedDatabaseRoute = outlineView;
+      } else {
+        publishedDatabaseRoute =
+          currentPublishedDatabaseView ?? databaseContainer?.children.find((child) => child.is_published);
+      }
+
+      let targetView = outlineView || undefined;
+
+      try {
+        const view = targetView || (await loadViewMeta(viewId));
+        const routeViewId = publishedDatabaseRoute?.view_id || viewId;
+
+        targetView = view;
+
+        const res = await PublishService.getViewInfo(routeViewId);
 
         if (!res) {
           throw new Error('View has not been published yet');
@@ -389,6 +424,10 @@ export const PublishProvider = ({
           searchParams.set('template', 'true');
         }
 
+        if (databaseContainer) {
+          searchParams.set('v', viewId);
+        }
+
         let url = `/${viewNamespace}/${publishName}`;
 
         if (searchParams.toString()) {
@@ -400,20 +439,27 @@ export const PublishProvider = ({
         });
         return;
       } catch (e) {
-        // For unpublished sibling database views, switch the tab via URL parameter
-        // instead of navigating to a non-existent published page.
-        // Only apply this fallback when a ?v= param is already present (indicating
-        // we're on a database page with tabs). Otherwise, re-throw so callers
-        // (e.g., relation pills, @-mentions) can handle the error.
-        const currentParams = new URLSearchParams(window.location.search);
+        // A database tab may not have its own published route. If the current
+        // published page is already a database, switch tabs in place.
+        const targetDatabaseId = targetView?.extra?.database_id;
+        const currentDatabaseId = getCurrentOutlineView()?.extra?.database_id;
+        const isCurrentDatabaseTab =
+          Boolean(targetDatabaseId) && targetDatabaseId === currentDatabaseId;
 
-        currentParams.set('v', viewId);
-        navigate(`${window.location.pathname}?${currentParams.toString()}`, {
-          replace: true,
-        });
+        if (viewMeta && isDatabaseLayout(viewMeta.layout) && isCurrentDatabaseTab) {
+          const currentParams = new URLSearchParams(window.location.search);
+
+          currentParams.set('v', viewId);
+          navigate(`${window.location.pathname}?${currentParams.toString()}`, {
+            replace: true,
+          });
+          return;
+        }
+
+        throw e;
       }
     },
-    [loadViewMeta, isTemplate, navigate]
+    [isTemplate, loadViewMeta, navigate, outline, viewMeta]
   );
 
   const loadOutline = useCallback(async () => {

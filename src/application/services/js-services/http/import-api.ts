@@ -33,6 +33,11 @@ export interface ImportUploadTask {
   multipart: ImportMultipartUploadInfo | null;
 }
 
+export enum CreateImportTaskType {
+  Notion = 'Notion',
+  Workspace = 'Workspace',
+}
+
 export interface CreateNotionImportTaskPayload {
   content_length: number;
   md5_base64: string;
@@ -46,7 +51,7 @@ function toImportUploadTask(data: CreateImportTaskRaw): ImportUploadTask {
   };
 }
 
-export async function createImportTask(file: File): Promise<ImportUploadTask> {
+export async function createImportTask(file: File, taskType: CreateImportTaskType): Promise<ImportUploadTask> {
   const url = `/api/import/create`;
   const fileName = file.name.split('.').slice(0, -1).join('.') || crypto.randomUUID();
 
@@ -56,6 +61,7 @@ export async function createImportTask(file: File): Promise<ImportUploadTask> {
       {
         workspace_name: fileName,
         content_length: file.size,
+        task_type: taskType,
       },
       {
         headers: {

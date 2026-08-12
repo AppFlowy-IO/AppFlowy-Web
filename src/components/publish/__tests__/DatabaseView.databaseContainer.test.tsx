@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import * as Y from 'yjs';
 
-import { ViewLayout, ViewMetaProps, YDoc, YjsEditorKey } from '@/application/types';
+import { View, ViewLayout, ViewMetaProps, YDoc, YjsEditorKey } from '@/application/types';
 import DatabaseView from '@/components/publish/DatabaseView';
 
 declare global {
@@ -11,12 +11,17 @@ declare global {
   var __publishDatabaseViewTestState:
     | {
         capturedDatabaseProps?: unknown;
+        capturedPageMetaProps?: unknown;
+        outline?: View[];
       }
     | undefined;
 }
 
 jest.mock('@/application/publish', () => ({
-  usePublishContext: () => ({ isTemplateThumb: false, outline: [] }),
+  usePublishContext: () => ({
+    isTemplateThumb: false,
+    outline: global.__publishDatabaseViewTestState?.outline || [],
+  }),
 }));
 
 jest.mock('@/components/database', () => ({
@@ -29,7 +34,13 @@ jest.mock('@/components/database', () => ({
   },
 }));
 
-jest.mock('src/components/view-meta/ViewMetaPreview', () => () => null);
+jest.mock('src/components/view-meta/ViewMetaPreview', () => (props: unknown) => {
+  global.__publishDatabaseViewTestState = {
+    ...(global.__publishDatabaseViewTestState || {}),
+    capturedPageMetaProps: props,
+  };
+  return null;
+});
 
 function createDatabaseDoc(databaseViewIds: string[] = []): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
@@ -63,7 +74,10 @@ describe('published DatabaseView database container', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/published/database']}>
+      <MemoryRouter
+        initialEntries={['/published/database']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
         <DatabaseView doc={createDatabaseDoc()} workspaceId='workspace-id' viewMeta={viewMeta} />
       </MemoryRouter>
     );
@@ -92,7 +106,10 @@ describe('published DatabaseView database container', () => {
     };
 
     render(
-      <MemoryRouter initialEntries={['/published/database']}>
+      <MemoryRouter
+        initialEntries={['/published/database']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
         <DatabaseView
           doc={createDatabaseDoc(['inline-view-id', 'grid-view-id'])}
           workspaceId='workspace-id'
@@ -107,5 +124,66 @@ describe('published DatabaseView database container', () => {
 
     expect(databaseProps?.databasePageId).toBe('container-id');
     expect(databaseProps?.activeViewId).toBe('grid-view-id');
+  });
+
+  it('uses the outline container name when the published route is a database child', () => {
+    const childView: View = {
+      view_id: 'by-status-view-id',
+      parent_view_id: 'epics-container-id',
+      name: 'By Status',
+      layout: ViewLayout.Grid,
+      children: [],
+      icon: null,
+      extra: { database_id: 'epics-database-id' },
+      is_published: true,
+      is_private: false,
+    };
+    const containerView: View = {
+      view_id: 'epics-container-id',
+      name: '03_epics',
+      layout: ViewLayout.Grid,
+      children: [childView],
+      icon: null,
+      extra: { database_id: 'epics-database-id', is_database_container: true },
+      is_published: true,
+      is_private: false,
+    };
+    const viewMeta: ViewMetaProps = {
+      viewId: childView.view_id,
+      name: childView.name,
+      layout: childView.layout,
+      icon: undefined,
+      extra: childView.extra,
+      workspaceId: 'workspace-id',
+      visibleViewIds: [childView.view_id],
+    };
+
+    global.__publishDatabaseViewTestState = {
+      outline: [containerView],
+    };
+
+    render(
+      <MemoryRouter
+        initialEntries={['/published/database']}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <DatabaseView
+          doc={createDatabaseDoc([childView.view_id])}
+          workspaceId='workspace-id'
+          viewMeta={viewMeta}
+        />
+      </MemoryRouter>
+    );
+
+    const pageMetaProps = global.__publishDatabaseViewTestState?.capturedPageMetaProps as ViewMetaProps | undefined;
+    const databaseProps = global.__publishDatabaseViewTestState?.capturedDatabaseProps as
+      | { databaseName?: string; databasePageId?: string; activeViewId?: string }
+      | undefined;
+
+    expect(pageMetaProps?.name).toBe('03_epics');
+    expect(pageMetaProps?.viewId).toBe(containerView.view_id);
+    expect(databaseProps?.databaseName).toBe('03_epics');
+    expect(databaseProps?.databasePageId).toBe(containerView.view_id);
+    expect(databaseProps?.activeViewId).toBe(childView.view_id);
   });
 });

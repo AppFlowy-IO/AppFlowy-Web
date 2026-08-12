@@ -291,6 +291,105 @@ Then('the published database views keep the publisher order', async ({ page }) =
     .toEqual(state.sourceViewOrder);
 });
 
+Then('the public outline shows the database container and dot-style child views', async ({ page, request }) => {
+  const state = requireState(page);
+  const consumerPage = requireConsumerPage(state);
+  const containerId = requireValue(state.databaseContainerId, 'database container id');
+  const sourceViewIds = requireValue(state.sourceViewIds, 'source database view ids');
+  const container = await sourceDatabaseContainer(request, state);
+  const containerRow = publishedOutlineItem(consumerPage, containerId);
+
+  await expandPublishedOutlineSpace(consumerPage);
+  await expect(containerRow).toBeVisible({ timeout: 30000 });
+  await expandPublishedOutlineItem(containerRow);
+  await expect(containerRow.getByTestId('page-name')).toHaveText(container.name);
+  await expect(containerRow.getByTestId('database-view-dot')).toHaveCount(0);
+
+  for (const viewId of sourceViewIds) {
+    const childRow = publishedOutlineItem(consumerPage, viewId);
+
+    await expect(childRow).toBeVisible({ timeout: 30000 });
+    await expect(childRow.getByTestId('database-view-dot')).toHaveCount(1);
+  }
+});
+
+Then('the public outline highlights only the container and active database view', async ({ page }) => {
+  const state = requireState(page);
+  const consumerPage = requireConsumerPage(state);
+  const containerId = requireValue(state.databaseContainerId, 'database container id');
+  const sourceViewIds = requireValue(state.sourceViewIds, 'source database view ids');
+  const activeViewId = await activePublicDatabaseViewId(consumerPage);
+
+  await expect(publishedOutlineItem(consumerPage, containerId)).toHaveAttribute('data-selected', 'true');
+
+  for (const viewId of sourceViewIds) {
+    await expect(publishedOutlineItem(consumerPage, viewId)).toHaveAttribute(
+      'data-selected',
+      viewId === activeViewId ? 'true' : 'false'
+    );
+  }
+});
+
+When('the public outline opens the {string} database view', async ({ page }, viewLabel: string) => {
+  const state = requireState(page);
+  const consumerPage = requireConsumerPage(state);
+  const viewId = sourceViewIdByLabel(state, viewLabel);
+
+  await publishedOutlineItem(consumerPage, viewId).getByTestId('page-name').click({ force: true });
+});
+
+Then(
+  'the public database route keeps its published anchor and selects {string}',
+  async ({ page }, viewLabel: string) => {
+    const state = requireState(page);
+    const consumerPage = requireConsumerPage(state);
+    const publishedUrl = new URL(requirePublishedUrl(state));
+    const expectedViewId = sourceViewIdByLabel(state, viewLabel);
+
+    await expect
+      .poll(
+        () => {
+          const currentUrl = new URL(consumerPage.url());
+
+          return {
+            pathname: currentUrl.pathname,
+            selectedViewId: currentUrl.searchParams.get('v'),
+          };
+        },
+        {
+          timeout: 30000,
+          message: `Expected the public outline to select ${viewLabel} without leaving ${publishedUrl.pathname}`,
+        }
+      )
+      .toEqual({
+        pathname: publishedUrl.pathname,
+        selectedViewId: expectedViewId,
+      });
+    await expect(DatabaseViewSelectors.viewTab(consumerPage, expectedViewId)).toHaveAttribute('data-state', 'active');
+  }
+);
+
+When('the public outline opens the database container', async ({ page }) => {
+  const state = requireState(page);
+  const consumerPage = requireConsumerPage(state);
+  const containerId = requireValue(state.databaseContainerId, 'database container id');
+
+  await publishedOutlineItem(consumerPage, containerId).getByTestId('page-name').click({ force: true });
+});
+
+Then('the public outline remains expanded', async ({ page }) => {
+  const state = requireState(page);
+  const consumerPage = requireConsumerPage(state);
+  const containerId = requireValue(state.databaseContainerId, 'database container id');
+  const sourceViewIds = requireValue(state.sourceViewIds, 'source database view ids');
+
+  await expect(publishedOutlineItem(consumerPage, containerId).getByTestId('outline-toggle-collapse')).toBeVisible();
+
+  for (const viewId of sourceViewIds) {
+    await expect(publishedOutlineItem(consumerPage, viewId)).toBeVisible();
+  }
+});
+
 Then('the published child-view outline keeps the database view order', async ({ page, request }) => {
   const state = requireState(page);
   const containerId = requireValue(state.databaseContainerId, 'database container id');
@@ -689,6 +788,60 @@ async function databaseViewIds(page: Page): Promise<string[]> {
 
     return viewId;
   });
+}
+
+function publishedOutlineItem(page: Page, viewId: string) {
+  return page.locator(`[data-testid="outline-item-${viewId}"]:visible`).first();
+}
+
+async function expandPublishedOutlineSpace(page: Page): Promise<void> {
+  const spaceName = page.getByTestId('space-name').first();
+
+  await expect(spaceName).toBeVisible({ timeout: 30000 });
+
+  const spaceRow = spaceName.locator('xpath=ancestor::*[starts-with(@data-testid, "outline-item-")][1]');
+
+  await expandPublishedOutlineItem(spaceRow);
+}
+
+async function expandPublishedOutlineItem(outlineItem: ReturnType<typeof publishedOutlineItem>): Promise<void> {
+  const expandButton = outlineItem.getByTestId('outline-toggle-expand');
+
+  if (await expandButton.isVisible().catch(() => false)) {
+    await expandButton.click();
+  }
+
+  await expect(outlineItem.getByTestId('outline-toggle-collapse')).toBeVisible();
+}
+
+async function activePublicDatabaseViewId(page: Page): Promise<string> {
+  const testId = await DatabaseViewSelectors.activeViewTab(page).getAttribute('data-testid');
+  const viewId = testId?.replace(/^view-tab-/, '');
+
+  if (!viewId || viewId === testId) {
+    throw new Error(`Could not resolve the active public database view from ${testId || 'an empty test id'}`);
+  }
+
+  return viewId;
+}
+
+function sourceViewIdByLabel(state: PublishedTemplateState, viewLabel: string): string {
+  const sourceViewIds = requireValue(state.sourceViewIds, 'source database view ids');
+  const viewIndex = state.sourceViewOrder.indexOf(viewLabel);
+
+  if (viewIndex < 0 || !sourceViewIds[viewIndex]) {
+    throw new Error(`The source database does not contain a ${viewLabel} view`);
+  }
+
+  return sourceViewIds[viewIndex];
+}
+
+async function sourceDatabaseContainer(request: APIRequestContext, state: PublishedTemplateState): Promise<FolderView> {
+  const token = requireValue(state.publisherToken, 'publisher token');
+  const workspaceId = requireValue(state.publisherWorkspaceId, 'publisher workspace id');
+  const containerId = requireValue(state.databaseContainerId, 'database container id');
+
+  return getApi<FolderView>(request, token, `/api/workspace/${workspaceId}/view/${containerId}?depth=2`);
 }
 
 async function publishDatabaseChildView(
