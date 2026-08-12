@@ -11,17 +11,15 @@ import * as Y from 'yjs';
 import { openCollabDB } from '@/application/db';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { createRow } from '@/application/services/js-services/cache';
-import {
-  YDatabase,
-  YjsDatabaseKey,
-  YjsEditorKey,
-} from '@/application/types';
+import { YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 interface RowOrderEntry {
   id?: string;
   is_deleted?: boolean;
 }
+
+const PUBLISH_ROW_LOAD_CONCURRENCY = 8;
 
 /**
  * Publishing must not expose rows that only remain in the live collab as
@@ -49,12 +47,22 @@ function createDatabasePublishSnapshot(dbDoc: Y.Doc): { doc: Y.Doc; rowIds: stri
 
         if (row?.is_deleted) {
           rowOrders.delete(index);
-        } else if (row?.id) {
-          rowIdSet.add(row.id);
         }
       }
     });
   }, 'filterTombstonedRowsForPublish');
+
+  views?.forEach((view) => {
+    const rowOrders = view.get(YjsDatabaseKey.row_orders);
+
+    for (let index = 0; index < (rowOrders?.length ?? 0); index += 1) {
+      const row = rowOrders?.get(index) as RowOrderEntry | undefined;
+
+      if (row?.id) {
+        rowIdSet.add(row.id);
+      }
+    }
+  });
 
   return { doc: publishDoc, rowIds: Array.from(rowIdSet) };
 }
@@ -103,25 +111,39 @@ export async function gatherDatabasePublishData(
 
   publishDbDoc.destroy();
 
-  // 4. Encode each row collab
+  // 4. Encode each row collab. Row documents are independent, so load them in
+  // bounded parallel batches rather than adding one IndexedDB round trip per
+  // row to the critical path.
   const databaseRowCollabs: Record<string, number[]> = {};
 
-  for (const rowId of rowIds) {
-    try {
-      const rowKey = getRowKey(actualDatabaseId, rowId);
-      const rowDoc = await createRow(rowKey);
+  for (let start = 0; start < rowIds.length; start += PUBLISH_ROW_LOAD_CONCURRENCY) {
+    const rowBatch = rowIds.slice(start, start + PUBLISH_ROW_LOAD_CONCURRENCY);
+    const encodedRows = await Promise.all(
+      rowBatch.map(async (rowId): Promise<[string, number[]] | null> => {
+        try {
+          const rowKey = getRowKey(actualDatabaseId, rowId);
+          const rowDoc = await createRow(rowKey);
 
-      // Verify the row doc has data
-      const rowRoot = rowDoc.getMap(YjsEditorKey.data_section);
+          // Verify the row doc has data
+          const rowRoot = rowDoc.getMap(YjsEditorKey.data_section);
 
-      if (!rowRoot.has(YjsEditorKey.database_row)) {
-        Log.debug('[gatherDatabasePublishData] skipping empty row', { rowId });
-        continue;
+          if (!rowRoot.has(YjsEditorKey.database_row)) {
+            Log.debug('[gatherDatabasePublishData] skipping empty row', { rowId });
+            return null;
+          }
+
+          return [rowId, Array.from(Y.encodeStateAsUpdate(rowDoc))];
+        } catch (e) {
+          Log.debug('[gatherDatabasePublishData] failed to load row', { rowId, error: e });
+          return null;
+        }
+      })
+    );
+
+    for (const encodedRow of encodedRows) {
+      if (encodedRow) {
+        databaseRowCollabs[encodedRow[0]] = encodedRow[1];
       }
-
-      databaseRowCollabs[rowId] = Array.from(Y.encodeStateAsUpdate(rowDoc));
-    } catch (e) {
-      Log.debug('[gatherDatabasePublishData] failed to load row', { rowId, error: e });
     }
   }
 

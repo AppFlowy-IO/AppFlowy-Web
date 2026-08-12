@@ -1166,7 +1166,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       workspaceId={workspaceId}
       viewId={documentId}
       doc={doc}
-      readOnly={false}
+      readOnly={context.readOnly}
+      canComment={context.canComment ?? false}
+      canWrite={context.canWrite ?? !context.readOnly}
       mentionContext={mentionContext}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}

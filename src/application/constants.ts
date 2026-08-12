@@ -78,6 +78,7 @@ export const APP_EVENTS = {
   FOLDER_VIEW_CHANGED: 'folder-view-changed',             // Granular folder view change (sidebar update)
   VIEW_META_CHANGED: 'view-meta-changed',                 // Parsed view metadata update for loaded views outside the outline
   INBOX_NOTIFICATION: 'inbox-notification',               // Inbox notification push for notification center refresh
+  INLINE_COMMENT_CHANGED: 'inline-comment-changed',       // Document inline comment created, resolved, or deleted
   COLLAB_DOC_RESET: 'collab-doc-reset',                   // Collab version reset replaced active Y.Doc instance
 
   // Editor events

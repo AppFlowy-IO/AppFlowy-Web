@@ -17,6 +17,7 @@ import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { PanelProvider } from '@/components/editor/components/panels/PanelsContext';
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { InlineCommentEditorControls } from '@/components/inline-comment/editor/InlineCommentEditorControls';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -63,7 +64,7 @@ function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Rang
 }
 
 const EditorEditable = () => {
-  const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { canComment = false, readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
   const { decorateState } = useEditorLocalState();
   const { getMatchDecorations } = useFindReplaceDecorations();
   const editor = useSlate();
@@ -221,6 +222,8 @@ const EditorEditable = () => {
               <HrefPopover open={!!linkOpen} onClose={handleCloseLinkPopover} />
             </Suspense>
           )}
+
+          {canComment && <InlineCommentEditorControls readOnly={readOnly} />}
 
           <div className={cn('pointer-events-none absolute left-0 right-0 top-0 flex h-full justify-center')}>
             <div

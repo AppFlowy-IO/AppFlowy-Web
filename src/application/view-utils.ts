@@ -15,10 +15,27 @@
 import { View, ViewLayout } from './types';
 
 /**
- * Check if a layout is a database layout (Grid, Board, or Calendar)
+ * Check whether a view represents a space.
+ *
+ * Newer folder-view APIs expose the authoritative marker at the top level,
+ * while older responses only include it in `extra`.
+ */
+export function isSpaceView(
+  view: { is_space?: boolean; extra?: { is_space?: boolean } | null } | null | undefined
+): boolean {
+  return view?.is_space ?? Boolean(view?.extra?.is_space);
+}
+
+/**
+ * Check if a layout is supported as a database layout in Web.
  */
 export function isDatabaseLayout(layout: ViewLayout): boolean {
-  return layout === ViewLayout.Grid || layout === ViewLayout.Board || layout === ViewLayout.Calendar;
+  return (
+    layout === ViewLayout.Grid ||
+    layout === ViewLayout.Board ||
+    layout === ViewLayout.Calendar ||
+    layout === ViewLayout.Chart
+  );
 }
 
 /**

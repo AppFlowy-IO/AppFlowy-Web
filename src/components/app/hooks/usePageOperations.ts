@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
-import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import { publishCollabs, PublishCollabMetadata } from '@/application/services/js-services/http/publish-api';
+import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import {
   CreateDatabaseViewPayload,
   CreateOrphanedViewPayload,
@@ -13,20 +13,54 @@ import {
   CreatePagePayload,
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
+  PublishViewPayload,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
   View,
   ViewIconType,
-  ViewLayout,
 } from '@/application/types';
-import { Log } from '@/utils/log';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
 const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
+const DOCUMENT_PUBLISH_SERVER_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 6000] as const;
+
+function waitForDocumentPublishRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+function isPendingDocumentPublishData(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, message } = error as { code?: unknown; message?: unknown };
+
+  return code === -2 && typeof message === 'string' && /record not (?:found|exist)|view .* not found/i.test(message);
+}
+
+async function publishDocumentWhenServerStateIsReady(
+  workspaceId: string,
+  viewId: string,
+  payload: PublishViewPayload,
+  syncServerState?: () => Promise<void>
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await PublishService.publish(workspaceId, viewId, payload);
+      return;
+    } catch (error) {
+      const retryDelay = DOCUMENT_PUBLISH_SERVER_RETRY_DELAYS_MS[attempt];
+
+      if (retryDelay === undefined || !isPendingDocumentPublishData(error)) throw error;
+      await syncServerState?.();
+      await waitForDocumentPublishRetry(retryDelay);
+    }
+  }
+}
 
 export function usePageOperations({
   outlineRef,
@@ -385,10 +419,9 @@ export function usePageOperations({
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
-      const isDatabaseLayout =
-        view.layout === ViewLayout.Grid || view.layout === ViewLayout.Board || view.layout === ViewLayout.Calendar;
+      const isDatabaseView = isDatabaseLayout(view.layout);
 
-      if (isDatabaseLayout) {
+      if (isDatabaseView) {
         // Database views: gather data client-side and send via binary publish endpoint
         // (same approach as the desktop client — fixes #8464). Kick the WS
         // drain in the background — the binary publish below carries the
@@ -412,7 +445,9 @@ export function usePageOperations({
         // tab (Grid, Board, Calendar, etc.) appears on the published page.
         let resolvedVisibleViewIds = visibleViewIds;
 
-        if (outlineRef.current) {
+        if (view.extra?.is_database_container) {
+          resolvedVisibleViewIds = [viewId, ...view.children.map((child) => child.view_id)];
+        } else if (outlineRef.current) {
           const parentView = findParentView(outlineRef.current, viewId);
 
           if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
@@ -430,23 +465,30 @@ export function usePageOperations({
           return isNaN(t) ? 0 : Math.floor(t / 1000);
         };
 
+        const toPublishViewInfo = (publishView: View): PublishCollabMetadata['metadata']['view'] => ({
+          view_id: publishView.view_id,
+          name: publishView.name,
+          icon: publishView.icon,
+          layout: publishView.layout,
+          extra: publishView.extra
+            ? typeof publishView.extra === 'string'
+              ? publishView.extra
+              : JSON.stringify(publishView.extra)
+            : null,
+          created_by: null,
+          last_edited_by: null,
+          last_edited_time: toTimestamp(publishView.last_edited_time),
+          created_at: toTimestamp(publishView.created_at),
+          child_views: null,
+        });
+        const visibleViewIdSet = new Set(resolvedVisibleViewIds ?? []);
+
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
           metadata: {
-            view: {
-              view_id: viewId,
-              name: view.name,
-              icon: view.icon,
-              layout: view.layout,
-              extra: view.extra ? (typeof view.extra === 'string' ? view.extra : JSON.stringify(view.extra)) : null,
-              created_by: null,
-              last_edited_by: null,
-              last_edited_time: toTimestamp(view.last_edited_time),
-              created_at: toTimestamp(view.created_at),
-              child_views: null,
-            },
-            child_views: [],
+            view: toPublishViewInfo(view),
+            child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
             ancestor_views: [],
           },
         };
@@ -454,16 +496,36 @@ export function usePageOperations({
         await publishCollabs(currentWorkspaceId, [{ meta, data }]);
         clearPublishViewInfoCache(viewId);
       } else {
-        // Document views: use existing server-side gathering
-        await PublishService.publish(currentWorkspaceId, viewId, {
-          publish_name: publishName,
-          visible_database_view_ids: visibleViewIds,
-        });
+        // Document publishing gathers the folder, document, and referenced
+        // dependencies on the server. Push the browser's current state first,
+        // then tolerate the provisioning/projection interval under load.
+        const outboxDrained = await flushAllSync?.();
+        let fullSyncPromise: Promise<void> | undefined;
+        const ensureServerState = syncAllToServer
+          ? () => {
+              fullSyncPromise ??= syncAllToServer(currentWorkspaceId);
+              return fullSyncPromise;
+            }
+          : undefined;
+
+        if (outboxDrained !== true) {
+          await ensureServerState?.();
+        }
+
+        await publishDocumentWhenServerStateIsReady(
+          currentWorkspaceId,
+          viewId,
+          {
+            publish_name: publishName,
+            visible_database_view_ids: visibleViewIds,
+          },
+          ensureServerState
+        );
       }
 
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef, getDatabaseIdForViewId]
+    [currentWorkspaceId, loadOutline, flushAllSync, syncAllToServer, outlineRef, getDatabaseIdForViewId]
   );
 
   // Unpublish view

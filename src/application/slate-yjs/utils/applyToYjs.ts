@@ -11,7 +11,7 @@ import {
 } from 'slate';
 import * as Y from 'yjs';
 
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { EditorMarkFormat, INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import { getNodeAtPath } from '@/application/slate-yjs/utils/editor';
 import { calculateOffsetRelativeToParent } from '@/application/slate-yjs/utils/positions';
 import { getBlock, getText } from '@/application/slate-yjs/utils/yjs';
@@ -164,7 +164,9 @@ function applyRemoveText(ydoc: Y.Doc, editor: Editor, op: RemoveTextOperation, s
 
 function applySetNode(ydoc: Y.Doc, editor: Editor, op: SetNodeOperation, slateContent: Descendant[]) {
   const { newProperties, path, properties } = op;
-  const leafKeys = Object.values(EditorMarkFormat) as string[];
+  // Inline comment anchors are stored as a text delta attribute, so they take
+  // the same Yjs `format` path as the formatting marks.
+  const leafKeys = [...Object.values(EditorMarkFormat), INLINE_COMMENT_IDS_KEY] as string[];
 
   const isLeaf =
     Object.keys(newProperties).some((prop: string) => leafKeys.includes(prop)) ||

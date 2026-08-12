@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
+  DatabaseRelations,
   LoadViewOptions,
   Types,
   View,
@@ -68,8 +69,59 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
   return false;
 }
 
+/**
+ * Comment permission is independent from editor writeability: a locked page
+ * and Read-and-comment access both use a read-only Slate editor but still
+ * permit inline comments.
+ */
+export function getViewCanCommentStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+  if (outline) {
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel >= AccessLevel.ReadAndComment;
+    }
+  }
+
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level >= AccessLevel.ReadAndComment;
+  }
+
+  // Views outside "Shared with me" belong to the current workspace user.
+  return true;
+}
+
+/**
+ * Return the canonical document-write capability for a view.
+ *
+ * This deliberately ignores presentation-only read-only states such as a
+ * locked page or the mobile layout. Those states prevent editing in the UI,
+ * but they do not require comment anchors to use the narrow
+ * Read-and-comment persistence lane.
+ */
+export function getViewCanWriteStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+  if (outline) {
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel >= AccessLevel.ReadAndWrite;
+    }
+  }
+
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level >= AccessLevel.ReadAndWrite;
+  }
+
+  // Views outside "Shared with me" belong to a writable workspace context.
+  return true;
+}
+
 // Hook for managing view-related operations
-export function useViewOperations() {
+export function useViewOperations({
+  loadDatabaseRelations,
+}: {
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+} = {}) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
@@ -109,6 +161,7 @@ export function useViewOperations() {
     currentWorkspaceId,
     databaseStorageId,
     registerSyncContext,
+    loadDatabaseRelations,
   });
 
   // Check if view should be readonly based on access permissions

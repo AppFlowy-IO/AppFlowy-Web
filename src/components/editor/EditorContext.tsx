@@ -74,6 +74,9 @@ export interface EditorContextState {
   workspaceId: string;
   viewId: string;
   readOnly: boolean;
+  canComment?: boolean;
+  /** Canonical server write permission, independent from editor UI state. */
+  canWrite?: boolean;
   layoutStyle?: EditorLayoutStyle;
   codeGrammars?: Record<string, string>;
   addCodeGrammars?: (blockId: string, grammar: string) => void;
@@ -124,6 +127,8 @@ export const EditorContextProvider = ({
   workspaceId,
   viewId,
   readOnly,
+  canComment,
+  canWrite,
   layoutStyle,
   codeGrammars,
   addCodeGrammars,
@@ -212,6 +217,8 @@ export const EditorContextProvider = ({
       workspaceId,
       viewId,
       readOnly,
+      canComment,
+      canWrite,
       layoutStyle,
       codeGrammars,
       addCodeGrammars,
@@ -257,6 +264,8 @@ export const EditorContextProvider = ({
       workspaceId,
       viewId,
       readOnly,
+      canComment,
+      canWrite,
       layoutStyle,
       codeGrammars,
       addCodeGrammars,

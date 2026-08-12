@@ -255,4 +255,41 @@ describe('Outline navigation context hydration', () => {
 
     warnSpy.mockRestore();
   });
+
+  it('renders only visible spaces from mixed workspace-root views', () => {
+    global.__outlineNavigationTestOutline = [
+      createView('typed-space', {
+        name: 'Typed space',
+        is_space: true,
+      }),
+      createView('legacy-space', {
+        name: 'Legacy space',
+        extra: { is_space: true },
+      }),
+      createView('root-page', {
+        name: 'Untitled root page',
+        is_space: false,
+      }),
+      createView('authoritative-non-space', {
+        name: 'Stale legacy marker',
+        is_space: false,
+        extra: { is_space: true },
+      }),
+      createView('hidden-space', {
+        name: 'Hidden space',
+        is_space: true,
+        extra: { is_space: true, is_hidden_space: true },
+      }),
+    ];
+    global.__outlineNavigationTestEnsureViewVisible = jest.fn().mockResolvedValue([]);
+    global.__outlineNavigationTestToView = jest.fn().mockResolvedValue(undefined);
+
+    render(<Outline width={280} />);
+
+    expect(screen.getByTestId('space-typed-space')).toBeTruthy();
+    expect(screen.getByTestId('space-legacy-space')).toBeTruthy();
+    expect(screen.queryByTestId('space-root-page')).toBeNull();
+    expect(screen.queryByTestId('space-authoritative-non-space')).toBeNull();
+    expect(screen.queryByTestId('space-hidden-space')).toBeNull();
+  });
 });

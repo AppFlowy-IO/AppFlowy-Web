@@ -20,16 +20,20 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import * as databaseFilter from '@/application/database-yjs/filter';
+import * as rowOrderVisibility from '@/application/database-yjs/row-order-visibility';
 import {
   RowId,
+  YDatabase,
   YDatabaseCalculation,
   YDatabaseCalculations,
   YDatabaseField,
   YDatabaseFilter,
   YDatabaseFilters,
+  YDatabaseMetas,
   YDatabaseRowOrders,
   YDatabaseSorts,
   YDatabaseView,
+  YDatabaseViews,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -42,6 +46,7 @@ jest.mock('@/utils/runtime-config', () => ({
 }));
 
 type DatabaseFixture = {
+  database: YDatabase;
   databaseDoc: YDoc;
   fields: Y.Map<YDatabaseField>;
   filters: YDatabaseFilters;
@@ -49,6 +54,7 @@ type DatabaseFixture = {
   rowOrders: YDatabaseRowOrders;
   view: YDatabaseView;
   viewId: string;
+  views: YDatabaseViews;
 };
 
 const databaseId = 'database-id';
@@ -80,9 +86,9 @@ function createDatabaseFixture(): DatabaseFixture {
   const viewId = 'view-id';
   const databaseDoc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
-  const database = new Y.Map();
+  const database = new Y.Map() as YDatabase;
   const fields = new Y.Map<YDatabaseField>();
-  const views = new Y.Map();
+  const views = new Y.Map() as YDatabaseViews;
   const view = new Y.Map() as YDatabaseView;
   const rowOrders = new Y.Array<{ id: RowId; height: number }>();
   const filters = new Y.Array<YDatabaseFilter>() as YDatabaseFilters;
@@ -106,6 +112,7 @@ function createDatabaseFixture(): DatabaseFixture {
   sharedRoot.set(YjsEditorKey.database, database);
 
   return {
+    database,
     databaseDoc,
     fields,
     filters,
@@ -123,7 +130,24 @@ function createDatabaseFixture(): DatabaseFixture {
     rowOrders,
     view,
     viewId,
+    views,
   };
+}
+
+function addInlineView(fixture: DatabaseFixture, rows: Array<{ id: RowId; height: number; is_deleted?: boolean }>) {
+  const inlineViewId = 'inline-view-id';
+  const inlineView = new Y.Map() as YDatabaseView;
+  const inlineRowOrders = new Y.Array() as YDatabaseRowOrders;
+  const metas = new Y.Map() as YDatabaseMetas;
+
+  inlineRowOrders.push(rows);
+  inlineView.set(YjsDatabaseKey.is_inline, true);
+  inlineView.set(YjsDatabaseKey.row_orders, inlineRowOrders);
+  fixture.views.set(inlineViewId, inlineView);
+  metas.set(YjsDatabaseKey.iid, inlineViewId);
+  fixture.database.set(YjsDatabaseKey.metas, metas);
+
+  return inlineRowOrders;
 }
 
 function createWrapper(fixture: DatabaseFixture, contextOverrides: Partial<DatabaseContextState> = {}) {
@@ -304,6 +328,88 @@ describe('useRowOrdersSelector', () => {
     });
 
     expect(result.current?.map((row) => row.id)).toEqual(['row-new', 'row-a', 'row-b']);
+  });
+
+  it('updates linked-view visibility immediately when the inline tombstone changes', async () => {
+    const fixture = createDatabaseFixture();
+    const inlineRowOrders = addInlineView(fixture, fixture.rowOrders.toJSON());
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      const rowAIndex = inlineRowOrders.toJSON().findIndex(({ id }) => id === 'row-a');
+      const rowA = inlineRowOrders.get(rowAIndex);
+
+      fixture.databaseDoc.transact(() => {
+        inlineRowOrders.delete(rowAIndex);
+        inlineRowOrders.insert(rowAIndex, [{ ...rowA, is_deleted: true }]);
+      });
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-b']);
+
+    act(() => {
+      const rowAIndex = inlineRowOrders.toJSON().findIndex(({ id }) => id === 'row-a');
+      const rowA = inlineRowOrders.get(rowAIndex);
+
+      fixture.databaseDoc.transact(() => {
+        inlineRowOrders.delete(rowAIndex);
+        inlineRowOrders.insert(rowAIndex, [{ ...rowA, is_deleted: false }]);
+      });
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+  });
+
+  it('reconciles all-view row-order changes once per Yjs transaction', async () => {
+    const fixture = createDatabaseFixture();
+    const inlineRowOrders = addInlineView(fixture, fixture.rowOrders.toJSON());
+    const materializeSpy = jest.spyOn(rowOrderVisibility, 'materializeVisibleRowOrders');
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    materializeSpy.mockClear();
+
+    act(() => {
+      fixture.databaseDoc.transact(() => {
+        const row = { id: 'row-new', height: 44 };
+
+        fixture.rowOrders.push([row]);
+        inlineRowOrders.push([row]);
+      });
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b', 'row-new']);
+    expect(materializeSpy).toHaveBeenCalledTimes(1);
+    materializeSpy.mockRestore();
+  });
+
+  it('renders a duplicate row-order ID once and keeps its last value', async () => {
+    const fixture = createDatabaseFixture();
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.rowOrders.push([{ id: 'row-a', height: 72 }]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    expect(result.current?.find((row) => row.id === 'row-a')?.height).toBe(72);
   });
 
   it('resubscribes when the row order array is replaced', async () => {

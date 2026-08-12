@@ -19,7 +19,7 @@ export interface YjsEditor extends Editor {
   disconnect: () => void;
   sharedRoot: YSharedRoot;
   applyRemoteEvents: (events: Array<YEvent>, transaction: Transaction) => void;
-  flushLocalChanges: () => void;
+  flushLocalChanges: (origin?: unknown) => void;
   storeLocalChange: (op: Operation) => void;
   interceptLocalChange: boolean;
   uploadFile?: (file: File) => Promise<string>;
@@ -196,7 +196,14 @@ export function withYjs<T extends Editor>(
   };
 
   const handleYEvents = (events: Array<YEvent>, transaction: Transaction) => {
-    if (transaction.origin === CollabOrigin.Local) return;
+    if (
+      transaction.origin === CollabOrigin.Local ||
+      transaction.origin === CollabOrigin.InlineComment ||
+      transaction.origin === CollabOrigin.InlineCommentAuthorized
+    ) {
+      return;
+    }
+
     YjsEditor.applyRemoteEvents(e, events, transaction);
   };
 
@@ -247,7 +254,7 @@ export function withYjs<T extends Editor>(
     localChanges.set(e, [...changes, { op, slateContent: e.children }]);
   };
 
-  e.flushLocalChanges = () => {
+  e.flushLocalChanges = (origin = localOrigin) => {
     const changes = YjsEditor.localChanges(e);
 
     localChanges.delete(e);
@@ -256,7 +263,7 @@ export function withYjs<T extends Editor>(
       changes.forEach((change) => {
         applyToYjs(doc, editor, change.op, change.slateContent);
       });
-    }, localOrigin);
+    }, origin);
   };
 
   // Proxy the select function with error handling

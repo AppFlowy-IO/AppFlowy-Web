@@ -12,6 +12,8 @@ import { BlockType, CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
+import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { Log } from '@/utils/log';
@@ -84,15 +86,18 @@ function CollaborativeEditor({
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
   const context = useEditorContext();
+  const inlineComments = useInlineCommentEditorBridgeOptional();
   const readSummary = context.readSummary;
   const onRendered = context.onRendered;
   const uploadFile = context.uploadFile;
   const readOnly = context.readOnly;
+  const canComment = context.canComment ?? false;
+  const canWrite = context.canWrite ?? !readOnly;
   const viewId = context.viewId;
   const onWordCountChange = context.onWordCountChange;
   const deletePage = context.deletePage;
   const loadViewMeta = context.loadViewMeta;
-  const [, setClock] = useState(0);
+  const [contentClock, setClock] = useState(0);
   const databaseBlocksRef = useRef<Map<string, DatabaseBlockInfo>>(new Map());
   const pendingDatabaseViewDeletionRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const onContentChange = useCallback(
@@ -267,14 +272,41 @@ function CollaborativeEditor({
   const handleSlateChange = useCallback(() => {
     ensureValidSelection(editor);
     handleDatabaseBlockLifecycle(editor);
-  }, [editor, handleDatabaseBlockLifecycle]);
+    inlineComments?.handleEditorChange(editor);
+  }, [editor, handleDatabaseBlockLifecycle, inlineComments]);
 
   const [, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    inlineComments?.updateEditorAccess(editor, {
+      canComment,
+      canWrite,
+      readOnly,
+      viewId,
+    });
+  }, [canComment, canWrite, editor, inlineComments, readOnly, viewId]);
+
+  // A wholesale content swap (the doc arriving after connect, a version reset)
+  // bumps the content clock without emitting Slate operations, so the comment
+  // anchors have to be rescanned from the new children.
+  useEffect(() => {
+    if (!editor) return;
+
+    inlineComments?.refreshAnchors(editor);
+  }, [contentClock, editor, inlineComments]);
+
+  useInlineCommentEditorRegistration(editor, inlineComments, {
+    canComment,
+    canWrite,
+    readOnly,
+    viewId,
+  });
 
   useEffect(() => {
     if (!editor) return;
 
     editor.connect();
+
     setIsConnected(true);
     onEditorConnected?.(editor);
     databaseBlocksRef.current = collectDatabaseBlocks(editor);

@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { Transaction } from 'yjs';
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -49,6 +50,7 @@ import {
   subscribeRollupCell,
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
+import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { sortBy } from '@/application/database-yjs/sort';
@@ -1348,6 +1350,7 @@ export function useRowOrdersSelector() {
   const fields = useDatabaseFields();
   const filters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
+  const inlineRowOrders = getInlineViewRowOrders(database);
   const {
     databaseDoc,
     loadView,
@@ -1372,6 +1375,7 @@ export function useRowOrdersSelector() {
   const conditionComputeLogRef = useRef({ count: 0, lastLoggedAt: 0 });
   const pendingConditionRowLoadsRef = useRef(new Set<string>());
   const unavailableConditionRowsRef = useRef(new Set<string>());
+  const lastProcessedRowOrderTransactionRef = useRef<Transaction | null>(null);
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || hasEffectiveFilters(filters, fields);
@@ -1477,9 +1481,15 @@ export function useRowOrdersSelector() {
     [blobPrefetchComplete, ensureRow, loadRowFromSeed, markConditionRowsUnavailable, seedsReady]
   );
 
-  const syncUnconditionedRowOrders = useCallback(() => {
+  const readVisibleRowOrders = useCallback(() => {
     const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
-    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
+    const canonicalRowOrders = inlineRowOrders?.toJSON() as Row[] | undefined;
+
+    return materializeVisibleRowOrders(rawRowOrders, canonicalRowOrders);
+  }, [inlineRowOrders, rowOrders]);
+
+  const syncUnconditionedRowOrders = useCallback(() => {
+    const originalRowOrders = readVisibleRowOrders();
 
     if (!originalRowOrders) return false;
 
@@ -1499,7 +1509,7 @@ export function useRowOrdersSelector() {
     filtersAppliedRef.current = false;
     setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
     return true;
-  }, [fields, filters, rowOrders, sorts, viewId]);
+  }, [fields, filters, readVisibleRowOrders, sorts, viewId]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -1566,8 +1576,7 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
-    const rawRowOrders = rowOrders?.toJSON() as Row[] | undefined;
-    const originalRowOrders = rawRowOrders?.filter((row) => !row.is_deleted);
+    const originalRowOrders = readVisibleRowOrders();
 
     if (!originalRowOrders) return;
 
@@ -1682,7 +1691,7 @@ export function useRowOrdersSelector() {
     filters,
     rowDocsForConditions,
     sorts,
-    rowOrders,
+    readVisibleRowOrders,
     relationTextGetter,
     rollupValueGetter,
     rollupTextGetter,
@@ -1716,13 +1725,23 @@ export function useRowOrdersSelector() {
       onConditionsChange();
     }, 200);
 
-    const handleRowOrdersChange = () => {
+    const handleRowOrdersChange = (_events: unknown, transaction: Transaction) => {
+      // Row mutations normally update every view in one Yjs transaction. The
+      // selected and inline observers therefore receive the same transaction;
+      // reconcile it once instead of serializing both row-order arrays twice.
+      if (lastProcessedRowOrderTransactionRef.current === transaction) return;
+
+      lastProcessedRowOrderTransactionRef.current = transaction;
+
       if (!syncUnconditionedRowOrders()) {
         debouncedChange();
       }
     };
 
     rowOrders?.observeDeep(handleRowOrdersChange);
+    if (inlineRowOrders !== rowOrders) {
+      inlineRowOrders?.observeDeep(handleRowOrdersChange);
+    }
 
     const observers = new Map<string, () => void>();
     let relationFieldIds: string[] = [];
@@ -1804,6 +1823,10 @@ export function useRowOrdersSelector() {
 
     return () => {
       rowOrders?.unobserveDeep(handleRowOrdersChange);
+      if (inlineRowOrders !== rowOrders) {
+        inlineRowOrders?.unobserveDeep(handleRowOrdersChange);
+      }
+
       sorts?.unobserveDeep(handleSortFilterChange);
       filters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
@@ -1816,7 +1839,7 @@ export function useRowOrdersSelector() {
         }
       });
     };
-  }, [onConditionsChange, rowOrders, fields, filters, sorts, rows, viewId, syncUnconditionedRowOrders]);
+  }, [onConditionsChange, rowOrders, inlineRowOrders, fields, filters, sorts, rows, viewId, syncUnconditionedRowOrders]);
 
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);

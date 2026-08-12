@@ -62,6 +62,10 @@ function dispatchNotifications(
   if (n.inboxNotification) {
     eventEmitter.emit(APP_EVENTS.INBOX_NOTIFICATION, n.inboxNotification);
   }
+
+  if (n.commentChanged) {
+    eventEmitter.emit(APP_EVENTS.INLINE_COMMENT_CHANGED, n.commentChanged);
+  }
 }
 
 export function useWorkspaceNotifications(

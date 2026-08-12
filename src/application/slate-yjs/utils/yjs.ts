@@ -9,6 +9,7 @@ import {
   LIST_BLOCK_TYPES,
   TOGGLE_BLOCK_TYPES,
 } from '@/application/slate-yjs/command/const';
+import { INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import {
   BlockData,
   BlockType,
@@ -535,7 +536,32 @@ export function liftChildren(sharedRoot: YSharedRoot, sourceBlock: YBlock, targe
   }
 }
 
-export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetBlock: YBlock) {
+export function stripInlineCommentIdsFromDelta(delta: readonly Op[]): Op[] {
+  return delta.map((operation) => {
+    if (!operation.attributes || !(INLINE_COMMENT_IDS_KEY in operation.attributes)) return operation;
+
+    const attributes = { ...operation.attributes };
+
+    delete attributes[INLINE_COMMENT_IDS_KEY];
+
+    const nextOperation = { ...operation };
+
+    if (Object.keys(attributes).length > 0) {
+      nextOperation.attributes = attributes;
+    } else {
+      delete nextOperation.attributes;
+    }
+
+    return nextOperation;
+  });
+}
+
+export function copyBlockText(
+  sharedRoot: YSharedRoot,
+  sourceBlock: YBlock,
+  targetBlock: YBlock,
+  stripInlineCommentIds = false
+) {
   const sourceTextId = sourceBlock.get(YjsEditorKey.block_external_id);
   const targetTextId = targetBlock.get(YjsEditorKey.block_external_id);
 
@@ -550,7 +576,9 @@ export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targ
     return;
   }
 
-  targetText.applyDelta(sourceText.toDelta());
+  const delta = sourceText.toDelta() as Op[];
+
+  targetText.applyDelta(stripInlineCommentIds ? stripInlineCommentIdsFromDelta(delta) : delta);
 }
 
 function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
@@ -791,20 +819,32 @@ export function moveNode(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetPar
   return copiedBlockId;
 }
 
-export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock, dataOverride?: BlockData): string | null {
+export function deepCopyBlock(
+  sharedRoot: YSharedRoot,
+  sourceBlock: YBlock,
+  dataOverride?: BlockData,
+  stripInlineCommentIds = false
+): string | null {
   try {
     const newBlock = createBlock(sharedRoot, {
       ty: sourceBlock.get(YjsEditorKey.block_type),
       data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
     });
 
-    copyBlockText(sharedRoot, sourceBlock, newBlock);
+    copyBlockText(sharedRoot, sourceBlock, newBlock, stripInlineCommentIds);
 
     const sourceChildrenArray = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
     const targetChildrenArray = getChildrenArray(newBlock.get(YjsEditorKey.block_children), sharedRoot);
 
     if (sourceChildrenArray && targetChildrenArray) {
-      deepCopyChildren(sharedRoot, sourceChildrenArray, targetChildrenArray, newBlock.get(YjsEditorKey.block_id));
+      deepCopyChildren(
+        sharedRoot,
+        sourceChildrenArray,
+        targetChildrenArray,
+        newBlock.get(YjsEditorKey.block_id),
+        undefined,
+        stripInlineCommentIds
+      );
     }
 
     return newBlock.get(YjsEditorKey.block_id);
@@ -963,7 +1003,8 @@ export function deepCopyChildren(
   sourceArray: Y.Array<string>,
   targetArray: Y.Array<string>,
   targetBlockId: string,
-  index?: number
+  index?: number,
+  stripInlineCommentIds = false
 ) {
   const sourceArraySorted = index === undefined ? sourceArray.toArray() : sourceArray.toArray().reverse();
 
@@ -981,7 +1022,9 @@ export function deepCopyChildren(
       const targetText = getText(newChild.get(YjsEditorKey.block_external_id), sharedRoot);
 
       if (sourceText && targetText) {
-        targetText.applyDelta(sourceText.toDelta());
+        const delta = sourceText.toDelta() as Op[];
+
+        targetText.applyDelta(stripInlineCommentIds ? stripInlineCommentIdsFromDelta(delta) : delta);
       }
 
       const sourceChildrenArray = getChildrenArray(childId, sharedRoot);
@@ -990,7 +1033,14 @@ export function deepCopyChildren(
         const newChildrenArray = getChildrenArray(newChild.get(YjsEditorKey.block_children), sharedRoot);
 
         if (newChildrenArray) {
-          deepCopyChildren(sharedRoot, sourceChildrenArray, newChildrenArray, newChild.get(YjsEditorKey.block_id));
+          deepCopyChildren(
+            sharedRoot,
+            sourceChildrenArray,
+            newChildrenArray,
+            newChild.get(YjsEditorKey.block_id),
+            undefined,
+            stripInlineCommentIds
+          );
         }
       }
 

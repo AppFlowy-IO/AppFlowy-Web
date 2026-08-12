@@ -13,7 +13,9 @@ const MODAL_PAPER_PROPS = {
 
 import { useDatabaseContext } from '@/application/database-yjs';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
-import { View } from '@/application/types';
+import { getMultiple as getViews } from '@/application/services/domains/view';
+import { LoadViewMeta, View } from '@/application/types';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { NormalModal } from '@/components/_shared/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,6 +32,59 @@ export type RelationCreationResult = {
   sourceLimit: RelationLimit;
   reciprocalFieldName?: string;
 };
+
+type RelationCandidate = {
+  databaseId: string;
+  databaseViewId: string;
+  displayView: View;
+};
+
+function indexViews(views: View[]): Map<string, View> {
+  const indexedViews = new Map<string, View>();
+  const pending = [...views];
+  let index = 0;
+
+  while (index < pending.length) {
+    const view = pending[index];
+
+    index += 1;
+
+    if (!view || indexedViews.has(view.view_id)) continue;
+    indexedViews.set(view.view_id, view);
+    pending.push(...view.children);
+  }
+
+  return indexedViews;
+}
+
+async function loadViewsById(
+  workspaceId: string,
+  viewIds: string[],
+  loadViewMeta: LoadViewMeta
+): Promise<Map<string, View>> {
+  const uniqueViewIds = Array.from(new Set(viewIds.filter(Boolean)));
+
+  if (uniqueViewIds.length === 0) return new Map();
+
+  try {
+    // The API chunks large lists internally, replacing one request per view
+    // with one batch per 50 IDs.
+    return indexViews(await getViews(workspaceId, uniqueViewIds, 0));
+  } catch {
+    // Keep compatibility with servers that do not expose the batch endpoint.
+    const views = await Promise.all(
+      uniqueViewIds.map(async (viewId) => {
+        try {
+          return await loadViewMeta(viewId);
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    return indexViews(views.filter((view): view is View => Boolean(view)));
+  }
+}
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
   return limit === RelationLimit.OneOnly
@@ -55,7 +110,7 @@ export function RelationCreationDialog({
   onCreate: (result: RelationCreationResult) => void;
 }) {
   const { t } = useTranslation();
-  const { databasePageId, loadDatabaseRelations, loadViewMeta } = useDatabaseContext();
+  const { databaseDoc, databasePageId, loadDatabaseRelations, loadViewMeta, workspaceId } = useDatabaseContext();
   const [fieldName, setFieldName] = useState(initialFieldName);
   const [reciprocalFieldName, setReciprocalFieldName] = useState('');
   const [selectedDatabaseId, setSelectedDatabaseId] = useState('');
@@ -63,9 +118,9 @@ export function RelationCreationDialog({
   const [isTwoWay, setIsTwoWay] = useState(false);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  // Each candidate carries both view metadata (for display) and the database_id
-  // that needs to be persisted on the relation property.
-  const [candidates, setCandidates] = useState<Array<{ databaseId: string; view: View }>>([]);
+  // Keep the registered database view ID for identity, while rendering the
+  // database container so users see the database name instead of "Grid".
+  const [candidates, setCandidates] = useState<RelationCandidate[]>([]);
 
   // RelationCreationDialog itself stays mounted under PropertyMenu — only the
   // MUI Dialog subtree unmounts via `keepMounted={false}`. The useState above
@@ -114,34 +169,46 @@ export function RelationCreationDialog({
         // Mirror the desktop flow (RelationDatabaseListCubit):
         //   1. Ask the workspace for every registered database via
         //      DatabaseEventGetDatabases (here: `loadDatabaseRelations`).
-        //   2. For each `(databaseId, viewId)`, fetch the view metadata so we
-        //      get the database name. Desktop calls ViewBackendService.getView
-        //      per id; we call `loadViewMeta` per id.
+        //   2. For each `(databaseId, viewId)`, fetch the registered database
+        //      view and its container. The workspace map points to the first
+        //      internal view (usually named "Grid"), while the container owns
+        //      the user-facing database name.
         //   3. Drop entries whose view fetch failed.
         // Force a refresh so a database created earlier in this session shows
         // up — the workspace cache is otherwise only invalidated on workspace
         // switch.
         const databaseRelations = (await loadDatabaseRelationsFn({ refresh: true })) ?? {};
-        const entries = Object.entries(databaseRelations);
-
-        const fetched = await Promise.all(
-          entries.map(async ([databaseId, viewId]) => {
-            if (!viewId) return null;
-
-            try {
-              const view = await loadViewMetaFn(viewId);
-
-              return view ? { databaseId, view } : null;
-            } catch {
-              return null;
-            }
-          })
+        const entries = Object.entries(databaseRelations).filter((entry): entry is [string, string] => Boolean(entry[1]));
+        const databaseViews = await loadViewsById(
+          workspaceId,
+          entries.map(([, viewId]) => viewId),
+          loadViewMetaFn
         );
+        const parentViews = await loadViewsById(
+          workspaceId,
+          Array.from(databaseViews.values())
+            .filter((view) => !isDatabaseContainer(view))
+            .map((view) => view.parent_view_id)
+            .filter((viewId): viewId is string => Boolean(viewId)),
+          loadViewMetaFn
+        );
+        const fetched = entries.map(([databaseId, viewId]) => {
+          const databaseView = databaseViews.get(viewId);
+
+          if (!databaseView) return null;
+
+          const parentView = databaseView.parent_view_id
+            ? parentViews.get(databaseView.parent_view_id)
+            : undefined;
+          const displayView = isDatabaseContainer(parentView) ? parentView : databaseView;
+
+          return { databaseId, databaseViewId: databaseView.view_id, displayView };
+        });
 
         if (cancelled) return;
 
         const seen = new Set<string>();
-        const resolved: Array<{ databaseId: string; view: View }> = [];
+        const resolved: RelationCandidate[] = [];
 
         for (const entry of fetched) {
           if (!entry || seen.has(entry.databaseId)) continue;
@@ -164,13 +231,13 @@ export function RelationCreationDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, workspaceId]);
 
   const filteredCandidates = useMemo(() => {
     if (!query.trim()) return candidates;
     const lowered = query.trim().toLowerCase();
 
-    return candidates.filter(({ view }) => (view.name || '').toLowerCase().includes(lowered));
+    return candidates.filter(({ displayView }) => (displayView.name || '').toLowerCase().includes(lowered));
   }, [candidates, query]);
 
   const selectedCandidate = useMemo(
@@ -179,13 +246,20 @@ export function RelationCreationDialog({
   );
 
   const currentCandidate = useMemo(
-    () => candidates.find((entry) => entry.view.view_id === databasePageId),
-    [candidates, databasePageId]
+    () =>
+      candidates.find(
+        (entry) =>
+          entry.databaseId === databaseDoc.guid ||
+          entry.databaseViewId === databasePageId ||
+          entry.displayView.view_id === databasePageId
+      ),
+    [candidates, databaseDoc.guid, databasePageId]
   );
 
-  const relatedDatabaseName = selectedCandidate?.view.name || t('grid.relation.relatedDatabasePlaceholder');
+  const relatedDatabaseName =
+    selectedCandidate?.displayView.name || t('grid.relation.relatedDatabasePlaceholder');
   const sourceDatabaseName =
-    currentCandidate?.view.name || t('grid.relation.thisDatabase', { defaultValue: 'This database' });
+    currentCandidate?.displayView.name || t('grid.relation.thisDatabase', { defaultValue: 'This database' });
 
   // Memoize the disabled flag so MUI's Button can bail out when only
   // unrelated state (search query, two-way toggle, …) changes.
@@ -242,7 +316,7 @@ export function RelationCreationDialog({
                 {t('grid.relation.emptySearchResult')}
               </div>
             ) : (
-              filteredCandidates.map(({ databaseId, view }) => {
+              filteredCandidates.map(({ databaseId, displayView }) => {
                 const selected = databaseId === selectedDatabaseId;
 
                 return (
@@ -256,7 +330,7 @@ export function RelationCreationDialog({
                     )}
                     onClick={() => setSelectedDatabaseId(databaseId)}
                   >
-                    <RelationView view={view} />
+                    <RelationView view={displayView} />
                   </button>
                 );
               })

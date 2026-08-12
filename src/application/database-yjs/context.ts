@@ -40,6 +40,14 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 
 export interface DatabaseContextState {
   readOnly: boolean;
+  /**
+   * Whether the current user may comment on this database's row documents.
+   * Independent from [readOnly] — Read-and-comment access is read-only but
+   * still permits inline comments.
+   */
+  canComment?: boolean;
+  /** Canonical server write permission, independent from database UI state. */
+  canWrite?: boolean;
   databaseDoc: YDoc;
   /**
    * The database's page ID in the folder/outline structure.

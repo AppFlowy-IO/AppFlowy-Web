@@ -1,4 +1,3 @@
-import { omit } from 'lodash-es';
 import { Editor, Element, Operation, Path, Text } from 'slate';
 import * as Y from 'yjs';
 
@@ -426,7 +425,11 @@ function deltaInsertToSlateNode(change: { insert: string | object; attributes?: 
  * Get properties from node (excluding text)
  */
 function getProperties(node: Text): Record<string, unknown> {
-  return omit(node, ['text']);
+  const properties = { ...node } as Record<string, unknown>;
+
+  delete properties.text;
+
+  return properties;
 }
 
 /**
