@@ -76,8 +76,8 @@ export interface DatabaseContextState {
    */
   hasCellLocalMutation?: (rowId: string, fieldId: string) => boolean;
   markCellLocalMutation?: (rowId: string, fieldId: string) => void;
-  getCellLocalMutationRevision?: () => number;
-  subscribeToCellLocalMutations?: (onStoreChange: () => void) => () => void;
+  getCellLocalMutationRevision?: (fieldId: string) => string;
+  subscribeToCellLocalMutations?: (fieldId: string, onStoreChange: () => void) => () => void;
   blobPrefetchComplete?: boolean;
   /** True as soon as row seeds are cached (before IndexedDB persist completes). */
   seedsReady?: boolean;

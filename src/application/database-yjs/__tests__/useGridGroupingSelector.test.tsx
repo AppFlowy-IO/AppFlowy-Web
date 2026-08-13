@@ -42,7 +42,7 @@ import { useSyncGridGroupingMetadata } from '@/components/database/grid/GridGrou
 
 import { createCell, createRowDoc } from './test-helpers';
 
-import { type ReactNode, useLayoutEffect, useState } from 'react';
+import { StrictMode, type ReactNode, useLayoutEffect, useState } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -165,6 +165,7 @@ function createGridGroupingFixture({
     group,
     groups,
     gridLayoutSetting,
+    otherField,
     otherFieldId,
     rowA,
     rowB,
@@ -173,6 +174,7 @@ function createGridGroupingFixture({
     setCell,
     deleteCell,
     updateCell,
+    view,
     wrapper,
   };
 }
@@ -199,6 +201,53 @@ describe('useGridGroupingSelector refresh behavior', () => {
     });
 
     unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('keeps grouping row observers active across StrictMode effect replay', async () => {
+    const fixture = createGridGroupingFixture();
+    const FixtureWrapper = fixture.wrapper;
+    const StrictWrapper = ({ children }: { children: ReactNode }) => (
+      <StrictMode>
+        <FixtureWrapper>{children}</FixtureWrapper>
+      </StrictMode>
+    );
+    const { result, unmount } = renderHook(useGridGroupingSelector, { wrapper: StrictWrapper });
+
+    await waitFor(() => expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['A', 'B']));
+
+    act(() => fixture.updateCell(fixture.rowA, fixture.fieldId, 'B'));
+
+    await waitFor(() => {
+      expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['B']);
+      expect(result.current.visibleGroups[0].rows.map(({ id }) => id)).toEqual(['row-a', 'row-b']);
+    });
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
+  it('does not serialize row orders for unrelated view or field updates', async () => {
+    const fixture = createGridGroupingFixture();
+    const rowOrdersToJSON = jest.spyOn(fixture.rowOrders, 'toJSON');
+    const { result, unmount } = renderHook(useGridGroupingSelector, { wrapper: fixture.wrapper });
+
+    await waitFor(() => expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['A', 'B']));
+    rowOrdersToJSON.mockClear();
+
+    act(() => {
+      fixture.view.set(YjsDatabaseKey.name, 'Renamed view');
+      fixture.otherField.set(YjsDatabaseKey.name, 'Renamed notes');
+    });
+
+    expect(rowOrdersToJSON).not.toHaveBeenCalled();
+
+    unmount();
+    rowOrdersToJSON.mockRestore();
     fixture.rowA.destroy();
     fixture.rowB.destroy();
     fixture.databaseDoc.destroy();
@@ -485,7 +534,7 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.groups.delete(0, fixture.groups.length);
     const contextValue: DatabaseContextState = {
       ...fixture.contextValue,
-      getCellLocalMutationRevision: () => 0,
+      getCellLocalMutationRevision: () => '0:0',
       hasCellLocalMutation: () => false,
       markCellLocalMutation: () => undefined,
       subscribeToCellLocalMutations: () => () => undefined,
@@ -540,8 +589,8 @@ describe('useGridGroupingSelector refresh behavior', () => {
   it('syncs visible live edits without resurrecting a permanently offscreen seed value', async () => {
     const fixture = createGridGroupingFixture();
     const locallyMutatedCells = new Set<string>();
-    const localMutationSubscribers = new Set<() => void>();
-    let localMutationRevision = 0;
+    const localMutationRevisions = new Map<string, number>();
+    const localMutationSubscribersByFieldId = new Map<string, Set<() => void>>();
     const cellKey = (rowId: string, fieldId: string) => `${rowId}\u0000${fieldId}`;
 
     const markCellLocalMutation = (rowId: string, fieldId: string) => {
@@ -550,18 +599,28 @@ describe('useGridGroupingSelector refresh behavior', () => {
       if (locallyMutatedCells.has(key)) return;
 
       locallyMutatedCells.add(key);
-      localMutationRevision += 1;
-      localMutationSubscribers.forEach((subscriber) => subscriber());
+      localMutationRevisions.set(fieldId, (localMutationRevisions.get(fieldId) ?? 0) + 1);
+      localMutationSubscribersByFieldId.get(fieldId)?.forEach((subscriber) => subscriber());
     };
 
     const contextValue: DatabaseContextState = {
       ...fixture.contextValue,
-      getCellLocalMutationRevision: () => localMutationRevision,
+      getCellLocalMutationRevision: (fieldId) => `0:${localMutationRevisions.get(fieldId) ?? 0}`,
       hasCellLocalMutation: (rowId, fieldId) => locallyMutatedCells.has(cellKey(rowId, fieldId)),
       markCellLocalMutation,
-      subscribeToCellLocalMutations: (subscriber) => {
-        localMutationSubscribers.add(subscriber);
-        return () => localMutationSubscribers.delete(subscriber);
+      subscribeToCellLocalMutations: (fieldId, subscriber) => {
+        let subscribers = localMutationSubscribersByFieldId.get(fieldId);
+
+        if (!subscribers) {
+          subscribers = new Set();
+          localMutationSubscribersByFieldId.set(fieldId, subscribers);
+        }
+
+        subscribers.add(subscriber);
+        return () => {
+          subscribers.delete(subscriber);
+          if (subscribers.size === 0) localMutationSubscribersByFieldId.delete(fieldId);
+        };
       },
     };
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -603,10 +662,12 @@ describe('useGridGroupingSelector refresh behavior', () => {
       expect(result.current.grouping.activeGroupIds).toEqual(['name', 'B', 'C', 'A']);
     });
     expect(fixture.columns.toArray()).toEqual(remoteColumns);
+    const groupingBeforeUnrelatedEdit = result.current.grouping;
 
     act(() => result.current.updateRowAOtherField('after'));
 
     await waitFor(() => expect(locallyMutatedCells).toContain(cellKey('row-a', fixture.otherFieldId)));
+    expect(result.current.grouping).toBe(groupingBeforeUnrelatedEdit);
     expect(fixture.columns.toArray()).toEqual(remoteColumns);
     expect(fixture.columns.toJSON().some(({ id }: { id: string }) => id === 'A')).toBe(false);
 

@@ -89,9 +89,7 @@ import {
   YDatabaseGroup,
   YDatabaseMetas,
   YDatabaseRow,
-  YDatabaseRowOrders,
   YDatabaseSorts,
-  YDatabaseView,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -1398,9 +1396,6 @@ function orderNumberGroupIds(groupIds: string[], defaultGroupId: string) {
   });
 }
 
-const subscribeToStaticStore = () => () => undefined;
-const getStaticStoreRevision = () => 0;
-
 function yjsEventChangesKey(event: unknown, key: string) {
   const keysChanged = (event as { keysChanged?: Set<unknown> }).keysChanged;
 
@@ -1419,29 +1414,24 @@ function yjsEventTouchesGroupingCell(event: { path: Array<string | number> }, fi
   return path[2] === fieldId;
 }
 
-function getGridGroupingViewSnapshot(
-  view?: YDatabaseView,
-  fields?: YDatabaseFields,
-  inlineRowOrders?: YDatabaseRowOrders
-) {
-  const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
-  const fieldId = group?.get(YjsDatabaseKey.field_id);
-  const field = fieldId ? fields?.get(fieldId) : undefined;
-  const gridLayoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('0');
-  const primarySort = view?.get(YjsDatabaseKey.sorts)?.toArray()?.[0];
+const GRID_GROUPING_VIEW_KEYS = new Set<string>([
+  YjsDatabaseKey.groups,
+  YjsDatabaseKey.layout_settings,
+  YjsDatabaseKey.row_orders,
+  YjsDatabaseKey.sorts,
+]);
 
-  // Yjs collections mutate in place, so object identity cannot be used as an
-  // external-store snapshot. Keep this snapshot scoped to values that affect
-  // Grid grouping; unrelated view/field mutations then compare equal and do
-  // not schedule a React render.
-  return stringifyConditionSignature([
-    group?.toJSON() ?? null,
-    field?.toJSON() ?? null,
-    gridLayoutSetting?.toJSON() ?? null,
-    primarySort?.toJSON() ?? null,
-    view?.get(YjsDatabaseKey.row_orders)?.toJSON() ?? null,
-    inlineRowOrders?.toJSON() ?? null,
-  ]);
+function yjsEventTouchesGridGroupingView(event: YEvent) {
+  if (event.path.length > 0) return GRID_GROUPING_VIEW_KEYS.has(String(event.path[0]));
+
+  return [...GRID_GROUPING_VIEW_KEYS].some((key) => yjsEventChangesKey(event, key));
+}
+
+function yjsEventTouchesField(event: YEvent, fieldId?: string) {
+  if (!fieldId) return false;
+  if (event.path.length > 0) return event.path[0] === fieldId;
+
+  return yjsEventChangesKey(event, fieldId);
 }
 
 type GridGroupingRowObserver = {
@@ -1451,7 +1441,7 @@ type GridGroupingRowObserver = {
 };
 
 type GridGroupingRowsStore = {
-  destroy: () => void;
+  detachRows: () => void;
   getSnapshot: () => number;
   subscribe: (onStoreChange: () => void) => () => void;
   updateRows: (rows: Record<RowId, YDoc>) => void;
@@ -1461,7 +1451,6 @@ function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
   const subscribers = new Set<() => void>();
   const observers = new Map<RowId, GridGroupingRowObserver>();
   let revision = 0;
-  let destroyed = false;
 
   const publish = () => {
     revision += 1;
@@ -1487,23 +1476,18 @@ function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
   };
 
   return {
-    destroy: () => {
-      if (destroyed) return;
-      destroyed = true;
+    detachRows: () => {
       observers.forEach(detach);
       observers.clear();
-      subscribers.clear();
     },
     getSnapshot: () => revision,
     subscribe: (onStoreChange) => {
-      if (destroyed) return () => undefined;
       subscribers.add(onStoreChange);
       return () => {
         subscribers.delete(onStoreChange);
       };
     },
     updateRows: (rows) => {
-      if (destroyed) return;
       let changed = false;
 
       observers.forEach((entry, rowId) => {
@@ -1660,48 +1644,76 @@ export function useGridGroupingSelector(): GridGrouping {
   }, [groupingRows, groupingRowsStore]);
   useLayoutEffect(
     () => () => {
-      groupingRowsStore.destroy();
+      // React StrictMode and reusable effects replay cleanup followed by setup
+      // while preserving memoized values. Detach external resources here, but
+      // keep the store reusable so the next setup can attach them again.
+      groupingRowsStore.detachRows();
     },
     [groupingRowsStore]
   );
 
+  const groupingViewRevisionRef = useRef(0);
   const subscribeToGroupingView = useCallback(
     (onStoreChange: () => void) => {
-      view?.observeDeep(onStoreChange);
-      fields?.observeDeep(onStoreChange);
-      if (inlineRowOrders !== rawRowOrders) inlineRowOrders?.observeDeep(onStoreChange);
+      const publish = () => {
+        groupingViewRevisionRef.current += 1;
+        onStoreChange();
+      };
+
+      const handleViewChange = (events: YEvent[]) => {
+        if (events.some(yjsEventTouchesGridGroupingView)) publish();
+      };
+
+      const handleFieldsChange = (events: YEvent[]) => {
+        if (events.some((event) => yjsEventTouchesField(event, fieldId))) publish();
+      };
+
+      view?.observeDeep(handleViewChange);
+      fields?.observeDeep(handleFieldsChange);
+      if (inlineRowOrders !== rawRowOrders) inlineRowOrders?.observeDeep(publish);
+
+      // Close the render-to-subscribe gap with a cached primitive snapshot.
+      // useSyncExternalStore rechecks it immediately after subscribing.
+      groupingViewRevisionRef.current += 1;
 
       return () => {
-        view?.unobserveDeep(onStoreChange);
-        fields?.unobserveDeep(onStoreChange);
-        if (inlineRowOrders !== rawRowOrders) inlineRowOrders?.unobserveDeep(onStoreChange);
+        view?.unobserveDeep(handleViewChange);
+        fields?.unobserveDeep(handleFieldsChange);
+        if (inlineRowOrders !== rawRowOrders) inlineRowOrders?.unobserveDeep(publish);
       };
     },
-    [fields, inlineRowOrders, rawRowOrders, view]
+    [fieldId, fields, inlineRowOrders, rawRowOrders, view]
   );
-  const getGroupingViewSnapshot = useCallback(
-    () => getGridGroupingViewSnapshot(view, fields, inlineRowOrders),
-    [fields, inlineRowOrders, view]
-  );
-  const groupingViewSnapshot = useSyncExternalStore(
+  const getGroupingViewRevision = useCallback(() => groupingViewRevisionRef.current, []);
+  const groupingViewRevision = useSyncExternalStore(
     subscribeToGroupingView,
-    getGroupingViewSnapshot,
-    getGroupingViewSnapshot
+    getGroupingViewRevision,
+    getGroupingViewRevision
   );
   const allRowOrders = useMemo(() => {
-    void groupingViewSnapshot;
+    void groupingViewRevision;
 
     const sourceRowOrders = (rawRowOrders?.toJSON() as Row[] | undefined) ?? rowOrders;
 
     return materializeVisibleRowOrders(sourceRowOrders, inlineRowOrders?.toJSON() as Row[] | undefined);
-  }, [groupingViewSnapshot, inlineRowOrders, rawRowOrders, rowOrders]);
+  }, [groupingViewRevision, inlineRowOrders, rawRowOrders, rowOrders]);
   const groupingRowsSnapshot = useSyncExternalStore(
     groupingRowsStore.subscribe,
     groupingRowsStore.getSnapshot,
     groupingRowsStore.getSnapshot
   );
-  const cellLocalMutationSubscribe = subscribeToCellLocalMutations ?? subscribeToStaticStore;
-  const getCellLocalMutationSnapshot = getCellLocalMutationRevision ?? getStaticStoreRevision;
+  const cellLocalMutationSubscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!fieldId || !subscribeToCellLocalMutations) return () => undefined;
+
+      return subscribeToCellLocalMutations(fieldId, onStoreChange);
+    },
+    [fieldId, subscribeToCellLocalMutations]
+  );
+  const getCellLocalMutationSnapshot = useCallback(
+    () => (fieldId && getCellLocalMutationRevision ? getCellLocalMutationRevision(fieldId) : ''),
+    [fieldId, getCellLocalMutationRevision]
+  );
   const cellLocalMutationRevision = useSyncExternalStore(
     cellLocalMutationSubscribe,
     getCellLocalMutationSnapshot,
@@ -1710,7 +1722,7 @@ export function useGridGroupingSelector(): GridGrouping {
 
   const rowsHydrated = Boolean(allRowOrders && areGroupRowsHydrated(allRowOrders, groupingRows));
   const metadataSyncKey = useMemo(() => {
-    void groupingViewSnapshot;
+    void groupingViewRevision;
     const groupingField = fieldId ? fields?.get(fieldId) : undefined;
 
     return stringifyConditionSignature([
@@ -1727,13 +1739,13 @@ export function useGridGroupingSelector(): GridGrouping {
     fieldId,
     fields,
     groupingRowsSnapshot,
-    groupingViewSnapshot,
+    groupingViewRevision,
     persistedGroup,
     cellLocalMutationRevision,
   ]);
 
   return useMemo(() => {
-    void groupingViewSnapshot;
+    void groupingViewRevision;
     void cellLocalMutationRevision;
 
     const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
@@ -1886,7 +1898,7 @@ export function useGridGroupingSelector(): GridGrouping {
     allRowOrders,
     fields,
     groupingRows,
-    groupingViewSnapshot,
+    groupingViewRevision,
     hasCellLocalMutation,
     metadataSyncKey,
     cellLocalMutationRevision,
@@ -2343,6 +2355,11 @@ export function useRowOrdersSelector() {
     };
 
     const handleFieldChange = () => {
+      // Schema changes cannot affect row order when the view has no configured
+      // filters or sorts. Avoid serializing every row for unrelated field edits
+      // such as renames while an unconditioned Grid view is open.
+      if ((sorts?.length ?? 0) === 0 && (filters?.length ?? 0) === 0) return;
+
       refreshConditionFieldIds();
 
       Object.values(rowDocsForConditionsRef.current).forEach((rowDoc) => {

@@ -75,17 +75,19 @@ type RowSyncRegistration = {
 
 type CellLocalMutationStore = {
   fieldIdsByRowId: Map<RowId, Set<string>>;
+  fieldRevisions: Map<string, number>;
+  globalRevision: number;
   locallyCreatedRowIds: Set<RowId>;
-  revision: number;
-  subscribers: Set<() => void>;
+  subscribersByFieldId: Map<string, Set<() => void>>;
 };
 
 function createCellLocalMutationStore(): CellLocalMutationStore {
   return {
     fieldIdsByRowId: new Map(),
+    fieldRevisions: new Map(),
+    globalRevision: 0,
     locallyCreatedRowIds: new Set(),
-    revision: 0,
-    subscribers: new Set(),
+    subscribersByFieldId: new Map(),
   };
 }
 
@@ -296,11 +298,22 @@ function Database(props: Database2Props) {
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
 
-  const publishCellLocalMutationChange = useCallback(() => {
+  const publishCellLocalMutationChange = useCallback((fieldId?: string) => {
     const store = cellLocalMutationStoreRef.current;
 
-    store.revision += 1;
-    store.subscribers.forEach((subscriber) => subscriber());
+    if (fieldId) {
+      store.fieldRevisions.set(fieldId, (store.fieldRevisions.get(fieldId) ?? 0) + 1);
+      store.subscribersByFieldId.get(fieldId)?.forEach((subscriber) => subscriber());
+      return;
+    }
+
+    store.globalRevision += 1;
+    const subscribers = new Set<() => void>();
+
+    store.subscribersByFieldId.forEach((fieldSubscribers) => {
+      fieldSubscribers.forEach((subscriber) => subscribers.add(subscriber));
+    });
+    subscribers.forEach((subscriber) => subscriber());
   }, []);
   const markCellLocalMutation = useCallback(
     (rowId: RowId, fieldId: string) => {
@@ -314,7 +327,7 @@ function Database(props: Database2Props) {
       }
 
       fieldIds.add(fieldId);
-      publishCellLocalMutationChange();
+      publishCellLocalMutationChange(fieldId);
     },
     [publishCellLocalMutationChange]
   );
@@ -328,15 +341,24 @@ function Database(props: Database2Props) {
     },
     [publishCellLocalMutationChange]
   );
-  const subscribeToCellLocalMutations = useCallback((onStoreChange: () => void) => {
+  const subscribeToCellLocalMutations = useCallback((fieldId: string, onStoreChange: () => void) => {
     const store = cellLocalMutationStoreRef.current;
+    const existingSubscribers = store.subscribersByFieldId.get(fieldId);
+    const subscribers = existingSubscribers ?? new Set<() => void>();
 
-    store.subscribers.add(onStoreChange);
+    if (!existingSubscribers) store.subscribersByFieldId.set(fieldId, subscribers);
+
+    subscribers.add(onStoreChange);
     return () => {
-      store.subscribers.delete(onStoreChange);
+      subscribers.delete(onStoreChange);
+      if (subscribers.size === 0) store.subscribersByFieldId.delete(fieldId);
     };
   }, []);
-  const getCellLocalMutationRevision = useCallback(() => cellLocalMutationStoreRef.current.revision, []);
+  const getCellLocalMutationRevision = useCallback((fieldId: string) => {
+    const store = cellLocalMutationStoreRef.current;
+
+    return `${store.globalRevision}:${store.fieldRevisions.get(fieldId) ?? 0}`;
+  }, []);
 
   // Layout phase, and declared before the lifecycle-reset effect below, so that
   // in a commit where both `rowMap` and the lifecycle changed this mirror runs
@@ -1232,6 +1254,7 @@ function Database(props: Database2Props) {
 
     if (cellLocalMutationStore.fieldIdsByRowId.size > 0 || cellLocalMutationStore.locallyCreatedRowIds.size > 0) {
       cellLocalMutationStore.fieldIdsByRowId.clear();
+      cellLocalMutationStore.fieldRevisions.clear();
       cellLocalMutationStore.locallyCreatedRowIds.clear();
       publishCellLocalMutationChange();
     }
