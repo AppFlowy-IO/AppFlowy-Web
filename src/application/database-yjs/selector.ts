@@ -1,7 +1,15 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import type { Transaction } from 'yjs';
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 
 import { isUngroupedColumnHidden, resolveBoardColumnVisibility } from '@/application/database-yjs/board-visibility';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -34,7 +42,20 @@ import {
   hasEffectiveFilters,
   parseFilter,
 } from '@/application/database-yjs/filter';
-import { areGroupRowsHydrated, getGroupColumns, groupByField } from '@/application/database-yjs/group';
+import {
+  areGroupRowsHydrated,
+  getGroupColumns,
+  getGroupLabel,
+  groupByField,
+  isDatabaseGroupableFieldType,
+  isDynamicDatabaseGroupFieldType,
+} from '@/application/database-yjs/group';
+import {
+  hasPendingLocalGridGroupInitialization,
+  normalizeDatabaseGroupColumn,
+  normalizeUniqueDatabaseGroupColumns,
+} from '@/application/database-yjs/group-column';
+import type { DatabaseGroupColumn } from '@/application/database-yjs/group-column';
 import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
 import {
   invalidateRelationCell,
@@ -57,6 +78,7 @@ import { sortBy } from '@/application/database-yjs/sort';
 import {
   DatabaseViewLayout,
   FieldId,
+  RowId,
   SortId,
   TimeFormat,
   YDatabase,
@@ -64,9 +86,12 @@ import {
   YDatabaseField,
   YDatabaseFields,
   YDatabaseFilters,
+  YDatabaseGroup,
   YDatabaseMetas,
   YDatabaseRow,
+  YDatabaseRowOrders,
   YDatabaseSorts,
+  YDatabaseView,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -87,6 +112,8 @@ import {
   RowMeta,
   SortCondition,
 } from './database.type';
+
+import type { Transaction, YEvent } from 'yjs';
 
 export interface Column {
   fieldId: string;
@@ -976,44 +1003,7 @@ export function useGroupsSelector() {
   return groups;
 }
 
-export interface GroupColumn {
-  id: string;
-  visible: boolean;
-  /** Whether `visible` was explicitly persisted rather than defaulted to true. */
-  visibleExplicit?: boolean;
-}
-
-function normalizeGroupColumn(column: unknown): GroupColumn | null {
-  const parseVisible = (value: unknown) => value !== false && value !== 'false';
-  const isExplicitVisible = (value: unknown) => value !== undefined && value !== null;
-
-  if (!column || typeof column !== 'object') return null;
-
-  if ('get' in column && typeof column.get === 'function') {
-    const mapColumn = column as { get: (key: YjsDatabaseKey) => unknown };
-    const id = mapColumn.get(YjsDatabaseKey.id);
-
-    if (typeof id !== 'string' || !id) return null;
-
-    const rawVisible = mapColumn.get(YjsDatabaseKey.visible);
-
-    return {
-      id,
-      visible: parseVisible(rawVisible),
-      visibleExplicit: isExplicitVisible(rawVisible),
-    };
-  }
-
-  const plainColumn = column as Partial<GroupColumn>;
-
-  if (typeof plainColumn.id !== 'string' || !plainColumn.id) return null;
-
-  return {
-    id: plainColumn.id,
-    visible: parseVisible(plainColumn.visible),
-    visibleExplicit: isExplicitVisible(plainColumn.visible),
-  };
-}
+export type GroupColumn = DatabaseGroupColumn;
 
 function getFallbackGroupColumns(field?: YDatabaseField): GroupColumn[] {
   if (!field) return [];
@@ -1038,16 +1028,18 @@ export function useGroup(groupId: string) {
   const [columns, setColumns] = useState<GroupColumn[]>([]);
 
   useEffect(() => {
-    if (!viewId || !group) return;
+    if (!viewId || !group) {
+      setFieldId(null);
+      setColumns([]);
+      return;
+    }
 
     const observerEvent = () => {
       const groupFieldId = group.get(YjsDatabaseKey.field_id);
 
       setFieldId(groupFieldId);
       const groupColumnsVisible = group.get(YjsDatabaseKey.groups);
-      const persistedColumns = (groupColumnsVisible?.toArray() ?? [])
-        .map(normalizeGroupColumn)
-        .filter((column): column is GroupColumn => Boolean(column));
+      const persistedColumns = normalizeUniqueDatabaseGroupColumns(groupColumnsVisible?.toArray() ?? []);
 
       setColumns(persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId)));
     };
@@ -1118,7 +1110,11 @@ export function useBoardLayoutSettings() {
     const observerEvent = () => {
       const group = groups?.toArray()?.[0];
 
-      if (!group) return;
+      if (!group) {
+        setFieldId(null);
+        setUngroupedColumn(null);
+        return;
+      }
 
       const groupFieldId = group.get(YjsDatabaseKey.field_id);
 
@@ -1128,7 +1124,7 @@ export function useBoardLayoutSettings() {
       let next: GroupColumn | null = null;
 
       for (const rawColumn of rawColumns) {
-        const column = normalizeGroupColumn(rawColumn);
+        const column = normalizeDatabaseGroupColumn(rawColumn);
 
         if (column?.id === groupFieldId) {
           next = column;
@@ -1328,6 +1324,576 @@ export function useRowsByGroup(groupId: string) {
     hideEmptyGroups,
     notFound,
   };
+}
+
+export interface GridGroup {
+  id: string;
+  label: string;
+  rows: Row[];
+  isDefault: boolean;
+  visible: boolean;
+  hidden: boolean;
+  automaticallyHidden: boolean;
+  collapsed: boolean;
+  option?: SelectOption;
+}
+
+export interface GridGrouping {
+  isGrouped: boolean;
+  /** The filtered and sorted rows used to build group membership. */
+  rowOrders?: Row[];
+  groupId?: string;
+  fieldId?: string;
+  fieldType?: FieldType;
+  fieldName?: string;
+  field?: YDatabaseField;
+  content?: string;
+  /** Canonical group IDs backed by all view rows, in persisted metadata order. */
+  activeGroupIds: string[];
+  groups: GridGroup[];
+  visibleGroups: GridGroup[];
+  hideEmptyGroups: boolean;
+  ready: boolean;
+  /**
+   * Group IDs that are safe to reconcile into shared metadata. While some
+   * rows are seed-only this preserves every persisted ID and appends IDs
+   * derived only from locally mutated rows. It intentionally differs from
+   * activeGroupIds, whose conservative UI union may include seed-only values.
+   */
+  metadataGroupIds?: string[];
+  /** Local group config whose one-time hydrated metadata initialization is pending. */
+  metadataInitializationGroup?: YDatabaseGroup;
+  /** Changes only when row membership inputs change, not when group metadata changes. */
+  metadataSyncKey?: string;
+}
+
+const EMPTY_GRID_GROUPING: GridGrouping = {
+  isGrouped: false,
+  activeGroupIds: [],
+  groups: [],
+  visibleGroups: [],
+  hideEmptyGroups: true,
+  ready: true,
+  metadataGroupIds: [],
+  metadataSyncKey: '',
+};
+
+function getNumberGroupStart(groupId: string) {
+  const match = /^number_range_(-?\d+(?:\.\d+)?)_/.exec(groupId);
+
+  return match ? Number(match[1]) : undefined;
+}
+
+function orderNumberGroupIds(groupIds: string[], defaultGroupId: string) {
+  return [...groupIds].sort((left, right) => {
+    if (left === defaultGroupId) return -1;
+    if (right === defaultGroupId) return 1;
+
+    const leftStart = getNumberGroupStart(left);
+    const rightStart = getNumberGroupStart(right);
+
+    if (leftStart === undefined) return rightStart === undefined ? 0 : 1;
+    if (rightStart === undefined) return -1;
+    return leftStart - rightStart;
+  });
+}
+
+const subscribeToStaticStore = () => () => undefined;
+const getStaticStoreRevision = () => 0;
+
+function yjsEventChangesKey(event: unknown, key: string) {
+  const keysChanged = (event as { keysChanged?: Set<unknown> }).keysChanged;
+
+  return keysChanged?.has(key) ?? false;
+}
+
+function yjsEventTouchesGroupingCell(event: { path: Array<string | number> }, fieldId: string) {
+  const { path } = event;
+
+  if (path.length === 0) return yjsEventChangesKey(event, YjsEditorKey.database_row);
+  if (path[0] !== YjsEditorKey.database_row) return false;
+  if (path.length === 1) return yjsEventChangesKey(event, YjsDatabaseKey.cells);
+  if (path[1] !== YjsDatabaseKey.cells) return false;
+  if (path.length === 2) return yjsEventChangesKey(event, fieldId);
+
+  return path[2] === fieldId;
+}
+
+function getGridGroupingViewSnapshot(
+  view?: YDatabaseView,
+  fields?: YDatabaseFields,
+  inlineRowOrders?: YDatabaseRowOrders
+) {
+  const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
+  const fieldId = group?.get(YjsDatabaseKey.field_id);
+  const field = fieldId ? fields?.get(fieldId) : undefined;
+  const gridLayoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('0');
+  const primarySort = view?.get(YjsDatabaseKey.sorts)?.toArray()?.[0];
+
+  // Yjs collections mutate in place, so object identity cannot be used as an
+  // external-store snapshot. Keep this snapshot scoped to values that affect
+  // Grid grouping; unrelated view/field mutations then compare equal and do
+  // not schedule a React render.
+  return stringifyConditionSignature([
+    group?.toJSON() ?? null,
+    field?.toJSON() ?? null,
+    gridLayoutSetting?.toJSON() ?? null,
+    primarySort?.toJSON() ?? null,
+    view?.get(YjsDatabaseKey.row_orders)?.toJSON() ?? null,
+    inlineRowOrders?.toJSON() ?? null,
+  ]);
+}
+
+type GridGroupingRowObserver = {
+  dataSection: ReturnType<YDoc['getMap']>;
+  doc: YDoc;
+  observer: Parameters<ReturnType<YDoc['getMap']>['observeDeep']>[0];
+};
+
+type GridGroupingRowsStore = {
+  destroy: () => void;
+  getSnapshot: () => number;
+  subscribe: (onStoreChange: () => void) => () => void;
+  updateRows: (rows: Record<RowId, YDoc>) => void;
+};
+
+function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
+  const subscribers = new Set<() => void>();
+  const observers = new Map<RowId, GridGroupingRowObserver>();
+  let revision = 0;
+  let destroyed = false;
+
+  const publish = () => {
+    revision += 1;
+    subscribers.forEach((subscriber) => subscriber());
+  };
+
+  const detach = ({ dataSection, observer }: GridGroupingRowObserver) => {
+    try {
+      dataSection.unobserveDeep(observer);
+    } catch {
+      // The row document may already have been destroyed during a lifecycle reset.
+    }
+  };
+
+  const attach = (rowId: RowId, doc: YDoc) => {
+    const dataSection = doc.getMap(YjsEditorKey.data_section);
+    const observer: Parameters<typeof dataSection.observeDeep>[0] = (events: YEvent[]) => {
+      if (fieldId && events.some((event) => yjsEventTouchesGroupingCell(event, fieldId))) publish();
+    };
+
+    dataSection.observeDeep(observer);
+    observers.set(rowId, { dataSection, doc, observer });
+  };
+
+  return {
+    destroy: () => {
+      if (destroyed) return;
+      destroyed = true;
+      observers.forEach(detach);
+      observers.clear();
+      subscribers.clear();
+    },
+    getSnapshot: () => revision,
+    subscribe: (onStoreChange) => {
+      if (destroyed) return () => undefined;
+      subscribers.add(onStoreChange);
+      return () => {
+        subscribers.delete(onStoreChange);
+      };
+    },
+    updateRows: (rows) => {
+      if (destroyed) return;
+      let changed = false;
+
+      observers.forEach((entry, rowId) => {
+        if (rows[rowId] === entry.doc) return;
+        detach(entry);
+        observers.delete(rowId);
+        changed = true;
+      });
+      if (fieldId) {
+        Object.entries(rows).forEach(([rowId, doc]) => {
+          if (observers.has(rowId)) return;
+          attach(rowId, doc);
+          changed = true;
+        });
+      }
+
+      // A primitive revision is an O(1), cached external-store snapshot. The
+      // layout-phase update also closes the render-to-subscribe gap: if rows
+      // changed before observers were committed, React immediately rechecks.
+      if (changed) publish();
+    },
+  };
+}
+
+function haveSameRowOrder(left?: Row[], right?: Row[]) {
+  return Boolean(
+    left &&
+      right &&
+      left.length === right.length &&
+      left.every(
+        (row, index) => row.id === right[index]?.id && Boolean(row.is_deleted) === Boolean(right[index]?.is_deleted)
+      )
+  );
+}
+
+function orderGridGroupsForPrimarySort(
+  groupIds: string[],
+  groupResult: Map<string, Row[]> | undefined,
+  sortedRows: Row[] | undefined,
+  sortCondition: SortCondition
+) {
+  if (!groupResult || !sortedRows || groupIds.length <= 1) return groupIds;
+
+  const originalIndexById = new Map(groupIds.map((id, index) => [id, index] as const));
+  const sortedRowIndexById = new Map(sortedRows.map((row, index) => [row.id, index] as const));
+  const representativeOrderById = new Map<string, number>();
+
+  groupIds.forEach((id) => {
+    const representative = groupResult.get(id)?.[0];
+    const order = representative ? sortedRowIndexById.get(representative.id) : undefined;
+
+    if (order !== undefined) representativeOrderById.set(id, order);
+  });
+
+  if (representativeOrderById.size === 0) return groupIds;
+
+  const isPopulated = (id: string) => (groupResult.get(id)?.length ?? 0) > 0;
+  const emptyGroupOrder = (index: number) => {
+    let runStart = 0;
+
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (isPopulated(groupIds[cursor])) {
+        runStart = cursor + 1;
+        break;
+      }
+    }
+
+    let runEnd = groupIds.length;
+
+    for (let cursor = index + 1; cursor < groupIds.length; cursor += 1) {
+      if (isPopulated(groupIds[cursor])) {
+        runEnd = cursor;
+        break;
+      }
+    }
+
+    const runLength = Math.max(runEnd - runStart, 0);
+    const offset = Math.max(index - runStart, 0) + 1;
+    let previousOrder: number | undefined;
+
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      previousOrder = representativeOrderById.get(groupIds[cursor]);
+      if (previousOrder !== undefined) break;
+    }
+
+    let nextOrder: number | undefined;
+
+    for (let cursor = index + 1; cursor < groupIds.length; cursor += 1) {
+      nextOrder = representativeOrderById.get(groupIds[cursor]);
+      if (nextOrder !== undefined) break;
+    }
+
+    if (previousOrder !== undefined && nextOrder !== undefined) {
+      return previousOrder + ((nextOrder - previousOrder) * offset) / (runLength + 1);
+    }
+
+    if (nextOrder !== undefined) {
+      return sortCondition === SortCondition.Ascending
+        ? nextOrder - (runLength - offset + 1)
+        : nextOrder + (runLength - offset + 1);
+    }
+
+    if (previousOrder !== undefined) {
+      return sortCondition === SortCondition.Ascending ? previousOrder + offset : previousOrder - offset;
+    }
+
+    return index;
+  };
+
+  const orderById = new Map(
+    groupIds.map((id, index) => [id, representativeOrderById.get(id) ?? emptyGroupOrder(index)] as const)
+  );
+
+  return [...groupIds].sort((left, right) => {
+    const order = (orderById.get(left) ?? 0) - (orderById.get(right) ?? 0);
+
+    return order || (originalIndexById.get(left) ?? 0) - (originalIndexById.get(right) ?? 0);
+  });
+}
+
+/**
+ * Resolves Grid grouping from the current view and observes every source that
+ * can change group membership. Row documents are separate Yjs documents, so
+ * observing only the database view is not sufficient when a cell is edited.
+ */
+export function useGridGroupingSelector(): GridGrouping {
+  const { getCellLocalMutationRevision, hasCellLocalMutation, subscribeToCellLocalMutations } = useDatabaseContext();
+  const view = useDatabaseView();
+  const database = useDatabase();
+  const fields = useDatabaseFields();
+  const rowOrders = useRowOrdersSelector();
+  const rows = useRowMap();
+  const persistedGroups = view?.get(YjsDatabaseKey.groups);
+  const persistedGroup = persistedGroups?.toArray()?.[0];
+  const fieldId = persistedGroup?.get(YjsDatabaseKey.field_id);
+  const rawRowOrders = view?.get(YjsDatabaseKey.row_orders);
+  const inlineRowOrders = getInlineViewRowOrders(database);
+  const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'grid-grouping');
+  const groupingRows = useMemo(() => {
+    const next = { ...cachedRowDocs };
+
+    Object.entries(rows ?? {}).forEach(([rowId, rowDoc]) => {
+      if (hasRowConditionData(rowDoc) || !next[rowId]) {
+        next[rowId] = rowDoc;
+      }
+    });
+
+    return next;
+  }, [cachedRowDocs, rows]);
+  const groupingRowsStore = useMemo(() => createGridGroupingRowsStore(fieldId), [fieldId]);
+
+  useLayoutEffect(() => {
+    groupingRowsStore.updateRows(groupingRows);
+  }, [groupingRows, groupingRowsStore]);
+  useLayoutEffect(
+    () => () => {
+      groupingRowsStore.destroy();
+    },
+    [groupingRowsStore]
+  );
+
+  const subscribeToGroupingView = useCallback(
+    (onStoreChange: () => void) => {
+      view?.observeDeep(onStoreChange);
+      fields?.observeDeep(onStoreChange);
+      if (inlineRowOrders !== rawRowOrders) inlineRowOrders?.observeDeep(onStoreChange);
+
+      return () => {
+        view?.unobserveDeep(onStoreChange);
+        fields?.unobserveDeep(onStoreChange);
+        if (inlineRowOrders !== rawRowOrders) inlineRowOrders?.unobserveDeep(onStoreChange);
+      };
+    },
+    [fields, inlineRowOrders, rawRowOrders, view]
+  );
+  const getGroupingViewSnapshot = useCallback(
+    () => getGridGroupingViewSnapshot(view, fields, inlineRowOrders),
+    [fields, inlineRowOrders, view]
+  );
+  const groupingViewSnapshot = useSyncExternalStore(
+    subscribeToGroupingView,
+    getGroupingViewSnapshot,
+    getGroupingViewSnapshot
+  );
+  const allRowOrders = useMemo(() => {
+    void groupingViewSnapshot;
+
+    const sourceRowOrders = (rawRowOrders?.toJSON() as Row[] | undefined) ?? rowOrders;
+
+    return materializeVisibleRowOrders(sourceRowOrders, inlineRowOrders?.toJSON() as Row[] | undefined);
+  }, [groupingViewSnapshot, inlineRowOrders, rawRowOrders, rowOrders]);
+  const groupingRowsSnapshot = useSyncExternalStore(
+    groupingRowsStore.subscribe,
+    groupingRowsStore.getSnapshot,
+    groupingRowsStore.getSnapshot
+  );
+  const cellLocalMutationSubscribe = subscribeToCellLocalMutations ?? subscribeToStaticStore;
+  const getCellLocalMutationSnapshot = getCellLocalMutationRevision ?? getStaticStoreRevision;
+  const cellLocalMutationRevision = useSyncExternalStore(
+    cellLocalMutationSubscribe,
+    getCellLocalMutationSnapshot,
+    getCellLocalMutationSnapshot
+  );
+
+  const rowsHydrated = Boolean(allRowOrders && areGroupRowsHydrated(allRowOrders, groupingRows));
+  const metadataSyncKey = useMemo(() => {
+    void groupingViewSnapshot;
+    const groupingField = fieldId ? fields?.get(fieldId) : undefined;
+
+    return stringifyConditionSignature([
+      persistedGroup?.get(YjsDatabaseKey.id) ?? null,
+      fieldId ?? null,
+      persistedGroup?.get(YjsDatabaseKey.content) ?? null,
+      groupingField?.toJSON() ?? null,
+      groupingRowsSnapshot,
+      cellLocalMutationRevision,
+      allRowOrders?.map((row) => [row.id, Boolean(row.is_deleted)]) ?? null,
+    ]);
+  }, [
+    allRowOrders,
+    fieldId,
+    fields,
+    groupingRowsSnapshot,
+    groupingViewSnapshot,
+    persistedGroup,
+    cellLocalMutationRevision,
+  ]);
+
+  return useMemo(() => {
+    void groupingViewSnapshot;
+    void cellLocalMutationRevision;
+
+    const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
+    const currentFieldId = group?.get(YjsDatabaseKey.field_id);
+    const field = currentFieldId ? fields?.get(currentFieldId) : undefined;
+    const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+
+    if (!group || !field || !isDatabaseGroupableFieldType(fieldType)) {
+      return { ...EMPTY_GRID_GROUPING, rowOrders };
+    }
+
+    const groupingFieldId = field.get(YjsDatabaseKey.id);
+    const content = group.get(YjsDatabaseKey.content);
+    const result = rowOrders ? groupByField(rowOrders, groupingRows, field, undefined, content) : undefined;
+    const metadataResult = haveSameRowOrder(rowOrders, allRowOrders)
+      ? result
+      : allRowOrders
+      ? groupByField(allRowOrders, groupingRows, field, undefined, content)
+      : undefined;
+    const locallyMutatedRowOrders = allRowOrders?.filter(
+      (row) => hasCellLocalMutation?.(row.id, groupingFieldId) ?? true
+    );
+    const locallyDerivedMetadataResult = locallyMutatedRowOrders
+      ? groupByField(locallyMutatedRowOrders, groupingRows, field, undefined, content)
+      : undefined;
+    const ready = rowsHydrated;
+    const initializesLocalGroup = ready && hasPendingLocalGridGroupInitialization(group);
+    const rawColumns = group.get(YjsDatabaseKey.groups)?.toArray() ?? [];
+    const persistedColumns = normalizeUniqueDatabaseGroupColumns(rawColumns);
+    const fallbackColumns = getFallbackGroupColumns(field);
+    const derivedMetadataGroupIds = metadataResult
+      ? [...metadataResult.keys()]
+      : fallbackColumns.map((column) => column.id);
+    const persistedAndDerivedIds = persistedColumns.map((column) => column.id);
+    const orderedIdSet = new Set(persistedAndDerivedIds);
+
+    derivedMetadataGroupIds.forEach((id) => {
+      if (!orderedIdSet.has(id)) {
+        persistedAndDerivedIds.push(id);
+        orderedIdSet.add(id);
+      }
+    });
+    fallbackColumns.forEach((column) => {
+      if (!orderedIdSet.has(column.id)) {
+        persistedAndDerivedIds.push(column.id);
+        orderedIdSet.add(column.id);
+      }
+    });
+    const orderedIds =
+      fieldType === FieldType.Number
+        ? orderNumberGroupIds(persistedAndDerivedIds, groupingFieldId)
+        : persistedAndDerivedIds;
+
+    // Seed-only docs may lag a Desktop edit indefinitely because background
+    // grouping hydration deliberately does not bind realtime for offscreen
+    // rows. Preserve all persisted IDs and append only IDs proven by a local
+    // mutation. Sync registration alone never makes a derived value writable.
+    const metadataGroupIds = persistedColumns.map((column) => column.id);
+    const metadataGroupIdSet = new Set(metadataGroupIds);
+    const safeDerivedGroupIds = initializesLocalGroup
+      ? derivedMetadataGroupIds
+      : locallyDerivedMetadataResult
+      ? [...locallyDerivedMetadataResult.keys()]
+      : fallbackColumns.map((column) => column.id);
+
+    safeDerivedGroupIds.forEach((id) => {
+      if (!metadataGroupIdSet.has(id)) {
+        metadataGroupIds.push(id);
+        metadataGroupIdSet.add(id);
+      }
+    });
+    fallbackColumns.forEach((column) => {
+      if (!metadataGroupIdSet.has(column.id)) {
+        metadataGroupIds.push(column.id);
+        metadataGroupIdSet.add(column.id);
+      }
+    });
+    const orderedMetadataGroupIds =
+      fieldType === FieldType.Number ? orderNumberGroupIds(metadataGroupIds, groupingFieldId) : metadataGroupIds;
+
+    const collapsedValue = group.get(YjsDatabaseKey.collapsed_group_ids) as unknown;
+    const collapsedIds = new Set(
+      (collapsedValue && typeof collapsedValue === 'object' && 'toArray' in collapsedValue
+        ? (collapsedValue as { toArray: () => unknown[] }).toArray()
+        : Array.isArray(collapsedValue)
+        ? collapsedValue
+        : []
+      ).filter((id): id is string => typeof id === 'string')
+    );
+    const gridLayoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('0');
+    const storedHideEmpty = gridLayoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
+    const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);
+    const optionById = new Map(
+      (parseSelectOptionTypeOptions(field)?.options ?? []).map((option) => [option.id, option] as const)
+    );
+    const columnsById = new Map(persistedColumns.map((column) => [column.id, column] as const));
+    const primarySort = view?.get(YjsDatabaseKey.sorts)?.toArray()[0];
+    const primarySortCondition =
+      primarySort?.get(YjsDatabaseKey.field_id) === currentFieldId
+        ? (Number(primarySort.get(YjsDatabaseKey.condition)) as SortCondition)
+        : undefined;
+    const displayIds =
+      primarySortCondition === undefined
+        ? orderedIds
+        : orderGridGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
+    const groups = displayIds.map((id): GridGroup => {
+      const groupRows = result?.get(id) ?? [];
+      const hidden = columnsById.get(id)?.visible === false;
+      // Desktop deletes empty row-derived groups. Web conservatively keeps
+      // their persisted Y.Maps because seed-only rows cannot prove global
+      // absence, but must not resurrect those stale IDs as empty headers when
+      // the user turns the static-option "Hide empty groups" setting off.
+      const automaticallyHidden =
+        ready &&
+        groupRows.length === 0 &&
+        (hideEmptyGroups || (id !== currentFieldId && isDynamicDatabaseGroupFieldType(fieldType)));
+
+      return {
+        id,
+        label: getGroupLabel(id, field, content),
+        rows: groupRows,
+        isDefault: id === currentFieldId,
+        visible: !hidden && !automaticallyHidden,
+        hidden,
+        automaticallyHidden,
+        collapsed: collapsedIds.has(id),
+        option: optionById.get(id),
+      };
+    });
+
+    return {
+      isGrouped: true,
+      rowOrders,
+      groupId: group.get(YjsDatabaseKey.id),
+      fieldId: currentFieldId,
+      fieldType,
+      fieldName: field.get(YjsDatabaseKey.name),
+      field,
+      content,
+      activeGroupIds: orderedIds,
+      groups,
+      visibleGroups: groups.filter((group) => group.visible),
+      hideEmptyGroups,
+      ready,
+      metadataGroupIds: orderedMetadataGroupIds,
+      metadataInitializationGroup: initializesLocalGroup ? group : undefined,
+      metadataSyncKey,
+    };
+  }, [
+    allRowOrders,
+    fields,
+    groupingRows,
+    groupingViewSnapshot,
+    hasCellLocalMutation,
+    metadataSyncKey,
+    cellLocalMutationRevision,
+    rowOrders,
+    rowsHydrated,
+    view,
+  ]);
 }
 
 /**
@@ -1801,25 +2367,27 @@ export function useRowOrdersSelector() {
     // Keep relation/rollup field IDs updated as schema changes to avoid stale invalidation.
     refreshConditionFieldIds();
 
-    Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
-      const observerRowsEvent = () => {
-        invalidateRowConditionCache(rowDoc);
+    if (hasConditions) {
+      Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
+        const observerRowsEvent = () => {
+          invalidateRowConditionCache(rowDoc);
 
-        // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
-        for (const fieldId of relationFieldIds) {
-          invalidateRelationCell(`${rowId}:${fieldId}`);
-        }
+          // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
+          for (const fieldId of relationFieldIds) {
+            invalidateRelationCell(`${rowId}:${fieldId}`);
+          }
 
-        for (const fieldId of rollupFieldIds) {
-          invalidateRollupCell(`${rowId}:${fieldId}`);
-        }
+          for (const fieldId of rollupFieldIds) {
+            invalidateRollupCell(`${rowId}:${fieldId}`);
+          }
 
-        debouncedChange();
-      };
+          debouncedChange();
+        };
 
-      observers.set(rowId, observerRowsEvent);
-      rowDoc.getMap(YjsEditorKey.data_section).observeDeep(observerRowsEvent);
-    });
+        observers.set(rowId, observerRowsEvent);
+        rowDoc.getMap(YjsEditorKey.data_section).observeDeep(observerRowsEvent);
+      });
+    }
 
     return () => {
       rowOrders?.unobserveDeep(handleRowOrdersChange);
@@ -1831,15 +2399,22 @@ export function useRowOrdersSelector() {
       filters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
       debouncedChange.cancel();
-      Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
-        const observer = observers.get(rowId);
-
-        if (observer) {
-          rowDoc.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
-        }
+      observers.forEach((observer, rowId) => {
+        rows?.[rowId]?.getMap(YjsEditorKey.data_section).unobserveDeep(observer);
       });
     };
-  }, [onConditionsChange, rowOrders, inlineRowOrders, fields, filters, sorts, rows, viewId, syncUnconditionedRowOrders]);
+  }, [
+    onConditionsChange,
+    rowOrders,
+    inlineRowOrders,
+    fields,
+    filters,
+    sorts,
+    rows,
+    viewId,
+    syncUnconditionedRowOrders,
+    hasConditions,
+  ]);
 
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
@@ -2186,7 +2761,7 @@ export function useCalendarEventsSelector() {
         }
 
         const getDate = (timestamp: string) => {
-          const dayjsResult = timestamp.length === 10 ? dayjs.unix(Number(timestamp)) : dayjs(timestamp);
+          const dayjsResult = dayjs(timestamp.length === 10 ? Number(timestamp) * 1000 : timestamp);
 
           return dayjsResult.toDate();
         };

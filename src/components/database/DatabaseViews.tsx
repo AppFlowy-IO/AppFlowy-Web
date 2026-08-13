@@ -14,6 +14,7 @@ import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
+import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
 import {
   getDatabaseViewportStyle,
   shouldAutoShrinkDatabaseViewport,
@@ -393,51 +394,51 @@ function DatabaseViews({
     [conditionsExpanded, toggleExpanded, setExpanded, openFilterId, setOpenFilterId, isAdvancedMode, setAdvancedMode]
   );
 
-  return (
-    <>
-      <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
-        <DatabaseTabs
-          viewName={viewName}
-          databasePageId={databasePageId}
-          selectedViewId={activeViewId}
-          setSelectedViewId={handleViewChange}
-          viewIds={displayedViewIds}
-          onViewAddedToDatabase={handleViewAddedToDatabase}
-          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-          onViewIdsChanged={onViewIdsChanged}
-          onReorderTabs={handleReorderTabs}
-        />
+  const content = (
+    <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
+      <DatabaseTabs
+        viewName={viewName}
+        databasePageId={databasePageId}
+        selectedViewId={activeViewId}
+        setSelectedViewId={handleViewChange}
+        viewIds={displayedViewIds}
+        onViewAddedToDatabase={handleViewAddedToDatabase}
+        onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+        onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+        onViewIdsChanged={onViewIdsChanged}
+        onReorderTabs={handleReorderTabs}
+      />
 
-        <DatabaseConditions />
+      <DatabaseConditions />
 
+      <div
+        className={cn(
+          'relative flex w-full flex-col',
+          shouldUseFixedViewport
+            ? shouldAutoShrinkViewport
+              ? 'min-h-0 overflow-hidden'
+              : 'h-full min-h-0 flex-1 overflow-hidden'
+            : 'overflow-visible'
+        )}
+        style={viewportStyle}
+      >
         <div
           className={cn(
-            'relative flex w-full flex-col',
-            shouldUseFixedViewport
-              ? shouldAutoShrinkViewport
-                ? 'min-h-0 overflow-hidden'
-                : 'h-full min-h-0 flex-1 overflow-hidden'
-              : 'overflow-visible'
+            'w-full',
+            shouldUseFixedViewport &&
+              (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
           )}
           style={viewportStyle}
         >
-          <div
-            className={cn(
-              'w-full',
-              shouldUseFixedViewport &&
-                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
-            )}
-            style={viewportStyle}
-          >
-            <Suspense fallback={null}>
-              <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-            </Suspense>
-          </div>
+          <Suspense fallback={null}>
+            <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+          </Suspense>
         </div>
-      </DatabaseConditionsContext.Provider>
-    </>
+      </div>
+    </DatabaseConditionsContext.Provider>
   );
+
+  return effectiveLayout === DatabaseViewLayout.Grid ? <GridGroupingProvider>{content}</GridGroupingProvider> : content;
 }
 
 export default DatabaseViews;

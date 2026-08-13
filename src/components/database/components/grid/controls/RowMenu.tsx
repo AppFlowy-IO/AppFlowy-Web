@@ -11,10 +11,20 @@ import { useHoverControlsContext } from '@/components/database/components/grid/c
 import { DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
-function RowMenu({ rowId, onClose }: { rowId: string; onClose: () => void }) {
+function RowMenu({
+  rowId,
+  groupFieldId,
+  groupId,
+  onClose,
+}: {
+  rowId: string;
+  groupFieldId?: string;
+  groupId?: string;
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
   const { onAddRowBelow, onDuplicateRow, onAddRowAbove, addAboveLoading, addBelowLoading, duplicateLoading } =
-    useHoverControlsActions(rowId);
+    useHoverControlsActions(rowId, groupFieldId, groupId);
 
   const { showPreventDialog } = useHoverControlsContext();
 
@@ -23,6 +33,7 @@ function RowMenu({ rowId, onClose }: { rowId: string; onClose: () => void }) {
   const actions = useMemo(
     () => [
       {
+        testId: 'row-menu-insert-above',
         label: t('grid.row.insertRecordAbove'),
         icon: UpIcon,
         loading: addAboveLoading,
@@ -33,6 +44,7 @@ function RowMenu({ rowId, onClose }: { rowId: string; onClose: () => void }) {
         },
       },
       {
+        testId: 'row-menu-insert-below',
         label: t('grid.row.insertRecordBelow'),
         icon: PlusIcon,
         loading: addBelowLoading,
@@ -43,12 +55,14 @@ function RowMenu({ rowId, onClose }: { rowId: string; onClose: () => void }) {
         },
       },
       {
+        testId: 'row-menu-duplicate',
         label: t('grid.row.duplicate'),
         icon: DuplicateIcon,
         loading: duplicateLoading,
         onSelect: onDuplicateRow,
       },
       {
+        testId: 'row-menu-delete',
         label: t('grid.row.delete'),
         icon: DeleteIcon,
         onSelect: () => {
@@ -77,13 +91,7 @@ function RowMenu({ rowId, onClose }: { rowId: string; onClose: () => void }) {
           {actions.map((item) => (
             <DropdownMenuItem
               key={item.label}
-              data-testid={
-                item.label === t('grid.row.duplicate') ? 'row-menu-duplicate' :
-                item.label === t('grid.row.insertRecordAbove') ? 'row-menu-insert-above' :
-                item.label === t('grid.row.insertRecordBelow') ? 'row-menu-insert-below' :
-                item.label === t('grid.row.delete') ? 'row-menu-delete' :
-                undefined
-              }
+              data-testid={item.testId}
               onSelect={async (e) => {
                 e.preventDefault();
                 item.onSelect();

@@ -1,5 +1,4 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
 import * as Y from 'yjs';
 
 import {
@@ -10,15 +9,31 @@ import {
   useGroup,
 } from '@/application/database-yjs';
 import {
+  useClearGroupByFieldDispatch,
+  useGroupByFieldDispatch,
+  useReorderGroupColumnDispatch,
+  useSetAllGridGroupsVisibilityDispatch,
   useSetBoardColumnRenderedDispatch,
+  useSetGridGroupVisibilityDispatch,
+  useSyncGridGroupColumnsDispatch,
+  useToggleGridGroupCollapsedDispatch,
+  useToggleGridHideEmptyGroups,
   useToggleHiddenGroupColumnDispatch,
   useToggleHideEmptyGroups,
   useToggleHideUnGrouped,
+  useUpdateDatabaseLayout,
 } from '@/application/database-yjs/dispatch';
-import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { useGroupByFieldDispatch as useGroupByFieldDispatchCompatibility } from '@/application/database-yjs/dispatch/group';
+import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
+}));
+
+jest.mock('@/components/main/app.hooks', () => ({
+  useCurrentUser: () => undefined,
 }));
 
 function createDatabaseDoc({
@@ -86,12 +101,251 @@ function createWrapper(databaseDoc: YDoc, activeViewId: string) {
     workspaceId: 'workspace-id',
   };
 
-  return ({ children }: { children: React.ReactNode }) => (
+  return ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 }
 
 describe('useGroup', () => {
+  it('uses one canonical grouping dispatch through the compatibility module', () => {
+    expect(useGroupByFieldDispatchCompatibility).toBe(useGroupByFieldDispatch);
+  });
+
+  it.each<[FieldType, string[]]>([
+    [FieldType.RichText, ['field-id']],
+    [FieldType.Number, ['field-id']],
+    [FieldType.URL, ['field-id']],
+    [FieldType.Checkbox, ['Yes', 'No']],
+    [FieldType.SingleSelect, ['field-id']],
+    [FieldType.MultiSelect, ['field-id']],
+    [FieldType.DateTime, ['field-id']],
+  ])('creates desktop-compatible Grid group settings for field type %s', (fieldType, expectedColumnIds) => {
+    const fieldId = 'field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId: 'old-group', groupColumns: [], viewId });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+    view?.set(YjsDatabaseKey.layout, 0);
+    view?.get(YjsDatabaseKey.groups)?.delete(0, 1);
+    field?.set(YjsDatabaseKey.type, fieldType);
+    const { result } = renderHook(useGroupByFieldDispatch, { wrapper: createWrapper(databaseDoc, viewId) });
+
+    act(() => result.current(fieldId));
+
+    const group = view?.get(YjsDatabaseKey.groups)?.get(0);
+
+    expect(group?.get(YjsDatabaseKey.type)).toBe(fieldType);
+    expect(group?.get(YjsDatabaseKey.groups)?.toJSON()).toEqual(expectedColumnIds.map((id) => ({ id, visible: true })));
+    expect(
+      group
+        ?.get(YjsDatabaseKey.groups)
+        ?.toArray()
+        .every((column) => column instanceof Y.Map)
+    ).toBe(true);
+    expect(group?.get(YjsDatabaseKey.collapsed_group_ids)?.toArray()).toEqual([]);
+    expect(group?.get(YjsDatabaseKey.content)).toBe(
+      fieldType === FieldType.DateTime ? JSON.stringify({ hide_empty: false, condition: 0 }) : ''
+    );
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('0')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
+  });
+
+  it('can clear and immediately regroup by the same field with a fresh desktop-compatible setting', () => {
+    const fieldId = 'field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId: 'old-group', groupColumns: [], viewId });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const { result } = renderHook(
+      () => ({
+        clear: useClearGroupByFieldDispatch(),
+        groupBy: useGroupByFieldDispatch(),
+      }),
+      { wrapper: createWrapper(databaseDoc, viewId) }
+    );
+
+    act(() => {
+      result.current.clear();
+      result.current.groupBy(fieldId);
+    });
+
+    const group = view?.get(YjsDatabaseKey.groups)?.get(0);
+
+    expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(1);
+    expect(group?.get(YjsDatabaseKey.id)).not.toBe('old-group');
+    expect(group?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(
+      group
+        ?.get(YjsDatabaseKey.groups)
+        ?.toArray()
+        .every((column) => column instanceof Y.Map)
+    ).toBe(true);
+  });
+
+  it('preserves an existing Grid filter on the grouping field', () => {
+    const fieldId = 'field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId: 'old-group', groupColumns: [], viewId });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filters = new Y.Array<Y.Map<unknown>>();
+    const filter = new Y.Map<unknown>();
+
+    filter.set(YjsDatabaseKey.id, 'priority-vip-filter');
+    filter.set(YjsDatabaseKey.field_id, fieldId);
+    filter.set(YjsDatabaseKey.content, 'VIP');
+    filters.push([filter]);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+    view?.set(YjsDatabaseKey.filters, filters);
+    view?.get(YjsDatabaseKey.groups)?.delete(0, 1);
+    const { result } = renderHook(useGroupByFieldDispatch, { wrapper: createWrapper(databaseDoc, viewId) });
+
+    act(() => result.current(fieldId));
+
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(view?.get(YjsDatabaseKey.filters)?.length).toBe(1);
+    expect(view?.get(YjsDatabaseKey.filters)?.get(0)).toBe(filter);
+    expect(filter.get(YjsDatabaseKey.content)).toBe('VIP');
+  });
+
+  it('retains the existing Board behavior of removing a filter on the grouping field', () => {
+    const fieldId = 'field-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId: 'old-group', groupColumns: [], viewId });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filters = new Y.Array<Y.Map<unknown>>();
+    const filter = new Y.Map<unknown>();
+
+    filter.set(YjsDatabaseKey.id, 'priority-vip-filter');
+    filter.set(YjsDatabaseKey.field_id, fieldId);
+    filter.set(YjsDatabaseKey.content, 'VIP');
+    filters.push([filter]);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    view?.set(YjsDatabaseKey.filters, filters);
+    view?.get(YjsDatabaseKey.groups)?.delete(0, 1);
+    const { result } = renderHook(useGroupByFieldDispatch, { wrapper: createWrapper(databaseDoc, viewId) });
+
+    act(() => result.current(fieldId));
+
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(view?.get(YjsDatabaseKey.filters)?.length).toBe(0);
+  });
+
+  it('migrates legacy group objects and preserves desktop group metadata while syncing dynamic IDs', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [
+        { id: fieldId, visible: true },
+        { group_color: 'appflowy_tint5', id: 'A', visible: false },
+        { id: 'stale', visible: true },
+      ],
+      viewId,
+    });
+    const { result } = renderHook(() => useSyncGridGroupColumnsDispatch(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current([fieldId, 'A', 'B']));
+
+    const columns = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.groups)
+      ?.get(0)
+      ?.get(YjsDatabaseKey.groups);
+
+    expect(columns?.toJSON()).toEqual([
+      { id: fieldId, visible: true },
+      { group_color: 'appflowy_tint5', id: 'A', visible: false },
+      { id: 'stale', visible: true },
+      { id: 'B', visible: true },
+    ]);
+    expect(columns?.toArray().every((column) => column instanceof Y.Map)).toBe(true);
+  });
+
+  it('deduplicates concurrently appended group maps while preserving the first map metadata', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const firstA = new Y.Map();
+    const duplicateA = new Y.Map();
+
+    firstA.set(YjsDatabaseKey.id, 'A');
+    firstA.set(YjsDatabaseKey.visible, false);
+    firstA.set(YjsDatabaseKey.group_color, 'appflowy_tint5');
+    duplicateA.set(YjsDatabaseKey.id, 'A');
+    duplicateA.set(YjsDatabaseKey.visible, true);
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: fieldId, visible: true }, firstA, duplicateA, {}],
+      viewId,
+    });
+    const { result } = renderHook(() => useSyncGridGroupColumnsDispatch(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current([fieldId, 'A']));
+
+    const columns = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.groups)
+      ?.get(0)
+      ?.get(YjsDatabaseKey.groups);
+
+    expect(columns?.toJSON()).toEqual([
+      { id: fieldId, visible: true },
+      { group_color: 'appflowy_tint5', id: 'A', visible: false },
+    ]);
+    expect(columns?.get(1)).toBe(firstA);
+  });
+
+  it('reorders nested group maps without losing visibility or group color', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const groupA = new Y.Map();
+    const groupB = new Y.Map();
+
+    groupA.set(YjsDatabaseKey.id, 'A');
+    groupA.set(YjsDatabaseKey.visible, false);
+    groupA.set(YjsDatabaseKey.group_color, 'appflowy_tint5');
+    groupB.set(YjsDatabaseKey.id, 'B');
+    groupB.set(YjsDatabaseKey.visible, true);
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [groupA, groupB], viewId });
+    const { result } = renderHook(() => useReorderGroupColumnDispatch(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current('B'));
+
+    const columns = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.groups)
+      ?.get(0)
+      ?.get(YjsDatabaseKey.groups);
+
+    expect(columns?.toJSON()).toEqual([
+      { id: 'B', visible: true },
+      { group_color: 'appflowy_tint5', id: 'A', visible: false },
+    ]);
+    expect(columns?.toArray().every((column) => column instanceof Y.Map)).toBe(true);
+  });
+
   it('falls back to default group columns when persisted board columns are empty', async () => {
     const fieldId = 'field-id';
     const groupId = 'group-id';
@@ -112,6 +366,173 @@ describe('useGroup', () => {
     });
 
     expect(result.current.columns).toEqual([{ id: fieldId, visible: true, visibleExplicit: false }]);
+  });
+
+  it('persists dynamic Grid group visibility even when the group was generated from cell data', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [{ id: fieldId, visible: true }], viewId });
+    const { result } = renderHook(() => useSetGridGroupVisibilityDispatch(groupId, fieldId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current('dynamic-text-value', false));
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const columns = database
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.groups)
+      ?.get(0)
+      ?.get(YjsDatabaseKey.groups);
+
+    expect(columns?.toJSON()).toEqual([
+      { id: fieldId, visible: true },
+      { id: 'dynamic-text-value', visible: false },
+    ]);
+  });
+
+  it('can hide and restore every non-default Grid group in one transaction', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [
+        { id: fieldId, visible: true },
+        { id: 'A', visible: true },
+        { id: 'B', visible: true },
+      ],
+      viewId,
+    });
+    const { result } = renderHook(() => useSetAllGridGroupsVisibilityDispatch(groupId, fieldId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+    const getColumns = () =>
+      databaseDoc
+        .getMap(YjsEditorKey.data_section)
+        .get(YjsEditorKey.database)
+        ?.get(YjsDatabaseKey.views)
+        ?.get(viewId)
+        ?.get(YjsDatabaseKey.groups)
+        ?.get(0)
+        ?.get(YjsDatabaseKey.groups)
+        ?.toJSON();
+
+    act(() => result.current(['A', 'B'], false));
+    expect(getColumns()).toEqual([
+      { id: fieldId, visible: true },
+      { id: 'A', visible: false },
+      { id: 'B', visible: false },
+    ]);
+
+    act(() => result.current(['A', 'B'], true));
+    expect(getColumns()).toEqual([
+      { id: fieldId, visible: true },
+      { id: 'A', visible: true },
+      { id: 'B', visible: true },
+    ]);
+  });
+
+  it('persists Grid hide-empty and per-group collapse settings without changing Board settings', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [{ id: fieldId, visible: true }], viewId });
+    const { result } = renderHook(
+      () => ({
+        toggleCollapse: useToggleGridGroupCollapsedDispatch(groupId),
+        toggleHideEmpty: useToggleGridHideEmptyGroups(),
+      }),
+      { wrapper: createWrapper(databaseDoc, viewId) }
+    );
+
+    act(() => {
+      result.current.toggleHideEmpty(true);
+      result.current.toggleCollapse('A', true);
+    });
+
+    const view = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId);
+
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('0')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('1')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(false);
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.collapsed_group_ids)?.toArray()).toEqual(['A']);
+
+    act(() => result.current.toggleCollapse('A', false));
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.collapsed_group_ids)?.toArray()).toEqual([]);
+  });
+
+  it('removes optional Grid grouping without affecting rows or fields', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [{ id: fieldId, visible: true }], viewId });
+    const { result } = renderHook(useClearGroupByFieldDispatch, {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current());
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+    expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(0);
+    expect(database?.get(YjsDatabaseKey.fields)?.has(fieldId)).toBe(true);
+  });
+
+  it('clears observed group layout state when the active setting is removed', async () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId, groupColumns: [{ id: fieldId, visible: false }], viewId });
+    const { result } = renderHook(
+      () => ({
+        clear: useClearGroupByFieldDispatch(),
+        layoutSettings: useBoardLayoutSettings(),
+      }),
+      { wrapper: createWrapper(databaseDoc, viewId) }
+    );
+
+    await waitFor(() => {
+      expect(result.current.layoutSettings.fieldId).toBe(fieldId);
+      expect(result.current.layoutSettings.ungroupedColumnHidden).toBe(true);
+    });
+
+    act(() => result.current.clear());
+
+    await waitFor(() => {
+      expect(result.current.layoutSettings.fieldId).toBeNull();
+      expect(result.current.layoutSettings.ungroupedColumnHidden).toBe(false);
+    });
+  });
+
+  it('clears the persisted Board grouping when switching to Grid', () => {
+    const fieldId = 'field-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId: 'board-group-id',
+      groupColumns: [{ id: fieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.Grid));
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(0);
   });
 
   it('materializes fallback columns before persisting their visibility', async () => {
@@ -193,6 +614,7 @@ describe('useGroup', () => {
 
     column.set(YjsDatabaseKey.id, optionId);
     column.set(YjsDatabaseKey.visible, false);
+    column.set(YjsDatabaseKey.group_color, 'appflowy_tint5');
 
     const databaseDoc = createDatabaseDoc({
       fieldId,
@@ -209,7 +631,9 @@ describe('useGroup', () => {
       expect(result.current.fieldId).toBe(fieldId);
     });
 
-    expect(result.current.columns).toEqual([{ id: optionId, visible: false, visibleExplicit: true }]);
+    expect(result.current.columns).toEqual([
+      { groupColor: 'appflowy_tint5', id: optionId, visible: false, visibleExplicit: true },
+    ]);
   });
 
   it('derives the ungrouped hidden state from the persisted visible flag written by desktop', async () => {

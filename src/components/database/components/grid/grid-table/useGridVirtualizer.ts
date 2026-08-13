@@ -4,7 +4,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { GridColumnType } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow } from '@/components/database/components/grid/grid-row';
+import { getRenderRowKey, RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { getPlatform } from '@/utils/platform';
 
@@ -143,11 +143,15 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
 
   const virtualizer = useVirtualizer({
     count: data.length,
-    estimateSize: () => MIN_HEIGHT,
+    estimateSize: (index) => {
+      if (data[index]?.type === RenderRowType.GroupHeader) return 44;
+      if (data[index]?.type === RenderRowType.GroupSeparator) return 12;
+      return MIN_HEIGHT;
+    },
     overscan: 10,
     scrollMargin: parentOffset,
     getScrollElement,
-    getItemKey: (index) => data[index].rowId || data[index].type,
+    getItemKey: (index) => getRenderRowKey(data[index]),
     paddingStart: 0,
     paddingEnd: isDocumentBlock ? 0 : PADDING_END,
   });
@@ -224,7 +228,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
       return { shouldFill: false, fillWidth: lastColumn?.width || 150 };
     }
 
-    const sumOfOtherWidths = columns.reduce((sum, c, i) => i < columns.length - 1 ? sum + c.width : sum, 0);
+    const sumOfOtherWidths = columns.reduce((sum, c, i) => (i < columns.length - 1 ? sum + c.width : sum), 0);
     const remainingWidth = containerWidth - effectivePaddingStart - sumOfOtherWidths - effectivePaddingEnd;
 
     if (remainingWidth > lastColumn.width) {
@@ -236,13 +240,16 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
 
   const getColumn = useCallback((index: number) => columns[index], [columns]);
   const lastIndex = columns.length - 1;
-  const getColumnWidth = useCallback((index: number) => {
-    if (shouldFill && index === lastIndex) {
-      return fillWidth;
-    }
+  const getColumnWidth = useCallback(
+    (index: number) => {
+      if (shouldFill && index === lastIndex) {
+        return fillWidth;
+      }
 
-    return getColumn(index).width;
-  }, [getColumn, shouldFill, fillWidth, lastIndex]);
+      return getColumn(index).width;
+    },
+    [getColumn, shouldFill, fillWidth, lastIndex]
+  );
 
   const columnVirtualizer = useVirtualizer({
     horizontal: true,

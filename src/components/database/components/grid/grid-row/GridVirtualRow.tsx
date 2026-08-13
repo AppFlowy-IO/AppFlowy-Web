@@ -8,6 +8,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
+import { HoverControls } from '@/components/database/components/grid/controls/HoverControls';
 import {
   GridDragState,
   ItemState,
@@ -16,13 +17,15 @@ import {
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import GridVirtualColumn from '@/components/database/components/grid/grid-column/GridVirtualColumn';
 import { GridRowProvider } from '@/components/database/components/grid/grid-row/GridRowContext';
-import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
 import { useGridRowDraggable } from '@/components/database/components/grid/grid-row/useGridRowDraggable';
-import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { getRenderRowKey, RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
+import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
+import {
+  useGridContext,
+  useGridInteractionActions,
+  useIsGridRowActive,
+} from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
-
-import HoverControls from 'src/components/database/components/grid/controls/HoverControls';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
 
@@ -45,9 +48,13 @@ function GridVirtualRow({
 }) {
   const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
   const rowIndex = row.index;
-  const rowId = data[rowIndex].rowId as string;
-  const rowType = data[rowIndex].type;
-  const { activeCell, setHoverRowId, setResizeRow } = useGridContext();
+  const rowData = data[rowIndex];
+  const rowId = rowData.rowId as string;
+  const rowKey = getRenderRowKey(rowData);
+  const rowType = rowData.type;
+  const { isGrouped, rowResizeStore } = useGridContext();
+  const { setHoverRowKey } = useGridInteractionActions();
+  const hasActiveCell = useIsGridRowActive(rowKey);
   const databaseRow = useRowData(rowId);
   const cells = databaseRow?.get(YjsDatabaseKey.cells);
   const cellsCount = cells?.size;
@@ -68,13 +75,12 @@ function GridVirtualRow({
   );
 
   const isRegularRow = rowType === RenderRowType.Row;
-  const hasActiveCell = activeCell?.rowId === rowId;
 
   useEffect(() => {
     const element = innerRef.current;
     const dragHandle = dragHandleRef.current;
 
-    if (!element || !dragHandle || !isRegularRow) return;
+    if (!element || !dragHandle || !isRegularRow || isGrouped) return;
 
     const data = {
       instanceId,
@@ -121,13 +127,13 @@ function GridVirtualRow({
         },
       })
     );
-  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isRegularRow]);
+  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isGrouped, isRegularRow]);
 
   useGridRowDraggable({
     elementRef: innerRef,
     dragHandleRef,
     // Firefox prevents text selection inside a native draggable ancestor.
-    enabled: isRegularRow && !hasActiveCell,
+    enabled: isRegularRow && !hasActiveCell && !isGrouped,
     instanceId,
     rowId,
     rowIndex,
@@ -161,8 +167,8 @@ function GridVirtualRow({
       return Math.max(acc, cellHeight, 35); // Ensure minimum height
     }, 0);
 
-    setResizeRow({ rowId, maxCellHeight });
-  }, [rowId, setResizeRow]);
+    rowResizeStore.report(rowKey, maxCellHeight);
+  }, [rowId, rowKey, rowResizeStore]);
 
   useEffect(() => {
     const el = innerRef.current;
@@ -200,8 +206,8 @@ function GridVirtualRow({
       }}
     >
       <div
-        onMouseMove={() => setHoverRowId(rowId)}
-        onMouseLeave={() => setHoverRowId(undefined)}
+        onMouseMove={() => setHoverRowKey(rowKey)}
+        onMouseLeave={() => setHoverRowKey(undefined)}
         ref={innerRef}
         className={cn('relative flex')}
       >
@@ -213,12 +219,17 @@ function GridVirtualRow({
                 dragHandleRef.current = el;
               }}
               rowId={data[row.index].rowId as string}
+              rowKey={rowKey}
+              groupFieldId={rowData.groupFieldId}
+              groupId={rowData.groupId}
+              canDrag={!isGrouped}
             />
           )}
         </div>
         <div
           ref={rowRef}
           data-testid={`grid-row-${rowId}`}
+          data-row-key={rowKey}
           className={cn(
             'grid-table-row-content relative flex min-h-[36px]',
             state.type === GridDragState.DRAGGING && 'opacity-40'

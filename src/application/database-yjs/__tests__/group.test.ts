@@ -6,15 +6,31 @@ jest.mock('@/utils/runtime-config', () => ({
 
 import {
   areGroupRowsHydrated,
+  getDateGroupId,
+  getGroupCellData,
   groupByCheckbox,
+  groupByDate,
   groupByField,
+  groupByNumber,
   groupBySelectOption,
+  groupByText,
   getGroupColumns,
+  getGroupLabel,
+  getNumberGroupId,
+  isDatabaseGroupableFieldType,
 } from '@/application/database-yjs/group';
-import { FieldType, FilterType } from '@/application/database-yjs/database.type';
+import { DateGroupCondition, FieldType, FilterType } from '@/application/database-yjs/database.type';
 import { CheckboxFilterCondition, SelectOptionFilterCondition } from '@/application/database-yjs/fields';
 import { Row } from '@/application/database-yjs/selector';
-import { RowId, YDatabaseFilter, YDatabaseFields, YDoc, YjsDatabaseKey } from '@/application/types';
+import {
+  RowId,
+  YDatabaseFilter,
+  YDatabaseFields,
+  YDatabaseRow,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 
 import { createCell, createField, createRowDoc } from './test-helpers';
 
@@ -183,11 +199,229 @@ describe('desktop-model lazy conversion grouping', () => {
 describe('group by field fallback', () => {
   it('returns undefined for unsupported field types', () => {
     const fields = new Y.Map() as YDatabaseFields;
-    const field = createField('text-field', FieldType.RichText);
-    fields.set('text-field', field);
+    const field = createField('relation-field', FieldType.Relation);
+    fields.set('relation-field', field);
 
     const result = groupByField([], {}, field);
     expect(result).toBeUndefined();
+  });
+});
+
+describe('desktop Grid dynamic grouping parity', () => {
+  const databaseId = 'db-dynamic-groups';
+
+  function createRows(fieldId: string, fieldType: FieldType, values: Array<string | undefined>) {
+    const rows = values.map((_, index) => ({ id: `row-${index}`, height: 0 }));
+    const rowMetas = Object.fromEntries(
+      values.map((value, index) => [
+        `row-${index}`,
+        createRowDoc(`row-${index}`, databaseId, {
+          ...(value === undefined ? {} : { [fieldId]: createCell(fieldType, value) }),
+        }),
+      ])
+    );
+
+    return { rowMetas, rows };
+  }
+
+  function updateCell(rowDoc: YDoc, fieldId: string, value: string) {
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    row.get(YjsDatabaseKey.cells).get(fieldId)?.set(YjsDatabaseKey.data, value);
+  }
+
+  it('groups RichText by exact value and keeps empty values in No Name', () => {
+    const field = createField('name', FieldType.RichText);
+    field.set(YjsDatabaseKey.name, 'Name');
+    const { rowMetas, rows } = createRows('name', FieldType.RichText, ['A', 'B', 'A', '']);
+    const result = groupByText(rows, rowMetas, field);
+
+    expect([...result.keys()]).toEqual(['name', 'A', 'B']);
+    expect(result.get('A')?.map(({ id }) => id)).toEqual(['row-0', 'row-2']);
+    expect(result.get('name')?.map(({ id }) => id)).toEqual(['row-3']);
+  });
+
+  it('groups URL fields by exact URL', () => {
+    const field = createField('website', FieldType.URL);
+    const { rowMetas, rows } = createRows('website', FieldType.URL, [
+      'https://appflowy.io',
+      'https://github.com/AppFlowy-IO/AppFlowy',
+      'https://appflowy.io',
+    ]);
+    const result = groupByText(rows, rowMetas, field);
+
+    expect(result.get('https://appflowy.io')?.map(({ id }) => id)).toEqual(['row-0', 'row-2']);
+  });
+
+  it('groups numbers into fixed 100-value ranges including negatives', () => {
+    const field = createField('amount', FieldType.Number);
+    const { rowMetas, rows } = createRows('amount', FieldType.Number, [
+      '-150',
+      '-100',
+      '-1',
+      '0',
+      '99.9',
+      '100',
+      '1,250',
+      '',
+    ]);
+    const result = groupByNumber(rows, rowMetas, field);
+
+    expect([...result.keys()]).toEqual([
+      'amount',
+      'number_range_-200_-100',
+      'number_range_-100_0',
+      'number_range_0_100',
+      'number_range_100_200',
+      'number_range_1200_1300',
+    ]);
+    expect(result.get('number_range_0_100')?.map(({ id }) => id)).toEqual(['row-3', 'row-4']);
+    expect(result.get('amount')?.map(({ id }) => id)).toEqual(['row-7']);
+  });
+
+  it('moves a row when the RichText grouping cell changes', () => {
+    const field = createField('name', FieldType.RichText);
+    const { rowMetas, rows } = createRows('name', FieldType.RichText, ['A', 'B']);
+
+    updateCell(rowMetas['row-0'], 'name', 'B');
+    const result = groupByText(rows, rowMetas, field);
+
+    expect(result.has('A')).toBe(false);
+    expect(result.get('B')?.map(({ id }) => id)).toEqual(['row-0', 'row-1']);
+  });
+
+  it('moves a row to the correct number range when its value changes', () => {
+    const field = createField('amount', FieldType.Number);
+    const { rowMetas, rows } = createRows('amount', FieldType.Number, ['1', '2']);
+
+    updateCell(rowMetas['row-0'], 'amount', '250');
+    const result = groupByNumber(rows, rowMetas, field);
+
+    expect(result.get('number_range_0_100')?.map(({ id }) => id)).toEqual(['row-1']);
+    expect(result.get('number_range_200_300')?.map(({ id }) => id)).toEqual(['row-0']);
+  });
+
+  it.each<Array<[string, FieldType, string]>>([
+    ['RichText', FieldType.RichText, 'A'],
+    ['URL', FieldType.URL, 'https://appflowy.io'],
+    ['Number', FieldType.Number, '12'],
+  ])('does not delete a singleton %s group after an unrelated cell edit', (_name, fieldType, value) => {
+    const groupingField = createField('grouping', fieldType);
+    const unrelatedField = createField('other', FieldType.RichText);
+    const rows: Row[] = [{ id: 'only-row', height: 0 }];
+    const rowMetas = {
+      'only-row': createRowDoc('only-row', databaseId, {
+        grouping: createCell(fieldType, value),
+        other: createCell(FieldType.RichText, 'before'),
+      }),
+    };
+    const before = groupByField(rows, rowMetas, groupingField);
+    const groupId = [...(before?.keys() ?? [])].find((id) => id !== 'grouping') as string;
+
+    updateCell(rowMetas['only-row'], unrelatedField.get(YjsDatabaseKey.id), 'after');
+    const after = groupByField(rows, rowMetas, groupingField);
+
+    expect(after?.get(groupId)?.map(({ id }) => id)).toEqual(['only-row']);
+  });
+
+  it('preserves filtered and sorted row input inside every group', () => {
+    const field = createField('name', FieldType.RichText);
+    const { rowMetas, rows } = createRows('name', FieldType.RichText, ['A', 'B', 'A']);
+    const filteredAndSorted = [rows[2], rows[0]];
+    const result = groupByText(filteredAndSorted, rowMetas, field);
+
+    expect([...result.keys()]).toEqual(['name', 'A']);
+    expect(result.get('A')?.map(({ id }) => id)).toEqual(['row-2', 'row-0']);
+  });
+
+  it('supports exactly the seven desktop Grid grouping field types', () => {
+    expect(
+      [
+        FieldType.RichText,
+        FieldType.Number,
+        FieldType.URL,
+        FieldType.Checkbox,
+        FieldType.SingleSelect,
+        FieldType.MultiSelect,
+        FieldType.DateTime,
+      ].every(isDatabaseGroupableFieldType)
+    ).toBe(true);
+    expect(isDatabaseGroupableFieldType(FieldType.Relation)).toBe(false);
+    expect(isDatabaseGroupableFieldType(FieldType.Media)).toBe(false);
+  });
+
+  it('uses desktop-compatible group labels and new-row values', () => {
+    const numberField = createField('amount', FieldType.Number);
+    numberField.set(YjsDatabaseKey.name, 'Amount');
+    const dateField = createField('date', FieldType.DateTime);
+    const selectField = createField('status', FieldType.SingleSelect, {
+      disable_color: false,
+      options: [{ id: 'todo', name: 'To do', color: 1 }],
+    });
+
+    expect(getGroupLabel('number_range_-100_0', numberField)).toBe('-100 to 0');
+    expect(getGroupLabel('amount', numberField)).toBe('No Amount');
+    expect(getGroupLabel('todo', selectField)).toBe('To do');
+    expect(getGroupCellData('number_range_200_300', numberField)).toBe('200');
+    expect(getGroupCellData('status', selectField)).toBeUndefined();
+    expect(getGroupCellData('2026/08/13', dateField)).toMatch(/^\d+$/);
+  });
+
+  it('calculates number group IDs at desktop range boundaries', () => {
+    expect(getNumberGroupId('-100')).toBe('number_range_-100_0');
+    expect(getNumberGroupId('-0.1')).toBe('number_range_-100_0');
+    expect(getNumberGroupId('0')).toBe('number_range_0_100');
+    expect(getNumberGroupId('100')).toBe('number_range_100_200');
+    expect(getNumberGroupId('not-a-number')).toBeNull();
+  });
+});
+
+describe('desktop DateTime grouping parity', () => {
+  const localTimestamp = (year: number, month: number, day: number) =>
+    String(Math.floor(new Date(year, month - 1, day, 12).getTime() / 1000));
+
+  it.each<Array<[DateGroupCondition, string]>>([
+    [DateGroupCondition.Day, '2026/08/13'],
+    [DateGroupCondition.Week, '2026/08/10'],
+    [DateGroupCondition.Month, '2026/08/01'],
+    [DateGroupCondition.Year, '2026/01/01'],
+  ])('groups a date using condition %s', (condition, expected) => {
+    expect(getDateGroupId(localTimestamp(2026, 8, 13), condition, new Date(2026, 7, 20))).toBe(expected);
+  });
+
+  it('uses the seven relative-date buckets and month fallback', () => {
+    const now = new Date(2026, 7, 13, 12);
+
+    expect(getDateGroupId(localTimestamp(2026, 8, 13), DateGroupCondition.Relative, now)).toBe('2026/08/13');
+    expect(getDateGroupId(localTimestamp(2026, 8, 12), DateGroupCondition.Relative, now)).toBe('2026/08/12');
+    expect(getDateGroupId(localTimestamp(2026, 8, 11), DateGroupCondition.Relative, now)).toBe('2026/08/06');
+    expect(getDateGroupId(localTimestamp(2026, 8, 6), DateGroupCondition.Relative, now)).toBe('2026/08/06');
+    expect(getDateGroupId(localTimestamp(2026, 8, 17), DateGroupCondition.Relative, now)).toBe('2026/08/15');
+    expect(getDateGroupId(localTimestamp(2026, 7, 30), DateGroupCondition.Relative, now)).toBe('2026/07/14');
+    expect(getDateGroupId(localTimestamp(2026, 7, 14), DateGroupCondition.Relative, now)).toBe('2026/07/14');
+    expect(getDateGroupId(localTimestamp(2026, 8, 25), DateGroupCondition.Relative, now)).toBe('2026/08/21');
+    expect(getDateGroupId(localTimestamp(2026, 10, 1), DateGroupCondition.Relative, now)).toBe('2026/10/01');
+  });
+
+  it('keeps missing dates in the default group and sorts date groups chronologically', () => {
+    const field = createField('date', FieldType.DateTime);
+    const rows: Row[] = ['later', 'empty', 'earlier'].map((id) => ({ id, height: 0 }));
+    const rowMetas = {
+      later: createRowDoc('later', 'date-db', { date: createCell(FieldType.DateTime, localTimestamp(2026, 8, 20)) }),
+      empty: createRowDoc('empty', 'date-db', { date: createCell(FieldType.DateTime, '') }),
+      earlier: createRowDoc('earlier', 'date-db', {
+        date: createCell(FieldType.DateTime, localTimestamp(2026, 8, 10)),
+      }),
+    };
+    const result = groupByDate(
+      rows,
+      rowMetas,
+      field,
+      JSON.stringify({ condition: DateGroupCondition.Day, hide_empty: false })
+    );
+
+    expect([...result.keys()]).toEqual(['date', '2026/08/10', '2026/08/20']);
+    expect(result.get('date')?.map(({ id }) => id)).toEqual(['empty']);
   });
 });
 

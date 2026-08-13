@@ -608,6 +608,7 @@ export enum YjsDatabaseKey {
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
+  group_color = 'group_color',
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
   hide_empty_groups = 'hide_empty_groups',
@@ -899,6 +900,9 @@ export type SortId = string;
 export type GroupId = string;
 
 export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
+  // DatabaseViewLayout.Grid
+  get(key: '0'): YDatabaseGridLayoutSetting;
+
   // DatabaseViewLayout.Board
   get(key: '1'): YDatabaseBoardLayoutSetting;
 
@@ -907,6 +911,10 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Chart
   get(key: '3'): YDatabaseChartLayoutSetting;
+}
+
+export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.hide_empty_groups): boolean;
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
@@ -944,12 +952,14 @@ export interface YDatabaseGroup extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.collapsed_group_ids): Y.Array<string> | string[] | undefined;
 }
 
-export type YDatabaseGroupColumns = Y.Array<{ id: string; visible: boolean }>;
+export type YDatabaseGroupColumns = Y.Array<YDatabaseGroupColumn>;
 
 export interface YDatabaseGroupColumn extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.id): string;
 
   get(key: YjsDatabaseKey.visible): boolean;
+
+  get(key: YjsDatabaseKey.group_color): string | undefined;
 }
 
 export interface YDatabaseSort extends Y.Map<unknown> {

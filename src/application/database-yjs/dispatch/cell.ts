@@ -14,7 +14,15 @@ import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
-import { YDatabaseCell, YDatabaseCells, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  YDatabaseCell,
+  YDatabaseCells,
+  YDatabaseRow,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+  YSharedRoot,
+} from '@/application/types';
 import { Log } from '@/utils/log';
 
 const ROW_DATA_WAIT_MS = 3000;
@@ -195,14 +203,11 @@ function writeCellToRow({
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
-  const { rowMap, ensureRow } = useDatabaseContext();
+  const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
 
   return useCallback(
-    (
-      data: CellUpdateData,
-      dateOpts?: DateCellOptions
-    ) => {
+    (data: CellUpdateData, dateOpts?: DateCellOptions) => {
       void (async () => {
         if (!field) {
           Log.warn('[useUpdateCellDispatch] Field not found', { rowId, fieldId });
@@ -231,16 +236,17 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           data,
           dateOpts,
         });
+        markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [ensureRow, field, fieldId, rowMap, rowId]
+    [ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
-  const { rowMap, ensureRow } = useDatabaseContext();
+  const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
 
   return useCallback(
     (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
@@ -283,10 +289,11 @@ export function useUpdateStartEndTimeCell() {
           });
           writableTarget.row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
         });
+        markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
         Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [ensureRow, rowMap]
+    [ensureRow, markCellLocalMutation, rowMap]
   );
 }
