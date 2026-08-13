@@ -175,9 +175,7 @@ async function fetchShareDetail(
       // No withRetry here: the shared axios interceptor already retries GETs on
       // transient failures, and stacking a second retry ladder keeps the share
       // panel blocked for many seconds before the legacy fallback below runs.
-      return await executeAPIRequest<ShareAccessDetails>(() =>
-        getAxios()?.get<APIResponse<ShareAccessDetails>>(url)
-      );
+      return await executeAPIRequest<ShareAccessDetails>(() => getAxios()?.get<APIResponse<ShareAccessDetails>>(url));
     } catch (error) {
       const code = getErrorCode(error);
 
@@ -250,11 +248,7 @@ export interface CollabObjectPermission {
   can_share?: boolean;
 }
 
-export async function getObjectPermission(
-  workspaceId: string,
-  objectId: string,
-  collabType: Types = Types.Document
-) {
+export async function getObjectPermission(workspaceId: string, objectId: string, collabType: Types = Types.Document) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
 
   return executeAPIRequest<CollabObjectPermission>(() =>
@@ -275,6 +269,21 @@ export async function sharePageTo(workspaceId: string, viewId: string, emails: s
     })
   );
   invalidateShareDetailCache(workspaceId);
+}
+
+/** Direct group grants owned by this view.
+ *
+ * Access details contain effective grants after page ancestry is resolved. This
+ * endpoint is deliberately kept separate so callers never offer edit controls
+ * for a grant that can only be changed on an ancestor page.
+ */
+export async function getSharedGroups(workspaceId: string, viewId: string) {
+  const url = `/api/workspace/${workspaceId}/views/${viewId}/group`;
+  const result = await executeAPIRequest<{ groups?: WorkspaceGroupViewPermission[] }>(() =>
+    getAxios()?.get<APIResponse<{ groups?: WorkspaceGroupViewPermission[] }>>(url)
+  );
+
+  return result.groups ?? [];
 }
 
 export async function sharePageToGroup(workspaceId: string, viewId: string, groupId: string, accessLevel?: AccessLevel) {

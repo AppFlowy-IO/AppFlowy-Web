@@ -1,5 +1,4 @@
 import dayjs from 'dayjs';
-import type { TFunction } from 'i18next';
 import { MoreHorizontal, Search, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +13,7 @@ import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
   WorkspaceMemberInlineSearch,
+  WorkspaceMemberInlineSearchInput,
   workspaceMemberDisplayName,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -25,6 +25,8 @@ import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
+
+import type { TFunction } from 'i18next';
 
 type PeopleTab = 'members' | 'groups';
 type GroupDetailTab = 'general' | 'members';
@@ -69,23 +71,9 @@ function tabLabel(label: string, count: number): string {
   return `${label} ${count}`;
 }
 
-function matchesMember(member: WorkspaceMember, search: string, t: TFunction): boolean {
-  const value = search.trim().toLowerCase();
-
-  if (!value) return true;
-
-  return (
-    member.name.toLowerCase().includes(value) ||
-    member.email.toLowerCase().includes(value) ||
-    roleLabel(member.role, t).toLowerCase().includes(value)
-  );
-}
-
-function matchesGroup(group: WorkspaceGroup, search: string): boolean {
-  const value = search.trim().toLowerCase();
-
-  if (!value) return true;
-  return group.name.toLowerCase().includes(value);
+function matchesGroup(group: WorkspaceGroup, normalizedSearch: string): boolean {
+  if (!normalizedSearch) return true;
+  return group.name.toLowerCase().includes(normalizedSearch);
 }
 
 function groupMemberCountLabel(count: number, t: TFunction): string {
@@ -102,31 +90,59 @@ function fallbackInitial(value: string): string {
   return value.trim().charAt(0).toUpperCase() || '?';
 }
 
-function matchesGroupMember(member: WorkspaceGroupMember, search: string, t: TFunction): boolean {
-  const value = search.trim().toLowerCase();
+type CurrentWorkspaceId = ReturnType<typeof useCurrentWorkspaceId>;
 
-  if (!value) return true;
+export function MembersPanel() {
+  const currentWorkspaceId = useCurrentWorkspaceId();
+  const activeWorkspaceScopeRef = useRef({
+    generation: 0,
+    workspaceId: currentWorkspaceId,
+  });
+
+  if (activeWorkspaceScopeRef.current.workspaceId !== currentWorkspaceId) {
+    activeWorkspaceScopeRef.current = {
+      generation: activeWorkspaceScopeRef.current.generation + 1,
+      workspaceId: currentWorkspaceId,
+    };
+  }
+
+  const workspaceGeneration = activeWorkspaceScopeRef.current.generation;
+  const isCurrentWorkspaceRequest = useCallback((workspaceId: CurrentWorkspaceId, generation: number) => {
+    const currentScope = activeWorkspaceScopeRef.current;
+
+    return currentScope.workspaceId === workspaceId && currentScope.generation === generation;
+  }, []);
 
   return (
-    groupMemberDisplayName(member, t).toLowerCase().includes(value) ||
-    (member.email?.toLowerCase().includes(value) ?? false) ||
-    member.uid.toLowerCase().includes(value)
+    <MembersPanelForWorkspace
+      key={currentWorkspaceId ?? 'no-workspace'}
+      currentWorkspaceId={currentWorkspaceId}
+      workspaceGeneration={workspaceGeneration}
+      isCurrentWorkspaceRequest={isCurrentWorkspaceRequest}
+    />
   );
 }
 
-export function MembersPanel() {
+function MembersPanelForWorkspace({
+  currentWorkspaceId,
+  workspaceGeneration,
+  isCurrentWorkspaceRequest,
+}: {
+  currentWorkspaceId: CurrentWorkspaceId;
+  workspaceGeneration: number;
+  isCurrentWorkspaceRequest: (workspaceId: CurrentWorkspaceId, generation: number) => boolean;
+}) {
   const { t } = useTranslation();
-  const currentWorkspaceId = useCurrentWorkspaceId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const [tab, setTab] = useState<PeopleTab>('members');
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [groups, setGroups] = useState<WorkspaceGroup[]>([]);
-  const [memberSearch, setMemberSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
   const [emailValue, setEmailValue] = useState('');
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-  const [editingGroupName, setEditingGroupName] = useState('');
+  const [renamingGroup, setRenamingGroup] = useState<WorkspaceGroup | null>(null);
+  const [renamingGroupName, setRenamingGroupName] = useState('');
+  const [deleteConfirmationGroup, setDeleteConfirmationGroup] = useState<WorkspaceGroup | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<WorkspaceGroup | null>(null);
   const [inviting, setInviting] = useState(false);
   const [loadingMembers, setLoadingMembers] = useState(false);
@@ -138,14 +154,13 @@ export function MembersPanel() {
   const [generatingLink, setGeneratingLink] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showGroupSearch, setShowGroupSearch] = useState(false);
-  const memberListRef = useRef<WorkspaceMember[]>([]);
   const groupSearchInputRef = useRef<HTMLInputElement | null>(null);
   const removingRef = useRef(false);
 
   const isOwner = useMemo(() => {
     const workspace = userWorkspaceInfo?.workspaces.find((w) => w.id === currentWorkspaceId);
 
-    return workspace?.owner?.uid.toString() === currentUser?.uid.toString();
+    return workspace?.role === Role.Owner || workspace?.owner?.uid.toString() === currentUser?.uid.toString();
   }, [userWorkspaceInfo?.workspaces, currentWorkspaceId, currentUser?.uid]);
 
   useEffect(() => {
@@ -158,7 +173,6 @@ export function MembersPanel() {
         const list = await WorkspaceService.getMembers(currentWorkspaceId, isOwner);
 
         if (cancelled) return;
-        memberListRef.current = list;
         setMembers(list);
       } catch (e) {
         if (!cancelled) toast.error(getErrorMessage(e));
@@ -172,9 +186,19 @@ export function MembersPanel() {
     };
   }, [currentWorkspaceId, isOwner]);
 
+  // Keep the group search UI in sync when the list empties, without an extra
+  // render cycle from a state-syncing effect.
+  const applyGroups = useCallback((list: WorkspaceGroup[]) => {
+    setGroups(list);
+    if (list.length === 0) {
+      setGroupSearch('');
+      setShowGroupSearch(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!currentWorkspaceId || !isOwner) {
-      setGroups([]);
+      applyGroups([]);
       return;
     }
 
@@ -185,7 +209,7 @@ export function MembersPanel() {
       try {
         const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
 
-        if (!cancelled) setGroups(result.groups || []);
+        if (!cancelled) applyGroups(result.groups || []);
       } catch (e) {
         if (!cancelled) toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
       } finally {
@@ -196,7 +220,7 @@ export function MembersPanel() {
     return () => {
       cancelled = true;
     };
-  }, [currentWorkspaceId, isOwner, t]);
+  }, [applyGroups, currentWorkspaceId, isOwner, t]);
 
   useEffect(() => {
     if (!currentWorkspaceId || !isOwner) {
@@ -233,19 +257,11 @@ export function MembersPanel() {
     groupSearchInputRef.current?.focus();
   }, [showGroupSearch]);
 
-  useEffect(() => {
-    if (groups.length > 0) return;
-
-    setGroupSearch('');
-    setShowGroupSearch(false);
-  }, [groups.length]);
-
   const refreshMembers = useCallback(async () => {
     if (!currentWorkspaceId) return;
     try {
       const list = await WorkspaceService.getMembers(currentWorkspaceId, true);
 
-      memberListRef.current = list;
       setMembers(list);
     } catch (e) {
       toast.error(getErrorMessage(e));
@@ -254,21 +270,26 @@ export function MembersPanel() {
 
   const refreshGroups = useCallback(async () => {
     if (!currentWorkspaceId || !isOwner) return;
+    const requestedWorkspaceId = currentWorkspaceId;
+    const requestGeneration = workspaceGeneration;
+    const isCurrentRequest = () => isCurrentWorkspaceRequest(requestedWorkspaceId, requestGeneration);
+
     try {
-      const result = await WorkspaceService.getWorkspaceGroups(currentWorkspaceId);
+      const result = await WorkspaceService.getWorkspaceGroups(requestedWorkspaceId);
 
-      setGroups(result.groups || []);
+      if (isCurrentRequest()) applyGroups(result.groups || []);
     } catch (e) {
-      toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
+      if (isCurrentRequest()) {
+        toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupsFailed')));
+      }
     }
-  }, [currentWorkspaceId, isOwner, t]);
+  }, [applyGroups, currentWorkspaceId, isCurrentWorkspaceRequest, isOwner, t, workspaceGeneration]);
 
-  const visibleMembers = useMemo(
-    () => members.filter((member) => matchesMember(member, memberSearch, t)),
-    [memberSearch, members, t]
-  );
+  const visibleGroups = useMemo(() => {
+    const normalizedGroupSearch = groupSearch.trim().toLowerCase();
 
-  const visibleGroups = useMemo(() => groups.filter((group) => matchesGroup(group, groupSearch)), [groupSearch, groups]);
+    return groups.filter((group) => matchesGroup(group, normalizedGroupSearch));
+  }, [groupSearch, groups]);
 
   const selectedGroupForPanel = useMemo(() => {
     if (!selectedGroup) return null;
@@ -276,18 +297,13 @@ export function MembersPanel() {
     return groups.find((group) => group.group_id === selectedGroup.group_id) ?? selectedGroup;
   }, [groups, selectedGroup]);
 
-  const handleWorkspaceMembersLoaded = useCallback((list: WorkspaceMember[]) => {
-    memberListRef.current = list;
-    setMembers(list);
-  }, []);
-
   const handleInvite = useCallback(async () => {
     if (!currentWorkspaceId) return;
     const emails = parseInviteEmails(emailValue);
 
     if (emails.length === 0) return;
 
-    const existing = new Set(memberListRef.current.map((m) => m.email.toLowerCase()));
+    const existing = new Set(members.map((m) => m.email.toLowerCase()));
     const already = emails.filter((e) => existing.has(e.toLowerCase()));
 
     if (already.length > 0) {
@@ -312,7 +328,7 @@ export function MembersPanel() {
     } finally {
       setInviting(false);
     }
-  }, [currentWorkspaceId, emailValue, refreshMembers, t]);
+  }, [currentWorkspaceId, emailValue, members, refreshMembers, t]);
 
   const handleRemove = useCallback(
     async (email: string) => {
@@ -367,19 +383,25 @@ export function MembersPanel() {
   }, [currentWorkspaceId, generatingLink, t]);
 
   const startRenameGroup = useCallback((group: WorkspaceGroup) => {
-    setEditingGroupId(group.group_id);
-    setEditingGroupName(group.name);
+    setRenamingGroup(group);
+    setRenamingGroupName(group.name);
   }, []);
+
+  const closeRenameGroup = useCallback(() => {
+    if (updatingGroupId) return;
+    setRenamingGroup(null);
+    setRenamingGroupName('');
+  }, [updatingGroupId]);
 
   const handleRenameGroup = useCallback(
     async (group: WorkspaceGroup) => {
       if (!currentWorkspaceId || !isOwner) return;
-      const name = editingGroupName.trim();
+      const name = renamingGroupName.trim();
 
       if (!name) return;
       if (name === group.name) {
-        setEditingGroupId(null);
-        setEditingGroupName('');
+        setRenamingGroup(null);
+        setRenamingGroupName('');
         return;
       }
 
@@ -387,8 +409,8 @@ export function MembersPanel() {
       try {
         await WorkspaceService.updateWorkspaceGroup(currentWorkspaceId, group.group_id, { name });
         toast.success(t('settings.appearance.people.renameGroupSuccess'));
-        setEditingGroupId(null);
-        setEditingGroupName('');
+        setRenamingGroup(null);
+        setRenamingGroupName('');
         await refreshGroups();
       } catch (e) {
         toast.error(getErrorMessage(e, t('settings.appearance.people.renameGroupFailed')));
@@ -396,7 +418,7 @@ export function MembersPanel() {
         setUpdatingGroupId(null);
       }
     },
-    [currentWorkspaceId, editingGroupName, isOwner, refreshGroups, t]
+    [currentWorkspaceId, isOwner, refreshGroups, renamingGroupName, t]
   );
 
   const handleDeleteGroup = useCallback(
@@ -407,6 +429,7 @@ export function MembersPanel() {
       try {
         await WorkspaceService.removeWorkspaceGroup(currentWorkspaceId, group.group_id);
         toast.success(t('settings.appearance.people.deleteGroupSuccess'));
+        setDeleteConfirmationGroup(null);
         setSelectedGroup((current) => (current?.group_id === group.group_id ? null : current));
         await refreshGroups();
       } catch (e) {
@@ -466,7 +489,7 @@ export function MembersPanel() {
           )}
 
           <Tabs value={tab} onValueChange={(value) => setTab(value as PeopleTab)} className='gap-5'>
-            <div className='flex items-center justify-between gap-4'>
+            <div className='flex items-center gap-4'>
               <TabsList className='gap-1'>
                 <TabsTrigger
                   value='members'
@@ -481,17 +504,6 @@ export function MembersPanel() {
                   {tabLabel(t('settings.appearance.people.groupsTab'), groups.length)}
                 </TabsTrigger>
               </TabsList>
-
-              {tab === 'groups' && isOwner && (
-                <Button
-                  type='button'
-                  size='lg'
-                  onClick={() => setShowCreateGroup(true)}
-                  data-testid='people-create-group-button'
-                >
-                  {t('settings.appearance.people.createGroup')}
-                </Button>
-              )}
             </div>
 
             <TabsContent value='members' className='outline-none'>
@@ -501,40 +513,26 @@ export function MembersPanel() {
                     <div className='text-sm font-semibold text-text-primary'>
                       {t('settings.appearance.members.inviteByEmailTitle')}
                     </div>
-                    <div className='flex gap-2'>
-                      <Input
-                        className='flex-1'
-                        value={emailValue}
-                        placeholder={t('settings.appearance.members.inviteByEmailPlaceholder')}
-                        onChange={(e) => setEmailValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !inviting && emailValue) {
-                            void handleInvite();
-                          }
-                        }}
-                        data-testid='members-invite-email-input'
-                      />
-                      <Button
-                        onClick={() => void handleInvite()}
-                        disabled={!emailValue || inviting}
-                        loading={inviting}
-                        data-testid='members-invite-button'
-                      >
-                        {inviting && <Progress />}
-                        {t('settings.appearance.members.invite')}
-                      </Button>
-                    </div>
+                    <WorkspaceMemberInlineSearchInput
+                      search={emailValue}
+                      onSearchChange={setEmailValue}
+                      searchPlaceholder={t('settings.appearance.members.inviteByEmailPlaceholder')}
+                      addButtonLabel={t('settings.appearance.members.invite')}
+                      addButtonDisabled={!emailValue || inviting}
+                      addButtonLoading={inviting}
+                      addButtonIcon={inviting ? <Progress /> : null}
+                      inputTestId='members-invite-email-input'
+                      addButtonTestId='members-invite-button'
+                      onAddButtonClick={() => void handleInvite()}
+                      onInputKeyDown={(e) => {
+                        if (e.key === 'Enter' && !inviting && emailValue) {
+                          e.preventDefault();
+                          void handleInvite();
+                        }
+                      }}
+                    />
                   </div>
                 )}
-
-                <div className='flex items-center justify-end'>
-                  <SearchInput
-                    value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
-                    placeholder={t('settings.appearance.people.searchMembers')}
-                    className='h-9 w-[260px]'
-                  />
-                </div>
 
                 <div className='flex flex-col'>
                   <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_minmax(0,2fr)_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium text-text-secondary'>
@@ -547,12 +545,12 @@ export function MembersPanel() {
                     <div className='py-6 text-center text-sm text-text-secondary'>
                       <Progress />
                     </div>
-                  ) : visibleMembers.length === 0 ? (
+                  ) : members.length === 0 ? (
                     <div className='py-6 text-center text-sm text-text-secondary'>
                       {t('settings.appearance.members.noMembers')}
                     </div>
                   ) : (
-                    visibleMembers.map((m, idx) => {
+                    members.map((m, idx) => {
                       const subline = m.is_pending_invitation
                         ? t('settings.appearance.members.pending')
                         : joinedLabel(m.joined_at, t);
@@ -628,9 +626,9 @@ export function MembersPanel() {
                   </div>
                 ) : (
                   <>
-                    {groups.length > 0 && (
-                      <div className='flex items-center justify-end'>
-                        {showGroupSearch ? (
+                    <div className='flex items-center justify-end gap-2'>
+                      {groups.length > 0 &&
+                        (showGroupSearch ? (
                           <SearchInput
                             value={groupSearch}
                             inputRef={groupSearchInputRef}
@@ -656,9 +654,16 @@ export function MembersPanel() {
                           >
                             <Search className='h-5 w-5' />
                           </Button>
-                        )}
-                      </div>
-                    )}
+                        ))}
+                      <Button
+                        type='button'
+                        size='lg'
+                        onClick={() => setShowCreateGroup(true)}
+                        data-testid='people-create-group-button'
+                      >
+                        {t('settings.appearance.people.createGroup')}
+                      </Button>
+                    </div>
 
                     <div className='flex flex-col'>
                       <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium text-text-secondary'>
@@ -676,87 +681,47 @@ export function MembersPanel() {
                         </div>
                       ) : (
                         visibleGroups.map((group) => {
-                          const editing = editingGroupId === group.group_id;
-
                           return (
                             <div
                               key={group.group_id}
                               data-testid={`group-row-${group.group_id}`}
                               className='grid cursor-pointer grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px] items-center gap-4 border-b border-border-primary py-3 text-sm hover:bg-fill-content-hover'
-                              onClick={() => {
-                                if (!editing) setSelectedGroup(group);
-                              }}
+                              onClick={() => setSelectedGroup(group)}
                             >
                               <div className='flex min-w-0 items-center gap-3'>
                                 <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-fill-content-hover text-icon-secondary'>
                                   <Users className='h-5 w-5' />
                                 </div>
-                                {editing ? (
-                                  <div
-                                    className='flex min-w-0 flex-1 items-center gap-2'
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <Input
-                                      value={editingGroupName}
-                                      onChange={(e) => setEditingGroupName(e.target.value)}
-                                      autoFocus
-                                      className='h-9 flex-1'
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                          e.preventDefault();
-                                          void handleRenameGroup(group);
-                                        }
-
-                                        if (e.key === 'Escape') {
-                                          setEditingGroupId(null);
-                                          setEditingGroupName('');
-                                        }
-                                      }}
-                                    />
-                                    <Button
-                                      type='button'
-                                      size='sm'
-                                      disabled={!editingGroupName.trim() || updatingGroupId === group.group_id}
-                                      loading={updatingGroupId === group.group_id}
-                                      onClick={() => void handleRenameGroup(group)}
-                                    >
-                                      {t('button.save')}
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <span className='truncate font-medium text-text-primary'>{group.name}</span>
-                                )}
+                                <span className='truncate font-medium text-text-primary'>{group.name}</span>
                               </div>
                               <span className='truncate text-text-secondary'>
                                 {groupMemberCountLabel(group.member_count, t)}
                               </span>
-                              {!editing && (
-                                <div onClick={(e) => e.stopPropagation()}>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <button
-                                        type='button'
-                                        disabled={deletingGroupId === group.group_id}
-                                        className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
-                                        aria-label={t('settings.appearance.people.groupActions')}
-                                      >
-                                        <MoreHorizontal className='h-4 w-4' />
-                                      </button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align='end'>
-                                      <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
-                                        {t('settings.appearance.people.renameGroup')}
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        variant='destructive'
-                                        onSelect={() => void handleDeleteGroup(group)}
-                                      >
-                                        {t('settings.appearance.people.deleteGroup')}
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              )}
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type='button'
+                                      disabled={deletingGroupId === group.group_id}
+                                      className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
+                                      aria-label={t('settings.appearance.people.groupActions')}
+                                    >
+                                      <MoreHorizontal className='h-4 w-4' />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align='end'>
+                                    <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
+                                      {t('settings.appearance.people.renameGroup')}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      variant='destructive'
+                                      onSelect={() => setDeleteConfirmationGroup(group)}
+                                    >
+                                      {t('settings.appearance.people.deleteGroup')}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             </div>
                           );
                         })
@@ -780,7 +745,7 @@ export function MembersPanel() {
             setSelectedGroup(null);
             void refreshGroups();
           }}
-          onWorkspaceMembersLoaded={handleWorkspaceMembersLoaded}
+          workspaceMembers={members}
         />
       )}
       {showCreateGroup && currentWorkspaceId && (
@@ -792,6 +757,64 @@ export function MembersPanel() {
           onCreated={refreshGroups}
         />
       )}
+      {renamingGroup && (
+        <NormalModal
+          open
+          title={t('settings.appearance.people.renameGroup')}
+          onClose={closeRenameGroup}
+          onCancel={closeRenameGroup}
+          onOk={() => void handleRenameGroup(renamingGroup)}
+          okText={t('button.save')}
+          okLoading={updatingGroupId === renamingGroup.group_id}
+          okButtonProps={{
+            disabled:
+              !renamingGroupName.trim() ||
+              renamingGroupName.trim() === renamingGroup.name ||
+              updatingGroupId === renamingGroup.group_id,
+            'data-testid': 'people-rename-group-submit',
+          }}
+          cancelButtonProps={{ disabled: updatingGroupId === renamingGroup.group_id }}
+          PaperProps={{
+            className: 'w-[420px] max-w-[calc(100vw-32px)]',
+            'data-testid': 'rename-group-modal',
+          }}
+        >
+          <Input
+            value={renamingGroupName}
+            onChange={(event) => setRenamingGroupName(event.target.value)}
+            placeholder={t('settings.appearance.people.groupNamePlaceholder')}
+            autoFocus
+            disabled={updatingGroupId === renamingGroup.group_id}
+            data-testid='people-rename-group-name-input'
+          />
+        </NormalModal>
+      )}
+      {deleteConfirmationGroup && (
+        <NormalModal
+          open
+          danger
+          title={t('settings.appearance.people.deleteGroupQuestion')}
+          onClose={() => {
+            if (!deletingGroupId) setDeleteConfirmationGroup(null);
+          }}
+          onCancel={() => {
+            if (!deletingGroupId) setDeleteConfirmationGroup(null);
+          }}
+          onOk={() => void handleDeleteGroup(deleteConfirmationGroup)}
+          okText={t('button.delete')}
+          okLoading={deletingGroupId === deleteConfirmationGroup.group_id}
+          okButtonProps={{
+            'data-testid': 'people-delete-group-confirm',
+          }}
+          cancelButtonProps={{ disabled: deletingGroupId === deleteConfirmationGroup.group_id }}
+          PaperProps={{
+            className: 'w-[420px] max-w-[calc(100vw-32px)]',
+            'data-testid': 'delete-group-confirmation',
+          }}
+        >
+          <div className='text-sm text-text-secondary'>{t('settings.appearance.people.deleteGroupDescription')}</div>
+        </NormalModal>
+      )}
     </div>
   );
 }
@@ -800,10 +823,10 @@ interface GroupDetailModalProps {
   open: boolean;
   workspaceId: string;
   group: WorkspaceGroup;
+  workspaceMembers: WorkspaceMember[];
   onClose: () => void;
   onGroupChanged: () => Promise<void>;
   onGroupDeleted: () => void;
-  onWorkspaceMembersLoaded: (members: WorkspaceMember[]) => void;
 }
 
 interface CreateGroupModalProps {
@@ -964,15 +987,6 @@ function CreateGroupModal({ open, workspaceId, workspaceMembers, onClose, onCrea
   const [selectedMembers, setSelectedMembers] = useState<WorkspaceMember[]>([]);
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-
-    setGroupName('');
-    setMemberSearch('');
-    setSelectedMembers([]);
-    setCreating(false);
-  }, [open]);
-
   const selectedMemberUids = useMemo(
     () => selectedMembers.map((member) => getWorkspaceMemberUid(member)).filter((uid): uid is string => Boolean(uid)),
     [selectedMembers]
@@ -1032,18 +1046,25 @@ function CreateGroupModal({ open, workspaceId, workspaceMembers, onClose, onCrea
     setCreating(true);
     try {
       const createdGroup = await WorkspaceService.createWorkspaceGroup(workspaceId, { name });
-      const addResults = await Promise.allSettled(
-        selectedMemberUids.map((uid) =>
-          WorkspaceService.addWorkspaceGroupMember(workspaceId, createdGroup.group_id, { uid })
-        )
-      );
-      const failedAddCount = addResults.filter((result) => result.status === 'rejected').length;
 
-      if (failedAddCount > 0) {
-        toast.error(t('settings.appearance.people.addGroupMemberFailed'));
-      } else {
-        toast.success(t('settings.appearance.people.createGroupSuccess'));
+      try {
+        for (const uid of selectedMemberUids) {
+          await WorkspaceService.addWorkspaceGroupMember(workspaceId, createdGroup.group_id, { uid });
+        }
+      } catch (addMemberError) {
+        try {
+          await WorkspaceService.removeWorkspaceGroup(workspaceId, createdGroup.group_id);
+          toast.error(getErrorMessage(addMemberError, t('settings.appearance.people.addGroupMemberFailed')));
+          return;
+        } catch {
+          toast.error(t('settings.appearance.people.createGroupRollbackFailed'));
+          await onCreated();
+          onClose();
+          return;
+        }
       }
+
+      toast.success(t('settings.appearance.people.createGroupSuccess'));
 
       try {
         await onCreated();
@@ -1152,15 +1173,14 @@ function GroupDetailModal({
   open,
   workspaceId,
   group,
+  workspaceMembers,
   onClose,
   onGroupChanged,
   onGroupDeleted,
-  onWorkspaceMembersLoaded,
 }: GroupDetailModalProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<GroupDetailTab>('general');
   const [groupMembers, setGroupMembers] = useState<WorkspaceGroupMember[]>([]);
-  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
   const [loadingGroupMembers, setLoadingGroupMembers] = useState(false);
   const [addingUid, setAddingUid] = useState<string | null>(null);
@@ -1178,15 +1198,10 @@ function GroupDetailModal({
 
     void (async () => {
       try {
-        const [groupMemberResult, workspaceMemberList] = await Promise.all([
-          WorkspaceService.getWorkspaceGroupMembers(workspaceId, group.group_id),
-          WorkspaceService.getMembers(workspaceId, true),
-        ]);
+        const groupMemberResult = await WorkspaceService.getWorkspaceGroupMembers(workspaceId, group.group_id);
 
         if (cancelled) return;
         setGroupMembers(groupMemberResult.members || []);
-        setWorkspaceMembers(workspaceMemberList);
-        onWorkspaceMembersLoaded(workspaceMemberList);
       } catch (e) {
         if (!cancelled) {
           toast.error(getErrorMessage(e, t('settings.appearance.people.loadGroupMembersFailed')));
@@ -1199,7 +1214,7 @@ function GroupDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [group.group_id, onWorkspaceMembersLoaded, open, t, workspaceId]);
+  }, [group.group_id, open, t, workspaceId]);
 
   const groupMemberUidSet = useMemo(() => new Set(groupMembers.map((member) => member.uid)), [groupMembers]);
   const groupMemberEmailSet = useMemo(
@@ -1212,10 +1227,7 @@ function GroupDetailModal({
     [groupMembers]
   );
 
-  const visibleGroupMembers = useMemo(
-    () => groupMembers.filter((member) => matchesGroupMember(member, memberSearch, t)),
-    [groupMembers, memberSearch, t]
-  );
+  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
 
   const addableWorkspaceMembers = useAddableWorkspaceMembers({
     workspaceMembers,
@@ -1225,12 +1237,26 @@ function GroupDetailModal({
     excludedRoles: GROUP_EXCLUDED_WORKSPACE_ROLES,
     excludePending: true,
   });
+  const selectedAddableMember =
+    normalizedMemberSearch && addableWorkspaceMembers.length === 1 ? addableWorkspaceMembers[0] : null;
 
   const displayedMemberCount =
     loadingGroupMembers && groupMembers.length === 0 ? group.member_count : groupMembers.length;
-  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
-  const showCurrentGroupMemberList =
-    !normalizedMemberSearch || visibleGroupMembers.length > 0 || addableWorkspaceMembers.length === 0;
+  const workspaceMembersByUid = useMemo(() => {
+    const result = new Map<string, WorkspaceMember>();
+
+    for (const member of workspaceMembers) {
+      const uid = getWorkspaceMemberUid(member);
+
+      if (uid) result.set(uid, member);
+    }
+
+    return result;
+  }, [workspaceMembers]);
+  const workspaceMembersByEmail = useMemo(
+    () => new Map(workspaceMembers.map((member) => [member.email.trim().toLowerCase(), member])),
+    [workspaceMembers]
+  );
 
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
@@ -1373,66 +1399,71 @@ function GroupDetailModal({
                 ownerBadgeLabel={t('settings.appearance.people.workspaceOwner')}
                 unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
                 inputDisabled={loadingGroupMembers}
-                addButtonDisabled={loadingGroupMembers || Boolean(addingUid)}
+                addButtonDisabled={loadingGroupMembers || Boolean(addingUid) || !selectedAddableMember}
                 addingUid={addingUid}
+                maxResults={2}
                 inputClassName='h-9 flex-1'
+                onAddButtonClick={() => {
+                  if (selectedAddableMember) void handleAddMember(selectedAddableMember);
+                }}
+                onInputKeyDown={(event) => {
+                  if (event.key !== 'Enter' || !selectedAddableMember || addingUid) return;
+                  event.preventDefault();
+                  void handleAddMember(selectedAddableMember);
+                }}
                 onAddMember={(member) => void handleAddMember(member)}
               />
 
-              {showCurrentGroupMemberList && (
-                <div className='appflowy-scroller min-h-0 flex-1 overflow-y-auto'>
-                  {loadingGroupMembers && groupMembers.length === 0 ? (
-                    <div className='py-6 text-center text-sm text-text-secondary'>
-                      <Progress />
-                    </div>
-                  ) : visibleGroupMembers.length === 0 ? (
-                    <div className='py-6 text-center text-sm text-text-secondary'>
-                      {t('settings.appearance.people.noGroupMembers')}
-                    </div>
-                  ) : (
-                    visibleGroupMembers.map((member) => {
-                      const displayName = groupMemberDisplayName(member, t);
+              <div className='appflowy-scroller min-h-0 flex-1 overflow-y-auto'>
+                {loadingGroupMembers && groupMembers.length === 0 ? (
+                  <div className='py-6 text-center text-sm text-text-secondary'>
+                    <Progress />
+                  </div>
+                ) : groupMembers.length === 0 ? (
+                  <div className='py-6 text-center text-sm text-text-secondary'>
+                    {t('settings.appearance.people.noGroupMembers')}
+                  </div>
+                ) : (
+                  groupMembers.map((member) => {
+                    const workspaceMember =
+                      workspaceMembersByUid.get(member.uid) ||
+                      (member.email ? workspaceMembersByEmail.get(member.email.trim().toLowerCase()) : undefined);
+                    const displayName =
+                      member.name?.trim() || workspaceMember?.name || groupMemberDisplayName(member, t);
+                    const email = member.email?.trim() || workspaceMember?.email;
 
-                      return (
-                        <div
-                          key={member.uid}
-                          data-testid={`group-member-row-${member.uid}`}
-                          className='flex items-center justify-between gap-3 border-b border-border-primary py-3 text-sm'
-                        >
-                          <div className='flex min-w-0 items-center gap-3'>
-                            <Avatar size='md'>
-                              <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
-                            </Avatar>
-                            <div className='flex min-w-0 flex-col'>
-                              <span className='truncate font-medium text-text-primary'>{displayName}</span>
-                              {member.email && (
-                                <span className='truncate text-xs text-text-secondary'>{member.email}</span>
-                              )}
-                            </div>
+                    return (
+                      <div
+                        key={member.uid}
+                        data-testid={`group-member-row-${member.uid}`}
+                        className='flex items-center justify-between gap-3 border-b border-border-primary py-3 text-sm'
+                      >
+                        <div className='flex min-w-0 items-center gap-3'>
+                          <Avatar size='md'>
+                            <AvatarImage src={workspaceMember?.avatar_url} alt={displayName} />
+                            <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
+                          </Avatar>
+                          <div className='flex min-w-0 flex-col'>
+                            <span className='truncate font-medium text-text-primary'>{displayName}</span>
+                            {email && <span className='truncate text-xs text-text-secondary'>{email}</span>}
                           </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type='button'
-                                disabled={removingUid === member.uid}
-                                className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
-                                aria-label={t('settings.appearance.people.groupMemberActions')}
-                              >
-                                <MoreHorizontal className='h-4 w-4' />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align='end'>
-                              <DropdownMenuItem variant='destructive' onSelect={() => void handleRemoveMember(member)}>
-                                {t('settings.appearance.people.removeFromGroup')}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
                         </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
+                        <Button
+                          type='button'
+                          size='sm'
+                          variant='ghost'
+                          className='text-text-action hover:text-text-action-hover'
+                          disabled={removingUid === member.uid}
+                          loading={removingUid === member.uid}
+                          onClick={() => void handleRemoveMember(member)}
+                        >
+                          {t('button.remove')}
+                        </Button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>

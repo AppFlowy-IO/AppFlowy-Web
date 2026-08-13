@@ -57,6 +57,7 @@ function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined, updat
       viewId='view-1'
       people={[]}
       groups={[]}
+      editableGroupIds={new Set()}
       isLoadingPeople={false}
       onPeopleChange={async () => undefined}
       onPersonRemoved={() => undefined}

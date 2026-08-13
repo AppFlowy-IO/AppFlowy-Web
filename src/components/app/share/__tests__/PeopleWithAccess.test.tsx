@@ -11,6 +11,7 @@ const mockSharePageToGroup = jest.fn();
 const mockRevokeGroupAccess = jest.fn();
 const mockNavigate = jest.fn();
 const mockEventEmitter = new EventEmitter();
+const mockGroupMutationResult = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -52,18 +53,25 @@ jest.mock('@/components/app/share/PersonItem', () => ({
 jest.mock('@/components/app/share/GroupAccessLevelDropdown', () => ({
   GroupAccessLevelDropdown: ({
     group,
+    canModify,
     onAccessLevelChange,
     onRemoveAccess,
   }: {
     group: WorkspaceGroupViewPermission;
-    onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<void>;
-    onRemoveAccess: (groupId: string) => Promise<void>;
+    canModify: boolean;
+    onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<AccessLevel | null | undefined>;
+    onRemoveAccess: (groupId: string) => Promise<AccessLevel | null | undefined>;
   }) => (
     <>
-      <button onClick={() => void onAccessLevelChange(group.group_id, group.access_level)}>
+      <button
+        disabled={!canModify}
+        onClick={() => void onAccessLevelChange(group.group_id, group.access_level).then(mockGroupMutationResult)}
+      >
         update:{group.group_id}
       </button>
-      <button onClick={() => void onRemoveAccess(group.group_id)}>remove:{group.group_id}</button>
+      <button disabled={!canModify} onClick={() => void onRemoveAccess(group.group_id).then(mockGroupMutationResult)}>
+        remove:{group.group_id}
+      </button>
     </>
   ),
 }));
@@ -94,6 +102,7 @@ describe('PeopleWithAccess', () => {
     mockRevokeGroupAccess.mockReset();
     mockRevokeGroupAccess.mockResolvedValue(undefined);
     mockNavigate.mockReset();
+    mockGroupMutationResult.mockReset();
   });
 
   it('optimistically removes a successfully revoked row before revalidation', async () => {
@@ -105,6 +114,7 @@ describe('PeopleWithAccess', () => {
         viewId='view-1'
         people={[removedPerson]}
         groups={[]}
+        editableGroupIds={new Set()}
         isLoading={false}
         onPeopleChange={onPeopleChange}
         onPersonRemoved={onPersonRemoved}
@@ -132,6 +142,7 @@ describe('PeopleWithAccess', () => {
         viewId='view-1'
         people={[]}
         groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
         isLoading={false}
         onPeopleChange={onPeopleChange}
         onPersonRemoved={jest.fn()}
@@ -167,6 +178,7 @@ describe('PeopleWithAccess', () => {
         viewId='view-1'
         people={[]}
         groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
         isLoading={false}
         onPeopleChange={onPeopleChange}
         onPersonRemoved={jest.fn()}
@@ -186,5 +198,107 @@ describe('PeopleWithAccess', () => {
       updateGroupInAccessList.mock.invocationCallOrder[0]
     );
     expect(updateGroupInAccessList.mock.invocationCallOrder[0]).toBeLessThan(onPeopleChange.mock.invocationCallOrder[0]);
+  });
+
+  it('keeps inherited or stronger-effective group rows visible but disabled', () => {
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[]}
+        groups={[{ ...sharedGroup, access_level: AccessLevel.FullAccess, source: 'ancestor' }]}
+        editableGroupIds={new Set()}
+        isLoading={false}
+        onPeopleChange={async () => undefined}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={jest.fn()}
+        hasFullAccess
+        canGrantFullAccess
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    expect(screen.getByText(sharedGroup.name)).toBeTruthy();
+    expect(screen.getByRole('button', { name: `update:${sharedGroup.group_id}` }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: `remove:${sharedGroup.group_id}` }).disabled).toBe(true);
+  });
+
+  it('returns authoritative stronger effective access after a direct downgrade', async () => {
+    const strongerEffectiveGroup = { ...sharedGroup, access_level: AccessLevel.FullAccess, source: 'ancestor' };
+
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[]}
+        groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
+        isLoading={false}
+        onPeopleChange={async () => ({
+          effectiveGroups: [strongerEffectiveGroup],
+          directGroups: [sharedGroup],
+          effectiveGroupsLoaded: true,
+          directGroupsLoaded: true,
+        })}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={jest.fn()}
+        hasFullAccess
+        canGrantFullAccess
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    fireEvent.click(screen.getByText(`update:${sharedGroup.group_id}`));
+
+    await waitFor(() => expect(mockGroupMutationResult).toHaveBeenCalledWith(AccessLevel.FullAccess));
+  });
+
+  it('preserves an unverified refresh result instead of claiming inherited access', async () => {
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[]}
+        groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
+        isLoading={false}
+        onPeopleChange={async () => undefined}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={jest.fn()}
+        hasFullAccess
+        canGrantFullAccess
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    fireEvent.click(screen.getByText(`update:${sharedGroup.group_id}`));
+
+    await waitFor(() => expect(mockGroupMutationResult).toHaveBeenCalledWith(undefined));
+  });
+
+  it('returns inherited access after removing only the direct group grant', async () => {
+    const inheritedGroup = { ...sharedGroup, access_level: AccessLevel.ReadOnly, source: 'ancestor' };
+
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[]}
+        groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
+        isLoading={false}
+        onPeopleChange={async () => ({
+          effectiveGroups: [inheritedGroup],
+          directGroups: [],
+          effectiveGroupsLoaded: true,
+          directGroupsLoaded: true,
+        })}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={jest.fn()}
+        hasFullAccess
+        canGrantFullAccess
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    fireEvent.click(screen.getByText(`remove:${sharedGroup.group_id}`));
+
+    await waitFor(() => expect(mockGroupMutationResult).toHaveBeenCalledWith(AccessLevel.ReadOnly));
   });
 });

@@ -443,7 +443,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       return true;
     } catch (error) {
       if (!isCurrentRequest()) return false;
-      setSpaceMembersLoaded(false);
+      // Keep an already-loaded roster interactive when only a post-mutation
+      // revalidation fails. Initial loads start with this flag cleared.
       toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
       return false;
     } finally {

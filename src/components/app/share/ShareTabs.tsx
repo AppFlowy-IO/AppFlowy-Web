@@ -43,6 +43,7 @@ function ShareTabs({
   const {
     people,
     groups,
+    editableGroupIds,
     isLoadingPeople,
     loadPeople,
     removePersonFromAccessList,
@@ -123,6 +124,7 @@ function ShareTabs({
                 viewId={viewId}
                 people={people}
                 groups={groups}
+                editableGroupIds={editableGroupIds}
                 isLoadingPeople={isLoadingPeople}
                 onPeopleChange={loadPeople}
                 onPersonRemoved={removePersonFromAccessList}

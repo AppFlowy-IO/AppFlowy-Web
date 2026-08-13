@@ -15,12 +15,14 @@ import { useShareAccessDetails } from '@/components/app/share/useShareAccessDeta
 
 const mockEventEmitter = new EventEmitter();
 const mockGetShareDetail = jest.fn();
+const mockGetSharedGroups = jest.fn();
 const mockInvalidateShareDetailCache = jest.fn();
 let mockOutline: View[] = [];
 
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getShareDetail: (...args: unknown[]) => mockGetShareDetail(...args),
+    getSharedGroups: (...args: unknown[]) => mockGetSharedGroups(...args),
     invalidateShareDetailCache: (...args: unknown[]) => mockInvalidateShareDetailCache(...args),
   },
 }));
@@ -57,6 +59,8 @@ describe('useShareAccessDetails', () => {
   beforeEach(() => {
     mockEventEmitter.removeAllListeners();
     mockGetShareDetail.mockReset();
+    mockGetSharedGroups.mockReset();
+    mockGetSharedGroups.mockResolvedValue([]);
     mockInvalidateShareDetailCache.mockReset();
     mockOutline = [
       {
@@ -70,6 +74,101 @@ describe('useShareAccessDetails', () => {
         is_private: true,
       },
     ];
+  });
+
+  it('only marks direct grants whose effective level matches as editable', async () => {
+    const inheritedGroup = {
+      ...sharedGroup,
+      group_id: 'inherited-group',
+      name: 'Inherited team',
+      access_level: AccessLevel.ReadAndWrite,
+      source: 'ancestor',
+    };
+    const strongerEffectiveGroup = {
+      ...sharedGroup,
+      access_level: AccessLevel.FullAccess,
+      source: 'ancestor',
+    };
+
+    mockGetSharedGroups.mockResolvedValueOnce([sharedGroup]);
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [],
+      groups: [strongerEffectiveGroup, inheritedGroup],
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.groups).toEqual([strongerEffectiveGroup, inheritedGroup]));
+    expect(result.current.editableGroupIds.size).toBe(0);
+    expect(mockGetSharedGroups).toHaveBeenCalledWith('workspace-1', 'view-1');
+  });
+
+  it('keeps the last same-view direct snapshot when its refresh fails', async () => {
+    mockGetSharedGroups.mockResolvedValueOnce([sharedGroup]).mockRejectedValueOnce(new Error('direct list failed'));
+    mockGetShareDetail
+      .mockResolvedValueOnce({ shared_with: [], groups: [sharedGroup] })
+      .mockResolvedValueOnce({ shared_with: [], groups: [sharedGroup] });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true));
+
+    await act(async () => {
+      await result.current.loadPeople();
+    });
+
+    expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true);
+  });
+
+  it('does not leak direct editability when switching views and the new direct read fails', async () => {
+    const secondViewGroup = {
+      ...sharedGroup,
+      group_id: 'group-2',
+      name: 'Second view team',
+      source: 'ancestor',
+    };
+
+    mockGetSharedGroups.mockResolvedValueOnce([sharedGroup]).mockRejectedValueOnce(new Error('direct list failed'));
+    mockGetShareDetail
+      .mockResolvedValueOnce({ shared_with: [], groups: [sharedGroup] })
+      .mockResolvedValueOnce({ shared_with: [], groups: [secondViewGroup] });
+
+    const { result, rerender } = renderHook(({ viewId }) => useShareAccessDetails(viewId, true), {
+      initialProps: { viewId: 'view-1' },
+    });
+
+    await waitFor(() => expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true));
+
+    rerender({ viewId: 'view-2' });
+
+    await waitFor(() => expect(result.current.groups).toEqual([secondViewGroup]));
+    expect(result.current.editableGroupIds.size).toBe(0);
+  });
+
+  it('retains confirmed optimistic direct access when revalidation fails', async () => {
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const updatedGroup = { ...sharedGroup, access_level: AccessLevel.ReadAndWrite };
+
+    mockGetSharedGroups.mockResolvedValueOnce([sharedGroup]).mockRejectedValueOnce(new Error('direct list failed'));
+    mockGetShareDetail
+      .mockResolvedValueOnce({ shared_with: [], groups: [sharedGroup] })
+      .mockRejectedValueOnce({ code: 1000, message: 'effective list failed' });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true));
+
+    act(() => result.current.updateGroupInAccessList(sharedGroup.group_id, AccessLevel.ReadAndWrite));
+    expect(result.current.groups).toEqual([updatedGroup]);
+    expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true);
+
+    await act(async () => {
+      await result.current.loadPeople();
+    });
+
+    expect(result.current.groups).toEqual([updatedGroup]);
+    expect(result.current.editableGroupIds.has(sharedGroup.group_id)).toBe(true);
+    consoleErrorSpy.mockRestore();
   });
 
   it('invalidates and reloads an open access list after a remote share change', async () => {

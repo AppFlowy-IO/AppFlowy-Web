@@ -1,7 +1,7 @@
+import { Users } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Users } from 'lucide-react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { AccessService } from '@/application/services/domains';
@@ -15,12 +15,15 @@ import { GroupAccessLevelDropdown } from './GroupAccessLevelDropdown';
 import { PersonItem } from './PersonItem';
 import { isInheritedWorkspaceAccess, ShareSectionType } from './shareSectionType';
 
+import type { ShareAccessRefreshResult } from './useShareAccessDetails';
+
 interface PeopleWithAccessProps {
   viewId: string;
   people: IPeopleWithAccessType[];
   groups: WorkspaceGroupViewPermission[];
+  editableGroupIds: ReadonlySet<string>;
   isLoading: boolean;
-  onPeopleChange: () => Promise<void>;
+  onPeopleChange: () => Promise<ShareAccessRefreshResult | void>;
   onPersonRemoved: (email: string) => void;
   updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
@@ -32,6 +35,7 @@ export function PeopleWithAccess({
   viewId,
   people,
   groups = [],
+  editableGroupIds,
   onPeopleChange,
   onPersonRemoved,
   updateGroupInAccessList,
@@ -119,7 +123,10 @@ export function PeopleWithAccess({
       if (!currentWorkspaceId) return;
       await AccessService.sharePageToGroup(currentWorkspaceId, viewId, groupId, newAccessLevel);
       updateGroupInAccessList(groupId, newAccessLevel);
-      await onPeopleChange();
+      const refreshResult = await onPeopleChange();
+
+      if (!refreshResult) return undefined;
+      return refreshResult.effectiveGroups.find((group) => group.group_id === groupId)?.access_level ?? null;
     },
     [currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
   );
@@ -129,7 +136,10 @@ export function PeopleWithAccess({
       if (!currentWorkspaceId) return;
       await AccessService.revokeGroupAccess(currentWorkspaceId, viewId, groupId);
       updateGroupInAccessList(groupId, null);
-      await onPeopleChange();
+      const refreshResult = await onPeopleChange();
+
+      if (!refreshResult) return undefined;
+      return refreshResult.effectiveGroups.find((group) => group.group_id === groupId)?.access_level ?? null;
     },
     [currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
   );
@@ -185,7 +195,7 @@ export function PeopleWithAccess({
             </div>
             <GroupAccessLevelDropdown
               group={group}
-              canModify={hasFullAccess}
+              canModify={hasFullAccess && editableGroupIds.has(group.group_id)}
               currentUserHasFullAccess={hasFullAccess}
               onAccessLevelChange={handleGroupAccessLevelChange}
               onRemoveAccess={handleRemoveGroupAccess}

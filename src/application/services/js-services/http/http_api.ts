@@ -183,6 +183,7 @@ export {
   getShareDetail,
   invalidateShareDetailCache,
   sharePageTo,
+  getSharedGroups,
   sharePageToGroup,
   sharePageToGroups,
   revokeAccess,

@@ -22,8 +22,8 @@ interface GroupAccessLevelDropdownProps {
   group: WorkspaceGroupViewPermission;
   canModify: boolean;
   currentUserHasFullAccess: boolean;
-  onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<void>;
-  onRemoveAccess: (groupId: string) => Promise<void>;
+  onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<AccessLevel | null | undefined>;
+  onRemoveAccess: (groupId: string) => Promise<AccessLevel | null | undefined>;
 }
 
 export function GroupAccessLevelDropdown({
@@ -55,9 +55,14 @@ export function GroupAccessLevelDropdown({
     async (loadingKey: string, accessLevel: AccessLevel) => {
       setLoading(loadingKey);
       try {
-        await onAccessLevelChange(group.group_id, accessLevel);
+        const effectiveAccessLevel = await onAccessLevelChange(group.group_id, accessLevel);
+
         setOpen(false);
-        notify.success(t('shareAction.changeGroupAccessSuccess', { group: group.name }));
+        if (effectiveAccessLevel !== undefined && effectiveAccessLevel !== accessLevel) {
+          notify.error(t('shareAction.groupAccessInheritedStronger', { group: group.name }));
+        } else {
+          notify.success(t('shareAction.changeGroupAccessSuccess', { group: group.name }));
+        }
       } catch (error) {
         notify.error(t('shareAction.changeAccessError'));
       } finally {
@@ -70,9 +75,14 @@ export function GroupAccessLevelDropdown({
   const handleRemoveAccess = useCallback(async () => {
     setLoading('remove');
     try {
-      await onRemoveAccess(group.group_id);
+      const effectiveAccessLevel = await onRemoveAccess(group.group_id);
+
       setOpen(false);
-      notify.success(t('shareAction.removeGroupAccessSuccess', { group: group.name }));
+      if (effectiveAccessLevel !== undefined && effectiveAccessLevel !== null) {
+        notify.error(t('shareAction.groupAccessStillInherited', { group: group.name }));
+      } else {
+        notify.success(t('shareAction.removeGroupAccessSuccess', { group: group.name }));
+      }
     } catch (error) {
       notify.error(t('shareAction.removeAccessError'));
     } finally {

@@ -167,6 +167,26 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.patch.mock.calls[0][1]).not.toHaveProperty('space_permission');
   });
 
+  it('gets only the group grants owned by a view', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const directGroup = {
+      group_id: 'group-1',
+      name: 'Engineering',
+      access_level: AccessLevel.ReadOnly,
+      member_count: 2,
+      source: 'direct',
+    };
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: { code: 0, data: { groups: [directGroup] } },
+    });
+
+    await expect(module.getSharedGroups('workspace-1', 'page-1')).resolves.toEqual([directGroup]);
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/workspace/workspace-1/views/page-1/group');
+  });
+
   it('maps auth providers from API response', async () => {
     const module = await import('../http_api');
     module.initAPIService(baseConfig);

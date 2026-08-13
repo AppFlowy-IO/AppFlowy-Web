@@ -1,5 +1,5 @@
 import { Plus, UserPlus } from 'lucide-react';
-import { type KeyboardEventHandler, useMemo, useRef } from 'react';
+import { type KeyboardEventHandler, type ReactNode, useMemo, useRef } from 'react';
 
 import { Role, WorkspaceMember } from '@/application/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -87,7 +87,76 @@ interface WorkspaceMemberInlineSearchProps {
   maxResults?: number;
   inputClassName?: string;
   onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+  onAddButtonClick?: () => void;
   onAddMember: (member: WorkspaceMember) => void;
+}
+
+interface WorkspaceMemberInlineSearchInputProps {
+  search: string;
+  onSearchChange: (value: string) => void;
+  searchPlaceholder: string;
+  addButtonLabel: string;
+  addButtonDisabled?: boolean;
+  addButtonLoading?: boolean;
+  addButtonIcon?: ReactNode;
+  inputDisabled?: boolean;
+  inputClassName?: string;
+  inputTestId?: string;
+  addButtonTestId?: string;
+  onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+  onAddButtonClick?: () => void;
+}
+
+export function WorkspaceMemberInlineSearchInput({
+  search,
+  onSearchChange,
+  searchPlaceholder,
+  addButtonLabel,
+  addButtonDisabled = false,
+  addButtonLoading = false,
+  addButtonIcon,
+  inputDisabled = false,
+  inputClassName = 'h-10 flex-1',
+  inputTestId = 'workspace-member-inline-search-input',
+  addButtonTestId,
+  onInputKeyDown,
+  onAddButtonClick,
+}: WorkspaceMemberInlineSearchInputProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const ButtonIcon = addButtonIcon === undefined ? <UserPlus className='h-5 w-5' /> : addButtonIcon;
+
+  return (
+    <div className='flex items-center gap-2'>
+      <SearchInput
+        value={search}
+        onChange={(e) => onSearchChange(e.target.value)}
+        placeholder={searchPlaceholder}
+        className={inputClassName}
+        inputRef={inputRef}
+        disabled={inputDisabled}
+        onKeyDown={onInputKeyDown}
+        data-testid={inputTestId}
+      />
+      <Button
+        type='button'
+        size='lg'
+        disabled={addButtonDisabled}
+        loading={addButtonLoading}
+        onClick={() => {
+          if (onAddButtonClick) {
+            onAddButtonClick();
+            return;
+          }
+
+          inputRef.current?.focus();
+        }}
+        data-testid={addButtonTestId}
+      >
+        {ButtonIcon}
+        {addButtonLabel}
+      </Button>
+    </div>
+  );
 }
 
 export function WorkspaceMemberInlineSearch({
@@ -107,30 +176,25 @@ export function WorkspaceMemberInlineSearch({
   maxResults = 12,
   inputClassName = 'h-10 flex-1',
   onInputKeyDown,
+  onAddButtonClick,
   onAddMember,
 }: WorkspaceMemberInlineSearchProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
   const visibleMembers = addableMembers.slice(0, maxResults);
   const hasUnavailableMembers = visibleMembers.some((member) => !getWorkspaceMemberUid(member));
 
   return (
     <>
-      <div className='flex items-center gap-2'>
-        <SearchInput
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={searchPlaceholder}
-          className={inputClassName}
-          inputRef={inputRef}
-          disabled={inputDisabled}
-          onKeyDown={onInputKeyDown}
-          data-testid='workspace-member-inline-search-input'
-        />
-        <Button type='button' size='lg' disabled={addButtonDisabled} onClick={() => inputRef.current?.focus()}>
-          <UserPlus className='h-5 w-5' />
-          {addButtonLabel}
-        </Button>
-      </div>
+      <WorkspaceMemberInlineSearchInput
+        search={search}
+        onSearchChange={onSearchChange}
+        searchPlaceholder={searchPlaceholder}
+        addButtonLabel={addButtonLabel}
+        addButtonDisabled={addButtonDisabled}
+        inputDisabled={inputDisabled}
+        inputClassName={inputClassName}
+        onInputKeyDown={onInputKeyDown}
+        onAddButtonClick={onAddButtonClick}
+      />
 
       {visibleMembers.length > 0 && (
         <div className='flex flex-col gap-2 border-t border-border-primary pt-4'>

@@ -8,6 +8,7 @@ export {
   invalidateShareDetailCache,
   getObjectPermission,
   sharePageTo,
+  getSharedGroups,
   sharePageToGroup,
   sharePageToGroups,
   revokeAccess,

@@ -327,6 +327,35 @@ describe('ManageSpace ACL management', () => {
     await waitFor(() => expect(screen.queryByTestId('space-group-row-group-1')).toBeNull());
   });
 
+  it('keeps the confirmed group update interactive when roster revalidation fails', async () => {
+    const memberGroup = group('group-1', 'Engineering');
+    const ownerGroup = group('group-1', 'Engineering', SpaceMemberRole.Owner);
+
+    mockGetSpaceMembers
+      .mockResolvedValueOnce({ members: [], groups: [memberGroup] })
+      .mockRejectedValueOnce(new Error('revalidation failed'));
+    mockUpdateSpaceGroupPermission.mockResolvedValue(ownerGroup);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    const initialRow = await screen.findByTestId('space-group-row-group-1');
+
+    fireEvent.click(
+      within(initialRow).getByRole('button', {
+        name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+      })
+    );
+
+    await waitFor(() => expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      const updatedRow = screen.getByTestId('space-group-row-group-1');
+      const roleTrigger = within(updatedRow).getByRole('button', {
+        name: 'space.permissionManager.owner',
+      });
+
+      expect(roleTrigger.disabled).toBe(false);
+    });
+  });
+
   it('lets invite-only members add people without calling the manager-only member list', async () => {
     mockGetSpacePermission.mockResolvedValue(permissionResponse({ canManageMembers: false, canInviteMembers: true }));
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);

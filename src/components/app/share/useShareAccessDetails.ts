@@ -35,6 +35,19 @@ interface AccessDetailsError {
   retryAfterSecs?: number;
 }
 
+export interface ShareAccessRefreshResult {
+  effectiveGroups: WorkspaceGroupViewPermission[];
+  directGroups: WorkspaceGroupViewPermission[];
+  effectiveGroupsLoaded: boolean;
+  directGroupsLoaded: boolean;
+}
+
+interface DirectGroupSnapshot {
+  viewId: string;
+  groups: WorkspaceGroupViewPermission[];
+  loaded: boolean;
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -95,6 +108,9 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   const outline = useAppOutline();
   const [people, setPeople] = useState<IPeopleWithAccessType[]>([]);
   const [groups, setGroups] = useState<WorkspaceGroupViewPermission[]>([]);
+  const [directGroups, setDirectGroups] = useState<WorkspaceGroupViewPermission[]>([]);
+  const [directGroupsLoaded, setDirectGroupsLoaded] = useState(false);
+  const directGroupSnapshotRef = useRef<DirectGroupSnapshot>({ viewId, groups: [], loaded: false });
   const [isLoadingPeople, setIsLoadingPeople] = useState(false);
   const [hasLoadedPeople, setHasLoadedPeople] = useState(false);
   const [loadedPeopleViewId, setLoadedPeopleViewId] = useState<string | null>(null);
@@ -117,6 +133,10 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     [outline, viewId]
   );
 
+  if (directGroupSnapshotRef.current.viewId !== viewId) {
+    directGroupSnapshotRef.current = { viewId, groups: [], loaded: false };
+  }
+
   const loadPeople = useCallback(
     async (signal?: AbortSignal) => {
       if (!currentWorkspaceId || !viewId || !currentUserEmail) {
@@ -124,6 +144,11 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
       }
 
       const requestSeq = ++loadPeopleRequestSeq.current;
+      // Start both independent reads together. Effective access controls what is
+      // displayed, while direct grants control which rows may be edited here.
+      const directGroupsPromise = Promise.allSettled([AccessService.getSharedGroups(currentWorkspaceId, viewId)]).then(
+        ([result]) => result
+      );
 
       setIsLoadingPeople(true);
 
@@ -131,8 +156,20 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         for (let retryIndex = 0; retryIndex <= ACCESS_DETAILS_MAX_TRANSIENT_RETRIES; retryIndex += 1) {
           try {
             const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
+            const directGroupResult = await directGroupsPromise;
 
             if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
+
+            const previousDirectGroupSnapshot = directGroupSnapshotRef.current;
+            const canReuseDirectGroupSnapshot =
+              previousDirectGroupSnapshot.viewId === viewId && previousDirectGroupSnapshot.loaded;
+            const directGroupSnapshot =
+              directGroupResult.status === 'fulfilled'
+                ? directGroupResult.value
+                : canReuseDirectGroupSnapshot
+                ? previousDirectGroupSnapshot.groups
+                : [];
+            const hasLoadedDirectGroups = directGroupResult.status === 'fulfilled';
 
             if (pendingRevocations.current.viewId !== viewId) {
               pendingRevocations.current = { viewId, emails: new Map() };
@@ -158,17 +195,29 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
               if (requestSeq > revokedAtRequestSeq) revokedEmails.delete(email);
             }
 
-            const visibleGroups = (detail.groups ?? []).reduce<WorkspaceGroupViewPermission[]>((current, group) => {
-              const pendingUpdate = groupUpdates.get(group.group_id);
+            // Some deployments can omit direct rows from effective details. Keep
+            // them visible, then let the effective response win for duplicate
+            // group IDs, matching Desktop's direct/effective merge semantics.
+            const effectiveGroupsById = new Map(directGroupSnapshot.map((group) => [group.group_id, group] as const));
 
-              if (!pendingUpdate || requestSeq > pendingUpdate.requestSeq) {
-                current.push(group);
-              } else if (pendingUpdate.accessLevel !== null) {
-                current.push({ ...group, access_level: pendingUpdate.accessLevel });
-              }
+            for (const group of detail.groups ?? []) {
+              effectiveGroupsById.set(group.group_id, group);
+            }
 
-              return current;
-            }, []);
+            const visibleGroups = Array.from(effectiveGroupsById.values()).reduce<WorkspaceGroupViewPermission[]>(
+              (current, group) => {
+                const pendingUpdate = groupUpdates.get(group.group_id);
+
+                if (!pendingUpdate || requestSeq > pendingUpdate.requestSeq) {
+                  current.push(group);
+                } else if (pendingUpdate.accessLevel !== null) {
+                  current.push({ ...group, access_level: pendingUpdate.accessLevel });
+                }
+
+                return current;
+              },
+              []
+            );
 
             for (const [groupId, pendingUpdate] of groupUpdates) {
               if (requestSeq > pendingUpdate.requestSeq) groupUpdates.delete(groupId);
@@ -176,11 +225,27 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
 
             setPeople(visiblePeople);
             setGroups(visibleGroups);
+            if (hasLoadedDirectGroups) {
+              directGroupSnapshotRef.current = { viewId, groups: directGroupSnapshot, loaded: true };
+              setDirectGroups(directGroupSnapshot);
+              setDirectGroupsLoaded(true);
+            } else if (!canReuseDirectGroupSnapshot) {
+              directGroupSnapshotRef.current = { viewId, groups: [], loaded: false };
+              setDirectGroups([]);
+              setDirectGroupsLoaded(false);
+            }
+
             setCurrentUserPermission(detail.current_user_permission ?? null);
             setDeniedViewId(null);
             setHasLoadedPeople(true);
             setLoadedPeopleViewId(viewId);
-            return;
+            return {
+              effectiveGroups: visibleGroups,
+              directGroups: directGroupSnapshot,
+              effectiveGroupsLoaded: true,
+              directGroupsLoaded:
+                hasLoadedDirectGroups || (canReuseDirectGroupSnapshot && previousDirectGroupSnapshot.loaded),
+            } satisfies ShareAccessRefreshResult;
           } catch (error) {
             if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
 
@@ -191,6 +256,9 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
               pendingGroupUpdates.current = { viewId, updates: new Map() };
               setPeople([]);
               setGroups([]);
+              directGroupSnapshotRef.current = { viewId, groups: [], loaded: false };
+              setDirectGroups([]);
+              setDirectGroupsLoaded(false);
               setCurrentUserPermission(null);
               setDeniedViewId(viewId);
               setHasLoadedPeople(false);
@@ -294,6 +362,24 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
           group.group_id === groupId ? { ...group, access_level: accessLevel } : group
         );
       });
+      // The mutation response confirms the direct grant, so retain that
+      // snapshot if a subsequent direct-grant refresh fails.
+      const currentDirectSnapshot = directGroupSnapshotRef.current;
+      const directSnapshotWasLoaded = currentDirectSnapshot.viewId === viewId && currentDirectSnapshot.loaded;
+      const updatedDirectGroups =
+        accessLevel === null
+          ? currentDirectSnapshot.groups.filter((group) => group.group_id !== groupId)
+          : currentDirectSnapshot.groups.map((group) =>
+              group.group_id === groupId ? { ...group, access_level: accessLevel } : group
+            );
+
+      directGroupSnapshotRef.current = {
+        viewId,
+        groups: updatedDirectGroups,
+        loaded: directSnapshotWasLoaded,
+      };
+      setDirectGroups(updatedDirectGroups);
+      setDirectGroupsLoaded(directSnapshotWasLoaded);
     },
     [viewId]
   );
@@ -307,6 +393,23 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     () => (loadedPeopleViewId === viewId ? groups : []),
     [groups, loadedPeopleViewId, viewId]
   );
+  const directGroupsForCurrentView = useMemo(
+    () => (loadedPeopleViewId === viewId ? directGroups : []),
+    [directGroups, loadedPeopleViewId, viewId]
+  );
+  const editableGroupIds = useMemo(() => {
+    if (!directGroupsLoaded || loadedPeopleViewId !== viewId) return new Set<string>();
+
+    const effectiveAccessByGroupId = new Map(
+      groupsForCurrentView.map((group) => [group.group_id, group.access_level] as const)
+    );
+
+    return new Set(
+      directGroupsForCurrentView
+        .filter((group) => effectiveAccessByGroupId.get(group.group_id) === group.access_level)
+        .map((group) => group.group_id)
+    );
+  }, [directGroupsForCurrentView, directGroupsLoaded, groupsForCurrentView, loadedPeopleViewId, viewId]);
   const currentUserPermissionForCurrentView = loadedPeopleViewId === viewId ? currentUserPermission : null;
   const accessDetailsDenied = deniedViewId === viewId;
   const currentUserAccessLevel = useMemo(() => {
@@ -350,6 +453,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   return {
     people: peopleForCurrentView,
     groups: groupsForCurrentView,
+    editableGroupIds,
     isLoadingPeople,
     loadPeople,
     removePersonFromAccessList,
