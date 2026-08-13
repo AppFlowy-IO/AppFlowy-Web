@@ -1,3 +1,4 @@
+import { Dialog } from '@mui/material';
 import { ChevronDown, LoaderCircle } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -39,22 +40,12 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/database-templat
 import { ReactComponent as EditIcon } from '@/assets/icons/database-template/edit.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { ConfirmModal } from '@/components/_shared/modal/ConfirmModal';
 import { DatabaseRowProperties, RowSubDocument } from '@/components/database/components/database-row';
 import DragItem from '@/components/database/components/drag-and-drop/DragItem';
 import { DragContext, useDragContextValue } from '@/components/database/components/drag-and-drop/useDragContext';
 import DatabaseRowHeader from '@/components/database/components/header/DatabaseRowHeader';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +63,11 @@ type EditingTemplate = {
   templateId: string;
   rowDoc: YDoc;
 };
+
+const TEMPLATE_EDITOR_PAPER_PROPS = {
+  className:
+    'block h-[70vh] max-h-[calc(100vh-48px)] w-[70vw] min-w-[320px] !max-w-[calc(100vw-80px)] overflow-hidden overscroll-contain !rounded-[16px] bg-surface-primary p-0',
+} as const;
 
 function encodeDocument(doc?: YDoc | null): string | undefined {
   if (!doc) return undefined;
@@ -179,16 +175,21 @@ function DatabaseTemplateEditor({
   );
 
   return (
-    <Dialog open onOpenChange={(open) => !open && close()}>
-      <DialogContent
-        showCloseButton={false}
-        className='block h-[70vh] max-h-[calc(100vh-48px)] w-[70vw] min-w-[320px] !max-w-[calc(100vw-80px)] overflow-hidden overscroll-contain rounded-[16px] bg-surface-primary p-0'
-        data-testid='database-template-editor'
-      >
-        <DialogTitle className='sr-only'>Edit database template</DialogTitle>
-        <DialogDescription className='sr-only'>
+    <Dialog
+      open
+      maxWidth={false}
+      onClose={close}
+      aria-labelledby='database-template-editor-title'
+      aria-describedby='database-template-editor-description'
+      PaperProps={TEMPLATE_EDITOR_PAPER_PROPS}
+    >
+      <div className='h-full w-full' data-testid='database-template-editor'>
+        <div id='database-template-editor-title' className='sr-only'>
+          Edit database template
+        </div>
+        <div id='database-template-editor-description' className='sr-only'>
           Changes to this page and its properties are used when the template creates a new row.
-        </DialogDescription>
+        </div>
         <DatabaseContext.Provider value={editorContext}>
           <div className='appflowy-scroll-container h-full w-full overflow-y-auto pb-10'>
             <div
@@ -216,7 +217,7 @@ function DatabaseTemplateEditor({
             </div>
           </div>
         </DatabaseContext.Provider>
-      </DialogContent>
+      </div>
     </Dialog>
   );
 }
@@ -739,36 +740,27 @@ export function DatabaseTemplateButton() {
           onSave={saveEditingTemplate}
         />
       ) : null}
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
-        <AlertDialogContent data-testid='database-template-delete-dialog'>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('grid.rowTemplate.deleteTemplate', { defaultValue: 'Delete template?' })}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? t('grid.rowTemplate.deleteTemplateConfirmation', {
-                    templateName: pendingDelete.name,
-                    defaultValue: `Are you sure you want to delete "${pendingDelete.name}"?`,
-                  })
-                : ''}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('button.cancel', { defaultValue: 'Cancel' })}</AlertDialogCancel>
-            <AlertDialogAction
-              className='hover:bg-function-error/90 bg-function-error'
-              onClick={() => {
-                if (pendingDelete) store.delete(pendingDelete.templateId);
-                setPendingDelete(null);
-              }}
-              data-testid='database-template-delete-confirm'
-            >
-              {t('button.delete', { defaultValue: 'Delete' })}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmModal
+        open={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        title={t('button.delete', { defaultValue: 'Delete' })}
+        description={
+          pendingDelete
+            ? t('grid.rowTemplate.deleteTemplateConfirmation', {
+                templateName: pendingDelete.name,
+                defaultValue: `Are you sure you want to delete "${pendingDelete.name}"?`,
+              })
+            : ''
+        }
+        cancelText={t('button.cancel', { defaultValue: 'Cancel' })}
+        confirmText={t('button.delete', { defaultValue: 'Delete' })}
+        onConfirm={() => {
+          if (pendingDelete) store.delete(pendingDelete.templateId);
+          setPendingDelete(null);
+        }}
+        dialogTestId='database-template-delete-dialog'
+        confirmTestId='database-template-delete-confirm'
+      />
     </>
   );
 }

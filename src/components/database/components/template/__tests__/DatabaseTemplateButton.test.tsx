@@ -195,10 +195,12 @@ describe('DatabaseTemplateButton', () => {
     fireEvent.click(screen.getByTestId('database-template-create'));
 
     const editor = await screen.findByTestId('database-template-editor');
+    const editorPaper = editor.closest('.MuiDialog-paper') as HTMLElement;
 
-    expect(editor.className).toContain('h-[70vh]');
-    expect(editor.className).toContain('w-[70vw]');
-    expect(editor.className).toContain('rounded-[16px]');
+    expect(editorPaper).toBeTruthy();
+    expect(editorPaper.className).toContain('h-[70vh]');
+    expect(editorPaper.className).toContain('w-[70vw]');
+    expect(editorPaper.className).toContain('!rounded-[16px]');
     expect(screen.getByTestId('database-template-editor-banner').textContent).toBe("You're editing a template in Tasks");
     expect(screen.getByTestId('mock-template-header').getAttribute('data-template-style')).toBe('true');
     expect(screen.getByTestId('mock-template-properties').getAttribute('data-template-style')).toBe('true');
@@ -280,7 +282,7 @@ describe('DatabaseTemplateButton', () => {
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     await openTemplateActions(template.templateId);
     fireEvent.click(await screen.findByText('Edit'));
-    const editor = await screen.findByTestId('database-template-editor');
+    await screen.findByTestId('database-template-editor');
     const rowDoc = rows.get(getRowKey(databaseDocId, template.templateId)) as YDoc;
     const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
     const isDocumentEmptyId = getMetaIdMap(template.templateId).get(RowMetaKey.IsDocumentEmpty) as string;
@@ -288,7 +290,8 @@ describe('DatabaseTemplateButton', () => {
     mockPendingDocumentMetaFlush = () => {
       rowDoc.transact(() => meta.set(isDocumentEmptyId, false));
     };
-    fireEvent.click(editor.querySelector('button') as HTMLElement);
+
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
 
     expect(store.read().templates[0].isDocumentEmpty).toBe(false);
   });
@@ -388,14 +391,14 @@ describe('DatabaseTemplateButton', () => {
     await openMenu();
     fireEvent.click(screen.getByTestId('database-template-create'));
 
-    const editor = await screen.findByTestId('database-template-editor');
+    await screen.findByTestId('database-template-editor');
     const template = new DatabaseRowTemplateStore(database).read().templates[0];
     const rowDoc = rows.get(getRowKey(databaseDocId, template.templateId)) as YDoc;
     const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
     const iconId = getMetaIdMap(template.templateId).get(RowMetaKey.IconId) as string;
 
     meta.set(iconId, '🐞');
-    fireEvent.click(editor.querySelector('button') as HTMLElement);
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit database template' }), { key: 'Escape' });
 
     await waitFor(() =>
       expect(updatePage).toHaveBeenCalledWith(rowDocumentIdFromRowId(template.templateId), {
@@ -520,8 +523,14 @@ describe('DatabaseTemplateButton', () => {
     expect(screen.queryByText('Move down')).toBeNull();
     fireEvent.click(await screen.findByText('Delete'));
     expect(store.read().templates).toHaveLength(3);
-    expect(screen.getByText(`Are you sure you want to delete "${copy.name}"?`)).toBeTruthy();
-    fireEvent.click(await screen.findByTestId('database-template-delete-confirm'));
+    const deleteDialog = screen.getByTestId('database-template-delete-dialog');
+    const deleteConfirm = await screen.findByTestId('database-template-delete-confirm');
+
+    expect(deleteDialog.className).toContain('MuiDialog-root');
+    expect(within(deleteDialog).getByRole('dialog')).toBeTruthy();
+    expect(within(deleteDialog).getByText(`Are you sure you want to delete "${copy.name}"?`)).toBeTruthy();
+    expect(deleteConfirm.className).toContain('MuiButton-containedError');
+    fireEvent.click(deleteConfirm);
     expect(store.read().templates.map((template) => template.templateId)).toEqual([first.templateId, second.templateId]);
     expect(store.read().defaultTemplateId).toBe(first.templateId);
   });
