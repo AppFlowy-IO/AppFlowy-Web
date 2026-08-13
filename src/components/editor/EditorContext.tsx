@@ -5,8 +5,11 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { BaseRange, Range } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateRow,
+  CreateRowDocument,
+  DuplicateRowDocument,
   FontLayout,
   LineHeightLayout,
   LoadView,
@@ -27,17 +30,17 @@ import {
   MentionSearchContext,
   SearchMentions,
   DatabaseRelations,
-  RowDocumentSourcePayload,
   UpdatePagePayload,
   YDoc,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 export interface EditorLayoutStyle {
   fontLayout: FontLayout;
   font: string;
   lineHeightLayout: LineHeightLayout;
 }
+
+export type EditorContentPadding = 'page' | 'template';
 
 export const defaultLayoutStyle: EditorLayoutStyle = {
   fontLayout: FontLayout.normal,
@@ -71,6 +74,7 @@ export interface EditorLocalState {
  */
 export interface EditorContextState {
   fullWidth?: boolean;
+  contentPadding?: EditorContentPadding;
   workspaceId: string;
   viewId: string;
   readOnly: boolean;
@@ -85,7 +89,8 @@ export interface EditorContextState {
   loadView?: LoadView;
   loadRowDocument?: LoadRowDocument;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+  createRowDocument?: CreateRowDocument;
+  duplicateRowDocument?: DuplicateRowDocument;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
@@ -124,6 +129,7 @@ export const EditorLocalStateContext = createContext<EditorLocalState | undefine
 export const EditorContextProvider = ({
   children,
   fullWidth,
+  contentPadding,
   workspaceId,
   viewId,
   readOnly,
@@ -138,6 +144,7 @@ export const EditorContextProvider = ({
   loadRowDocument,
   checkIfRowDocumentExists,
   createRowDocument,
+  duplicateRowDocument,
   createRow,
   bindViewSync,
   readSummary,
@@ -214,6 +221,7 @@ export const EditorContextProvider = ({
   const configValue = useMemo(
     () => ({
       fullWidth,
+      contentPadding,
       workspaceId,
       viewId,
       readOnly,
@@ -228,6 +236,7 @@ export const EditorContextProvider = ({
       loadRowDocument,
       checkIfRowDocumentExists,
       createRowDocument,
+      duplicateRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -261,6 +270,7 @@ export const EditorContextProvider = ({
     }),
     [
       fullWidth,
+      contentPadding,
       workspaceId,
       viewId,
       readOnly,
@@ -275,6 +285,7 @@ export const EditorContextProvider = ({
       loadRowDocument,
       checkIfRowDocumentExists,
       createRowDocument,
+      duplicateRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -323,9 +334,7 @@ export const EditorContextProvider = ({
 
   return (
     <EditorContext.Provider value={configValue}>
-      <EditorLocalStateContext.Provider value={localStateValue}>
-        {children}
-      </EditorLocalStateContext.Provider>
+      <EditorLocalStateContext.Provider value={localStateValue}>{children}</EditorLocalStateContext.Provider>
     </EditorContext.Provider>
   );
 };

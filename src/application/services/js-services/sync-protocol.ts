@@ -73,6 +73,15 @@ export enum UpdateFlags {
   Lib0v2 = 1,
 }
 
+// lib0 v1 encodes an update with no structs and no delete set as two zero
+// varints. A manifest can legitimately produce this when both peers have no
+// state, or when the requesting peer already has everything in the local doc.
+// Sending that payload is never useful. More importantly, an empty
+// DatabaseRow opened just before another client uploads its initial state must
+// not publish this no-op as an explicit full-state replacement.
+const isEmptyUpdateV1 = (update: Uint8Array): boolean =>
+  update.byteLength === 2 && update[0] === 0 && update[1] === 0;
+
 /**
  * Bind an existing sync context to the current realtime connection.
  *
@@ -130,6 +139,16 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
     version: doc.version,
     bytes: update.byteLength,
   });
+
+  // The server's state vector already covers this document. Complete the
+  // manifest boundary locally without putting an empty Update into the
+  // durable outbox or on the wire. An empty DatabaseRow update with an empty
+  // causal vector otherwise looks like a self-contained replacement even
+  // though it carries no row metadata or parent database id.
+  if (isEmptyUpdateV1(update)) {
+    ctx.onManifestSync?.(doc.guid);
+    return;
+  }
 
   // A manifest response can contain years of locally retained Yjs history.
   // If it exceeds the server-advertised realtime frame limit, persist it and

@@ -18,7 +18,6 @@ import {
   LoadView,
   LoadViewMeta,
   MentionSearchContext,
-  RowDocumentSourcePayload,
   RowId,
   SearchMentions,
   Subscription,
@@ -96,16 +95,19 @@ export interface DatabaseContextState {
    * Only available in app mode - not provided in publish mode.
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+  createRowDocument?: import('@/application/types').CreateRowDocument;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
-  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
+  duplicateRowDocument?: import('@/application/types').DuplicateRowDocument;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: () => void;
   showActions?: boolean;
   workspaceId: string;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
-  addPage?: (parentId: string, payload: import('@/application/types').CreatePagePayload) => Promise<import('@/application/types').CreatePageResponse>;
+  addPage?: (
+    parentId: string,
+    payload: import('@/application/types').CreatePagePayload
+  ) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
   duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
@@ -369,10 +371,9 @@ export const useDatabaseSelectedView = (viewId: string) => {
 export const useDefaultTimeSetting = (): DefaultTimeSetting => {
   const currentUser = useCurrentUser();
 
-  
   return {
-    dateFormat: currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat ?? DateFormat.Local,
-    timeFormat: currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat ?? TimeFormat.TwelveHour,
-    startWeekOn: currentUser?.metadata?.[MetadataKey.StartWeekOn] as number ?? 0,
-  }
-}
+    dateFormat: (currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat) ?? DateFormat.Local,
+    timeFormat: (currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat) ?? TimeFormat.TwelveHour,
+    startWeekOn: (currentUser?.metadata?.[MetadataKey.StartWeekOn] as number) ?? 0,
+  };
+};
