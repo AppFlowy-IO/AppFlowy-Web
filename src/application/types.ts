@@ -605,6 +605,8 @@ export enum YjsDatabaseKey {
   condition = 'condition',
   rollup_target_type = 'rollup_target_ty',
   schema_version = 'schema_version',
+  row_templates = 'row_templates',
+  default_row_template = 'default_row_template',
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
@@ -1010,6 +1012,7 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
 export interface YDatabaseMetas extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.iid): string;
   get(key: YjsDatabaseKey.schema_version): string | number;
+  get(key: YjsDatabaseKey.row_templates | YjsDatabaseKey.default_row_template): string | undefined;
 }
 
 export interface YDatabaseFields extends Y.Map<YDatabaseField> {
@@ -1440,6 +1443,13 @@ export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
   row_document?: {
     source?: RowDocumentSourceExtra;
   };
+
+  /** Desktop's marker for an orphan document that backs a database row template. */
+  database_row_template?: boolean;
+  /** Owning database view for a template document (paired with `database_row_template`). */
+  database_view_id?: string;
+  /** Owning row-template id for a template document (paired with `database_row_template`). */
+  template_id?: string;
 }
 
 export interface View {
@@ -1610,6 +1620,18 @@ export interface RowDocumentSourcePayload {
   row_id: string;
 }
 
+export type CreateRowDocument = (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+
+export type PrepareDuplicateRowDocumentSource = () => Promise<void>;
+
+export type DuplicateRowDocument = (
+  databaseId: string,
+  sourceRowId: string,
+  newRowId: string,
+  clientDocStateB64?: string,
+  prepareSource?: PrepareDuplicateRowDocumentSource
+) => Promise<void>;
+
 export interface CreateOrphanedViewPayload {
   document_id: string;
   row_document_source?: RowDocumentSourcePayload;
@@ -1666,13 +1688,8 @@ export interface ViewComponentProps {
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
-  duplicateRowDocument?: (
-    databaseId: string,
-    sourceRowId: string,
-    newRowId: string,
-    clientDocStateB64?: string
-  ) => Promise<void>;
+  createRowDocument?: CreateRowDocument;
+  duplicateRowDocument?: DuplicateRowDocument;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

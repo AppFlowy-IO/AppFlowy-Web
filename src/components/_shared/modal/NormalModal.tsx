@@ -19,8 +19,8 @@ const ENTER_HANDLED_BY_CONTROL_SELECTOR = [
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 export interface NormalModalProps extends DialogProps {
-  okText?: string;
-  cancelText?: string | React.ReactNode;
+  okText?: React.ReactNode;
+  cancelText?: React.ReactNode;
   onOk?: () => void;
   onCancel?: () => void;
   danger?: boolean;
@@ -33,7 +33,7 @@ export interface NormalModalProps extends DialogProps {
   overflowHidden?: boolean;
 }
 
-export function NormalModal ({
+export function NormalModal({
   okText,
   title,
   cancelText,
@@ -50,11 +50,15 @@ export function NormalModal ({
   ...dialogProps
 }: NormalModalProps) {
   const { t } = useTranslation();
+  const generatedTitleId = React.useId();
   const modalOkText = okText || t('button.ok');
   const modalCancelText = cancelText || t('button.cancel');
+  const labelledBy = dialogProps['aria-labelledby'] || generatedTitleId;
+  const internalTitleId = dialogProps['aria-labelledby'] ? undefined : generatedTitleId;
 
   return (
     <Dialog
+      aria-labelledby={labelledBy}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && closable) {
           onClose?.();
@@ -76,27 +80,32 @@ export function NormalModal ({
         className={'relative flex flex-col gap-4 p-5'}
       >
         <div className={'flex w-full items-center justify-between text-base font-medium'}>
-          <div className={'flex-1 text-center font-medium truncate'}>{title}</div>
-          {closable && <div className={'relative -right-1.5'}>
-            <IconButton
-              aria-label={t('button.close')}
-              size={'small'}
-              color={'inherit'}
-              className={'h-6 w-6'}
-              onClick={onClose || onCancel}
-            >
-              <CloseIcon />
-            </IconButton>
-          </div>}
-
+          <div id={internalTitleId} className={'flex-1 truncate text-center font-medium'}>
+            {title}
+          </div>
+          {closable && (
+            <div className={'relative -right-1.5'}>
+              <IconButton
+                aria-label={t('button.close')}
+                size={'small'}
+                color={'inherit'}
+                className={'h-6 w-6'}
+                onClick={onClose || onCancel}
+              >
+                <CloseIcon />
+              </IconButton>
+            </div>
+          )}
         </div>
 
         <div
           style={{
             overflow: overflowHidden ? 'hidden' : 'auto',
           }}
-          className={'flex-1 w-full'}
-        >{children}</div>
+          className={'w-full flex-1'}
+        >
+          {children}
+        </div>
         <div className={'flex w-full justify-end gap-3'}>
           <Button
             color={'inherit'}
@@ -108,7 +117,9 @@ export function NormalModal ({
               } else {
                 onClose?.();
               }
-            }} {...cancelButtonProps}>
+            }}
+            {...cancelButtonProps}
+          >
             {modalCancelText}
           </Button>
           <Button
@@ -123,10 +134,7 @@ export function NormalModal ({
             disabled={okLoading}
             {...okButtonProps}
           >
-            {okLoading ? <CircularProgress
-              color={'inherit'}
-              size={16}
-            /> : modalOkText}
+            {okLoading ? <CircularProgress color={'inherit'} size={16} /> : modalOkText}
           </Button>
         </div>
       </div>

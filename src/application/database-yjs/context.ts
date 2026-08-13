@@ -18,7 +18,6 @@ import {
   LoadView,
   LoadViewMeta,
   MentionSearchContext,
-  RowDocumentSourcePayload,
   RowId,
   SearchMentions,
   Subscription,
@@ -104,14 +103,9 @@ export interface DatabaseContextState {
    * Only available in app mode - not provided in publish mode.
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+  createRowDocument?: import('@/application/types').CreateRowDocument;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
-  duplicateRowDocument?: (
-    databaseId: string,
-    sourceRowId: string,
-    newRowId: string,
-    clientDocStateB64?: string
-  ) => Promise<void>;
+  duplicateRowDocument?: import('@/application/types').DuplicateRowDocument;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: () => void;
   showActions?: boolean;

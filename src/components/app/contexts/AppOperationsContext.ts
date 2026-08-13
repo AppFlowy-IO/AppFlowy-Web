@@ -19,7 +19,6 @@ import {
   LoadRowDocument,
   LoadView,
   LoadViewMeta,
-  RowDocumentSourcePayload,
   Subscription,
   TestDatabasePromptConfig,
   TextCount,
@@ -132,14 +131,9 @@ export interface AppOperationsContextType {
   /** Load an existing row document. */
   loadRowDocument?: LoadRowDocument;
   /** Create a new row document (returns encoded initial state). */
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+  createRowDocument?: import('@/application/types').CreateRowDocument;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
-  duplicateRowDocument?: (
-    databaseId: string,
-    sourceRowId: string,
-    newRowId: string,
-    clientDocStateB64?: string
-  ) => Promise<void>;
+  duplicateRowDocument?: import('@/application/types').DuplicateRowDocument;
   /** Resolve a database ID to its primary view ID. */
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 

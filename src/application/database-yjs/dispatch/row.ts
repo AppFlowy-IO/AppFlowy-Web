@@ -30,29 +30,33 @@ import {
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
-import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
-import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
-import { deleteOutboxByObjectId } from '@/application/sync-outbox';
-import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
-import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
-import { PageService } from '@/application/services/domains';
+import { initialDatabaseRow } from '@/application/database-yjs/row';
+import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
+import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
+import {
+  applyTemplateCellsToRow,
+  DatabaseRowTemplateStore,
+  initializeTemplateSourceRow,
+  mergeTemplateViewDecorations,
+  readDatabaseRowTemplateState,
+  templateDecorationsNeedResolution,
+} from '@/application/database-yjs/template';
+import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
 import {
   ensureRowDocumentView,
   rowDocumentExists,
   rowDocumentIdFromRowId,
   syncRowDocumentViewName,
 } from '@/application/row-document/lifecycle';
-import { applyRelationReciprocalInserts } from './relation';
-import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
-import { initialDatabaseRow } from '@/application/database-yjs/row';
-import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
-import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
-import { executeOperationWithAllViews } from './utils';
+import { PageService } from '@/application/services/domains';
+import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
   BlockType,
   DatabaseViewLayout,
@@ -65,6 +69,11 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { Log } from '@/utils/log';
+
+import { applyRelationReciprocalInserts } from './relation';
+import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
+import { executeOperationWithAllViews } from './utils';
 
 /**
  * Helper: Reorder a row within a view's row_orders
@@ -343,9 +352,7 @@ export function useTrashAwareDeleteRowsDispatch() {
           }
         }
 
-        const metaMap = rowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.meta) as
-          | Y.Map<unknown>
-          | undefined;
+        const metaMap = rowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
         const meta = metaMap ? getMetaJSON(rowId, metaMap) : null;
         const documentId = meta?.documentId || rowDocumentIdFromRowId(rowId);
 
@@ -435,6 +442,17 @@ export function useTrashAwareDeleteRowsDispatch() {
   );
 }
 
+function markRowDocumentEmpty(rowDoc: YDoc, rowId: string) {
+  rowDoc.transact(() => {
+    const fallbackMeta = generateRowMeta(rowId, {
+      [RowMetaKey.IsDocumentEmpty]: true,
+    });
+    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
+
+    Object.entries(fallbackMeta).forEach(([key, value]) => meta.set(key, value));
+  }, 'database-row-template-fallback');
+}
+
 export function useNewRowDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
@@ -446,7 +464,17 @@ export function useNewRowDispatch() {
   const isCalendar = layout === DatabaseViewLayout.Calendar;
   const calendarSetting = useCalendarLayoutSetting();
   const filters = currentView?.get(YjsDatabaseKey.filters);
-  const { navigateToRow, databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync } = useDatabaseContext();
+  const {
+    navigateToRow,
+    databaseDoc,
+    loadView,
+    loadViewMeta,
+    getViewIdFromDatabaseId,
+    bindViewSync,
+    loadRowDocument,
+    createRowDocument,
+    duplicateRowDocument,
+  } = useDatabaseContext();
   const rowMap = useRowMap();
 
   return useCallback(
@@ -454,6 +482,9 @@ export function useNewRowDispatch() {
       beforeRowId,
       cellsData,
       tailing = false,
+      templateId,
+      skipDefaultTemplate = false,
+      openAfterCreate = false,
     }: {
       beforeRowId?: string;
       cellsData?: Record<
@@ -468,6 +499,12 @@ export function useNewRowDispatch() {
           }
       >;
       tailing?: boolean;
+      /** Explicit template selection. An unknown id is an error, matching Desktop. */
+      templateId?: string;
+      /** Bypass the configured default while preserving normal row creation. */
+      skipDefaultTemplate?: boolean;
+      /** Open the new row after it and any template document have been materialized. */
+      openAfterCreate?: boolean;
     }) => {
       if (!currentView) {
         throw new Error('Current view not found');
@@ -477,9 +514,44 @@ export function useNewRowDispatch() {
         throw new Error('No createRow function');
       }
 
+      const templateState = readDatabaseRowTemplateState(database);
+      const selectedTemplateId = templateId || (skipDefaultTemplate ? undefined : templateState.defaultTemplateId);
+      const storedTemplate = selectedTemplateId
+        ? templateState.templates.find((template) => template.templateId === selectedTemplateId)
+        : undefined;
+
+      if (templateId && !storedTemplate) {
+        throw new Error('templateId does not match any row template');
+      }
+
+      const templatePromise = (async () => {
+        if (!storedTemplate) return undefined;
+
+        // Desktop stores template decorations on the orphan document view
+        // rather than in RowTemplatePB. Resolve that fallback so templates
+        // authored by either client create the same row metadata.
+        if (templateDecorationsNeedResolution(storedTemplate) && storedTemplate.docViewId && loadViewMeta) {
+          try {
+            const templateView = await loadViewMeta(storedTemplate.docViewId);
+            const resolvedTemplate = mergeTemplateViewDecorations(storedTemplate, templateView);
+
+            return resolvedTemplate === storedTemplate
+              ? storedTemplate
+              : new DatabaseRowTemplateStore(database).upsert(resolvedTemplate);
+          } catch (error) {
+            Log.warn('[useNewRowDispatch] failed to resolve template view decorations', {
+              templateId: storedTemplate.templateId,
+              error,
+            });
+          }
+        }
+
+        return storedTemplate;
+      })();
+
       const rowId = uuidv4();
       const rowKey = getRowKey(guid, rowId);
-      const rowDoc = await createRow(rowKey);
+      const [selectedTemplate, rowDoc] = await Promise.all([templatePromise, createRow(rowKey)]);
       // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
       // JS array on each call, and we read it twice (length check + forEach).
       const filterArray = filters?.toArray() ?? [];
@@ -502,6 +574,10 @@ export function useNewRowDispatch() {
         const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
         const cells = row.get(YjsDatabaseKey.cells);
+
+        if (selectedTemplate) {
+          applyTemplateCellsToRow(row, database, selectedTemplate.defaultCells);
+        }
 
         filterArray.forEach((filter) => {
           const cell = new Y.Map() as YDatabaseCell;
@@ -610,17 +686,18 @@ export function useNewRowDispatch() {
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
         const newMeta = generateRowMeta(rowId, {
-          [RowMetaKey.IsDocumentEmpty]: true,
+          [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
+          [RowMetaKey.IconId]: selectedTemplate?.icon ?? null,
+          [RowMetaKey.CoverId]: selectedTemplate?.cover ?? null,
         });
 
         Object.keys(newMeta).forEach((key) => {
           const value = newMeta[key];
 
-          if (value) {
+          if (value !== undefined && value !== null) {
             meta.set(key, value);
           }
         });
-
       });
 
       executeOperationWithAllViews(
@@ -649,7 +726,65 @@ export function useNewRowDispatch() {
         'newRowDispatch'
       );
 
-      if (shouldOpenRowModal) {
+      if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
+        if (!duplicateRowDocument) {
+          markRowDocumentEmpty(rowDoc, rowId);
+          Log.warn('[useNewRowDispatch] template document duplication is unavailable', {
+            templateId: selectedTemplate.templateId,
+          });
+        } else {
+          try {
+            // A template is represented as a hidden row collab. It deliberately
+            // never enters row_orders, but gives the existing cloud duplication
+            // pipeline a stable source identity and preserves inline-vs-linked
+            // database semantics.
+            const cachedSourceDocument =
+              getCachedRowSubDoc(selectedTemplate.docViewId) ?? getCachedProviderDoc(selectedTemplate.docViewId);
+            const sourceDocumentPromise = cachedSourceDocument
+              ? Promise.resolve(cachedSourceDocument)
+              : loadRowDocument
+              ? loadRowDocument(selectedTemplate.docViewId)
+              : Promise.resolve(null);
+            const [sourceRowDoc, sourceDocument] = await Promise.all([
+              createRow(getRowKey(guid, selectedTemplate.templateId)),
+              sourceDocumentPromise,
+            ]);
+
+            initializeTemplateSourceRow(sourceRowDoc, database, selectedTemplate);
+
+            let clientDocStateB64: string | undefined;
+
+            if (sourceDocument) {
+              const docState = Y.encodeStateAsUpdate(sourceDocument);
+              const chunks: string[] = [];
+
+              for (let index = 0; index < docState.length; index += 8192) {
+                chunks.push(String.fromCharCode(...docState.subarray(index, index + 8192)));
+              }
+
+              clientDocStateB64 = btoa(chunks.join(''));
+            }
+
+            const databaseId = database.get(YjsDatabaseKey.id);
+            const sourceDocumentId = rowDocumentIdFromRowId(selectedTemplate.templateId);
+
+            await duplicateRowDocument(databaseId, selectedTemplate.templateId, rowId, clientDocStateB64, async () => {
+              await createRowDocument?.(sourceDocumentId, {
+                database_id: databaseId,
+                database_view_id: viewId,
+                row_id: selectedTemplate.templateId,
+              });
+            });
+          } catch (error) {
+            // Cell defaults must remain usable if document materialization is
+            // temporarily unavailable; this is also Desktop's graceful fallback.
+            markRowDocumentEmpty(rowDoc, rowId);
+            Log.error('[useNewRowDispatch] template document duplication failed', error);
+          }
+        }
+      }
+
+      if (shouldOpenRowModal || openAfterCreate) {
         navigateToRow?.(rowId);
       }
 
@@ -682,6 +817,7 @@ export function useNewRowDispatch() {
     [
       bindViewSync,
       calendarSetting,
+      createRowDocument,
       createRow,
       currentView,
       database,
@@ -691,9 +827,12 @@ export function useNewRowDispatch() {
       guid,
       isCalendar,
       loadView,
+      loadViewMeta,
+      loadRowDocument,
       navigateToRow,
       rowMap,
       sharedRoot,
+      duplicateRowDocument,
       viewId,
     ]
   );
@@ -911,12 +1050,7 @@ export function useDuplicateRowDispatch() {
           }
 
           if (shouldDuplicateSourceDoc || hasClientDocumentContent) {
-            await duplicateRowDocument(
-              databaseId,
-              referenceRowId,
-              rowId,
-              clientDocStateB64
-            );
+            await duplicateRowDocument(databaseId, referenceRowId, rowId, clientDocStateB64);
           }
         } catch (err) {
           Log.error('[duplicateRowDocument] failed:', err);

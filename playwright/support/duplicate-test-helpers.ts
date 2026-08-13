@@ -639,6 +639,35 @@ export async function insertLinkedGridViaSlash(
   throw new Error(`Database "${databaseName}" not found in linked database picker after multiple retries`);
 }
 
+export async function insertPageReferenceViaSlash(
+  page: Page,
+  docViewId: string,
+  pageName: string,
+  line: number = 0
+): Promise<void> {
+  const editor = editorForView(page, docViewId);
+
+  await expect(editor).toBeVisible({ timeout: 15000 });
+  await openSlashMenuInEditor(page, editor, line);
+  const linkedPageOption = page.getByTestId('slash-menu-linkedDoc');
+
+  await expect(linkedPageOption).toBeVisible({ timeout: 10000 });
+  await linkedPageOption.click();
+  const panel = page.getByTestId('mention-panel');
+
+  await expect(panel).toBeVisible({ timeout: 15000 });
+  await page.keyboard.type(pageName, { delay: 30 });
+  const result = panel
+    .locator('[data-option-kind="page"], [data-option-kind="database"]')
+    .filter({ hasText: new RegExp(escapeRegExp(pageName)) })
+    .first();
+
+  await expect(result).toBeVisible({ timeout: 30000 });
+  await result.click();
+  await expect(panel).toBeHidden({ timeout: 10000 });
+  await expect(editor).toContainText(pageName, { timeout: 15000 });
+}
+
 export async function editFirstGridCell(page: Page, gridBlock: Locator, text: string): Promise<void> {
   const firstCell = gridBlock.locator('[data-testid^="grid-cell-"]').first();
   await expect(firstCell).toBeVisible({ timeout: 15000 });

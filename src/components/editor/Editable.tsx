@@ -64,10 +64,11 @@ function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Rang
 }
 
 const EditorEditable = () => {
-  const { canComment = false, readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { canComment = false, readOnly, viewId, workspaceId, fullWidth, contentPadding = 'page' } = useEditorContext();
   const { decorateState } = useEditorLocalState();
   const { getMatchDecorations } = useFindReplaceDecorations();
   const editor = useSlate();
+  const contentPaddingClassName = contentPadding === 'template' ? 'px-[60px] max-sm:px-6' : 'px-24 max-sm:px-6';
 
   const codeDecorate = useDecorate(editor);
 
@@ -199,7 +200,8 @@ const EditorEditable = () => {
               }}
               id={`editor-${viewId}`}
               className={cn(
-                'custom-caret min-w-0 max-w-full scroll-mb-[100px] scroll-mt-[300px] px-24 pb-56 outline-none focus:outline-none max-sm:px-6',
+                'custom-caret min-w-0 max-w-full scroll-mb-[100px] scroll-mt-[300px] pb-56 outline-none focus:outline-none',
+                contentPaddingClassName,
                 fullWidth ? 'w-full' : 'w-[952px]'
               )}
               renderLeaf={Leaf}
@@ -227,7 +229,11 @@ const EditorEditable = () => {
 
           <div className={cn('pointer-events-none absolute left-0 right-0 top-0 flex h-full justify-center')}>
             <div
-              className={cn(fullWidth ? 'w-full' : 'w-[952px]', 'relative h-full min-w-0 max-w-full px-24 max-sm:px-6')}
+              className={cn(
+                fullWidth ? 'w-full' : 'w-[952px]',
+                'relative h-full min-w-0 max-w-full',
+                contentPaddingClassName
+              )}
             >
               <ErrorBoundary fallback={null}>
                 <RemoteSelectionsLayer editor={editor} />

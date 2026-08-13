@@ -2,10 +2,11 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { useDatabase, useDatabaseContextOptional, useRowData, useRowMetaSelector } from '@/application/database-yjs';
+import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { openCollabDB } from '@/application/db';
 import { getCachedRowSubDoc, getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
-import { YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { CollabOrigin, YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
@@ -45,30 +46,45 @@ jest.mock('@/components/_shared/skeleton/EditorSkeleton', () => ({
   EditorSkeleton: () => <div data-testid='editor-skeleton' />,
 }));
 
-jest.mock('@/components/editor', () => ({
-  Editor: ({
-    viewId,
-    doc,
-    readOnly,
-    canComment,
-    canWrite,
-  }: {
-    viewId: string;
-    doc: { guid: string };
-    readOnly: boolean;
-    canComment?: boolean;
-    canWrite?: boolean;
-  }) => (
-    <div
-      data-testid='row-document-editor'
-      data-view-id={viewId}
-      data-doc-id={doc.guid}
-      data-read-only={String(readOnly)}
-      data-can-comment={String(canComment)}
-      data-can-write={String(canWrite)}
-    />
-  ),
-}));
+jest.mock('@/components/editor', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+
+  return {
+    Editor: ({
+      viewId,
+      doc,
+      readOnly,
+      canComment,
+      canWrite,
+      contentPadding,
+      onEditorConnected,
+    }: {
+      viewId: string;
+      doc: { guid: string };
+      readOnly: boolean;
+      canComment?: boolean;
+      canWrite?: boolean;
+      contentPadding?: string;
+      onEditorConnected?: (editor: { children: unknown[] }) => void;
+    }) => {
+      React.useEffect(() => {
+        onEditorConnected?.({ children: [] });
+      }, [onEditorConnected]);
+
+      return (
+        <div
+          data-testid='row-document-editor'
+          data-view-id={viewId}
+          data-doc-id={doc.guid}
+          data-read-only={String(readOnly)}
+          data-can-comment={String(canComment)}
+          data-can-write={String(canWrite)}
+          data-content-padding={contentPadding}
+        />
+      );
+    },
+  };
+});
 
 const mockUseDatabase = useDatabase as jest.MockedFunction<typeof useDatabase>;
 const mockUseDatabaseContextOptional = useDatabaseContextOptional as jest.MockedFunction<
@@ -205,9 +221,12 @@ describe('DatabaseRowSubDocument', () => {
       checkIfRowDocumentExists,
     });
 
-    render(<DatabaseRowSubDocument rowId={rowId} />);
+    render(<DatabaseRowSubDocument rowId={rowId} contentPadding='template' />);
 
-    expect(await screen.findByTestId('row-document-editor')).not.toBeNull();
+    const editor = await screen.findByTestId('row-document-editor');
+
+    expect(editor).not.toBeNull();
+    expect(editor.getAttribute('data-content-padding')).toBe('template');
     expect(screen.queryByTestId('editor-skeleton')).toBeNull();
     expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(1);
     expect(loadRowDocument).toHaveBeenCalledWith(documentId, { maxAttempts: 1 });
@@ -332,5 +351,44 @@ describe('DatabaseRowSubDocument', () => {
     expect(editor.getAttribute('data-read-only')).toBe('true');
     expect(editor.getAttribute('data-can-comment')).toBe('true');
     expect(editor.getAttribute('data-can-write')).toBe('false');
+  });
+
+  it('registers a synchronous flush for pending document metadata updates', async () => {
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+    const updateRowMeta = jest.fn();
+    let pendingFlush: (() => void) | null = null;
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument: jest.fn().mockResolvedValue(cachedDoc),
+      createRowDocument: jest.fn().mockResolvedValue(createRowDocumentState(documentId)),
+      checkIfRowDocumentExists: jest.fn().mockResolvedValue(true),
+    });
+    mockUseUpdateRowMetaDispatch.mockReturnValue(updateRowMeta);
+
+    render(
+      <DatabaseRowSubDocument
+        rowId={rowId}
+        onRegisterPendingMetaFlush={(flush) => {
+          pendingFlush = flush;
+        }}
+      />
+    );
+
+    await screen.findByTestId('row-document-editor');
+    await waitFor(() => expect(pendingFlush).toEqual(expect.any(Function)));
+
+    act(() => {
+      cachedDoc.transact(
+        () => cachedDoc.getMap(YjsEditorKey.data_section).set('local-change', Date.now()),
+        CollabOrigin.Local
+      );
+      pendingFlush?.();
+    });
+
+    expect(updateRowMeta).toHaveBeenCalledWith(RowMetaKey.IsDocumentEmpty, false);
   });
 });

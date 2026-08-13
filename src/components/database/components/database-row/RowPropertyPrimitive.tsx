@@ -17,6 +17,7 @@ function RowPropertyPrimitive({
   setActivePropertyId,
   onCellUpdated,
   showPropertyName = true,
+  templateStyle = false,
 }: {
   fieldId: string;
   rowId: string;
@@ -24,6 +25,7 @@ function RowPropertyPrimitive({
   onCellUpdated?: (cell: Cell) => void;
   setActivePropertyId: (id: string | null) => void;
   showPropertyName?: boolean;
+  templateStyle?: boolean;
 }) {
   const readOnly = useReadOnly();
   const { t } = useTranslation();
@@ -38,13 +40,13 @@ function RowPropertyPrimitive({
       : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
   const tooltipContent =
     isEditingDisabled && (fieldType === FieldType.Relation || fieldType === FieldType.Rollup)
-    ? t('tooltip.fieldEditingUnavailable', {
-      field: fieldName.trim() ? fieldName.trim() : fallbackFieldName,
-    })
-    : fieldName;
+      ? t('tooltip.fieldEditingUnavailable', {
+          field: fieldName.trim() ? fieldName.trim() : fallbackFieldName,
+        })
+      : fieldName;
 
   return (
-    <div className={'flex min-h-[36px] w-full items-start gap-2'}>
+    <div className={cn('flex min-h-[36px] w-full items-start gap-2', templateStyle && 'min-h-[30px]')}>
       <PropertyMenu
         open={isActive}
         onOpenChange={(status) => {
@@ -64,7 +66,8 @@ function RowPropertyPrimitive({
           className={cn(
             'property-label flex h-auto w-[30%] max-w-[240px] items-center gap-2 overflow-hidden rounded-300 px-1 py-2',
             !readOnly && 'cursor-pointer hover:bg-fill-content-hover',
-            !showPropertyName && 'w-auto gap-0 p-2'
+            !showPropertyName && 'w-auto gap-0 p-2',
+            templateStyle && 'h-[30px] w-40 max-w-none py-1.5'
           )}
         >
           <Tooltip delayDuration={200} disableHoverableContent>
@@ -80,7 +83,7 @@ function RowPropertyPrimitive({
           {isAIField && <AIIndicatorSvg className={'h-5 w-5 min-w-5 text-text-featured'} />}
         </div>
       </PropertyMenu>
-      <RowPropertyCell fieldId={fieldId} rowId={rowId} onCellUpdated={onCellUpdated} />
+      <RowPropertyCell fieldId={fieldId} rowId={rowId} onCellUpdated={onCellUpdated} templateStyle={templateStyle} />
     </div>
   );
 }
