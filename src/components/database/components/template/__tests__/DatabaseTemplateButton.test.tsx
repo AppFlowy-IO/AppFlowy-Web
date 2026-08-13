@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { toast } from 'sonner';
 import * as Y from 'yjs';
 
@@ -144,7 +144,7 @@ describe('DatabaseTemplateButton', () => {
     fireEvent.keyDown(trigger, { key: 'ArrowRight' });
   }
 
-  it('shows the empty menu, creates a hidden template row, and opens its editor', async () => {
+  it('shows the empty menu, creates a hidden template row, and opens its editor without server registration', async () => {
     const { Wrapper, database, view, rows, createRowDocument } = setup();
 
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
@@ -177,11 +177,99 @@ describe('DatabaseTemplateButton', () => {
     expect(state.templates[0].name).toBe('New template');
     expect(rows.has(getRowKey(databaseDocId, state.templates[0].templateId))).toBe(true);
     expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(0);
-    expect(createRowDocument).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ row_id: state.templates[0].templateId }),
-      { syncBeforeCreate: true }
-    );
+    expect(createRowDocument).not.toHaveBeenCalled();
+  });
+
+  it('subscribes to template schema changes only while template UI is active', async () => {
+    const { Wrapper, database } = setup();
+    const fields = database.get(YjsDatabaseKey.fields);
+    const observeFields = jest.spyOn(fields, 'observeDeep');
+    const unobserveFields = jest.spyOn(fields, 'unobserveDeep');
+
+    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
+    expect(observeFields).not.toHaveBeenCalled();
+
+    await openMenu();
+    await waitFor(() => expect(observeFields).toHaveBeenCalledTimes(1));
+    fireEvent.keyDown(screen.getByTestId('database-template-menu'), { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByTestId('database-template-menu')).toBeNull());
+    expect(unobserveFields).toHaveBeenCalledTimes(1);
+
+    observeFields.mockRestore();
+    unobserveFields.mockRestore();
+  });
+
+  it('flushes pending row metadata when the template editor unmounts', async () => {
+    const { Wrapper, database, rows } = setup();
+    const store = new DatabaseRowTemplateStore(database);
+    const template = store.upsert({
+      templateId: 'flush-on-unmount',
+      name: 'Original',
+      docViewId: rowDocumentIdFromRowId('flush-on-unmount'),
+      isDocumentEmpty: true,
+      embeddedDatabases: [],
+      defaultCells: { [nameFieldId]: { type: 'text', value: 'Original' } },
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    });
+    const rendered = render(<DatabaseTemplateButton />, { wrapper: Wrapper });
+
+    await openTemplateActions(template.templateId);
+    fireEvent.click(await screen.findByText('Edit'));
+    await screen.findByTestId('database-template-editor');
+
+    const rowDoc = rows.get(getRowKey(databaseDocId, template.templateId)) as YDoc;
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    act(() => {
+      row.get(YjsDatabaseKey.cells).get(nameFieldId)?.set(YjsDatabaseKey.data, 'Saved during cleanup');
+    });
+    rendered.unmount();
+
+    expect(store.read().templates[0].name).toBe('Saved during cleanup');
+  });
+
+  it('does not rewrite database template metadata for document-body changes', async () => {
+    const { Wrapper, database, rows } = setup();
+    const store = new DatabaseRowTemplateStore(database);
+    const template = store.upsert({
+      templateId: 'narrow-observer',
+      name: 'Narrow observer',
+      docViewId: rowDocumentIdFromRowId('narrow-observer'),
+      isDocumentEmpty: true,
+      embeddedDatabases: [],
+      defaultCells: { [nameFieldId]: { type: 'text', value: 'Narrow observer' } },
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    });
+    const upsertTemplate = jest.spyOn(DatabaseRowTemplateStore.prototype, 'upsert');
+
+    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
+    await openTemplateActions(template.templateId);
+    fireEvent.click(await screen.findByText('Edit'));
+    await screen.findByTestId('database-template-editor');
+    upsertTemplate.mockClear();
+
+    const rowDoc = rows.get(getRowKey(databaseDocId, template.templateId)) as YDoc;
+    const root = rowDoc.getMap(YjsEditorKey.data_section);
+
+    act(() => {
+      const document = new Y.Map<unknown>();
+
+      root.set(YjsEditorKey.document, document);
+      document.set('body-change', 'content');
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+    expect(upsertTemplate).not.toHaveBeenCalled();
+
+    const row = root.get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    act(() => {
+      row.get(YjsDatabaseKey.cells).get(nameFieldId)?.set(YjsDatabaseKey.data, 'Relevant row change');
+    });
+    await waitFor(() => expect(upsertTemplate).toHaveBeenCalledTimes(1));
+    upsertTemplate.mockRestore();
   });
 
   it('uses the configured default when the main New half is clicked', async () => {
@@ -429,8 +517,7 @@ describe('DatabaseTemplateButton', () => {
     expect(context.duplicateRowDocument).toHaveBeenCalledTimes(1);
     expect(createRowDocument).toHaveBeenCalledWith(
       rowDocumentIdFromRowId(source.templateId),
-      expect.objectContaining({ row_id: source.templateId }),
-      { syncBeforeCreate: true }
+      expect.objectContaining({ row_id: source.templateId })
     );
     expect(rows.has(getRowKey(databaseDocId, source.templateId))).toBe(true);
     expect(rows.has(getRowKey(databaseDocId, duplicate.templateId))).toBe(true);

@@ -1610,11 +1610,7 @@ export interface RowDocumentSourcePayload {
   row_id: string;
 }
 
-export type CreateRowDocument = (
-  documentId: string,
-  source?: RowDocumentSourcePayload,
-  options?: { syncBeforeCreate?: boolean }
-) => Promise<Uint8Array | null>;
+export type CreateRowDocument = (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
 
 export type PrepareDuplicateRowDocumentSource = () => Promise<void>;
 

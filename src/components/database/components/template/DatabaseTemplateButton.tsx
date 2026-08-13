@@ -1,5 +1,5 @@
 import { ChevronDown, LoaderCircle } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { v4 as uuidv4 } from 'uuid';
@@ -102,31 +102,56 @@ function DatabaseTemplateEditor({
   const parentContext = useDatabaseContext();
   const database = useDatabase();
   const saveTimer = useRef<number>();
+  const hasPendingSave = useRef(false);
+  const templateRef = useRef(template);
+  const onSaveRef = useRef(onSave);
+
+  useLayoutEffect(() => {
+    templateRef.current = template;
+    onSaveRef.current = onSave;
+  }, [onSave, template]);
 
   const save = useCallback(() => {
     window.clearTimeout(saveTimer.current);
-    return onSave(updateTemplateFromSourceRow(template, editing.rowDoc, database));
-  }, [database, editing.rowDoc, onSave, template]);
+    saveTimer.current = undefined;
+    hasPendingSave.current = false;
+    const savedTemplate = onSaveRef.current(updateTemplateFromSourceRow(templateRef.current, editing.rowDoc, database));
+
+    templateRef.current = savedTemplate;
+    return savedTemplate;
+  }, [database, editing.rowDoc]);
+
+  const flushPendingSave = useCallback(() => {
+    return hasPendingSave.current ? save() : templateRef.current;
+  }, [save]);
 
   const close = useCallback(() => {
-    const savedTemplate = save();
+    const savedTemplate = flushPendingSave();
 
     onClose(savedTemplate);
-  }, [onClose, save]);
+  }, [flushPendingSave, onClose]);
 
   useEffect(() => {
     const root = editing.rowDoc.getMap(YjsEditorKey.data_section);
+    const row = root.get(YjsEditorKey.database_row) as Y.Map<unknown> | undefined;
+    const meta = root.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+
+    if (!row || !meta) return;
+
     const onChange = () => {
       window.clearTimeout(saveTimer.current);
+      hasPendingSave.current = true;
       saveTimer.current = window.setTimeout(save, 250);
     };
 
-    root.observeDeep(onChange);
+    row.observeDeep(onChange);
+    meta.observe(onChange);
     return () => {
-      window.clearTimeout(saveTimer.current);
-      root.unobserveDeep(onChange);
+      row.unobserveDeep(onChange);
+      meta.unobserve(onChange);
+      flushPendingSave();
     };
-  }, [editing.rowDoc, save]);
+  }, [editing.rowDoc, flushPendingSave, save]);
 
   const editorContext = useMemo(
     () => ({
@@ -188,9 +213,12 @@ export function DatabaseTemplateButton() {
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const createNewRow = useNewRowDispatch();
-  const { templates, defaultTemplateId, store } = useDatabaseRowTemplates();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState<EditingTemplate | null>(null);
   const [pendingDelete, setPendingDelete] = useState<DatabaseRowTemplate | null>(null);
+  const { templates, defaultTemplateId, store } = useDatabaseRowTemplates(
+    menuOpen || editing !== null || pendingDelete !== null
+  );
   const [templateListElement, setTemplateListElement] = useState<HTMLDivElement | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -239,15 +267,11 @@ export function DatabaseTemplateButton() {
 
   const registerSource = useCallback(
     async (templateId: string) => {
-      await createRowDocument?.(
-        rowDocumentIdFromRowId(templateId),
-        {
-          database_id: databaseId,
-          database_view_id: activeViewId,
-          row_id: templateId,
-        },
-        { syncBeforeCreate: true }
-      );
+      await createRowDocument?.(rowDocumentIdFromRowId(templateId), {
+        database_id: databaseId,
+        database_view_id: activeViewId,
+        row_id: templateId,
+      });
     },
     [activeViewId, createRowDocument, databaseId]
   );
@@ -286,7 +310,9 @@ export function DatabaseTemplateButton() {
       const hasPersistedSnapshot = (template.documentData?.length ?? 0) > 0 || template.embeddedDatabases.length > 0;
 
       if (template.docViewId === targetDocumentId && !hasPersistedSnapshot) {
-        await registerSource(template.templateId);
+        // The row-document editor creates the orphan view when it mounts. The
+        // server source only has to be registered synchronously immediately
+        // before a duplication request.
         return template;
       }
 
@@ -295,7 +321,6 @@ export function DatabaseTemplateButton() {
       initializeTemplateSourceRow(targetRowDoc, database, template);
 
       if (template.isDocumentEmpty) {
-        await registerSource(template.templateId);
         return store.upsert({
           ...updateTemplateFromSourceRow(template, targetRowDoc, database),
           docViewId: targetDocumentId,
@@ -526,7 +551,7 @@ export function DatabaseTemplateButton() {
           {busy ? <LoaderCircle className='h-4 w-4 animate-spin' /> : null}
           {t('grid.createView', { defaultValue: 'New' })}
         </Button>
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button
               aria-label='Open database templates'

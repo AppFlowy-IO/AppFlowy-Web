@@ -351,21 +351,13 @@ export function useDatabaseOperations(
 
   // Create a row document on the server (orphaned view)
   const createRowDocument = useCallback(
-    async (
-      documentId: string,
-      source?: RowDocumentSourcePayload,
-      options?: { syncBeforeCreate?: boolean }
-    ): Promise<Uint8Array | null> => {
+    async (documentId: string, source?: RowDocumentSourcePayload): Promise<Uint8Array | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[createRowDocument] service or workspaceId not available');
         return null;
       }
 
       try {
-        if (options?.syncBeforeCreate && syncAllToServer) {
-          await waitForSyncOrTimeout(syncAllToServer(currentWorkspaceId));
-        }
-
         Log.debug('[createRowDocument] creating', { documentId, source });
         const docState = await ViewService.createOrphaned(currentWorkspaceId, {
           document_id: documentId,
@@ -378,7 +370,7 @@ export function useDatabaseOperations(
         return null;
       }
     },
-    [currentWorkspaceId, syncAllToServer]
+    [currentWorkspaceId]
   );
 
   const duplicateRowDocument = useCallback(
