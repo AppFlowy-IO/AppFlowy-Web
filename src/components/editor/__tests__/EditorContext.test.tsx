@@ -13,6 +13,7 @@ function RowDocumentContextProbe() {
       data-has-duplicate={String(Boolean(context.duplicateRowDocument))}
       data-has-load={String(Boolean(context.loadRowDocument))}
       data-has-update={String(Boolean(context.updatePage))}
+      data-content-padding={context.contentPadding}
       onClick={() => void context.updatePage?.('database-view-id', { name: 'Renamed view' })}
     />
   );
@@ -27,6 +28,7 @@ describe('EditorContextProvider', () => {
         workspaceId='workspace-id'
         viewId='view-id'
         readOnly={false}
+        contentPadding='template'
         checkIfRowDocumentExists={jest.fn()}
         createRowDocument={jest.fn()}
         duplicateRowDocument={jest.fn()}
@@ -44,6 +46,7 @@ describe('EditorContextProvider', () => {
     expect(probe.getAttribute('data-has-duplicate')).toBe('true');
     expect(probe.getAttribute('data-has-load')).toBe('true');
     expect(probe.getAttribute('data-has-update')).toBe('true');
+    expect(probe.getAttribute('data-content-padding')).toBe('template');
 
     fireEvent.click(probe);
     expect(updatePage).toHaveBeenCalledWith('database-view-id', { name: 'Renamed view' });

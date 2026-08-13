@@ -50,14 +50,41 @@ jest.mock('@/components/database/components/header/DatabaseRowHeader', () => ({
   ),
 }));
 
-jest.mock('@/components/database/components/database-row', () => ({
-  DatabaseRowProperties: ({ rowId, templateStyle }: { rowId: string; templateStyle?: boolean }) => (
-    <div data-testid='mock-template-properties' data-template-style={String(Boolean(templateStyle))}>
-      {rowId}
-    </div>
-  ),
-  RowSubDocument: ({ rowId }: { rowId: string }) => <div data-testid='mock-template-document'>{rowId}</div>,
-}));
+let mockPendingDocumentMetaFlush: (() => void) | undefined;
+
+jest.mock('@/components/database/components/database-row', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+
+  return {
+    DatabaseRowProperties: ({ rowId, templateStyle }: { rowId: string; templateStyle?: boolean }) => (
+      <div data-testid='mock-template-properties' data-template-style={String(Boolean(templateStyle))}>
+        {rowId}
+      </div>
+    ),
+    RowSubDocument: ({
+      rowId,
+      contentPadding,
+      onRegisterPendingMetaFlush,
+    }: {
+      rowId: string;
+      contentPadding?: string;
+      onRegisterPendingMetaFlush?: (flush: (() => void) | null) => void;
+    }) => {
+      React.useEffect(() => {
+        const flush = () => mockPendingDocumentMetaFlush?.();
+
+        onRegisterPendingMetaFlush?.(flush);
+        return () => onRegisterPendingMetaFlush?.(null);
+      }, [onRegisterPendingMetaFlush]);
+
+      return (
+        <div data-testid='mock-template-document' data-content-padding={contentPadding}>
+          {rowId}
+        </div>
+      );
+    },
+  };
+});
 
 const databaseId = 'database-id';
 const databaseDocId = '40000000-0000-4000-8000-000000000004';
@@ -129,6 +156,7 @@ function setup() {
 describe('DatabaseTemplateButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPendingDocumentMetaFlush = undefined;
   });
 
   async function openMenu() {
@@ -145,7 +173,10 @@ describe('DatabaseTemplateButton', () => {
   }
 
   it('shows the empty menu, creates a hidden template row, and opens its editor without server registration', async () => {
-    const { Wrapper, database, view, rows, createRowDocument } = setup();
+    const { Wrapper, context, database, view, rows, createRowDocument } = setup();
+    const loadViewMeta = jest.fn().mockRejectedValue(new Error('new templates must not need a view lookup'));
+
+    context.loadViewMeta = loadViewMeta;
 
     render(<DatabaseTemplateButton />, { wrapper: Wrapper });
     await openMenu();
@@ -171,6 +202,7 @@ describe('DatabaseTemplateButton', () => {
     expect(screen.getByTestId('database-template-editor-banner').textContent).toBe("You're editing a template in Tasks");
     expect(screen.getByTestId('mock-template-header').getAttribute('data-template-style')).toBe('true');
     expect(screen.getByTestId('mock-template-properties').getAttribute('data-template-style')).toBe('true');
+    expect(screen.getByTestId('mock-template-document').getAttribute('data-content-padding')).toBe('template');
     const state = new DatabaseRowTemplateStore(database).read();
 
     expect(state.templates).toHaveLength(1);
@@ -178,6 +210,7 @@ describe('DatabaseTemplateButton', () => {
     expect(rows.has(getRowKey(databaseDocId, state.templates[0].templateId))).toBe(true);
     expect(view.get(YjsDatabaseKey.row_orders)).toHaveLength(0);
     expect(createRowDocument).not.toHaveBeenCalled();
+    expect(loadViewMeta).not.toHaveBeenCalled();
   });
 
   it('subscribes to template schema changes only while template UI is active', async () => {
@@ -228,6 +261,36 @@ describe('DatabaseTemplateButton', () => {
     rendered.unmount();
 
     expect(store.read().templates[0].name).toBe('Saved during cleanup');
+  });
+
+  it('flushes pending document metadata before taking the final template snapshot', async () => {
+    const { Wrapper, database, rows } = setup();
+    const store = new DatabaseRowTemplateStore(database);
+    const template = store.upsert({
+      templateId: 'flush-document-meta-on-close',
+      name: 'Document metadata',
+      docViewId: rowDocumentIdFromRowId('flush-document-meta-on-close'),
+      isDocumentEmpty: true,
+      embeddedDatabases: [],
+      defaultCells: { [nameFieldId]: { type: 'text', value: 'Document metadata' } },
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    });
+
+    render(<DatabaseTemplateButton />, { wrapper: Wrapper });
+    await openTemplateActions(template.templateId);
+    fireEvent.click(await screen.findByText('Edit'));
+    const editor = await screen.findByTestId('database-template-editor');
+    const rowDoc = rows.get(getRowKey(databaseDocId, template.templateId)) as YDoc;
+    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
+    const isDocumentEmptyId = getMetaIdMap(template.templateId).get(RowMetaKey.IsDocumentEmpty) as string;
+
+    mockPendingDocumentMetaFlush = () => {
+      rowDoc.transact(() => meta.set(isDocumentEmptyId, false));
+    };
+    fireEvent.click(editor.querySelector('button') as HTMLElement);
+
+    expect(store.read().templates[0].isDocumentEmpty).toBe(false);
   });
 
   it('does not rewrite database template metadata for document-body changes', async () => {
@@ -553,7 +616,11 @@ describe('DatabaseTemplateButton', () => {
     context.duplicateRowDocument = jest.fn(async (_databaseId, sourceId, targetId, _state, prepareSource) => {
       expect(sourceId).not.toBe(template.templateId);
       expect(targetId).toBe(template.templateId);
-      expect(store.read().templates.some((item) => item.templateId === sourceId)).toBe(true);
+      const rawTemplates = database.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.row_templates);
+      const persistedTemplates = JSON.parse(String(rawTemplates)) as Array<{ template_id: string; name: string }>;
+
+      expect(persistedTemplates).toContainEqual(expect.objectContaining({ template_id: sourceId, name: '' }));
+      expect(store.read().templates.some((item) => item.templateId === sourceId)).toBe(false);
       await prepareSource?.();
     });
 
@@ -572,6 +639,9 @@ describe('DatabaseTemplateButton', () => {
         documentData: undefined,
         embeddedDatabases: [],
       })
+    );
+    expect(JSON.parse(String(database.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.row_templates)))).not.toContainEqual(
+      expect.objectContaining({ name: '' })
     );
   });
 

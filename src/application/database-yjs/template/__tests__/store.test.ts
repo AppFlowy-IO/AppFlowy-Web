@@ -62,6 +62,39 @@ describe('DatabaseRowTemplateStore', () => {
     expect(readDatabaseRowTemplateState(database).templates.map(({ templateId }) => templateId)).toEqual(['first']);
   });
 
+  it('keeps transient migration sources Desktop-readable but hidden from template lists', () => {
+    const database = createDatabase();
+    const store = new DatabaseRowTemplateStore(database);
+
+    store.upsert(createTemplate('visible'));
+    store.upsertTransientMigrationSource(createTemplate('staging'));
+
+    expect(store.read().templates.map(({ templateId }) => templateId)).toEqual(['visible']);
+    const persisted = JSON.parse(String(database.get(YjsDatabaseKey.metas)?.get(DATABASE_ROW_TEMPLATES_KEY))) as Array<{
+      template_id: string;
+      name: string;
+    }>;
+
+    expect(persisted).toContainEqual(expect.objectContaining({ template_id: 'staging', name: '' }));
+
+    store.upsert({ ...createTemplate('visible'), name: 'Updated' });
+    store.upsert(createTemplate('second'));
+    store.move('second', 'visible');
+    store.delete('second');
+
+    const afterVisibleWrites = JSON.parse(
+      String(database.get(YjsDatabaseKey.metas)?.get(DATABASE_ROW_TEMPLATES_KEY))
+    ) as Array<{ template_id: string; name: string }>;
+
+    expect(afterVisibleWrites).toContainEqual(expect.objectContaining({ template_id: 'staging', name: '' }));
+    expect(store.setDefault('staging')).toBe(false);
+    expect(store.deleteTransientMigrationSource('staging')).toBe(true);
+    expect(store.deleteTransientMigrationSource('staging')).toBe(false);
+    expect(JSON.parse(String(database.get(YjsDatabaseKey.metas)?.get(DATABASE_ROW_TEMPLATES_KEY)))).toEqual([
+      expect.objectContaining({ template_id: 'visible', name: 'Updated' }),
+    ]);
+  });
+
   it('deletes every template and clears a default that pointed at the deleted set', () => {
     const database = createDatabase();
     const store = new DatabaseRowTemplateStore(database);

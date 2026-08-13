@@ -310,7 +310,7 @@ export function updateTemplateFromSourceRow(
     name: primaryName || template.name,
     defaultCells: extractTemplateCellsFromRow(row, database),
     isDocumentEmpty: meta.isEmptyDocument ?? template.isDocumentEmpty,
-    ...(meta.icon ? { icon: meta.icon } : { icon: undefined }),
-    ...(meta.cover ? { cover: JSON.stringify(meta.cover) } : { cover: undefined }),
+    icon: meta.icon || '',
+    cover: meta.cover ? JSON.stringify(meta.cover) : '',
   };
 }

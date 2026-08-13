@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { YDatabase, YDatabaseMetas, YjsDatabaseKey } from '@/application/types';
 
 import { sanitizeTemplateCells } from './cell';
-import { parseDatabaseRowTemplateState, serializeDatabaseRowTemplates } from './codec';
+import { parseDatabaseRowTemplateState, serializeDatabaseRowTemplate } from './codec';
 import {
   DATABASE_DEFAULT_ROW_TEMPLATE_KEY,
   DATABASE_ROW_TEMPLATES_KEY,
@@ -42,6 +42,42 @@ function transact(database: YDatabase, operation: () => void) {
   } else {
     operation();
   }
+}
+
+type PersistedTemplateRecord = Record<string, unknown>;
+
+function readPersistedTemplateRecords(database: YDatabase): PersistedTemplateRecord[] {
+  const raw = database.get(YjsDatabaseKey.metas)?.get(DATABASE_ROW_TEMPLATES_KEY);
+
+  if (typeof raw !== 'string' || raw.trim() === '') return [];
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (entry): entry is PersistedTemplateRecord => typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function isHiddenMigrationSource(record: PersistedTemplateRecord): boolean {
+  return typeof record.template_id === 'string' && record.template_id.length > 0 && record.name === '';
+}
+
+function serializeVisibleTemplatesPreservingMigrationSources(
+  database: YDatabase,
+  templates: DatabaseRowTemplate[]
+): string {
+  const visibleTemplateIds = new Set(templates.map((template) => template.templateId));
+  const migrationSources = readPersistedTemplateRecords(database).filter(
+    (record) => isHiddenMigrationSource(record) && !visibleTemplateIds.has(record.template_id as string)
+  );
+
+  return JSON.stringify([...templates.map(serializeDatabaseRowTemplate), ...migrationSources]);
 }
 
 function parseSnapshotState(snapshot: string): [unknown, unknown] | undefined {
@@ -158,7 +194,10 @@ export class DatabaseRowTemplateStore {
     else templates[index] = updated;
 
     transact(this.database, () => {
-      ensureMetas(this.database).set(DATABASE_ROW_TEMPLATES_KEY, serializeDatabaseRowTemplates(templates));
+      ensureMetas(this.database).set(
+        DATABASE_ROW_TEMPLATES_KEY,
+        serializeVisibleTemplatesPreservingMigrationSources(this.database, templates)
+      );
     });
 
     return updated;
@@ -173,7 +212,10 @@ export class DatabaseRowTemplateStore {
     transact(this.database, () => {
       const metas = ensureMetas(this.database);
 
-      metas.set(DATABASE_ROW_TEMPLATES_KEY, serializeDatabaseRowTemplates(templates));
+      metas.set(
+        DATABASE_ROW_TEMPLATES_KEY,
+        serializeVisibleTemplatesPreservingMigrationSources(this.database, templates)
+      );
       if (state.defaultTemplateId === templateId) metas.set(DATABASE_DEFAULT_ROW_TEMPLATE_KEY, '');
     });
 
@@ -207,7 +249,48 @@ export class DatabaseRowTemplateStore {
     templates.splice(toIndex, 0, moved);
 
     transact(this.database, () => {
-      ensureMetas(this.database).set(DATABASE_ROW_TEMPLATES_KEY, serializeDatabaseRowTemplates(templates));
+      ensureMetas(this.database).set(
+        DATABASE_ROW_TEMPLATES_KEY,
+        serializeVisibleTemplatesPreservingMigrationSources(this.database, templates)
+      );
+    });
+
+    return true;
+  }
+
+  /**
+   * Publishes a server-only source while a Desktop snapshot is converted to a
+   * live row document. An empty name keeps the record out of both Web and
+   * Flutter template lists without changing Desktop's persisted field shape.
+   */
+  upsertTransientMigrationSource(template: DatabaseRowTemplate): DatabaseRowTemplate {
+    const updated: DatabaseRowTemplate = {
+      ...template,
+      name: '',
+      embeddedDatabases: sanitizeEmbeddedDatabases(template.embeddedDatabases),
+      defaultCells: sanitizeTemplateCells(this.database, template.defaultCells),
+      updatedAtMs: Date.now(),
+    };
+    const records = readPersistedTemplateRecords(this.database).filter(
+      (record) => record.template_id !== updated.templateId
+    );
+
+    records.push({ ...serializeDatabaseRowTemplate(updated) });
+    transact(this.database, () => {
+      ensureMetas(this.database).set(DATABASE_ROW_TEMPLATES_KEY, JSON.stringify(records));
+    });
+
+    return updated;
+  }
+
+  deleteTransientMigrationSource(templateId: string): boolean {
+    const records = readPersistedTemplateRecords(this.database);
+    const remaining = records.filter((record) => record.template_id !== templateId);
+
+    if (remaining.length === records.length) return false;
+
+    transact(this.database, () => {
+      ensureMetas(this.database).set(DATABASE_ROW_TEMPLATES_KEY, JSON.stringify(remaining));
     });
 
     return true;

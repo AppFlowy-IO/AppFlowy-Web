@@ -40,9 +40,11 @@ import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/applica
 import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
 import {
   applyTemplateCellsToRow,
+  DatabaseRowTemplateStore,
   initializeTemplateSourceRow,
   mergeTemplateViewDecorations,
   readDatabaseRowTemplateState,
+  templateDecorationsNeedResolution,
 } from '@/application/database-yjs/template';
 import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
 import {
@@ -528,15 +530,14 @@ export function useNewRowDispatch() {
         // Desktop stores template decorations on the orphan document view
         // rather than in RowTemplatePB. Resolve that fallback so templates
         // authored by either client create the same row metadata.
-        if (
-          (!storedTemplate.icon?.trim() || !storedTemplate.cover?.trim()) &&
-          storedTemplate.docViewId &&
-          loadViewMeta
-        ) {
+        if (templateDecorationsNeedResolution(storedTemplate) && storedTemplate.docViewId && loadViewMeta) {
           try {
             const templateView = await loadViewMeta(storedTemplate.docViewId);
+            const resolvedTemplate = mergeTemplateViewDecorations(storedTemplate, templateView);
 
-            return mergeTemplateViewDecorations(storedTemplate, templateView);
+            return resolvedTemplate === storedTemplate
+              ? storedTemplate
+              : new DatabaseRowTemplateStore(database).upsert(resolvedTemplate);
           } catch (error) {
             Log.warn('[useNewRowDispatch] failed to resolve template view decorations', {
               templateId: storedTemplate.templateId,

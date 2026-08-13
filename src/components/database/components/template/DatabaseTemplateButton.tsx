@@ -21,6 +21,7 @@ import {
   DatabaseRowTemplate,
   initializeTemplateSourceRow,
   mergeTemplateViewDecorations,
+  templateDecorationsNeedResolution,
   templateCoverToViewCover,
   updateTemplateFromSourceRow,
 } from '@/application/database-yjs/template';
@@ -103,6 +104,7 @@ function DatabaseTemplateEditor({
   const database = useDatabase();
   const saveTimer = useRef<number>();
   const hasPendingSave = useRef(false);
+  const pendingDocumentMetaFlushRef = useRef<(() => void) | null>(null);
   const templateRef = useRef(template);
   const onSaveRef = useRef(onSave);
 
@@ -125,11 +127,22 @@ function DatabaseTemplateEditor({
     return hasPendingSave.current ? save() : templateRef.current;
   }, [save]);
 
+  const flushPendingTemplateChanges = useCallback(() => {
+    // The document editor derives IsDocumentEmpty asynchronously from Slate.
+    // Flush that child state before taking the final row/template snapshot.
+    pendingDocumentMetaFlushRef.current?.();
+    return flushPendingSave();
+  }, [flushPendingSave]);
+
+  const registerPendingDocumentMetaFlush = useCallback((flush: (() => void) | null) => {
+    pendingDocumentMetaFlushRef.current = flush;
+  }, []);
+
   const close = useCallback(() => {
-    const savedTemplate = flushPendingSave();
+    const savedTemplate = flushPendingTemplateChanges();
 
     onClose(savedTemplate);
-  }, [flushPendingSave, onClose]);
+  }, [flushPendingTemplateChanges, onClose]);
 
   useEffect(() => {
     const root = editing.rowDoc.getMap(YjsEditorKey.data_section);
@@ -147,6 +160,7 @@ function DatabaseTemplateEditor({
     row.observeDeep(onChange);
     meta.observe(onChange);
     return () => {
+      pendingDocumentMetaFlushRef.current?.();
       row.unobserveDeep(onChange);
       meta.unobserve(onChange);
       flushPendingSave();
@@ -194,7 +208,11 @@ function DatabaseTemplateEditor({
             </div>
             <div className='mx-[60px] mt-5 border-t border-border-primary max-sm:mx-6' />
             <div className='mt-2 h-[clamp(260px,45vh,520px)]'>
-              <RowSubDocument rowId={editing.templateId} />
+              <RowSubDocument
+                rowId={editing.templateId}
+                contentPadding='template'
+                onRegisterPendingMetaFlush={registerPendingDocumentMetaFlush}
+              />
             </div>
           </div>
         </DatabaseContext.Provider>
@@ -343,6 +361,7 @@ export function DatabaseTemplateButton() {
       const stagingTemplate: DatabaseRowTemplate = {
         ...template,
         templateId: stagingId,
+        name: '',
         docViewId: rowDocumentIdFromRowId(stagingId),
       };
       const stagingRowDoc = await ensureTemplateRow(stagingTemplate);
@@ -351,13 +370,13 @@ export function DatabaseTemplateButton() {
       // The duplication worker resolves template-owned database snapshots by
       // source template ID. Publish this temporary source just for the copy,
       // then remove it regardless of success.
-      store.upsert(stagingTemplate);
+      store.upsertTransientMigrationSource(stagingTemplate);
       try {
         await duplicateRowDocument(databaseId, stagingId, template.templateId, encodeDocument(sourceDocument), () =>
           registerSource(stagingId)
         );
       } finally {
-        store.delete(stagingId);
+        store.deleteTransientMigrationSource(stagingId);
       }
 
       const migrated = store.upsert({
@@ -376,7 +395,7 @@ export function DatabaseTemplateButton() {
     async (template: DatabaseRowTemplate) => {
       let editableTemplate = template;
 
-      if ((!template.icon?.trim() || !template.cover?.trim()) && template.docViewId && loadViewMeta) {
+      if (templateDecorationsNeedResolution(template) && template.docViewId && loadViewMeta) {
         try {
           editableTemplate = mergeTemplateViewDecorations(template, await loadViewMeta(template.docViewId));
         } catch (error) {
@@ -410,6 +429,8 @@ export function DatabaseTemplateButton() {
       docViewId: rowDocumentIdFromRowId(templateId),
       isDocumentEmpty: true,
       embeddedDatabases: [],
+      icon: '',
+      cover: '',
       defaultCells: primaryFieldId
         ? {
             [primaryFieldId]: {

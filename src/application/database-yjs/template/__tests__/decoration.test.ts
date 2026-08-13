@@ -1,5 +1,6 @@
 import {
   mergeTemplateViewDecorations,
+  templateDecorationsNeedResolution,
   templateCoverToViewCover,
   viewCoverToTemplateCover,
 } from '@/application/database-yjs/template/decoration';
@@ -72,5 +73,26 @@ describe('database template decorations', () => {
 
     expect(explicit.icon).toBe('🐛');
     expect(explicit.cover).toBe('saved-cover');
+  });
+
+  it('resolves missing decorations once and preserves explicit empty values', () => {
+    expect(templateDecorationsNeedResolution(template)).toBe(true);
+
+    const resolvedWithoutDecorations = mergeTemplateViewDecorations(template, null);
+
+    expect(resolvedWithoutDecorations.icon).toBe('');
+    expect(resolvedWithoutDecorations.cover).toBe('');
+    expect(templateDecorationsNeedResolution(resolvedWithoutDecorations)).toBe(false);
+
+    const explicitEmpty = mergeTemplateViewDecorations(
+      { ...template, icon: '', cover: '' },
+      {
+        icon: { ty: ViewIconType.Emoji, value: '🐛' },
+        extra: { cover: { type: CoverType.BuildInImage, value: '2', offset: 0 } },
+      }
+    );
+
+    expect(explicitEmpty.icon).toBe('');
+    expect(explicitEmpty.cover).toBe('');
   });
 });

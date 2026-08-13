@@ -40,6 +40,8 @@ export interface EditorLayoutStyle {
   lineHeightLayout: LineHeightLayout;
 }
 
+export type EditorContentPadding = 'page' | 'template';
+
 export const defaultLayoutStyle: EditorLayoutStyle = {
   fontLayout: FontLayout.normal,
   font: '',
@@ -72,6 +74,7 @@ export interface EditorLocalState {
  */
 export interface EditorContextState {
   fullWidth?: boolean;
+  contentPadding?: EditorContentPadding;
   workspaceId: string;
   viewId: string;
   readOnly: boolean;
@@ -126,6 +129,7 @@ export const EditorLocalStateContext = createContext<EditorLocalState | undefine
 export const EditorContextProvider = ({
   children,
   fullWidth,
+  contentPadding,
   workspaceId,
   viewId,
   readOnly,
@@ -217,6 +221,7 @@ export const EditorContextProvider = ({
   const configValue = useMemo(
     () => ({
       fullWidth,
+      contentPadding,
       workspaceId,
       viewId,
       readOnly,
@@ -265,6 +270,7 @@ export const EditorContextProvider = ({
     }),
     [
       fullWidth,
+      contentPadding,
       workspaceId,
       viewId,
       readOnly,

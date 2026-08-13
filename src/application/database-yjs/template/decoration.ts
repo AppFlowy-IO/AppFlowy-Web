@@ -84,6 +84,15 @@ export function templateCoverToViewCover(raw?: string): ViewCover | undefined {
 }
 
 /**
+ * Missing properties mean the template predates Web's decoration extensions
+ * and still needs its Desktop orphan-view metadata resolved. Empty strings are
+ * explicit, already-resolved "no decoration" values.
+ */
+export function templateDecorationsNeedResolution(template: DatabaseRowTemplate): boolean {
+  return template.icon === undefined || template.cover === undefined;
+}
+
+/**
  * Desktop persists template decorations on the orphan document view. Merge
  * those values only when the shared template JSON does not already contain a
  * Web-authored value.
@@ -93,14 +102,19 @@ export function mergeTemplateViewDecorations(
   view?: Pick<View, 'icon' | 'extra'> | null
 ): DatabaseRowTemplate {
   const icon =
-    template.icon?.trim() || (view?.icon?.ty === ViewIconType.Emoji ? view.icon.value.trim() : '') || undefined;
-  const cover = template.cover?.trim() || viewCoverToTemplateCover(view?.extra?.cover);
+    template.icon === undefined
+      ? view?.icon?.ty === ViewIconType.Emoji
+        ? view.icon.value.trim()
+        : ''
+      : template.icon.trim();
+  const cover =
+    template.cover === undefined ? viewCoverToTemplateCover(view?.extra?.cover) ?? '' : template.cover.trim();
 
   if (icon === template.icon && cover === template.cover) return template;
 
   return {
     ...template,
-    ...(icon === undefined ? { icon: undefined } : { icon }),
-    ...(cover === undefined ? { cover: undefined } : { cover }),
+    icon,
+    cover,
   };
 }

@@ -262,6 +262,41 @@ describe('useNewRowDispatch database templates', () => {
       data: '2',
       offset: 0.25,
     });
+    expect(new DatabaseRowTemplateStore(database).read().templates[0]).toEqual(
+      expect.objectContaining({
+        icon: '🧩',
+        cover: expect.any(String),
+      })
+    );
+
+    await act(async () => {
+      await result.current({ templateId: desktopTemplate.templateId });
+    });
+    expect(loadViewMeta).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not request orphan view metadata for explicitly empty decorations', async () => {
+    const { doc, database } = createDatabaseDoc();
+    const original = addTemplate(database);
+    const template = new DatabaseRowTemplateStore(database).upsert({ ...original, icon: '', cover: '' });
+    const loadViewMeta = jest.fn().mockRejectedValue(new Error('explicit blanks are already resolved'));
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow: async (key) => new Y.Doc({ guid: key }) as YDoc,
+      loadViewMeta,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+
+    await act(async () => {
+      await result.current({ templateId: template.templateId });
+    });
+
+    expect(loadViewMeta).not.toHaveBeenCalled();
   });
 
   it('rejects an unknown explicit template before creating a row', async () => {

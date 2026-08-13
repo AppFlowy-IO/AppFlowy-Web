@@ -36,6 +36,8 @@ import { Editor } from '@/components/editor';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
+import type { EditorContentPadding } from '@/components/editor/EditorContext';
+
 type ContentNode = {
   type?: BlockType | string;
   text?: string;
@@ -112,7 +114,20 @@ function hasYjsBlockContent(block: Y.Map<unknown>) {
  * For publish mode (read-only), use PublishRowSubDocument instead.
  * The RowSubDocument wrapper handles mode selection automatically.
  */
-export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
+export type PendingRowDocumentMetaFlush = () => void;
+export type RegisterPendingRowDocumentMetaFlush = (flush: PendingRowDocumentMetaFlush | null) => void;
+
+interface DatabaseRowSubDocumentProps {
+  rowId: string;
+  contentPadding?: EditorContentPadding;
+  onRegisterPendingMetaFlush?: RegisterPendingRowDocumentMetaFlush;
+}
+
+export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
+  rowId,
+  contentPadding,
+  onRegisterPendingMetaFlush,
+}: DatabaseRowSubDocumentProps) {
   const meta = useRowMetaSelector(rowId);
   const documentId = meta?.documentId;
   const database = useDatabase();
@@ -1123,12 +1138,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     };
 
     doc.on('update', handleDocUpdate);
+    onRegisterPendingMetaFlush?.(flushPendingMetaUpdate);
 
     return () => {
       doc.off('update', handleDocUpdate);
       // Flush — not cancel — so a close-card immediately after paste still
       // marks the row non-empty and registers the orphan collab on the server.
       flushPendingMetaUpdate();
+      onRegisterPendingMetaFlush?.(null);
     };
   }, [
     doc,
@@ -1140,6 +1157,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     updateRowMeta,
     ensureRowDocumentExists,
     scheduleEnsureRowDocumentExists,
+    onRegisterPendingMetaFlush,
   ]);
 
   useEffect(() => {
@@ -1163,6 +1181,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     <Editor
       {...editorContext}
       fullWidth
+      contentPadding={contentPadding}
       workspaceId={workspaceId}
       viewId={documentId}
       doc={doc}
