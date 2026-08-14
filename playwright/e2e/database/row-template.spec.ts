@@ -15,7 +15,13 @@ import {
 import { signInAndCreateDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import { addFieldWithType, clickFieldHeaderById } from '../../support/field-type-helpers';
 import { closeRowDetailWithEscape, getVisibleDataRowIds, openRowDetailByRowId } from '../../support/row-detail-helpers';
-import { DatabaseGridSelectors, DatabaseViewSelectors, FieldType, PropertyMenuSelectors } from '../../support/selectors';
+import {
+  DatabaseGridSelectors,
+  DatabaseListSelectors,
+  DatabaseViewSelectors,
+  FieldType,
+  PropertyMenuSelectors,
+} from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const TEMPLATE_MENU = 'database-template-menu';
@@ -173,7 +179,7 @@ async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Ca
   await expect(block.locator('[data-testid^="grid-cell-"]').first()).toBeVisible({ timeout: 30000 });
 }
 
-async function addRootDatabaseView(page: Page, layout: 'Board' | 'Calendar' | 'Chart'): Promise<string> {
+async function addRootDatabaseView(page: Page, layout: 'Board' | 'Calendar' | 'Chart' | 'List'): Promise<string> {
   const tabs = DatabaseViewSelectors.viewTab(page);
   const previousIds = new Set(
     (await tabs.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-testid')))).filter(
@@ -217,7 +223,8 @@ async function switchDatabaseView(page: Page, tabTestId: string): Promise<void> 
 async function createDefaultTemplateRowFromView(
   page: Page,
   gridTabTestId: string,
-  sourceTabTestId: string
+  sourceTabTestId: string,
+  expectListRow: boolean
 ): Promise<string> {
   await switchDatabaseView(page, gridTabTestId);
   await waitForGridReady(page);
@@ -232,6 +239,32 @@ async function createDefaultTemplateRowFromView(
 
   await expect(rowDialog).toBeVisible({ timeout: 60000 });
   await closeRowDetailWithEscape(page);
+
+  if (expectListRow) {
+    await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30000 });
+    let createdListRowId = '';
+
+    await expect
+      .poll(
+        async () => {
+          createdListRowId =
+            (
+              await DatabaseListSelectors.rows(page).evaluateAll((rows) =>
+                rows.map((row) => row.getAttribute('data-row-id')).filter((rowId): rowId is string => Boolean(rowId))
+              )
+            ).find((rowId) => !before.includes(rowId)) ?? '';
+          return createdListRowId;
+        },
+        { timeout: 30000, message: `Expected the templated row to render in ${sourceTabTestId}` }
+      )
+      .not.toBe('');
+    await expect(page.getByTestId(`list-primary-cell-${createdListRowId}`)).toHaveAttribute(
+      'data-primary-indicator',
+      'document',
+      { timeout: 30000 }
+    );
+  }
+
   await switchDatabaseView(page, gridTabTestId);
   await waitForGridReady(page);
   let createdId = '';
@@ -553,13 +586,26 @@ test.describe('Database row templates (Desktop parity)', () => {
     await switchDatabaseView(page, gridTabTestId as string);
     const chartTabTestId = await addRootDatabaseView(page, 'Chart');
 
+    await switchDatabaseView(page, gridTabTestId as string);
+    const listTabTestId = await addRootDatabaseView(page, 'List');
+
+    await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30_000 });
+
     const createdRows: string[] = [];
 
-    for (const tabTestId of [gridTabTestId as string, boardTabTestId, calendarTabTestId, chartTabTestId]) {
-      createdRows.push(await createDefaultTemplateRowFromView(page, gridTabTestId as string, tabTestId));
+    for (const tabTestId of [
+      gridTabTestId as string,
+      boardTabTestId,
+      calendarTabTestId,
+      chartTabTestId,
+      listTabTestId,
+    ]) {
+      createdRows.push(
+        await createDefaultTemplateRowFromView(page, gridTabTestId as string, tabTestId, tabTestId === listTabTestId)
+      );
     }
 
-    expect(new Set(createdRows).size).toBe(4);
+    expect(new Set(createdRows).size).toBe(5);
   });
 
   test('default templates preserve icon-only, icon-and-cover, and cover-only row metadata after reload', async ({

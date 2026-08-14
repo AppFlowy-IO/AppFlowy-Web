@@ -2,7 +2,7 @@ import { type KeyboardEvent, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateGroupCondition, FieldType, usePropertiesSelector } from '@/application/database-yjs';
-import type { GridGroup } from '@/application/database-yjs';
+import type { GridGroup, GridGrouping } from '@/application/database-yjs';
 import {
   useClearGroupByFieldDispatch,
   useGroupByFieldDispatch,
@@ -49,7 +49,7 @@ export function getGridGroupVisibilityGroups(groups: GridGroup[], fieldType?: Fi
   return groups.filter((group) => group.isDefault || group.rows.length > 0);
 }
 
-function GridGroupVisibilityLabel({ group }: { group: GridGroup }) {
+function GridGroupVisibilityLabel({ group, testIdPrefix }: { group: GridGroup; testIdPrefix: string }) {
   if (!group.option) return <span className='truncate'>{group.label}</span>;
 
   const backgroundToken = SelectOptionColorMap[group.option.color];
@@ -59,7 +59,7 @@ function GridGroupVisibilityLabel({ group }: { group: GridGroup }) {
     <div
       className='min-w-0'
       data-background-color-token={backgroundToken}
-      data-testid={`grid-group-visibility-option-tag-${group.id}`}
+      data-testid={`${testIdPrefix}-group-visibility-option-tag-${group.id}`}
       data-text-color-token={textToken}
     >
       <Tag bgColor={backgroundToken} label={group.option.name} textColor={textToken} />
@@ -70,9 +70,11 @@ function GridGroupVisibilityLabel({ group }: { group: GridGroup }) {
 export function GridGroupVisibilityList({
   groups,
   setVisibility,
+  testIdPrefix = 'grid',
 }: {
   groups: GridGroup[];
   setVisibility: (groupId: string, visible: boolean) => void;
+  testIdPrefix?: string;
 }) {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState('');
@@ -120,7 +122,7 @@ export function GridGroupVisibilityList({
               aria-label={t('searchLabel', 'Search groups')}
               autoComplete='off'
               className='h-8 w-full cursor-text rounded-300 border border-border-primary bg-fill-content px-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary focus:border-border-theme-thick focus:ring-[0.5px] focus:ring-border-theme-thick'
-              data-testid='grid-group-visibility-search'
+              data-testid={`${testIdPrefix}-group-visibility-search`}
               onChange={(event) => setSearchValue(event.target.value)}
               onKeyDown={handleSearchKeyDown}
               placeholder={t('searchLabel', 'Search groups')}
@@ -135,7 +137,7 @@ export function GridGroupVisibilityList({
       {renderedGroups.map((group) => (
         <DropdownMenuItem
           aria-checked={!group.hidden}
-          data-testid={`grid-group-visibility-${group.id}`}
+          data-testid={`${testIdPrefix}-group-visibility-${group.id}`}
           key={group.id}
           onSelect={(event) => {
             event.preventDefault();
@@ -143,25 +145,33 @@ export function GridGroupVisibilityList({
           }}
           role='menuitemcheckbox'
         >
-          <GridGroupVisibilityLabel group={group} />
+          <GridGroupVisibilityLabel group={group} testIdPrefix={testIdPrefix} />
           <Switch
             aria-hidden='true'
             checked={!group.hidden}
             className='pointer-events-none ml-auto'
-            data-testid={`grid-group-visibility-switch-${group.id}`}
+            data-testid={`${testIdPrefix}-group-visibility-switch-${group.id}`}
             tabIndex={-1}
           />
         </DropdownMenuItem>
       ))}
 
       {filteredGroups.length === 0 && (
-        <div className='px-3 py-2 text-sm text-text-secondary' data-testid='grid-group-visibility-empty' role='status'>
+        <div
+          className='px-3 py-2 text-sm text-text-secondary'
+          data-testid={`${testIdPrefix}-group-visibility-empty`}
+          role='status'
+        >
           {t('grid.settings.noMatchingGroups', { defaultValue: 'No matching groups' })}
         </div>
       )}
 
       {isLimited && (
-        <div className='px-3 py-2 text-xs text-text-secondary' data-testid='grid-group-visibility-limit' role='status'>
+        <div
+          className='px-3 py-2 text-xs text-text-secondary'
+          data-testid={`${testIdPrefix}-group-visibility-limit`}
+          role='status'
+        >
           {t('grid.settings.groupVisibilityLimited', {
             defaultValue: 'Showing {{shown}} of {{total}} groups. Search to find more.',
             shown: renderedGroups.length,
@@ -176,9 +186,11 @@ export function GridGroupVisibilityList({
 export function GridGroupVisibilityActions({
   groups,
   setAllVisibility,
+  testIdPrefix = 'grid',
 }: {
   groups: GridGroup[];
   setAllVisibility: (groupIds: string[], visible: boolean) => void;
+  testIdPrefix?: string;
 }) {
   const { t } = useTranslation();
   const groupIds = useMemo(() => groups.filter((group) => !group.isDefault).map((group) => group.id), [groups]);
@@ -188,7 +200,7 @@ export function GridGroupVisibilityActions({
   return (
     <>
       <DropdownMenuItem
-        data-testid='grid-show-all-groups'
+        data-testid={`${testIdPrefix}-show-all-groups`}
         onSelect={(event) => {
           event.preventDefault();
           setAllVisibility(groupIds, true);
@@ -197,7 +209,7 @@ export function GridGroupVisibilityActions({
         {t('board.showAllGroups', 'Show all')}
       </DropdownMenuItem>
       <DropdownMenuItem
-        data-testid='grid-hide-all-groups'
+        data-testid={`${testIdPrefix}-hide-all-groups`}
         onSelect={(event) => {
           event.preventDefault();
           setAllVisibility(groupIds, false);
@@ -209,15 +221,28 @@ export function GridGroupVisibilityActions({
   );
 }
 
-function GridSettingGroup() {
+interface DatabaseSettingGroupProps {
+  grouping: GridGrouping;
+  groupBy: (fieldId: string) => void;
+  clearGrouping: () => void;
+  toggleHideEmpty: (hide: boolean) => void;
+  setVisibility: (groupId: string, visible: boolean) => void;
+  setAllVisibility: (groupIds: string[], visible: boolean) => void;
+  updateDateCondition: (condition: DateGroupCondition) => void;
+  testIdPrefix: 'grid' | 'list';
+}
+
+export function DatabaseSettingGroup({
+  grouping,
+  groupBy,
+  clearGrouping,
+  toggleHideEmpty,
+  setVisibility,
+  setAllVisibility,
+  updateDateCondition,
+  testIdPrefix,
+}: DatabaseSettingGroupProps) {
   const { t } = useTranslation();
-  const grouping = useGridGrouping();
-  const groupBy = useGroupByFieldDispatch();
-  const clearGrouping = useClearGroupByFieldDispatch();
-  const toggleHideEmpty = useToggleGridHideEmptyGroups();
-  const setVisibility = useSetGridGroupVisibilityDispatch(grouping.groupId, grouping.fieldId);
-  const setAllVisibility = useSetAllGridGroupsVisibilityDispatch(grouping.groupId, grouping.fieldId);
-  const updateDateCondition = useUpdateDateGroupConditionDispatch();
   const { properties: allProperties } = usePropertiesSelector(true);
   const properties = useMemo(
     () => allProperties.filter((property) => DATABASE_GROUPABLE_FIELD_TYPES.includes(property.type)),
@@ -231,21 +256,21 @@ function GridSettingGroup() {
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger data-testid='grid-group-settings-trigger'>
+      <DropdownMenuSubTrigger data-testid={`${testIdPrefix}-group-settings-trigger`}>
         <GroupIcon />
         {t('grid.settings.group', 'Group')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent
           className='appflowy-scroller max-h-[520px] max-w-[280px] overflow-y-auto'
-          data-testid='grid-group-settings-menu'
+          data-testid={`${testIdPrefix}-group-settings-menu`}
         >
           {grouping.isGrouped && (
             <>
               <DropdownMenuItem
                 aria-checked={grouping.hideEmptyGroups}
                 className='w-full'
-                data-testid='grid-hide-empty-groups-toggle'
+                data-testid={`${testIdPrefix}-hide-empty-groups-toggle`}
                 onSelect={(event) => {
                   event.preventDefault();
                   toggleHideEmpty(!grouping.hideEmptyGroups);
@@ -257,7 +282,7 @@ function GridSettingGroup() {
                   aria-hidden='true'
                   checked={grouping.hideEmptyGroups}
                   className='pointer-events-none ml-auto'
-                  data-testid='grid-hide-empty-groups-switch'
+                  data-testid={`${testIdPrefix}-hide-empty-groups-switch`}
                   tabIndex={-1}
                 />
               </DropdownMenuItem>
@@ -267,7 +292,7 @@ function GridSettingGroup() {
                   <DropdownMenuLabel>{t('grid.settings.groupDateBy', 'Group dates by')}</DropdownMenuLabel>
                   {DATE_CONDITIONS.map((condition) => (
                     <DropdownMenuItem
-                      data-testid={`grid-date-group-condition-${condition.value}`}
+                      data-testid={`${testIdPrefix}-date-group-condition-${condition.value}`}
                       key={condition.value}
                       onSelect={(event) => {
                         event.preventDefault();
@@ -285,17 +310,26 @@ function GridSettingGroup() {
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>{t('grid.settings.groupVisibility', 'Group visibility')}</DropdownMenuLabel>
-                  <GridGroupVisibilityActions groups={visibilityGroups} setAllVisibility={setAllVisibility} />
+                  <GridGroupVisibilityActions
+                    groups={visibilityGroups}
+                    setAllVisibility={setAllVisibility}
+                    testIdPrefix={testIdPrefix}
+                  />
                   <GridGroupVisibilityList
                     groups={visibilityGroups}
                     key={grouping.fieldId}
                     setVisibility={setVisibility}
+                    testIdPrefix={testIdPrefix}
                   />
                 </>
               )}
 
               <DropdownMenuSeparator />
-              <DropdownMenuItem data-testid='grid-remove-grouping' onSelect={clearGrouping} variant='destructive'>
+              <DropdownMenuItem
+                data-testid={`${testIdPrefix}-remove-grouping`}
+                onSelect={clearGrouping}
+                variant='destructive'
+              >
                 {t('board.removeGrouping', 'Remove grouping')}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -304,7 +338,7 @@ function GridSettingGroup() {
 
           <DropdownMenuLabel>{t('board.groupBy', 'Group by')}</DropdownMenuLabel>
           <DropdownMenuItem
-            data-testid='grid-group-by-none'
+            data-testid={`${testIdPrefix}-group-by-none`}
             onSelect={(event) => {
               event.preventDefault();
               clearGrouping();
@@ -315,7 +349,7 @@ function GridSettingGroup() {
           </DropdownMenuItem>
           {properties.map((property) => (
             <DropdownMenuItem
-              data-testid={`grid-group-by-field-${property.id}`}
+              data-testid={`${testIdPrefix}-group-by-field-${property.id}`}
               key={property.id}
               onSelect={(event) => {
                 event.preventDefault();
@@ -329,6 +363,29 @@ function GridSettingGroup() {
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>
+  );
+}
+
+function GridSettingGroup() {
+  const grouping = useGridGrouping();
+  const groupBy = useGroupByFieldDispatch();
+  const clearGrouping = useClearGroupByFieldDispatch();
+  const toggleHideEmpty = useToggleGridHideEmptyGroups();
+  const setVisibility = useSetGridGroupVisibilityDispatch(grouping.groupId, grouping.fieldId);
+  const setAllVisibility = useSetAllGridGroupsVisibilityDispatch(grouping.groupId, grouping.fieldId);
+  const updateDateCondition = useUpdateDateGroupConditionDispatch();
+
+  return (
+    <DatabaseSettingGroup
+      clearGrouping={clearGrouping}
+      groupBy={groupBy}
+      grouping={grouping}
+      setAllVisibility={setAllVisibility}
+      setVisibility={setVisibility}
+      testIdPrefix='grid'
+      toggleHideEmpty={toggleHideEmpty}
+      updateDateCondition={updateDateCondition}
+    />
   );
 }
 

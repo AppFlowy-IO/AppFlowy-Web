@@ -93,6 +93,7 @@ export interface EditorContextState {
   duplicateRowDocument?: DuplicateRowDocument;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   readSummary?: boolean;
   jumpBlockId?: string;
   onJumpedBlockId?: () => void;
@@ -147,6 +148,7 @@ export const EditorContextProvider = ({
   duplicateRowDocument,
   createRow,
   bindViewSync,
+  scheduleDeferredCleanup,
   readSummary,
   jumpBlockId,
   onJumpedBlockId,
@@ -239,6 +241,7 @@ export const EditorContextProvider = ({
       duplicateRowDocument,
       createRow,
       bindViewSync,
+      scheduleDeferredCleanup,
       readSummary,
       jumpBlockId,
       onJumpedBlockId,
@@ -288,6 +291,7 @@ export const EditorContextProvider = ({
       duplicateRowDocument,
       createRow,
       bindViewSync,
+      scheduleDeferredCleanup,
       readSummary,
       jumpBlockId,
       onJumpedBlockId,

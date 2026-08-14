@@ -115,6 +115,7 @@ function Property({
 
   return (
     <DropdownMenuItem
+      data-testid={`database-property-${id}`}
       ref={innerRef}
       onSelect={(e) => {
         e.preventDefault();
@@ -136,6 +137,8 @@ function Property({
         </Tooltip>
 
         <Button
+          aria-label={`${visible ? 'Hide' : 'Show'} ${name || 'property'}`}
+          data-testid={`database-property-visibility-${id}`}
           variant={'ghost'}
           size={'icon-sm'}
           onClick={(e) => {

@@ -467,7 +467,7 @@ function Database(props: Database2Props) {
     const fields = database?.get(YjsDatabaseKey.fields);
     const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
     const isGroupedView =
-      [DatabaseViewLayout.Grid, DatabaseViewLayout.Board].includes(layout) &&
+      [DatabaseViewLayout.Grid, DatabaseViewLayout.Board, DatabaseViewLayout.List].includes(layout) &&
       (view?.get(YjsDatabaseKey.groups)?.length ?? 0) > 0;
 
     return (
@@ -1337,7 +1337,15 @@ function Database(props: Database2Props) {
 
   const handleOpenRow = useCallback(
     async (rowId: string, viewId?: string) => {
-      if (readOnly) {
+      // A locked document's embedded database must keep the row detail inside
+      // this Database context so the row editor inherits the document's
+      // read-only permission. Navigating to the source database would reopen
+      // the same row with that page's independent (usually editable) context.
+      // Published databases still use route-based row pages because their row
+      // documents are loaded through the publish navigation/cache path.
+      const shouldNavigateReadonlyRow = readOnly && (!_isDocumentBlock || props.variant === UIVariant.Publish);
+
+      if (shouldNavigateReadonlyRow) {
         if (viewId) {
           void navigateToView?.(viewId, rowId);
           return;
@@ -1377,7 +1385,7 @@ function Database(props: Database2Props) {
 
       setModalState((prev) => ({ ...prev, rowId }));
     },
-    [createNewRow, loadView, navigateToView, onOpenRowPage, readOnly]
+    [createNewRow, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, _isDocumentBlock]
   );
 
   const handleCloseRowModal = useCallback(() => {
@@ -1426,6 +1434,7 @@ function Database(props: Database2Props) {
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
+      scheduleDeferredCleanup: props.scheduleDeferredCleanup,
       createRow: createNewRow,
       checkIfRowDocumentExists,
       loadRowDocument,
@@ -1475,6 +1484,7 @@ function Database(props: Database2Props) {
       handleOpenRow,
       loadView,
       bindViewSync,
+      props.scheduleDeferredCleanup,
       createNewRow,
       checkIfRowDocumentExists,
       loadRowDocument,

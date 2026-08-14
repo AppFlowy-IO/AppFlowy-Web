@@ -90,6 +90,7 @@ export interface DatabaseContextState {
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   createRow?: CreateRow;
   loadViewMeta?: LoadViewMeta;
   /**

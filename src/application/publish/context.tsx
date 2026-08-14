@@ -413,6 +413,7 @@ export const PublishProvider = ({
             case ViewLayout.Grid:
             case ViewLayout.Board:
             case ViewLayout.Calendar:
+            case ViewLayout.List:
               searchParams.set('r', blockId);
               break;
             default:
@@ -443,8 +444,7 @@ export const PublishProvider = ({
         // published page is already a database, switch tabs in place.
         const targetDatabaseId = targetView?.extra?.database_id;
         const currentDatabaseId = getCurrentOutlineView()?.extra?.database_id;
-        const isCurrentDatabaseTab =
-          Boolean(targetDatabaseId) && targetDatabaseId === currentDatabaseId;
+        const isCurrentDatabaseTab = Boolean(targetDatabaseId) && targetDatabaseId === currentDatabaseId;
 
         if (viewMeta && isDatabaseLayout(viewMeta.layout) && isCurrentDatabaseTab) {
           const currentParams = new URLSearchParams(window.location.search);
@@ -477,27 +477,24 @@ export const PublishProvider = ({
     }
   }, [namespace]);
 
-  const createRow = useCallback(
-    async (rowKey: string) => {
-      try {
-        const snapshotRow = databaseRowDocsRef.current.get(rowKey);
+  const createRow = useCallback(async (rowKey: string) => {
+    try {
+      const snapshotRow = databaseRowDocsRef.current.get(rowKey);
 
-        if (snapshotRow) return snapshotRow;
+      if (snapshotRow) return snapshotRow;
 
-        const doc = await RowService.create(rowKey);
+      const doc = await RowService.create(rowKey);
 
-        if (!doc) {
-          throw new Error('Failed to create row');
-        }
-
-        createdRowKeys.current.push(rowKey);
-        return doc;
-      } catch (e) {
-        return Promise.reject(e);
+      if (!doc) {
+        throw new Error('Failed to create row');
       }
-    },
-    []
-  );
+
+      createdRowKeys.current.push(rowKey);
+      return doc;
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }, []);
 
   const loadRowDocument = useCallback(async (documentId: string): Promise<YDoc | null> => {
     const cachedDoc = rowDocumentDocsRef.current.get(documentId);
@@ -640,11 +637,7 @@ export const PublishProvider = ({
     ]
   );
 
-  return (
-    <PublishContext.Provider value={contextValue}>
-      {children}
-    </PublishContext.Provider>
-  );
+  return <PublishContext.Provider value={contextValue}>{children}</PublishContext.Provider>;
 };
 
 export function usePublishContext() {

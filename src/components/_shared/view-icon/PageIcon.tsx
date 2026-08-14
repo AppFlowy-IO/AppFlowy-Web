@@ -7,6 +7,7 @@ import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
 import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
+import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 import { cn } from '@/lib/utils';
 import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
@@ -59,7 +60,12 @@ function PageIcon({
     if (imgSrc) {
       return (
         <span className={cn('flex h-full w-full items-center justify-center p-[2px]', className)}>
-          <img data-testid='page-icon-image' className={'max-h-full max-w-full object-contain'} src={imgSrc} alt='icon' />
+          <img
+            data-testid='page-icon-image'
+            className={'max-h-full max-w-full object-contain'}
+            src={imgSrc}
+            alt='icon'
+          />
         </span>
       );
     }
@@ -140,6 +146,8 @@ function PageIcon({
       return <CalendarSvg className={className} />;
     case ViewLayout.Chart:
       return <ChartSvg className={className} />;
+    case ViewLayout.List:
+      return <ListSvg data-testid='list-view-icon' className={className} />;
     case ViewLayout.Document:
       return <DocumentSvg className={className} />;
     default:

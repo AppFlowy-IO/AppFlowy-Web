@@ -51,7 +51,7 @@ import {
   isDynamicDatabaseGroupFieldType,
 } from '@/application/database-yjs/group';
 import {
-  hasPendingLocalGridGroupInitialization,
+  hasPendingLocalDatabaseGroupInitialization,
   normalizeDatabaseGroupColumn,
   normalizeUniqueDatabaseGroupColumns,
 } from '@/application/database-yjs/group-column';
@@ -1369,7 +1369,10 @@ export interface GridGrouping {
   metadataSyncKey?: string;
 }
 
-const EMPTY_GRID_GROUPING: GridGrouping = {
+export type DatabaseGroupingGroup = GridGroup;
+export type DatabaseGrouping = GridGrouping;
+
+const EMPTY_DATABASE_GROUPING: DatabaseGrouping = {
   isGrouped: false,
   activeGroupIds: [],
   groups: [],
@@ -1418,17 +1421,17 @@ function yjsEventTouchesGroupingCell(event: { path: Array<string | number> }, fi
   return path[2] === fieldId;
 }
 
-const GRID_GROUPING_VIEW_KEYS = new Set<string>([
+const DATABASE_GROUPING_VIEW_KEYS = new Set<string>([
   YjsDatabaseKey.groups,
   YjsDatabaseKey.layout_settings,
   YjsDatabaseKey.row_orders,
   YjsDatabaseKey.sorts,
 ]);
 
-function yjsEventTouchesGridGroupingView(event: YEvent) {
-  if (event.path.length > 0) return GRID_GROUPING_VIEW_KEYS.has(String(event.path[0]));
+function yjsEventTouchesDatabaseGroupingView(event: YEvent) {
+  if (event.path.length > 0) return DATABASE_GROUPING_VIEW_KEYS.has(String(event.path[0]));
 
-  return [...GRID_GROUPING_VIEW_KEYS].some((key) => yjsEventChangesKey(event, key));
+  return [...DATABASE_GROUPING_VIEW_KEYS].some((key) => yjsEventChangesKey(event, key));
 }
 
 function yjsEventTouchesField(event: YEvent, fieldId?: string) {
@@ -1438,13 +1441,13 @@ function yjsEventTouchesField(event: YEvent, fieldId?: string) {
   return yjsEventChangesKey(event, fieldId);
 }
 
-type GridGroupingRowObserver = {
+type DatabaseGroupingRowObserver = {
   dataSection: ReturnType<YDoc['getMap']>;
   doc: YDoc;
   observer: Parameters<ReturnType<YDoc['getMap']>['observeDeep']>[0];
 };
 
-type GridGroupingRowsStore = {
+type DatabaseGroupingRowsStore = {
   applyCachedRowsChange: (change: BackgroundRowDocChange) => void;
   detachRows: () => void;
   getSnapshot: () => number;
@@ -1453,9 +1456,9 @@ type GridGroupingRowsStore = {
   subscribe: (onStoreChange: () => void) => () => void;
 };
 
-function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
+function createDatabaseGroupingRowsStore(fieldId?: string): DatabaseGroupingRowsStore {
   const subscribers = new Set<() => void>();
-  const observers = new Map<RowId, GridGroupingRowObserver>();
+  const observers = new Map<RowId, DatabaseGroupingRowObserver>();
   const cachedRows = new Map<RowId, YDoc>();
   const liveRows = new Map<RowId, YDoc>();
   let revision = 0;
@@ -1465,7 +1468,7 @@ function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
     subscribers.forEach((subscriber) => subscriber());
   };
 
-  const detach = ({ dataSection, observer }: GridGroupingRowObserver) => {
+  const detach = ({ dataSection, observer }: DatabaseGroupingRowObserver) => {
     try {
       dataSection.unobserveDeep(observer);
     } catch {
@@ -1565,7 +1568,7 @@ function haveSameRowOrder(left?: Row[], right?: Row[]) {
   );
 }
 
-function orderGridGroupsForPrimarySort(
+function orderDatabaseGroupsForPrimarySort(
   groupIds: string[],
   groupResult: Map<string, Row[]> | undefined,
   sortedRows: Row[] | undefined,
@@ -1651,11 +1654,11 @@ function orderGridGroupsForPrimarySort(
 }
 
 /**
- * Resolves Grid grouping from the current view and observes every source that
+ * Resolves optional grouping for the current Grid or List view and observes every source that
  * can change group membership. Row documents are separate Yjs documents, so
  * observing only the database view is not sufficient when a cell is edited.
  */
-export function useGridGroupingSelector(): GridGrouping {
+export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): DatabaseGrouping {
   const { getCellLocalMutationRevision, hasCellLocalMutation, subscribeToCellLocalMutations } = useDatabaseContext();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
@@ -1670,7 +1673,7 @@ export function useGridGroupingSelector(): GridGrouping {
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
     Boolean(fieldId),
-    'grid-grouping'
+    `${layout === DatabaseViewLayout.List ? 'list' : 'grid'}-grouping`
   );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
@@ -1687,7 +1690,7 @@ export function useGridGroupingSelector(): GridGrouping {
     // The same database field can group multiple views; each view owns its
     // observer lifecycle even when the field ID is identical.
     void viewId;
-    return createGridGroupingRowsStore(fieldId);
+    return createDatabaseGroupingRowsStore(fieldId);
   }, [fieldId, viewId]);
 
   useLayoutEffect(() => {
@@ -1723,7 +1726,7 @@ export function useGridGroupingSelector(): GridGrouping {
       };
 
       const handleViewChange = (events: YEvent[]) => {
-        if (events.some(yjsEventTouchesGridGroupingView)) publish();
+        if (events.some(yjsEventTouchesDatabaseGroupingView)) publish();
       };
 
       const handleFieldsChange = (events: YEvent[]) => {
@@ -1816,7 +1819,7 @@ export function useGridGroupingSelector(): GridGrouping {
     const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
     if (!group || !field || !isDatabaseGroupableFieldType(fieldType)) {
-      return { ...EMPTY_GRID_GROUPING, rowOrders };
+      return { ...EMPTY_DATABASE_GROUPING, rowOrders };
     }
 
     const groupingFieldId = field.get(YjsDatabaseKey.id);
@@ -1834,7 +1837,7 @@ export function useGridGroupingSelector(): GridGrouping {
       ? groupByField(locallyMutatedRowOrders, groupingRows, field, undefined, content)
       : undefined;
     const ready = rowsHydrated;
-    const initializesLocalGroup = ready && hasPendingLocalGridGroupInitialization(group);
+    const initializesLocalGroup = ready && hasPendingLocalDatabaseGroupInitialization(group);
     const rawColumns = group.get(YjsDatabaseKey.groups)?.toArray() ?? [];
     const persistedColumns = normalizeUniqueDatabaseGroupColumns(rawColumns);
     const fallbackColumns = getFallbackGroupColumns(field);
@@ -1897,8 +1900,11 @@ export function useGridGroupingSelector(): GridGrouping {
         : []
       ).filter((id): id is string => typeof id === 'string')
     );
-    const gridLayoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('0');
-    const storedHideEmpty = gridLayoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
+    const layoutSetting =
+      layout === DatabaseViewLayout.List
+        ? view?.get(YjsDatabaseKey.layout_settings)?.get('4')
+        : view?.get(YjsDatabaseKey.layout_settings)?.get('0');
+    const storedHideEmpty = layoutSetting?.get(YjsDatabaseKey.hide_empty_groups);
     const hideEmptyGroups = storedHideEmpty === undefined ? true : Boolean(storedHideEmpty);
     const optionById = new Map(
       (parseSelectOptionTypeOptions(field)?.options ?? []).map((option) => [option.id, option] as const)
@@ -1912,7 +1918,7 @@ export function useGridGroupingSelector(): GridGrouping {
     const displayIds =
       primarySortCondition === undefined
         ? orderedIds
-        : orderGridGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
+        : orderDatabaseGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
     const groups = displayIds.map((id): GridGroup => {
       const groupRows = result?.get(id) ?? [];
       const hidden = columnsById.get(id)?.visible === false;
@@ -1962,12 +1968,21 @@ export function useGridGroupingSelector(): GridGrouping {
     groupingRows,
     groupingViewRevision,
     hasCellLocalMutation,
+    layout,
     metadataSyncKey,
     cellLocalMutationRevision,
     rowOrders,
     rowsHydrated,
     view,
   ]);
+}
+
+export function useGridGroupingSelector(): GridGrouping {
+  return useDatabaseGroupingSelector(DatabaseViewLayout.Grid);
+}
+
+export function useListGroupingSelector(): DatabaseGrouping {
+  return useDatabaseGroupingSelector(DatabaseViewLayout.List);
 }
 
 /**

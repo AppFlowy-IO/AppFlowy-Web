@@ -155,17 +155,19 @@ function VisibilityMenu({
   groups,
   setAllVisibility = jest.fn(),
   setVisibility = jest.fn(),
+  testIdPrefix,
 }: {
   groups: GridGroup[];
   setAllVisibility?: (groupIds: string[], visible: boolean) => void;
   setVisibility?: (groupId: string, visible: boolean) => void;
+  testIdPrefix?: string;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger>Open group visibility</DropdownMenuTrigger>
       <DropdownMenuContent>
-        <GridGroupVisibilityActions groups={groups} setAllVisibility={setAllVisibility} />
-        <GridGroupVisibilityList groups={groups} setVisibility={setVisibility} />
+        <GridGroupVisibilityActions groups={groups} setAllVisibility={setAllVisibility} testIdPrefix={testIdPrefix} />
+        <GridGroupVisibilityList groups={groups} setVisibility={setVisibility} testIdPrefix={testIdPrefix} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -186,6 +188,18 @@ async function openMenuWithKeyboard() {
 }
 
 describe('GridGroupVisibilityList', () => {
+  it('supports stable List visibility identifiers without changing Grid defaults', async () => {
+    render(<VisibilityMenu groups={[createGroup(1)]} testIdPrefix='list' />);
+    const trigger = screen.getByRole('button', { name: 'Open group visibility' });
+
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+
+    await waitFor(() => expect(screen.getByTestId('list-group-visibility-group-1')).toBeTruthy());
+    expect(screen.getByTestId('list-group-visibility-switch-group-1')).toBeTruthy();
+    expect(screen.queryByTestId('grid-group-visibility-group-1')).toBeNull();
+  });
+
   it('omits empty persisted dynamic groups while leaving static group choices unchanged', () => {
     const defaultGroup = { ...createGroup(0), id: 'field-id', isDefault: true };
     const populatedGroup = {

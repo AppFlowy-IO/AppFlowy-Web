@@ -116,25 +116,27 @@ export function Title({
       className={'flex w-full flex-col'}
     >
       <div className={cn('relative flex w-full justify-center', toolbarHeight)}>
-        <AddIconCover
-          iconTabs={['emoji']}
-          defaultIconTab={'emoji'}
-          visible={isHover}
-          hasIcon={!!icon}
-          hasCover={hasCover}
-          onUpdateIcon={handleUpdateIcon}
-          onAddCover={() => {
-            updateRowMeta(
-              RowMetaKey.CoverId,
-              JSON.stringify({
-                cover_type: RowCoverType.AssetCover,
-                data: 1,
-              })
-            );
-          }}
-          onUploadFile={onUploadFile}
-          contentClassName={templateStyle ? 'px-[60px] max-sm:px-6' : undefined}
-        />
+        {!readOnly ? (
+          <AddIconCover
+            iconTabs={['emoji']}
+            defaultIconTab={'emoji'}
+            visible={isHover}
+            hasIcon={!!icon}
+            hasCover={hasCover}
+            onUpdateIcon={handleUpdateIcon}
+            onAddCover={() => {
+              updateRowMeta(
+                RowMetaKey.CoverId,
+                JSON.stringify({
+                  cover_type: RowCoverType.AssetCover,
+                  data: 1,
+                })
+              );
+            }}
+            onUploadFile={onUploadFile}
+            contentClassName={templateStyle ? 'px-[60px] max-sm:px-6' : undefined}
+          />
+        ) : null}
         {templateStyle && icon ? (
           <div className={cn('absolute left-[60px] z-10 max-sm:left-6', hasCover ? 'bottom-0' : 'bottom-10')}>
             {renderIcon(true)}

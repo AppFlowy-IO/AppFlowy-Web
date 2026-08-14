@@ -588,6 +588,14 @@ export function useNewRowDispatch() {
             return;
           }
 
+          // Desktop deliberately leaves the primary title empty when a row is
+          // created under an active filter. The filtered-out row is completed
+          // through the row detail page; secondary fields can still inherit
+          // their filter values.
+          if (field.get(YjsDatabaseKey.is_primary)) {
+            return;
+          }
+
           if (isCalendar && calendarSetting?.fieldId === fieldId) {
             shouldOpenRowModal = true;
           }

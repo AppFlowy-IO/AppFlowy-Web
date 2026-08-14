@@ -275,6 +275,22 @@ export const DatabaseGridSelectors = {
 };
 
 /**
+ * Database List selectors
+ */
+export const DatabaseListSelectors = {
+  list: (page: Page) => page.getByTestId('database-list'),
+  rows: (page: Page) => page.locator('[data-testid^="list-row-"][data-row-id]'),
+  rowById: (page: Page, rowId: string) => page.getByTestId(`list-row-${rowId}`),
+  rowActionsById: (page: Page, rowId: string) => page.getByTestId(`list-row-actions-${rowId}`),
+  primaryCells: (page: Page) => page.locator('[data-testid^="list-primary-cell-"]'),
+  fieldsForField: (page: Page, fieldId: string) => page.locator(`[data-testid^="list-field-${fieldId}-"]`),
+  newRowButton: (page: Page) => page.getByTestId('list-new-row'),
+  groupHeaderById: (page: Page, groupId: string) => page.getByTestId(`list-group-header-${groupId}`),
+  groupFooterById: (page: Page, groupId: string) => page.getByTestId(`list-group-footer-${groupId}`),
+  loadMoreButton: (page: Page) => page.getByTestId('list-load-more'),
+};
+
+/**
  * Database View selectors
  */
 export const DatabaseViewSelectors = {
@@ -289,6 +305,7 @@ export const DatabaseViewSelectors = {
   gridView: (page: Page) => page.getByTestId('grid-view'),
   boardView: (page: Page) => page.locator('[data-testid*="board"]'),
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
+  listView: (page: Page) => page.getByTestId('database-list'),
   /**
    * Locator for a layout option inside the AddViewButton dropdown
    * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
@@ -518,6 +535,7 @@ export const AddPageSelectors = {
   addBoardButton: (page: Page) => page.getByTestId('add-board-button'),
   addAIChatButton: (page: Page) => page.getByTestId('add-ai-chat-button'),
   addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
+  addListButton: (page: Page) => page.getByTestId('add-list-button'),
   addImportButton: (page: Page) => page.getByTestId('add-import-button'),
 };
 
@@ -598,9 +616,12 @@ export const BoardSelectors = {
   mainColumns: (page: Page) => page.locator('.database-board .columns'),
   columns: (page: Page) => page.locator('[class*="board-column"], [data-testid*="board-column"]'),
   columnByName: (page: Page, name: string) =>
-    page.locator('.database-board .columns').getByTestId('board-column').filter({
-      has: page.getByTestId('board-column-name').getByText(name, { exact: true }),
-    }),
+    page
+      .locator('.database-board .columns')
+      .getByTestId('board-column')
+      .filter({
+        has: page.getByTestId('board-column-name').getByText(name, { exact: true }),
+      }),
   cards: (page: Page) => page.locator('.board-card'),
   cardByRowId: (page: Page, rowId: string) => page.locator(`[data-card-id*="${rowId}"]`),
   cardContent: (page: Page) => page.locator('.board-card .truncate'),
@@ -609,12 +630,14 @@ export const BoardSelectors = {
   addGroupButton: (page: Page) => page.locator('.database-board .columns').getByTestId('board-add-group-button'),
   addGroupInput: (page: Page) => page.getByTestId('board-add-group-input'),
   addGroupSubmit: (page: Page) => page.getByTestId('board-add-group-submit'),
-  hiddenGroupsToggle: (page: Page) =>
-    page.locator('.database-board .columns').getByTestId('board-hidden-groups-toggle'),
+  hiddenGroupsToggle: (page: Page) => page.locator('.database-board .columns').getByTestId('board-hidden-groups-toggle'),
   hiddenGroupByName: (page: Page, name: string) =>
-    page.locator('.database-board .columns').getByTestId('board-hidden-group').filter({
-      has: page.getByTestId('board-hidden-group-name').getByText(name, { exact: true }),
-    }),
+    page
+      .locator('.database-board .columns')
+      .getByTestId('board-hidden-group')
+      .filter({
+        has: page.getByTestId('board-hidden-group-name').getByText(name, { exact: true }),
+      }),
 };
 
 /**

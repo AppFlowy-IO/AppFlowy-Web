@@ -58,9 +58,14 @@ import {
   cloneYDatabaseGroupColumn,
   createYDatabaseGroupColumn,
   getDatabaseGroupColumnId,
-  markLocalGridGroupInitialization,
+  markLocalDatabaseGroupInitialization,
   normalizeDatabaseGroupColumn,
 } from '@/application/database-yjs/group-column';
+import {
+  initializeListLayoutSetting,
+  normalizeCreatedDatabaseListView,
+  removeCreatedDatabaseView,
+} from '@/application/database-yjs/list-layout';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
@@ -96,6 +101,7 @@ import {
   YDatabaseGroups,
   YDatabaseGridLayoutSetting,
   YDatabaseLayoutSettings,
+  YDatabaseListLayoutSetting,
   YDatabaseRow,
   YDatabaseSort,
   YDatabaseSorts,
@@ -294,9 +300,10 @@ export function useGroupByFieldDispatch() {
         sharedRoot,
         [
           () => {
-            const isGrid = Number(view.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Grid;
+            const layout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+            const supportsOptionalGrouping = layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List;
 
-            if (!isGrid) {
+            if (!supportsOptionalGrouping) {
               // Board keeps its existing behavior: a field cannot simultaneously
               // act as the grouping source and as a filter.
               const filters = view.get(YjsDatabaseKey.filters);
@@ -318,17 +325,17 @@ export function useGroupByFieldDispatch() {
 
             const group = generateGroupByField(field);
 
-            if (isGrid) markLocalGridGroupInitialization(group);
+            if (supportsOptionalGrouping) markLocalDatabaseGroupInitialization(group);
 
             // Only one group can exist at a time, so we clear the existing groups
             groups.delete(0, groups.length);
             groups.insert(0, [group]);
 
-            if (isGrid) {
-              const gridSetting = getOrCreateGridLayoutSetting(view);
+            if (supportsOptionalGrouping) {
+              const layoutSetting = getOrCreateDatabaseGroupingLayoutSetting(view, layout);
 
-              if (gridSetting.get(YjsDatabaseKey.hide_empty_groups) === undefined) {
-                gridSetting.set(YjsDatabaseKey.hide_empty_groups, true);
+              if (layoutSetting.get(YjsDatabaseKey.hide_empty_groups) === undefined) {
+                layoutSetting.set(YjsDatabaseKey.hide_empty_groups, true);
               }
             }
           },
@@ -372,8 +379,10 @@ export function useUpdateGroupContentDispatch() {
             const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
 
             if (!group) throw new Error('Group not found');
-            if (Number(view?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Grid) {
-              markLocalGridGroupInitialization(group);
+            const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+
+            if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+              markLocalDatabaseGroupInitialization(group);
             }
 
             group.set(YjsDatabaseKey.content, content);
@@ -418,8 +427,10 @@ export function useUpdateDateGroupConditionDispatch() {
             const replacement = generateGroupByField(field);
 
             replacement.set(YjsDatabaseKey.content, JSON.stringify({ ...configuration, condition }));
-            if (Number(view?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Grid) {
-              markLocalGridGroupInitialization(replacement);
+            const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+
+            if (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List) {
+              markLocalDatabaseGroupInitialization(replacement);
             }
 
             groups.delete(0, groups.length);
@@ -671,7 +682,7 @@ function setGroupColumnHidden({
   setGroupColumnsHidden({ ...options, columnIds: [columnId] });
 }
 
-export function useSyncGridGroupColumnsDispatch(groupId?: string) {
+export function useSyncDatabaseGroupColumnsDispatch(groupId?: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
@@ -791,11 +802,19 @@ export function useSyncGridGroupColumnsDispatch(groupId?: string) {
             }
           },
         ],
-        'syncGridGroupColumns'
+        'syncDatabaseGroupColumns'
       );
     },
     [groupId, sharedRoot, view]
   );
+}
+
+export function useSyncGridGroupColumnsDispatch(groupId?: string) {
+  return useSyncDatabaseGroupColumnsDispatch(groupId);
+}
+
+export function useSyncListGroupColumnsDispatch(groupId?: string) {
+  return useSyncDatabaseGroupColumnsDispatch(groupId);
 }
 
 function readShownEmptyGroupIds(layoutSetting: YDatabaseBoardLayoutSetting) {
@@ -891,7 +910,10 @@ function getOrCreateBoardLayoutSetting(view: YDatabaseView) {
   return layoutSetting;
 }
 
-function getOrCreateGridLayoutSetting(view: YDatabaseView) {
+function getOrCreateDatabaseGroupingLayoutSetting(
+  view: YDatabaseView,
+  layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List
+): YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting {
   let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
 
   if (!layoutSettings) {
@@ -899,17 +921,17 @@ function getOrCreateGridLayoutSetting(view: YDatabaseView) {
     view.set(YjsDatabaseKey.layout_settings, layoutSettings);
   }
 
-  let layoutSetting = layoutSettings.get('0');
+  let layoutSetting = layout === DatabaseViewLayout.List ? layoutSettings.get('4') : layoutSettings.get('0');
 
   if (!layoutSetting) {
-    layoutSetting = new Y.Map() as YDatabaseGridLayoutSetting;
-    layoutSettings.set('0', layoutSetting);
+    layoutSetting = new Y.Map() as YDatabaseGridLayoutSetting | YDatabaseListLayoutSetting;
+    layoutSettings.set(String(layout), layoutSetting);
   }
 
   return layoutSetting;
 }
 
-export function useToggleGridHideEmptyGroups() {
+export function useToggleDatabaseHideEmptyGroups(layout: DatabaseViewLayout.Grid | DatabaseViewLayout.List) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
@@ -919,18 +941,26 @@ export function useToggleGridHideEmptyGroups() {
         sharedRoot,
         [
           () => {
-            if (!view) throw new Error('Unable to toggle Grid empty groups');
-            getOrCreateGridLayoutSetting(view).set(YjsDatabaseKey.hide_empty_groups, hide);
+            if (!view) throw new Error('Unable to toggle database empty groups');
+            getOrCreateDatabaseGroupingLayoutSetting(view, layout).set(YjsDatabaseKey.hide_empty_groups, hide);
           },
         ],
-        'toggleGridHideEmptyGroups'
+        'toggleDatabaseHideEmptyGroups'
       );
     },
-    [sharedRoot, view]
+    [layout, sharedRoot, view]
   );
 }
 
-export function useSetGridGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
+export function useToggleGridHideEmptyGroups() {
+  return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.Grid);
+}
+
+export function useToggleListHideEmptyGroups() {
+  return useToggleDatabaseHideEmptyGroups(DatabaseViewLayout.List);
+}
+
+export function useSetDatabaseGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
   const view = useDatabaseView();
   const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
@@ -941,7 +971,7 @@ export function useSetGridGroupVisibilityDispatch(groupId?: string, fieldId?: st
         sharedRoot,
         [
           () => {
-            if (!view || !groupId || !fieldId) throw new Error('Grid group not found');
+            if (!view || !groupId || !fieldId) throw new Error('Database group not found');
             setGroupColumnHidden({
               allowDynamicColumn: true,
               columnId,
@@ -954,14 +984,22 @@ export function useSetGridGroupVisibilityDispatch(groupId?: string, fieldId?: st
             });
           },
         ],
-        'setGridGroupVisibility'
+        'setDatabaseGroupVisibility'
       );
     },
     [fieldId, fields, groupId, sharedRoot, view]
   );
 }
 
-export function useSetAllGridGroupsVisibilityDispatch(groupId?: string, fieldId?: string) {
+export function useSetGridGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
+  return useSetDatabaseGroupVisibilityDispatch(groupId, fieldId);
+}
+
+export function useSetListGroupVisibilityDispatch(groupId?: string, fieldId?: string) {
+  return useSetDatabaseGroupVisibilityDispatch(groupId, fieldId);
+}
+
+export function useSetAllDatabaseGroupsVisibilityDispatch(groupId?: string, fieldId?: string) {
   const view = useDatabaseView();
   const fields = useDatabaseFields();
   const sharedRoot = useSharedRoot();
@@ -972,7 +1010,7 @@ export function useSetAllGridGroupsVisibilityDispatch(groupId?: string, fieldId?
         sharedRoot,
         [
           () => {
-            if (!view || !groupId || !fieldId) throw new Error('Grid group not found');
+            if (!view || !groupId || !fieldId) throw new Error('Database group not found');
             setGroupColumnsHidden({
               allowDynamicColumn: true,
               columnIds,
@@ -985,14 +1023,22 @@ export function useSetAllGridGroupsVisibilityDispatch(groupId?: string, fieldId?
             });
           },
         ],
-        'setAllGridGroupsVisibility'
+        'setAllDatabaseGroupsVisibility'
       );
     },
     [fieldId, fields, groupId, sharedRoot, view]
   );
 }
 
-export function useToggleGridGroupCollapsedDispatch(groupId?: string) {
+export function useSetAllGridGroupsVisibilityDispatch(groupId?: string, fieldId?: string) {
+  return useSetAllDatabaseGroupsVisibilityDispatch(groupId, fieldId);
+}
+
+export function useSetAllListGroupsVisibilityDispatch(groupId?: string, fieldId?: string) {
+  return useSetAllDatabaseGroupsVisibilityDispatch(groupId, fieldId);
+}
+
+export function useToggleDatabaseGroupCollapsedDispatch(groupId?: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
@@ -1007,7 +1053,7 @@ export function useToggleGridGroupCollapsedDispatch(groupId?: string) {
               ?.toArray()
               .find((candidate) => candidate.get(YjsDatabaseKey.id) === groupId);
 
-            if (!group) throw new Error('Grid group not found');
+            if (!group) throw new Error('Database group not found');
 
             const stored = group.get(YjsDatabaseKey.collapsed_group_ids) as unknown;
             const ids = new Set<string>(
@@ -1025,11 +1071,19 @@ export function useToggleGridGroupCollapsedDispatch(groupId?: string) {
             group.set(YjsDatabaseKey.collapsed_group_ids, next);
           },
         ],
-        'toggleGridGroupCollapsed'
+        'toggleDatabaseGroupCollapsed'
       );
     },
     [groupId, sharedRoot, view]
   );
+}
+
+export function useToggleGridGroupCollapsedDispatch(groupId?: string) {
+  return useToggleDatabaseGroupCollapsedDispatch(groupId);
+}
+
+export function useToggleListGroupCollapsedDispatch(groupId?: string) {
+  return useToggleDatabaseGroupCollapsedDispatch(groupId);
 }
 
 export function useToggleCollapsedHiddenGroupColumnDispatch() {
@@ -2470,7 +2524,7 @@ function useEnhanceCalendarLayoutByFieldExists() {
  */
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
-  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, loadViewMeta, isDocumentBlock } =
+  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, deletePage, loadViewMeta, isDocumentBlock } =
     useDatabaseContext();
   const sharedRoot = useSharedRoot();
 
@@ -2583,6 +2637,8 @@ export function useAddDatabaseView() {
         };
       })();
 
+      const existingViewIds = new Set(database?.get(YjsDatabaseKey.views)?.keys() ?? []);
+
       // Create new view as a child of the database container (or document for embedded linked views).
       const response = await createDatabaseView(requestViewId, {
         parent_view_id: tabsParentViewId,
@@ -2593,13 +2649,53 @@ export function useAddDatabaseView() {
         embedded: isDocumentBlock ?? false,
       });
 
-      if (response?.database_update?.length) {
+      if (response.database_update?.length) {
         applyYDoc(databaseDoc, new Uint8Array(response.database_update));
+      }
+
+      if (layout === DatabaseViewLayout.List) {
+        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
+        const createdViewWasNew = !existingViewIds.has(response.view_id);
+        const isExactReturnedView =
+          Boolean(response.view_id) &&
+          createdViewWasNew &&
+          response.database_id === databaseId &&
+          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
+
+        if (
+          !isExactReturnedView ||
+          normalizeCreatedDatabaseListView(databaseDoc, response.view_id) !== response.view_id
+        ) {
+          if (response.view_id && createdViewWasNew) {
+            removeCreatedDatabaseView(databaseDoc, response.view_id);
+
+            try {
+              await deletePage?.(response.view_id);
+            } catch (error) {
+              Log.warn('[useAddDatabaseView] failed to roll back an invalid List view', {
+                viewId: response.view_id,
+                error,
+              });
+            }
+          }
+
+          throw new Error('The server did not return the requested List database view');
+        }
       }
 
       return response.view_id;
     },
-    [createDatabaseView, databaseDoc, databasePageId, databaseId, activeViewId, loadViewMeta, isDocumentBlock]
+    [
+      createDatabaseView,
+      database,
+      databaseDoc,
+      databasePageId,
+      databaseId,
+      activeViewId,
+      deletePage,
+      loadViewMeta,
+      isDocumentBlock,
+    ]
   );
 }
 
@@ -2654,7 +2750,24 @@ export function useUpdateDatabaseLayout(viewId: string) {
               view.set(YjsDatabaseKey.layout_settings, layoutSettings);
             }
 
+            if (layout === DatabaseViewLayout.List) {
+              const groups = view.get(YjsDatabaseKey.groups);
+
+              if (groups?.length) groups.delete(0, groups.length);
+              initializeListLayoutSetting(view);
+            }
+
             if (currentLayout === DatabaseViewLayout.Board && layout === DatabaseViewLayout.Grid) {
+              const groups = view.get(YjsDatabaseKey.groups);
+
+              if (groups?.length) groups.delete(0, groups.length);
+            }
+
+            if (
+              currentLayout === DatabaseViewLayout.List &&
+              layout !== DatabaseViewLayout.List &&
+              layout !== DatabaseViewLayout.Board
+            ) {
               const groups = view.get(YjsDatabaseKey.groups);
 
               if (groups?.length) groups.delete(0, groups.length);

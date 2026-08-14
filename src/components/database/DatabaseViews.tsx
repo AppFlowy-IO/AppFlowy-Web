@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
@@ -15,9 +15,11 @@ import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
+import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import {
   getDatabaseViewportStyle,
   shouldAutoShrinkDatabaseViewport,
+  shouldScrollEmbeddedDatabaseViewport,
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
@@ -33,6 +35,8 @@ import {
 import { Log } from '@/utils/log';
 
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
+
+const List = lazy(() => import('@/components/database/list/List'));
 
 function DatabaseViews({
   onChangeView,
@@ -338,6 +342,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.List:
+        return <List />;
       case DatabaseViewLayout.Gallery:
         return <UnsupportedView />;
       default:
@@ -355,6 +360,11 @@ function DatabaseViews({
     layout: effectiveLayout,
   });
   const viewportStyle = getDatabaseViewportStyle({
+    embeddedHeight: fixedHeight,
+    isDocumentBlock,
+    layout: effectiveLayout,
+  });
+  const shouldScrollEmbeddedViewport = shouldScrollEmbeddedDatabaseViewport({
     embeddedHeight: fixedHeight,
     isDocumentBlock,
     layout: effectiveLayout,
@@ -394,7 +404,9 @@ function DatabaseViews({
           'relative flex w-full flex-col',
           shouldUseFixedViewport
             ? shouldAutoShrinkViewport
-              ? 'min-h-0 overflow-hidden'
+              ? shouldScrollEmbeddedViewport
+                ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+                : 'min-h-0 overflow-hidden'
               : 'h-full min-h-0 flex-1 overflow-hidden'
             : 'overflow-visible'
         )}
@@ -416,7 +428,14 @@ function DatabaseViews({
     </DatabaseConditionsContext.Provider>
   );
 
-  return effectiveLayout === DatabaseViewLayout.Grid ? <GridGroupingProvider>{content}</GridGroupingProvider> : content;
+  switch (effectiveLayout) {
+    case DatabaseViewLayout.Grid:
+      return <GridGroupingProvider>{content}</GridGroupingProvider>;
+    case DatabaseViewLayout.List:
+      return <ListGroupingProvider>{content}</ListGroupingProvider>;
+    default:
+      return content;
+  }
 }
 
 export default DatabaseViews;

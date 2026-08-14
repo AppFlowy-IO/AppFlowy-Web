@@ -63,7 +63,7 @@ describe('DatabaseActions template support', () => {
     expect(screen.getByTestId('database-template-button')).toBeTruthy();
   });
 
-  it('keeps sorting limited to the grid layout', () => {
+  it('shows sorting in grid and list layouts', () => {
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
 
     const { rerender } = render(<DatabaseActions />);
@@ -71,6 +71,11 @@ describe('DatabaseActions template support', () => {
     expect(screen.queryByTestId('sorts-button')).toBeNull();
 
     mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+    rerender(<DatabaseActions />);
+
+    expect(screen.getByTestId('sorts-button')).toBeTruthy();
+
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.List);
     rerender(<DatabaseActions />);
 
     expect(screen.getByTestId('sorts-button')).toBeTruthy();

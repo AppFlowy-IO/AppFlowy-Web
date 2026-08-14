@@ -186,10 +186,16 @@ export async function createDocumentPageAndNavigate(page: Page): Promise<string>
 /**
  * Inserts a linked database into the current document editor via the slash menu.
  */
-export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string, dbName: string): Promise<void> {
+export async function insertLinkedDatabaseViaSlash(
+  page: Page,
+  docViewId: string,
+  dbName: string,
+  layout: 'Grid' | 'List' = 'Grid'
+): Promise<void> {
   const editor = page.locator(`#editor-${docViewId}`);
   await expect(editor).toBeVisible({ timeout: 15000 });
-  const initialBlockCount = await editor.locator(BlockSelectors.blockSelector('grid')).count();
+  const blockType = layout === 'List' ? 'list' : 'grid';
+  const initialBlockCount = await editor.locator(BlockSelectors.blockSelector(blockType)).count();
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -200,7 +206,9 @@ export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string
 
       const slashPanel = SlashCommandSelectors.slashPanel(page);
       await expect(slashPanel).toBeVisible({ timeout: 10000 });
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+      const slashMenuKey = layout === 'List' ? 'linkedList' : 'linkedGrid';
+
+      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName(slashMenuKey)).first().click({ force: true });
       await page.waitForTimeout(1000);
 
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
@@ -229,7 +237,7 @@ export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string
       lastError = e;
     }
 
-    if ((await editor.locator(BlockSelectors.blockSelector('grid')).count()) > initialBlockCount) {
+    if ((await editor.locator(BlockSelectors.blockSelector(blockType)).count()) > initialBlockCount) {
       return;
     }
 

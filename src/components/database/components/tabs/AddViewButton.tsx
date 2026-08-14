@@ -7,12 +7,7 @@ import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -107,18 +102,15 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
           {t('chart.menuName')}
         </DropdownMenuItem>
 
-        {/* List - Desktop Only */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <DropdownMenuItem disabled>
-                <ViewIcon layout={ViewLayout.List} size={'small'} />
-                {t('list.menuName')}
-              </DropdownMenuItem>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
-        </Tooltip>
+        <DropdownMenuItem
+          data-testid='add-list-view-button'
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.List, t('list.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.List} size={'small'} />
+          {t('list.menuName')}
+        </DropdownMenuItem>
 
         {/* Gallery - Desktop Only */}
         <Tooltip>

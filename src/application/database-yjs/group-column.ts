@@ -6,19 +6,25 @@ import type { YDatabaseGroup, YDatabaseGroupColumn } from '@/application/types';
 // Local-only provenance. Never persist this bit into the collaborative map:
 // remote/Desktop-created groups must not gain initialization authority merely
 // because their structure matches a group Web could create.
-const pendingLocalGridGroupInitializations = new WeakSet<YDatabaseGroup>();
+const pendingLocalDatabaseGroupInitializations = new WeakSet<YDatabaseGroup>();
 
-export function markLocalGridGroupInitialization(group: YDatabaseGroup) {
-  pendingLocalGridGroupInitializations.add(group);
+export function markLocalDatabaseGroupInitialization(group: YDatabaseGroup) {
+  pendingLocalDatabaseGroupInitializations.add(group);
 }
 
-export function hasPendingLocalGridGroupInitialization(group: YDatabaseGroup) {
-  return pendingLocalGridGroupInitializations.has(group);
+export function hasPendingLocalDatabaseGroupInitialization(group: YDatabaseGroup) {
+  return pendingLocalDatabaseGroupInitializations.has(group);
 }
 
-export function consumeLocalGridGroupInitialization(group: YDatabaseGroup) {
-  return pendingLocalGridGroupInitializations.delete(group);
+export function consumeLocalDatabaseGroupInitialization(group: YDatabaseGroup) {
+  return pendingLocalDatabaseGroupInitializations.delete(group);
 }
+
+// Compatibility aliases for the Grid grouping UI. List and Grid now share
+// the same metadata initialization lifecycle.
+export const markLocalGridGroupInitialization = markLocalDatabaseGroupInitialization;
+export const hasPendingLocalGridGroupInitialization = hasPendingLocalDatabaseGroupInitialization;
+export const consumeLocalGridGroupInitialization = consumeLocalDatabaseGroupInitialization;
 
 export interface DatabaseGroupColumn {
   id: string;

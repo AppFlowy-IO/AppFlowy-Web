@@ -38,6 +38,7 @@ export enum BlockType {
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  ListBlock = 'list',
   ChartBlock = 'chart',
   OutlineBlock = 'outline',
   TableBlock = 'table',
@@ -614,6 +615,13 @@ export enum YjsDatabaseKey {
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
   hide_empty_groups = 'hide_empty_groups',
+  display_mode = 'display_mode',
+  visible_field_ids = 'visible_field_ids',
+  show_cover = 'show_cover',
+  show_icon = 'show_icon',
+  card_width = 'card_width',
+  group_field_id = 'group_field_id',
+  show_field_names = 'show_field_names',
   shown_empty_group_ids = 'shown_empty_group_ids',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
@@ -913,6 +921,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Chart
   get(key: '3'): YDatabaseChartLayoutSetting;
+
+  // DatabaseViewLayout.List
+  get(key: '4'): YDatabaseListLayoutSetting;
 }
 
 export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
@@ -937,6 +948,19 @@ export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
   get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
   get(key: 'xFieldId' | 'yFieldId'): string | undefined;
   get(key: 'showEmptyValues' | 'cumulative'): boolean;
+}
+
+export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.display_mode | YjsDatabaseKey.card_width): number;
+  get(key: YjsDatabaseKey.visible_field_ids): string[];
+  get(key: YjsDatabaseKey.group_field_id): string | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.show_cover
+      | YjsDatabaseKey.show_icon
+      | YjsDatabaseKey.show_field_names
+      | YjsDatabaseKey.hide_empty_groups
+  ): boolean;
 }
 
 export interface YDatabaseGroup extends Y.Map<unknown> {
@@ -1128,6 +1152,7 @@ export const layoutMap = {
   [ViewLayout.Board]: 'board',
   [ViewLayout.Calendar]: 'calendar',
   [ViewLayout.Chart]: 'chart',
+  [ViewLayout.List]: 'list',
 };
 
 export const databaseLayoutMap = {
@@ -1135,6 +1160,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Board]: 'board',
   [DatabaseViewLayout.Calendar]: 'calendar',
   [DatabaseViewLayout.Chart]: 'chart',
+  [DatabaseViewLayout.List]: 'list',
 };
 
 export enum FontLayout {

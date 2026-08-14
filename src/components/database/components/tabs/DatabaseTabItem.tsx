@@ -111,6 +111,8 @@ export const DatabaseTabItem = memo(
           return 'Calendar';
         case DatabaseViewLayout.Chart:
           return 'Chart';
+        case DatabaseViewLayout.List:
+          return 'List';
         default:
           return t('untitled');
       }
@@ -130,6 +132,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.Calendar
         : databaseLayout === DatabaseViewLayout.Chart
         ? ViewLayout.Chart
+        : databaseLayout === DatabaseViewLayout.List
+        ? ViewLayout.List
         : ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu

@@ -16,7 +16,12 @@ import {
   YDocWithMeta,
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
-import { getDatabaseIdFromExtra, getFirstChildView, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
+import {
+  getDatabaseIdFromExtra,
+  getFirstChildView,
+  isDatabaseContainer,
+  isDatabaseLayout,
+} from '@/application/view-utils';
 import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
@@ -227,20 +232,14 @@ export function useViewOperations({
         const layout = isSubDocument ? ViewLayout.Document : view?.layout;
         const databaseIdHint = !isSubDocument
           ? options?.databaseId ??
-            (
-              layout !== undefined && isDatabaseLayout(layout)
-                ? getDatabaseIdFromExtra(view)
-                : undefined
-            )
+            (layout !== undefined && isDatabaseLayout(layout) ? getDatabaseIdFromExtra(view) : undefined)
           : undefined;
 
         // Use view-loader to open document (handles cache vs fetch)
-        let { doc, collabType: detectedCollabType } = await openView(
-          currentWorkspaceId,
-          viewId,
-          layout,
-          { databaseId: databaseIdHint }
-        );
+        let { doc, collabType: detectedCollabType } = await openView(currentWorkspaceId, viewId, layout, {
+          databaseId: databaseIdHint,
+          forceFetch: options?.forceFetch,
+        });
 
         // Use detected collab type, or override for sub-documents
         let collabType = isSubDocument ? Types.Document : detectedCollabType;
@@ -259,7 +258,10 @@ export function useViewOperations({
         });
 
         if (collabType === Types.Database && !databaseIdHint && collabObjectId !== viewId) {
-          const canonical = await openView(currentWorkspaceId, viewId, layout, { databaseId: collabObjectId });
+          const canonical = await openView(currentWorkspaceId, viewId, layout, {
+            databaseId: collabObjectId,
+            forceFetch: options?.forceFetch,
+          });
 
           doc = canonical.doc;
           detectedCollabType = canonical.collabType;
@@ -451,6 +453,7 @@ export function useViewOperations({
           case ViewLayout.Board:
           case ViewLayout.Calendar:
           case ViewLayout.Chart:
+          case ViewLayout.List:
             searchParams.set('r', blockId);
             break;
           default:
@@ -511,17 +514,14 @@ export function useViewOperations({
 
           doc.version = versionId;
 
-          Y.transact(
-            doc,
-            () => {
-              try {
-                Y.applyUpdate(doc, docState);
-              } catch (e) {
-                Log.error('Error applying Yjs update for document version preview', e);
-                throw e;
-              }
+          Y.transact(doc, () => {
+            try {
+              Y.applyUpdate(doc, docState);
+            } catch (e) {
+              Log.error('Error applying Yjs update for document version preview', e);
+              throw e;
             }
-          );
+          });
 
           return doc;
         }

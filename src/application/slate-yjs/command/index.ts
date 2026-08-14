@@ -2,6 +2,7 @@ import isEqual from 'lodash-es/isEqual';
 import { BasePoint, BaseRange, Editor, Element, Node, NodeEntry, Path, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { LIST_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -43,7 +44,11 @@ import {
   reorderRow,
   updateTableData,
 } from '@/application/slate-yjs/utils/simple-table-operations';
-import { ensureValidSelection, findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
+import {
+  ensureValidSelection,
+  findNearestValidSelection,
+  isValidSelection,
+} from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
   deepCopyBlock,
@@ -516,11 +521,7 @@ export const CustomEditor = {
       const [node, path] = entry;
       const data = (node.data || {}) as ToggleListBlockData;
 
-      Transforms.setNodes(
-        editor,
-        { data: { ...data, collapsed: !data.collapsed } } as Partial<Element>,
-        { at: path }
-      );
+      Transforms.setNodes(editor, { data: { ...data, collapsed: !data.collapsed } } as Partial<Element>, { at: path });
       return;
     }
 
@@ -840,16 +841,9 @@ export const CustomEditor = {
       return;
     }
 
-    // Skip focus and selection for database blocks (Grid, Board, Calendar, Chart)
-    // as they open in a modal and don't need cursor positioning
-    const isDatabaseBlock = [
-      BlockType.GridBlock,
-      BlockType.BoardBlock,
-      BlockType.CalendarBlock,
-      BlockType.ChartBlock,
-    ].includes(type);
-
-    if (isDatabaseBlock) {
+    // Skip focus and selection for database blocks as they open in a modal and
+    // don't need cursor positioning.
+    if (isDatabaseBlockType(type)) {
       return newBlockId;
     }
 

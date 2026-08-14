@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
@@ -12,6 +13,7 @@ import {
   useAppOperations,
   useCurrentWorkspaceId,
   useOpenPageModal,
+  useScheduleDeferredCleanup,
   useToView,
 } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -19,8 +21,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
-  const { addPage } = useAppOperations();
+  const { addPage, bindViewSync, createDatabaseView, deletePage, deleteTrash, loadView, loadViewMeta, updatePage } =
+    useAppOperations();
   const openPageModal = useOpenPageModal();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -36,7 +40,30 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       try {
         // Append after the last child so the new page appears at the bottom.
         // When prev_view_id is omitted the backend prepends (inserts at index 0).
-        const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
+        const response =
+          layout === ViewLayout.List
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('List creation is not available right now');
+                }
+
+                return createDatabaseListPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
 
         if (layout === ViewLayout.AIChat && currentWorkspaceId) {
           try {
@@ -79,7 +106,24 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         toast.error(e.message);
       }
     },
-    [addPage, aiEnabled, currentWorkspaceId, openPageModal, t, toView, view, lastChildViewId]
+    [
+      addPage,
+      aiEnabled,
+      bindViewSync,
+      createDatabaseView,
+      currentWorkspaceId,
+      deletePage,
+      deleteTrash,
+      lastChildViewId,
+      loadView,
+      loadViewMeta,
+      openPageModal,
+      scheduleDeferredCleanup,
+      t,
+      toView,
+      updatePage,
+      view,
+    ]
   );
 
   const actions: {
@@ -144,10 +188,10 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       {
         label: t('list.menuName'),
         icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,
-        disabled: true,
-        tooltip: t('common.desktopOnly'),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onSelect: () => {},
+        testId: 'add-list-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.List, t('document.plugins.database.newDatabase'));
+        },
       },
       {
         label: t('gallery.menuName'),
