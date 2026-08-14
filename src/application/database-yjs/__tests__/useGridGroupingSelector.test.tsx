@@ -9,8 +9,10 @@ import {
   FilterType,
   SortCondition,
   TextFilterCondition,
+  useDatabaseGroupingSelector,
   useGroupByFieldDispatch,
   useGridGroupingSelector,
+  useListGroupingSelector,
   useUpdateCellDispatch,
   useUpdateDateGroupConditionDispatch,
   useUpdateGroupContentDispatch,
@@ -186,6 +188,48 @@ describe('useGridGroupingSelector refresh behavior', () => {
     useSyncGridGroupingMetadata(grouping);
     return grouping;
   };
+
+  it('uses List layout slot 4 through the generic selector and List alias', async () => {
+    const fixture = createGridGroupingFixture();
+    const listLayoutSetting = new Y.Map<unknown>();
+
+    listLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
+    fixture.view.get(YjsDatabaseKey.layout_settings).set('4', listLayoutSetting);
+    fixture.view.set(YjsDatabaseKey.layout, DatabaseViewLayout.List);
+    const { result, unmount } = renderHook(
+      () => ({
+        generic: useDatabaseGroupingSelector(DatabaseViewLayout.List),
+        list: useListGroupingSelector(),
+      }),
+      { wrapper: fixture.wrapper }
+    );
+
+    await waitFor(() => {
+      expect(result.current.generic.hideEmptyGroups).toBe(false);
+      expect(result.current.list.hideEmptyGroups).toBe(false);
+      expect(result.current.list.visibleGroups.map(({ id }) => id)).toEqual(['name', 'A', 'B']);
+    });
+
+    act(() => {
+      listLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, true);
+    });
+
+    await waitFor(() => {
+      expect(result.current.generic.hideEmptyGroups).toBe(true);
+      expect(result.current.list.hideEmptyGroups).toBe(true);
+      expect(result.current.list.visibleGroups.map(({ id }) => id)).toEqual(['A', 'B']);
+    });
+
+    act(() => {
+      fixture.gridLayoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
+    });
+    expect(result.current.list.hideEmptyGroups).toBe(true);
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
 
   it('refreshes group membership immediately after the grouping cell changes', async () => {
     const fixture = createGridGroupingFixture();

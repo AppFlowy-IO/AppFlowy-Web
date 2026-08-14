@@ -39,6 +39,7 @@ import {
   findDuplicatedContainerChild,
   getDatabaseLayoutFromBlockType,
   isDatabaseBlockType,
+  loadDatabaseDuplicateSourceViews,
 } from './databaseDuplicateUtils';
 
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
@@ -279,7 +280,11 @@ function ControlsMenu({
       const isLinkedDuplicate = firstSourceView.parent_view_id === parentId;
 
       if (isLinkedDuplicate) {
-        const sourceViews = await Promise.all(sourceViewIds.map((id) => loadViewMeta(id).catch(() => null)));
+        const sourceViews = await loadDatabaseDuplicateSourceViews({
+          sourceViewIds,
+          firstSourceView,
+          loadViewMeta,
+        });
 
         const duplicatedViewIds = await Promise.all(
           sourceViewIds.map(async (_, i) => {

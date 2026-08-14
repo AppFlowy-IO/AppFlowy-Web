@@ -11,6 +11,8 @@ describe('shouldUseFixedGlobalCommentInput', () => {
     expect(shouldUseFixedGlobalCommentInput(ViewLayout.Grid)).toBe(false);
     expect(shouldUseFixedGlobalCommentInput(ViewLayout.Board)).toBe(false);
     expect(shouldUseFixedGlobalCommentInput(ViewLayout.Calendar)).toBe(false);
+    expect(shouldUseFixedGlobalCommentInput(ViewLayout.Chart)).toBe(false);
+    expect(shouldUseFixedGlobalCommentInput(ViewLayout.List)).toBe(false);
   });
 
   it('keeps the sticky comment input when the view layout is not loaded yet', () => {

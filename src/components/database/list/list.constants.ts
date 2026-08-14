@@ -1,0 +1,10 @@
+export const LIST_ROW_HEIGHT = 36;
+export const LIST_ROW_ACTIONS_WIDTH = 40;
+export const LIST_PROPERTY_WIDTH = 140;
+export const LIST_PRIMARY_MIN_WIDTH = 160;
+
+export const LIST_INITIAL_ROW_LIMIT = 50;
+export const LIST_LOAD_MORE_INCREMENT = 50;
+export const LIST_LOAD_MORE_THRESHOLD = 200;
+
+export const LIST_DESKTOP_INLINE_PADDING = 96;

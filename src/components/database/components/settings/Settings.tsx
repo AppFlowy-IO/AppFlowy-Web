@@ -5,6 +5,7 @@ import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import BoardSettings from '@/components/database/components/settings/BoardSettings';
 import CalendarSettings from '@/components/database/components/settings/CalendarSettings';
 import ChartSettings from '@/components/database/components/settings/ChartSettings';
+import ListSettings from '@/components/database/components/settings/ListSettings';
 
 import GridSettings from './GridSettings';
 
@@ -23,6 +24,8 @@ function Settings({ children }: { children: React.ReactNode }) {
         return CalendarSettings;
       case DatabaseViewLayout.Chart:
         return ChartSettings;
+      case DatabaseViewLayout.List:
+        return ListSettings;
       default:
         return null;
     }

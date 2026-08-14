@@ -10,7 +10,7 @@ import {
 } from './selectors';
 import { signInAndWaitForApp } from './auth-flow-helpers';
 
-export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart';
+export type DatabaseViewType = 'Grid' | 'Board' | 'Calendar' | 'Chart' | 'List';
 
 interface CreateDatabaseViewOptions {
   appReadyWaitMs?: number;
@@ -24,9 +24,9 @@ interface CreateDatabaseViewOptions {
  */
 export async function waitForAppReady(page: Page): Promise<void> {
   // Wait for either inline-add-page or new-page-button to be visible
-  await expect(
-    page.locator('[data-testid="inline-add-page"], [data-testid="new-page-button"]').first()
-  ).toBeVisible({ timeout: 20000 });
+  await expect(page.locator('[data-testid="inline-add-page"], [data-testid="new-page-button"]').first()).toBeVisible({
+    timeout: 20000,
+  });
 }
 
 /**
@@ -74,6 +74,8 @@ export async function createDatabaseView(
     await page.locator('[role="menuitem"]').filter({ hasText: 'Calendar' }).click({ force: true });
   } else if (viewType === 'Chart') {
     await AddPageSelectors.addChartButton(page).click({ force: true });
+  } else if (viewType === 'List') {
+    await AddPageSelectors.addListButton(page).click({ force: true });
   }
 
   await page.waitForTimeout(createWaitMs);
@@ -84,10 +86,7 @@ export async function createDatabaseView(
  * Robust version with retry and fallback via field header context menu.
  * Matches Cypress flow: click newPropertyButton → propertyTypeTrigger → select type.
  */
-export async function addPropertyColumn(
-  page: Page,
-  fieldType: number
-): Promise<void> {
+export async function addPropertyColumn(page: Page, fieldType: number): Promise<void> {
   // Click new property button via JS click to bypass the footer bar that covers it.
   // dispatchEvent('click') would bubble and create duplicates, so use evaluate instead.
   await PropertyMenuSelectors.newPropertyButton(page).first().scrollIntoViewIfNeeded();
@@ -107,7 +106,7 @@ export async function addPropertyColumn(
     await page.waitForTimeout(1000);
 
     const editProp = PropertyMenuSelectors.editPropertyMenuItem(page);
-    if (await editProp.count() > 0) {
+    if ((await editProp.count()) > 0) {
       await editProp.click({ force: true });
       await page.waitForTimeout(1000);
     }

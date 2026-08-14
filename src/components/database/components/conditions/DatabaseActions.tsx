@@ -19,7 +19,7 @@ export function DatabaseActions() {
   const conditionsContext = useConditionsContext();
   const { isDocumentBlock, navigateToView, databasePageId } = useDatabaseContext();
 
-  const showSorts = [DatabaseViewLayout.Grid].includes(layout);
+  const showSorts = [DatabaseViewLayout.Grid, DatabaseViewLayout.List].includes(layout);
   const showTemplates = [
     DatabaseViewLayout.Grid,
     DatabaseViewLayout.Board,

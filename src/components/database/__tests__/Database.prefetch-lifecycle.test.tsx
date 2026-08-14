@@ -312,14 +312,17 @@ describe('Database blob prefetch lifecycle', () => {
     mockedPrefetch.mockImplementation(() => new Promise(() => undefined));
   });
 
-  it('requests a complete row seed set for a grouped Board view', async () => {
+  it.each([
+    ['Board', DatabaseViewLayout.Board],
+    ['List', DatabaseViewLayout.List],
+  ])('requests a complete row seed set for a grouped %s view', async (_name, layout) => {
     const doc = createDatabaseDoc('database-id');
     const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
     const view = database?.get(YjsDatabaseKey.views)?.get('view-id');
     const groups = new Y.Array();
 
     groups.push([new Y.Map()]);
-    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    view?.set(YjsDatabaseKey.layout, layout);
     view?.set(YjsDatabaseKey.groups, groups);
 
     const { unmount } = render(<Database {...databaseProps(doc)} />);

@@ -467,7 +467,7 @@ function Database(props: Database2Props) {
     const fields = database?.get(YjsDatabaseKey.fields);
     const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
     const isGroupedView =
-      [DatabaseViewLayout.Grid, DatabaseViewLayout.Board].includes(layout) &&
+      [DatabaseViewLayout.Grid, DatabaseViewLayout.Board, DatabaseViewLayout.List].includes(layout) &&
       (view?.get(YjsDatabaseKey.groups)?.length ?? 0) > 0;
 
     return (

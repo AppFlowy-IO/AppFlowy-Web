@@ -161,6 +161,7 @@ export enum ViewLayout {
   Board = 2,
   Calendar = 3,
   AIChat = 4,
+  List = 6,
 }
 
 export interface View {

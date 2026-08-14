@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import {
   DatabaseContext,
   DatabaseContextState,
+  FieldVisibility,
   FieldType,
   useBoardLayoutSettings,
   useGroup,
@@ -13,11 +14,15 @@ import {
   useGroupByFieldDispatch,
   useReorderGroupColumnDispatch,
   useSetAllGridGroupsVisibilityDispatch,
+  useSetAllListGroupsVisibilityDispatch,
   useSetBoardColumnRenderedDispatch,
   useSetGridGroupVisibilityDispatch,
+  useSetListGroupVisibilityDispatch,
   useSyncGridGroupColumnsDispatch,
   useToggleGridGroupCollapsedDispatch,
   useToggleGridHideEmptyGroups,
+  useToggleListGroupCollapsedDispatch,
+  useToggleListHideEmptyGroups,
   useToggleHiddenGroupColumnDispatch,
   useToggleHideEmptyGroups,
   useToggleHideUnGrouped,
@@ -207,6 +212,32 @@ describe('useGroup', () => {
     expect(view?.get(YjsDatabaseKey.filters)?.length).toBe(1);
     expect(view?.get(YjsDatabaseKey.filters)?.get(0)).toBe(filter);
     expect(filter.get(YjsDatabaseKey.content)).toBe('VIP');
+  });
+
+  it('preserves a List filter and initializes List hide-empty metadata when grouping', () => {
+    const fieldId = 'field-id';
+    const viewId = 'list-view-id';
+    const databaseDoc = createDatabaseDoc({ fieldId, groupId: 'old-group', groupColumns: [], viewId });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filters = new Y.Array<Y.Map<unknown>>();
+    const filter = new Y.Map<unknown>();
+
+    filter.set(YjsDatabaseKey.id, 'list-filter');
+    filter.set(YjsDatabaseKey.field_id, fieldId);
+    filter.set(YjsDatabaseKey.content, 'VIP');
+    filters.push([filter]);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.List);
+    view?.set(YjsDatabaseKey.filters, filters);
+    view?.get(YjsDatabaseKey.groups)?.delete(0, 1);
+    const { result } = renderHook(useGroupByFieldDispatch, { wrapper: createWrapper(databaseDoc, viewId) });
+
+    act(() => result.current(fieldId));
+
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(view?.get(YjsDatabaseKey.filters)?.toArray()).toEqual([filter]);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('4')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(true);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.has('0')).toBe(false);
   });
 
   it('retains the existing Board behavior of removing a filter on the grouping field', () => {
@@ -505,6 +536,52 @@ describe('useGroup', () => {
     expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.collapsed_group_ids)?.toArray()).toEqual([]);
   });
 
+  it('persists List grouping visibility, hide-empty, and collapse through List dispatch aliases', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'list-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [
+        { id: fieldId, visible: true },
+        { id: 'A', visible: true },
+        { id: 'B', visible: true },
+      ],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.List);
+    const { result } = renderHook(
+      () => ({
+        setAllVisibility: useSetAllListGroupsVisibilityDispatch(groupId, fieldId),
+        setVisibility: useSetListGroupVisibilityDispatch(groupId, fieldId),
+        toggleCollapse: useToggleListGroupCollapsedDispatch(groupId),
+        toggleHideEmpty: useToggleListHideEmptyGroups(),
+      }),
+      { wrapper: createWrapper(databaseDoc, viewId) }
+    );
+
+    act(() => {
+      result.current.setVisibility('A', false);
+      result.current.setAllVisibility(['B'], false);
+      result.current.toggleCollapse('A', true);
+      result.current.toggleHideEmpty(false);
+    });
+
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.groups)?.toJSON()).toEqual([
+      { id: fieldId, visible: true },
+      { id: 'A', visible: false },
+      { id: 'B', visible: false },
+    ]);
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.collapsed_group_ids)?.toArray()).toEqual(['A']);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('4')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(false);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('1')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(false);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.has('0')).toBe(false);
+  });
+
   it('removes optional Grid grouping without affecting rows or fields', () => {
     const fieldId = 'field-id';
     const groupId = 'group-id';
@@ -570,6 +647,167 @@ describe('useGroup', () => {
 
     expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
     expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(0);
+  });
+
+  it("converts to an ungrouped List with Desktop's first-three-field visibility default", () => {
+    const primaryFieldId = 'field-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId: primaryFieldId,
+      groupId: 'board-group-id',
+      groupColumns: [{ id: primaryFieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const nonPrimaryFieldIds = ['field-1', 'field-2', 'field-3', 'field-4', 'field-5'];
+
+    fields?.get(primaryFieldId)?.set(YjsDatabaseKey.is_primary, true);
+    nonPrimaryFieldIds.forEach((fieldId) => {
+      const field = new Y.Map<unknown>();
+
+      field.set(YjsDatabaseKey.id, fieldId);
+      field.set(YjsDatabaseKey.type, FieldType.RichText);
+      fields?.set(fieldId, field);
+    });
+    fieldOrders.push([primaryFieldId, ...nonPrimaryFieldIds].map((id) => ({ id })));
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.field_settings, new Y.Map());
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.List));
+
+    const listSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('4');
+    const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.List);
+    expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(0);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('1')?.get(YjsDatabaseKey.hide_empty_groups)).toBe(false);
+    expect(listSetting?.toJSON()).toEqual({
+      card_width: 0,
+      display_mode: 1,
+      show_cover: true,
+      show_field_names: true,
+      show_icon: true,
+      visible_field_ids: [],
+    });
+    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
+    nonPrimaryFieldIds.forEach((fieldId, index) => {
+      expect(fieldSettings?.get(fieldId)?.get(YjsDatabaseKey.visibility)).toBe(
+        index < 2 ? FieldVisibility.AlwaysShown : FieldVisibility.AlwaysHidden
+      );
+    });
+  });
+
+  it("keeps List's primary field visible when it is ordered after Desktop's three-field cutoff", () => {
+    const primaryFieldId = 'field-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId: primaryFieldId,
+      groupId: 'board-group-id',
+      groupColumns: [{ id: primaryFieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const nonPrimaryFieldIds = ['field-1', 'field-2', 'field-3', 'field-4', 'field-5'];
+
+    fields?.get(primaryFieldId)?.set(YjsDatabaseKey.is_primary, true);
+    nonPrimaryFieldIds.forEach((fieldId) => {
+      const field = new Y.Map<unknown>();
+
+      field.set(YjsDatabaseKey.id, fieldId);
+      field.set(YjsDatabaseKey.type, FieldType.RichText);
+      fields?.set(fieldId, field);
+    });
+    fieldOrders.push(
+      [
+        nonPrimaryFieldIds[0],
+        nonPrimaryFieldIds[1],
+        nonPrimaryFieldIds[2],
+        nonPrimaryFieldIds[3],
+        primaryFieldId,
+        nonPrimaryFieldIds[4],
+      ].map((id) => ({ id }))
+    );
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.field_settings, new Y.Map());
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.List));
+
+    const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
+    nonPrimaryFieldIds.forEach((fieldId, index) => {
+      expect(fieldSettings?.get(fieldId)?.get(YjsDatabaseKey.visibility)).toBe(
+        index < 3 ? FieldVisibility.AlwaysShown : FieldVisibility.AlwaysHidden
+      );
+    });
+  });
+
+  it("ignores missing and duplicate field orders before applying List's three-field cutoff", () => {
+    const primaryFieldId = 'field-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId: primaryFieldId,
+      groupId: 'board-group-id',
+      groupColumns: [{ id: primaryFieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const nonPrimaryFieldIds = ['field-1', 'field-2', 'field-3', 'field-4'];
+
+    fields?.get(primaryFieldId)?.set(YjsDatabaseKey.is_primary, true);
+    nonPrimaryFieldIds.forEach((fieldId) => {
+      const field = new Y.Map<unknown>();
+
+      field.set(YjsDatabaseKey.id, fieldId);
+      field.set(YjsDatabaseKey.type, FieldType.RichText);
+      fields?.set(fieldId, field);
+    });
+    fieldOrders.push(
+      [
+        'missing-field',
+        primaryFieldId,
+        primaryFieldId,
+        nonPrimaryFieldIds[0],
+        nonPrimaryFieldIds[0],
+        nonPrimaryFieldIds[1],
+        nonPrimaryFieldIds[2],
+        nonPrimaryFieldIds[3],
+      ].map((id) => ({ id }))
+    );
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.field_settings, new Y.Map());
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.List));
+
+    const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
+    nonPrimaryFieldIds.forEach((fieldId, index) => {
+      expect(fieldSettings?.get(fieldId)?.get(YjsDatabaseKey.visibility)).toBe(
+        index < 2 ? FieldVisibility.AlwaysShown : FieldVisibility.AlwaysHidden
+      );
+    });
   });
 
   it('materializes fallback columns before persisting their visibility', async () => {
