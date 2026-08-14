@@ -37,6 +37,10 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.Chart,
         label: t('chart.menuName'),
       },
+      {
+        value: DatabaseViewLayout.List,
+        label: t('list.menuName'),
+      },
     ],
     [t]
   );

@@ -8,6 +8,7 @@ import { useConditionsContext } from '@/components/database/components/condition
 import FiltersButton from '@/components/database/components/conditions/FiltersButton';
 import SortsButton from '@/components/database/components/conditions/SortsButton';
 import Settings from '@/components/database/components/settings/Settings';
+import { DatabaseTemplateButton } from '@/components/database/components/template';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -18,10 +19,18 @@ export function DatabaseActions() {
   const conditionsContext = useConditionsContext();
   const { isDocumentBlock, navigateToView, databasePageId } = useDatabaseContext();
 
-  const showSorts = [DatabaseViewLayout.Grid].includes(layout);
+  const showSorts = [DatabaseViewLayout.Grid, DatabaseViewLayout.List].includes(layout);
+  const showTemplates = [
+    DatabaseViewLayout.Grid,
+    DatabaseViewLayout.Board,
+    DatabaseViewLayout.Calendar,
+    DatabaseViewLayout.Chart,
+    DatabaseViewLayout.List,
+    DatabaseViewLayout.Gallery,
+  ].includes(layout);
 
   return (
-    <div className='flex w-[120px] items-center justify-end gap-1.5'>
+    <div className='flex min-w-fit items-center justify-end gap-1.5'>
       <FiltersButton {...conditionsContext} />
       {showSorts && <SortsButton {...conditionsContext} />}
       <Settings>
@@ -53,6 +62,7 @@ export function DatabaseActions() {
           <TooltipContent>{t('tooltip.openAsPage')}</TooltipContent>
         </Tooltip>
       )}
+      {showTemplates ? <DatabaseTemplateButton /> : null}
     </div>
   );
 }

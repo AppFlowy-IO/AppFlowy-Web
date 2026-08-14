@@ -11,7 +11,6 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
-import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
 import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
 import { useAIEnabled } from '@/components/app/app.hooks';
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
@@ -25,10 +24,12 @@ function EventPopoverContent({
   rowId,
   onCloseEvent,
   onGotoDate,
+  onRequestDelete,
 }: {
   rowId: string;
   onCloseEvent: () => void;
   onGotoDate: (date: Date) => void;
+  onRequestDelete: () => void;
 }) {
   const readOnly = useReadOnly();
   const primaryFieldId = usePrimaryFieldId();
@@ -37,9 +38,6 @@ function EventPopoverContent({
   const navigateToRow = useNavigateToRow();
   const { t } = useTranslation();
   const [activePropertyId, setActivePropertyId] = useState<string | null>(null);
-
-  // State for delete confirmation dialog
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const fields = useFieldsSelector();
   const aiEnabled = useAIEnabled();
@@ -53,15 +51,8 @@ function EventPopoverContent({
   // Handle delete action
   const handleDelete = useCallback(() => {
     Log.debug('[EventPopoverContent] Delete button clicked for row:', rowId);
-    setShowDeleteConfirm(true);
-  }, [rowId]);
-
-  // Handle delete confirmation
-  const handleDeleteConfirm = useCallback(() => {
-    Log.debug('[EventPopoverContent] Delete confirmed for row:', rowId);
-    // Close the current popover after deletion
-    onCloseEvent();
-  }, [onCloseEvent, rowId]);
+    onRequestDelete();
+  }, [onRequestDelete, rowId]);
 
   // Handle duplicate action
   const handleDuplicate = useCallback(async () => {
@@ -165,13 +156,6 @@ function EventPopoverContent({
           );
         })}
       </div>
-      {/* Delete confirmation dialog */}
-      <DeleteRowConfirm
-        open={showDeleteConfirm}
-        onClose={() => setShowDeleteConfirm(false)}
-        rowIds={[rowId]}
-        onDeleted={handleDeleteConfirm}
-      />
     </div>
   );
 }

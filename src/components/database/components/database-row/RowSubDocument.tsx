@@ -1,8 +1,18 @@
 import { memo } from 'react';
 
 import { useReadOnly } from '@/application/database-yjs';
-import { DatabaseRowSubDocument } from './DatabaseRowSubDocument';
 import { PublishRowSubDocument } from '@/components/publish/PublishRowSubDocument';
+
+import { DatabaseRowSubDocument } from './DatabaseRowSubDocument';
+
+import type { EditorContentPadding } from '@/components/editor/EditorContext';
+import type { RegisterPendingRowDocumentMetaFlush } from './DatabaseRowSubDocument';
+
+interface RowSubDocumentProps {
+  rowId: string;
+  contentPadding?: EditorContentPadding;
+  onRegisterPendingMetaFlush?: RegisterPendingRowDocumentMetaFlush;
+}
 
 /**
  * RowSubDocument - A wrapper component that renders the appropriate
@@ -14,14 +24,20 @@ import { PublishRowSubDocument } from '@/components/publish/PublishRowSubDocumen
  * This separation follows the single responsibility principle and avoids
  * if-else branches within the components.
  */
-export const RowSubDocument = memo(({ rowId }: { rowId: string }) => {
+export const RowSubDocument = memo(({ rowId, contentPadding, onRegisterPendingMetaFlush }: RowSubDocumentProps) => {
   const readOnly = useReadOnly();
 
   if (readOnly) {
-    return <PublishRowSubDocument rowId={rowId} />;
+    return <PublishRowSubDocument rowId={rowId} contentPadding={contentPadding} />;
   }
 
-  return <DatabaseRowSubDocument rowId={rowId} />;
+  return (
+    <DatabaseRowSubDocument
+      rowId={rowId}
+      contentPadding={contentPadding}
+      onRegisterPendingMetaFlush={onRegisterPendingMetaFlush}
+    />
+  );
 });
 
 RowSubDocument.displayName = 'RowSubDocument';

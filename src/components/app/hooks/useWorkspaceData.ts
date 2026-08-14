@@ -718,6 +718,7 @@ export function useWorkspaceData() {
             ViewLayout.Board,
             ViewLayout.Grid,
             ViewLayout.Calendar,
+            ViewLayout.List,
           ]);
 
           if (firstView) {
@@ -750,6 +751,7 @@ export function useWorkspaceData() {
                   ViewLayout.Board,
                   ViewLayout.Grid,
                   ViewLayout.Calendar,
+                  ViewLayout.List,
                 ]);
 
                 if (firstChild) {
@@ -1457,9 +1459,7 @@ export function useWorkspaceData() {
 
           if (!isCurrentProbe()) return;
 
-          const diskChangedView = diskCachedNavigation
-            ? findView([diskCachedNavigation], changedViewId)
-            : null;
+          const diskChangedView = diskCachedNavigation ? findView([diskCachedNavigation], changedViewId) : null;
           const databaseId = cachedDatabaseId ?? diskChangedView?.extra?.database_id;
 
           ViewService.invalidateCache(workspaceId, changedViewId);

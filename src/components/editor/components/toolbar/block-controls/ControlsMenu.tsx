@@ -6,13 +6,14 @@ import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, View } from '@/application/types';
+import { BlockType, View, ViewLayout } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -39,6 +40,7 @@ import {
   findDuplicatedContainerChild,
   getDatabaseLayoutFromBlockType,
   isDatabaseBlockType,
+  loadDatabaseDuplicateSourceViews,
 } from './databaseDuplicateUtils';
 
 function getViewNoCache(workspaceId: string, viewId: string, depth: number = 1): Promise<View> {
@@ -225,7 +227,16 @@ function ControlsMenu({
   anchorEl: HTMLElement | null;
 }) {
   const { selectedBlockIds } = useEditorLocalState();
-  const { workspaceId, loadViewMeta, createDatabaseView, duplicatePage } = useEditorContext();
+  const {
+    workspaceId,
+    loadViewMeta,
+    loadView,
+    bindViewSync,
+    scheduleDeferredCleanup,
+    createDatabaseView,
+    deletePage,
+    duplicatePage,
+  } = useEditorContext();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
   const node = useMemo(() => {
@@ -279,7 +290,11 @@ function ControlsMenu({
       const isLinkedDuplicate = firstSourceView.parent_view_id === parentId;
 
       if (isLinkedDuplicate) {
-        const sourceViews = await Promise.all(sourceViewIds.map((id) => loadViewMeta(id).catch(() => null)));
+        const sourceViews = await loadDatabaseDuplicateSourceViews({
+          sourceViewIds,
+          firstSourceView,
+          loadViewMeta,
+        });
 
         const duplicatedViewIds = await Promise.all(
           sourceViewIds.map(async (_, i) => {
@@ -290,13 +305,30 @@ function ControlsMenu({
               throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
             }
 
-            const response = await createDatabaseView(parentId, {
-              parent_view_id: parentId,
-              database_id: databaseId,
-              layout,
-              name: sourceView?.name,
-              embedded: true,
-            });
+            const response =
+              layout === ViewLayout.List
+                ? await createLinkedDatabaseListView({
+                    requestViewId: parentId,
+                    sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+                    payload: {
+                      parent_view_id: parentId,
+                      database_id: databaseId,
+                      name: sourceView?.name,
+                      embedded: true,
+                    },
+                    createDatabaseView,
+                    loadView,
+                    bindViewSync,
+                    deletePage,
+                    scheduleDeferredCleanup,
+                  })
+                : await createDatabaseView(parentId, {
+                    parent_view_id: parentId,
+                    database_id: databaseId,
+                    layout,
+                    name: sourceView?.name,
+                    embedded: true,
+                  });
 
             return response.view_id;
           })
@@ -435,7 +467,18 @@ function ControlsMenu({
         databaseId: duplicatedContainer.databaseId,
       });
     },
-    [createDatabaseView, duplicateCopySuffix, duplicatePage, loadViewMeta, t, workspaceId]
+    [
+      bindViewSync,
+      createDatabaseView,
+      deletePage,
+      duplicateCopySuffix,
+      duplicatePage,
+      loadView,
+      loadViewMeta,
+      scheduleDeferredCleanup,
+      t,
+      workspaceId,
+    ]
   );
 
   const duplicateSelectedBlocks = useCallback(async () => {

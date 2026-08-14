@@ -4,6 +4,10 @@ import { usePublishContext } from '@/application/publish';
 import { UIVariant } from '@/application/types';
 import { OutlineDrawer } from '@/components/_shared/outline';
 import Outline from '@/components/_shared/outline/Outline';
+import {
+  DATABASE_TAB_VIEW_ID_QUERY_PARAM,
+  resolveSidebarSelectedViewId,
+} from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
 interface SideBarProps {
   drawerWidth: number;
@@ -19,9 +23,12 @@ function SideBar ({
   const outline = usePublishContext()?.outline;
 
   const baseViewId = usePublishContext()?.viewMeta?.view_id;
-  // Use the active database tab (?v= param) for sidebar highlight
   const [searchParams] = useSearchParams();
-  const viewId = searchParams.get('v') || baseViewId;
+  const viewId = resolveSidebarSelectedViewId({
+    routeViewId: baseViewId,
+    tabViewId: searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM),
+    outline,
+  });
   const navigateToView = usePublishContext()?.toView;
 
   return (

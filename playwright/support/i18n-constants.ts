@@ -18,6 +18,8 @@ export const SlashMenuNames = {
   linkedDoc: 'Link to page',
   grid: 'Grid',
   linkedGrid: 'Linked Grid',
+  list: 'List',
+  linkedList: 'Linked List',
   kanban: 'Kanban',
   linkedKanban: 'Linked Kanban',
   calendar: 'Calendar',

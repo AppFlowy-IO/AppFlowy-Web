@@ -7,6 +7,8 @@ import { YDoc, YjsEditorKey } from '@/application/types';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { Editor } from '@/components/editor';
 
+import type { EditorContentPadding } from '@/components/editor/EditorContext';
+
 /**
  * PublishRowSubDocument - A simplified component for displaying row documents in publish mode.
  *
@@ -17,7 +19,12 @@ import { Editor } from '@/components/editor';
  *
  * For app mode (authenticated, editable), use DatabaseRowSubDocument instead.
  */
-export const PublishRowSubDocument = memo(({ rowId }: { rowId: string }) => {
+interface PublishRowSubDocumentProps {
+  rowId: string;
+  contentPadding?: EditorContentPadding;
+}
+
+export const PublishRowSubDocument = memo(({ rowId, contentPadding }: PublishRowSubDocumentProps) => {
   const context = useDatabaseContextOptional();
   const loadRowDocument = context?.loadRowDocument;
 
@@ -77,6 +84,7 @@ export const PublishRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     <Editor
       {...context}
       fullWidth
+      contentPadding={contentPadding}
       workspaceId="publish"
       viewId={documentId}
       doc={doc}

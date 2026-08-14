@@ -38,6 +38,7 @@ export enum BlockType {
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  ListBlock = 'list',
   ChartBlock = 'chart',
   OutlineBlock = 'outline',
   TableBlock = 'table',
@@ -605,12 +606,22 @@ export enum YjsDatabaseKey {
   condition = 'condition',
   rollup_target_type = 'rollup_target_ty',
   schema_version = 'schema_version',
+  row_templates = 'row_templates',
+  default_row_template = 'default_row_template',
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
+  group_color = 'group_color',
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
   hide_empty_groups = 'hide_empty_groups',
+  display_mode = 'display_mode',
+  visible_field_ids = 'visible_field_ids',
+  show_cover = 'show_cover',
+  show_icon = 'show_icon',
+  card_width = 'card_width',
+  group_field_id = 'group_field_id',
+  show_field_names = 'show_field_names',
   shown_empty_group_ids = 'shown_empty_group_ids',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
@@ -899,6 +910,9 @@ export type SortId = string;
 export type GroupId = string;
 
 export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
+  // DatabaseViewLayout.Grid
+  get(key: '0'): YDatabaseGridLayoutSetting;
+
   // DatabaseViewLayout.Board
   get(key: '1'): YDatabaseBoardLayoutSetting;
 
@@ -907,6 +921,13 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Chart
   get(key: '3'): YDatabaseChartLayoutSetting;
+
+  // DatabaseViewLayout.List
+  get(key: '4'): YDatabaseListLayoutSetting;
+}
+
+export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.hide_empty_groups): boolean;
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
@@ -929,6 +950,19 @@ export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
   get(key: 'showEmptyValues' | 'cumulative'): boolean;
 }
 
+export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.display_mode | YjsDatabaseKey.card_width): number;
+  get(key: YjsDatabaseKey.visible_field_ids): string[];
+  get(key: YjsDatabaseKey.group_field_id): string | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.show_cover
+      | YjsDatabaseKey.show_icon
+      | YjsDatabaseKey.show_field_names
+      | YjsDatabaseKey.hide_empty_groups
+  ): boolean;
+}
+
 export interface YDatabaseGroup extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.id): GroupId;
 
@@ -944,12 +978,14 @@ export interface YDatabaseGroup extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.collapsed_group_ids): Y.Array<string> | string[] | undefined;
 }
 
-export type YDatabaseGroupColumns = Y.Array<{ id: string; visible: boolean }>;
+export type YDatabaseGroupColumns = Y.Array<YDatabaseGroupColumn>;
 
 export interface YDatabaseGroupColumn extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.id): string;
 
   get(key: YjsDatabaseKey.visible): boolean;
+
+  get(key: YjsDatabaseKey.group_color): string | undefined;
 }
 
 export interface YDatabaseSort extends Y.Map<unknown> {
@@ -1000,6 +1036,7 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
 export interface YDatabaseMetas extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.iid): string;
   get(key: YjsDatabaseKey.schema_version): string | number;
+  get(key: YjsDatabaseKey.row_templates | YjsDatabaseKey.default_row_template): string | undefined;
 }
 
 export interface YDatabaseFields extends Y.Map<YDatabaseField> {
@@ -1115,6 +1152,7 @@ export const layoutMap = {
   [ViewLayout.Board]: 'board',
   [ViewLayout.Calendar]: 'calendar',
   [ViewLayout.Chart]: 'chart',
+  [ViewLayout.List]: 'list',
 };
 
 export const databaseLayoutMap = {
@@ -1122,6 +1160,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Board]: 'board',
   [DatabaseViewLayout.Calendar]: 'calendar',
   [DatabaseViewLayout.Chart]: 'chart',
+  [DatabaseViewLayout.List]: 'list',
 };
 
 export enum FontLayout {
@@ -1565,6 +1604,13 @@ export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
   row_document?: {
     source?: RowDocumentSourceExtra;
   };
+
+  /** Desktop's marker for an orphan document that backs a database row template. */
+  database_row_template?: boolean;
+  /** Owning database view for a template document (paired with `database_row_template`). */
+  database_view_id?: string;
+  /** Owning row-template id for a template document (paired with `database_row_template`). */
+  template_id?: string;
 }
 
 export interface View {
@@ -1736,6 +1782,18 @@ export interface RowDocumentSourcePayload {
   row_id: string;
 }
 
+export type CreateRowDocument = (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+
+export type PrepareDuplicateRowDocumentSource = () => Promise<void>;
+
+export type DuplicateRowDocument = (
+  databaseId: string,
+  sourceRowId: string,
+  newRowId: string,
+  clientDocStateB64?: string,
+  prepareSource?: PrepareDuplicateRowDocumentSource
+) => Promise<void>;
+
 export interface CreateOrphanedViewPayload {
   document_id: string;
   row_document_source?: RowDocumentSourcePayload;
@@ -1792,13 +1850,8 @@ export interface ViewComponentProps {
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
-  duplicateRowDocument?: (
-    databaseId: string,
-    sourceRowId: string,
-    newRowId: string,
-    clientDocStateB64?: string
-  ) => Promise<void>;
+  createRowDocument?: CreateRowDocument;
+  duplicateRowDocument?: DuplicateRowDocument;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

@@ -2,7 +2,13 @@ import { expect } from '@jest/globals';
 import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, useAddDatabaseView } from '@/application/database-yjs';
+import {
+  DatabaseContext,
+  DatabaseContextState,
+  FieldType,
+  FieldVisibility,
+  useAddDatabaseView,
+} from '@/application/database-yjs';
 import { DatabaseViewLayout, View, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -17,6 +23,68 @@ function createDatabaseDoc(databaseId: string): YDoc {
   database.set(YjsDatabaseKey.id, databaseId);
   sharedRoot.set(YjsEditorKey.database, database);
   return doc;
+}
+
+function addExistingGridView(databaseDoc: YDoc, viewId: string): void {
+  const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const fields = new Y.Map();
+  const field = new Y.Map();
+  const views = new Y.Map();
+  const view = new Y.Map();
+  const fieldOrders = new Y.Array<{ id: string }>();
+  const fieldSettings = new Y.Map();
+  const fieldSetting = new Y.Map();
+
+  field.set(YjsDatabaseKey.id, 'primary-field');
+  field.set(YjsDatabaseKey.type, FieldType.RichText);
+  field.set(YjsDatabaseKey.is_primary, true);
+  fields.set('primary-field', field);
+  fieldOrders.push([{ id: 'primary-field' }]);
+  fieldSetting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+  fieldSettings.set('primary-field', fieldSetting);
+  view.set(YjsDatabaseKey.id, viewId);
+  view.set(YjsDatabaseKey.name, 'Grid');
+  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+  view.set(YjsDatabaseKey.field_orders, fieldOrders);
+  view.set(YjsDatabaseKey.field_settings, fieldSettings);
+  view.set(YjsDatabaseKey.groups, new Y.Array());
+  view.set(YjsDatabaseKey.layout_settings, new Y.Map());
+  views.set(viewId, view);
+  database?.set(YjsDatabaseKey.fields, fields);
+  database?.set(YjsDatabaseKey.views, views);
+}
+
+function addServerListViewWithGridDefaults(databaseDoc: YDoc, viewId: string): void {
+  const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const fields = new Y.Map();
+  const views = new Y.Map();
+  const view = new Y.Map();
+  const fieldOrders = new Y.Array<{ id: string }>();
+  const fieldSettings = new Y.Map();
+  const fieldIds = ['primary-field', 'field-1', 'field-2', 'field-3'];
+
+  fieldIds.forEach((fieldId, index) => {
+    const field = new Y.Map();
+    const setting = new Y.Map();
+
+    field.set(YjsDatabaseKey.id, fieldId);
+    field.set(YjsDatabaseKey.type, FieldType.RichText);
+    field.set(YjsDatabaseKey.is_primary, index === 0);
+    fields.set(fieldId, field);
+    setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+    fieldSettings.set(fieldId, setting);
+  });
+  fieldOrders.push(fieldIds.map((id) => ({ id })));
+  view.set(YjsDatabaseKey.id, viewId);
+  view.set(YjsDatabaseKey.name, 'List');
+  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.List);
+  view.set(YjsDatabaseKey.field_orders, fieldOrders);
+  view.set(YjsDatabaseKey.field_settings, fieldSettings);
+  view.set(YjsDatabaseKey.groups, new Y.Array());
+  view.set(YjsDatabaseKey.layout_settings, new Y.Map());
+  views.set(viewId, view);
+  database?.set(YjsDatabaseKey.fields, fields);
+  database?.set(YjsDatabaseKey.views, views);
 }
 
 function createView(overrides: Partial<View>): View {
@@ -34,6 +102,152 @@ function createView(overrides: Partial<View>): View {
 }
 
 describe('useAddDatabaseView', () => {
+  it('normalizes the Grid field defaults returned for a server-created List tab', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const newViewId = 'new-list-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+    const emptyServerUpdate = Array.from(Y.encodeStateAsUpdate(new Y.Doc()));
+    const createDatabaseView = jest.fn(async () => {
+      addServerListViewWithGridDefaults(databaseDoc, newViewId);
+      return {
+        view_id: newViewId,
+        database_id: databaseId,
+        database_update: emptyServerUpdate,
+      };
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(DatabaseViewLayout.List, 'List');
+    });
+
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      baseViewId,
+      expect.objectContaining({
+        database_id: databaseId,
+        layout: ViewLayout.List,
+        name: 'List',
+      })
+    );
+
+    const listView = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(newViewId);
+
+    expect(listView?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.List);
+    expect(listView?.get(YjsDatabaseKey.field_settings)?.get('field-2')?.get(YjsDatabaseKey.visibility)).toBe(
+      FieldVisibility.AlwaysShown
+    );
+    expect(listView?.get(YjsDatabaseKey.field_settings)?.get('field-3')?.get(YjsDatabaseKey.visibility)).toBe(
+      FieldVisibility.AlwaysHidden
+    );
+    expect(listView?.get(YjsDatabaseKey.layout_settings)?.get('4')?.get(YjsDatabaseKey.display_mode)).toBe(1);
+  });
+
+  it('rejects a List response whose update omits the exact returned child', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const returnedViewId = 'missing-list-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: returnedViewId,
+      database_id: databaseId,
+      database_update: Array.from(Y.encodeStateAsUpdate(new Y.Doc())),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      deletePage,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.List, 'List')).rejects.toThrow(
+      'The server did not return the requested List database view'
+    );
+
+    const existingView = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(baseViewId);
+
+    expect(existingView?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(existingView?.get(YjsDatabaseKey.field_settings)?.get('primary-field')?.get(YjsDatabaseKey.visibility)).toBe(
+      FieldVisibility.AlwaysHidden
+    );
+    expect(deletePage).toHaveBeenCalledWith(returnedViewId);
+  });
+
+  it('does not normalize or compensate a pre-existing view ID returned by a stale List response', async () => {
+    const databaseId = 'db-1';
+    const baseViewId = 'base-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: baseViewId,
+      database_id: databaseId,
+      database_update: Array.from(Y.encodeStateAsUpdate(new Y.Doc())),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      deletePage,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.List, 'List')).rejects.toThrow(
+      'The server did not return the requested List database view'
+    );
+
+    const existingView = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(baseViewId);
+
+    expect(existingView?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Grid);
+    expect(existingView?.get(YjsDatabaseKey.field_settings)?.get('primary-field')?.get(YjsDatabaseKey.visibility)).toBe(
+      FieldVisibility.AlwaysHidden
+    );
+    expect(deletePage).not.toHaveBeenCalled();
+  });
+
   it('appends linked view under database container when parent is container', async () => {
     const databaseId = 'db-1';
     const baseViewId = 'base-view-id';

@@ -1995,6 +1995,21 @@
       "createRowAboveDescription": "create a row above",
       "createRowBelowDescription": "insert a row below"
     },
+    "rowTemplate": {
+      "templatesFor": "Templates for {{databaseName}}",
+      "noTemplatesYet": "No templates yet",
+      "newTemplate": "New template",
+      "deleteTemplate": "Delete template?",
+      "deleteTemplateConfirmation": "Are you sure you want to delete \"{{templateName}}\"?",
+      "setAsDefault": "Set as default",
+      "clearDefault": "Clear default",
+      "editingTemplateIn": "You're editing a template in {{databaseName}}",
+      "failedToLoadDatabase": "Failed to load database",
+      "notSupported": "Not supported",
+      "failedToLoadDocument": "Failed to load document",
+      "emptyPagePlaceholder": "Press Enter to continue with an empty page.",
+      "copySuffix": "(Copy)"
+    },
     "selectOption": {
       "create": "Create",
       "purpleColor": "Purple",

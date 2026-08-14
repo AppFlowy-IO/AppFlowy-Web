@@ -266,7 +266,16 @@ export async function deleteFilter(page: Page): Promise<void> {
     await page.waitForTimeout(500);
   } else {
     // Normal mode
-    const hasFilterPopover = (await page.locator('[data-radix-popper-content-wrapper]').count()) > 0;
+    // Radix keeps popper wrappers for other toolbar controls mounted. Detect
+    // the filter editor by its own controls so an open/hidden sort wrapper
+    // cannot make this helper skip the filter chip.
+    const hasFilterPopover =
+      (await page
+        .locator(
+          '[data-testid="text-filter"]:visible, [data-testid="text-filter-input"]:visible, ' +
+            '[data-testid="filter-more-options-button"]:visible, [data-testid="delete-filter-button"]:visible'
+        )
+        .count()) > 0;
 
     if (!hasFilterPopover) {
       await DatabaseFilterSelectors.filterCondition(page).first().click({ force: true });

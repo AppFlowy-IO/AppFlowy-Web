@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
@@ -14,9 +14,12 @@ import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
+import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
+import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import {
   getDatabaseViewportStyle,
   shouldAutoShrinkDatabaseViewport,
+  shouldScrollEmbeddedDatabaseViewport,
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
@@ -32,6 +35,8 @@ import {
 import { Log } from '@/utils/log';
 
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
+
+const List = lazy(() => import('@/components/database/list/List'));
 
 function DatabaseViews({
   onChangeView,
@@ -89,10 +94,6 @@ function DatabaseViews({
   const pendingViewAppendBaseRef = useRef<string[] | null>(null);
   const tabReorderRequestSeqRef = useRef(0);
   const hasAuthoritativeVisibleOrder = Boolean(visibleViewIds && visibleViewIds.length > 0);
-
-  const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
-  // Track the previous valid layout to prevent flash when switching to a new view
-  const prevLayoutRef = useRef<DatabaseViewLayout | null>(null);
 
   const fallbackViewIds = useMemo(() => {
     if (hasAuthoritativeVisibleOrder) {
@@ -241,25 +242,6 @@ function DatabaseViews({
     return views?.get(activeViewId);
   }, [activeViewId, childViews, viewIds, views]);
 
-  // Update layout when active view changes
-  useEffect(() => {
-    if (!activeView) return;
-
-    const observerEvent = () => {
-      const newLayout = Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-
-      setLayout(newLayout);
-      prevLayoutRef.current = newLayout;
-    };
-
-    observerEvent();
-    activeView.observe(observerEvent);
-
-    return () => {
-      activeView.unobserve(observerEvent);
-    };
-  }, [activeView]);
-
   const handleViewChange = useCallback(
     (newViewId: string) => {
       onChangeView(newViewId);
@@ -344,9 +326,10 @@ function DatabaseViews({
 
   const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;
 
-  // Render the appropriate view component based on layout
-  // Use previous layout as fallback to prevent flash during view transitions
-  const effectiveLayout = layout ?? prevLayoutRef.current;
+  // The database store already observes view metadata. Derive the layout from
+  // the current view during render so a tab switch cannot commit the previous
+  // view's component tree or providers against the next view's context.
+  const effectiveLayout = activeView ? (Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout) : undefined;
 
   const view = useMemo(() => {
     switch (effectiveLayout) {
@@ -359,6 +342,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.List:
+        return <List />;
       case DatabaseViewLayout.Gallery:
         return <UnsupportedView />;
       default:
@@ -380,6 +364,11 @@ function DatabaseViews({
     isDocumentBlock,
     layout: effectiveLayout,
   });
+  const shouldScrollEmbeddedViewport = shouldScrollEmbeddedDatabaseViewport({
+    embeddedHeight: fixedHeight,
+    isDocumentBlock,
+    layout: effectiveLayout,
+  });
   const databaseConditionsValue = useMemo(
     () => ({
       expanded: conditionsExpanded,
@@ -393,51 +382,60 @@ function DatabaseViews({
     [conditionsExpanded, toggleExpanded, setExpanded, openFilterId, setOpenFilterId, isAdvancedMode, setAdvancedMode]
   );
 
-  return (
-    <>
-      <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
-        <DatabaseTabs
-          viewName={viewName}
-          databasePageId={databasePageId}
-          selectedViewId={activeViewId}
-          setSelectedViewId={handleViewChange}
-          viewIds={displayedViewIds}
-          onViewAddedToDatabase={handleViewAddedToDatabase}
-          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-          onViewIdsChanged={onViewIdsChanged}
-          onReorderTabs={handleReorderTabs}
-        />
+  const content = (
+    <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
+      <DatabaseTabs
+        viewName={viewName}
+        databasePageId={databasePageId}
+        selectedViewId={activeViewId}
+        setSelectedViewId={handleViewChange}
+        viewIds={displayedViewIds}
+        onViewAddedToDatabase={handleViewAddedToDatabase}
+        onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+        onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+        onViewIdsChanged={onViewIdsChanged}
+        onReorderTabs={handleReorderTabs}
+      />
 
-        <DatabaseConditions />
+      <DatabaseConditions />
 
+      <div
+        className={cn(
+          'relative flex w-full flex-col',
+          shouldUseFixedViewport
+            ? shouldAutoShrinkViewport
+              ? shouldScrollEmbeddedViewport
+                ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+                : 'min-h-0 overflow-hidden'
+              : 'h-full min-h-0 flex-1 overflow-hidden'
+            : 'overflow-visible'
+        )}
+        style={viewportStyle}
+      >
         <div
           className={cn(
-            'relative flex w-full flex-col',
-            shouldUseFixedViewport
-              ? shouldAutoShrinkViewport
-                ? 'min-h-0 overflow-hidden'
-                : 'h-full min-h-0 flex-1 overflow-hidden'
-              : 'overflow-visible'
+            'w-full',
+            shouldUseFixedViewport &&
+              (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
           )}
           style={viewportStyle}
         >
-          <div
-            className={cn(
-              'w-full',
-              shouldUseFixedViewport &&
-                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
-            )}
-            style={viewportStyle}
-          >
-            <Suspense fallback={null}>
-              <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-            </Suspense>
-          </div>
+          <Suspense fallback={null}>
+            <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+          </Suspense>
         </div>
-      </DatabaseConditionsContext.Provider>
-    </>
+      </div>
+    </DatabaseConditionsContext.Provider>
   );
+
+  switch (effectiveLayout) {
+    case DatabaseViewLayout.Grid:
+      return <GridGroupingProvider>{content}</GridGroupingProvider>;
+    case DatabaseViewLayout.List:
+      return <ListGroupingProvider>{content}</ListGroupingProvider>;
+    default:
+      return content;
+  }
 }
 
 export default DatabaseViews;

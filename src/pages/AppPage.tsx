@@ -2,7 +2,15 @@ import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, u
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { MentionSearchRequest, UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import {
+  MentionSearchRequest,
+  UIVariant,
+  View,
+  ViewLayout,
+  ViewMetaProps,
+  YDoc,
+  YDocWithMeta,
+} from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
@@ -374,7 +382,17 @@ function AppPage() {
   useEffect(() => {
     if (!eventEmitter) return;
 
-    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc, isExternalRevert }: { objectId: string; viewId?: string; doc: YDoc; isExternalRevert?: boolean }) => {
+    const handleCollabDocReset = ({
+      objectId,
+      viewId: resetViewId,
+      doc: nextDoc,
+      isExternalRevert,
+    }: {
+      objectId: string;
+      viewId?: string;
+      doc: YDoc;
+      isExternalRevert?: boolean;
+    }) => {
       Log.debug('[Version] AppPage handleCollabDocReset received:', {
         objectId,
         resetViewId,
@@ -491,7 +509,7 @@ function AppPage() {
     const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
 
     if (layout === ViewLayout.AIChat && !aiEnabled) {
-      return <div data-testid="ai-chat-disabled-view" className="h-full w-full" />;
+      return <div data-testid='ai-chat-disabled-view' className='h-full w-full' />;
     }
 
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
@@ -507,7 +525,6 @@ function AppPage() {
     }
 
     if (layout === ViewLayout.Document) {
-
       const key = `${viewId}:${docForCurrentView.version}`;
 
       return (
@@ -536,6 +553,7 @@ function AppPage() {
           onWordCountChange={setWordCount}
           uploadFile={handleUploadFile}
           variant={UIVariant.App}
+          scheduleDeferredCleanup={scheduleDeferredCleanup}
           getSubscriptions={operations.getSubscriptions}
           getMentionUser={getMentionUser}
           searchMentions={searchMentions}
@@ -735,7 +753,9 @@ function AppPage() {
     <div ref={ref} className={'relative h-full w-full'}>
       {helmet}
 
-      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : (
+      {error ? (
+        <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} />
+      ) : (
         <div className={`h-full w-full ${isTransitioning ? 'pointer-events-none opacity-80' : ''}`}>
           {displayDom}
           {(isTransitioning || !displayDom) && (

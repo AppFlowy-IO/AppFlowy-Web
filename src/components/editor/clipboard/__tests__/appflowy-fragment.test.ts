@@ -164,6 +164,33 @@ describe('AppFlowy clipboard fragment paste support', () => {
     expect(textChildren(firstParagraph)).toEqual([{ text: 'A1' }]);
   });
 
+  it('preserves a native desktop List database block and its compatibility IDs', () => {
+    const data = {
+      parent_id: 'document-id',
+      view_ids: ['list-view-id'],
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+    };
+    const fragment = appFlowyDocumentToSlateFragment({
+      document: {
+        type: BlockType.Page,
+        children: [
+          {
+            type: BlockType.ListBlock,
+            data,
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(fragment).toHaveLength(1);
+    expect(fragment?.[0]).toMatchObject({
+      type: BlockType.ListBlock,
+      data,
+    });
+  });
+
   it('reads web AppFlowy MIME fragments before fallback formats', () => {
     const appFlowyFragment = [
       {

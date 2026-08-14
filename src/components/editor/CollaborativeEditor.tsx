@@ -4,14 +4,16 @@ import { createEditor, Descendant, Editor, Element as SlateElement, Node, Operat
 import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
-import { BlockType, CollabOrigin, YDoc } from '@/application/types';
+import { CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { resolveDatabaseBlockDeletionTarget } from '@/components/editor/database-block-lifecycle';
 import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
 import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
 import { withPlugins } from '@/components/editor/plugins';
@@ -41,12 +43,6 @@ import { getTextCount } from '@/utils/word';
 }
 
 const defaultInitialValue: Descendant[] = [];
-const DATABASE_BLOCK_TYPES = new Set([
-  BlockType.GridBlock,
-  BlockType.BoardBlock,
-  BlockType.CalendarBlock,
-  BlockType.ChartBlock,
-]);
 const DATABASE_VIEW_DELETION_GRACE_MS = 1500;
 
 type DatabaseBlockInfo = {
@@ -56,7 +52,7 @@ type DatabaseBlockInfo = {
 };
 
 function isDatabaseBlockNode(node: Node): boolean {
-  return SlateElement.isElement(node) && DATABASE_BLOCK_TYPES.has((node as unknown as { type: BlockType }).type);
+  return SlateElement.isElement(node) && isDatabaseBlockType((node as unknown as { type?: unknown }).type);
 }
 
 function isDatabaseBlockLifecycleOperation(editor: YjsEditor, op: Operation): boolean {
@@ -124,8 +120,7 @@ function CollaborativeEditor({
 
     for (const [node] of Editor.nodes(editor, {
       at: [],
-      match: (value: Node) =>
-        SlateElement.isElement(value) && DATABASE_BLOCK_TYPES.has((value as { type: BlockType }).type),
+      match: isDatabaseBlockNode,
     })) {
       const element = node as unknown as {
         blockId?: string;
@@ -142,8 +137,8 @@ function CollaborativeEditor({
       const viewIds = Array.isArray(data.view_ids)
         ? data.view_ids.filter((id): id is string => typeof id === 'string')
         : typeof data.view_id === 'string'
-          ? [data.view_id]
-          : [];
+        ? [data.view_id]
+        : [];
 
       if (viewIds.length === 0) continue;
 
@@ -221,22 +216,27 @@ function CollaborativeEditor({
 
           if (stillReferenced) return;
 
-          // Find the container by looking up the parent of the child view
+          // Inline database children own a container. Linked database views
+          // are direct document children and must be deleted individually.
           if (!loadViewMeta || !deletePage) return;
 
           try {
-            const childMeta = await loadViewMeta(firstViewId);
-            const containerId = childMeta?.parent_view_id;
+            const deletionTargetId = await resolveDatabaseBlockDeletionTarget(firstViewId, loadViewMeta);
 
-            if (!containerId) {
-              Log.warn('[CollaborativeEditor] Could not find container for orphaned database view', { firstViewId });
+            if (!deletionTargetId) {
+              Log.warn('[CollaborativeEditor] Could not resolve the orphaned database deletion target', {
+                firstViewId,
+              });
               return;
             }
 
-            Log.debug('[CollaborativeEditor] Deleting orphaned database container', { containerId, firstViewId });
-            await deletePage(containerId);
+            Log.debug('[CollaborativeEditor] Deleting orphaned database target', {
+              deletionTargetId,
+              firstViewId,
+            });
+            await deletePage(deletionTargetId);
           } catch (err) {
-            Log.error('[CollaborativeEditor] Failed to delete database container', { firstViewId, err });
+            Log.error('[CollaborativeEditor] Failed to delete orphaned database target', { firstViewId, err });
           }
         }, DATABASE_VIEW_DELETION_GRACE_MS);
 

@@ -3,7 +3,7 @@ import { Types, ViewLayout } from '@/application/types';
 import { getCollabTypeFromViewLayout } from './DuplicateModal';
 
 describe('getCollabTypeFromViewLayout', () => {
-  it.each([ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.Chart])(
+  it.each([ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.Chart, ViewLayout.List])(
     'maps database layout %s to the database collab type',
     (layout) => {
       expect(getCollabTypeFromViewLayout(layout)).toBe(Types.Database);

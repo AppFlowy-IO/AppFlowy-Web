@@ -4,6 +4,7 @@ import {
   findDuplicatedContainerChild,
   getDatabaseLayoutFromBlockType,
   isDatabaseBlockType,
+  loadDatabaseDuplicateSourceViews,
 } from '../databaseDuplicateUtils';
 
 function makeView(overrides: Partial<View>): View {
@@ -36,6 +37,8 @@ describe('databaseDuplicateUtils', () => {
     expect(isDatabaseBlockType(BlockType.GridBlock)).toBe(true);
     expect(isDatabaseBlockType(BlockType.BoardBlock)).toBe(true);
     expect(isDatabaseBlockType(BlockType.CalendarBlock)).toBe(true);
+    expect(isDatabaseBlockType(BlockType.ListBlock)).toBe(true);
+    expect(isDatabaseBlockType(BlockType.ChartBlock)).toBe(true);
     expect(isDatabaseBlockType(BlockType.Paragraph)).toBe(false);
   });
 
@@ -43,13 +46,33 @@ describe('databaseDuplicateUtils', () => {
     expect(getDatabaseLayoutFromBlockType(BlockType.GridBlock)).toBe(ViewLayout.Grid);
     expect(getDatabaseLayoutFromBlockType(BlockType.BoardBlock)).toBe(ViewLayout.Board);
     expect(getDatabaseLayoutFromBlockType(BlockType.CalendarBlock)).toBe(ViewLayout.Calendar);
+    expect(getDatabaseLayoutFromBlockType(BlockType.ListBlock)).toBe(ViewLayout.List);
+    expect(getDatabaseLayoutFromBlockType(BlockType.ChartBlock)).toBe(ViewLayout.Chart);
     expect(getDatabaseLayoutFromBlockType(BlockType.Paragraph)).toBeUndefined();
   });
 
+  it('preserves the authoritative first source view without reloading its List layout', async () => {
+    const firstSourceView = makeView({ view_id: 'list-view', layout: ViewLayout.List });
+    const secondSourceView = makeView({ view_id: 'board-view', layout: ViewLayout.Board });
+    const loadViewMeta = jest.fn(async (viewId: string) => {
+      if (viewId === secondSourceView.view_id) return secondSourceView;
+
+      throw new Error('metadata unavailable');
+    });
+
+    await expect(
+      loadDatabaseDuplicateSourceViews({
+        sourceViewIds: [firstSourceView.view_id, secondSourceView.view_id, 'missing-view'],
+        firstSourceView,
+        loadViewMeta,
+      })
+    ).resolves.toEqual([firstSourceView, secondSourceView, null]);
+    expect(loadViewMeta).toHaveBeenCalledTimes(2);
+    expect(loadViewMeta).not.toHaveBeenCalledWith(firstSourceView.view_id);
+  });
+
   it('finds the duplicated container from newly added children', () => {
-    const beforeChildren = [
-      makeView({ view_id: 'source-container', name: 'Source', layout: ViewLayout.Grid }),
-    ];
+    const beforeChildren = [makeView({ view_id: 'source-container', name: 'Source', layout: ViewLayout.Grid })];
     const duplicatedChild = makeView({
       view_id: 'duplicate-container',
       name: 'Source (Copy)',

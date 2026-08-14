@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { type UIEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRowType } from '@/components/database/components/grid/grid-row';
+import GridGroupHeader from '@/components/database/components/grid/grid-group/GridGroupHeader';
+import { getRenderRowKey, RenderRowType } from '@/components/database/components/grid/grid-row';
 import GridLoadMoreRow from '@/components/database/components/grid/grid-row/GridLoadMoreRow';
 import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
@@ -13,8 +14,8 @@ import { PADDING_INLINE, useGridVirtualizer } from '@/components/database/compon
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
-import { getEmbeddedGridViewportStyle } from '@/components/database/layout';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { getEmbeddedGridViewportStyle } from '@/components/database/layout';
 import { cn } from '@/lib/utils';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
@@ -38,7 +39,7 @@ const gridLoadingDots = (
 );
 
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
-  const { rows: data, resizeRows, onResizeRowEnd } = useGridContext();
+  const { rows: data, rowResizeStore } = useGridContext();
   const { handleResizeStart, isResizing } = useColumnResize(columns);
   const { embeddedHeight, isDocumentBlock, paddingEnd } = useDatabaseContext();
 
@@ -67,22 +68,26 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const [isScrolling, setIsScrolling] = useState(false);
   const { setShowStickyHeader } = useGridContext();
   const stickyHeaderVisibleRef = useRef<boolean | null>(null);
+  const rowIndexByKey = useMemo(
+    () => new Map(data.map((rowData, index) => [getRenderRowKey(rowData), index] as const)),
+    [data]
+  );
 
   const onResizeRow = useCallback(
-    (id: string, maxCellHeight: number) => {
-      const index = data.findIndex((row) => row.rowId === id);
+    (rowKey: string, maxCellHeight: number) => {
+      const index = rowIndexByKey.get(rowKey);
 
-      if (index === -1) return;
+      if (index === undefined) return;
 
-      if (rowsHeightRef.current.has(id) && rowsHeightRef.current.get(id) === maxCellHeight) {
+      if (rowsHeightRef.current.has(rowKey) && rowsHeightRef.current.get(rowKey) === maxCellHeight) {
         return; // No change in height, no need to resize
       }
 
-      rowsHeightRef.current.set(id, maxCellHeight);
+      rowsHeightRef.current.set(rowKey, maxCellHeight);
 
       virtualizer.resizeItem(index, maxCellHeight);
     },
-    [data, virtualizer]
+    [rowIndexByKey, virtualizer]
   );
 
   useEffect(() => {
@@ -97,17 +102,13 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     isScrollingRef.current = isScrolling;
   }, [isScrolling]);
 
-  useEffect(() => {
-    const rows = Array.from(resizeRows?.entries() || []);
-
-    rows.forEach(([rowId, maxCellHeight]) => {
-      if (!isScrollingRef.current) {
-        onResizeRow(rowId, maxCellHeight);
-      }
-
-      onResizeRowEnd(rowId);
-    });
-  }, [isResizing, resizeRows, onResizeRow, onResizeRowEnd]);
+  useEffect(
+    () =>
+      rowResizeStore.subscribe((rowKey, maxCellHeight) => {
+        if (!isScrollingRef.current) onResizeRow(rowKey, maxCellHeight);
+      }),
+    [onResizeRow, rowResizeStore]
+  );
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;
@@ -156,7 +157,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     };
   }, [parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);
 
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+  const handleScroll = useCallback((e: UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
 
     stickyHeaderRef.current?.scroll({
@@ -170,12 +171,15 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     });
   }, []);
 
-  const handleScrollLeft = useCallback((scrollLeft: number) => {
-    parentRef.current?.scrollTo({
-      left: scrollLeft,
-      behavior: 'auto',
-    });
-  }, [parentRef]);
+  const handleScrollLeft = useCallback(
+    (scrollLeft: number) => {
+      parentRef.current?.scrollTo({
+        left: scrollLeft,
+        behavior: 'auto',
+      });
+    },
+    [parentRef]
+  );
 
   return (
     <GridDragContext.Provider value={contextValue}>
@@ -209,12 +213,16 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
             const rowId = rowData.rowId;
             const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
             const isFullWidthControlRow =
-              rowData.type === RenderRowType.NewRow || rowData.type === RenderRowType.LoadMoreRow;
+              rowData.type === RenderRowType.NewRow ||
+              rowData.type === RenderRowType.LoadMoreRow ||
+              rowData.type === RenderRowType.GroupHeader ||
+              rowData.type === RenderRowType.GroupSeparator;
 
             return (
               <div
                 key={row.key}
                 data-row-id={rowId}
+                data-row-key={getRenderRowKey(rowData)}
                 data-index={row.index}
                 ref={virtualizer.measureElement}
                 style={{
@@ -247,8 +255,12 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   >
                     {rowData.type === RenderRowType.LoadMoreRow ? (
                       <GridLoadMoreRow remainingCount={rowData.remainingRowCount ?? 0} />
+                    ) : rowData.type === RenderRowType.GroupHeader ? (
+                      <GridGroupHeader data={rowData} />
+                    ) : rowData.type === RenderRowType.GroupSeparator ? (
+                      <div aria-hidden className='h-3 min-w-full bg-fill-content' />
                     ) : (
-                      <GridNewRow />
+                      <GridNewRow groupFieldId={rowData.groupFieldId} groupId={rowData.groupId} />
                     )}
                   </div>
                 ) : (
@@ -275,7 +287,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
               }}
               ref={stickyHeaderRef}
               columns={columns}
-              data={data}
+              data={[{ key: 'sticky-header', type: RenderRowType.Header }]}
               totalSize={totalSize}
               columnItems={columnItems}
               onScrollLeft={handleScrollLeft}

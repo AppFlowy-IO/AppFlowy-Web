@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { DatabaseTabItem } from '@/components/database/components/tabs/DatabaseTabItem';
 import { Tabs, TabsList } from '@/components/ui/tabs';
 
@@ -12,7 +12,9 @@ jest.mock('@/components/_shared/reorder/useReorderableItem', () => ({
   }),
 }));
 
-jest.mock('@/components/_shared/view-icon/PageIcon', () => () => null);
+jest.mock('@/components/_shared/view-icon/PageIcon', () => ({ view }: { view: { layout: number } }) => (
+  <span data-testid='database-tab-icon-layout'>{view.layout}</span>
+));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -23,11 +25,38 @@ jest.mock('react-i18next', () => ({
 const viewId = 'database-view-id';
 
 describe('DatabaseTabItem', () => {
+  it('uses the List name and icon for a List view', () => {
+    const doc = new Y.Doc();
+    const view = doc.getMap('view') as YDatabaseView;
+
+    view.set(YjsDatabaseKey.name, '');
+    view.set(YjsDatabaseKey.layout, DatabaseViewLayout.List);
+
+    render(
+      <Tabs value={viewId}>
+        <TabsList>
+          <DatabaseTabItem
+            databasePageId={viewId}
+            menuViewId={null}
+            onOpenDeleteModal={jest.fn()}
+            onOpenRenameModal={jest.fn()}
+            onSetMenuViewId={jest.fn()}
+            readOnly={false}
+            setTabRef={jest.fn()}
+            view={view}
+            viewId={viewId}
+            visibleViewIds={[viewId]}
+          />
+        </TabsList>
+      </Tabs>
+    );
+
+    expect(screen.getByTestId(`view-tab-${viewId}`).textContent).toContain('List');
+    expect(screen.getByTestId('database-tab-icon-layout').textContent).toBe(String(ViewLayout.List));
+  });
   it('renders a new database tab whose Yjs layout is BigInt', () => {
     const view = {
-      get: jest.fn((key: YjsDatabaseKey) =>
-        key === YjsDatabaseKey.name ? 'Grid' : BigInt(DatabaseViewLayout.Grid)
-      ),
+      get: jest.fn((key: YjsDatabaseKey) => (key === YjsDatabaseKey.name ? 'Grid' : BigInt(DatabaseViewLayout.Grid))),
       observe: jest.fn(),
       unobserve: jest.fn(),
     } as unknown as YDatabaseView;

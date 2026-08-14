@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { useDatabaseViewId } from '@/application/database-yjs';
+import { useDatabaseFields } from '@/application/database-yjs';
 import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { getGridGroupCellsData } from '@/components/database/components/grid/grid-row/GridNewRow';
+import { useGridContext, useIsGridRowHovered } from '@/components/database/grid/useGridContext';
 
-export function useHoverControlsDisplay(rowId: string) {
+export function useHoverControlsDisplay(rowKey: string) {
   const ref = useRef<HTMLDivElement>(null);
-  const { hoverRowId } = useGridContext();
-  const viewId = useDatabaseViewId();
-
-  const isHover = rowId === hoverRowId;
+  const isHover = useIsGridRowHovered(rowKey);
 
   const handleMouseMove = useCallback(() => {
     const el = ref.current;
@@ -33,13 +31,6 @@ export function useHoverControlsDisplay(rowId: string) {
     el.style.pointerEvents = 'none';
   }, []);
 
-  useLayoutEffect(() => {
-    window.addEventListener('wheel', handleMouseLeave);
-    return () => {
-      window.removeEventListener('wheel', handleMouseLeave);
-    };
-  }, [handleMouseLeave, isHover, viewId]);
-
   useEffect(() => {
     if (isHover) {
       handleMouseMove();
@@ -54,13 +45,18 @@ export function useHoverControlsDisplay(rowId: string) {
   };
 }
 
-export function useHoverControlsActions(rowId: string) {
+export function useHoverControlsActions(rowId: string, groupFieldId?: string, groupId?: string) {
   const [addBelowLoading, setAddBelowLoading] = useState<boolean>(false);
   const [addAboveLoading, setAddAboveLoading] = useState<boolean>(false);
   const [duplicateLoading, setDuplicateLoading] = useState<boolean>(false);
   const { rowOrders } = useGridContext();
   const onNewRow = useNewRowDispatch();
   const duplicateRow = useDuplicateRowDispatch();
+  const fields = useDatabaseFields();
+  const getCellsData = useCallback(
+    () => getGridGroupCellsData(fields, groupFieldId, groupId),
+    [fields, groupFieldId, groupId]
+  );
 
   const onAddRowBelow = useCallback(async () => {
     if (!rowOrders) {
@@ -70,13 +66,13 @@ export function useHoverControlsActions(rowId: string) {
     setAddBelowLoading(true);
 
     try {
-      await onNewRow({ beforeRowId: rowId });
+      await onNewRow({ beforeRowId: rowId, cellsData: getCellsData() });
     } catch (e) {
       console.error(e);
     } finally {
       setAddBelowLoading(false);
     }
-  }, [onNewRow, rowId, rowOrders]);
+  }, [getCellsData, onNewRow, rowId, rowOrders]);
 
   const onAddRowAbove = useCallback(async () => {
     if (!rowOrders) {
@@ -88,13 +84,13 @@ export function useHoverControlsActions(rowId: string) {
     const beforeRowId = index > 0 ? rowOrders[index - 1].id : undefined;
 
     try {
-      await onNewRow({ beforeRowId });
+      await onNewRow({ beforeRowId, cellsData: getCellsData() });
     } catch (e) {
       console.error(e);
     } finally {
       setAddAboveLoading(false);
     }
-  }, [onNewRow, rowId, rowOrders]);
+  }, [getCellsData, onNewRow, rowId, rowOrders]);
 
   const onDuplicateRow = useCallback(async () => {
     setDuplicateLoading(true);

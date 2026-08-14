@@ -414,4 +414,35 @@ describe('sync protocol', () => {
     );
     expect(onManifestSync).toHaveBeenCalledWith(doc.guid, expect.any(Promise));
   });
+
+  it('does not publish an empty DatabaseRow as a manifest response', () => {
+    const doc = new Y.Doc({ guid: random.uuidv4() });
+    const serverDoc = new Y.Doc();
+    const emit = jest.fn();
+    const onManifestSync = jest.fn();
+    const ctx: SyncContext = {
+      doc,
+      collabType: Types.DatabaseRow,
+      emit,
+      onManifestSync,
+    };
+
+    (outboxMock.enqueueOutboxUpdate as jest.Mock).mockClear();
+
+    handleMessage(ctx, {
+      objectId: doc.guid,
+      collabType: Types.DatabaseRow,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(serverDoc),
+        version: doc.version,
+      },
+    });
+
+    expect(emit).not.toHaveBeenCalled();
+    expect(outboxMock.enqueueOutboxUpdate).not.toHaveBeenCalled();
+    expect(onManifestSync).toHaveBeenCalledWith(doc.guid);
+
+    doc.destroy();
+    serverDoc.destroy();
+  });
 });

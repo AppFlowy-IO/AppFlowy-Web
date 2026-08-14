@@ -1,11 +1,12 @@
 import { renderHook } from '@testing-library/react';
-import type React from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContext, DatabaseContextState, GridGrouping } from '@/application/database-yjs';
 import { YDoc } from '@/application/types';
 
 import { RenderRowType, useRenderRows } from '../useRenderRows';
+
+import type { ReactNode } from 'react';
 
 function createWrapper() {
   const contextValue: DatabaseContextState = {
@@ -17,7 +18,7 @@ function createWrapper() {
     workspaceId: 'workspace-id',
   };
 
-  return ({ children }: { children: React.ReactNode }) => (
+  return ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 }
@@ -33,6 +34,184 @@ describe('useRenderRows', () => {
       RenderRowType.PlaceholderRow,
       RenderRowType.NewRow,
     ]);
+  });
+
+  it('renders every visible group as one virtualized stream with repeated field headers', () => {
+    const grouping: GridGrouping = {
+      isGrouped: true,
+      groupId: 'group-config',
+      fieldId: 'status',
+      fieldName: 'Status',
+      fieldType: 3,
+      hideEmptyGroups: true,
+      ready: true,
+      groups: [],
+      visibleGroups: [
+        {
+          id: 'todo',
+          label: 'To do',
+          rows: [{ id: 'row-1', height: 0 }],
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+        {
+          id: 'done',
+          label: 'Done',
+          rows: [{ id: 'row-2', height: 0 }],
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+      ],
+    };
+    const { result } = renderHook(() => useRenderRows([], { grouping }), { wrapper: createWrapper() });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.GroupHeader,
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.NewRow,
+      RenderRowType.GroupSeparator,
+      RenderRowType.GroupHeader,
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.NewRow,
+      RenderRowType.GroupSeparator,
+      RenderRowType.CalculateRow,
+    ]);
+    expect(result.current.rows.filter((row) => row.type === RenderRowType.NewRow).map((row) => row.groupId)).toEqual([
+      'todo',
+      'done',
+    ]);
+    expect(
+      result.current.rows
+        .filter((row) => row.type === RenderRowType.Row)
+        .map((row) => ({ groupFieldId: row.groupFieldId, groupId: row.groupId, rowId: row.rowId }))
+    ).toEqual([
+      { groupFieldId: 'status', groupId: 'todo', rowId: 'row-1' },
+      { groupFieldId: 'status', groupId: 'done', rowId: 'row-2' },
+    ]);
+  });
+
+  it('keeps a collapsed group header mounted while removing its table rows', () => {
+    const grouping: GridGrouping = {
+      isGrouped: true,
+      hideEmptyGroups: true,
+      ready: true,
+      groups: [],
+      visibleGroups: [
+        {
+          id: 'todo',
+          label: 'To do',
+          rows: [{ id: 'row-1', height: 0 }],
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: true,
+        },
+      ],
+    };
+    const { result } = renderHook(() => useRenderRows([], { grouping }), { wrapper: createWrapper() });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.GroupHeader,
+      RenderRowType.GroupSeparator,
+      RenderRowType.CalculateRow,
+    ]);
+  });
+
+  it('keeps exact large-group counts while limiting the mounted row stream', () => {
+    const alphaRows = Array.from({ length: 60 }, (_, index) => ({ id: `alpha-${index}`, height: 0 }));
+    const betaRows = Array.from({ length: 40 }, (_, index) => ({ id: `beta-${index}`, height: 0 }));
+    const grouping: GridGrouping = {
+      isGrouped: true,
+      groupId: 'group-config',
+      fieldId: 'status',
+      fieldName: 'Status',
+      fieldType: 3,
+      hideEmptyGroups: true,
+      ready: true,
+      groups: [],
+      visibleGroups: [
+        {
+          id: 'alpha',
+          label: 'Alpha',
+          rows: alphaRows,
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+        {
+          id: 'beta',
+          label: 'Beta',
+          rows: betaRows,
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+      ],
+    };
+    const { result } = renderHook(() => useRenderRows([], { grouping, visibleRowLimit: 25 }), {
+      wrapper: createWrapper(),
+    });
+    const groupHeaders = result.current.rows.filter((row) => row.type === RenderRowType.GroupHeader);
+    const mountedRows = result.current.rows.filter((row) => row.type === RenderRowType.Row);
+
+    expect(groupHeaders.map((row) => [row.groupId, row.groupRowCount])).toEqual([
+      ['alpha', 60],
+      ['beta', 40],
+    ]);
+    expect(groupHeaders.reduce((total, row) => total + (row.groupRowCount ?? 0), 0)).toBe(100);
+    expect(mountedRows).toHaveLength(25);
+    expect(result.current.remainingRowCount).toBe(75);
+    expect(result.current.lastVisibleRowId).toBe('alpha-24');
+  });
+
+  it('uses group-qualified keys when a MultiSelect row appears in multiple groups', () => {
+    const sharedRow = { id: 'row-shared', height: 0 };
+    const grouping: GridGrouping = {
+      isGrouped: true,
+      hideEmptyGroups: true,
+      ready: true,
+      groups: [],
+      visibleGroups: [
+        {
+          id: 'alpha',
+          label: 'Alpha',
+          rows: [sharedRow],
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+        {
+          id: 'beta',
+          label: 'Beta',
+          rows: [sharedRow],
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+      ],
+    };
+    const { result } = renderHook(() => useRenderRows([], { grouping }), { wrapper: createWrapper() });
+    const rowKeys = result.current.rows.filter((row) => row.type === RenderRowType.Row).map((row) => row.key);
+
+    expect(rowKeys).toEqual(['group:alpha:row:row-shared', 'group:beta:row:row-shared']);
+    expect(new Set(rowKeys).size).toBe(2);
   });
 
   it('renders an empty filtered result instead of treating it as loading', () => {

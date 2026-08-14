@@ -11,11 +11,11 @@ import {
   useRowMetaSelector,
 } from '@/application/database-yjs';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
+import { viewCoverToTemplateCover } from '@/application/database-yjs/template';
 import { rowDocumentIdFromRowId, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
 import { setActiveRowPage } from '@/application/row-document/row-page-state';
 import {
   AppendBreadcrumb,
-  CoverType,
   RowCoverType,
   ViewIconType,
   ViewLayout,
@@ -31,9 +31,17 @@ import Title from '@/components/database/components/header/Title';
 import { getScrollParent } from '@/components/global-comment/utils';
 import ViewCoverActions from '@/components/view-meta/ViewCoverActions';
 import { renderColor } from '@/utils/color';
-import { clampCoverOffset, coverOffsetToObjectPosition } from '@/utils/cover';
+import { coverOffsetToObjectPosition } from '@/utils/cover';
 
-function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendBreadcrumb?: AppendBreadcrumb }) {
+function DatabaseRowHeader({
+  rowId,
+  appendBreadcrumb,
+  templateStyle = false,
+}: {
+  rowId: string;
+  appendBreadcrumb?: AppendBreadcrumb;
+  templateStyle?: boolean;
+}) {
   const fieldId = usePrimaryFieldId() || '';
 
   const ref = React.useRef<HTMLDivElement>(null);
@@ -56,26 +64,7 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
     (cover: ViewMetaCover) => {
       if (readOnly) return;
 
-      // eslint-disable-next-line
-      // @ts-ignore
-      const coverTypeMap: Record<CoverType, RowCoverType> = {
-        [CoverType.GradientColor]: RowCoverType.GradientCover,
-        [CoverType.NormalColor]: RowCoverType.ColorCover,
-        [CoverType.BuildInImage]: RowCoverType.AssetCover,
-        [CoverType.CustomImage]: RowCoverType.FileCover,
-        [CoverType.UpsplashImage]: RowCoverType.FileCover,
-      };
-      const coverType = coverTypeMap[cover.type];
-      const offset = clampCoverOffset(cover.offset);
-
-      updateRowMeta(
-        RowMetaKey.CoverId,
-        JSON.stringify({
-          cover_type: coverType,
-          data: cover.value,
-          offset,
-        })
-      );
+      updateRowMeta(RowMetaKey.CoverId, viewCoverToTemplateCover(cover) ?? '');
     },
     [readOnly, updateRowMeta]
   );
@@ -250,8 +239,8 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
         {cover && cover.data && (
           <div
             style={{
-              height: isDatabaseRowPage ? '40vh' : '25vh',
-              maxHeight: isDatabaseRowPage ? '288px' : '200px',
+              height: templateStyle ? '280px' : isDatabaseRowPage ? '40vh' : '25vh',
+              maxHeight: templateStyle ? '280px' : isDatabaseRowPage ? '288px' : '200px',
             }}
             onMouseEnter={() => setShowAction(true)}
             onMouseLeave={() => setShowAction(false)}
@@ -276,6 +265,7 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
         name={cell?.data as string}
         hasCover={!!cover}
         onEdited={onTitleEdited}
+        templateStyle={templateStyle}
       />
     </div>
   );

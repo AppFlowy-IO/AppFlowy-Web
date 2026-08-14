@@ -36,8 +36,11 @@ export function ManageDataPanel() {
     async (file: File) => {
       setImporting(true);
       try {
-        await FileService.importFile(file, () => {
-          /* progress is surfaced via the in-progress state */
+        await FileService.importFile(file, {
+          taskType: FileService.CreateImportTaskType.Workspace,
+          onProgress: () => {
+            /* progress is surfaced via the in-progress state */
+          },
         });
         toast.success(t('settings.manageData.importWorkspace.success'));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
