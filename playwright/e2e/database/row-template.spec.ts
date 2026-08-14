@@ -92,15 +92,12 @@ async function createRowAndGetId(page: Page, create: () => Promise<void>): Promi
     )
     .not.toBe('');
 
-  if (
-    await page
-      .locator('.MuiDialog-paper')
-      .last()
-      .isVisible()
-      .catch(() => false)
-  ) {
-    await closeRowDetailWithEscape(page);
-  }
+  // Template-backed creation opens the new row after its document has been
+  // materialized. The dialog can mount just after the grid row appears, so an
+  // immediate isVisible() check races it and leaves the modal over the next
+  // template action.
+  await expect(page.locator('.MuiDialog-paper').last()).toBeVisible({ timeout: 30000 });
+  await closeRowDetailWithEscape(page);
 
   return createdId;
 }
@@ -427,12 +424,19 @@ test.describe('Database row templates (Desktop parity)', () => {
     const nestedEditor = await editTemplate(page, renamed);
     const nestedDocumentEditor = nestedEditor.getByTestId('editor-content').first();
     const copiedTemplateBody = 'Template body preserved by database duplication';
-    const emptyDocumentPlaceholder = nestedEditor.getByText('Enter a / to insert a block, or start typing').last();
+    const slateEditor = nestedDocumentEditor.locator('[data-slate-editor="true"]').first();
 
     await expect(nestedDocumentEditor).toBeVisible({ timeout: 30000 });
-    await expect(emptyDocumentPlaceholder).toBeVisible({ timeout: 30000 });
-    await emptyDocumentPlaceholder.click();
+    await expect(slateEditor).toBeVisible({ timeout: 30000 });
+    await slateEditor.click({ force: true });
+    await expect
+      .poll(() => nestedDocumentEditor.evaluate((element) => element.contains(document.activeElement)), {
+        timeout: 5000,
+        message: 'Expected the copied template document editor to receive focus',
+      })
+      .toBe(true);
     await page.keyboard.type(copiedTemplateBody);
+    await expect(nestedDocumentEditor).toContainText(copiedTemplateBody);
     await closeTemplateEditor(page);
     await page.waitForTimeout(3000);
 

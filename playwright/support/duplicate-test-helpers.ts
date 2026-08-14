@@ -484,7 +484,7 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await openSlashMenuInEditor(page, editor, line);
-      const gridOption = SlashCommandSelectors.slashMenuGrid(page);
+      const gridOption = BlockSelectors.slashMenuGrid(page);
 
       await expect(gridOption).toBeVisible({ timeout: 10000 });
       await gridOption.click();
