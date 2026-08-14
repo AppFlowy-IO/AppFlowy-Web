@@ -41,6 +41,10 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
         value: DatabaseViewLayout.List,
         label: t('list.menuName'),
       },
+      {
+        value: DatabaseViewLayout.Gallery,
+        label: t('gallery.menuName'),
+      },
     ],
     [t]
   );
@@ -48,8 +52,11 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>
-        <LayoutIcon />
-        {t('grid.settings.layout')}
+        <LayoutIcon aria-hidden='true' />
+        <span>{t('grid.settings.layout')}</span>
+        <span className='ml-auto text-xs text-text-tertiary'>
+          {options.find((option) => option.value === currentLayout)?.label}
+        </span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent className={'appflowy-scroller max-w-[240px] overflow-y-auto'}>

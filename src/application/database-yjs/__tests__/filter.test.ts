@@ -12,6 +12,7 @@ import {
   filterBy,
   numberFilterCheck,
   personFilterCheck,
+  parseFilter,
   rowTimeFilterCheck,
   selectOptionFilterCheck,
   textFilterCheck,
@@ -76,6 +77,41 @@ function createFilters(
     toArray: () => filters,
   } as YDatabaseFilters;
 }
+
+function createFilter(config: { fieldType: FieldType; condition: number; content?: string }): YDatabaseFilter {
+  const doc = new Y.Doc();
+  const filter = doc.getMap('filter') as YDatabaseFilter;
+
+  filter.set(YjsDatabaseKey.id, 'filter');
+  filter.set(YjsDatabaseKey.field_id, 'field');
+  filter.set(YjsDatabaseKey.type, config.fieldType);
+  filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+  filter.set(YjsDatabaseKey.condition, config.condition);
+  filter.set(YjsDatabaseKey.content, config.content ?? '');
+
+  return filter;
+}
+
+describe('date filter parsing', () => {
+  it.each([
+    DateFilterCondition.DateStartIsEmpty,
+    DateFilterCondition.DateStartIsNotEmpty,
+    DateFilterCondition.DateEndIsEmpty,
+    DateFilterCondition.DateEndIsNotEmpty,
+    DateFilterCondition.DateStartsToday,
+    DateFilterCondition.DateEndsNextWeek,
+  ])('preserves condition %s when the filter has no content payload', (condition) => {
+    const filter = createFilter({
+      fieldType: FieldType.DateTime,
+      condition,
+    });
+
+    expect(parseFilter(FieldType.DateTime, filter)).toMatchObject({
+      condition,
+      content: '',
+    });
+  });
+});
 
 describe('text filter tests', () => {
   it('filters rows where text field is empty', () => {
@@ -379,9 +415,9 @@ describe('select option filter tests', () => {
   });
 
   it('filters rows where multi-select contains option', () => {
-    expect(
-      selectOptionFilterCheck(field, 'opt-a,opt-b', 'opt-b', SelectOptionFilterCondition.OptionContains)
-    ).toBe(true);
+    expect(selectOptionFilterCheck(field, 'opt-a,opt-b', 'opt-b', SelectOptionFilterCondition.OptionContains)).toBe(
+      true
+    );
   });
 
   it('filters rows where multi-select does not contain option', () => {
@@ -411,8 +447,9 @@ describe('select option filter tests', () => {
 
 describe('person filter tests', () => {
   it('filters rows where person contains id', () => {
-    expect(personFilterCheck(JSON.stringify(['u1', 'u2']), JSON.stringify(['u2']), PersonFilterCondition.PersonContains))
-      .toBe(true);
+    expect(
+      personFilterCheck(JSON.stringify(['u1', 'u2']), JSON.stringify(['u2']), PersonFilterCondition.PersonContains)
+    ).toBe(true);
   });
 
   it('filters rows where person does not contain id', () => {
@@ -426,9 +463,9 @@ describe('person filter tests', () => {
   });
 
   it('filters rows where person is not empty', () => {
-    expect(personFilterCheck(JSON.stringify(['u1']), JSON.stringify(['u1']), PersonFilterCondition.PersonIsNotEmpty)).toBe(
-      true
-    );
+    expect(
+      personFilterCheck(JSON.stringify(['u1']), JSON.stringify(['u1']), PersonFilterCondition.PersonIsNotEmpty)
+    ).toBe(true);
   });
 });
 
@@ -460,7 +497,12 @@ describe('advanced filter tests', () => {
   it('applies multiple filters with AND logic', () => {
     const filters = createFilters([
       { fieldId: textFieldId, fieldType: FieldType.RichText, condition: TextFilterCondition.TextContains, content: 'a' },
-      { fieldId: numberFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThan, content: '10' },
+      {
+        fieldId: numberFieldId,
+        fieldType: FieldType.Number,
+        condition: NumberFilterCondition.GreaterThan,
+        content: '10',
+      },
     ]);
 
     const result = filterBy(rows, filters, fields, rowMetas).map((row) => row.id);
@@ -612,102 +654,179 @@ describe('v069 comprehensive filter tests (desktop parity)', () => {
   // --- Checkbox ---
 
   it('checkbox is checked => 7 rows', () => {
-    const result = apply([{ fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked }]);
+    const result = apply([
+      { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked },
+    ]);
     expect(result.length).toBe(7);
     expect(names(result)).toEqual(['Beatrice', 'Scotty', 'Thomas', 'Juan', 'Alex', 'George', 'Judy']);
   });
 
   it('checkbox is unchecked => 6 rows', () => {
-    const result = apply([{ fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsUnChecked }]);
+    const result = apply([
+      { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsUnChecked },
+    ]);
     expect(result.length).toBe(6);
   });
 
   // --- Number (Amount) - isEmpty/isNotEmpty ---
 
   it('Amount is empty => 3 rows', () => {
-    const result = apply([{ fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsEmpty }]);
+    const result = apply([
+      { fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsEmpty },
+    ]);
     expect(result.length).toBe(3);
   });
 
   it('Amount is not empty => 10 rows', () => {
-    const result = apply([{ fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsNotEmpty }]);
+    const result = apply([
+      { fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsNotEmpty },
+    ]);
     expect(result.length).toBe(10);
   });
 
   // --- Number (Delta) - value comparisons ---
 
   it('Delta equals 0 => 1 row (Scotty)', () => {
-    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.Equal, content: '0' }]);
+    const result = apply([
+      { fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.Equal, content: '0' },
+    ]);
     expect(result.length).toBe(1);
     expect(names(result)).toEqual(['Scotty']);
   });
 
   it('Delta less than 0 => 3 rows', () => {
-    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.LessThan, content: '0' }]);
+    const result = apply([
+      { fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.LessThan, content: '0' },
+    ]);
     expect(result.length).toBe(3);
     expect(names(result)).toEqual(['Beatrice', 'Thomas', 'Joanna']);
   });
 
   it('Delta greater than 0 => 6 rows', () => {
-    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThan, content: '0' }]);
+    const result = apply([
+      { fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThan, content: '0' },
+    ]);
     expect(result.length).toBe(6);
   });
 
   it('Delta less than or equal to 0 => 4 rows', () => {
-    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.LessThanOrEqualTo, content: '0' }]);
+    const result = apply([
+      {
+        fieldId: deltaFieldId,
+        fieldType: FieldType.Number,
+        condition: NumberFilterCondition.LessThanOrEqualTo,
+        content: '0',
+      },
+    ]);
     expect(result.length).toBe(4);
   });
 
   it('Delta greater than or equal to 0 => 7 rows', () => {
-    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThanOrEqualTo, content: '0' }]);
+    const result = apply([
+      {
+        fieldId: deltaFieldId,
+        fieldType: FieldType.Number,
+        condition: NumberFilterCondition.GreaterThanOrEqualTo,
+        content: '0',
+      },
+    ]);
     expect(result.length).toBe(7);
   });
 
   it('Delta not equal to 0 => 9 rows', () => {
-    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NotEqual, content: '0' }]);
+    const result = apply([
+      { fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NotEqual, content: '0' },
+    ]);
     expect(result.length).toBe(9);
   });
 
   // --- Text (Name) ---
 
   it('Name contains "George" => 2 rows', () => {
-    const result = apply([{ fieldId: nameFieldId, fieldType: FieldType.RichText, condition: TextFilterCondition.TextContains, content: 'George' }]);
+    const result = apply([
+      {
+        fieldId: nameFieldId,
+        fieldType: FieldType.RichText,
+        condition: TextFilterCondition.TextContains,
+        content: 'George',
+      },
+    ]);
     expect(result.length).toBe(2);
   });
 
   // --- SingleSelect (Priority) ---
 
   it('Priority is VIP => 2 rows', () => {
-    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: VIP }]);
+    const result = apply([
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIs,
+        content: VIP,
+      },
+    ]);
     expect(result.length).toBe(2);
     expect(names(result)).toEqual(['Olaf', 'Lancelot']);
   });
 
   it('Priority is High => 3 rows', () => {
-    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: HIGH }]);
+    const result = apply([
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIs,
+        content: HIGH,
+      },
+    ]);
     expect(result.length).toBe(3);
     expect(names(result)).toEqual(['Beatrice', 'Thomas', 'Alexander']);
   });
 
   it('Priority is Medium => 5 rows', () => {
-    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: MEDIUM }]);
+    const result = apply([
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIs,
+        content: MEDIUM,
+      },
+    ]);
     expect(result.length).toBe(5);
   });
 
   it('Priority is empty => 3 rows', () => {
-    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIsEmpty }]);
+    const result = apply([
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIsEmpty,
+      },
+    ]);
     expect(result.length).toBe(3);
   });
 
   it('Priority is not empty => 10 rows', () => {
-    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIsNotEmpty }]);
+    const result = apply([
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIsNotEmpty,
+      },
+    ]);
     expect(result.length).toBe(10);
   });
 
   // --- MultiSelect (Tags) ---
 
   it('Tags contains (no selection) => 13 rows (all)', () => {
-    const result = apply([{ fieldId: tagsFieldId, fieldType: FieldType.MultiSelect, condition: SelectOptionFilterCondition.OptionContains, content: '' }]);
+    const result = apply([
+      {
+        fieldId: tagsFieldId,
+        fieldType: FieldType.MultiSelect,
+        condition: SelectOptionFilterCondition.OptionContains,
+        content: '',
+      },
+    ]);
     expect(result.length).toBe(13);
   });
 
@@ -725,7 +844,12 @@ describe('v069 comprehensive filter tests (desktop parity)', () => {
   it('checkbox checked AND Priority High => 2 rows', () => {
     const result = apply([
       { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked },
-      { fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: HIGH },
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIs,
+        content: HIGH,
+      },
     ]);
     expect(result.length).toBe(2);
     expect(names(result)).toEqual(['Beatrice', 'Thomas']);
@@ -735,7 +859,12 @@ describe('v069 comprehensive filter tests (desktop parity)', () => {
     const result = apply([
       { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked },
       { fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsNotEmpty },
-      { fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: MEDIUM },
+      {
+        fieldId: priorityFieldId,
+        fieldType: FieldType.SingleSelect,
+        condition: SelectOptionFilterCondition.OptionIs,
+        content: MEDIUM,
+      },
     ]);
     expect(result.length).toBe(2);
     expect(names(result)).toEqual(['Juan', 'Alex']);
@@ -744,12 +873,8 @@ describe('v069 comprehensive filter tests (desktop parity)', () => {
 
 describe('filterBy with v069 relation and rollup values', () => {
   const fixture = createRelationRollupFixtureFromV069({ suffix: 'filter' });
-  const relationField = fixture.baseDatabase
-    .get(YjsDatabaseKey.fields)
-    ?.get(fixture.relationFieldId) as YDatabaseField;
-  const rollupField = fixture.baseDatabase
-    .get(YjsDatabaseKey.fields)
-    ?.get(fixture.rollupListFieldId) as YDatabaseField;
+  const relationField = fixture.baseDatabase.get(YjsDatabaseKey.fields)?.get(fixture.relationFieldId) as YDatabaseField;
+  const rollupField = fixture.baseDatabase.get(YjsDatabaseKey.fields)?.get(fixture.rollupListFieldId) as YDatabaseField;
 
   let relationTexts: Record<RowId, string>;
   let rollupTexts: Record<RowId, string>;
@@ -759,9 +884,7 @@ describe('filterBy with v069 relation and rollup values', () => {
     rollupTexts = {};
     for (const rowId of fixture.baseRowIds) {
       const rowDoc = fixture.baseRowMetas[rowId];
-      const row = rowDoc
-        .getMap(YjsEditorKey.data_section)
-        .get(YjsEditorKey.database_row) as YDatabaseRow;
+      const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
       relationTexts[rowId] = await resolveRelationText({
         baseDoc: fixture.baseDoc,
         database: fixture.baseDatabase,
@@ -835,12 +958,7 @@ describe('desktop grid filter parity', () => {
     const doc = new Y.Doc();
     let counter = 0;
 
-    const makeDataFilter = (
-      fieldId: string,
-      fieldType: FieldType,
-      condition: number,
-      content: string = ''
-    ) => {
+    const makeDataFilter = (fieldId: string, fieldType: FieldType, condition: number, content: string = '') => {
       const filter = new Y.Map() as YDatabaseFilter;
       filter.set(YjsDatabaseKey.id, `filter-${counter}`);
       filter.set(YjsDatabaseKey.field_id, fieldId);
@@ -894,11 +1012,7 @@ describe('desktop grid filter parity', () => {
 
   it('filters text is empty', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextIsEmpty
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextIsEmpty);
 
     const result = applyFilters(makeFilters([filter]));
     expect(result).toEqual([fixture.rowIds[1]]);
@@ -906,11 +1020,7 @@ describe('desktop grid filter parity', () => {
 
   it('filters text is not empty', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextIsNotEmpty
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextIsNotEmpty);
 
     const result = applyFilters(makeFilters([filter]));
     expect(result).toEqual([
@@ -925,12 +1035,7 @@ describe('desktop grid filter parity', () => {
 
   it('filters text is', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextIs,
-      'A'
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextIs, 'A');
 
     const result = applyFilters(makeFilters([filter]));
     expect(result).toEqual([fixture.rowIds[0]]);
@@ -938,20 +1043,10 @@ describe('desktop grid filter parity', () => {
 
   it('filters text contains and reacts to cell updates', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextContains,
-      'A'
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextContains, 'A');
     const filters = makeFilters([filter]);
 
-    expect(applyFilters(filters)).toEqual([
-      fixture.rowIds[0],
-      fixture.rowIds[3],
-      fixture.rowIds[4],
-      fixture.rowIds[5],
-    ]);
+    expect(applyFilters(filters)).toEqual([fixture.rowIds[0], fixture.rowIds[3], fixture.rowIds[4], fixture.rowIds[5]]);
 
     setCellData(fixture.rowIds[1], fixture.fieldIds.text, FieldType.RichText, 'ABC');
     expect(applyFilters(filters)).toEqual([
@@ -978,12 +1073,7 @@ describe('desktop grid filter parity', () => {
 
   it('filters text starts with', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextStartsWith,
-      'A'
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextStartsWith, 'A');
 
     const result = applyFilters(makeFilters([filter]));
     expect(result).toEqual([fixture.rowIds[0], fixture.rowIds[4], fixture.rowIds[5]]);
@@ -991,12 +1081,7 @@ describe('desktop grid filter parity', () => {
 
   it('filters text ends with', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextEndsWith,
-      'A'
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextEndsWith, 'A');
 
     const result = applyFilters(makeFilters([filter]));
     expect(result).toEqual([fixture.rowIds[0], fixture.rowIds[3]]);
@@ -1004,12 +1089,7 @@ describe('desktop grid filter parity', () => {
 
   it('updates filter conditions', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextEndsWith,
-      'A'
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextEndsWith, 'A');
     const filters = makeFilters([filter]);
 
     expect(applyFilters(filters)).toEqual([fixture.rowIds[0], fixture.rowIds[3]]);
@@ -1022,11 +1102,7 @@ describe('desktop grid filter parity', () => {
 
   it('deletes filter', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextIsEmpty
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextIsEmpty);
     const filters = makeFilters([filter]);
 
     expect(applyFilters(filters)).toEqual([fixture.rowIds[1]]);
@@ -1037,11 +1113,7 @@ describe('desktop grid filter parity', () => {
 
   it('updates empty text cell', () => {
     const { makeDataFilter, makeFilters } = buildFilterHarness();
-    const filter = makeDataFilter(
-      fixture.fieldIds.text,
-      FieldType.RichText,
-      TextFilterCondition.TextIsEmpty
-    );
+    const filter = makeDataFilter(fixture.fieldIds.text, FieldType.RichText, TextFilterCondition.TextIsEmpty);
     const filters = makeFilters([filter]);
 
     expect(applyFilters(filters)).toEqual([fixture.rowIds[1]]);
@@ -1055,74 +1127,37 @@ describe('desktop grid filter parity', () => {
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.number,
-            FieldType.Number,
-            NumberFilterCondition.Equal,
-            '1'
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.number, FieldType.Number, NumberFilterCondition.Equal, '1')])
       )
     ).toEqual([fixture.rowIds[0]]);
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.number,
-            FieldType.Number,
-            NumberFilterCondition.LessThan,
-            '3'
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.number, FieldType.Number, NumberFilterCondition.LessThan, '3')])
       )
     ).toEqual([fixture.rowIds[0], fixture.rowIds[1]]);
 
     expect(
       applyFilters(
         makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.number,
-            FieldType.Number,
-            NumberFilterCondition.LessThanOrEqualTo,
-            '3'
-          ),
+          makeDataFilter(fixture.fieldIds.number, FieldType.Number, NumberFilterCondition.LessThanOrEqualTo, '3'),
         ])
       )
     ).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[2]]);
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.number,
-            FieldType.Number,
-            NumberFilterCondition.NumberIsEmpty,
-            ''
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.number, FieldType.Number, NumberFilterCondition.NumberIsEmpty, '')])
       )
     ).toEqual([fixture.rowIds[4], fixture.rowIds[6]]);
 
     expect(
       applyFilters(
         makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.number,
-            FieldType.Number,
-            NumberFilterCondition.NumberIsNotEmpty,
-            ''
-          ),
+          makeDataFilter(fixture.fieldIds.number, FieldType.Number, NumberFilterCondition.NumberIsNotEmpty, ''),
         ])
       )
-    ).toEqual([
-      fixture.rowIds[0],
-      fixture.rowIds[1],
-      fixture.rowIds[2],
-      fixture.rowIds[3],
-      fixture.rowIds[5],
-    ]);
+    ).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[2], fixture.rowIds[3], fixture.rowIds[5]]);
   });
 
   it('filters checkbox conditions', () => {
@@ -1130,38 +1165,21 @@ describe('desktop grid filter parity', () => {
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.checkbox,
-            FieldType.Checkbox,
-            CheckboxFilterCondition.IsChecked
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.checkbox, FieldType.Checkbox, CheckboxFilterCondition.IsChecked)])
       )
     ).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[5]]);
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.checkbox,
-            FieldType.Checkbox,
-            CheckboxFilterCondition.IsUnChecked
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.checkbox, FieldType.Checkbox, CheckboxFilterCondition.IsUnChecked)])
       )
     ).toEqual([fixture.rowIds[2], fixture.rowIds[3], fixture.rowIds[4], fixture.rowIds[6]]);
   });
 
   it('filters checklist completeness', () => {
     const row0Doc = fixture.rowMetas[fixture.rowIds[0]];
-    const row0 = row0Doc
-      .getMap(YjsEditorKey.data_section)
-      .get(YjsEditorKey.database_row) as YDatabaseRow;
-    const row0Checklist = row0
-      .get(YjsDatabaseKey.cells)
-      ?.get(fixture.fieldIds.checklist)
-      ?.get(YjsDatabaseKey.data);
+    const row0 = row0Doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const row0Checklist = row0.get(YjsDatabaseKey.cells)?.get(fixture.fieldIds.checklist)?.get(YjsDatabaseKey.data);
 
     if (typeof row0Checklist === 'string') {
       const parsed = JSON.parse(row0Checklist) as { options: Array<{ id: string }>; selected_option_ids: string[] };
@@ -1169,10 +1187,7 @@ describe('desktop grid filter parity', () => {
         options: parsed.options,
         selected_option_ids: parsed.options.map((option) => option.id),
       });
-      row0
-        .get(YjsDatabaseKey.cells)
-        ?.get(fixture.fieldIds.checklist)
-        ?.set(YjsDatabaseKey.data, completeChecklist);
+      row0.get(YjsDatabaseKey.cells)?.get(fixture.fieldIds.checklist)?.set(YjsDatabaseKey.data, completeChecklist);
     }
 
     const { makeDataFilter, makeFilters } = buildFilterHarness();
@@ -1180,11 +1195,7 @@ describe('desktop grid filter parity', () => {
     expect(
       applyFilters(
         makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.checklist,
-            FieldType.Checklist,
-            ChecklistFilterCondition.IsIncomplete
-          ),
+          makeDataFilter(fixture.fieldIds.checklist, FieldType.Checklist, ChecklistFilterCondition.IsIncomplete),
         ])
       )
     ).toEqual([fixture.rowIds[1], fixture.rowIds[2], fixture.rowIds[4], fixture.rowIds[5], fixture.rowIds[6]]);
@@ -1192,11 +1203,7 @@ describe('desktop grid filter parity', () => {
     expect(
       applyFilters(
         makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.checklist,
-            FieldType.Checklist,
-            ChecklistFilterCondition.IsComplete
-          ),
+          makeDataFilter(fixture.fieldIds.checklist, FieldType.Checklist, ChecklistFilterCondition.IsComplete),
         ])
       )
     ).toEqual([fixture.rowIds[0], fixture.rowIds[3]]);
@@ -1398,11 +1405,7 @@ describe('desktop grid filter parity', () => {
   });
 
   it('filters relation conditions', () => {
-    setRelationCellRowIds(
-      fixture.rowMetas[fixture.rowIds[0]],
-      fixture.fieldIds.relation,
-      [fixture.rowIds[1]]
-    );
+    setRelationCellRowIds(fixture.rowMetas[fixture.rowIds[0]], fixture.fieldIds.relation, [fixture.rowIds[1]]);
     const row0RelationCell = (
       fixture.rowMetas[fixture.rowIds[0]]
         .getMap(YjsEditorKey.data_section)
@@ -1503,53 +1506,27 @@ describe('desktop grid filter parity', () => {
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.time,
-            FieldType.Time,
-            NumberFilterCondition.Equal,
-            '75'
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.time, FieldType.Time, NumberFilterCondition.Equal, '75')])
+      )
+    ).toEqual([fixture.rowIds[0]]);
+
+    expect(
+      applyFilters(
+        makeFilters([makeDataFilter(fixture.fieldIds.time, FieldType.Time, NumberFilterCondition.LessThan, '80')])
       )
     ).toEqual([fixture.rowIds[0]]);
 
     expect(
       applyFilters(
         makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.time,
-            FieldType.Time,
-            NumberFilterCondition.LessThan,
-            '80'
-          ),
+          makeDataFilter(fixture.fieldIds.time, FieldType.Time, NumberFilterCondition.LessThanOrEqualTo, '75'),
         ])
       )
     ).toEqual([fixture.rowIds[0]]);
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.time,
-            FieldType.Time,
-            NumberFilterCondition.LessThanOrEqualTo,
-            '75'
-          ),
-        ])
-      )
-    ).toEqual([fixture.rowIds[0]]);
-
-    expect(
-      applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.time,
-            FieldType.Time,
-            NumberFilterCondition.NumberIsEmpty,
-            ''
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.time, FieldType.Time, NumberFilterCondition.NumberIsEmpty, '')])
       )
     ).toEqual([
       fixture.rowIds[1],
@@ -1562,14 +1539,7 @@ describe('desktop grid filter parity', () => {
 
     expect(
       applyFilters(
-        makeFilters([
-          makeDataFilter(
-            fixture.fieldIds.time,
-            FieldType.Time,
-            NumberFilterCondition.NumberIsNotEmpty,
-            ''
-          ),
-        ])
+        makeFilters([makeDataFilter(fixture.fieldIds.time, FieldType.Time, NumberFilterCondition.NumberIsNotEmpty, '')])
       )
     ).toEqual([fixture.rowIds[0]]);
   });
@@ -1617,11 +1587,7 @@ describe('desktop grid filter parity', () => {
     );
     const orGroup = makeGroupFilter(FilterType.Or, [blankTextFilter, checkboxFilter]);
 
-    expect(applyFilters(makeFilters([orGroup]))).toEqual([
-      fixture.rowIds[0],
-      fixture.rowIds[1],
-      fixture.rowIds[5],
-    ]);
+    expect(applyFilters(makeFilters([orGroup]))).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[5]]);
   });
 
   it('applies nested filters with mixed group order', () => {
@@ -1997,10 +1963,7 @@ describe('desktop sync filter operations (delete/update with plain objects)', ()
     const doc = new Y.Doc();
     const childrenArray = doc.getArray('children');
 
-    childrenArray.push([
-      { [YjsDatabaseKey.id]: 'filter-1' },
-      { [YjsDatabaseKey.id]: 'filter-2' },
-    ]);
+    childrenArray.push([{ [YjsDatabaseKey.id]: 'filter-1' }, { [YjsDatabaseKey.id]: 'filter-2' }]);
 
     const targetId = 'non-existent';
     const index = childrenArray.toArray().findIndex((f) => {
@@ -2095,12 +2058,7 @@ describe('v070 advanced filter tests', () => {
     const doc = new Y.Doc();
     let counter = 0;
 
-    const makeDataFilter = (
-      fieldName: string,
-      fieldType: FieldType,
-      condition: number,
-      content: string = ''
-    ) => {
+    const makeDataFilter = (fieldName: string, fieldType: FieldType, condition: number, content: string = '') => {
       const fieldId = fixture.fieldIdByName.get(fieldName);
       if (!fieldId) throw new Error(`Field "${fieldName}" not found`);
       const f = new Y.Map() as YDatabaseFilter;
@@ -2197,13 +2155,17 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice Wang|https://awang.io',
-      'Frank|https://frank.net',
-      'Alice|https://alice2.com',
-      'Jane|',
-    ], 'Case 1b');
+    assertVisibleRows(
+      result,
+      [
+        'Alice|https://alice.com',
+        'Alice Wang|https://awang.io',
+        'Frank|https://frank.net',
+        'Alice|https://alice2.com',
+        'Jane|',
+      ],
+      'Case 1b'
+    );
   });
 
   // Case 2: OR(Name Contains "Ali", AND(Notes Is "Team lead", Status Is Pending)) => 3
@@ -2222,11 +2184,11 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice Wang|https://awang.io',
-      'Alice|https://alice2.com',
-    ], 'Case 2');
+    assertVisibleRows(
+      result,
+      ['Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Alice|https://alice2.com'],
+      'Case 2'
+    );
   });
 
   // Case 3: AND(Age > 30, Active IsChecked, Status Is Active) => 3
@@ -2241,11 +2203,7 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Dave|https://dave.org',
-      '|https://unknown.com',
-      'Karl|https://karl.de',
-    ], 'Case 3');
+    assertVisibleRows(result, ['Dave|https://dave.org', '|https://unknown.com', 'Karl|https://karl.de'], 'Case 3');
   });
 
   // Case 4: OR(Name Is "Bob", Age Equal 50, Status Is Inactive) => 4
@@ -2260,12 +2218,11 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      'Bob|https://bob.dev',
-      'Alice Wang|https://awang.io',
-      'Frank|https://frank.net',
-      'Jane|',
-    ], 'Case 4');
+    assertVisibleRows(
+      result,
+      ['Bob|https://bob.dev', 'Alice Wang|https://awang.io', 'Frank|https://frank.net', 'Jane|'],
+      'Case 4'
+    );
   });
 
   // Case 5: OR(Active IsChecked, AND(Age > 25, Status Is Pending)) => 10
@@ -2302,12 +2259,11 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice Wang|https://awang.io',
-      'Eve|',
-      'Alice|https://alice2.com',
-    ], 'Case 6');
+    assertVisibleRows(
+      result,
+      ['Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Eve|', 'Alice|https://alice2.com'],
+      'Case 6'
+    );
   });
 
   // Case 7: AND(Name EndsWith "e", Categories Contains Work) => 3
@@ -2321,11 +2277,11 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Dave|https://dave.org',
-      'Alice|https://alice2.com',
-    ], 'Case 7');
+    assertVisibleRows(
+      result,
+      ['Alice|https://alice.com', 'Dave|https://dave.org', 'Alice|https://alice2.com'],
+      'Case 7'
+    );
   });
 
   // Case 8: OR(Age < 30, Active IsUnChecked) => 10
@@ -2338,18 +2294,22 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Charlie|',
-      '|',
-      'Eve|',
-      'Grace|https://grace.ai',
-      'Hank|',
-      'Alice|https://alice2.com',
-      'Ivan|https://ivan.ru',
-      'Jane|',
-      'Lily|',
-    ], 'Case 8');
+    assertVisibleRows(
+      result,
+      [
+        'Alice|https://alice.com',
+        'Charlie|',
+        '|',
+        'Eve|',
+        'Grace|https://grace.ai',
+        'Hank|',
+        'Alice|https://alice2.com',
+        'Ivan|https://ivan.ru',
+        'Jane|',
+        'Lily|',
+      ],
+      'Case 8'
+    );
   });
 
   // Case 10: AND(Tasks IsComplete, Active IsChecked, Status Is Active) => 3
@@ -2364,11 +2324,7 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      '|https://unknown.com',
-      'Karl|https://karl.de',
-    ], 'Case 10');
+    assertVisibleRows(result, ['Alice|https://alice.com', '|https://unknown.com', 'Karl|https://karl.de'], 'Case 10');
   });
 
   // Case 12: AND(Categories Contains Health, Tasks IsIncomplete) => 2
@@ -2382,10 +2338,7 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Charlie|',
-      'Ivan|https://ivan.ru',
-    ], 'Case 12');
+    assertVisibleRows(result, ['Charlie|', 'Ivan|https://ivan.ru'], 'Case 12');
   });
 
   // Case 15: OR(AND(Name Contains "Ali", Status Active), AND(Score < 0, Active IsChecked)) => 2
@@ -2406,10 +2359,7 @@ describe('v070 advanced filter tests', () => {
     const orGroup = makeGroupFilter(FilterType.Or, [and1, and2]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice Wang|https://awang.io',
-    ], 'Case 15');
+    assertVisibleRows(result, ['Alice|https://alice.com', 'Alice Wang|https://awang.io'], 'Case 15');
   });
 
   // Case 17: AND(Name Contains "Ali", Website Contains "alice") => 2
@@ -2422,10 +2372,7 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice|https://alice2.com',
-    ], 'Case 17');
+    assertVisibleRows(result, ['Alice|https://alice.com', 'Alice|https://alice2.com'], 'Case 17');
   });
 
   // Case 18: OR(Name IsEmpty, Age NumberIsEmpty, Status OptionIsEmpty) => 3
@@ -2439,11 +2386,7 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      '|',
-      '|https://unknown.com',
-      'Hank|',
-    ], 'Case 18');
+    assertVisibleRows(result, ['|', '|https://unknown.com', 'Hank|'], 'Case 18');
   });
 
   // Case 19: Left-nested And(Or(Active, Name "Ali"), Status Pending) => 1
@@ -2499,13 +2442,11 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([orGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice Wang|https://awang.io',
-      '|',
-      'Hank|',
-      'Alice|https://alice2.com',
-    ], 'Case 21');
+    assertVisibleRows(
+      result,
+      ['Alice|https://alice.com', 'Alice Wang|https://awang.io', '|', 'Hank|', 'Alice|https://alice2.com'],
+      'Case 21'
+    );
   });
 
   // Case 22: Right-nested And(Name "Ali", Or(Active, Age IsEmpty)) => 3
@@ -2523,11 +2464,11 @@ describe('v070 advanced filter tests', () => {
     ]);
 
     const result = applyFilters(makeFilters([andGroup]));
-    assertVisibleRows(result, [
-      'Alice|https://alice.com',
-      'Alice Wang|https://awang.io',
-      'Alice|https://alice2.com',
-    ], 'Case 22');
+    assertVisibleRows(
+      result,
+      ['Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Alice|https://alice2.com'],
+      'Case 22'
+    );
   });
 });
 
@@ -2594,11 +2535,21 @@ describe('personFilter bug fixes', () => {
 
   it('PersonContains uses ALL semantics', () => {
     // ALL filter IDs must be present in cell
-    expect(personFilterCheck(JSON.stringify(['u1', 'u2']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)).toBe(true);
+    expect(
+      personFilterCheck(JSON.stringify(['u1', 'u2']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)
+    ).toBe(true);
     // u2 not in cell
-    expect(personFilterCheck(JSON.stringify(['u1']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)).toBe(false);
+    expect(
+      personFilterCheck(JSON.stringify(['u1']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)
+    ).toBe(false);
     // all filter IDs present (cell has extra)
-    expect(personFilterCheck(JSON.stringify(['u1', 'u2', 'u3']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)).toBe(true);
+    expect(
+      personFilterCheck(
+        JSON.stringify(['u1', 'u2', 'u3']),
+        JSON.stringify(['u1', 'u2']),
+        PersonFilterCondition.PersonContains
+      )
+    ).toBe(true);
   });
 });
 
@@ -2615,53 +2566,55 @@ describe('groupByConsecutiveOperator', () => {
 
   it('groups all-AND drafts into single group', () => {
     const groups = groupByConsecutiveOperator([
-      draft('A', null), draft('B', FilterType.And), draft('C', FilterType.And),
+      draft('A', null),
+      draft('B', FilterType.And),
+      draft('C', FilterType.And),
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0].operator).toBe(FilterType.And);
-    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B', 'C']);
+    expect(groups[0].drafts.map((d) => d.id)).toEqual(['A', 'B', 'C']);
   });
 
   it('groups all-OR drafts into single group', () => {
-    const groups = groupByConsecutiveOperator([
-      draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.Or),
-    ]);
+    const groups = groupByConsecutiveOperator([draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.Or)]);
     expect(groups).toHaveLength(1);
     expect(groups[0].operator).toBe(FilterType.Or);
-    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B', 'C']);
+    expect(groups[0].drafts.map((d) => d.id)).toEqual(['A', 'B', 'C']);
   });
 
   it('splits mixed operators into consecutive groups', () => {
     // [A(null), B(Or), C(And)] → [{Or: [A,B]}, {And: [C]}]
-    const groups = groupByConsecutiveOperator([
-      draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.And),
-    ]);
+    const groups = groupByConsecutiveOperator([draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.And)]);
     expect(groups).toHaveLength(2);
     expect(groups[0].operator).toBe(FilterType.Or);
-    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B']);
+    expect(groups[0].drafts.map((d) => d.id)).toEqual(['A', 'B']);
     expect(groups[1].operator).toBe(FilterType.And);
-    expect(groups[1].drafts.map(d => d.id)).toEqual(['C']);
+    expect(groups[1].drafts.map((d) => d.id)).toEqual(['C']);
   });
 
   it('handles complex mixed operators', () => {
     // [A(null), B(Or), C(Or), D(And), E(And), F(Or)]
     const groups = groupByConsecutiveOperator([
-      draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.Or),
-      draft('D', FilterType.And), draft('E', FilterType.And), draft('F', FilterType.Or),
+      draft('A', null),
+      draft('B', FilterType.Or),
+      draft('C', FilterType.Or),
+      draft('D', FilterType.And),
+      draft('E', FilterType.And),
+      draft('F', FilterType.Or),
     ]);
     expect(groups).toHaveLength(3);
-    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B', 'C']);
+    expect(groups[0].drafts.map((d) => d.id)).toEqual(['A', 'B', 'C']);
     expect(groups[0].operator).toBe(FilterType.Or);
-    expect(groups[1].drafts.map(d => d.id)).toEqual(['D', 'E']);
+    expect(groups[1].drafts.map((d) => d.id)).toEqual(['D', 'E']);
     expect(groups[1].operator).toBe(FilterType.And);
-    expect(groups[2].drafts.map(d => d.id)).toEqual(['F']);
+    expect(groups[2].drafts.map((d) => d.id)).toEqual(['F']);
     expect(groups[2].operator).toBe(FilterType.Or);
   });
 
   it('handles single draft', () => {
     const groups = groupByConsecutiveOperator([draft('A', null)]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].drafts.map(d => d.id)).toEqual(['A']);
+    expect(groups[0].drafts.map((d) => d.id)).toEqual(['A']);
   });
 });
 
@@ -2676,12 +2629,7 @@ describe('v070 text/url filter tests', () => {
     fixture = loadV070DatabaseFixture();
   });
 
-  function applySingleFilter(
-    fieldName: string,
-    fieldType: FieldType,
-    condition: number,
-    content: string = ''
-  ) {
+  function applySingleFilter(fieldName: string, fieldType: FieldType, condition: number, content: string = '') {
     const fieldId = fixture.fieldIdByName.get(fieldName)!;
     const filters = createFilters([{ fieldId, fieldType, condition, content }]);
     return filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((r) => r.id);
@@ -2732,8 +2680,13 @@ describe('v070 text/url filter tests', () => {
   it('Name TextEndsWith "e" => 7 rows', () => {
     const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextEndsWith, 'e');
     assertKeys(result, [
-      'Alice|https://alice.com', 'Charlie|', 'Dave|https://dave.org',
-      'Eve|', 'Grace|https://grace.ai', 'Alice|https://alice2.com', 'Jane|',
+      'Alice|https://alice.com',
+      'Charlie|',
+      'Dave|https://dave.org',
+      'Eve|',
+      'Grace|https://grace.ai',
+      'Alice|https://alice2.com',
+      'Jane|',
     ]);
   });
 
@@ -2776,9 +2729,7 @@ describe('v070 text/url filter tests', () => {
 
   it('Notes TextContains "er" => 5 rows', () => {
     const result = applySingleFilter('Notes', FieldType.RichText, TextFilterCondition.TextContains, 'er');
-    assertKeys(result, [
-      'Bob|https://bob.dev', 'Dave|https://dave.org', 'Eve|', 'Jane|', 'Lily|',
-    ]);
+    assertKeys(result, ['Bob|https://bob.dev', 'Dave|https://dave.org', 'Eve|', 'Jane|', 'Lily|']);
   });
 });
 
@@ -2825,8 +2776,10 @@ describe('v070 number filter tests', () => {
   it('Age GreaterThan 35 => 4 rows', () => {
     const result = applySingleFilter('Age', NumberFilterCondition.GreaterThan, '35');
     assertKeys(result, [
-      'Alice Wang|https://awang.io', 'Frank|https://frank.net',
-      '|https://unknown.com', 'Karl|https://karl.de',
+      'Alice Wang|https://awang.io',
+      'Frank|https://frank.net',
+      '|https://unknown.com',
+      'Karl|https://karl.de',
     ]);
   });
 
@@ -2838,16 +2791,22 @@ describe('v070 number filter tests', () => {
   it('Age GreaterThanOrEqualTo 35 => 5 rows', () => {
     const result = applySingleFilter('Age', NumberFilterCondition.GreaterThanOrEqualTo, '35');
     assertKeys(result, [
-      'Alice Wang|https://awang.io', 'Dave|https://dave.org',
-      'Frank|https://frank.net', '|https://unknown.com', 'Karl|https://karl.de',
+      'Alice Wang|https://awang.io',
+      'Dave|https://dave.org',
+      'Frank|https://frank.net',
+      '|https://unknown.com',
+      'Karl|https://karl.de',
     ]);
   });
 
   it('Age LessThanOrEqualTo 25 => 5 rows', () => {
     const result = applySingleFilter('Age', NumberFilterCondition.LessThanOrEqualTo, '25');
     assertKeys(result, [
-      'Alice|https://alice.com', 'Charlie|', 'Grace|https://grace.ai',
-      'Alice|https://alice2.com', 'Lily|',
+      'Alice|https://alice.com',
+      'Charlie|',
+      'Grace|https://grace.ai',
+      'Alice|https://alice2.com',
+      'Lily|',
     ]);
   });
 
@@ -2928,26 +2887,46 @@ describe('v070 select filter tests', () => {
     const activeId = getOptionId('Status', 'Active');
     const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, activeId);
     assertKeys(result, [
-      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Dave|https://dave.org',
-      'Grace|https://grace.ai', '|https://unknown.com', 'Ivan|https://ivan.ru', 'Karl|https://karl.de',
+      'Alice|https://alice.com',
+      'Bob|https://bob.dev',
+      'Dave|https://dave.org',
+      'Grace|https://grace.ai',
+      '|https://unknown.com',
+      'Ivan|https://ivan.ru',
+      'Karl|https://karl.de',
     ]);
   });
 
   it('Status OptionIsNot Active => 9 rows', () => {
     const activeId = getOptionId('Status', 'Active');
-    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIsNot, activeId);
+    const result = applySingleFilter(
+      'Status',
+      FieldType.SingleSelect,
+      SelectOptionFilterCondition.OptionIsNot,
+      activeId
+    );
     expect(result.length).toBe(9);
   });
 
   it('Status OptionContains Active => 7 rows', () => {
     const activeId = getOptionId('Status', 'Active');
-    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionContains, activeId);
+    const result = applySingleFilter(
+      'Status',
+      FieldType.SingleSelect,
+      SelectOptionFilterCondition.OptionContains,
+      activeId
+    );
     expect(result.length).toBe(7);
   });
 
   it('Status OptionDoesNotContain Active => 9 rows', () => {
     const activeId = getOptionId('Status', 'Active');
-    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionDoesNotContain, activeId);
+    const result = applySingleFilter(
+      'Status',
+      FieldType.SingleSelect,
+      SelectOptionFilterCondition.OptionDoesNotContain,
+      activeId
+    );
     expect(result.length).toBe(9);
   });
 
@@ -2971,40 +2950,73 @@ describe('v070 select filter tests', () => {
 
   it('Categories OptionIsNot Work => 15 rows', () => {
     const workId = getOptionId('Categories', 'Work');
-    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIsNot, workId);
+    const result = applySingleFilter(
+      'Categories',
+      FieldType.MultiSelect,
+      SelectOptionFilterCondition.OptionIsNot,
+      workId
+    );
     expect(result.length).toBe(15);
   });
 
   it('Categories OptionContains Work => 7 rows', () => {
     const workId = getOptionId('Categories', 'Work');
-    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, workId);
+    const result = applySingleFilter(
+      'Categories',
+      FieldType.MultiSelect,
+      SelectOptionFilterCondition.OptionContains,
+      workId
+    );
     assertKeys(result, [
-      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Dave|https://dave.org',
-      'Frank|https://frank.net', '|https://unknown.com', 'Alice|https://alice2.com', 'Karl|https://karl.de',
+      'Alice|https://alice.com',
+      'Bob|https://bob.dev',
+      'Dave|https://dave.org',
+      'Frank|https://frank.net',
+      '|https://unknown.com',
+      'Alice|https://alice2.com',
+      'Karl|https://karl.de',
     ]);
   });
 
   it('Categories OptionDoesNotContain Work => 9 rows', () => {
     const workId = getOptionId('Categories', 'Work');
-    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionDoesNotContain, workId);
+    const result = applySingleFilter(
+      'Categories',
+      FieldType.MultiSelect,
+      SelectOptionFilterCondition.OptionDoesNotContain,
+      workId
+    );
     expect(result.length).toBe(9);
   });
 
   it('Categories OptionContains Work,Health => 10 rows', () => {
     const workId = getOptionId('Categories', 'Work');
     const healthId = getOptionId('Categories', 'Health');
-    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, `${workId},${healthId}`);
+    const result = applySingleFilter(
+      'Categories',
+      FieldType.MultiSelect,
+      SelectOptionFilterCondition.OptionContains,
+      `${workId},${healthId}`
+    );
     expect(result.length).toBe(10);
   });
 
   it('Categories OptionIs Work,Health => 4 rows (subset check)', () => {
     const workId = getOptionId('Categories', 'Work');
     const healthId = getOptionId('Categories', 'Health');
-    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIs, `${workId},${healthId}`);
+    const result = applySingleFilter(
+      'Categories',
+      FieldType.MultiSelect,
+      SelectOptionFilterCondition.OptionIs,
+      `${workId},${healthId}`
+    );
     // OptionIs = all cell options must be within {Work, Health}
     // Alice: {Work,Health} ✓, Bob: {Work} ✓, Frank: {Health,Work} ✓, Ivan: {Health} ✓
     assertKeys(result, [
-      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Frank|https://frank.net', 'Ivan|https://ivan.ru',
+      'Alice|https://alice.com',
+      'Bob|https://bob.dev',
+      'Frank|https://frank.net',
+      'Ivan|https://ivan.ru',
     ]);
   });
 
@@ -3052,33 +3064,49 @@ describe('v070 checkbox/checklist filter tests', () => {
   it('Active IsChecked => 9 rows', () => {
     const result = applySingleFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked);
     assertKeys(result, [
-      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Alice Wang|https://awang.io',
-      'Dave|https://dave.org', 'Frank|https://frank.net', '|https://unknown.com',
-      'Alice|https://alice2.com', 'Jane|', 'Karl|https://karl.de',
+      'Alice|https://alice.com',
+      'Bob|https://bob.dev',
+      'Alice Wang|https://awang.io',
+      'Dave|https://dave.org',
+      'Frank|https://frank.net',
+      '|https://unknown.com',
+      'Alice|https://alice2.com',
+      'Jane|',
+      'Karl|https://karl.de',
     ]);
   });
 
   it('Active IsUnChecked => 7 rows', () => {
     const result = applySingleFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsUnChecked);
-    assertKeys(result, [
-      'Charlie|', '|', 'Eve|', 'Grace|https://grace.ai', 'Hank|', 'Ivan|https://ivan.ru', 'Lily|',
-    ]);
+    assertKeys(result, ['Charlie|', '|', 'Eve|', 'Grace|https://grace.ai', 'Hank|', 'Ivan|https://ivan.ru', 'Lily|']);
   });
 
   // Tasks (Checklist) tests
   it('Tasks IsComplete => 6 rows', () => {
     const result = applySingleFilter('Tasks', FieldType.Checklist, ChecklistFilterCondition.IsComplete);
     assertKeys(result, [
-      'Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Frank|https://frank.net',
-      '|https://unknown.com', 'Jane|', 'Karl|https://karl.de',
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+      'Frank|https://frank.net',
+      '|https://unknown.com',
+      'Jane|',
+      'Karl|https://karl.de',
     ]);
   });
 
   it('Tasks IsIncomplete => 10 rows', () => {
     const result = applySingleFilter('Tasks', FieldType.Checklist, ChecklistFilterCondition.IsIncomplete);
     assertKeys(result, [
-      'Bob|https://bob.dev', 'Charlie|', '|', 'Dave|https://dave.org', 'Eve|',
-      'Grace|https://grace.ai', 'Hank|', 'Alice|https://alice2.com', 'Ivan|https://ivan.ru', 'Lily|',
+      'Bob|https://bob.dev',
+      'Charlie|',
+      '|',
+      'Dave|https://dave.org',
+      'Eve|',
+      'Grace|https://grace.ai',
+      'Hank|',
+      'Alice|https://alice2.com',
+      'Ivan|https://ivan.ru',
+      'Lily|',
     ]);
   });
 });

@@ -42,6 +42,7 @@ import {
   hasEffectiveFilters,
   parseFilter,
 } from '@/application/database-yjs/filter';
+import { DEFAULT_GALLERY_LAYOUT_SETTINGS } from '@/application/database-yjs/gallery-layout';
 import {
   areGroupRowsHydrated,
   getGroupColumns,
@@ -82,6 +83,9 @@ import { sortBy } from '@/application/database-yjs/sort';
 import {
   DatabaseViewLayout,
   FieldId,
+  GalleryCardPreview,
+  GalleryCardSize,
+  GalleryLayoutSettings,
   RowId,
   SortId,
   TimeFormat,
@@ -94,6 +98,7 @@ import {
   YDatabaseMetas,
   YDatabaseRow,
   YDatabaseSorts,
+  YDatabaseView,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -363,6 +368,35 @@ export function useFieldsSelector(visibilitys: FieldVisibility[] = defaultVisibl
   }, [database, view, visibilitys]);
 
   return columns;
+}
+
+/**
+ * Return the active view's persisted group field without waiting for an
+ * effect. Gallery keeps Board grouping configuration when layouts switch, but
+ * Desktop never renders that grouping field as a card property.
+ */
+export function useDatabaseGroupFieldIdSelector(): string | undefined {
+  const view = useDatabaseView();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!view) return () => undefined;
+
+      view.observeDeep(onStoreChange);
+      return () => view.unobserveDeep(onStoreChange);
+    },
+    [view]
+  );
+  const getSnapshot = useCallback(() => {
+    const groups = view?.get(YjsDatabaseKey.groups);
+    // Yjs 14 throws when reading beyond an array's current length. Gallery
+    // views normally have no groups, so guard the first-item lookup.
+    const group = groups && groups.length > 0 ? groups.get(0) : undefined;
+    const fieldId = group?.get(YjsDatabaseKey.field_id);
+
+    return typeof fieldId === 'string' && fieldId ? fieldId : undefined;
+  }, [view]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function useFieldType(fieldId: string) {
@@ -3456,4 +3490,58 @@ export function useChartLayoutSetting(): ChartLayoutSettings | null {
   }, [database, viewId]);
 
   return setting;
+}
+
+function gallerySettingsEqual(a: GalleryLayoutSettings, b: GalleryLayoutSettings): boolean {
+  return (
+    a.showCover === b.showCover &&
+    a.fitImage === b.fitImage &&
+    a.cardSize === b.cardSize &&
+    a.cardWidth === b.cardWidth &&
+    a.cardPreview === b.cardPreview &&
+    a.coverFieldId === b.coverFieldId
+  );
+}
+
+function readGalleryLayoutSettings(view?: YDatabaseView): GalleryLayoutSettings {
+  const map = view?.get(YjsDatabaseKey.layout_settings)?.get('5');
+  const coverFieldId = map?.get(YjsDatabaseKey.cover_field_id);
+
+  return {
+    // Flutter Desktop always renders Gallery covers and writes true whenever
+    // settings are saved. Ignore stale cross-client false values so existing
+    // cards and the add-row card keep the same geometry.
+    showCover: true,
+    fitImage: map?.get(YjsDatabaseKey.fit_image) ?? DEFAULT_GALLERY_LAYOUT_SETTINGS.fitImage,
+    cardSize: Number(map?.get(YjsDatabaseKey.card_size) ?? DEFAULT_GALLERY_LAYOUT_SETTINGS.cardSize) as GalleryCardSize,
+    cardWidth: Number(map?.get(YjsDatabaseKey.card_width) ?? DEFAULT_GALLERY_LAYOUT_SETTINGS.cardWidth),
+    cardPreview: Number(
+      map?.get(YjsDatabaseKey.card_preview) ?? DEFAULT_GALLERY_LAYOUT_SETTINGS.cardPreview
+    ) as GalleryCardPreview,
+    coverFieldId: coverFieldId ? String(coverFieldId) : undefined,
+  };
+}
+
+/** Subscribe to Desktop-compatible Gallery settings at `layout_settings['5']`. */
+export function useGalleryLayoutSettings(): GalleryLayoutSettings {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+  const [settings, setSettings] = useState<GalleryLayoutSettings>(() => readGalleryLayoutSettings(view));
+
+  useLayoutEffect(() => {
+    if (!view) return;
+
+    const update = () => {
+      const next = readGalleryLayoutSettings(view);
+
+      setSettings((current) => (gallerySettingsEqual(current, next) ? current : next));
+    };
+
+    update();
+    view.observeDeep(update);
+    return () => view.unobserveDeep(update);
+  }, [view]);
+
+  return settings;
 }

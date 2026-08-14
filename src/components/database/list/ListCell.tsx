@@ -12,6 +12,7 @@ import type { Column } from '@/application/database-yjs';
 import type { Cell as DatabaseCell, FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as AttachmentIcon } from '@/assets/icons/attachment.svg';
 import { ReactComponent as CheckboxCheckIcon } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckIcon } from '@/assets/icons/uncheck.svg';
@@ -22,13 +23,17 @@ import { cn } from '@/lib/utils';
 function ListCheckboxCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
+  const { field } = useFieldSelector(fieldId);
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
   const checked = getChecked(cell?.data as string | number | boolean | undefined);
+  const fieldName =
+    field && typeof (field as { get?: unknown }).get === 'function' ? field.get(YjsDatabaseKey.name) : undefined;
+  const stateLabel = checked ? t('button.checked') : t('button.unchecked');
 
   return (
     <button
       aria-checked={checked}
-      aria-label={t('grid.field.checkbox', { defaultValue: checked ? 'Checked' : 'Unchecked' })}
+      aria-label={fieldName ? `${fieldName}: ${stateLabel}` : stateLabel}
       aria-readonly={readOnly}
       className='flex h-5 w-5 shrink-0 items-center justify-center text-text-action'
       data-checked={checked}

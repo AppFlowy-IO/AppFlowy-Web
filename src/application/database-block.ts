@@ -6,6 +6,7 @@ export const DATABASE_BLOCK_TYPES = [
   BlockType.CalendarBlock,
   BlockType.ListBlock,
   BlockType.ChartBlock,
+  BlockType.DatabaseGalleryBlock,
 ] as const;
 
 export type DatabaseBlockType = (typeof DATABASE_BLOCK_TYPES)[number];
@@ -28,6 +29,8 @@ export function getDatabaseLayoutFromBlockType(type: unknown): ViewLayout | unde
       return ViewLayout.List;
     case BlockType.ChartBlock:
       return ViewLayout.Chart;
+    case BlockType.DatabaseGalleryBlock:
+      return ViewLayout.Gallery;
     default:
       return undefined;
   }

@@ -6,6 +6,7 @@ import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import { createLinkedDatabaseGalleryView } from '@/application/database-yjs/gallery-layout';
 import { createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
@@ -13,7 +14,7 @@ import { getView } from '@/application/services/js-services/http/view-api';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
-import { BlockType, View, ViewLayout } from '@/application/types';
+import { BlockType, CreateDatabaseViewResponse, View, ViewLayout } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -305,30 +306,49 @@ function ControlsMenu({
               throw new Error(t('document.plugins.subPage.errors.failedDuplicateFindView'));
             }
 
-            const response =
-              layout === ViewLayout.List
-                ? await createLinkedDatabaseListView({
-                    requestViewId: parentId,
-                    sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
-                    payload: {
-                      parent_view_id: parentId,
-                      database_id: databaseId,
-                      name: sourceView?.name,
-                      embedded: true,
-                    },
-                    createDatabaseView,
-                    loadView,
-                    bindViewSync,
-                    deletePage,
-                    scheduleDeferredCleanup,
-                  })
-                : await createDatabaseView(parentId, {
-                    parent_view_id: parentId,
-                    database_id: databaseId,
-                    layout,
-                    name: sourceView?.name,
-                    embedded: true,
-                  });
+            let response: CreateDatabaseViewResponse;
+
+            if (layout === ViewLayout.List) {
+              response = await createLinkedDatabaseListView({
+                requestViewId: parentId,
+                sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+                payload: {
+                  parent_view_id: parentId,
+                  database_id: databaseId,
+                  name: sourceView?.name,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
+                deletePage,
+                scheduleDeferredCleanup,
+              });
+            } else if (layout === ViewLayout.Gallery) {
+              response = await createLinkedDatabaseGalleryView({
+                requestViewId: parentId,
+                sourceViewId: sourceView?.view_id ?? sourceViewIds[i],
+                payload: {
+                  parent_view_id: parentId,
+                  database_id: databaseId,
+                  name: sourceView?.name,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
+                deletePage,
+                scheduleDeferredCleanup,
+              });
+            } else {
+              response = await createDatabaseView(parentId, {
+                parent_view_id: parentId,
+                database_id: databaseId,
+                layout,
+                name: sourceView?.name,
+                embedded: true,
+              });
+            }
 
             return response.view_id;
           })

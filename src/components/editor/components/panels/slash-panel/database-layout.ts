@@ -6,6 +6,7 @@ const DATABASE_LAYOUTS = new Set<ViewLayout>([
   ViewLayout.Calendar,
   ViewLayout.Chart,
   ViewLayout.List,
+  ViewLayout.Gallery,
 ]);
 
 /** Map each database view layout to its cross-client document block type. */
@@ -21,6 +22,8 @@ export function getDatabaseBlockTypeForLayout(layout: ViewLayout): BlockType | n
       return BlockType.CalendarBlock;
     case ViewLayout.Chart:
       return BlockType.ChartBlock;
+    case ViewLayout.Gallery:
+      return BlockType.DatabaseGalleryBlock;
     default:
       return null;
   }

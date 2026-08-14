@@ -27,6 +27,7 @@ function CollabView({ doc }: CollabViewProps) {
       case ViewLayout.Board:
       case ViewLayout.Calendar:
       case ViewLayout.List:
+      case ViewLayout.Gallery:
         return DatabaseView;
       default:
         return null;
@@ -77,6 +78,7 @@ function CollabView({ doc }: CollabViewProps) {
     switch (layout) {
       case ViewLayout.Grid:
       case ViewLayout.List:
+      case ViewLayout.Gallery:
         return <GridSkeleton />;
       case ViewLayout.Board:
         return <KanbanSkeleton />;

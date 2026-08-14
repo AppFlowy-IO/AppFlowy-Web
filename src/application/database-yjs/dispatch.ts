@@ -50,6 +50,11 @@ import { createSelectOptionCell } from '@/application/database-yjs/fields/select
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import {
+  initializeGalleryLayoutSetting,
+  normalizeCreatedDatabaseGalleryView,
+  updateCreatesExactGalleryView as updateCreatesExactDatabaseView,
+} from '@/application/database-yjs/gallery-layout';
+import {
   getGroupColumns,
   isDatabaseGroupableFieldType,
   parseDateGroupConfiguration,
@@ -67,6 +72,7 @@ import {
   removeCreatedDatabaseView,
 } from '@/application/database-yjs/list-layout';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
+import { getInlineViewRowOrders, materializeVisibleRowOrders } from '@/application/database-yjs/row-order-visibility';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import { deleteCollabDB } from '@/application/db';
@@ -76,6 +82,7 @@ import {
   DatabaseViewLayout,
   DateFormat,
   FieldId,
+  GalleryLayoutSettings,
   RowId,
   TimeFormat,
   UpdatePagePayload,
@@ -92,7 +99,6 @@ import {
   YDatabaseFieldOrders,
   YDatabaseFields,
   YDatabaseFieldSetting,
-  YDatabaseFieldSettings,
   YDatabaseFieldTypeOption,
   YDatabaseFilter,
   YDatabaseFilters,
@@ -103,6 +109,7 @@ import {
   YDatabaseLayoutSettings,
   YDatabaseListLayoutSetting,
   YDatabaseRow,
+  YDatabaseRowOrders,
   YDatabaseSort,
   YDatabaseSorts,
   YDatabaseView,
@@ -2372,36 +2379,26 @@ export function useUpdateRowMetaDispatch(rowId: string) {
 
 export { useUpdateCellDispatch, useUpdateStartEndTimeCell } from './dispatch/cell';
 
-function generateBoardSetting(database: YDatabase): YDatabaseFieldSettings {
-  const fieldSettingsMap = new Y.Map() as YDatabaseFieldSettings;
-
-  const boardFields = database.get(YjsDatabaseKey.fields);
-
-  if (!boardFields) {
-    return fieldSettingsMap;
-  }
-
-  boardFields.forEach((_, id) => {
-    const setting = new Y.Map() as YDatabaseFieldSetting;
-
-    setting.set(YjsDatabaseKey.visibility, FieldVisibility.HideWhenEmpty);
-    setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
-
-    fieldSettingsMap.set(id, setting);
-  });
-
-  return fieldSettingsMap;
-}
-
-function generateBoardLayoutSettings() {
-  const layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+function createBoardLayoutSetting() {
   const layoutSetting = new Y.Map() as YDatabaseBoardLayoutSetting;
 
   layoutSetting.set(YjsDatabaseKey.hide_ungrouped_column, false);
   layoutSetting.set(YjsDatabaseKey.hide_empty_groups, false);
   layoutSetting.set(YjsDatabaseKey.collapse_hidden_groups, true);
-  layoutSettings.set('1', layoutSetting);
-  return layoutSettings;
+  return layoutSetting;
+}
+
+function initializeBoardLayoutSetting(view: YDatabaseView) {
+  let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
+
+  if (!layoutSettings) {
+    layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+    view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+  }
+
+  if (!layoutSettings.has('1')) {
+    layoutSettings.set('1', createBoardLayoutSetting());
+  }
 }
 
 function generateBoardGroup(database: YDatabase, fieldOrders: YDatabaseFieldOrders) {
@@ -2445,14 +2442,33 @@ function generateBoardGroup(database: YDatabase, fieldOrders: YDatabaseFieldOrde
 
 function generateCalendarLayoutSettings(fieldId: FieldId, _defaultTimeSetting: DefaultTimeSetting) {
   const layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+  const layoutSetting = createCalendarLayoutSetting(fieldId);
+
+  layoutSettings.set('2', layoutSetting);
+  return layoutSettings;
+}
+
+function createCalendarLayoutSetting(fieldId: FieldId) {
   const layoutSetting = new Y.Map() as YDatabaseCalendarLayoutSetting;
 
   layoutSetting.set(YjsDatabaseKey.field_id, fieldId);
   layoutSetting.set(YjsDatabaseKey.layout_ty, CalendarLayout.MonthLayout);
   layoutSetting.set(YjsDatabaseKey.show_week_numbers, true);
   layoutSetting.set(YjsDatabaseKey.show_weekends, true);
-  layoutSettings.set('2', layoutSetting);
-  return layoutSettings;
+  return layoutSetting;
+}
+
+function initializeCalendarLayoutSetting(view: YDatabaseView, fieldId: FieldId) {
+  let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
+
+  if (!layoutSettings) {
+    layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+    view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+  }
+
+  if (!layoutSettings.has('2')) {
+    layoutSettings.set('2', createCalendarLayoutSetting(fieldId));
+  }
 }
 
 function useEnhanceCalendarLayoutByFieldExists() {
@@ -2522,6 +2538,13 @@ function useEnhanceCalendarLayoutByFieldExists() {
  * Hook to add a new database view (Grid, Board, or Calendar tab).
  * Creates a new view tab as a child of the main database page.
  */
+interface AddDatabaseViewOptions {
+  /** Place the new folder child immediately before this existing database view. */
+  insertBeforeViewId?: string;
+  /** Validate the returned child in an isolated Y.Doc before applying its update. */
+  requireExactCreatedView?: boolean;
+}
+
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
   const { databasePageId, activeViewId, createDatabaseView, databaseDoc, deletePage, loadViewMeta, isDocumentBlock } =
@@ -2539,7 +2562,7 @@ export function useAddDatabaseView() {
   }, [database]);
 
   return useCallback(
-    async (layout: DatabaseViewLayout, nameOverride?: string) => {
+    async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
       if (!createDatabaseView) {
         throw new Error('createDatabaseView not found');
       }
@@ -2579,6 +2602,21 @@ export function useAddDatabaseView() {
         return children.length > 0 ? children[children.length - 1].view_id : undefined;
       };
 
+      const getInsertionPrevViewId = (view: View | null | undefined, fallbackViewId?: string): string | undefined => {
+        const insertBeforeViewId = options?.insertBeforeViewId;
+        const children = view?.children ?? [];
+
+        if (insertBeforeViewId) {
+          const insertBeforeIndex = children.findIndex((child) => child.view_id === insertBeforeViewId);
+
+          if (insertBeforeIndex >= 0) {
+            return insertBeforeIndex > 0 ? children[insertBeforeIndex - 1].view_id : undefined;
+          }
+        }
+
+        return getLastChildViewId(view) ?? fallbackViewId;
+      };
+
       const { tabsParentViewId, prevViewId } = await (async (): Promise<{
         tabsParentViewId: string;
         prevViewId?: string;
@@ -2602,7 +2640,7 @@ export function useAddDatabaseView() {
         if (currentMeta && isDatabaseContainer(currentMeta)) {
           return {
             tabsParentViewId: currentMeta.view_id,
-            prevViewId: getLastChildViewId(currentMeta),
+            prevViewId: getInsertionPrevViewId(currentMeta),
           };
         }
 
@@ -2618,7 +2656,7 @@ export function useAddDatabaseView() {
         if (isDatabaseContainer(parentMeta)) {
           return {
             tabsParentViewId: parentId,
-            prevViewId: getLastChildViewId(parentMeta),
+            prevViewId: getInsertionPrevViewId(parentMeta),
           };
         }
 
@@ -2626,18 +2664,24 @@ export function useAddDatabaseView() {
         if (isDocumentBlock) {
           return {
             tabsParentViewId: parentId,
-            prevViewId: getLastChildViewId(parentMeta) ?? currentMeta?.view_id,
+            prevViewId: getInsertionPrevViewId(parentMeta, currentMeta?.view_id),
           };
         }
 
         // Backward-compatible fallback: attach under the current database view.
+        const databasePageMeta =
+          currentMeta?.view_id === databasePageId ? currentMeta : await safeLoadViewMeta(databasePageId);
+
         return {
           tabsParentViewId: databasePageId,
-          prevViewId: getLastChildViewId(currentMeta),
+          prevViewId: getInsertionPrevViewId(databasePageMeta),
         };
       })();
 
       const existingViewIds = new Set(database?.get(YjsDatabaseKey.views)?.keys() ?? []);
+      const requiresIsolatedValidation =
+        layout === DatabaseViewLayout.Gallery || options?.requireExactCreatedView === true;
+      const preRequestState = requiresIsolatedValidation ? Y.encodeStateAsUpdate(databaseDoc) : undefined;
 
       // Create new view as a child of the database container (or document for embedded linked views).
       const response = await createDatabaseView(requestViewId, {
@@ -2648,6 +2692,40 @@ export function useAddDatabaseView() {
         name: nameOverride ?? name,
         embedded: isDocumentBlock ?? false,
       });
+
+      if (requiresIsolatedValidation) {
+        const returnedViewWasNew = Boolean(response.view_id) && !existingViewIds.has(response.view_id);
+        const databaseUpdate = response.database_update;
+        const hasExactDatabaseUpdate =
+          Boolean(response.view_id) &&
+          response.database_id === databaseId &&
+          preRequestState !== undefined &&
+          databaseUpdate !== undefined &&
+          databaseUpdate.length > 0 &&
+          updateCreatesExactDatabaseView({
+            databaseId,
+            existingViewIds,
+            preRequestState,
+            update: databaseUpdate,
+            viewId: response.view_id,
+          });
+
+        if (!hasExactDatabaseUpdate) {
+          if (response.view_id && returnedViewWasNew) {
+            try {
+              await deletePage?.(response.view_id);
+            } catch (error) {
+              Log.warn('[useAddDatabaseView] failed to compensate an invalid database view', {
+                viewId: response.view_id,
+                layout,
+                error,
+              });
+            }
+          }
+
+          throw new Error(`The server did not return the requested ${name} database view`);
+        }
+      }
 
       if (response.database_update?.length) {
         applyYDoc(databaseDoc, new Uint8Array(response.database_update));
@@ -2683,6 +2761,34 @@ export function useAddDatabaseView() {
         }
       }
 
+      if (layout === DatabaseViewLayout.Gallery) {
+        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
+        const isExactReturnedView =
+          Boolean(response.view_id) &&
+          !existingViewIds.has(response.view_id) &&
+          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
+
+        if (
+          !isExactReturnedView ||
+          normalizeCreatedDatabaseGalleryView(databaseDoc, response.view_id) !== response.view_id
+        ) {
+          if (response.view_id && !existingViewIds.has(response.view_id)) {
+            removeCreatedDatabaseView(databaseDoc, response.view_id);
+
+            try {
+              await deletePage?.(response.view_id);
+            } catch (error) {
+              Log.warn('[useAddDatabaseView] failed to roll back an invalid Gallery view', {
+                viewId: response.view_id,
+                error,
+              });
+            }
+          }
+
+          throw new Error('The server did not return the requested Gallery database view');
+        }
+      }
+
       return response.view_id;
     },
     [
@@ -2699,12 +2805,166 @@ export function useAddDatabaseView() {
   );
 }
 
+const DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS = [
+  YjsDatabaseKey.field_orders,
+  YjsDatabaseKey.field_settings,
+  YjsDatabaseKey.filters,
+  YjsDatabaseKey.groups,
+  YjsDatabaseKey.layout_settings,
+  YjsDatabaseKey.sorts,
+  YjsDatabaseKey.calculations,
+] as const;
+
+function cloneDatabaseViewConfigurationValue(value: unknown): unknown {
+  if (value instanceof Y.Map) {
+    const clone = new Y.Map<unknown>();
+
+    value.forEach((childValue, key) => {
+      clone.set(key, cloneDatabaseViewConfigurationValue(childValue));
+    });
+    return clone;
+  }
+
+  if (value instanceof Y.Array) {
+    const clone = new Y.Array<unknown>();
+
+    clone.push(value.toArray().map(cloneDatabaseViewConfigurationValue));
+    return clone;
+  }
+
+  if (value instanceof Uint8Array) return value.slice();
+  if (Array.isArray(value)) return value.map(cloneDatabaseViewConfigurationValue);
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, childValue]) => [
+        key,
+        cloneDatabaseViewConfigurationValue(childValue),
+      ])
+    );
+  }
+
+  return value;
+}
+
+export function copyDatabaseViewConfiguration(
+  source: YDatabaseView,
+  target: YDatabaseView,
+  canonicalRowOrders?: YDatabaseRowOrders
+) {
+  const sourceMap = source as unknown as Y.Map<unknown>;
+  const targetMap = target as unknown as Y.Map<unknown>;
+
+  DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS.forEach((key) => {
+    const value = sourceMap.get(key);
+
+    if (value === undefined) {
+      targetMap.delete(key);
+      return;
+    }
+
+    targetMap.set(key, cloneDatabaseViewConfigurationValue(value));
+  });
+
+  const sourceRowOrders = source.get(YjsDatabaseKey.row_orders);
+
+  if (!sourceRowOrders) {
+    targetMap.delete(YjsDatabaseKey.row_orders);
+    return;
+  }
+
+  const visibleRowOrders = materializeVisibleRowOrders(sourceRowOrders.toJSON(), canonicalRowOrders?.toJSON()) ?? [];
+  const copiedRowOrders = new Y.Array() as YDatabaseRowOrders;
+
+  copiedRowOrders.push(
+    visibleRowOrders.map((rowOrder) => cloneDatabaseViewConfigurationValue(rowOrder)) as Array<{
+      id: RowId;
+      height: number;
+      is_deleted?: boolean;
+    }>
+  );
+  target.set(YjsDatabaseKey.row_orders, copiedRowOrders);
+}
+
+/**
+ * Duplicate a database tab while retaining the source database and rows.
+ * The server creates the new child view/folder entry; the client then copies
+ * the source's per-view configuration into that exact returned view.
+ */
+export function useDuplicateDatabaseView() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const { databaseDoc, deletePage } = useDatabaseContext();
+  const addDatabaseView = useAddDatabaseView();
+
+  return useCallback(
+    async (sourceViewId: string, duplicatedName?: string) => {
+      const views = database.get(YjsDatabaseKey.views);
+      const sourceView = views?.get(sourceViewId);
+
+      if (!views || !sourceView) throw new Error('Database view not found');
+
+      const layout = Number(sourceView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+      const targetName = duplicatedName?.trim() || `${sourceView.get(YjsDatabaseKey.name) || 'View'} (Copy)`;
+      const existingViewIds = new Set(views.keys());
+      let duplicatedViewId: string | undefined;
+      let duplicatedViewWasNew = false;
+
+      try {
+        duplicatedViewId = await addDatabaseView(layout, targetName, {
+          insertBeforeViewId: sourceViewId,
+          requireExactCreatedView: true,
+        });
+        duplicatedViewWasNew = Boolean(duplicatedViewId) && !existingViewIds.has(duplicatedViewId);
+
+        if (!duplicatedViewId || !duplicatedViewWasNew) {
+          throw new Error('The server did not return a new duplicated database view');
+        }
+
+        const duplicatedView = views.get(duplicatedViewId);
+        const exactDuplicatedViewId = (duplicatedView as unknown as Y.Map<unknown> | undefined)?.get(YjsDatabaseKey.id);
+
+        if (!duplicatedView || exactDuplicatedViewId !== duplicatedViewId) {
+          throw new Error('Duplicated database view not found');
+        }
+
+        const canonicalRowOrders = getInlineViewRowOrders(database);
+
+        executeOperations(
+          sharedRoot,
+          [() => copyDatabaseViewConfiguration(sourceView, duplicatedView, canonicalRowOrders)],
+          'duplicateDatabaseView'
+        );
+      } catch (error) {
+        if (!duplicatedViewId || !duplicatedViewWasNew) throw error;
+
+        removeCreatedDatabaseView(databaseDoc, duplicatedViewId);
+
+        try {
+          await deletePage?.(duplicatedViewId);
+        } catch (rollbackError) {
+          Log.warn('[useDuplicateDatabaseView] failed to roll back duplicated view', {
+            viewId: duplicatedViewId,
+            error: rollbackError,
+          });
+        }
+
+        throw error;
+      }
+
+      if (!duplicatedViewId) throw new Error('Duplicated database view not found');
+
+      return duplicatedViewId;
+    },
+    [addDatabaseView, database, databaseDoc, deletePage, sharedRoot]
+  );
+}
+
 export function useUpdateDatabaseLayout(viewId: string) {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
-  const defaultTimeSetting = useDefaultTimeSetting();
 
   return useCallback(
     (layout: DatabaseViewLayout) => {
@@ -2727,13 +2987,13 @@ export function useUpdateDatabaseLayout(viewId: string) {
             const fieldOrders = view.get(YjsDatabaseKey.field_orders);
 
             if (layout === DatabaseViewLayout.Board) {
-              const groups = generateBoardGroup(database, fieldOrders);
-              const settings = generateBoardSetting(database);
-              const layoutSettings = generateBoardLayoutSettings();
+              const groups = view.get(YjsDatabaseKey.groups);
 
-              view.set(YjsDatabaseKey.groups, groups);
-              view.set(YjsDatabaseKey.field_settings, settings);
-              view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+              if (!groups?.length) {
+                view.set(YjsDatabaseKey.groups, generateBoardGroup(database, fieldOrders));
+              }
+
+              initializeBoardLayoutSetting(view);
             }
 
             if (layout === DatabaseViewLayout.Calendar) {
@@ -2745,9 +3005,7 @@ export function useUpdateDatabaseLayout(viewId: string) {
                 throw new Error(`Date field not found`);
               }
 
-              const layoutSettings = generateCalendarLayoutSettings(fieldId, defaultTimeSetting);
-
-              view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+              initializeCalendarLayoutSetting(view, fieldId);
             }
 
             if (layout === DatabaseViewLayout.List) {
@@ -2755,6 +3013,10 @@ export function useUpdateDatabaseLayout(viewId: string) {
 
               if (groups?.length) groups.delete(0, groups.length);
               initializeListLayoutSetting(view);
+            }
+
+            if (layout === DatabaseViewLayout.Gallery) {
+              initializeGalleryLayoutSetting(view);
             }
 
             if (currentLayout === DatabaseViewLayout.Board && layout === DatabaseViewLayout.Grid) {
@@ -2779,7 +3041,39 @@ export function useUpdateDatabaseLayout(viewId: string) {
         'updateDatabaseLayout'
       );
     },
-    [database, defaultTimeSetting, enhanceCalendarLayoutByFieldExists, sharedRoot, viewId]
+    [database, enhanceCalendarLayoutByFieldExists, sharedRoot, viewId]
+  );
+}
+
+export function useUpdateGalleryLayoutSettings() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (changes: Partial<GalleryLayoutSettings> & { coverFieldId?: string | null }) => {
+      if (!view) return;
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const gallery = initializeGalleryLayoutSetting(view);
+
+            if (changes.showCover !== undefined) gallery.set(YjsDatabaseKey.show_cover, changes.showCover);
+            if (changes.fitImage !== undefined) gallery.set(YjsDatabaseKey.fit_image, changes.fitImage);
+            if (changes.cardSize !== undefined) gallery.set(YjsDatabaseKey.card_size, changes.cardSize);
+            if (changes.cardWidth !== undefined) gallery.set(YjsDatabaseKey.card_width, changes.cardWidth);
+            if (changes.cardPreview !== undefined) gallery.set(YjsDatabaseKey.card_preview, changes.cardPreview);
+            if (changes.coverFieldId !== undefined) {
+              if (changes.coverFieldId) gallery.set(YjsDatabaseKey.cover_field_id, changes.coverFieldId);
+              else gallery.delete(YjsDatabaseKey.cover_field_id);
+            }
+          },
+        ],
+        'updateGalleryLayoutSettings'
+      );
+    },
+    [sharedRoot, view]
   );
 }
 

@@ -84,6 +84,10 @@ describe('database_list_field_display.dart: list view displays multiple field ty
   it('renders and toggles the Flutter 14px checkbox in a stable 20px slot', () => {
     const updateCell = jest.fn();
 
+    mockUseFieldSelector.mockReturnValue({
+      clock: 0,
+      field: { get: jest.fn((key: string) => (key === 'name' ? 'Done' : undefined)) },
+    } as unknown as ReturnType<typeof useFieldSelector>);
     mockUseUpdateCellDispatch.mockReturnValue(updateCell);
     render(
       <ListCell
@@ -99,6 +103,7 @@ describe('database_list_field_display.dart: list view displays multiple field ty
     expect(checkbox.className).toContain('w-5');
     expect(checkbox.className).toContain('justify-center');
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
+    expect(checkbox.getAttribute('aria-label')).toBe('Done: button.checked');
     expect(checkbox.querySelector('svg')?.getAttribute('class')).toContain('h-3.5');
 
     fireEvent.click(checkbox);

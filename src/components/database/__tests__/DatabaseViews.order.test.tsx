@@ -1,5 +1,5 @@
 import { expect } from '@jest/globals';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
@@ -83,6 +83,11 @@ jest.mock('@/components/database/chart', () => ({
 
 jest.mock('@/components/database/fullcalendar', () => ({
   Calendar: () => null,
+}));
+
+jest.mock('@/components/database/gallery', () => ({
+  __esModule: true,
+  default: () => <div data-testid='gallery-layout' />,
 }));
 
 jest.mock('@/components/database/components/UnsupportedView', () => () => null);
@@ -188,6 +193,59 @@ describe('DatabaseViews order', () => {
     expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(visibleViewIds);
   });
 
+  it('remounts Gallery when the active Gallery view changes', async () => {
+    const visibleViewIds = ['gallery-a', 'gallery-b', 'gallery-c'];
+    const doc = createDatabaseDoc('gallery-db', [
+      {
+        viewId: 'gallery-a',
+        name: 'Gallery A',
+        createdAt: '100',
+        layout: DatabaseViewLayout.Gallery,
+      },
+      {
+        viewId: 'gallery-b',
+        name: 'Gallery B',
+        createdAt: '200',
+        layout: DatabaseViewLayout.Gallery,
+      },
+      {
+        viewId: 'gallery-c',
+        name: 'Gallery C',
+        createdAt: '300',
+        layout: DatabaseViewLayout.Gallery,
+      },
+    ]);
+    const renderForActiveView = (activeViewId: string) => {
+      const contextValue: DatabaseContextState = {
+        readOnly: true,
+        databaseDoc: doc,
+        databasePageId: visibleViewIds[0],
+        activeViewId,
+        rowDocMap: {},
+        workspaceId: 'workspace-id',
+      };
+
+      return (
+        <DatabaseContext.Provider value={contextValue}>
+          <DatabaseViews
+            activeViewId={activeViewId}
+            databasePageId={visibleViewIds[0]}
+            onChangeView={jest.fn()}
+            visibleViewIds={visibleViewIds}
+          />
+        </DatabaseContext.Provider>
+      );
+    };
+
+    const { rerender } = render(renderForActiveView('gallery-a'));
+
+    const firstGalleryNode = await screen.findByTestId('gallery-layout');
+
+    rerender(renderForActiveView('gallery-b'));
+
+    await waitFor(() => expect(screen.getByTestId('gallery-layout')).not.toBe(firstGalleryNode));
+  });
+
   it('overwrites stale stored order when visible view order is authoritative', async () => {
     const databaseId = 'db-1';
     const visibleViewIds = ['launch-review-log', 'grid', 'grid2'];
@@ -221,6 +279,82 @@ describe('DatabaseViews order', () => {
     });
 
     expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual([...visibleViewIds, newViewId]);
+  });
+
+  it('keeps a newly duplicated view before its source when Yjs observes the appended child', async () => {
+    const visibleViewIds = ['launch-review-log', 'grid', 'grid2'];
+    const newViewId = 'duplicated-grid';
+    const nextIds = ['launch-review-log', newViewId, 'grid', 'grid2'];
+    const doc = createDatabaseDoc('db-duplicate-order', [
+      { viewId: 'launch-review-log', name: 'Launch Review Log', createdAt: '100' },
+      { viewId: 'grid', name: 'Grid', createdAt: '200' },
+      { viewId: 'grid2', name: 'Grid 2', createdAt: '300' },
+    ]);
+    const renderForVisibleViews = (nextVisibleViewIds: string[]) => {
+      const contextValue: DatabaseContextState = {
+        readOnly: true,
+        databaseDoc: doc,
+        databasePageId: 'launch-review-log',
+        activeViewId: 'grid',
+        rowDocMap: {},
+        workspaceId: 'workspace-id',
+      };
+
+      return (
+        <DatabaseContext.Provider value={contextValue}>
+          <DatabaseViews
+            onChangeView={jest.fn()}
+            activeViewId='grid'
+            databasePageId='launch-review-log'
+            visibleViewIds={nextVisibleViewIds}
+          />
+        </DatabaseContext.Provider>
+      );
+    };
+
+    const rendered = render(renderForVisibleViews(visibleViewIds));
+
+    await waitFor(() => {
+      expect(global.__databaseViewsOrderTestState?.latestTabsProps).toBeDefined();
+    });
+
+    act(() => {
+      const tabsProps = global.__databaseViewsOrderTestState?.latestTabsProps;
+
+      tabsProps?.onBeforeViewAddedToDatabase?.();
+      tabsProps?.onViewAddedToDatabase?.(newViewId);
+      tabsProps?.onReorderTabs?.({
+        movedId: newViewId,
+        prevId: 'launch-review-log',
+        nextIds,
+        fromIndex: 3,
+        toIndex: 1,
+      });
+      tabsProps?.onAfterViewAddedToDatabase?.();
+    });
+
+    expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(nextIds);
+
+    act(() => {
+      const views = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database)?.get(YjsDatabaseKey.views);
+      const duplicatedView = new Y.Map();
+
+      duplicatedView.set(YjsDatabaseKey.id, newViewId);
+      duplicatedView.set(YjsDatabaseKey.name, 'Grid (Copy)');
+      duplicatedView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+      duplicatedView.set(YjsDatabaseKey.created_at, '400');
+      duplicatedView.set(YjsDatabaseKey.is_inline, false);
+      duplicatedView.set(YjsDatabaseKey.embedded, false);
+      views?.set(newViewId, duplicatedView);
+      rendered.rerender(renderForVisibleViews([...visibleViewIds, newViewId]));
+    });
+
+    await waitFor(() => {
+      expect(global.__databaseViewsOrderTestState?.renderedViewIds.at(-1)).toEqual(nextIds);
+    });
+
+    rendered.unmount();
+    doc.destroy();
   });
 
   it('rolls back optimistic tab order when durable container reorder fails', async () => {

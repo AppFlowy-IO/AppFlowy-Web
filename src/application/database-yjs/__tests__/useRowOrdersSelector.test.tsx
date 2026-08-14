@@ -258,6 +258,36 @@ describe('useRowOrdersSelector', () => {
     filterBySpy.mockRestore();
   });
 
+  it('reacts when a blank inline filter receives its debounced content', async () => {
+    const fixture = createDatabaseFixture();
+    const filter = createTextFilter('');
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([filter]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+
+    act(() => {
+      filter.set(YjsDatabaseKey.condition, TextFilterCondition.TextContains);
+    });
+
+    act(() => {
+      filter.set(YjsDatabaseKey.content, 'match');
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    });
+  });
+
   it('computes each filter change once', async () => {
     const fixture = createDatabaseFixture();
     const filterBySpy = jest.spyOn(databaseFilter, 'filterBy');

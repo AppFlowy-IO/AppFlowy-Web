@@ -101,6 +101,17 @@ export function removeViewId(data: DatabaseNodeData, viewId: string): DatabaseNo
   };
 }
 
+/** Replace embedded database view IDs while preserving the callback's exact order. */
+export function replaceViewIds(data: DatabaseNodeData, viewIds: string[]): DatabaseNodeData {
+  const uniqueViewIds = Array.from(new Set(viewIds.filter(Boolean)));
+
+  return {
+    ...data,
+    view_ids: uniqueViewIds,
+    view_id: uniqueViewIds[0],
+  };
+}
+
 /**
  * Parse database node data from JSON string with backward compatibility.
  */

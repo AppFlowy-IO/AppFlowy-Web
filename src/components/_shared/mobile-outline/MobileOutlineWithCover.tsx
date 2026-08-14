@@ -60,6 +60,7 @@ function MobileOutlineWithCover({
         };
       case ViewLayout.Grid:
       case ViewLayout.List:
+      case ViewLayout.Gallery:
         return {
           iconClassName: 'text-[#8263FF]',
           bgColor: isDark ? '#8B80AD33' : '#F5F4FFFF',

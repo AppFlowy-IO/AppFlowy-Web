@@ -84,6 +84,16 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
+      if (
+        condition === DateFilterCondition.DateStartIsEmpty ||
+        condition === DateFilterCondition.DateStartIsNotEmpty ||
+        condition === DateFilterCondition.DateEndIsEmpty ||
+        condition === DateFilterCondition.DateEndIsNotEmpty ||
+        isRelativeDateCondition(condition)
+      ) {
+        return value as DateFilter;
+      }
+
       try {
         const data = JSON.parse(content) as DateFilter;
 
@@ -126,7 +136,7 @@ function wrapPlainObjectAsFilter(obj: Record<string, unknown>): YDatabaseFilter 
   } as unknown as YDatabaseFilter;
 }
 
-function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
+export function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
   if (node === null || typeof node !== 'object') return null;
 
   // Already a Yjs Map with .get()
@@ -138,7 +148,7 @@ function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
   return wrapPlainObjectAsFilter(node as Record<string, unknown>);
 }
 
-function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
+export function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
   const children = filter.get(YjsDatabaseKey.children);
 
   if (!children) return [];
@@ -153,9 +163,7 @@ function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
     return [];
   }
 
-  return childArray
-    .map(normalizeFilterNode)
-    .filter((node): node is YDatabaseFilter => node !== null);
+  return childArray.map(normalizeFilterNode).filter((node): node is YDatabaseFilter => node !== null);
 }
 
 type EffectiveFilterSnapshot = {
@@ -436,10 +444,7 @@ export function resolveRollupFilterTargetFieldType(fieldType: FieldType, field?:
  * Recursively flatten a filter tree into a flat list with per-row operators.
  * Mirrors the desktop's `collectFilters()` logic from `filter_entities.dart`.
  */
-export function flattenFilterTree(
-  filtersArray: YDatabaseFilters,
-  fields: YDatabaseFields
-): FilterDraft[] {
+export function flattenFilterTree(filtersArray: YDatabaseFilters, fields: YDatabaseFields): FilterDraft[] {
   const result: FilterDraft[] = [];
 
   if (!filtersArray || filtersArray.length === 0) return result;
@@ -448,9 +453,10 @@ export function flattenFilterTree(
 
   if (!rootFilter) return result;
 
-  const rootNode = typeof rootFilter.get === 'function'
-    ? rootFilter
-    : wrapPlainObjectAsFilter(rootFilter as unknown as Record<string, unknown>);
+  const rootNode =
+    typeof rootFilter.get === 'function'
+      ? rootFilter
+      : wrapPlainObjectAsFilter(rootFilter as unknown as Record<string, unknown>);
 
   const rootType = Number(rootNode.get(YjsDatabaseKey.filter_type));
 
@@ -463,12 +469,7 @@ export function flattenFilterTree(
   const children = getFilterChildren(rootNode);
 
   for (let i = 0; i < children.length; i++) {
-    collectFiltersRecursive(
-      children[i],
-      i === 0 ? null : rootOperator,
-      fields,
-      result
-    );
+    collectFiltersRecursive(children[i], i === 0 ? null : rootOperator, fields, result);
   }
 
   // Also collect any sibling top-level filters at indices 1+ (can appear from
@@ -480,12 +481,7 @@ export function flattenFilterTree(
     if (!sibling) continue;
 
     // Siblings are always AND'd with the root group by filterBy().
-    collectFiltersRecursive(
-      sibling,
-      FilterType.And,
-      fields,
-      result
-    );
+    collectFiltersRecursive(sibling, FilterType.And, fields, result);
   }
 
   return result;
@@ -497,9 +493,10 @@ function collectFiltersRecursive(
   fields: YDatabaseFields,
   result: FilterDraft[]
 ): void {
-  const node = typeof filterNode.get === 'function'
-    ? filterNode
-    : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
+  const node =
+    typeof filterNode.get === 'function'
+      ? filterNode
+      : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
 
   const filterType = Number(node.get(YjsDatabaseKey.filter_type));
 
@@ -508,12 +505,7 @@ function collectFiltersRecursive(
     const children = getFilterChildren(node);
 
     for (let i = 0; i < children.length; i++) {
-      collectFiltersRecursive(
-        children[i],
-        i === 0 ? inheritedOperator : groupOperator,
-        fields,
-        result
-      );
+      collectFiltersRecursive(children[i], i === 0 ? inheritedOperator : groupOperator, fields, result);
     }
 
     return;
@@ -619,7 +611,10 @@ function createSelectOptionFilterContext(field: YDatabaseField, content: string)
     if (option.name) optionIdByValue.set(option.name, option.id);
   });
 
-  const filterOptionIds = content.split(',').map((item) => item.trim()).filter(Boolean);
+  const filterOptionIds = content
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   return {
     content,
@@ -638,9 +633,12 @@ function getSelectedOptionIds(data: unknown, context: SelectOptionFilterContext)
   const checklist = looksLikeChecklist ? parseChecklistFlexible(data) : null;
   const rawIdsOrNames = checklist
     ? checklist.selectedOptionIds
-      ?.map((idOrName) => checklist.options?.find((opt) => opt.id === idOrName)?.name ?? idOrName)
-      .filter(Boolean) ?? []
-    : data.split(',').map((item) => item.trim()).filter(Boolean);
+        ?.map((idOrName) => checklist.options?.find((opt) => opt.id === idOrName)?.name ?? idOrName)
+        .filter(Boolean) ?? []
+    : data
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
 
   return rawIdsOrNames
     .map((idOrName) => context.optionIdByValue.get(idOrName))
@@ -748,9 +746,10 @@ export function filterBy(
     }
 
     // Wrap plain objects that lack .get() (e.g. from desktop sync)
-    const node = typeof filterNode.get === 'function'
-      ? filterNode
-      : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
+    const node =
+      typeof filterNode.get === 'function'
+        ? filterNode
+        : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
 
     const filterType = Number(node.get(YjsDatabaseKey.filter_type));
 
@@ -865,7 +864,11 @@ export function filterBy(
         }
 
         case FieldType.Person: {
-          return personFilterCheckWithIds(typeof cellData === 'string' ? cellData : '', personFilterIds ?? null, condition);
+          return personFilterCheckWithIds(
+            typeof cellData === 'string' ? cellData : '',
+            personFilterIds ?? null,
+            condition
+          );
         }
 
         default:
@@ -910,8 +913,7 @@ export function textFilterCheck(data: string, content: string, condition: TextFi
 
 export function numberFilterCheck(data: string, content: string, condition: number) {
   const isEmptyCondition =
-    condition === NumberFilterCondition.NumberIsEmpty ||
-    condition === NumberFilterCondition.NumberIsNotEmpty;
+    condition === NumberFilterCondition.NumberIsEmpty || condition === NumberFilterCondition.NumberIsNotEmpty;
 
   if (!isEmptyCondition && content.trim() === '') {
     return true;
@@ -1092,7 +1094,6 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
 export function selectOptionFilterCheck(field: YDatabaseField, data: unknown, content: string, condition: number) {
   return selectOptionFilterCheckWithContext(data, condition, createSelectOptionFilterContext(field, content));
 }
-
 
 export function personFilterCheck(data: string, content: string, condition: number) {
   const userIds = parseJsonStringArray(data, 'Error parsing person filter data:');

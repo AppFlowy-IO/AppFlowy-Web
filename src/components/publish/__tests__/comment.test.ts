@@ -1,3 +1,4 @@
+import { DATABASE_BLOCK_TYPES } from '@/application/database-block';
 import { normalizePublishedPageSnapshot } from '@/application/publish-snapshot/normalize';
 import {
   publishedDatabasePayload,
@@ -16,7 +17,7 @@ describe('shouldDisableFixedGlobalCommentInput', () => {
     expect(shouldDisableFixedGlobalCommentInput(normalizePublishedPageSnapshot(publishedDocumentPayload))).toBe(false);
   });
 
-  it.each([BlockType.GridBlock, BlockType.ListBlock])(
+  it.each(DATABASE_BLOCK_TYPES)(
     'disables fixed comments for published documents with %s blocks in raw data',
     (blockType) => {
       const snapshot = normalizePublishedPageSnapshot({
@@ -49,7 +50,7 @@ describe('shouldDisableFixedGlobalCommentInput', () => {
     }
   );
 
-  it.each([BlockType.GridBlock, BlockType.ListBlock])(
+  it.each(DATABASE_BLOCK_TYPES)(
     'disables fixed comments for published documents with %s blocks in slate children',
     (blockType) => {
       const snapshot = normalizePublishedPageSnapshot({

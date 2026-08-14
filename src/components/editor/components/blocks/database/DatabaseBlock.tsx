@@ -18,13 +18,7 @@ import { useDocumentLoader } from './hooks/useDocumentLoader';
 import { useResizePositioning } from './hooks/useResizePositioning';
 import { useViewMeta } from './hooks/useViewMeta';
 import { useViewSelection } from './hooks/useViewSelection';
-import {
-  addViewId,
-  getViewIds,
-  isDatabaseDuplicatePlaceholder,
-  isViewGoneError,
-  removeViewId,
-} from './utils/databaseBlockUtils';
+import { getViewIds, isDatabaseDuplicatePlaceholder, isViewGoneError, replaceViewIds } from './utils/databaseBlockUtils';
 
 function DatabaseDuplicatePlaceholder() {
   const { t } = useTranslation();
@@ -318,32 +312,26 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
       if (readOnly) return;
 
       const existingViewIds = getViewIds(node.data);
+      const updatedData = replaceViewIds(node.data, currentViewIds);
+      const nextViewIds = getViewIds(updatedData);
 
       // Find new view IDs (additions)
-      const addedViewIds = currentViewIds.filter((id) => !existingViewIds.includes(id));
+      const addedViewIds = nextViewIds.filter((id) => !existingViewIds.includes(id));
 
       // Find removed view IDs (deletions)
-      const removedViewIds = existingViewIds.filter((id) => !currentViewIds.includes(id));
+      const removedViewIds = existingViewIds.filter((id) => !nextViewIds.includes(id));
+      const orderChanged =
+        existingViewIds.length !== nextViewIds.length ||
+        existingViewIds.some((viewId, index) => viewId !== nextViewIds[index]);
 
-      if (addedViewIds.length === 0 && removedViewIds.length === 0) return;
+      if (!orderChanged) return;
 
       Log.debug('[DatabaseBlock] View IDs changed', {
         addedViewIds,
         removedViewIds,
         existingViewIds,
-        currentViewIds,
+        currentViewIds: nextViewIds,
       });
-
-      // Build the new data object
-      let updatedData = { ...node.data };
-
-      for (const id of addedViewIds) {
-        updatedData = addViewId(updatedData, id);
-      }
-
-      for (const id of removedViewIds) {
-        updatedData = removeViewId(updatedData, id);
-      }
 
       // Update the Slate node
       try {
