@@ -74,24 +74,39 @@ jobs:
         test-group:
           - name: "auth-chat"
             spec: "playwright/e2e/auth playwright/e2e/chat"
+            shard: ""
             description: "Authentication and AI chat"
           - name: "editor"
             spec: "playwright/e2e/editor"
+            shard: ""
             description: "Document editing and formatting"
           - name: "database"
             spec: "playwright/e2e/database/"
-            description: "Database and grid operations"
+            shard: "--shard=1/3"
+            description: "Database and grid operations (shard 1 of 3)"
+          - name: "database-2"
+            spec: "playwright/e2e/database/"
+            shard: "--shard=2/3"
+            description: "Database and grid operations (shard 2 of 3)"
+          - name: "database-3"
+            spec: "playwright/e2e/database/"
+            shard: "--shard=3/3"
+            description: "Database and grid operations (shard 3 of 3)"
           - name: "database-filters"
             spec: "playwright/e2e/database2 playwright/e2e/database3"
+            shard: ""
             description: "Database filters and field type switching"
           - name: "embedded"
             spec: "playwright/e2e/embeded"
+            shard: ""
             description: "Embedded database and image operations"
           - name: "page"
             spec: "playwright/e2e/page"
+            shard: ""
             description: "Page management (create, delete, share, publish, paste)"
           - name: "account-space-user"
             spec: "playwright/e2e/account playwright/e2e/space playwright/e2e/user playwright/e2e/app playwright/e2e/folder playwright/e2e/calendar"
+            shard: ""
             description: "Account, Space, User, App, Folder, and Calendar tests"
 
     name: "${{ matrix.test-group.name }}"
@@ -224,7 +239,7 @@ jobs:
           done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
 
       - name: Run ${{ matrix.test-group.name }} tests
-        run: pnpm exec playwright test --workers=2 ${{ matrix.test-group.spec }}
+        run: pnpm exec playwright test --workers=2 ${{ matrix.test-group.shard }} ${{ matrix.test-group.spec }}
         env:
           CI: true
           BASE_URL: http://localhost:3000

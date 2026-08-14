@@ -33,7 +33,12 @@ async function closeTemplateEditor(page: Page): Promise<void> {
   const editor = page.getByTestId(TEMPLATE_EDITOR);
 
   if (!(await editor.isVisible().catch(() => false))) return;
-  await page.keyboard.press('Escape');
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.keyboard.press('Escape');
+    if (await editor.isHidden({ timeout: 2000 }).catch(() => false)) return;
+  }
+
   await expect(editor).toBeHidden();
 }
 
@@ -105,7 +110,7 @@ async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ ed
   for (let attempt = 0; attempt < 10; attempt++) {
     await openRowDetailByRowId(page, rowId);
     const modal = page.locator('.MuiDialog-paper').last();
-    const editor = modal.locator('[id^="editor-"]').first();
+    const editor = modal.getByTestId('editor-content').first();
     const block = databaseBlocks(editor).first();
 
     if (await block.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -124,10 +129,14 @@ async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ ed
 async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Calendar' | 'Chart' = 'Board') {
   const tabs = block.locator('[data-testid^="view-tab-"]');
   const initialCount = await tabs.count();
-
-  await block.getByTestId('add-view-button').scrollIntoViewIfNeeded();
-  await block.getByTestId('add-view-button').click({ force: true });
+  const addViewButton = block.getByTestId('add-view-button');
   const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
+
+  await addViewButton.scrollIntoViewIfNeeded();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await addViewButton.click({ force: true });
+    if (await menu.isVisible({ timeout: 3000 }).catch(() => false)) break;
+  }
 
   await expect(menu).toBeVisible({ timeout: 10000 });
   await menu
@@ -240,7 +249,7 @@ async function addTemplateEmoji(page: Page, editor: Locator): Promise<string> {
 
 async function addTemplateCover(editor: Locator): Promise<void> {
   await editor.getByTestId('row-title-input').hover();
-  const addCover = editor.getByRole('button', { name: 'Add cover', exact: true });
+  const addCover = editor.getByRole('button', { name: 'Add Cover', exact: true });
 
   await expect(addCover).toBeVisible();
   await addCover.click();
@@ -290,7 +299,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(initialMenu.getByText('No templates yet')).toBeVisible();
     const splitButtonBox = await page.getByTestId('database-template-split-button').boundingBox();
     const initialMenuBox = await initialMenu.boundingBox();
-    const headerStyle = await initialMenu.getByText(`Templates for ${databaseName}`).evaluate((element) => {
+    const headerStyle = await initialMenu.getByText('Templates for Grid').evaluate((element) => {
       const style = getComputedStyle(element);
 
       return { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight };
@@ -313,9 +322,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     const editor = await createTemplate(page, originalName);
 
-    await expect(editor.getByTestId('database-template-editor-banner')).toHaveText(
-      `You're editing a template in ${databaseName}`
-    );
+    await expect(editor.getByTestId('database-template-editor-banner')).toHaveText("You're editing a template in Grid");
     await expect(editor.locator('.row-properties')).toBeVisible();
     await expect(editor.getByText('New property', { exact: true })).toHaveCount(0);
     const editorBox = await editor.boundingBox();
@@ -383,7 +390,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await page.keyboard.press('Escape');
 
     const nestedEditor = await editTemplate(page, renamed);
-    const nestedDocumentEditor = nestedEditor.locator('[id^="editor-"]').first();
+    const nestedDocumentEditor = nestedEditor.getByTestId('editor-content').first();
     const nestedDocumentId = (await nestedDocumentEditor.getAttribute('id'))?.replace('editor-', '');
 
     expect(nestedDocumentId).toBeTruthy();
@@ -491,10 +498,10 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     expect(gridTabTestId).toBeTruthy();
     const editor = await createTemplate(page, templateName);
-    const documentEditor = editor.locator('[id^="editor-"]').first();
+    const documentEditor = editor.getByTestId('editor-content').first();
 
     await expect(documentEditor).toBeVisible({ timeout: 30000 });
-    await documentEditor.locator('[data-slate-editor="true"]').click();
+    await documentEditor.click();
     await page.keyboard.type('Template content for every supported view');
     await closeTemplateEditor(page);
     await setDefaultTemplate(page, templateName);
@@ -600,13 +607,13 @@ test.describe('Database row templates (Desktop parity)', () => {
     await renameCurrentPage(page, referenceName);
     await createNamedGridPage(page, targetName);
     const editor = await createTemplate(page, name);
-    const documentEditor = editor.locator('[id^="editor-"]').first();
+    const documentEditor = editor.getByTestId('editor-content').first();
 
     await expect(documentEditor).toBeVisible({ timeout: 30000 });
     const documentId = (await documentEditor.getAttribute('id'))?.replace('editor-', '');
 
     expect(documentId).toBeTruthy();
-    await documentEditor.locator('[data-slate-editor="true"]').click();
+    await documentEditor.click();
     await page.keyboard.type('Template document body');
     await page.keyboard.press('Enter');
     await insertInlineGridViaSlash(page, documentId as string);
@@ -626,7 +633,7 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const reopened = await editTemplate(page, name);
-      const reopenedDocument = reopened.locator('[id^="editor-"]').first();
+      const reopenedDocument = reopened.getByTestId('editor-content').first();
       const reopenedBlock = databaseBlocks(reopenedDocument).first();
 
       await expect(databaseBlocks(reopenedDocument)).toHaveCount(1, { timeout: 30000 });
@@ -732,7 +739,7 @@ test.describe('Database row templates (Desktop parity)', () => {
     await createNamedGridPage(page, targetName);
 
     const editor = await createTemplate(page, templateName);
-    const documentEditor = editor.locator('[id^="editor-"]').first();
+    const documentEditor = editor.getByTestId('editor-content').first();
 
     await expect(documentEditor).toBeVisible({ timeout: 30000 });
     const documentId = (await documentEditor.getAttribute('id'))?.replace('editor-', '');

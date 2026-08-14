@@ -656,11 +656,17 @@ export async function insertPageReferenceViaSlash(
   const panel = page.getByTestId('mention-panel');
 
   await expect(panel).toBeVisible({ timeout: 15000 });
-  await page.keyboard.type(pageName, { delay: 30 });
   const result = panel
     .locator('[data-option-kind="page"], [data-option-kind="database"]')
     .filter({ hasText: new RegExp(escapeRegExp(pageName)) })
     .first();
+
+  // The initial, unfiltered response often already contains the exact page.
+  // Prefer it because the server's full-text endpoint can briefly return no
+  // matches for a database that was renamed only moments ago.
+  if (!(await result.isVisible({ timeout: 5000 }).catch(() => false))) {
+    await page.keyboard.type(pageName, { delay: 30 });
+  }
 
   await expect(result).toBeVisible({ timeout: 30000 });
   await result.click();
