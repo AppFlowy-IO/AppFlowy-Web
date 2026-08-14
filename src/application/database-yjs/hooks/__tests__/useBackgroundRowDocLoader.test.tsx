@@ -1,9 +1,12 @@
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import { startTransition, Suspense, type ReactNode } from 'react';
+import { startTransition, Suspense, type ReactNode, useEffect } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
-import { useBackgroundRowDocLoader } from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
+import {
+  type BackgroundRowDocChange,
+  useBackgroundRowDocLoader,
+} from '@/application/database-yjs/hooks/useBackgroundRowDocLoader';
 import { YDatabaseRowOrders, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { createRowDoc } from '../../__tests__/test-helpers';
@@ -63,6 +66,51 @@ function BackgroundLoader({ scope, suspend = false }: { scope: string; suspend?:
 }
 
 describe('useBackgroundRowDocLoader', () => {
+  it('publishes seed hydration as bounded row-document deltas', async () => {
+    const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
+    const rowIds = Array.from({ length: 129 }, (_, index) => `seed-row-${index}`);
+    const seedDocs = Object.fromEntries(rowIds.map((rowId) => [rowId, createRowDoc(rowId, databaseId, {})]));
+    const changes: BackgroundRowDocChange[] = [];
+
+    rowOrders.delete(0, rowOrders.length);
+    rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+    const contextValue: DatabaseContextState = {
+      activeViewId: viewId,
+      blobPrefetchComplete: false,
+      databaseDoc,
+      databasePageId: viewId,
+      peekRowDocFromSeed: (rowId) => seedDocs[rowId] ?? null,
+      readOnly: false,
+      rowMap: {},
+      seedsReady: true,
+      workspaceId: 'workspace-id',
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(
+      () => {
+        const { cachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(true, 'bounded-seed-deltas');
+
+        useEffect(
+          () => subscribeToCachedRowDocChanges((change) => changes.push(change)),
+          [subscribeToCachedRowDocChanges]
+        );
+        return cachedRowDocs;
+      },
+      { wrapper }
+    );
+
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(129));
+
+    expect(changes.map(({ added }) => Object.keys(added).length)).toEqual([128, 1]);
+    expect(changes.every(({ removed }) => Object.keys(removed).length === 0)).toBe(true);
+
+    unmount();
+    Object.values(seedDocs).forEach((doc) => doc.destroy());
+    databaseDoc.destroy();
+  });
+
   it('hydrates a row inserted collaboratively after the initial loading pass', async () => {
     const { databaseDoc, databaseId, rowOrders, viewId } = createDatabaseFixture();
     const initialRowDoc = createRowDoc('initial-row', databaseId, {});

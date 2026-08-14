@@ -73,6 +73,24 @@ type RowSyncRegistration = {
   reconciliationPromise?: Promise<void>;
 };
 
+type CellLocalMutationStore = {
+  fieldIdsByRowId: Map<RowId, Set<string>>;
+  fieldRevisions: Map<string, number>;
+  globalRevision: number;
+  locallyCreatedRowIds: Set<RowId>;
+  subscribersByFieldId: Map<string, Set<() => void>>;
+};
+
+function createCellLocalMutationStore(): CellLocalMutationStore {
+  return {
+    fieldIdsByRowId: new Map(),
+    fieldRevisions: new Map(),
+    globalRevision: 0,
+    locallyCreatedRowIds: new Set(),
+    subscribersByFieldId: new Map(),
+  };
+}
+
 function cleanupRegisteredRowSync(registration: RowSyncRegistration) {
   const rowId = registration.rowKey.split('_rows_')[1];
 
@@ -269,6 +287,7 @@ function Database(props: Database2Props) {
   const blobPrefetchPromiseRef = useRef<Promise<void> | null>(null);
   const localCachePrimedRef = useRef(false);
   const rowSyncRegistrationsRef = useRef<Map<string, RowSyncRegistration>>(new Map());
+  const cellLocalMutationStoreRef = useRef(createCellLocalMutationStore());
   const remoteRowsNeedingReconciliationRef = useRef<Set<RowId>>(new Set());
   const batchPreloadDoneRef = useRef(false);
   // Async blob work is scoped to one workspace/database lifecycle. A later
@@ -278,6 +297,68 @@ function Database(props: Database2Props) {
   const seedsGateRef = useRef(createDeferredGate());
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
+
+  const publishCellLocalMutationChange = useCallback((fieldId?: string) => {
+    const store = cellLocalMutationStoreRef.current;
+
+    if (fieldId) {
+      store.fieldRevisions.set(fieldId, (store.fieldRevisions.get(fieldId) ?? 0) + 1);
+      store.subscribersByFieldId.get(fieldId)?.forEach((subscriber) => subscriber());
+      return;
+    }
+
+    store.globalRevision += 1;
+    const subscribers = new Set<() => void>();
+
+    store.subscribersByFieldId.forEach((fieldSubscribers) => {
+      fieldSubscribers.forEach((subscriber) => subscribers.add(subscriber));
+    });
+    subscribers.forEach((subscriber) => subscriber());
+  }, []);
+  const markCellLocalMutation = useCallback(
+    (rowId: RowId, fieldId: string) => {
+      const store = cellLocalMutationStoreRef.current;
+      let fieldIds = store.fieldIdsByRowId.get(rowId);
+
+      if (fieldIds?.has(fieldId)) return;
+      if (!fieldIds) {
+        fieldIds = new Set();
+        store.fieldIdsByRowId.set(rowId, fieldIds);
+      }
+
+      fieldIds.add(fieldId);
+      publishCellLocalMutationChange(fieldId);
+    },
+    [publishCellLocalMutationChange]
+  );
+  const markLocallyCreatedRow = useCallback(
+    (rowId: RowId) => {
+      const store = cellLocalMutationStoreRef.current;
+
+      if (store.locallyCreatedRowIds.has(rowId)) return;
+      store.locallyCreatedRowIds.add(rowId);
+      publishCellLocalMutationChange();
+    },
+    [publishCellLocalMutationChange]
+  );
+  const subscribeToCellLocalMutations = useCallback((fieldId: string, onStoreChange: () => void) => {
+    const store = cellLocalMutationStoreRef.current;
+    const existingSubscribers = store.subscribersByFieldId.get(fieldId);
+    const subscribers = existingSubscribers ?? new Set<() => void>();
+
+    if (!existingSubscribers) store.subscribersByFieldId.set(fieldId, subscribers);
+
+    subscribers.add(onStoreChange);
+    return () => {
+      subscribers.delete(onStoreChange);
+      if (subscribers.size === 0) store.subscribersByFieldId.delete(fieldId);
+    };
+  }, []);
+  const getCellLocalMutationRevision = useCallback((fieldId: string) => {
+    const store = cellLocalMutationStoreRef.current;
+
+    return `${store.globalRevision}:${store.fieldRevisions.get(fieldId) ?? 0}`;
+  }, []);
 
   // Layout phase, and declared before the lifecycle-reset effect below, so that
   // in a commit where both `rowMap` and the lifecycle changed this mirror runs
@@ -348,6 +429,11 @@ function Database(props: Database2Props) {
     }),
     [workspaceId, doc, currentDatabaseId, props.initialRowMap]
   );
+  const hasCellLocalMutation = useCallback((rowId: RowId, fieldId: string) => {
+    const store = cellLocalMutationStoreRef.current;
+
+    return store.locallyCreatedRowIds.has(rowId) || Boolean(store.fieldIdsByRowId.get(rowId)?.has(fieldId));
+  }, []);
   const activeDatabaseLifecycleRef = useRef<typeof databaseLifecycleIdentity | null>(databaseLifecycleIdentity);
   const previousDatabaseLifecycleRef = useRef(databaseLifecycleIdentity);
 
@@ -379,12 +465,13 @@ function Database(props: Database2Props) {
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
     const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
     const fields = database?.get(YjsDatabaseKey.fields);
-    const isGroupedBoard =
-      Number(view?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Board &&
+    const layout = Number(view?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+    const isGroupedView =
+      [DatabaseViewLayout.Grid, DatabaseViewLayout.Board].includes(layout) &&
       (view?.get(YjsDatabaseKey.groups)?.length ?? 0) > 0;
 
     return (
-      isGroupedBoard ||
+      isGroupedView ||
       hasEffectiveFilters(view?.get(YjsDatabaseKey.filters), fields) ||
       (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0
     );
@@ -874,6 +961,7 @@ function Database(props: Database2Props) {
 
       // Add the new row doc to rowMap so grouping logic can see it immediately
       if (rowId && rowDoc) {
+        markLocallyCreatedRow(rowId);
         setRowMap((prev) => {
           if (prev[rowId]) return prev;
           return { ...prev, [rowId]: rowDoc };
@@ -887,7 +975,7 @@ function Database(props: Database2Props) {
 
       return rowDoc;
     },
-    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch]
+    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, markLocallyCreatedRow]
   );
 
   // Self-healing for a lying delta watermark: the RID cursor lives in
@@ -1162,6 +1250,15 @@ function Database(props: Database2Props) {
 
     previousDatabaseLifecycleRef.current = databaseLifecycleIdentity;
     activeDatabaseLifecycleRef.current = databaseLifecycleIdentity;
+    const cellLocalMutationStore = cellLocalMutationStoreRef.current;
+
+    if (cellLocalMutationStore.fieldIdsByRowId.size > 0 || cellLocalMutationStore.locallyCreatedRowIds.size > 0) {
+      cellLocalMutationStore.fieldIdsByRowId.clear();
+      cellLocalMutationStore.fieldRevisions.clear();
+      cellLocalMutationStore.locallyCreatedRowIds.clear();
+      publishCellLocalMutationChange();
+    }
+
     const lifecycleRowSyncRegistrations = new Map<string, RowSyncRegistration>();
     const prefetchGeneration = blobPrefetchGenerationRef.current + 1;
     const previousGate = seedsGateRef.current;
@@ -1202,7 +1299,7 @@ function Database(props: Database2Props) {
       lifecycleRowSyncRegistrations.clear();
       lifecycleGate.resolve();
     };
-  }, [databaseLifecycleIdentity, props.initialRowMap]);
+  }, [databaseLifecycleIdentity, props.initialRowMap, publishCellLocalMutationChange]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
@@ -1316,6 +1413,10 @@ function Database(props: Database2Props) {
       loadRowFromSeed,
       peekRowDocFromSeed,
       bindRowSync,
+      hasCellLocalMutation,
+      markCellLocalMutation,
+      getCellLocalMutationRevision,
+      subscribeToCellLocalMutations,
       blobPrefetchComplete,
       seedsReady,
       paddingStart: props.paddingStart,
@@ -1361,6 +1462,10 @@ function Database(props: Database2Props) {
       loadRowFromSeed,
       peekRowDocFromSeed,
       bindRowSync,
+      hasCellLocalMutation,
+      markCellLocalMutation,
+      getCellLocalMutationRevision,
+      subscribeToCellLocalMutations,
       blobPrefetchComplete,
       seedsReady,
       props.paddingStart,

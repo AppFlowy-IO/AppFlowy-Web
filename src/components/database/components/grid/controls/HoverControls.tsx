@@ -12,27 +12,35 @@ import { HoverControlsProvider } from '@/components/database/components/grid/con
 import RowMenu from '@/components/database/components/grid/controls/RowMenu';
 import { ItemState } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/lib/utils';
 import { isMac } from '@/utils/hotkeys';
 
-
-export function HoverControls ({ rowId, dragHandleRef }: {
+export function HoverControls({
+  rowId,
+  rowKey,
+  groupFieldId,
+  groupId,
+  dragHandleRef,
+  canDrag = true,
+}: {
   rowId: string;
+  rowKey: string;
+  groupFieldId?: string;
+  groupId?: string;
+  canDrag?: boolean;
   dragHandleRef?: (node: HTMLDivElement | null) => void;
-  state: ItemState
+  state: ItemState;
 }) {
-  const { ref } = useHoverControlsDisplay(rowId);
+  const { ref } = useHoverControlsDisplay(rowKey);
 
-  const {
-    onAddRowBelow,
-    onAddRowAbove,
-    addAboveLoading,
-    addBelowLoading,
-  } = useHoverControlsActions(rowId);
+  const { onAddRowBelow, onAddRowAbove, addAboveLoading, addBelowLoading } = useHoverControlsActions(
+    rowId,
+    groupFieldId,
+    groupId
+  );
   const { t } = useTranslation();
 
   const [menuOpen, setMenuOpen] = useState<boolean>(false);
@@ -41,14 +49,17 @@ export function HoverControls ({ rowId, dragHandleRef }: {
   const hasSorted = sorts.length > 0;
   const continueRef = useRef<(() => void) | null>(null);
 
-  const showPreventDialog = useCallback((continueFn: () => void) => {
-    if (hasSorted) {
-      setOpenPrevented(true);
-      continueRef.current = continueFn;
-    } else {
-      continueFn();
-    }
-  }, [hasSorted]);
+  const showPreventDialog = useCallback(
+    (continueFn: () => void) => {
+      if (hasSorted) {
+        setOpenPrevented(true);
+        continueRef.current = continueFn;
+      } else {
+        continueFn();
+      }
+    },
+    [hasSorted]
+  );
 
   return (
     <HoverControlsProvider
@@ -61,7 +72,9 @@ export function HoverControls ({ rowId, dragHandleRef }: {
         style={{
           minHeight: 34,
         }}
-        className={'flex relative border w-full py-1.5 border-transparent items-start left-0 justify-end'}
+        className={
+          'relative left-0 flex w-full items-start justify-end border border-transparent py-1.5 focus-within:!pointer-events-auto focus-within:!opacity-100'
+        }
       >
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
@@ -82,58 +95,56 @@ export function HoverControls ({ rowId, dragHandleRef }: {
                     void onAddRowBelow();
                   }
                 });
-
               }}
             >
-              {(addBelowLoading || addAboveLoading) ? <Progress variant={'primary'} /> :
-                <AddIcon className={'w-5 h-5'} />}
+              {addBelowLoading || addAboveLoading ? <Progress variant={'primary'} /> : <AddIcon className={'h-5 w-5'} />}
             </Button>
           </TooltipTrigger>
           <TooltipContent>
             {t('tooltip.addNewRow')}
-            <TooltipShortcut>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t('blockActions.addAboveTooltip')}`}</TooltipShortcut>
+            <TooltipShortcut>{`${isMac() ? t('blockActions.addAboveMacCmd') : t('blockActions.addAboveCmd')} ${t(
+              'blockActions.addAboveTooltip'
+            )}`}</TooltipShortcut>
           </TooltipContent>
         </Tooltip>
-        <Tooltip disableHoverableContent>
-          <TooltipTrigger asChild>
-            <div
-              ref={dragHandleRef}
-              data-testid="row-accessory-button"
-              onClick={() => {
-                setMenuOpen(true);
+        <div ref={dragHandleRef} className='flex shrink-0'>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <Tooltip disableHoverableContent>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    aria-label={canDrag ? `${t('tooltip.dragRow')}. ${t('tooltip.openMenu')}` : t('tooltip.openMenu')}
+                    className='text-icon-secondary focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
+                    data-testid='row-accessory-button'
+                    size='icon-sm'
+                    type='button'
+                    variant='ghost'
+                  >
+                    <DragIcon aria-hidden='true' className='h-5 w-5' />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>
+                {canDrag ? (
+                  <>
+                    {t('tooltip.dragRow')}
+                    <TooltipShortcut>{t('tooltip.openMenu')}</TooltipShortcut>
+                  </>
+                ) : (
+                  t('tooltip.openMenu')
+                )}
+              </TooltipContent>
+            </Tooltip>
+            <RowMenu
+              groupFieldId={groupFieldId}
+              groupId={groupId}
+              onClose={() => {
+                setMenuOpen(false);
               }}
-              className={cn(buttonVariants({
-                variant: 'ghost',
-                size: 'icon-sm',
-                className: 'text-icon-secondary cursor-pointer',
-              }))}
-            >
-              <DragIcon className={'w-5 h-5'} />
-            </div>
-
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('tooltip.dragRow')}
-            <TooltipShortcut>{t('tooltip.openMenu')}</TooltipShortcut>
-          </TooltipContent>
-        </Tooltip>
-        <DropdownMenu
-          open={menuOpen}
-          onOpenChange={setMenuOpen}
-        >
-          <DropdownMenuTrigger asChild>
-            <Button
-              tabIndex={-1}
-              className={'absolute right-0 opacity-0 z-[-1]'}
+              rowId={rowId}
             />
-          </DropdownMenuTrigger>
-          <RowMenu
-            onClose={() => {
-              setMenuOpen(false);
-            }}
-            rowId={rowId}
-          />
-        </DropdownMenu>
+          </DropdownMenu>
+        </div>
       </div>
       <ClearSortingConfirm
         open={openPrevented}

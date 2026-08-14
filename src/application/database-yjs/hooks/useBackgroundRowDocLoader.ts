@@ -24,6 +24,11 @@ type RowDocMap = Record<string, YDoc>;
 type EnsureRow = (rowId: string) => Promise<YDoc | undefined> | void;
 type LoadRowFromSeed = (rowId: string) => Promise<YDoc | undefined>;
 
+export type BackgroundRowDocChange = {
+  added: RowDocMap;
+  removed: RowDocMap;
+};
+
 const pendingEphemeralRowDocs = new Map<string, Promise<YDoc>>();
 const retainedEphemeralRowDocs = new WeakMap<YDoc, number>();
 
@@ -146,6 +151,7 @@ type LoaderStore = {
   refCount: number;
   cachedRowDocs: RowDocMap;
   subscribers: Set<() => void>;
+  rowDocChangeSubscribers: Set<(change: BackgroundRowDocChange) => void>;
   sharedCachedRowDocIds: Set<string>;
   cachedRowDocPending: Map<string, Promise<YDoc | undefined>>;
   backgroundQueue: Set<string>;
@@ -171,6 +177,7 @@ function createLoaderStore(key: string): LoaderStore {
     refCount: 0,
     cachedRowDocs: {},
     subscribers: new Set(),
+    rowDocChangeSubscribers: new Set(),
     sharedCachedRowDocIds: new Set(),
     cachedRowDocPending: new Map(),
     backgroundQueue: new Set(),
@@ -209,11 +216,20 @@ function disposeStoreDoc(store: LoaderStore, rowId: string, doc: YDoc) {
   releaseOwnedRowDoc(doc);
 }
 
-function setStoreCachedRowDocs(store: LoaderStore, updater: (prev: RowDocMap) => RowDocMap) {
-  const next = updater(store.cachedRowDocs);
+function setStoreCachedRowDocs(
+  store: LoaderStore,
+  updater: (prev: RowDocMap) => { added: RowDocMap; next: RowDocMap; removed: RowDocMap }
+) {
+  const { added, next, removed } = updater(store.cachedRowDocs);
 
   if (next === store.cachedRowDocs) return;
   store.cachedRowDocs = next;
+  if (Object.keys(added).length > 0 || Object.keys(removed).length > 0) {
+    const change = { added, removed };
+
+    store.rowDocChangeSubscribers.forEach((subscriber) => subscriber(change));
+  }
+
   notifyStore(store);
 }
 
@@ -252,6 +268,7 @@ function destroyStore(store: LoaderStore) {
   }
 
   store.cachedRowDocs = {};
+  store.rowDocChangeSubscribers.clear();
   store.sharedCachedRowDocIds.clear();
   store.cachedRowDocPending.clear();
   store.seedHydrateFrame = null;
@@ -292,19 +309,26 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     store.loadRowFromSeed = loadRowFromSeed;
   }, [ensureRow, loadRowFromSeed, rowOrders, rows, store]);
 
-  const cachedRowDocs = useSyncExternalStore(
-    useCallback(
-      (onStoreChange) => {
-        store.subscribers.add(onStoreChange);
-        return () => {
-          store.subscribers.delete(onStoreChange);
-        };
-      },
-      [store]
-    ),
-    useCallback(() => store.cachedRowDocs, [store]),
-    useCallback(() => store.cachedRowDocs, [store])
+  const subscribeToCachedRowDocs = useCallback(
+    (onStoreChange: () => void) => {
+      store.subscribers.add(onStoreChange);
+      return () => {
+        store.subscribers.delete(onStoreChange);
+      };
+    },
+    [store]
   );
+  const getCachedRowDocs = useCallback(() => store.cachedRowDocs, [store]);
+  const subscribeToCachedRowDocChanges = useCallback(
+    (subscriber: (change: BackgroundRowDocChange) => void) => {
+      store.rowDocChangeSubscribers.add(subscriber);
+      return () => {
+        store.rowDocChangeSubscribers.delete(subscriber);
+      };
+    },
+    [store]
+  );
+  const cachedRowDocs = useSyncExternalStore(subscribeToCachedRowDocs, getCachedRowDocs, getCachedRowDocs);
 
   // Y.Array identity is stable when collaborative edits insert rows. Track a
   // primitive revision so the loading effects also process rows added after
@@ -335,6 +359,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
         setStoreCachedRowDocs(store, (prev) => {
           let changed = false;
           const next = { ...prev };
+          const added: RowDocMap = {};
           const currentRows = store.rows;
 
           Object.entries(pending).forEach(([rowId, doc]) => {
@@ -348,10 +373,11 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
             }
 
             next[rowId] = doc;
+            added[rowId] = doc;
             store.sharedCachedRowDocIds.delete(rowId);
             changed = true;
           });
-          return changed ? next : prev;
+          return { added, next: changed ? next : prev, removed: {} };
         });
       });
     });
@@ -374,9 +400,11 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     const cached = store.cachedRowDocs;
     let changed = false;
     const next: RowDocMap = {};
+    const removed: RowDocMap = {};
 
     Object.entries(cached).forEach(([rowId, doc]) => {
       if (hasRowConditionData(rows?.[rowId])) {
+        removed[rowId] = doc;
         disposeStoreDoc(store, rowId, doc);
         store.sharedCachedRowDocIds.delete(rowId);
         changed = true;
@@ -387,7 +415,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
     });
 
     if (changed) {
-      setStoreCachedRowDocs(store, () => next);
+      setStoreCachedRowDocs(store, () => ({ added: {}, next, removed }));
     }
   }, [rows, store]);
 
@@ -442,6 +470,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
           setStoreCachedRowDocs(store, (prev) => {
             let changed = false;
             const next = { ...prev };
+            const added: RowDocMap = {};
             const currentRows = store.rows;
 
             Object.entries(additions).forEach(([rowId, doc]) => {
@@ -454,10 +483,11 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
               }
 
               next[rowId] = doc;
+              added[rowId] = doc;
               store.sharedCachedRowDocIds.add(rowId);
               changed = true;
             });
-            return changed ? next : prev;
+            return { added, next: changed ? next : prev, removed: {} };
           });
         });
       }
@@ -709,5 +739,7 @@ export function useBackgroundRowDocLoader(active: boolean, scope = 'conditions')
 
   return {
     cachedRowDocs,
+    getCachedRowDocs,
+    subscribeToCachedRowDocChanges,
   };
 }

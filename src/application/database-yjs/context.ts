@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
@@ -70,6 +70,14 @@ export interface DatabaseContextState {
    */
   peekRowDocFromSeed?: (rowId: string) => YDoc | null;
   bindRowSync?: (rowId: string) => void;
+  /**
+   * Local mutation provenance used for safe, additive derived-metadata writes.
+   * Realtime registration alone does not imply that a seed doc is fresh.
+   */
+  hasCellLocalMutation?: (rowId: string, fieldId: string) => boolean;
+  markCellLocalMutation?: (rowId: string, fieldId: string) => void;
+  getCellLocalMutationRevision?: (fieldId: string) => string;
+  subscribeToCellLocalMutations?: (fieldId: string, onStoreChange: () => void) => () => void;
   blobPrefetchComplete?: boolean;
   /** True as soon as row seeds are cached (before IndexedDB persist completes). */
   seedsReady?: boolean;
@@ -169,50 +177,112 @@ export const useCreateRow = () => {
   return context.createRow;
 };
 
+type DatabaseExternalStore = {
+  getDatabase: () => YDatabase | undefined;
+  getSnapshot: () => number;
+  subscribe: (onStoreChange: () => void) => () => void;
+};
+
+const databaseExternalStores = new WeakMap<YDoc, DatabaseExternalStore>();
+
+function createDatabaseExternalStore(databaseDoc: YDoc): DatabaseExternalStore {
+  const dataSection = databaseDoc.getMap(YjsEditorKey.data_section);
+  const subscribers = new Set<() => void>();
+  let database = dataSection.get(YjsEditorKey.database) as YDatabase | undefined;
+  let revision = 0;
+  let observing = false;
+
+  const publish = () => {
+    revision += 1;
+    subscribers.forEach((subscriber) => subscriber());
+  };
+
+  const handleDatabaseChange = () => publish();
+  const readCurrentDatabase = () => dataSection.get(YjsEditorKey.database) as YDatabase | undefined;
+  const replaceObservedDatabase = (nextDatabase: YDatabase | undefined) => {
+    if (nextDatabase === database) return false;
+
+    if (observing) {
+      try {
+        database?.unobserveDeep(handleDatabaseChange);
+      } catch {
+        // The previous database map may already have been destroyed.
+      }
+    }
+
+    database = nextDatabase;
+
+    if (observing) database?.observeDeep(handleDatabaseChange);
+    return true;
+  };
+
+  const handleDataSectionChange = () => {
+    replaceObservedDatabase(readCurrentDatabase());
+    publish();
+  };
+
+  const attach = () => {
+    if (observing) return;
+
+    database = readCurrentDatabase();
+    observing = true;
+    dataSection.observe(handleDataSectionChange);
+    database?.observeDeep(handleDatabaseChange);
+
+    // Close the render-to-subscribe gap with a primitive cached revision. This
+    // is deliberately not an object snapshot: useSyncExternalStore requires
+    // getSnapshot to stay referentially stable until the Yjs store changes.
+    revision += 1;
+  };
+
+  const detach = () => {
+    if (!observing) return;
+
+    observing = false;
+    dataSection.unobserve(handleDataSectionChange);
+    try {
+      database?.unobserveDeep(handleDatabaseChange);
+    } catch {
+      // Ignore teardown of an already-destroyed Yjs map.
+    }
+  };
+
+  return {
+    getDatabase: () => database,
+    getSnapshot: () => revision,
+    subscribe: (onStoreChange) => {
+      subscribers.add(onStoreChange);
+      if (subscribers.size === 1) attach();
+
+      return () => {
+        subscribers.delete(onStoreChange);
+        if (subscribers.size === 0) detach();
+      };
+    },
+  };
+}
+
+function getDatabaseExternalStore(databaseDoc: YDoc) {
+  let store = databaseExternalStores.get(databaseDoc);
+
+  if (!store) {
+    store = createDatabaseExternalStore(databaseDoc);
+    databaseExternalStores.set(databaseDoc, store);
+  }
+
+  return store;
+}
+
 export const useDatabase = () => {
   const context = useDatabaseContext();
   const databaseDoc = context.databaseDoc;
-  const [, forceUpdate] = useState(0);
-  const dataSection = databaseDoc?.getMap(YjsEditorKey.data_section);
-  const database = dataSection?.get(YjsEditorKey.database) as YDatabase;
+  const store = getDatabaseExternalStore(databaseDoc);
 
-  // Re-render when database key is added to dataSection (initial load via websocket).
-  useEffect(() => {
-    if (!dataSection) return;
-
-    const handleChange = () => {
-      forceUpdate((prev) => prev + 1);
-    };
-
-    dataSection.observe(handleChange);
-
-    return () => {
-      dataSection.unobserve(handleChange);
-    };
-  }, [dataSection, databaseDoc?.guid]);
-
-  // Re-render on database content changes (rows, fields, views added/modified).
-  useEffect(() => {
-    if (!database) {
-      return;
-    }
-
-    const handleChange = () => {
-      forceUpdate((prev) => prev + 1);
-    };
-
-    database.observeDeep(handleChange);
-
-    return () => {
-      try {
-        database.unobserveDeep(handleChange);
-      } catch {
-        // Ignore errors from unobserving destroyed Yjs objects
-      }
-    };
-  }, [database]);
-
-  return database;
+  useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  // Preserve the established hook contract. During initial hydration the
+  // runtime value may still be absent (as before), but widening this return
+  // type would force unrelated consumers to add guards across the codebase.
+  return store.getDatabase() as YDatabase;
 };
 
 export const useNavigateToRow = () => {

@@ -17,12 +17,12 @@ export function CheckboxCell({
   setEditing,
 }: CellProps<CheckboxCellType>) {
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
-
-  const checkedRef = useRef<boolean>(getChecked(cell?.data));
+  const checked = getChecked(cell?.data);
+  const checkedRef = useRef<boolean>(checked);
 
   useEffect(() => {
-    checkedRef.current = getChecked(cell?.data);
-  }, [cell?.data]);
+    checkedRef.current = checked;
+  }, [checked]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -40,13 +40,16 @@ export function CheckboxCell({
     <div
       style={style}
       data-testid={`checkbox-cell-${rowId}-${fieldId}`}
-      data-checked={checkedRef.current}
+      data-checked={checked}
       className={cn('relative flex h-full w-full text-lg text-text-action', readOnly ? '' : 'cursor-pointer')}
     >
-      {checkedRef.current ? (
-        <CheckboxCheckSvg className={'h-5 w-5'} data-testid="checkbox-checked-icon" />
+      {checked ? (
+        <CheckboxCheckSvg className={'h-5 w-5'} data-testid='checkbox-checked-icon' />
       ) : (
-        <CheckboxUncheckSvg className={'h-5 w-5 text-border-primary hover:text-border-primary-hover'} data-testid="checkbox-unchecked-icon" />
+        <CheckboxUncheckSvg
+          className={'h-5 w-5 text-border-primary hover:text-border-primary-hover'}
+          data-testid='checkbox-unchecked-icon'
+        />
       )}
     </div>
   );

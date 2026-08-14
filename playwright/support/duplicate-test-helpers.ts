@@ -13,7 +13,6 @@ import {
 } from './selectors';
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { createDocumentPageAndNavigate, currentViewIdFromUrl, ensurePageExpandedByViewId } from './page-utils';
-import { getSlashMenuItemName } from './i18n-constants';
 import {
   changeCheckboxFilterCondition,
   changeFilterCondition,
@@ -485,21 +484,20 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await openSlashMenuInEditor(page, editor, line);
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
+      const gridOption = BlockSelectors.slashMenuGrid(page);
+
+      await expect(gridOption).toBeVisible({ timeout: 10000 });
+      await gridOption.click();
 
       await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
 
-      // The database ViewModal can mount shortly after the embedded grid. Wait
-      // for that delayed render before closing it so sidebar interactions are
-      // not blocked by the modal backdrop.
-      const dialog = page.locator('[role="dialog"]').last();
-      await dialog.waitFor({ state: 'visible', timeout: 2000 }).catch(() => undefined);
-      if (await dialog.isVisible().catch(() => false)) {
-        await page.keyboard.press('Escape');
-        if (await dialog.isVisible().catch(() => false)) {
-          await page.mouse.click(10, 10);
-        }
-        await expect(dialog).toBeHidden({ timeout: 5000 });
+      // The database ViewModal can mount shortly after the embedded grid. Close
+      // that modal specifically; the editor itself may also live in a dialog.
+      const viewModalClose = page.getByTestId('view-modal-close').last();
+      await viewModalClose.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined);
+      if (await viewModalClose.isVisible().catch(() => false)) {
+        await viewModalClose.click();
+        await expect(viewModalClose).toBeHidden({ timeout: 5000 });
       }
 
       await page.waitForTimeout(1500);
@@ -656,11 +654,22 @@ export async function insertPageReferenceViaSlash(
   const panel = page.getByTestId('mention-panel');
 
   await expect(panel).toBeVisible({ timeout: 15000 });
-  await page.keyboard.type(pageName, { delay: 30 });
   const result = panel
     .locator('[data-option-kind="page"], [data-option-kind="database"]')
     .filter({ hasText: new RegExp(escapeRegExp(pageName)) })
     .first();
+
+  // The initial, unfiltered response often already contains the exact page.
+  // Prefer it because the server's full-text endpoint can briefly return no
+  // matches for a database that was renamed only moments ago.
+  if (
+    !(await result.waitFor({ state: 'visible', timeout: 5000 }).then(
+      () => true,
+      () => false
+    ))
+  ) {
+    await page.keyboard.type(pageName, { delay: 30 });
+  }
 
   await expect(result).toBeVisible({ timeout: 30000 });
   await result.click();
