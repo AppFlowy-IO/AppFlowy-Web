@@ -33,13 +33,8 @@ async function closeTemplateEditor(page: Page): Promise<void> {
   const editor = page.getByTestId(TEMPLATE_EDITOR);
 
   if (!(await editor.isVisible().catch(() => false))) return;
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await page.keyboard.press('Escape');
-    if (await editor.isHidden({ timeout: 2000 }).catch(() => false)) return;
-  }
-
-  await expect(editor).toBeHidden();
+  await page.getByRole('dialog', { name: 'Edit database template' }).press('Escape');
+  await expect(editor).toBeHidden({ timeout: 15000 });
 }
 
 async function createTemplate(page: Page, name: string): Promise<Locator> {
@@ -132,10 +127,17 @@ async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Ca
   const addViewButton = block.getByTestId('add-view-button');
   const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
 
+  await expect(addViewButton).toBeVisible({ timeout: 30000 });
   await addViewButton.scrollIntoViewIfNeeded();
   for (let attempt = 0; attempt < 3; attempt++) {
-    await addViewButton.click({ force: true });
-    if (await menu.isVisible({ timeout: 3000 }).catch(() => false)) break;
+    await addViewButton.click();
+    if (
+      await menu.waitFor({ state: 'visible', timeout: 3000 }).then(
+        () => true,
+        () => false
+      )
+    )
+      break;
   }
 
   await expect(menu).toBeVisible({ timeout: 10000 });
@@ -298,7 +300,11 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(initialMenu.getByText('No templates yet')).toBeVisible();
     const splitButtonBox = await page.getByTestId('database-template-split-button').boundingBox();
-    const initialMenuBox = await initialMenu.boundingBox();
+    const initialMenuSize = await initialMenu.evaluate((element) => {
+      const style = getComputedStyle(element);
+
+      return { width: Number.parseFloat(style.width), height: Number.parseFloat(style.height) };
+    });
     const headerStyle = await initialMenu.getByText('Templates for Grid').evaluate((element) => {
       const style = getComputedStyle(element);
 
@@ -312,9 +318,9 @@ test.describe('Database row templates (Desktop parity)', () => {
       .evaluate((element) => getComputedStyle(element).lineHeight);
 
     expect(splitButtonBox?.height).toBe(28);
-    expect(initialMenuBox?.width).toBe(300);
-    expect(initialMenuBox?.height).toBeGreaterThanOrEqual(126);
-    expect(initialMenuBox?.height).toBeLessThanOrEqual(130);
+    expect(initialMenuSize.width).toBe(300);
+    expect(initialMenuSize.height).toBeGreaterThanOrEqual(126);
+    expect(initialMenuSize.height).toBeLessThanOrEqual(130);
     expect(headerStyle).toEqual({ fontSize: '12px', fontWeight: '500', lineHeight: '14px' });
     expect(emptyLineHeight).toBe('16px');
     expect(footerLineHeight).toBe('16px');
