@@ -558,9 +558,9 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
   );
 }
 
-function setGroupColumnHidden({
+function setGroupColumnsHidden({
   allowDynamicColumn = false,
-  columnId,
+  columnIds,
   fieldId,
   fields,
   groupId,
@@ -569,7 +569,7 @@ function setGroupColumnHidden({
   view,
 }: {
   allowDynamicColumn?: boolean;
-  columnId: string;
+  columnIds: readonly string[];
   fieldId: string;
   fields: YDatabaseFields | undefined;
   groupId: string;
@@ -595,57 +595,80 @@ function setGroupColumnHidden({
     throw new Error('Group columns not found');
   }
 
-  let index = columns.toArray().findIndex((column) => getDatabaseGroupColumnId(column) === columnId);
+  const requestedColumnIds = new Set(columnIds.filter(Boolean));
 
-  if (index === -1) {
+  if (requestedColumnIds.size === 0) return;
+
+  const columnsById = new Map<string, { column: unknown; index: number }>();
+
+  columns.toArray().forEach((column, index) => {
+    const id = getDatabaseGroupColumnId(column);
+
+    if (id && !columnsById.has(id)) columnsById.set(id, { column, index });
+  });
+
+  const missingRequestedColumnIds = [...requestedColumnIds].filter((id) => !columnsById.has(id));
+
+  if (missingRequestedColumnIds.length > 0) {
     const field = fields?.get(fieldId);
     const fallbackColumns = field ? getGroupColumns(field) ?? [] : [];
+    const fallbackColumnIds = new Set(fallbackColumns.map((column) => column.id));
 
-    if (!allowDynamicColumn && !fallbackColumns.some((column) => column.id === columnId)) {
-      throw new Error(`Column with id ${columnId} not found in group ${groupId}`);
+    if (!allowDynamicColumn) {
+      const invalidColumnId = missingRequestedColumnIds.find((id) => !fallbackColumnIds.has(id));
+
+      if (invalidColumnId) throw new Error(`Column with id ${invalidColumnId} not found in group ${groupId}`);
     }
 
-    const existingColumnIds = new Set(columns.toArray().map(getDatabaseGroupColumnId));
-    const missingColumns = fallbackColumns
-      .filter((column) => !existingColumnIds.has(column.id))
-      .map((column) => createYDatabaseGroupColumn({ id: column.id }));
+    const additions: ReturnType<typeof createYDatabaseGroupColumn>[] = [];
+    const appendColumn = (id: string) => {
+      if (columnsById.has(id)) return;
 
-    if (missingColumns.length > 0) {
-      columns.insert(columns.length, missingColumns);
-    }
+      const column = createYDatabaseGroupColumn({ id });
+      const index = columns.length + additions.length;
 
-    if (allowDynamicColumn && !columns.toArray().some((column) => getDatabaseGroupColumnId(column) === columnId)) {
-      columns.insert(columns.length, [createYDatabaseGroupColumn({ id: columnId })]);
-    }
+      additions.push(column);
+      columnsById.set(id, { column, index });
+    };
 
-    index = columns.toArray().findIndex((column) => getDatabaseGroupColumnId(column) === columnId);
+    fallbackColumns.forEach((column) => appendColumn(column.id));
+    if (allowDynamicColumn) missingRequestedColumnIds.forEach(appendColumn);
+    if (additions.length > 0) columns.insert(columns.length, additions);
   }
 
-  const column = columns.get(index) as unknown;
+  requestedColumnIds.forEach((columnId) => {
+    const entry = columnsById.get(columnId);
 
-  if (index === -1 || !column) {
-    throw new Error(`Column with id ${columnId} not found in group ${groupId}`);
-  }
+    if (!entry) throw new Error(`Column with id ${columnId} not found in group ${groupId}`);
 
-  if (column instanceof Y.Map) {
-    column.set(YjsDatabaseKey.visible, !hidden);
-  } else {
-    const normalized = normalizeDatabaseGroupColumn(column);
+    if (entry.column instanceof Y.Map) {
+      entry.column.set(YjsDatabaseKey.visible, !hidden);
+      return;
+    }
+
+    const normalized = normalizeDatabaseGroupColumn(entry.column);
 
     if (!normalized) throw new Error(`Column with id ${columnId} is invalid`);
-    columns.delete(index);
-    columns.insert(index, [
+    columns.delete(entry.index);
+    columns.insert(entry.index, [
       createYDatabaseGroupColumn({
         groupColor: normalized.groupColor,
         id: normalized.id,
         visible: !hidden,
       }),
     ]);
-  }
+  });
 
-  if (mirrorBoardUngrouped && columnId === fieldId) {
+  if (mirrorBoardUngrouped && requestedColumnIds.has(fieldId)) {
     getOrCreateBoardLayoutSetting(view).set(YjsDatabaseKey.hide_ungrouped_column, hidden);
   }
+}
+
+function setGroupColumnHidden({
+  columnId,
+  ...options
+}: Omit<Parameters<typeof setGroupColumnsHidden>[0], 'columnIds'> & { columnId: string }) {
+  setGroupColumnsHidden({ ...options, columnIds: [columnId] });
 }
 
 export function useSyncGridGroupColumnsDispatch(groupId?: string) {
@@ -950,17 +973,15 @@ export function useSetAllGridGroupsVisibilityDispatch(groupId?: string, fieldId?
         [
           () => {
             if (!view || !groupId || !fieldId) throw new Error('Grid group not found');
-            columnIds.forEach((columnId) => {
-              setGroupColumnHidden({
-                allowDynamicColumn: true,
-                columnId,
-                fieldId,
-                fields,
-                groupId,
-                hidden: !visible,
-                mirrorBoardUngrouped: false,
-                view,
-              });
+            setGroupColumnsHidden({
+              allowDynamicColumn: true,
+              columnIds,
+              fieldId,
+              fields,
+              groupId,
+              hidden: !visible,
+              mirrorBoardUngrouped: false,
+              view,
             });
           },
         ],

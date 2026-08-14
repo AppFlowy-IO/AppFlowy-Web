@@ -206,6 +206,34 @@ describe('useGridGroupingSelector refresh behavior', () => {
     fixture.databaseDoc.destroy();
   });
 
+  it('observes grouping changes in seed-only row documents', async () => {
+    const fixture = createGridGroupingFixture();
+    const contextValue: DatabaseContextState = {
+      ...fixture.contextValue,
+      blobPrefetchComplete: false,
+      peekRowDocFromSeed: (rowId) => (rowId === 'row-a' ? fixture.rowA : rowId === 'row-b' ? fixture.rowB : null),
+      rowMap: {},
+    };
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
+    );
+    const { result, unmount } = renderHook(useGridGroupingSelector, { wrapper });
+
+    await waitFor(() => expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['A', 'B']));
+
+    act(() => fixture.updateCell(fixture.rowA, fixture.fieldId, 'B'));
+
+    await waitFor(() => {
+      expect(result.current.visibleGroups.map(({ id }) => id)).toEqual(['B']);
+      expect(result.current.visibleGroups[0].rows.map(({ id }) => id)).toEqual(['row-a', 'row-b']);
+    });
+
+    unmount();
+    fixture.rowA.destroy();
+    fixture.rowB.destroy();
+    fixture.databaseDoc.destroy();
+  });
+
   it('keeps grouping row observers active across StrictMode effect replay', async () => {
     const fixture = createGridGroupingFixture();
     const FixtureWrapper = fixture.wrapper;

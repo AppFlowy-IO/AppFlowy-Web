@@ -7,5 +7,5 @@
  */
 
 export { useBackgroundRowDocLoader } from './useBackgroundRowDocLoader';
+export type { BackgroundRowDocChange } from './useBackgroundRowDocLoader';
 export { useRollupFieldObservers } from './useRollupFieldObservers';
-

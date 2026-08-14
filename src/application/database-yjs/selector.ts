@@ -56,7 +56,11 @@ import {
   normalizeUniqueDatabaseGroupColumns,
 } from '@/application/database-yjs/group-column';
 import type { DatabaseGroupColumn } from '@/application/database-yjs/group-column';
-import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
+import {
+  type BackgroundRowDocChange,
+  useBackgroundRowDocLoader,
+  useRollupFieldObservers,
+} from '@/application/database-yjs/hooks';
 import {
   invalidateRelationCell,
   readRelationCellText,
@@ -1441,15 +1445,19 @@ type GridGroupingRowObserver = {
 };
 
 type GridGroupingRowsStore = {
+  applyCachedRowsChange: (change: BackgroundRowDocChange) => void;
   detachRows: () => void;
   getSnapshot: () => number;
+  replaceCachedRows: (rows: Record<RowId, YDoc>) => void;
+  replaceLiveRows: (rows: Record<RowId, YDoc>) => void;
   subscribe: (onStoreChange: () => void) => () => void;
-  updateRows: (rows: Record<RowId, YDoc>) => void;
 };
 
 function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
   const subscribers = new Set<() => void>();
   const observers = new Map<RowId, GridGroupingRowObserver>();
+  const cachedRows = new Map<RowId, YDoc>();
+  const liveRows = new Map<RowId, YDoc>();
   let revision = 0;
 
   const publish = () => {
@@ -1475,39 +1483,73 @@ function createGridGroupingRowsStore(fieldId?: string): GridGroupingRowsStore {
     observers.set(rowId, { dataSection, doc, observer });
   };
 
+  const getEffectiveRow = (rowId: RowId) => {
+    const cachedRow = cachedRows.get(rowId);
+    const liveRow = liveRows.get(rowId);
+
+    if (liveRow && (hasRowConditionData(liveRow) || !cachedRow)) return liveRow;
+    return cachedRow;
+  };
+
+  const reconcileRow = (rowId: RowId) => {
+    const current = observers.get(rowId);
+    const next = getEffectiveRow(rowId);
+
+    if (current?.doc === next) return;
+    if (current) {
+      detach(current);
+      observers.delete(rowId);
+    }
+
+    if (fieldId && next) attach(rowId, next);
+  };
+
+  const replaceRows = (currentRows: Map<RowId, YDoc>, nextRows: Record<RowId, YDoc>) => {
+    const changedRowIds = new Set<RowId>();
+
+    currentRows.forEach((doc, rowId) => {
+      if (nextRows[rowId] === doc) return;
+      currentRows.delete(rowId);
+      changedRowIds.add(rowId);
+    });
+    Object.entries(nextRows).forEach(([rowId, doc]) => {
+      if (currentRows.get(rowId) === doc) return;
+      currentRows.set(rowId, doc);
+      changedRowIds.add(rowId);
+    });
+    changedRowIds.forEach(reconcileRow);
+  };
+
   return {
+    applyCachedRowsChange: ({ added, removed }) => {
+      const changedRowIds = new Set<RowId>();
+
+      Object.entries(removed).forEach(([rowId, doc]) => {
+        if (cachedRows.get(rowId) !== doc) return;
+        cachedRows.delete(rowId);
+        changedRowIds.add(rowId);
+      });
+      Object.entries(added).forEach(([rowId, doc]) => {
+        if (cachedRows.get(rowId) === doc) return;
+        cachedRows.set(rowId, doc);
+        changedRowIds.add(rowId);
+      });
+      changedRowIds.forEach(reconcileRow);
+    },
     detachRows: () => {
       observers.forEach(detach);
       observers.clear();
+      cachedRows.clear();
+      liveRows.clear();
     },
     getSnapshot: () => revision,
+    replaceCachedRows: (rows) => replaceRows(cachedRows, rows),
+    replaceLiveRows: (rows) => replaceRows(liveRows, rows),
     subscribe: (onStoreChange) => {
       subscribers.add(onStoreChange);
       return () => {
         subscribers.delete(onStoreChange);
       };
-    },
-    updateRows: (rows) => {
-      let changed = false;
-
-      observers.forEach((entry, rowId) => {
-        if (rows[rowId] === entry.doc) return;
-        detach(entry);
-        observers.delete(rowId);
-        changed = true;
-      });
-      if (fieldId) {
-        Object.entries(rows).forEach(([rowId, doc]) => {
-          if (observers.has(rowId)) return;
-          attach(rowId, doc);
-          changed = true;
-        });
-      }
-
-      // A primitive revision is an O(1), cached external-store snapshot. The
-      // layout-phase update also closes the render-to-subscribe gap: if rows
-      // changed before observers were committed, React immediately rechecks.
-      if (changed) publish();
     },
   };
 }
@@ -1616,6 +1658,7 @@ function orderGridGroupsForPrimarySort(
 export function useGridGroupingSelector(): GridGrouping {
   const { getCellLocalMutationRevision, hasCellLocalMutation, subscribeToCellLocalMutations } = useDatabaseContext();
   const view = useDatabaseView();
+  const viewId = useDatabaseViewId();
   const database = useDatabase();
   const fields = useDatabaseFields();
   const rowOrders = useRowOrdersSelector();
@@ -1625,7 +1668,10 @@ export function useGridGroupingSelector(): GridGrouping {
   const fieldId = persistedGroup?.get(YjsDatabaseKey.field_id);
   const rawRowOrders = view?.get(YjsDatabaseKey.row_orders);
   const inlineRowOrders = getInlineViewRowOrders(database);
-  const { cachedRowDocs } = useBackgroundRowDocLoader(Boolean(fieldId), 'grid-grouping');
+  const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
+    Boolean(fieldId),
+    'grid-grouping'
+  );
   const groupingRows = useMemo(() => {
     const next = { ...cachedRowDocs };
 
@@ -1637,11 +1683,27 @@ export function useGridGroupingSelector(): GridGrouping {
 
     return next;
   }, [cachedRowDocs, rows]);
-  const groupingRowsStore = useMemo(() => createGridGroupingRowsStore(fieldId), [fieldId]);
+  const groupingRowsStore = useMemo(() => {
+    // The same database field can group multiple views; each view owns its
+    // observer lifecycle even when the field ID is identical.
+    void viewId;
+    return createGridGroupingRowsStore(fieldId);
+  }, [fieldId, viewId]);
 
   useLayoutEffect(() => {
-    groupingRowsStore.updateRows(groupingRows);
-  }, [groupingRows, groupingRowsStore]);
+    // Live row-map changes are small and may be followed by another layout
+    // effect that edits a cell, so close that commit-phase observation gap.
+    groupingRowsStore.replaceLiveRows(rows ?? {});
+  }, [groupingRowsStore, rows]);
+  useEffect(() => {
+    // Seed hydration publishes bounded add/remove deltas before its React
+    // snapshot. Subscribe once instead of rescanning every accumulated seed doc
+    // in a layout effect for each 128-row batch.
+    const unsubscribe = subscribeToCachedRowDocChanges(groupingRowsStore.applyCachedRowsChange);
+
+    groupingRowsStore.replaceCachedRows(getCachedRowDocs());
+    return unsubscribe;
+  }, [getCachedRowDocs, groupingRowsStore, subscribeToCachedRowDocChanges]);
   useLayoutEffect(
     () => () => {
       // React StrictMode and reusable effects replay cleanup followed by setup

@@ -436,6 +436,43 @@ describe('useGroup', () => {
     ]);
   });
 
+  it('scans Grid group columns once when changing bulk visibility', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const dynamicGroupIds = Array.from({ length: 250 }, (_, index) => `group-${index}`);
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: fieldId, visible: true }, ...dynamicGroupIds.map((id) => ({ id, visible: true }))],
+      viewId,
+    });
+    const columns = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database)
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.groups)
+      ?.get(0)
+      ?.get(YjsDatabaseKey.groups);
+    const columnsToArray = jest.spyOn(columns, 'toArray');
+    const { result } = renderHook(() => useSetAllGridGroupsVisibilityDispatch(groupId, fieldId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    columnsToArray.mockClear();
+    act(() => result.current(dynamicGroupIds, false));
+
+    expect(columnsToArray).toHaveBeenCalledTimes(1);
+    expect(
+      columns
+        ?.toJSON()
+        .slice(1)
+        .every(({ visible }: { visible?: boolean }) => visible === false)
+    ).toBe(true);
+    columnsToArray.mockRestore();
+  });
+
   it('persists Grid hide-empty and per-group collapse settings without changing Board settings', () => {
     const fieldId = 'field-id';
     const groupId = 'group-id';

@@ -91,10 +91,6 @@ function DatabaseViews({
   const tabReorderRequestSeqRef = useRef(0);
   const hasAuthoritativeVisibleOrder = Boolean(visibleViewIds && visibleViewIds.length > 0);
 
-  const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
-  // Track the previous valid layout to prevent flash when switching to a new view
-  const prevLayoutRef = useRef<DatabaseViewLayout | null>(null);
-
   const fallbackViewIds = useMemo(() => {
     if (hasAuthoritativeVisibleOrder) {
       return viewIds;
@@ -242,25 +238,6 @@ function DatabaseViews({
     return views?.get(activeViewId);
   }, [activeViewId, childViews, viewIds, views]);
 
-  // Update layout when active view changes
-  useEffect(() => {
-    if (!activeView) return;
-
-    const observerEvent = () => {
-      const newLayout = Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-
-      setLayout(newLayout);
-      prevLayoutRef.current = newLayout;
-    };
-
-    observerEvent();
-    activeView.observe(observerEvent);
-
-    return () => {
-      activeView.unobserve(observerEvent);
-    };
-  }, [activeView]);
-
   const handleViewChange = useCallback(
     (newViewId: string) => {
       onChangeView(newViewId);
@@ -345,9 +322,10 @@ function DatabaseViews({
 
   const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;
 
-  // Render the appropriate view component based on layout
-  // Use previous layout as fallback to prevent flash during view transitions
-  const effectiveLayout = layout ?? prevLayoutRef.current;
+  // The database store already observes view metadata. Derive the layout from
+  // the current view during render so a tab switch cannot commit the previous
+  // view's component tree or providers against the next view's context.
+  const effectiveLayout = activeView ? (Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout) : undefined;
 
   const view = useMemo(() => {
     switch (effectiveLayout) {
