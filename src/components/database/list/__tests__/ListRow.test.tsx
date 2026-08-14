@@ -27,6 +27,12 @@ jest.mock('@/application/database-yjs', () => ({
   useRowMetaSelector: jest.fn(),
 }));
 
+const mockUpdateCell = jest.fn();
+
+jest.mock('@/application/database-yjs/dispatch', () => ({
+  useUpdateCellDispatch: () => mockUpdateCell,
+}));
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string }) =>
@@ -49,7 +55,7 @@ jest.mock('@/components/database/components/cell/Cell', () => ({
 
 jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
   __esModule: true,
-  default: () => null,
+  ClearSortingConfirm: () => null,
 }));
 
 jest.mock('../ListRowActions', () => ({
@@ -91,16 +97,53 @@ describe('ListRow Desktop parity', () => {
     );
   }
 
-  it('renders leading, primary, and trailing properties in persisted order', () => {
-    renderRow();
+  it('database_list_property_order_test.dart: leading property respects visibility and renders before primary field', () => {
+    const initiallyTrailingFields = [fields[1], fields[0], fields[2]];
+    const { rerender } = render(
+      <ListRow
+        fields={initiallyTrailingFields}
+        reorderable={false}
+        rowId='row-1'
+        rowOrders={[{ height: 36, id: 'row-1' }]}
+      />
+    );
 
-    const leading = screen.getByTestId('list-field-leading-row-1');
-    const primary = screen.getByTestId('list-primary-cell-row-1');
+    let leading = screen.getByTestId('list-field-leading-row-1');
+    let primary = screen.getByTestId('list-primary-cell-row-1');
+
+    expect(primary.compareDocumentPosition(leading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    rerender(<ListRow fields={fields} reorderable={false} rowId='row-1' rowOrders={[{ height: 36, id: 'row-1' }]} />);
+
+    leading = screen.getByTestId('list-field-leading-row-1');
+    primary = screen.getByTestId('list-primary-cell-row-1');
     const trailing = screen.getByTestId('list-field-interactive-row-1');
+    const spacer = screen.getByTestId('list-row-spacer-row-1');
 
     expect(leading.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(primary.compareDocumentPosition(trailing) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(primary.nextElementSibling).toBe(spacer);
+    expect(trailing.style.width).toBe('');
+    expect(leading.parentElement?.className).toContain('mr-3');
     expect(bindRowSync).toHaveBeenCalledWith('row-1');
+
+    rerender(
+      <ListRow
+        fields={fields.filter((field) => field.fieldId !== 'leading')}
+        reorderable={false}
+        rowId='row-1'
+        rowOrders={[{ height: 36, id: 'row-1' }]}
+      />
+    );
+    expect(screen.queryByTestId('list-field-leading-row-1')).toBeNull();
+  });
+
+  it('database_list_field_display.dart: list view shows visible fields', () => {
+    renderRow();
+
+    expect(screen.getByTestId('list-field-leading-row-1')).toBeTruthy();
+    expect(screen.getByTestId('list-primary-cell-row-1')).toBeTruthy();
+    expect(screen.getByTestId('list-field-interactive-row-1')).toBeTruthy();
   });
 
   it('opens the row only from a non-interactive surface', () => {
@@ -111,6 +154,10 @@ describe('ListRow Desktop parity', () => {
 
     navigateToRow.mockClear();
     fireEvent.click(screen.getByRole('button', { name: 'Cell action' }));
+    expect(navigateToRow).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('list-checkbox-cell-row-1-leading'));
+    expect(mockUpdateCell).toHaveBeenCalledWith('Yes');
     expect(navigateToRow).not.toHaveBeenCalled();
   });
 
@@ -136,7 +183,7 @@ describe('ListRow Desktop parity', () => {
     expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
 
-  it('shows Untitled only when the empty row has neither an icon nor a document', () => {
+  it('database_list_field_display.dart: list view shows row icon and document indicator', () => {
     const { rerender } = render(
       <ListRow fields={fields} reorderable={false} rowId='row-1' rowOrders={[{ height: 36, id: 'row-1' }]} />
     );
@@ -157,13 +204,24 @@ describe('ListRow Desktop parity', () => {
     rerender(<ListRow fields={fields} reorderable={false} rowId='row-1' rowOrders={[{ height: 36, id: 'row-1' }]} />);
 
     expect(screen.getByTestId('list-primary-cell-row-1').getAttribute('data-primary-indicator')).toBe('icon');
-    expect(screen.getByText('📌')).toBeTruthy();
+    expect(screen.getByText('📌').className).toContain('text-base');
+    expect(screen.getByText('📌').className).toContain('leading-4');
+
+    mockUseRowMetaSelector.mockReturnValue({ icon: '🇺🇸', isEmptyDocument: false } as ReturnType<
+      typeof useRowMetaSelector
+    >);
+    rerender(<ListRow fields={fields} reorderable={false} rowId='row-1' rowOrders={[{ height: 36, id: 'row-1' }]} />);
+    expect(screen.getByText('🇺🇸').className).toContain('icon');
   });
 
   it('renders the reactive row comment count beside the title', () => {
     mockUseRowCommentCount.mockReturnValue(3);
     renderRow();
 
-    expect(screen.getByTestId('list-row-comment-count-row-1').textContent).toContain('3');
+    const primary = screen.getByTestId('list-primary-cell-row-1');
+    const comment = screen.getByTestId('list-row-comment-count-row-1');
+
+    expect(comment.textContent).toContain('3');
+    expect(primary.children[0]?.nextElementSibling).toBe(comment);
   });
 });

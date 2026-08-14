@@ -238,6 +238,7 @@ export function useViewOperations({
         // Use view-loader to open document (handles cache vs fetch)
         let { doc, collabType: detectedCollabType } = await openView(currentWorkspaceId, viewId, layout, {
           databaseId: databaseIdHint,
+          forceFetch: options?.forceFetch,
         });
 
         // Use detected collab type, or override for sub-documents
@@ -257,7 +258,10 @@ export function useViewOperations({
         });
 
         if (collabType === Types.Database && !databaseIdHint && collabObjectId !== viewId) {
-          const canonical = await openView(currentWorkspaceId, viewId, layout, { databaseId: collabObjectId });
+          const canonical = await openView(currentWorkspaceId, viewId, layout, {
+            databaseId: collabObjectId,
+            forceFetch: options?.forceFetch,
+          });
 
           doc = canonical.doc;
           detectedCollabType = canonical.collabType;

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
-import { createDatabaseListPageViaGrid, normalizeCreatedDatabaseListView } from '@/application/database-yjs/list-layout';
+import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
@@ -246,6 +246,8 @@ export function SlashPanel({
     loadViewMeta,
     loadView,
     bindViewSync,
+    deletePage,
+    updatePage,
     getMoreAIContext,
     createDatabaseView,
     loadViews,
@@ -453,7 +455,7 @@ export function SlashPanel({
         const response =
           layout === ViewLayout.List
             ? await (() => {
-                if (!loadView || !bindViewSync) {
+                if (!loadView || !bindViewSync || !deletePage) {
                   throw new Error('List creation is not available right now');
                 }
 
@@ -461,8 +463,11 @@ export function SlashPanel({
                   parentViewId: documentId,
                   name,
                   addPage,
+                  loadViewMeta,
                   loadView,
                   bindViewSync,
+                  deletePage,
+                  updatePage,
                 });
               })()
             : await addPage(documentId, { layout, name });
@@ -517,7 +522,19 @@ export function SlashPanel({
         notify.error((e as Error).message);
       }
     },
-    [addPage, bindViewSync, documentId, editor, loadView, openPageModal, t, turnInto]
+    [
+      addPage,
+      bindViewSync,
+      deletePage,
+      documentId,
+      editor,
+      loadView,
+      loadViewMeta,
+      openPageModal,
+      t,
+      turnInto,
+      updatePage,
+    ]
   );
 
   const allowedDatabaseIds = useMemo(() => {
@@ -759,13 +776,28 @@ export function SlashPanel({
         })();
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
 
-        const response = await createDatabaseView(documentId, {
-          parent_view_id: documentId,
-          database_id: databaseId,
-          layout: linkedPicker.layout,
-          name: referencedName,
-          embedded: true,
-        });
+        const response =
+          linkedPicker.layout === ViewLayout.List
+            ? await createLinkedDatabaseListView({
+                requestViewId: documentId,
+                payload: {
+                  parent_view_id: documentId,
+                  database_id: databaseId,
+                  name: referencedName,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
+                deletePage,
+              })
+            : await createDatabaseView(documentId, {
+                parent_view_id: documentId,
+                database_id: databaseId,
+                layout: linkedPicker.layout,
+                name: referencedName,
+                embedded: true,
+              });
 
         Log.debug('[SlashPanel] {} created linked database', {
           documentId,
@@ -774,24 +806,13 @@ export function SlashPanel({
           referencedName,
         });
 
-        if (response.database_update?.length && loadView) {
+        if (linkedPicker.layout !== ViewLayout.List && response.database_update?.length && loadView) {
           try {
             const databaseDoc = await loadView(response.view_id, false, false, {
               databaseId: response.database_id || databaseId,
             });
 
             applyYDoc(databaseDoc, new Uint8Array(response.database_update));
-            if (linkedPicker.layout === ViewLayout.List) {
-              const syncContext = bindViewSync?.(databaseDoc);
-
-              if (!normalizeCreatedDatabaseListView(databaseDoc, response.view_id)) {
-                Log.warn('[SlashPanel] failed to normalize server-created linked List field settings', {
-                  viewId: response.view_id,
-                });
-              }
-
-              void syncContext?.flush?.();
-            }
           } catch (error) {
             Log.warn('[SlashPanel] failed to apply linked database update', {
               viewId: response.view_id,
@@ -825,6 +846,7 @@ export function SlashPanel({
       turnInto,
       t,
       bindViewSync,
+      deletePage,
       loadView,
       loadViewMeta,
       loadDatabaseRelations,

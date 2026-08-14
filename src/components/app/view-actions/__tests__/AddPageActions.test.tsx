@@ -3,7 +3,15 @@ import { toast } from 'sonner';
 import * as Y from 'yjs';
 
 import { FieldType, FieldVisibility } from '@/application/database-yjs';
-import { DatabaseViewLayout, View, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import {
+  DatabaseViewLayout,
+  View,
+  ViewLayout,
+  YDatabase,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
 
 import type { ReactNode } from 'react';
@@ -15,7 +23,12 @@ const mockToView = jest.fn();
 const mockOpenPageModal = jest.fn();
 const mockChatRequest = jest.fn();
 const mockLoadView = jest.fn();
+const mockLoadViewMeta = jest.fn();
 const mockBindViewSync = jest.fn();
+const mockCreateDatabaseView = jest.fn();
+const mockDeletePage = jest.fn();
+const mockDeleteTrash = jest.fn();
+const mockUpdatePage = jest.fn();
 const mockFlush = jest.fn();
 
 jest.mock('react-i18next', () => ({
@@ -37,7 +50,12 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAppOperations: () => ({
     addPage: mockAddPage,
     bindViewSync: mockBindViewSync,
+    createDatabaseView: mockCreateDatabaseView,
+    deletePage: mockDeletePage,
+    deleteTrash: mockDeleteTrash,
     loadView: mockLoadView,
+    loadViewMeta: mockLoadViewMeta,
+    updatePage: mockUpdatePage,
   }),
   useCurrentWorkspaceId: () => 'workspace-id',
   useOpenPageModal: () => mockOpenPageModal,
@@ -110,6 +128,7 @@ function createGridDatabaseDoc(): YDoc {
   const databaseView = new Y.Map();
   const fieldOrders = new Y.Array<{ id: string }>();
   const fieldSettings = new Y.Map();
+  const metas = new Y.Map();
   const fieldIds = ['primary-field', 'field-1', 'field-2', 'field-3'];
 
   fieldIds.forEach((fieldId, index) => {
@@ -133,11 +152,37 @@ function createGridDatabaseDoc(): YDoc {
   databaseView.set(YjsDatabaseKey.groups, new Y.Array());
   databaseView.set(YjsDatabaseKey.layout_settings, new Y.Map());
   views.set('grid-view-id', databaseView);
+  metas.set(YjsDatabaseKey.iid, 'grid-view-id');
   database.set(YjsDatabaseKey.id, 'database-id');
   database.set(YjsDatabaseKey.fields, fields);
   database.set(YjsDatabaseKey.views, views);
+  database.set(YjsDatabaseKey.metas, metas);
   sharedRoot.set(YjsEditorKey.database, database);
   return doc;
+}
+
+function createLinkedListUpdate(databaseDoc: YDoc): number[] {
+  const serverDoc = new Y.Doc();
+
+  Y.applyUpdate(serverDoc, Y.encodeStateAsUpdate(databaseDoc));
+  const clientStateVector = Y.encodeStateVector(databaseDoc);
+  const database = serverDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+  const views = database?.get(YjsDatabaseKey.views);
+  const gridView = views?.get('grid-view-id');
+  const listView = new Y.Map();
+  const fieldOrders = new Y.Array<{ id: string }>();
+
+  fieldOrders.push(gridView?.get(YjsDatabaseKey.field_orders)?.toArray() ?? []);
+  listView.set(YjsDatabaseKey.id, 'list-view-id');
+  listView.set(YjsDatabaseKey.name, 'List');
+  listView.set(YjsDatabaseKey.layout, DatabaseViewLayout.List);
+  listView.set(YjsDatabaseKey.field_orders, fieldOrders);
+  listView.set(YjsDatabaseKey.field_settings, new Y.Map());
+  listView.set(YjsDatabaseKey.groups, new Y.Array());
+  listView.set(YjsDatabaseKey.layout_settings, new Y.Map());
+  views?.set('list-view-id', listView);
+
+  return Array.from(Y.encodeStateAsUpdate(serverDoc, clientStateVector));
 }
 
 describe('AddPageActions', () => {
@@ -148,12 +193,32 @@ describe('AddPageActions', () => {
     mockToView.mockResolvedValue(undefined);
     mockFlush.mockResolvedValue(true);
     mockBindViewSync.mockReturnValue({ flush: mockFlush });
+    mockCreateDatabaseView.mockResolvedValue({
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+    });
+    mockDeletePage.mockResolvedValue(undefined);
+    mockDeleteTrash.mockResolvedValue(undefined);
+    mockLoadViewMeta.mockResolvedValue(null);
+    mockUpdatePage.mockResolvedValue(undefined);
   });
 
-  it('creates and opens a List database page through the server-compatible Grid conversion', async () => {
+  it('replaces the temporary standalone Grid child with a durable List child', async () => {
     const databaseDoc = createGridDatabaseDoc();
 
     mockAddPage.mockResolvedValueOnce({ view_id: 'list-container-id', database_id: 'database-id' });
+    mockCreateDatabaseView.mockResolvedValueOnce({
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+      database_update: createLinkedListUpdate(databaseDoc),
+    });
+    mockLoadViewMeta.mockResolvedValueOnce(
+      view({
+        view_id: 'list-container-id',
+        layout: ViewLayout.Grid,
+        children: [view({ view_id: 'grid-view-id', layout: ViewLayout.Grid })],
+      })
+    );
     mockLoadView.mockResolvedValueOnce(databaseDoc);
     const parent = view({
       view_id: 'parent-id',
@@ -170,14 +235,27 @@ describe('AddPageActions', () => {
         prev_view_id: 'last-child-id',
       })
     );
-    expect(mockLoadView).toHaveBeenCalledWith('list-container-id', false, false, {
+    expect(mockLoadViewMeta).toHaveBeenCalledWith('list-container-id');
+    expect(mockLoadView).toHaveBeenCalledWith('grid-view-id', false, false, {
       databaseId: 'database-id',
       forceFetch: true,
     });
     expect(mockBindViewSync).toHaveBeenCalledWith(databaseDoc);
+    expect(mockCreateDatabaseView).toHaveBeenCalledWith('grid-view-id', {
+      parent_view_id: 'list-container-id',
+      prev_view_id: 'grid-view-id',
+      database_id: 'database-id',
+      layout: ViewLayout.List,
+      name: 'List',
+      embedded: false,
+    });
+    expect(mockDeletePage).toHaveBeenCalledWith('grid-view-id');
+    expect(mockDeleteTrash).toHaveBeenCalledWith('grid-view-id');
+    expect(mockUpdatePage).not.toHaveBeenCalled();
 
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
-    const listView = database?.get(YjsDatabaseKey.views)?.get('grid-view-id');
+    const databaseViews = database?.get(YjsDatabaseKey.views);
+    const listView = databaseViews?.get('list-view-id');
 
     expect(listView?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.List);
     expect(listView?.get(YjsDatabaseKey.name)).toBe('List');
@@ -187,8 +265,156 @@ describe('AddPageActions', () => {
     expect(listView?.get(YjsDatabaseKey.field_settings)?.get('field-3')?.get(YjsDatabaseKey.visibility)).toBe(
       FieldVisibility.AlwaysHidden
     );
-    expect(mockFlush).toHaveBeenCalled();
-    expect(mockToView).toHaveBeenCalledWith('list-container-id');
+    expect(database?.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.iid)).toBe('list-view-id');
+    expect(databaseViews?.has('grid-view-id')).toBe(false);
+    expect(Array.from(databaseViews?.keys() ?? [])).toEqual(['list-view-id']);
+    expect(mockFlush).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mockToView).toHaveBeenCalledWith('list-view-id'));
+    expect(mockFlush.mock.invocationCallOrder[0]).toBeLessThan(mockDeletePage.mock.invocationCallOrder[0]);
+    expect(mockDeletePage.mock.invocationCallOrder[0]).toBeLessThan(mockDeleteTrash.mock.invocationCallOrder[0]);
+    expect(mockDeleteTrash.mock.invocationCallOrder[0]).toBeLessThan(mockFlush.mock.invocationCallOrder[1]);
+    expect(mockFlush.mock.invocationCallOrder[1]).toBeLessThan(mockToView.mock.invocationCallOrder[0]);
+  });
+
+  it('compensates the exact container when temporary Grid soft-delete fails', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+
+    mockAddPage.mockResolvedValueOnce({ view_id: 'list-container-id', database_id: 'database-id' });
+    mockCreateDatabaseView.mockResolvedValueOnce({
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+      database_update: createLinkedListUpdate(databaseDoc),
+    });
+    mockLoadViewMeta.mockResolvedValueOnce(
+      view({
+        view_id: 'list-container-id',
+        layout: ViewLayout.Grid,
+        children: [view({ view_id: 'grid-view-id', layout: ViewLayout.Grid })],
+      })
+    );
+    mockLoadView.mockResolvedValueOnce(databaseDoc);
+    mockDeletePage.mockRejectedValueOnce(new Error('temporary Grid could not be moved to trash'));
+
+    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    fireEvent.click(screen.getByTestId('add-list-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('temporary Grid could not be moved to trash'));
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const databaseViews = database?.get(YjsDatabaseKey.views);
+
+    expect(database?.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.iid)).toBe('list-view-id');
+    expect(databaseViews?.has('grid-view-id')).toBe(true);
+    expect(databaseViews?.has('list-view-id')).toBe(true);
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockDeletePage.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
+    expect(mockDeleteTrash.mock.calls).toEqual([['list-container-id']]);
+    expect(mockToView).not.toHaveBeenCalled();
+  });
+
+  it('compensates the exact container when initial List persistence is unconfirmed', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+
+    mockAddPage.mockResolvedValueOnce({ view_id: 'list-container-id', database_id: 'database-id' });
+    mockCreateDatabaseView.mockResolvedValueOnce({
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+      database_update: createLinkedListUpdate(databaseDoc),
+    });
+    mockLoadViewMeta.mockResolvedValueOnce(
+      view({
+        view_id: 'list-container-id',
+        layout: ViewLayout.Grid,
+        children: [view({ view_id: 'grid-view-id', layout: ViewLayout.Grid })],
+      })
+    );
+    mockLoadView.mockResolvedValueOnce(databaseDoc);
+    mockFlush.mockResolvedValueOnce(false);
+
+    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    fireEvent.click(screen.getByTestId('add-list-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The new List database could not be persisted'));
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+
+    expect(mockDeletePage.mock.calls).toEqual([['list-container-id']]);
+    expect(mockDeleteTrash.mock.calls).toEqual([['list-container-id']]);
+    expect(database?.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.iid)).toBe('list-view-id');
+    expect(database?.get(YjsDatabaseKey.views)?.has('grid-view-id')).toBe(true);
+    expect(mockToView).not.toHaveBeenCalled();
+  });
+
+  it('compensates the exact container when temporary Grid permanent-delete fails', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+
+    mockAddPage.mockResolvedValueOnce({ view_id: 'list-container-id', database_id: 'database-id' });
+    mockCreateDatabaseView.mockResolvedValueOnce({
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+      database_update: createLinkedListUpdate(databaseDoc),
+    });
+    mockLoadViewMeta.mockResolvedValueOnce(
+      view({
+        view_id: 'list-container-id',
+        layout: ViewLayout.Grid,
+        children: [view({ view_id: 'grid-view-id', layout: ViewLayout.Grid })],
+      })
+    );
+    mockLoadView.mockResolvedValueOnce(databaseDoc);
+    mockDeleteTrash.mockRejectedValueOnce(new Error('permanent cleanup unavailable'));
+
+    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    fireEvent.click(screen.getByTestId('add-list-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('permanent cleanup unavailable'));
+
+    expect(mockDeletePage.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
+    expect(mockDeleteTrash.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+
+    expect(database?.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.iid)).toBe('list-view-id');
+    expect(database?.get(YjsDatabaseKey.views)?.has('grid-view-id')).toBe(true);
+    expect(database?.get(YjsDatabaseKey.views)?.has('list-view-id')).toBe(true);
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockToView).not.toHaveBeenCalled();
+  });
+
+  it('compensates the exact container when final Grid Y-view persistence is unconfirmed', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+
+    mockAddPage.mockResolvedValueOnce({ view_id: 'list-container-id', database_id: 'database-id' });
+    mockCreateDatabaseView.mockResolvedValueOnce({
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+      database_update: createLinkedListUpdate(databaseDoc),
+    });
+    mockLoadViewMeta.mockResolvedValueOnce(
+      view({
+        view_id: 'list-container-id',
+        layout: ViewLayout.Grid,
+        children: [view({ view_id: 'grid-view-id', layout: ViewLayout.Grid })],
+      })
+    );
+    mockLoadView.mockResolvedValueOnce(databaseDoc);
+    mockFlush.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
+    render(<AddPageActions view={view({ view_id: 'parent-id' })} />);
+    fireEvent.click(screen.getByTestId('add-list-button'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('The temporary Grid cleanup could not be persisted'));
+
+    expect(mockDeletePage.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
+    expect(mockDeleteTrash.mock.calls).toEqual([['grid-view-id'], ['list-container-id']]);
+    expect(
+      databaseDoc
+        .getMap(YjsEditorKey.data_section)
+        .get(YjsEditorKey.database)
+        ?.get(YjsDatabaseKey.views)
+        ?.has('grid-view-id')
+    ).toBe(false);
+    expect(mockFlush).toHaveBeenCalledTimes(2);
+    expect(mockToView).not.toHaveBeenCalled();
   });
 
   it('starts with no RAG IDs when the parent is a space', async () => {

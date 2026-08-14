@@ -2,6 +2,44 @@ Feature: List group visibility
   List grouping must use List-scoped settings and react immediately when a
   group is hidden or shown.
 
+  # Migrated from database_list_grouping_test.dart.
+  Scenario: list shows group headers and remove grouping option
+    Given a grid database is open for List group visibility testing
+    And the grid has List group options "A, B, C"
+    When I add a List view for group visibility testing
+    And I group the List by the Type field
+    Then List group "A" is visible
+    And List group "B" is visible
+    And List group "C" is visible
+    And the List Remove grouping action is available
+
+  Scenario: add row in group footer increases group count
+    Given a grid database is open for List group visibility testing
+    And the grid has List group options "A, B, C"
+    When I add a List view for group visibility testing
+    And I group the List by the Type field
+    And I add a row from List group "A" footer
+    Then List group "A" has one more row
+
+  Scenario: remove grouping clears list headers and hides action
+    Given a grid database is open for List group visibility testing
+    And the grid has List group options "A, B, C"
+    When I add a List view for group visibility testing
+    And I group the List by the Type field
+    And I remove List grouping
+    Then the List has no group headers
+    And the List Remove grouping action is not available
+
+  Scenario: board grouping does not carry over to list layout and remove grouping is hidden
+    Given a grid database is open for List group visibility testing
+    And the grid has List group options "A, B, C"
+    When I change the active database layout to Board
+    And I group the Board by the Type field
+    Then Board grouping cannot be removed
+    When I change the active database layout to List
+    Then the List has no group headers
+    And the List Remove grouping action is not available
+
   Scenario: List page hides groups when visibility is toggled off
     Given a grid database is open for List group visibility testing
     And the grid has List group options "A, B, C"

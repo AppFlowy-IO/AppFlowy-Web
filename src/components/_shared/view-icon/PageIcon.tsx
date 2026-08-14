@@ -147,7 +147,7 @@ function PageIcon({
     case ViewLayout.Chart:
       return <ChartSvg className={className} />;
     case ViewLayout.List:
-      return <ListSvg className={className} />;
+      return <ListSvg data-testid='list-view-icon' className={className} />;
     case ViewLayout.Document:
       return <DocumentSvg className={className} />;
     default:

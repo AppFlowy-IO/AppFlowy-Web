@@ -1,6 +1,5 @@
 import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
-import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -22,12 +21,14 @@ import {
   LIST_LOAD_MORE_THRESHOLD,
   LIST_ROW_ACTIONS_WIDTH,
 } from './list.constants';
+import { getListRemainingRowCount, getVisibleListRows } from './list.utils';
 import { ListLoadMore, ListLoadMoreIndicator, ListLoadingIndicator, ListNewRow } from './ListControls';
 import { ListGroupFooter, ListGroupHeader, ListGroupSeparator } from './ListGroup';
 import { ListGroupingProvider, useListGrouping } from './ListGroupingContext';
 import { ListRow } from './ListRow';
 import { ListSortSubscription } from './ListSortState';
-import { getListRemainingRowCount, getVisibleListRows } from './list.utils';
+
+import type { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 
 const LIST_FIELD_VISIBILITIES = [
   FieldVisibility.AlwaysShown,
@@ -134,94 +135,95 @@ function ListContent() {
     paddingInlineEnd: effectivePaddingEnd,
     paddingInlineStart: Math.max(effectivePaddingStart - LIST_ROW_ACTIONS_WIDTH, 0),
   };
-  const rowsContent =
-    rowOrders === undefined ? (
-      <div className='pl-10'>
-        <ListLoadingIndicator />
+  const containerClassName = cn(
+    'database-list appflowy-custom-scroller min-h-0 w-full',
+    isDocumentBlock ? 'overflow-visible' : 'h-full flex-1 overflow-y-auto overflow-x-hidden'
+  );
+
+  if (rowOrders === undefined) {
+    return (
+      <div className={containerClassName} data-testid='database-list' ref={scrollContainerRef}>
+        <ListLoadingIndicator fillAvailable={!isDocumentBlock} />
       </div>
-    ) : useGroupedView ? (
-      grouping.visibleGroups.map((group) => {
-        const groupLimit = groupLimits[group.id] ?? LIST_INITIAL_ROW_LIMIT;
-        const groupRows = group.collapsed ? [] : group.rows.slice(0, groupLimit);
-        const groupRemainingRowCount = Math.max(group.rows.length - groupLimit, 0);
-
-        return (
-          <section data-group-id={group.id} key={group.id}>
-            <ListGroupHeader
-              fieldId={grouping.fieldId}
-              fieldName={grouping.fieldName}
-              fieldType={grouping.fieldType}
-              group={group}
-              groupConfigId={grouping.groupId}
-            />
-
-            {!group.collapsed ? (
-              <>
-                <div className='py-1'>
-                  {groupRows.map((row) => (
-                    <ListRow
-                      fields={fields}
-                      groupFieldId={grouping.fieldId}
-                      groupId={group.id}
-                      key={`${group.id}/${row.id}`}
-                      reorderable={false}
-                      rowId={row.id}
-                      rowOrders={rowOrders}
-                    />
-                  ))}
-                </div>
-                {groupRemainingRowCount > 0 ? (
-                  <ListLoadMore
-                    groupId={group.id}
-                    onLoadMore={() =>
-                      setGroupLimits((current) => ({
-                        ...current,
-                        [group.id]: groupLimit + LIST_LOAD_MORE_INCREMENT,
-                      }))
-                    }
-                    remainingCount={groupRemainingRowCount}
-                  />
-                ) : null}
-                {!readOnly ? <ListGroupFooter fieldId={grouping.fieldId} groupId={group.id} /> : null}
-              </>
-            ) : null}
-
-            <ListGroupSeparator />
-          </section>
-        );
-      })
-    ) : (
-      <>
-        {visibleRows?.map((row: Row) => (
-          <ListRow
-            fields={fields}
-            key={row.id}
-            onDropRow={handleDropRow}
-            reorderable={!readOnly}
-            rowId={row.id}
-            rowOrders={rowOrders}
-          />
-        ))}
-
-        {remainingRowCount > 0 && isDocumentBlock ? (
-          <ListLoadMore onLoadMore={loadMoreRows} remainingCount={remainingRowCount} />
-        ) : null}
-        {!readOnly ? <ListNewRow /> : null}
-        {remainingRowCount > 0 && !isDocumentBlock ? <ListLoadMoreIndicator /> : null}
-      </>
     );
+  }
+
+  const rowsContent = useGroupedView ? (
+    grouping.visibleGroups.map((group) => {
+      const groupLimit = groupLimits[group.id] ?? LIST_INITIAL_ROW_LIMIT;
+      const groupRows = group.collapsed ? [] : group.rows.slice(0, groupLimit);
+      const groupRemainingRowCount = Math.max(group.rows.length - groupLimit, 0);
+
+      return (
+        <section data-group-id={group.id} key={group.id}>
+          <ListGroupHeader
+            fieldId={grouping.fieldId}
+            fieldName={grouping.fieldName}
+            fieldType={grouping.fieldType}
+            group={group}
+            groupConfigId={grouping.groupId}
+          />
+
+          {!group.collapsed ? (
+            <>
+              <div className='py-1'>
+                {groupRows.map((row) => (
+                  <ListRow
+                    fields={fields}
+                    groupFieldId={grouping.fieldId}
+                    groupId={group.id}
+                    key={`${group.id}/${row.id}`}
+                    reorderable={false}
+                    rowId={row.id}
+                    rowOrders={rowOrders}
+                  />
+                ))}
+              </div>
+              {groupRemainingRowCount > 0 ? (
+                <ListLoadMore
+                  groupId={group.id}
+                  onLoadMore={() =>
+                    setGroupLimits((current) => ({
+                      ...current,
+                      [group.id]: groupLimit + LIST_LOAD_MORE_INCREMENT,
+                    }))
+                  }
+                  remainingCount={groupRemainingRowCount}
+                />
+              ) : null}
+              {!readOnly ? <ListGroupFooter fieldId={grouping.fieldId} groupId={group.id} /> : null}
+            </>
+          ) : null}
+
+          <ListGroupSeparator />
+        </section>
+      );
+    })
+  ) : (
+    <>
+      {visibleRows?.map((row: Row) => (
+        <ListRow
+          fields={fields}
+          key={row.id}
+          onDropRow={handleDropRow}
+          reorderable={!readOnly}
+          rowId={row.id}
+          rowOrders={rowOrders}
+        />
+      ))}
+
+      {remainingRowCount > 0 && isDocumentBlock ? (
+        <ListLoadMore onLoadMore={loadMoreRows} remainingCount={remainingRowCount} />
+      ) : null}
+      {!readOnly ? <ListNewRow /> : null}
+      {remainingRowCount > 0 && !isDocumentBlock ? <ListLoadMoreIndicator /> : null}
+    </>
+  );
 
   return (
-    <div
-      className={cn(
-        'database-list appflowy-custom-scroller min-h-0 w-full',
-        isDocumentBlock ? 'overflow-visible' : 'h-full flex-1 overflow-y-auto overflow-x-hidden'
-      )}
-      data-testid='database-list'
-      ref={scrollContainerRef}
-    >
+    <div className={containerClassName} data-testid='database-list' ref={scrollContainerRef}>
       <div className='w-full py-2' style={contentStyle}>
-        {readOnly || rowOrders === undefined ? rowsContent : <ListSortSubscription>{rowsContent}</ListSortSubscription>}
+        {readOnly ? rowsContent : <ListSortSubscription>{rowsContent}</ListSortSubscription>}
       </div>
     </div>
   );

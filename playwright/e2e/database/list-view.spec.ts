@@ -17,12 +17,15 @@ import { addFieldWithType } from '../../support/field-type-helpers';
 import { createDocumentPageAndNavigate, insertLinkedDatabaseViaSlash } from '../../support/page-utils';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
 import {
+  BoardSelectors,
   DatabaseGridSelectors,
   DatabaseListSelectors,
   DatabaseViewSelectors,
   FieldType,
-  RowControlsSelectors,
+  itemDirectChildPageItems,
+  PageSelectors,
   RowDetailSelectors,
+  viewIdFromPageTestId,
 } from '../../support/selectors';
 import {
   addSortByFieldName,
@@ -39,9 +42,58 @@ async function addListView(page: Page): Promise<void> {
   await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30000 });
 }
 
-async function switchToView(page: Page, name: 'Grid' | 'List'): Promise<void> {
+async function switchToView(page: Page, name: 'Board' | 'Grid' | 'List'): Promise<void> {
   await DatabaseViewSelectors.viewTab(page).filter({ hasText: name }).click();
   await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText(name);
+}
+
+async function chooseRowEmoji(page: Page, rowId: string, emojiIndex: number): Promise<string> {
+  await DatabaseListSelectors.rowById(page, rowId).click();
+  const rowDetail = RowDetailSelectors.modal(page).last();
+
+  await expect(rowDetail).toBeVisible({ timeout: 15_000 });
+  await rowDetail.getByTestId('row-title-input').hover();
+
+  const existingIcon = rowDetail.locator('.view-icon').first();
+
+  if (await existingIcon.isVisible().catch(() => false)) {
+    await existingIcon.click();
+  } else {
+    const addIcon = rowDetail.getByTestId('add-icon-button');
+
+    await expect(addIcon).toBeVisible();
+    await addIcon.click();
+  }
+
+  await page.getByTestId('icon-popover-tab-emoji').click();
+  const emojiButton = page.locator('.emoji-picker button.text-xl').nth(emojiIndex);
+
+  await expect(emojiButton).toBeVisible({ timeout: 15_000 });
+  const emoji = (await emojiButton.textContent())?.trim() ?? '';
+
+  expect(emoji).not.toBe('');
+  await emojiButton.click();
+  await expect(page.locator('.emoji-picker')).toHaveCount(0, { timeout: 15_000 });
+  await closeListRowDetail(page);
+  await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toContainText(emoji);
+  return emoji;
+}
+
+async function closeListRowDetail(page: Page): Promise<void> {
+  await closeRowDetailWithEscape(page);
+  await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 15_000 });
+  await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 15_000 });
+}
+
+async function openDatabaseProperties(page: Page): Promise<void> {
+  const trigger = page.getByTestId('database-properties-settings-trigger');
+
+  if (!(await trigger.isVisible().catch(() => false))) {
+    await page.getByTestId('database-actions-settings').click();
+  }
+
+  await expect(trigger).toBeVisible({ timeout: 10_000 });
+  await trigger.hover();
 }
 
 async function closeDatabaseSettings(page: Page): Promise<void> {
@@ -79,13 +131,40 @@ async function expectListTitles(page: Page, titles: string[]): Promise<void> {
   await expect(DatabaseListSelectors.primaryCells(page)).toHaveText(titles, { timeout: 15000 });
 }
 
+async function expectOnlyStandaloneListChild(page: Page): Promise<string> {
+  const container = PageSelectors.itemByName(page, 'New Database');
+
+  await expect(container).toBeVisible({ timeout: 30_000 });
+  const visibleChildren = container.locator(itemDirectChildPageItems(true));
+
+  if ((await visibleChildren.count()) === 0) {
+    await container.locator('[data-testid="outline-toggle-expand"]').first().click({ force: true });
+  }
+
+  await expect(visibleChildren).toHaveCount(1, { timeout: 30_000 });
+  const listChild = visibleChildren.first();
+
+  await expect(listChild.getByTestId('page-name')).toHaveText('List');
+  // Referenced database children intentionally use a dot in the sidebar. The
+  // breadcrumb icon is selected from that folder child's persisted ViewLayout,
+  // so it catches a renamed Grid child even when its collab was locally
+  // converted to List.
+  await expect(page.getByTestId('breadcrumb-item-list').getByTestId('list-view-icon')).toBeVisible();
+  const childRowTestId = await listChild.locator(':scope > [data-testid^="page-"]').first().getAttribute('data-testid');
+
+  return viewIdFromPageTestId(childRowTestId);
+}
+
 test.describe('Database List view (Flutter desktop parity)', () => {
   test.beforeEach(async ({ page }) => {
     setupPageErrorHandling(page);
     await page.setViewportSize({ height: 800, width: 1440 });
   });
 
-  test('creates a standalone List page with rows and desktop controls', async ({ page, request }) => {
+  test('database_list_basic.dart: creates a standalone List container with one database child', async ({
+    page,
+    request,
+  }) => {
     await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'List', {
       verify: async (currentPage) => {
         await expect(DatabaseListSelectors.list(currentPage)).toBeVisible({ timeout: 30000 });
@@ -95,6 +174,113 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText('List');
     await expect.poll(() => DatabaseListSelectors.rows(page).count()).toBeGreaterThan(0);
     await expect(DatabaseListSelectors.newRowButton(page)).toBeVisible();
+    await expect(DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Grid' })).toHaveCount(0);
+
+    const listViewId = await expectOnlyStandaloneListChild(page);
+
+    expect(page.url()).toContain(listViewId);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30_000 });
+    await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText('List');
+    await expect(DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Grid' })).toHaveCount(0);
+    expect(await expectOnlyStandaloneListChild(page)).toBe(listViewId);
+  });
+
+  test('database_list_basic.dart: list view displays rows edited through row detail', async ({ page, request }) => {
+    await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'List', {
+      verify: async (currentPage) => {
+        await expect(DatabaseListSelectors.list(currentPage)).toBeVisible({ timeout: 30_000 });
+      },
+    });
+
+    const rows = DatabaseListSelectors.rows(page);
+
+    await expect.poll(() => rows.count()).toBeGreaterThanOrEqual(2);
+    const firstRowId = await rows.nth(0).getAttribute('data-row-id');
+    const secondRowId = await rows.nth(1).getAttribute('data-row-id');
+
+    expect(firstRowId).toBeTruthy();
+    expect(secondRowId).toBeTruthy();
+
+    await DatabaseListSelectors.rowById(page, firstRowId!).click();
+    await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15_000 });
+    await RowDetailSelectors.titleInput(page).fill('First Row');
+    await closeListRowDetail(page);
+
+    await DatabaseListSelectors.rowById(page, secondRowId!).click();
+    await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15_000 });
+    await RowDetailSelectors.titleInput(page).fill('Second Row');
+    await closeListRowDetail(page);
+
+    await expect(page.getByTestId(`list-primary-cell-${firstRowId}`)).toContainText('First Row');
+    await expect(page.getByTestId(`list-primary-cell-${secondRowId}`)).toContainText('Second Row');
+  });
+
+  test('database_list_basic.dart: creates List from the Grid tab bar and switches both ways', async ({
+    page,
+    request,
+  }) => {
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+
+    await expect(DatabaseGridSelectors.grid(page)).toBeVisible();
+    await expect.poll(() => DatabaseGridSelectors.dataRows(page).count()).toBeGreaterThanOrEqual(3);
+    const seededRowCount = await DatabaseGridSelectors.dataRows(page).count();
+
+    await addListView(page);
+    await expect(DatabaseGridSelectors.grid(page)).toHaveCount(0);
+    await expect(DatabaseListSelectors.rows(page)).toHaveCount(seededRowCount, { timeout: 15_000 });
+
+    await switchToView(page, 'Grid');
+    await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30_000 });
+    await expect(DatabaseListSelectors.list(page)).toHaveCount(0);
+    await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(seededRowCount, { timeout: 15_000 });
+
+    await switchToView(page, 'List');
+    await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30_000 });
+    await expect(DatabaseGridSelectors.grid(page)).toHaveCount(0);
+    await expect(DatabaseListSelectors.rows(page)).toHaveCount(seededRowCount, { timeout: 15_000 });
+  });
+
+  test('database_list_basic.dart and database_list_row_icon_test.dart: List layout and row icon persist after navigation', async ({
+    page,
+    request,
+  }) => {
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+
+    const primaryFieldId = await getPrimaryFieldId(page);
+
+    await typeTextIntoCell(page, primaryFieldId, 0, 'Persistent icon row');
+    await addListView(page);
+    const row = DatabaseListSelectors.rows(page).filter({ hasText: 'Persistent icon row' }).first();
+    const rowId = await row.getAttribute('data-row-id');
+
+    expect(rowId).toBeTruthy();
+    const emoji = await chooseRowEmoji(page, rowId!, 0);
+    const listUrl = page.url();
+
+    await createDocumentPageAndNavigate(page);
+    await expect(DatabaseListSelectors.list(page)).toHaveCount(0);
+
+    await page.goto(listUrl, { waitUntil: 'domcontentloaded' });
+    await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30_000 });
+    await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText('List');
+    await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toContainText(emoji, { timeout: 30_000 });
+  });
+
+  test('database_list_basic.dart: creates List from Board and preserves the Board tab', async ({ page, request }) => {
+    await signInAndCreateDatabaseView(page, request, generateRandomEmail(), 'Board', {
+      verify: async (currentPage) => {
+        await expect(BoardSelectors.boardContainer(currentPage)).toBeVisible({ timeout: 30_000 });
+      },
+    });
+
+    await addListView(page);
+    await expect(DatabaseListSelectors.list(page)).toBeVisible();
+
+    await switchToView(page, 'Board');
+    await expect(BoardSelectors.boardContainer(page)).toBeVisible({ timeout: 30_000 });
+    await expect(DatabaseListSelectors.list(page)).toHaveCount(0);
   });
 
   test("creates List from Grid, keeps Desktop's first three ordered fields, and persists visibility per view", async ({
@@ -146,14 +332,14 @@ test.describe('Database List view (Flutter desktop parity)', () => {
 
     await expectFirstListRowFieldOrder(page, primaryFieldId, expectedInitialFieldOrder);
 
-    await page.getByTestId('database-actions-settings').click();
-    await page.getByTestId('database-properties-settings-trigger').hover();
+    await openDatabaseProperties(page);
     const hiddenProperty = page.getByTestId(`database-property-${initiallyHiddenFieldId}`);
 
     await expect(hiddenProperty).toBeVisible({ timeout: 10000 });
     await hiddenProperty.click();
     await expect(DatabaseListSelectors.fieldsForField(page, initiallyHiddenFieldId).first()).toBeVisible();
 
+    await openDatabaseProperties(page);
     const listOnlyHiddenProperty = page.getByTestId(`database-property-${listOnlyHiddenFieldId}`);
 
     await expect(listOnlyHiddenProperty).toBeVisible();
@@ -208,7 +394,44 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     await expectListTitles(page, ['Zulu skip', 'Beta target', 'Alpha target']);
   });
 
-  test('opens rows, prioritizes icon over document, and shares duplicate/delete changes with Grid', async ({
+  test('database_list_row_operations.dart: creates a row from List and shares it with Grid', async ({
+    page,
+    request,
+  }) => {
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+
+    const initialGridRowCount = await DatabaseGridSelectors.dataRows(page).count();
+
+    await addListView(page);
+    const initialListRowCount = await DatabaseListSelectors.rows(page).count();
+
+    await DatabaseListSelectors.newRowButton(page).click();
+    await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15_000 });
+    await closeListRowDetail(page);
+    await expect(DatabaseListSelectors.rows(page)).toHaveCount(initialListRowCount + 1, { timeout: 15_000 });
+
+    await switchToView(page, 'Grid');
+    await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(initialGridRowCount + 1, { timeout: 15_000 });
+  });
+
+  test('database_list_row_operations.dart: a Grid title edit is reflected in List', async ({ page, request }) => {
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+
+    const primaryFieldId = await getPrimaryFieldId(page);
+
+    await typeTextIntoCell(page, primaryFieldId, 0, 'Initial Title');
+    await addListView(page);
+    await expect(DatabaseListSelectors.primaryCells(page).filter({ hasText: 'Initial Title' })).toHaveCount(1);
+
+    await switchToView(page, 'Grid');
+    await typeTextIntoCell(page, primaryFieldId, 0, 'Updated Title');
+    await switchToView(page, 'List');
+
+    await expect(DatabaseListSelectors.primaryCells(page).filter({ hasText: 'Updated Title' })).toHaveCount(1);
+    await expect(DatabaseListSelectors.primaryCells(page).filter({ hasText: 'Initial Title' })).toHaveCount(0);
+  });
+
+  test('database_list_row_operations.dart and database_list_row_icon_test.dart: row detail, icon priority, duplicate, and delete parity', async ({
     page,
     request,
   }) => {
@@ -227,7 +450,7 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15000 });
 
     await typeInRowDocument(page, 'List document content');
-    await closeRowDetailWithEscape(page);
+    await closeListRowDetail(page);
     await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toHaveAttribute('data-primary-indicator', 'document', {
       timeout: 15000,
     });
@@ -246,23 +469,27 @@ test.describe('Database List view (Flutter desktop parity)', () => {
 
     await expect(emojiButton).toBeVisible({ timeout: 15000 });
     await emojiButton.click();
-    await closeRowDetailWithEscape(page);
+    await expect(page.locator('.emoji-picker')).toHaveCount(0, { timeout: 15_000 });
+    await closeListRowDetail(page);
     await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toHaveAttribute('data-primary-indicator', 'icon', {
       timeout: 15000,
     });
 
     const initialListRowCount = await DatabaseListSelectors.rows(page).count();
 
-    await DatabaseListSelectors.rowById(page, rowId!).hover();
-    await DatabaseListSelectors.rowById(page, rowId!).getByTestId('row-accessory-button').click();
-    await RowControlsSelectors.rowMenuDuplicate(page).click();
+    await DatabaseListSelectors.rowById(page, rowId!).click();
+    await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('row-detail-more-actions').click();
+    await page.getByTestId('row-detail-duplicate').click();
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 15_000 });
     await expect(DatabaseListSelectors.rows(page)).toHaveCount(initialListRowCount + 1, { timeout: 15000 });
     await expect(DatabaseListSelectors.primaryCells(page).filter({ hasText: 'Lifecycle row' })).toHaveCount(2);
 
-    await DatabaseListSelectors.rowById(page, rowId!).hover();
-    await DatabaseListSelectors.rowById(page, rowId!).getByTestId('row-accessory-button').click();
-    await RowControlsSelectors.rowMenuDelete(page).click();
-    await RowControlsSelectors.deleteRowConfirmButton(page).click();
+    await DatabaseListSelectors.rowById(page, rowId!).click();
+    await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId('row-detail-more-actions').click();
+    await page.getByTestId('row-detail-delete').click();
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(0, { timeout: 15_000 });
     await expect(DatabaseListSelectors.rowById(page, rowId!)).toHaveCount(0, { timeout: 15000 });
 
     await switchToView(page, 'Grid');
@@ -272,7 +499,55 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     ).toHaveCount(1);
   });
 
-  test('renders source rows in a Linked List embedded in a document', async ({ page, request }) => {
+  test('database_list_row_icon_test.dart: row icon updates when changed in row detail', async ({ page, request }) => {
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+
+    const primaryFieldId = await getPrimaryFieldId(page);
+
+    await typeTextIntoCell(page, primaryFieldId, 0, 'Changing icon row');
+    await addListView(page);
+    const rowId = await DatabaseListSelectors.rows(page)
+      .filter({ hasText: 'Changing icon row' })
+      .first()
+      .getAttribute('data-row-id');
+
+    expect(rowId).toBeTruthy();
+    const firstEmoji = await chooseRowEmoji(page, rowId!, 0);
+    const nextEmoji = await chooseRowEmoji(page, rowId!, 1);
+
+    expect(nextEmoji).not.toBe(firstEmoji);
+    await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toContainText(nextEmoji);
+    await expect(page.getByTestId(`list-primary-cell-${rowId}`)).not.toContainText(firstEmoji);
+  });
+
+  test('database_list_row_icon_test.dart: Grid and List both show the same row emoji', async ({ page, request }) => {
+    await loginAndCreateGrid(page, request, generateRandomEmail());
+
+    const primaryFieldId = await getPrimaryFieldId(page);
+
+    await typeTextIntoCell(page, primaryFieldId, 0, 'Cross-view icon row');
+    await addListView(page);
+    const rowId = await DatabaseListSelectors.rows(page)
+      .filter({ hasText: 'Cross-view icon row' })
+      .first()
+      .getAttribute('data-row-id');
+
+    expect(rowId).toBeTruthy();
+    const emoji = await chooseRowEmoji(page, rowId!, 0);
+
+    await switchToView(page, 'Grid');
+    await expect(DatabaseGridSelectors.rowById(page, rowId!).locator('.custom-icon')).toContainText(emoji, {
+      timeout: 15_000,
+    });
+
+    await switchToView(page, 'List');
+    await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toContainText(emoji);
+  });
+
+  test('document_linked_list_test.dart: renders source rows in a Linked List embedded in a document', async ({
+    page,
+    request,
+  }) => {
     await loginAndCreateGrid(page, request, generateRandomEmail());
 
     const primaryFieldId = await getPrimaryFieldId(page);

@@ -25,13 +25,13 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/database/components/database-row/DeleteRowConfirm', () => ({
   __esModule: true,
-  default: ({ open, rowIds }: { open: boolean; rowIds: string[] }) =>
+  DeleteRowConfirm: ({ open, rowIds }: { open: boolean; rowIds: string[] }) =>
     open ? <div data-row-ids={rowIds.join(',')} data-testid='mock-delete-row-confirm' /> : null,
 }));
 
 jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
   __esModule: true,
-  default: ({ onClose, onRemoved, open }: { onClose: () => void; onRemoved?: () => void; open: boolean }) =>
+  ClearSortingConfirm: ({ onClose, onRemoved, open }: { onClose: () => void; onRemoved?: () => void; open: boolean }) =>
     open ? (
       <button
         data-testid='mock-clear-sorts-confirm'
@@ -145,5 +145,24 @@ describe('ListRowActions', () => {
     expect(createRow).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByTestId('mock-clear-sorts-confirm'));
     await waitFor(() => expect(createRow).toHaveBeenCalledWith({ beforeRowId: 'row-a', cellsData: undefined }));
+  });
+
+  it('matches Flutter ListRowActions 40px slot, 20x30 controls, and 200px menu spacing', async () => {
+    renderActions();
+
+    const actions = screen.getByTestId('list-row-actions-row-a');
+    const add = screen.getByTestId('list-row-add-below-row-a');
+    const menuButton = screen.getByTestId('row-accessory-button');
+
+    expect(actions.className).toContain('w-10');
+    expect(add.className).toContain('h-[30px]');
+    expect(add.className).toContain('w-5');
+    expect(menuButton.className).toContain('h-[30px]');
+    expect(menuButton.className).toContain('w-5');
+
+    await openMenu();
+
+    expect(screen.getByTestId('list-row-action-menu').className).toContain('w-[200px]');
+    expect(screen.getByTestId('list-row-action-menu-items').className).toContain('gap-2');
   });
 });

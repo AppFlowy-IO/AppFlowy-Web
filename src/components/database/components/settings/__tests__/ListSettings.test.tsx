@@ -30,7 +30,7 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
 }));
 
 describe('ListSettings', () => {
-  it('matches the desktop Properties, Layout, Group action order', () => {
+  it('database_list_field_display.dart: list view has settings button with properties option', () => {
     render(
       <ListSettings>
         <button type='button'>Settings</button>

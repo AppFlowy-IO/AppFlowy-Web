@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
+import { TextFilterCondition } from '@/application/database-yjs/fields';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
 import {
@@ -14,6 +15,7 @@ import {
   ViewLayout,
   YDatabase,
   YDatabaseField,
+  YDatabaseFilter,
   YDatabaseRow,
   YDatabaseView,
   YDoc,
@@ -206,6 +208,53 @@ describe('useNewRowDispatch database templates', () => {
 
     expect(cellData(createdRows.get(getRowKey(databaseDocId, templatedId)) as YDoc, nameFieldId)).toBe('From template');
     expect(cellData(createdRows.get(getRowKey(databaseDocId, plainId)) as YDoc, nameFieldId)).toBeUndefined();
+  });
+
+  it('keeps the primary title empty while pre-filling secondary fields from active filters', async () => {
+    const { doc, database } = createDatabaseDoc();
+    const filters = database.get(YjsDatabaseKey.views)?.get(viewId)?.get(YjsDatabaseKey.filters);
+    const nameFilter = new Y.Map() as YDatabaseFilter;
+    const statusFilter = new Y.Map() as YDatabaseFilter;
+
+    nameFilter.set(YjsDatabaseKey.id, 'name-filter');
+    nameFilter.set(YjsDatabaseKey.field_id, nameFieldId);
+    nameFilter.set(YjsDatabaseKey.condition, TextFilterCondition.TextIsNotEmpty);
+    nameFilter.set(YjsDatabaseKey.content, '');
+    statusFilter.set(YjsDatabaseKey.id, 'status-filter');
+    statusFilter.set(YjsDatabaseKey.field_id, statusFieldId);
+    statusFilter.set(YjsDatabaseKey.condition, TextFilterCondition.TextIs);
+    statusFilter.set(YjsDatabaseKey.content, 'Ready');
+    filters?.push([nameFilter, statusFilter]);
+
+    const createdRows = new Map<string, YDoc>();
+    const navigateToRow = jest.fn();
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow: async (key) => {
+        const rowDoc = new Y.Doc({ guid: key }) as YDoc;
+
+        createdRows.set(key, rowDoc);
+        return rowDoc;
+      },
+      navigateToRow,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = (await result.current({})) as string;
+    });
+
+    const rowDoc = createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc;
+
+    expect(cellData(rowDoc, nameFieldId)).toBeUndefined();
+    expect(cellData(rowDoc, statusFieldId)).toBe('Ready');
+    expect(navigateToRow).toHaveBeenCalledWith(rowId);
   });
 
   it('falls back to the orphan view icon and cover used by Desktop templates', async () => {

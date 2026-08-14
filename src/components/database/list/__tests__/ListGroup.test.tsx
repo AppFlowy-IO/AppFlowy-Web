@@ -132,6 +132,21 @@ describe('ListGroupHeader', () => {
       })
     );
   });
+
+  it('matches Desktop GroupHeader spacing and control geometry', () => {
+    renderHeader();
+
+    const header = screen.getByTestId('list-group-header-todo');
+    const collapse = screen.getByTestId('list-group-collapse-toggle');
+    const count = screen.getByTestId('list-group-row-count');
+    const actions = screen.getByTestId('list-group-actions');
+
+    expect(header.className).toContain('h-11');
+    expect(collapse.className).toContain('mr-1');
+    expect(count.className).toContain('ml-2');
+    expect(count.className).toContain('py-px');
+    expect(actions.className).toContain('ml-2');
+  });
 });
 
 describe('ListGroupFooter', () => {
@@ -169,5 +184,11 @@ describe('ListGroupFooter', () => {
         tailing: true,
       })
     );
+  });
+
+  it('matches Desktop 36px grouped footer geometry', () => {
+    render(<ListGroupFooter fieldId='status' groupId='todo' />);
+
+    expect(screen.getByTestId('list-group-footer-todo').className).toContain('h-9');
   });
 });

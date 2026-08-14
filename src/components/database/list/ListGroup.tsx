@@ -60,21 +60,21 @@ export function ListGroupHeader({
 
   return (
     <div
-      className='group/list-group-header flex h-11 min-w-0 items-center gap-2 pl-10 pr-1 text-sm text-text-primary'
+      className='group/list-group-header flex h-11 min-w-0 items-center pl-10 pr-1 text-sm text-text-primary'
       data-group-id={group.id}
       data-testid={`list-group-header-${group.id}`}
     >
       <Button
         aria-expanded={!group.collapsed}
         aria-label={group.collapsed ? t('button.expand', 'Expand group') : t('button.collapse', 'Collapse group')}
-        className='h-7 w-7 rounded-[4px] p-0.5'
+        className='mr-1 h-7 w-7 rounded-[4px] p-0.5'
         data-testid='list-group-collapse-toggle'
         onClick={() => toggleCollapsed(group.id, !group.collapsed)}
         size='icon'
         type='button'
         variant='ghost'
       >
-        <ArrowIcon className={cn('h-5 w-5 text-icon-primary transition-transform', !group.collapsed && 'rotate-90')} />
+        <ArrowIcon aria-hidden='true' className={cn('h-5 w-5 text-icon-primary', !group.collapsed && 'rotate-90')} />
       </Button>
 
       {group.option ? (
@@ -87,7 +87,7 @@ export function ListGroupHeader({
           <Tag bgColor={optionBackgroundToken} label={group.option.name} textColor={optionTextToken} />
         </div>
       ) : isCheckbox ? (
-        <div className='flex min-w-0 items-center gap-1.5'>
+        <div className='flex min-w-0 items-center gap-1'>
           <span
             aria-checked={isChecked}
             aria-label={`${fieldName}: ${isChecked ? t('button.yes', 'Yes') : t('button.no', 'No')}`}
@@ -106,7 +106,7 @@ export function ListGroupHeader({
         <span className='max-w-[360px] truncate'>{group.label}</span>
       )}
 
-      <span className='px-1 text-text-secondary' data-testid='list-group-row-count'>
+      <span className='ml-2 px-1 py-px text-text-secondary' data-testid='list-group-row-count'>
         {group.rows.length}
       </span>
 
@@ -116,13 +116,13 @@ export function ListGroupHeader({
             <DropdownMenuTrigger asChild>
               <Button
                 aria-label={t('button.more', 'Group actions')}
-                className='h-7 w-7 rounded-[4px] p-1 opacity-0 focus-visible:opacity-100 group-focus-within/list-group-header:opacity-100 group-hover/list-group-header:opacity-100 data-[state=open]:opacity-100'
+                className='ml-2 h-7 w-7 rounded-[4px] p-1 opacity-0 focus-visible:opacity-100 group-focus-within/list-group-header:opacity-100 group-hover/list-group-header:opacity-100 data-[state=open]:opacity-100'
                 data-testid='list-group-actions'
                 size='icon'
                 type='button'
                 variant='ghost'
               >
-                <MoreIcon className='h-4 w-4' />
+                <MoreIcon aria-hidden='true' className='h-4 w-4' />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align='start' className='min-w-[180px]'>
@@ -143,7 +143,7 @@ export function ListGroupHeader({
             type='button'
             variant='ghost'
           >
-            <PlusIcon className='h-4 w-4' />
+            <PlusIcon aria-hidden='true' className='h-4 w-4' />
           </Button>
         </>
       ) : null}
@@ -162,7 +162,7 @@ export function ListGroupFooter({ fieldId, groupId }: { fieldId?: string; groupI
         onClick={() => void createRow()}
         type='button'
       >
-        <PlusIcon className='h-4 w-4' />
+        <PlusIcon aria-hidden='true' className='h-4 w-4' />
         {t('grid.row.newRow')}
       </button>
     </div>

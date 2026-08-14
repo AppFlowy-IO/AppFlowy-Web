@@ -20,7 +20,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
-  const { addPage, bindViewSync, loadView } = useAppOperations();
+  const { addPage, bindViewSync, createDatabaseView, deletePage, deleteTrash, loadView, loadViewMeta, updatePage } =
+    useAppOperations();
   const openPageModal = useOpenPageModal();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
@@ -40,15 +41,23 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         const response =
           layout === ViewLayout.List
             ? await (() => {
-                if (!bindViewSync) throw new Error('List creation is not available right now');
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash) {
+                  throw new Error('List creation is not available right now');
+                }
 
                 return createDatabaseListPageViaGrid({
                   parentViewId: view.view_id,
                   name,
                   prevViewId: lastChildViewId,
+                  standalone: true,
                   addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
                   loadView,
                   bindViewSync,
+                  updatePage,
                 });
               })()
             : await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
@@ -94,7 +103,23 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         toast.error(e.message);
       }
     },
-    [addPage, aiEnabled, bindViewSync, currentWorkspaceId, lastChildViewId, loadView, openPageModal, t, toView, view]
+    [
+      addPage,
+      aiEnabled,
+      bindViewSync,
+      createDatabaseView,
+      currentWorkspaceId,
+      deletePage,
+      deleteTrash,
+      lastChildViewId,
+      loadView,
+      loadViewMeta,
+      openPageModal,
+      t,
+      toView,
+      updatePage,
+      view,
+    ]
   );
 
   const actions: {

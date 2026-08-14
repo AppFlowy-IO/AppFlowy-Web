@@ -12,8 +12,8 @@ import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
-import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
+import { DeleteRowConfirm } from '@/components/database/components/database-row/DeleteRowConfirm';
+import { ClearSortingConfirm } from '@/components/database/components/sorts/ClearSortingConfirm';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -192,7 +192,7 @@ export function ListRowActions({
           {loadingAction === 'above' || loadingAction === 'below' ? (
             <Progress variant='primary' />
           ) : (
-            <PlusIcon className='h-4 w-4' />
+            <PlusIcon aria-hidden='true' className='h-3.5 w-3.5' />
           )}
         </Button>
 
@@ -209,11 +209,17 @@ export function ListRowActions({
                 type='button'
                 variant='ghost'
               >
-                <DragIcon className='h-4 w-4' />
+                <DragIcon aria-hidden='true' className='h-3.5 w-3.5' />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent onCloseAutoFocus={(event) => event.preventDefault()} side='right'>
-              <DropdownMenuGroup>
+            <DropdownMenuContent
+              className='w-[200px] min-w-[200px]'
+              data-testid='list-row-action-menu'
+              onCloseAutoFocus={(event) => event.preventDefault()}
+              side='right'
+              sideOffset={6}
+            >
+              <DropdownMenuGroup className='flex flex-col gap-2' data-testid='list-row-action-menu-items'>
                 {actions.map((action) => (
                   <DropdownMenuItem
                     data-testid={action.testId}
@@ -225,7 +231,7 @@ export function ListRowActions({
                     }}
                     variant={action.destructive ? 'destructive' : 'default'}
                   >
-                    {action.loading ? <Progress variant='primary' /> : <action.icon />}
+                    {action.loading ? <Progress variant='primary' /> : <action.icon aria-hidden='true' />}
                     {action.label}
                   </DropdownMenuItem>
                 ))}

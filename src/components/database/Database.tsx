@@ -1337,7 +1337,15 @@ function Database(props: Database2Props) {
 
   const handleOpenRow = useCallback(
     async (rowId: string, viewId?: string) => {
-      if (readOnly) {
+      // A locked document's embedded database must keep the row detail inside
+      // this Database context so the row editor inherits the document's
+      // read-only permission. Navigating to the source database would reopen
+      // the same row with that page's independent (usually editable) context.
+      // Published databases still use route-based row pages because their row
+      // documents are loaded through the publish navigation/cache path.
+      const shouldNavigateReadonlyRow = readOnly && (!_isDocumentBlock || props.variant === UIVariant.Publish);
+
+      if (shouldNavigateReadonlyRow) {
         if (viewId) {
           void navigateToView?.(viewId, rowId);
           return;
@@ -1377,7 +1385,7 @@ function Database(props: Database2Props) {
 
       setModalState((prev) => ({ ...prev, rowId }));
     },
-    [createNewRow, loadView, navigateToView, onOpenRowPage, readOnly]
+    [createNewRow, loadView, navigateToView, onOpenRowPage, props.variant, readOnly, _isDocumentBlock]
   );
 
   const handleCloseRowModal = useCallback(() => {

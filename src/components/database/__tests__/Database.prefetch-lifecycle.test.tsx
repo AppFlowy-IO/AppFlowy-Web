@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { APP_EVENTS } from '@/application/constants';
 import { peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
-import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { DatabaseViewLayout, UIVariant, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import Database, { Database2Props } from '@/components/database/Database';
 
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
@@ -30,7 +30,12 @@ jest.mock('@/components/database/DatabaseRow', () => ({
   DatabaseRow: () => null,
 }));
 
-jest.mock('@/components/database/DatabaseRowModal', () => () => null);
+jest.mock(
+  '@/components/database/DatabaseRowModal',
+  () =>
+    ({ open }: { open: boolean }) =>
+      open ? <div data-testid='database-row-modal' /> : null
+);
 jest.mock('@/components/database/DatabaseContext', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const { DatabaseContext } = jest.requireActual<typeof import('@/application/database-yjs/context')>(
@@ -54,7 +59,7 @@ jest.mock('@/components/database/DatabaseViews', () => {
   );
 
   return function MockDatabaseViews() {
-    const { bindRowSync, ensureRow, loadRowFromSeed, rowMap } = useDatabaseContext();
+    const { bindRowSync, ensureRow, loadRowFromSeed, navigateToRow, rowMap } = useDatabaseContext();
     const initialLoadRowFromSeed = React.useRef(loadRowFromSeed).current;
     const previousLoadRowFromSeed = React.useRef(loadRowFromSeed);
 
@@ -132,6 +137,14 @@ jest.mock('@/components/database/DatabaseViews', () => {
           type: 'button',
         },
         'Ensure remote row'
+      ),
+      React.createElement(
+        'button',
+        {
+          onClick: () => navigateToRow?.('row-id'),
+          type: 'button',
+        },
+        'Open row'
       ),
       ...['remote-row-a', 'remote-row-b', 'remote-row-c'].map((rowId) =>
         React.createElement(
@@ -1024,6 +1037,44 @@ describe('Database blob prefetch lifecycle', () => {
     doc.destroy();
     snapshotRowDoc.destroy();
     transportRowDoc.destroy();
+  });
+
+  it('keeps a readonly embedded App row in a modal that inherits the document permission', () => {
+    const doc = createDatabaseDoc('database-id');
+    const onOpenRowPage = jest.fn();
+    const { unmount } = render(
+      <Database {...databaseProps(doc)} isDocumentBlock onOpenRowPage={onOpenRowPage} readOnly variant={UIVariant.App} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+
+    expect(screen.getByTestId('database-row-modal')).not.toBeNull();
+    expect(onOpenRowPage).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('preserves route-based readonly row navigation for published databases', () => {
+    const doc = createDatabaseDoc('database-id');
+    const onOpenRowPage = jest.fn();
+    const { unmount } = render(
+      <Database
+        {...databaseProps(doc)}
+        isDocumentBlock
+        onOpenRowPage={onOpenRowPage}
+        readOnly
+        variant={UIVariant.Publish}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open row' }));
+
+    expect(onOpenRowPage).toHaveBeenCalledWith('row-id');
+    expect(screen.queryByTestId('database-row-modal')).toBeNull();
+
+    unmount();
+    doc.destroy();
   });
 
   it('adopts a replacement DatabaseRow doc emitted by a version reset', async () => {
