@@ -12,7 +12,6 @@ import type { Column } from '@/application/database-yjs';
 import type { Cell as DatabaseCell, FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
-import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as AttachmentIcon } from '@/assets/icons/attachment.svg';
 import { ReactComponent as CheckboxCheckIcon } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckIcon } from '@/assets/icons/uncheck.svg';
@@ -20,14 +19,11 @@ import { Cell } from '@/components/database/components/cell/Cell';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { cn } from '@/lib/utils';
 
-function ListCheckboxCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
+function ListCheckboxCell({ cell, fieldId, fieldName, rowId }: ListSpecialCellProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
-  const { field } = useFieldSelector(fieldId);
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
   const checked = getChecked(cell?.data as string | number | boolean | undefined);
-  const fieldName =
-    field && typeof (field as { get?: unknown }).get === 'function' ? field.get(YjsDatabaseKey.name) : undefined;
   const stateLabel = checked ? t('button.checked') : t('button.unchecked');
 
   return (
@@ -212,23 +208,26 @@ function ListChecklistCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
 interface ListSpecialCellProps {
   cell?: DatabaseCell;
   fieldId: string;
+  fieldName?: string;
   rowId: string;
 }
 
 export function ListCell({
   cell,
   field,
+  onTextChange,
   rowId,
   style,
 }: {
   cell?: DatabaseCell;
   field: Column;
+  onTextChange?: (text: string) => void;
   rowId: string;
   style: CSSProperties;
 }) {
   switch (field.fieldType) {
     case FieldType.Checkbox:
-      return <ListCheckboxCell cell={cell} fieldId={field.fieldId} rowId={rowId} />;
+      return <ListCheckboxCell cell={cell} fieldId={field.fieldId} fieldName={field.fieldName} rowId={rowId} />;
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
       return <ListSelectOptionCell cell={cell} fieldId={field.fieldId} rowId={rowId} />;
@@ -254,7 +253,15 @@ export function ListCell({
           data-field-type={field.fieldType}
           data-testid={`list-shared-cell-${rowId}-${field.fieldId}`}
         >
-          <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={false} />
+          <Cell
+            cell={cell}
+            fieldId={field.fieldId}
+            onTextChange={onTextChange}
+            readOnly
+            rowId={rowId}
+            style={style}
+            wrap={false}
+          />
         </div>
       );
     default:

@@ -15,6 +15,7 @@ import {
 } from '@/application/database-yjs';
 import { useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { cn } from '@/lib/utils';
 
 import {
@@ -120,6 +121,7 @@ export function Gallery() {
   const rowOrders = useRowOrdersSelector();
   const readOnly = useReadOnly();
   const settings = useGalleryLayoutSettings();
+  const { query } = useDatabaseSearch();
   const { activeViewId, isDocumentBlock, onRendered, paddingEnd, paddingStart } = useDatabaseContext();
   const reorderRow = useReorderRowDispatch();
   const [visibleRowLimit, setVisibleRowLimit] = useState(GALLERY_INITIAL_ROW_LIMIT);
@@ -130,6 +132,8 @@ export function Gallery() {
   const cardWidth = getGalleryCardWidth(settings.cardSize);
   const columnCount = useGalleryColumnCount(gridRef, cardWidth, rowOrders !== undefined);
 
+  rowOrdersRef.current = rowOrders;
+
   useEffect(() => {
     setVisibleRowLimit(GALLERY_INITIAL_ROW_LIMIT);
   }, [activeViewId, isDocumentBlock]);
@@ -138,12 +142,12 @@ export function Gallery() {
     if (rowOrders !== undefined) onRendered?.();
   }, [onRendered, rowOrders]);
 
-  useEffect(() => {
-    rowOrdersRef.current = rowOrders;
-  }, [rowOrders]);
-
-  const visibleRows = useMemo(() => rowOrders?.slice(0, visibleRowLimit), [rowOrders, visibleRowLimit]);
-  const remainingRowCount = rowOrders ? Math.max(rowOrders.length - visibleRowLimit, 0) : 0;
+  const searchActive = query.trim().length > 0;
+  const visibleRows = useMemo(
+    () => (searchActive ? rowOrders : rowOrders?.slice(0, visibleRowLimit)),
+    [rowOrders, searchActive, visibleRowLimit]
+  );
+  const remainingRowCount = rowOrders && !searchActive ? Math.max(rowOrders.length - visibleRowLimit, 0) : 0;
   const loadMoreRows = useCallback(() => {
     setVisibleRowLimit((current) => current + GALLERY_LOAD_MORE_INCREMENT);
   }, []);

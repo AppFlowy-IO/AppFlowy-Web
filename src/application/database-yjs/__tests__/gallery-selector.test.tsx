@@ -49,12 +49,12 @@ function createFixture({ includeGroup = true }: { includeGroup?: boolean } = {})
     workspaceId: 'workspace',
   };
 
-  return { context, group };
+  return { context, gallerySettings, group };
 }
 
 describe('Gallery selectors', () => {
   it('reads Gallery geometry synchronously and normalizes stale cover-off state', () => {
-    const { context } = createFixture();
+    const { context, gallerySettings } = createFixture();
     const { result } = renderHook(() => useGalleryLayoutSettings(), {
       wrapper: ({ children }) => <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>,
     });
@@ -65,6 +65,11 @@ describe('Gallery selectors', () => {
       fitImage: true,
       showCover: true,
     });
+
+    act(() => {
+      gallerySettings.set(YjsDatabaseKey.card_size, GalleryCardSize.Small);
+    });
+    expect(result.current.cardSize).toBe(GalleryCardSize.Small);
   });
 
   it('tracks the preserved group field used to suppress Gallery properties', () => {

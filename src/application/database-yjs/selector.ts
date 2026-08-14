@@ -124,6 +124,7 @@ import type { Transaction, YEvent } from 'yjs';
 
 export interface Column {
   fieldId: string;
+  fieldName?: string;
   width: number;
   visibility: FieldVisibility;
   wrap?: boolean;
@@ -338,6 +339,7 @@ export function useFieldsSelector(visibilitys: FieldVisibility[] = defaultVisibl
 
           return {
             fieldId,
+            fieldName: field?.get(YjsDatabaseKey.name),
             isPrimary: field?.get(YjsDatabaseKey.is_primary),
             width: parseInt(setting?.get(YjsDatabaseKey.width)) || MIN_COLUMN_WIDTH,
             visibility: Number(
@@ -352,18 +354,37 @@ export function useFieldsSelector(visibilitys: FieldVisibility[] = defaultVisibl
         });
     };
 
-    const observerEvent = () => setColumns(getColumns());
+    const observerEvent = () => {
+      const next = getColumns();
 
-    setColumns(getColumns());
+      setColumns((current) => {
+        const unchanged =
+          current.length === next.length &&
+          current.every(
+            (column, index) =>
+              column.fieldId === next[index].fieldId &&
+              column.fieldName === next[index].fieldName &&
+              column.fieldType === next[index].fieldType &&
+              column.isPrimary === next[index].isPrimary &&
+              column.visibility === next[index].visibility &&
+              column.width === next[index].width &&
+              column.wrap === next[index].wrap
+          );
+
+        return unchanged ? current : next;
+      });
+    };
+
+    observerEvent();
 
     fieldsOrder?.observeDeep(observerEvent);
     fieldSettings?.observeDeep(observerEvent);
-    fields?.observe(observerEvent);
+    fields?.observeDeep(observerEvent);
 
     return () => {
       fieldsOrder?.unobserveDeep(observerEvent);
       fieldSettings?.unobserveDeep(observerEvent);
-      fields?.unobserve(observerEvent);
+      fields?.unobserveDeep(observerEvent);
     };
   }, [database, view, visibilitys]);
 
@@ -3492,17 +3513,6 @@ export function useChartLayoutSetting(): ChartLayoutSettings | null {
   return setting;
 }
 
-function gallerySettingsEqual(a: GalleryLayoutSettings, b: GalleryLayoutSettings): boolean {
-  return (
-    a.showCover === b.showCover &&
-    a.fitImage === b.fitImage &&
-    a.cardSize === b.cardSize &&
-    a.cardWidth === b.cardWidth &&
-    a.cardPreview === b.cardPreview &&
-    a.coverFieldId === b.coverFieldId
-  );
-}
-
 function readGalleryLayoutSettings(view?: YDatabaseView): GalleryLayoutSettings {
   const map = view?.get(YjsDatabaseKey.layout_settings)?.get('5');
   const coverFieldId = map?.get(YjsDatabaseKey.cover_field_id);
@@ -3527,21 +3537,17 @@ export function useGalleryLayoutSettings(): GalleryLayoutSettings {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const view = database.get(YjsDatabaseKey.views)?.get(viewId);
-  const [settings, setSettings] = useState<GalleryLayoutSettings>(() => readGalleryLayoutSettings(view));
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!view) return () => undefined;
 
-  useLayoutEffect(() => {
-    if (!view) return;
+      view.observeDeep(onStoreChange);
+      return () => view.unobserveDeep(onStoreChange);
+    },
+    [view]
+  );
+  const getSnapshot = useCallback(() => JSON.stringify(readGalleryLayoutSettings(view)), [view]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-    const update = () => {
-      const next = readGalleryLayoutSettings(view);
-
-      setSettings((current) => (gallerySettingsEqual(current, next) ? current : next));
-    };
-
-    update();
-    view.observeDeep(update);
-    return () => view.unobserveDeep(update);
-  }, [view]);
-
-  return settings;
+  return useMemo(() => JSON.parse(snapshot) as GalleryLayoutSettings, [snapshot]);
 }

@@ -19,7 +19,7 @@ export function GalleryNewRow({ cardSize }: { cardSize: GalleryCardSize }) {
   const handleCreateRow = async () => {
     setCreating(true);
     try {
-      await createRow({ openAfterCreate: false, tailing: true });
+      await createRow({ openAfterCreate: true, tailing: true });
     } catch (error) {
       Log.error('[GalleryNewRow] failed to create row', error);
       toast.error(error instanceof Error ? error.message : t('error.generalError'));

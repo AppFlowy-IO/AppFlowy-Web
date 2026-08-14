@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 function DatabaseSearchAction() {
   const { t } = useTranslation();
   const { query, setQuery } = useDatabaseSearch();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(() => Boolean(query));
   const [inputValue, setInputValue] = useState(query);
 
   useEffect(() => {

@@ -2440,6 +2440,16 @@ function generateBoardGroup(database: YDatabase, fieldOrders: YDatabaseFieldOrde
   return groups;
 }
 
+function hasBoardCompatibleGroup(database: YDatabase, groups: YDatabaseGroups | undefined) {
+  if (!groups?.length) return false;
+
+  const fieldId = groups?.get(0)?.get(YjsDatabaseKey.field_id);
+  const field = fieldId ? database.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined;
+  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+
+  return [FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(fieldType);
+}
+
 function generateCalendarLayoutSettings(fieldId: FieldId, _defaultTimeSetting: DefaultTimeSetting) {
   const layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
   const layoutSetting = createCalendarLayoutSetting(fieldId);
@@ -2466,9 +2476,21 @@ function initializeCalendarLayoutSetting(view: YDatabaseView, fieldId: FieldId) 
     view.set(YjsDatabaseKey.layout_settings, layoutSettings);
   }
 
-  if (!layoutSettings.has('2')) {
+  const calendarSetting = layoutSettings.get('2');
+
+  if (!calendarSetting) {
     layoutSettings.set('2', createCalendarLayoutSetting(fieldId));
+  } else if (calendarSetting.get(YjsDatabaseKey.field_id) !== fieldId) {
+    calendarSetting.set(YjsDatabaseKey.field_id, fieldId);
   }
+}
+
+function getValidCalendarField(database: YDatabase, fieldOrders: YDatabaseFieldOrders, fieldId: FieldId | undefined) {
+  if (!fieldId || !fieldOrders.toArray().some((fieldOrder) => fieldOrder.id === fieldId)) return undefined;
+
+  const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+  return Number(field?.get(YjsDatabaseKey.type)) === FieldType.DateTime ? field : undefined;
 }
 
 function useEnhanceCalendarLayoutByFieldExists() {
@@ -2989,7 +3011,7 @@ export function useUpdateDatabaseLayout(viewId: string) {
             if (layout === DatabaseViewLayout.Board) {
               const groups = view.get(YjsDatabaseKey.groups);
 
-              if (!groups?.length) {
+              if (!hasBoardCompatibleGroup(database, groups)) {
                 view.set(YjsDatabaseKey.groups, generateBoardGroup(database, fieldOrders));
               }
 
@@ -2997,8 +3019,11 @@ export function useUpdateDatabaseLayout(viewId: string) {
             }
 
             if (layout === DatabaseViewLayout.Calendar) {
-              // find date field in all views
-              const dateField: YDatabaseField | undefined = enhanceCalendarLayoutByFieldExists(fieldOrders);
+              const calendarSetting = view.get(YjsDatabaseKey.layout_settings)?.get('2');
+              const configuredFieldId = calendarSetting?.get(YjsDatabaseKey.field_id);
+              const configuredField = getValidCalendarField(database, fieldOrders, configuredFieldId);
+              const dateField: YDatabaseField | undefined =
+                configuredField ?? enhanceCalendarLayoutByFieldExists(fieldOrders);
               const fieldId = dateField?.get(YjsDatabaseKey.id);
 
               if (!fieldId) {

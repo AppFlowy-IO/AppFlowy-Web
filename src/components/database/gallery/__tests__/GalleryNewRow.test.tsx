@@ -93,7 +93,7 @@ describe('GalleryNewRow Flutter desktop parity', () => {
     fireEvent.click(button);
 
     expect(createRow).toHaveBeenCalledTimes(1);
-    expect(createRow).toHaveBeenCalledWith({ openAfterCreate: false, tailing: true });
+    expect(createRow).toHaveBeenCalledWith({ openAfterCreate: true, tailing: true });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.querySelector('svg')?.classList.contains('animate-spin')).toBe(true);

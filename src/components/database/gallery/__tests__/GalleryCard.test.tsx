@@ -1,8 +1,9 @@
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import {
+  FieldType,
   useDatabase,
   useDatabaseContext,
   useIsRowLoaded,
@@ -28,6 +29,11 @@ jest.mock('@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge', () => ({
 }));
 
 jest.mock('@/application/database-yjs', () => ({
+  FieldType: {
+    Person: 15,
+    Relation: 10,
+    RichText: 0,
+  },
   useCellSelector: jest.fn(() => ({ data: 'Title' })),
   useDatabase: jest.fn(() => undefined),
   useDatabaseContext: jest.fn(),
@@ -54,9 +60,19 @@ jest.mock('@/components/database/components/cell/Cell', () => ({
   Cell: () => <span>Title</span>,
 }));
 
-jest.mock('@/components/database/list/ListCell', () => ({
-  ListCell: () => <button type='button'>Property action</button>,
-}));
+jest.mock('@/components/database/list/ListCell', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+
+  return {
+    ListCell: ({ field, onTextChange }: { field: { fieldType: number }; onTextChange?: (text: string) => void }) => {
+      React.useEffect(() => {
+        onTextChange?.(field.fieldType === 10 ? 'Acme' : 'Alice');
+      }, [field.fieldType, onTextChange]);
+
+      return <button type='button'>Property action</button>;
+    },
+  };
+});
 jest.mock('@/components/database/components/sorts/ClearSortingConfirm', () => ({
   ClearSortingConfirm: () => null,
 }));
@@ -80,8 +96,8 @@ const mockDropTargetForElements = dropTargetForElements as jest.MockedFunction<t
 const mockExtractClosestEdge = extractClosestEdge as jest.MockedFunction<typeof extractClosestEdge>;
 
 const fields = [
-  { fieldId: 'title', isPrimary: true },
-  { fieldId: 'property', isPrimary: false },
+  { fieldId: 'title', fieldType: FieldType.RichText, isPrimary: true },
+  { fieldId: 'property', fieldType: FieldType.Person, isPrimary: false },
 ] as Column[];
 
 describe('GalleryCard rendering lifecycle', () => {
@@ -122,12 +138,12 @@ describe('GalleryCard rendering lifecycle', () => {
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
   });
 
-  function renderCard() {
+  function renderCard(cardFields: Column[] = fields) {
     return render(
       <GalleryCard
         cardPreview={GalleryCardPreview.PageCover}
         cardSize={GalleryCardSize.Medium}
-        fields={fields}
+        fields={cardFields}
         fitImage={false}
         reorderable={false}
         rowId='row-1'
@@ -275,13 +291,70 @@ describe('GalleryCard rendering lifecycle', () => {
     mockUseRowDataSelector.mockReturnValue({ row } as unknown as ReturnType<typeof useRowDataSelector>);
     mockUseDatabaseSearch.mockReturnValue({ query: 'review', setQuery: jest.fn() });
 
-    const { unmount } = renderCard();
+    const { rerender } = renderCard();
 
-    expect(screen.getByTestId('gallery-card-row-1')).toBeTruthy();
+    expect(screen.getByTestId('gallery-tile-row-1').hidden).toBe(false);
 
-    unmount();
     mockUseDatabaseSearch.mockReturnValue({ query: 'missing', setQuery: jest.fn() });
-    renderCard();
-    expect(screen.queryByTestId('gallery-card-row-1')).toBeNull();
+    rerender(
+      <GalleryCard
+        cardPreview={GalleryCardPreview.PageCover}
+        cardSize={GalleryCardSize.Medium}
+        fields={[...fields]}
+        fitImage={false}
+        reorderable={false}
+        rowId='row-1'
+      />
+    );
+    expect(screen.getByTestId('gallery-tile-row-1').hidden).toBe(true);
+  });
+
+  it.each([
+    [FieldType.Person, 'alice'],
+    [FieldType.Relation, 'acme'],
+  ])('searches the resolved text rendered for field type %s', async (fieldType, query) => {
+    const resolvedFields = [fields[0], { fieldId: 'resolved-property', fieldType, isPrimary: false }] as Column[];
+
+    mockUseDatabaseSearch.mockReturnValue({ query, setQuery: jest.fn() });
+    renderCard(resolvedFields);
+
+    await waitFor(() => expect(screen.getByTestId('gallery-tile-row-1').hidden).toBe(false));
+  });
+
+  it('re-enables drag and viewport effects when a hidden search result is restored', () => {
+    const cell = { text: 'Ready for review' };
+    const cells = { get: jest.fn(() => cell) };
+    const row = { get: jest.fn(() => cells) };
+    const databaseFields = { get: jest.fn(() => ({})) };
+    const database = { get: jest.fn(() => databaseFields) };
+    const createCard = (cardFields: Column[]) => (
+      <GalleryCard
+        cardPreview={GalleryCardPreview.PageCover}
+        cardSize={GalleryCardSize.Medium}
+        fields={cardFields}
+        fitImage={false}
+        onDropRow={jest.fn()}
+        reorderable
+        rowId='row-1'
+      />
+    );
+
+    mockUseDatabase.mockReturnValue(database as unknown as ReturnType<typeof useDatabase>);
+    mockUseRowDataSelector.mockReturnValue({ row } as unknown as ReturnType<typeof useRowDataSelector>);
+    mockUseDatabaseSearch.mockReturnValue({ query: 'missing', setQuery: jest.fn() });
+    const { rerender } = render(createCard(fields));
+    const tile = screen.getByTestId('gallery-tile-row-1');
+
+    expect(tile.hidden).toBe(true);
+    expect(mockDraggable).not.toHaveBeenCalled();
+
+    mockUseDatabaseSearch.mockReturnValue({ query: '', setQuery: jest.fn() });
+    rerender(createCard([...fields]));
+
+    expect(screen.getByTestId('gallery-tile-row-1')).toBe(tile);
+    expect(tile.hidden).toBe(false);
+    expect(mockDraggable).toHaveBeenCalledWith(
+      expect.objectContaining({ element: screen.getByRole('button', { name: 'Open row Title' }) })
+    );
   });
 });

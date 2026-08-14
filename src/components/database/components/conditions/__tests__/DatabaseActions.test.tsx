@@ -227,4 +227,32 @@ describe('DatabaseActions template support', () => {
     expect(screen.queryByTestId('database-actions-search-input')).toBeNull();
     expect(screen.getByTestId('database-actions-search')).toBeTruthy();
   });
+
+  it('restores an active Gallery query visibly after a layout round trip', () => {
+    jest.useFakeTimers();
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Gallery);
+    const createActions = () => (
+      <DatabaseSearchProvider activeViewId='view-1'>
+        <DatabaseActions />
+        <SearchQueryProbe />
+      </DatabaseSearchProvider>
+    );
+    const { rerender } = render(createActions());
+
+    fireEvent.click(screen.getByTestId('database-actions-search'));
+    fireEvent.change(screen.getByTestId('database-actions-search-input'), { target: { value: 'Roadmap' } });
+    act(() => {
+      jest.advanceTimersByTime(200);
+    });
+    expect(screen.getByTestId('database-search-query').textContent).toBe('Roadmap');
+
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Board);
+    rerender(createActions());
+    expect(screen.queryByTestId('database-actions-search-input')).toBeNull();
+
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Gallery);
+    rerender(createActions());
+    expect(screen.getByTestId('database-actions-search-input').value).toBe('Roadmap');
+    expect(screen.getByTestId('database-search-query').textContent).toBe('Roadmap');
+  });
 });

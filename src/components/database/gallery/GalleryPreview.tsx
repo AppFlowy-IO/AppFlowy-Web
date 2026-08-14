@@ -178,17 +178,11 @@ interface GalleryPreviewValue {
   src?: string;
 }
 
-function GalleryPreviewImage({ fitImage, rowId, src }: { fitImage: boolean; rowId: string; src: string }) {
-  const authenticatedSrc = useAuthenticatedImage(src);
+function GalleryPreviewResolvedImage({ fitImage, rowId, src }: { fitImage: boolean; rowId: string; src: string }) {
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    setLoaded(false);
-    setFailed(false);
-  }, [authenticatedSrc]);
-
-  if (failed || !authenticatedSrc) return null;
+  if (failed) return null;
 
   return (
     <img
@@ -198,9 +192,17 @@ function GalleryPreviewImage({ fitImage, rowId, src }: { fitImage: boolean; rowI
       draggable={false}
       onError={() => setFailed(true)}
       onLoad={() => setLoaded(true)}
-      src={authenticatedSrc}
+      src={src}
     />
   );
+}
+
+function GalleryPreviewImage({ fitImage, rowId, src }: { fitImage: boolean; rowId: string; src: string }) {
+  const authenticatedSrc = useAuthenticatedImage(src);
+
+  if (!authenticatedSrc) return null;
+
+  return <GalleryPreviewResolvedImage fitImage={fitImage} key={authenticatedSrc} rowId={rowId} src={authenticatedSrc} />;
 }
 
 function GalleryPreviewFrame({

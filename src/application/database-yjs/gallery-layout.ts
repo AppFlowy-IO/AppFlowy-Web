@@ -475,11 +475,13 @@ export async function createDatabaseGalleryPageViaGrid(params: {
 
     const createdViewId = response.view_id;
 
-    await params.updatePage?.(createdViewId, { name: 'Gallery' });
-    const databaseDoc = await params.loadView(createdViewId, false, false, {
-      databaseId: response.database_id,
-      forceFetch: true,
-    });
+    const [databaseDoc] = await Promise.all([
+      params.loadView(createdViewId, false, false, {
+        databaseId: response.database_id,
+        forceFetch: true,
+      }),
+      params.updatePage?.(createdViewId, { name: 'Gallery' }) ?? Promise.resolve(),
+    ]);
     const syncContext = params.bindViewSync(databaseDoc);
 
     if (!syncContext) throw new Error('The new embedded Gallery could not be connected for persistence');

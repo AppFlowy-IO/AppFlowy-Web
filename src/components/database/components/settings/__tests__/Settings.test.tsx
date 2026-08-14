@@ -55,14 +55,14 @@ describe('database Settings', () => {
     expect(screen.queryByTestId('grid-settings')).toBeNull();
   });
 
-  it('uses the Gallery settings menu for a Gallery view', () => {
+  it('uses the Gallery settings menu for a Gallery view', async () => {
     render(
       <Settings layout={DatabaseViewLayout.Gallery}>
         <button type='button'>Settings</button>
       </Settings>
     );
 
-    expect(screen.getByTestId('gallery-settings')).toBeTruthy();
+    expect(await screen.findByTestId('gallery-settings')).toBeTruthy();
     expect(screen.queryByTestId('grid-settings')).toBeNull();
   });
 });

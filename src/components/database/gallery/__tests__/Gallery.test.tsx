@@ -9,6 +9,7 @@ import {
   useRowOrdersSelector,
 } from '@/application/database-yjs';
 import { GalleryCardPreview, GalleryCardSize } from '@/application/types';
+import { useDatabaseSearch } from '@/components/database/components/conditions/DatabaseSearchContext';
 
 import { Gallery } from '../Gallery';
 
@@ -31,6 +32,9 @@ jest.mock('@/application/database-yjs', () => ({
   useRowOrdersSelector: jest.fn(),
 }));
 jest.mock('@/application/database-yjs/dispatch', () => ({ useReorderRowDispatch: () => jest.fn() }));
+jest.mock('@/components/database/components/conditions/DatabaseSearchContext', () => ({
+  useDatabaseSearch: jest.fn(),
+}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -57,6 +61,7 @@ const mockUseFieldsSelector = useFieldsSelector as jest.MockedFunction<typeof us
 const mockUseGalleryLayoutSettings = useGalleryLayoutSettings as jest.MockedFunction<typeof useGalleryLayoutSettings>;
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
 const mockUseRowOrdersSelector = useRowOrdersSelector as jest.MockedFunction<typeof useRowOrdersSelector>;
+const mockUseDatabaseSearch = useDatabaseSearch as jest.MockedFunction<typeof useDatabaseSearch>;
 
 const rows = Array.from({ length: 100 }, (_, index) => ({ height: 36, id: `row-${index}` }));
 
@@ -116,6 +121,7 @@ describe('Gallery pagination lifecycle', () => {
     });
     mockUseReadOnly.mockReturnValue(false);
     mockUseRowOrdersSelector.mockReturnValue(rows);
+    mockUseDatabaseSearch.mockReturnValue({ query: '', setQuery: jest.fn() });
   });
 
   afterEach(() => {
@@ -166,6 +172,15 @@ describe('Gallery pagination lifecycle', () => {
     await waitFor(() => {
       expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(rows.length);
     });
+  });
+
+  it('searches every row instead of limiting candidates to the current page', () => {
+    scrollHeight = 2_000;
+    mockUseDatabaseSearch.mockReturnValue({ query: 'only in row 99', setQuery: jest.fn() });
+
+    render(<Gallery />);
+
+    expect(screen.getAllByTestId(/^mock-gallery-card-/)).toHaveLength(rows.length);
   });
 
   it('keeps an explicit zero inset and excludes the preserved grouping field', () => {

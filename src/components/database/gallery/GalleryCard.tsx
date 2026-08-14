@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   Column,
+  FieldType,
   RowMeta,
   useCellSelector,
   useDatabase,
@@ -327,8 +328,20 @@ function GalleryTitle({
   );
 }
 
-function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
+function GalleryProperty({
+  field,
+  onSearchTextChange,
+  rowId,
+}: {
+  field: Column;
+  onSearchTextChange?: (fieldId: string, text: string) => void;
+  rowId: string;
+}) {
   const cell = useCellSelector({ fieldId: field.fieldId, rowId });
+  const handleTextChange = useCallback(
+    (text: string) => onSearchTextChange?.(field.fieldId, text),
+    [field.fieldId, onSearchTextChange]
+  );
 
   return (
     <div
@@ -336,7 +349,13 @@ function GalleryProperty({ field, rowId }: { field: Column; rowId: string }) {
       data-field-id={field.fieldId}
       data-testid={`gallery-field-${field.fieldId}-${rowId}`}
     >
-      <ListCell cell={cell} field={field} rowId={rowId} style={propertyCellStyle} />
+      <ListCell
+        cell={cell}
+        field={field}
+        onTextChange={onSearchTextChange ? handleTextChange : undefined}
+        rowId={rowId}
+        style={propertyCellStyle}
+      />
     </div>
   );
 }
@@ -368,6 +387,7 @@ export const GalleryCard = memo(function GalleryCard({
   const dragRef = useRef<HTMLButtonElement | null>(null);
   const tileRef = useRef<HTMLDivElement | null>(null);
   const [editing, setEditing] = useState(false);
+  const [resolvedSearchText, setResolvedSearchText] = useState<Record<string, string>>({});
   const readOnly = useReadOnly();
   const database = useDatabase();
   const { query } = useDatabaseSearch();
@@ -376,14 +396,40 @@ export const GalleryCard = memo(function GalleryCard({
   const meta = useRowMetaSelector(rowId);
   const primaryField = useMemo(() => fields.find((field) => field.isPrimary) ?? fields[0], [fields]);
   const propertyFields = useMemo(() => fields.filter((field) => !field.isPrimary), [fields]);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const handleSearchTextChange = useCallback((fieldId: string, text: string) => {
+    setResolvedSearchText((current) => (current[fieldId] === text ? current : { ...current, [fieldId]: text }));
+  }, []);
+  const searchableText = normalizedQuery
+    ? fields
+        .map((field) => {
+          if (field.fieldType === FieldType.Person || field.fieldType === FieldType.Relation) {
+            return resolvedSearchText[field.fieldId] ?? '';
+          }
+
+          const yField = database?.get(YjsDatabaseKey.fields)?.get(field.fieldId);
+          const yCell = row?.get(YjsDatabaseKey.cells)?.get(field.fieldId);
+
+          if (!yField || !yCell) return '';
+
+          try {
+            return decodeCellToText(yCell, yField);
+          } catch {
+            return '';
+          }
+        })
+        .join(' ')
+        .toLocaleLowerCase()
+    : '';
+  const matchesSearch = !normalizedQuery || searchableText.includes(normalizedQuery);
   const dnd = useGalleryCardDnd({
     dragRef,
-    enabled: reorderable && !readOnly,
+    enabled: matchesSearch && reorderable && !readOnly,
     onDropRow,
     rowId,
     tileRef,
   });
-  const previewNearViewport = useGalleryPreviewNearViewport(tileRef, true);
+  const previewNearViewport = useGalleryPreviewNearViewport(tileRef, matchesSearch);
 
   useEffect(() => {
     if (bindRowSync && rowId) bindRowSync(rowId);
@@ -399,26 +445,6 @@ export const GalleryCard = memo(function GalleryCard({
   const tileMinimumHeight = minimumHeight + GALLERY_TILE_PADDING * 2;
   const openLabelId = `gallery-card-open-label-${rowId}`;
   const titleLabelId = `gallery-card-title-label-${rowId}`;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const searchableText = normalizedQuery
-    ? fields
-        .map((field) => {
-          const yField = database?.get(YjsDatabaseKey.fields)?.get(field.fieldId);
-          const yCell = row?.get(YjsDatabaseKey.cells)?.get(field.fieldId);
-
-          if (!yField || !yCell) return '';
-
-          try {
-            return decodeCellToText(yCell, yField);
-          } catch {
-            return '';
-          }
-        })
-        .join(' ')
-        .toLocaleLowerCase()
-    : '';
-
-  if (normalizedQuery && !searchableText.includes(normalizedQuery)) return null;
 
   return (
     <>
@@ -429,6 +455,7 @@ export const GalleryCard = memo(function GalleryCard({
         )}
         data-row-id={rowId}
         data-testid={`gallery-tile-${rowId}`}
+        hidden={!matchesSearch}
         ref={tileRef}
         style={{
           contentVisibility: 'auto',
@@ -521,7 +548,12 @@ export const GalleryCard = memo(function GalleryCard({
                 data-testid={`gallery-card-properties-${rowId}`}
               >
                 {propertyFields.map((field) => (
-                  <GalleryProperty field={field} key={field.fieldId} rowId={rowId} />
+                  <GalleryProperty
+                    field={field}
+                    key={field.fieldId}
+                    onSearchTextChange={normalizedQuery ? handleSearchTextChange : undefined}
+                    rowId={rowId}
+                  />
                 ))}
               </div>
             ) : null}

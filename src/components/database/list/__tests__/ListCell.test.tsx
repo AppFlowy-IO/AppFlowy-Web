@@ -62,8 +62,8 @@ const mockUseFieldSelector = useFieldSelector as jest.MockedFunction<typeof useF
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
 const mockUseUpdateCellDispatch = useUpdateCellDispatch as jest.MockedFunction<typeof useUpdateCellDispatch>;
 
-function makeField(fieldId: string, fieldType: FieldType): Column {
-  return { fieldId, fieldType, isPrimary: false, visibility: 0, width: 140 } as Column;
+function makeField(fieldId: string, fieldType: FieldType, fieldName?: string): Column {
+  return { fieldId, fieldName, fieldType, isPrimary: false, visibility: 0, width: 140 } as Column;
 }
 
 function makeCell(fieldType: FieldType, data: unknown): DatabaseCell {
@@ -84,15 +84,11 @@ describe('database_list_field_display.dart: list view displays multiple field ty
   it('renders and toggles the Flutter 14px checkbox in a stable 20px slot', () => {
     const updateCell = jest.fn();
 
-    mockUseFieldSelector.mockReturnValue({
-      clock: 0,
-      field: { get: jest.fn((key: string) => (key === 'name' ? 'Done' : undefined)) },
-    } as unknown as ReturnType<typeof useFieldSelector>);
     mockUseUpdateCellDispatch.mockReturnValue(updateCell);
     render(
       <ListCell
         cell={makeCell(FieldType.Checkbox, 'Yes')}
-        field={makeField('done', FieldType.Checkbox)}
+        field={makeField('done', FieldType.Checkbox, 'Done')}
         rowId='row-1'
         style={{}}
       />
