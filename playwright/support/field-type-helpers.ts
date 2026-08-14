@@ -121,22 +121,28 @@ export async function changeFieldType(page: Page, fieldName: string, newFieldTyp
  * Returns the field ID of the newly created field
  */
 export async function addFieldWithType(page: Page, fieldType: FieldType): Promise<string> {
-  // Click new property button via JS click to bypass potential overlay
-  await PropertyMenuSelectors.newPropertyButton(page).first().scrollIntoViewIfNeeded();
-  await page.evaluate(() => {
-    const el = document.querySelector('[data-testid="grid-new-property-button"]');
-    if (el) (el as HTMLElement).click();
-  });
+  // A grouped Grid repeats its header and new-property control for every group.
+  // Use the last mounted instance so its property menu is the topmost Radix
+  // portal instead of an earlier duplicate hidden beneath it.
+  const newPropertyButton = PropertyMenuSelectors.newPropertyButton(page).last();
+
+  await newPropertyButton.scrollIntoViewIfNeeded();
+  await newPropertyButton.evaluate((element) => (element as HTMLElement).click());
   await page.waitForTimeout(1200);
 
   // Hover over property type trigger
-  const trigger = PropertyMenuSelectors.propertyTypeTrigger(page).first();
-  await trigger.hover();
+  const trigger = PropertyMenuSelectors.propertyTypeTrigger(page).last();
+  await trigger.hover({ force: true });
   await page.waitForTimeout(600);
 
-  // Select the field type
-  await PropertyMenuSelectors.propertyTypeOption(page, fieldType).first().scrollIntoViewIfNeeded();
-  await PropertyMenuSelectors.propertyTypeOption(page, fieldType).first().click({ force: true });
+  // The newly inserted column animates while this submenu opens, so coordinate-
+  // based actions can wait forever for the option to become geometrically
+  // stable. Dispatch directly to the mounted Radix item, as the other field
+  // helpers do for virtualized Grid controls.
+  const typeOption = PropertyMenuSelectors.propertyTypeOption(page, fieldType).last();
+
+  await typeOption.waitFor({ state: 'attached' });
+  await typeOption.evaluate((element) => (element as HTMLElement).click());
   await page.waitForTimeout(800);
 
   // Close

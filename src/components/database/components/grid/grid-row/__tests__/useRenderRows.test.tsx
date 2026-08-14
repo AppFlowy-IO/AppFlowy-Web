@@ -126,6 +126,57 @@ describe('useRenderRows', () => {
     ]);
   });
 
+  it('keeps exact large-group counts while limiting the mounted row stream', () => {
+    const alphaRows = Array.from({ length: 60 }, (_, index) => ({ id: `alpha-${index}`, height: 0 }));
+    const betaRows = Array.from({ length: 40 }, (_, index) => ({ id: `beta-${index}`, height: 0 }));
+    const grouping: GridGrouping = {
+      isGrouped: true,
+      groupId: 'group-config',
+      fieldId: 'status',
+      fieldName: 'Status',
+      fieldType: 3,
+      hideEmptyGroups: true,
+      ready: true,
+      groups: [],
+      visibleGroups: [
+        {
+          id: 'alpha',
+          label: 'Alpha',
+          rows: alphaRows,
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+        {
+          id: 'beta',
+          label: 'Beta',
+          rows: betaRows,
+          isDefault: false,
+          visible: true,
+          hidden: false,
+          automaticallyHidden: false,
+          collapsed: false,
+        },
+      ],
+    };
+    const { result } = renderHook(() => useRenderRows([], { grouping, visibleRowLimit: 25 }), {
+      wrapper: createWrapper(),
+    });
+    const groupHeaders = result.current.rows.filter((row) => row.type === RenderRowType.GroupHeader);
+    const mountedRows = result.current.rows.filter((row) => row.type === RenderRowType.Row);
+
+    expect(groupHeaders.map((row) => [row.groupId, row.groupRowCount])).toEqual([
+      ['alpha', 60],
+      ['beta', 40],
+    ]);
+    expect(groupHeaders.reduce((total, row) => total + (row.groupRowCount ?? 0), 0)).toBe(100);
+    expect(mountedRows).toHaveLength(25);
+    expect(result.current.remainingRowCount).toBe(75);
+    expect(result.current.lastVisibleRowId).toBe('alpha-24');
+  });
+
   it('uses group-qualified keys when a MultiSelect row appears in multiple groups', () => {
     const sharedRow = { id: 'row-shared', height: 0 };
     const grouping: GridGrouping = {

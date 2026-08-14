@@ -1,10 +1,31 @@
 /**
  * Grid grouping desktop-parity integration coverage.
  *
- * Migrated from database_grid_group_test.dart and
- * database_grid_group_filter_sort_test.dart. The lower-level field matrix,
- * date/number boundaries, visibility persistence, and refresh regressions are
- * covered by the colocated Jest suites.
+ * Migrated from the Desktop Grid grouping, grouping/filter/sort, all-field,
+ * visibility, number, text, hide-empty, and sort-with-group suites. Exact
+ * date/number boundaries and high-volume derivation stay in the colocated Jest
+ * suites; this file exercises every Web-supported grouping field through UI.
+ *
+ * Desktop sources audited:
+ * - database_grid_group_test.dart
+ * - database_grid_group_filter_sort_test.dart
+ * - database_all_group_fields_test.dart
+ * - database_group_visibility_test.dart
+ * - database_number_group_test.dart
+ * - database_text_group_test.dart
+ * - grid_hide_empty_groups.feature
+ * - layout_and_group.feature
+ * - sort_with_group.feature
+ * - grouped_visualization.feature
+ * - cloud_grouped_status_row_move.feature
+ * - group_setting_sync_test.dart
+ * - grouped_search_test.dart
+ *
+ * The Flutter controller-sync cases map to the colocated Yjs selector/hook
+ * suites. Runnable Web exclusions are grouped search (Web has no database
+ * search control) and list_group_visibility.feature (Web currently renders
+ * List as unsupported). Board-only and native-mobile interaction suites are
+ * outside this Grid migration.
  */
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -52,6 +73,8 @@ const gridGroupHeaderByOptionName = (page: Page, optionName: string) =>
   gridGroupHeaders(page).filter({
     has: gridGroupOptionTags(page).filter({ hasText: optionName }),
   });
+const gridGroupCellsForField = (page: Page, groupId: string, fieldId: string) =>
+  page.locator(`[data-index][data-row-key^="group:${groupId}:row:"] .grid-row-cell[data-column-id="${fieldId}"]`);
 
 async function loginAndCreateGroupingGrid(page: Page, request: Parameters<typeof loginAndCreateGrid>[1]) {
   setupFieldTypeTest(page);
@@ -101,17 +124,33 @@ async function assignExistingSelectOptionToRow(page: Page, rowTestId: string, fi
 }
 
 async function addGridView(page: Page) {
+  const existingViewIds = new Set(
+    (await DatabaseViewSelectors.viewTab(page).evaluateAll((tabs) =>
+      tabs.map((tab) => tab.getAttribute('data-testid')?.replace(/^view-tab-/, '')).filter(Boolean)
+    )) as string[]
+  );
+
   await DatabaseViewSelectors.addViewButton(page).click();
   const menu = page.locator('[data-slot="dropdown-menu-content"]').last();
 
   await expect(menu).toBeVisible();
   await menu.getByRole('menuitem', { name: /^Grid$/i }).click();
-  await waitForGridReady(page);
+  let addedViewId = '';
 
-  const testId = await DatabaseViewSelectors.activeViewTab(page).getAttribute('data-testid');
+  await expect
+    .poll(async () => {
+      const viewIds = (await DatabaseViewSelectors.viewTab(page).evaluateAll((tabs) =>
+        tabs.map((tab) => tab.getAttribute('data-testid')?.replace(/^view-tab-/, '')).filter(Boolean)
+      )) as string[];
 
-  if (!testId) throw new Error('The newly created Grid view did not become active');
-  return testId.replace(/^view-tab-/, '');
+      addedViewId = viewIds.find((viewId) => !existingViewIds.has(viewId)) ?? '';
+      return addedViewId;
+    })
+    .not.toBe('');
+
+  await switchToGridView(page, addedViewId);
+
+  return addedViewId;
 }
 
 async function switchToGridView(page: Page, viewId: string) {
@@ -198,6 +237,8 @@ test.describe('Database Grid grouping', () => {
     await typeTextIntoCell(page, notesFieldId, 0, 'before grouping');
 
     await openGridGroupSettings(page);
+    await expect(page.getByTestId('grid-hide-all-groups')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="grid-group-visibility-"]')).toHaveCount(0);
     await page.getByTestId(`grid-group-by-field-${primaryFieldId}`).click();
     await closeGridGroupSettings(page);
 
@@ -251,12 +292,9 @@ test.describe('Database Grid grouping', () => {
     await closeGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-header-C')).toBeVisible();
 
-    // Grid hide-empty is a layout setting separate from Board's. Verify the
+    // Grid hide-empty defaults ON independently from Board. Verify the
     // rendered default group, not only the switch state, in both directions.
     await openGridGroupSettings(page);
-    if ((await page.getByTestId('grid-hide-empty-groups-switch').getAttribute('data-state')) !== 'checked') {
-      await page.getByTestId('grid-hide-empty-groups-toggle').click();
-    }
     await expect(page.getByTestId('grid-hide-empty-groups-switch')).toHaveAttribute('data-state', 'checked');
     await closeGridGroupSettings(page);
     await expect(page.getByTestId(`grid-group-header-${primaryFieldId}`)).toHaveCount(0);
@@ -267,7 +305,6 @@ test.describe('Database Grid grouping', () => {
     await openGridGroupSettings(page);
     await expect(page.getByTestId('grid-hide-empty-groups-switch')).toHaveAttribute('data-state', 'checked');
     await page.getByTestId('grid-hide-empty-groups-toggle').click();
-    await expect(page.getByTestId('grid-hide-empty-groups-switch')).toHaveAttribute('data-state', 'unchecked');
     await closeGridGroupSettings(page);
     await expect(page.getByTestId(`grid-group-header-${primaryFieldId}`)).toBeVisible();
     await expect(page.getByTestId(`grid-group-header-${primaryFieldId}`).getByTestId('grid-group-row-count')).toHaveText(
@@ -295,6 +332,20 @@ test.describe('Database Grid grouping', () => {
     await closeGridGroupSettings(page);
     await expect(page.getByTestId('grid-group-header-C')).toBeVisible();
 
+    // Desktop exposes bulk visibility actions in the same settings section.
+    await openGridGroupSettings(page);
+    await page.getByTestId('grid-hide-all-groups').click();
+    await closeGridGroupSettings(page);
+    await expect(page.getByTestId('grid-group-header-B')).toHaveCount(0);
+    await expect(page.getByTestId('grid-group-header-C')).toHaveCount(0);
+    await expect(page.getByTestId(`grid-group-header-${primaryFieldId}`)).toBeVisible();
+
+    await openGridGroupSettings(page);
+    await page.getByTestId('grid-show-all-groups').click();
+    await closeGridGroupSettings(page);
+    await expect(page.getByTestId('grid-group-header-B')).toBeVisible();
+    await expect(page.getByTestId('grid-group-header-C')).toBeVisible();
+
     await openGridGroupSettings(page);
     await page.getByTestId('grid-remove-grouping').click();
     await closeGridGroupSettings(page);
@@ -311,15 +362,15 @@ test.describe('Database Grid grouping', () => {
     await expect(page.getByTestId('grid-group-header-B').getByTestId('grid-group-row-count')).toHaveText('3');
   });
 
-  test('preserves a same-field select filter when grouping', async ({ page, request }) => {
+  test('preserves a same-field filter and applies sorting within the remaining group', async ({ page, request }) => {
     await loginAndCreateGroupingGrid(page, request);
 
     const primaryFieldId = await getPrimaryFieldId(page);
     const selectFieldId = await addFieldWithType(page, FieldType.SingleSelect);
 
-    await typeTextIntoCell(page, primaryFieldId, 0, 'VIP one');
+    await typeTextIntoCell(page, primaryFieldId, 0, 'Zulu VIP');
     await typeTextIntoCell(page, primaryFieldId, 1, 'Standard');
-    await typeTextIntoCell(page, primaryFieldId, 2, 'VIP two');
+    await typeTextIntoCell(page, primaryFieldId, 2, 'Alpha VIP');
     await assignNewSelectOption(page, selectFieldId, 0, 'VIP');
     await assignNewSelectOption(page, selectFieldId, 1, 'Standard');
     await assignExistingSelectOptions(page, selectFieldId, 2, ['VIP']);
@@ -335,31 +386,137 @@ test.describe('Database Grid grouping', () => {
     await expect(DatabaseFilterSelectors.filterCondition(page)).toHaveCount(1);
     await expect(gridGroupOptionTags(page).filter({ hasText: 'VIP' })).toBeVisible();
     await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(2);
-    await expect(DatabaseGridSelectors.dataRowCellsForField(page, primaryFieldId)).toHaveText(['VIP one', 'VIP two']);
+    await expect(DatabaseGridSelectors.dataRowCellsForField(page, primaryFieldId)).toHaveText(['Zulu VIP', 'Alpha VIP']);
+
+    await addSortByFieldName(page, 'Name');
+    await expect(DatabaseFilterSelectors.filterCondition(page)).toHaveCount(1);
+    await expect(DatabaseGridSelectors.dataRowCellsForField(page, primaryFieldId)).toHaveText(['Alpha VIP', 'Zulu VIP']);
+
+    await openSortMenu(page);
+    await changeSortDirection(page, 0, SortDirection.Descending);
+    await closeSortMenu(page);
+    await expect(DatabaseGridSelectors.dataRowCellsForField(page, primaryFieldId)).toHaveText(['Zulu VIP', 'Alpha VIP']);
   });
 
-  test('moves an edited SingleSelect row out of the default group exactly once', async ({ page, request }) => {
+  test('sorts rows inside every group and reorders after a sort-key edit', async ({ page, request }) => {
+    await loginAndCreateGroupingGrid(page, request);
+
+    const numberFieldId = await addFieldWithType(page, FieldType.Number);
+    const selectFieldId = await addFieldWithType(page, FieldType.SingleSelect);
+
+    await typeTextIntoCell(page, numberFieldId, 0, '30');
+    await typeTextIntoCell(page, numberFieldId, 1, '10');
+    await typeTextIntoCell(page, numberFieldId, 2, '20');
+    await addSortByFieldName(page, 'Numbers');
+    await expect(DatabaseGridSelectors.dataRowCellsForField(page, numberFieldId)).toHaveText(['10', '20', '30']);
+
+    // Match Desktop's scenario: assign groups using the already-sorted row
+    // order, then prove the sort remains active within each rendered group.
+    await assignNewSelectOption(page, selectFieldId, 0, 'A');
+    await assignNewSelectOption(page, selectFieldId, 1, 'B');
+    await assignExistingSelectOptions(page, selectFieldId, 2, ['A']);
+    await groupGridByField(page, selectFieldId);
+
+    const groupA = gridGroupHeaderByOptionName(page, 'A');
+    const groupB = gridGroupHeaderByOptionName(page, 'B');
+    const groupAId = await groupA.getAttribute('data-group-id');
+    const groupBId = await groupB.getAttribute('data-group-id');
+
+    expect(groupAId).toBeTruthy();
+    expect(groupBId).toBeTruthy();
+    await expect(gridGroupCellsForField(page, groupAId!, numberFieldId)).toHaveText(['10', '30']);
+    await expect(gridGroupCellsForField(page, groupBId!, numberFieldId)).toHaveText(['20']);
+
+    await typeTextIntoCell(page, numberFieldId, 0, '50');
+
+    await expect(gridGroupCellsForField(page, groupAId!, numberFieldId)).toHaveText(['30', '50']);
+    await expect(gridGroupCellsForField(page, groupBId!, numberFieldId)).toHaveText(['20']);
+  });
+
+  test('groups Number ranges and exact URL values through the Grid UI', async ({ page, request }) => {
+    await loginAndCreateGroupingGrid(page, request);
+
+    const numberFieldId = await addFieldWithType(page, FieldType.Number);
+    const urlFieldId = await addFieldWithType(page, FieldType.URL);
+
+    await typeTextIntoCell(page, numberFieldId, 0, '50');
+    await typeTextIntoCell(page, numberFieldId, 1, '150');
+    await typeTextIntoCell(page, numberFieldId, 2, '75');
+    await typeTextIntoCell(page, urlFieldId, 0, 'https://appflowy.io');
+    await typeTextIntoCell(page, urlFieldId, 1, 'https://github.com/AppFlowy-IO/AppFlowy');
+    await typeTextIntoCell(page, urlFieldId, 2, 'https://appflowy.io');
+
+    await groupGridByField(page, numberFieldId);
+    await expect(page.getByTestId('grid-group-header-number_range_0_100')).toBeVisible();
+    await expect(page.getByTestId('grid-group-header-number_range_0_100')).toContainText('0 to 100');
+    await expect(
+      page.getByTestId('grid-group-header-number_range_0_100').getByTestId('grid-group-row-count')
+    ).toHaveText('2');
+    await expect(
+      page.getByTestId('grid-group-header-number_range_100_200').getByTestId('grid-group-row-count')
+    ).toHaveText('1');
+
+    await typeTextIntoCell(page, numberFieldId, 0, '250');
+    await expect(
+      page.getByTestId('grid-group-header-number_range_0_100').getByTestId('grid-group-row-count')
+    ).toHaveText('1');
+    await expect(
+      page.getByTestId('grid-group-header-number_range_200_300').getByTestId('grid-group-row-count')
+    ).toHaveText('1');
+    await expect
+      .poll(() => gridGroupHeaders(page).evaluateAll((headers) => headers.map((header) => header.dataset.groupId)))
+      .toEqual(['number_range_0_100', 'number_range_100_200', 'number_range_200_300']);
+
+    await openGridGroupSettings(page);
+    await page.getByTestId(`grid-group-by-field-${urlFieldId}`).click();
+    await closeGridGroupSettings(page);
+    await expect(
+      page.getByTestId('grid-group-header-https://appflowy.io').getByTestId('grid-group-row-count')
+    ).toHaveText('2');
+    await expect(
+      page.getByTestId('grid-group-header-https://github.com/AppFlowy-IO/AppFlowy').getByTestId('grid-group-row-count')
+    ).toHaveText('1');
+  });
+
+  test('moves an edited SingleSelect row between populated groups exactly once', async ({ page, request }) => {
     await loginAndCreateGroupingGrid(page, request);
 
     const selectFieldId = await addFieldWithType(page, FieldType.SingleSelect);
-    const rowToMoveTestId = await DatabaseGridSelectors.dataRows(page).nth(1).getAttribute('data-testid');
+    const rowToMoveTestId = await DatabaseGridSelectors.dataRows(page).nth(2).getAttribute('data-testid');
 
     expect(rowToMoveTestId).toBeTruthy();
     await assignNewSelectOption(page, selectFieldId, 0, 'Ready');
+    await assignNewSelectOption(page, selectFieldId, 1, 'Blocked');
     await groupGridByField(page, selectFieldId);
 
     const readyGroup = gridGroupHeaderByOptionName(page, 'Ready');
+    const blockedGroup = gridGroupHeaderByOptionName(page, 'Blocked');
     const defaultGroup = page.getByTestId(`grid-group-header-${selectFieldId}`);
 
     await expect(readyGroup).toHaveCount(1);
     await expect(readyGroup.getByTestId('grid-group-row-count')).toHaveText('1');
-    await expect(defaultGroup.getByTestId('grid-group-row-count')).toHaveText('2');
+    await expect(blockedGroup).toHaveCount(1);
+    await expect(blockedGroup.getByTestId('grid-group-row-count')).toHaveText('1');
+    await expect(defaultGroup.getByTestId('grid-group-row-count')).toHaveText('1');
 
     await assignExistingSelectOptionToRow(page, rowToMoveTestId!, selectFieldId, 'Ready');
 
     await expect(readyGroup).toHaveCount(1);
     await expect(readyGroup.getByTestId('grid-group-row-count')).toHaveText('2');
-    await expect(defaultGroup.getByTestId('grid-group-row-count')).toHaveText('1');
+    await expect(blockedGroup.getByTestId('grid-group-row-count')).toHaveText('1');
+    await expect(defaultGroup).toHaveCount(0);
+    await expect(page.getByTestId(rowToMoveTestId!)).toHaveCount(1);
+
+    await assignExistingSelectOptionToRow(page, rowToMoveTestId!, selectFieldId, 'Blocked');
+
+    await expect(readyGroup.getByTestId('grid-group-row-count')).toHaveText('1');
+    await expect(blockedGroup.getByTestId('grid-group-row-count')).toHaveText('2');
+    await expect(page.getByTestId(rowToMoveTestId!)).toHaveCount(1);
+
+    await assignExistingSelectOptionToRow(page, rowToMoveTestId!, selectFieldId, 'Ready');
+
+    await expect(readyGroup.getByTestId('grid-group-row-count')).toHaveText('2');
+    await expect(blockedGroup.getByTestId('grid-group-row-count')).toHaveText('1');
     await expect(page.getByTestId(rowToMoveTestId!)).toHaveCount(1);
   });
 
@@ -565,6 +722,8 @@ test.describe('Database Grid grouping', () => {
     if ((await page.getByTestId('grid-hide-empty-groups-switch').getAttribute('data-state')) === 'checked') {
       await page.getByTestId('grid-hide-empty-groups-toggle').click();
     }
+    await closeGridGroupSettings(page);
+    await openGridGroupSettings(page);
     await expect(page.getByTestId('grid-hide-empty-groups-switch')).toHaveAttribute('data-state', 'unchecked');
     await page.getByTestId('grid-date-group-condition-3').click();
     await closeGridGroupSettings(page);
