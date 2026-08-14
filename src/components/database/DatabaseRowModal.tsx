@@ -79,7 +79,7 @@ function DatabaseRowModal({
             )}
           </div>
 
-          {!readOnly ? (
+          {openPage ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

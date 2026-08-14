@@ -29,7 +29,8 @@ import {
   useUpdateDatabaseLayout,
 } from '@/application/database-yjs/dispatch';
 import { useGroupByFieldDispatch as useGroupByFieldDispatchCompatibility } from '@/application/database-yjs/dispatch/group';
-import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { generateListFieldSettings } from '@/application/database-yjs/list-layout';
+import { DatabaseViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import type { ReactNode } from 'react';
 
@@ -649,7 +650,7 @@ describe('useGroup', () => {
     expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(0);
   });
 
-  it("converts to an ungrouped List with Desktop's first-three-field visibility default", () => {
+  it('preserves existing field settings when switching to an ungrouped List', () => {
     const primaryFieldId = 'field-id';
     const viewId = 'board-view-id';
     const databaseDoc = createDatabaseDoc({
@@ -659,22 +660,15 @@ describe('useGroup', () => {
       viewId,
     });
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
-    const fields = database?.get(YjsDatabaseKey.fields);
     const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const fieldOrders = new Y.Array<{ id: string }>();
-    const nonPrimaryFieldIds = ['field-1', 'field-2', 'field-3', 'field-4', 'field-5'];
+    const existingFieldSettings = new Y.Map();
+    const primaryFieldSetting = new Y.Map();
 
-    fields?.get(primaryFieldId)?.set(YjsDatabaseKey.is_primary, true);
-    nonPrimaryFieldIds.forEach((fieldId) => {
-      const field = new Y.Map<unknown>();
-
-      field.set(YjsDatabaseKey.id, fieldId);
-      field.set(YjsDatabaseKey.type, FieldType.RichText);
-      fields?.set(fieldId, field);
-    });
-    fieldOrders.push([primaryFieldId, ...nonPrimaryFieldIds].map((id) => ({ id })));
-    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
-    view?.set(YjsDatabaseKey.field_settings, new Y.Map());
+    primaryFieldSetting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+    primaryFieldSetting.set(YjsDatabaseKey.wrap, true);
+    primaryFieldSetting.set(YjsDatabaseKey.width, '420');
+    existingFieldSettings.set(primaryFieldId, primaryFieldSetting);
+    view?.set(YjsDatabaseKey.field_settings, existingFieldSettings);
     view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
     const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
       wrapper: createWrapper(databaseDoc, viewId),
@@ -696,12 +690,10 @@ describe('useGroup', () => {
       show_icon: true,
       visible_field_ids: [],
     });
-    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
-    nonPrimaryFieldIds.forEach((fieldId, index) => {
-      expect(fieldSettings?.get(fieldId)?.get(YjsDatabaseKey.visibility)).toBe(
-        index < 2 ? FieldVisibility.AlwaysShown : FieldVisibility.AlwaysHidden
-      );
-    });
+    expect(fieldSettings).toBe(existingFieldSettings);
+    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysHidden);
+    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.wrap)).toBe(true);
+    expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.width)).toBe('420');
   });
 
   it("keeps List's primary field visible when it is ordered after Desktop's three-field cutoff", () => {
@@ -738,14 +730,10 @@ describe('useGroup', () => {
       ].map((id) => ({ id }))
     );
     view?.set(YjsDatabaseKey.field_orders, fieldOrders);
-    view?.set(YjsDatabaseKey.field_settings, new Y.Map());
-    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
-    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
-      wrapper: createWrapper(databaseDoc, viewId),
-    });
-
-    act(() => result.current(DatabaseViewLayout.List));
-
+    view?.set(
+      YjsDatabaseKey.field_settings,
+      generateListFieldSettings(database as YDatabase, view.get(YjsDatabaseKey.field_orders) as typeof fieldOrders)
+    );
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
     expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);
@@ -792,14 +780,10 @@ describe('useGroup', () => {
       ].map((id) => ({ id }))
     );
     view?.set(YjsDatabaseKey.field_orders, fieldOrders);
-    view?.set(YjsDatabaseKey.field_settings, new Y.Map());
-    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
-    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
-      wrapper: createWrapper(databaseDoc, viewId),
-    });
-
-    act(() => result.current(DatabaseViewLayout.List));
-
+    view?.set(
+      YjsDatabaseKey.field_settings,
+      generateListFieldSettings(database as YDatabase, view.get(YjsDatabaseKey.field_orders) as typeof fieldOrders)
+    );
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
     expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysShown);

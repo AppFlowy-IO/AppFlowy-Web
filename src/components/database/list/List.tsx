@@ -24,7 +24,7 @@ import {
 import { getListRemainingRowCount, getVisibleListRows } from './list.utils';
 import { ListLoadMore, ListLoadMoreIndicator, ListLoadingIndicator, ListNewRow } from './ListControls';
 import { ListGroupFooter, ListGroupHeader, ListGroupSeparator } from './ListGroup';
-import { ListGroupingProvider, useListGrouping } from './ListGroupingContext';
+import { useListGrouping } from './ListGroupingContext';
 import { ListRow } from './ListRow';
 import { ListSortSubscription } from './ListSortState';
 
@@ -89,6 +89,8 @@ function ListContent() {
         : listElement;
 
     const handleScroll = () => {
+      if (scrollElement.clientHeight <= 0) return;
+
       const distanceFromBottom =
         scrollElement === listElement
           ? scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight
@@ -98,9 +100,22 @@ function ListContent() {
     };
 
     const listenerOptions: AddEventListenerOptions = { passive: true };
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            handleScroll();
+          });
 
     scrollElement.addEventListener('scroll', handleScroll, listenerOptions);
-    return () => scrollElement.removeEventListener('scroll', handleScroll, listenerOptions);
+    resizeObserver?.observe(scrollElement);
+    if (scrollElement !== listElement) resizeObserver?.observe(listElement);
+    handleScroll();
+
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll, listenerOptions);
+      resizeObserver?.disconnect();
+    };
   }, [isDocumentBlock, loadMoreRows, remainingRowCount, useGroupedView]);
 
   const handleDropRow = useCallback(
@@ -148,11 +163,15 @@ function ListContent() {
     );
   }
 
+  let remainingGroupedRowBudget = visibleRowLimit;
   const rowsContent = useGroupedView ? (
     grouping.visibleGroups.map((group) => {
       const groupLimit = groupLimits[group.id] ?? LIST_INITIAL_ROW_LIMIT;
-      const groupRows = group.collapsed ? [] : group.rows.slice(0, groupLimit);
-      const groupRemainingRowCount = Math.max(group.rows.length - groupLimit, 0);
+      const groupRowLimit = Math.min(groupLimit, remainingGroupedRowBudget);
+      const groupRows = group.collapsed ? [] : group.rows.slice(0, groupRowLimit);
+      const groupRemainingRowCount = group.collapsed ? 0 : Math.max(group.rows.length - groupRows.length, 0);
+
+      remainingGroupedRowBudget -= groupRows.length;
 
       return (
         <section data-group-id={group.id} key={group.id}>
@@ -182,12 +201,13 @@ function ListContent() {
               {groupRemainingRowCount > 0 ? (
                 <ListLoadMore
                   groupId={group.id}
-                  onLoadMore={() =>
+                  onLoadMore={() => {
+                    setVisibleRowLimit((currentLimit) => currentLimit + LIST_LOAD_MORE_INCREMENT);
                     setGroupLimits((current) => ({
                       ...current,
                       [group.id]: groupLimit + LIST_LOAD_MORE_INCREMENT,
-                    }))
-                  }
+                    }));
+                  }}
                   remainingCount={groupRemainingRowCount}
                 />
               ) : null}
@@ -230,11 +250,7 @@ function ListContent() {
 }
 
 export function List() {
-  return (
-    <ListGroupingProvider>
-      <ListContent />
-    </ListGroupingProvider>
-  );
+  return <ListContent />;
 }
 
 export default List;

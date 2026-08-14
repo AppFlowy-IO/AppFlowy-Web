@@ -13,6 +13,7 @@ import {
   useAppOperations,
   useCurrentWorkspaceId,
   useOpenPageModal,
+  useScheduleDeferredCleanup,
   useToView,
 } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -23,6 +24,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
   const { addPage, bindViewSync, createDatabaseView, deletePage, deleteTrash, loadView, loadViewMeta, updatePage } =
     useAppOperations();
   const openPageModal = useOpenPageModal();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -41,7 +43,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
         const response =
           layout === ViewLayout.List
             ? await (() => {
-                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash) {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
                   throw new Error('List creation is not available right now');
                 }
 
@@ -57,6 +59,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
                   loadViewMeta,
                   loadView,
                   bindViewSync,
+                  scheduleDeferredCleanup,
                   updatePage,
                 });
               })()
@@ -115,6 +118,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       loadView,
       loadViewMeta,
       openPageModal,
+      scheduleDeferredCleanup,
       t,
       toView,
       updatePage,

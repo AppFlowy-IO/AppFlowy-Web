@@ -20,11 +20,9 @@ interface CommentsState {
  */
 export function useRowCommentCount(rowId: string) {
   const [commentCount, setCommentCount] = useState(0);
-  const rowMap = useRowMap();
+  const rowDoc = useRowMap()?.[rowId];
 
   useEffect(() => {
-    const rowDoc = rowMap?.[rowId];
-
     if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) {
       setCommentCount(0);
       return;
@@ -59,7 +57,7 @@ export function useRowCommentCount(rowId: string) {
       rowSharedRoot.unobserve(syncCommentsMap);
       commentsMap?.unobserveDeep(updateCount);
     };
-  }, [rowId, rowMap]);
+  }, [rowDoc]);
 
   return commentCount;
 }

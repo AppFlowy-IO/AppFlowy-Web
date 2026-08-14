@@ -31,6 +31,7 @@ import {
   addSortByFieldName,
   changeSortDirection,
   closeSortMenu,
+  deleteSort,
   openSortMenu,
   SortDirection,
 } from '../../support/sort-test-helpers';
@@ -153,6 +154,54 @@ async function expectOnlyStandaloneListChild(page: Page): Promise<string> {
   const childRowTestId = await listChild.locator(':scope > [data-testid^="page-"]').first().getAttribute('data-testid');
 
   return viewIdFromPageTestId(childRowTestId);
+}
+
+async function expectSerializedListBlock(page: Page, documentViewId: string, expectedDatabaseId: string): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((viewId) => {
+          type TestEditorNode = {
+            blockId?: string;
+            data?: { database_id?: string };
+            type?: string;
+          };
+          type TestEditor = {
+            children?: TestEditorNode[];
+          };
+          type YMapLike = {
+            get?: (key: string) => unknown;
+          };
+          type TestDocument = {
+            getMap?: (key: string) => YMapLike;
+          };
+          const testWindow = window as Window & {
+            __TEST_DOC__?: TestDocument;
+            __TEST_EDITORS__?: Record<string, TestEditor | undefined>;
+          };
+          const listNode = testWindow.__TEST_EDITORS__?.[viewId]?.children?.find((node) => node.type === 'list');
+
+          if (!listNode?.blockId) {
+            return { databaseId: null, serializedType: null, slateType: null };
+          }
+
+          const sharedRoot = testWindow.__TEST_DOC__?.getMap?.('data');
+          const document = sharedRoot?.get?.('document') as YMapLike | undefined;
+          const blocks = document?.get?.('blocks') as YMapLike | undefined;
+          const block = blocks?.get?.(listNode.blockId) as YMapLike | undefined;
+
+          return {
+            databaseId: listNode.data?.database_id ?? null,
+            serializedType: block?.get?.('ty') ?? null,
+            slateType: listNode.type,
+          };
+        }, documentViewId),
+      {
+        message: 'Expected the embedded List to remain serialized as the canonical `list` document block type',
+        timeout: 30_000,
+      }
+    )
+    .toEqual({ databaseId: expectedDatabaseId, serializedType: 'list', slateType: 'list' });
 }
 
 test.describe('Database List view (Flutter desktop parity)', () => {
@@ -390,8 +439,23 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     await closeSortMenu(page);
     await expectListTitles(page, ['Beta target', 'Alpha target']);
 
+    // Flutter exercises deleting a sort while the filter remains active.
+    await openSortMenu(page);
+    await deleteSort(page, 0);
+    await closeSortMenu(page);
+    await expect(page.getByTestId('database-sort-condition')).toHaveCount(0);
+    await expect(page.getByTestId('database-filter-condition')).toHaveCount(1);
+    await expectListTitles(page, ['Beta target', 'Alpha target']);
+
+    // Exercise the inverse half of the combined case: deleting the filter
+    // must leave the newly-created sort active.
+    await addSortByFieldName(page, 'Name');
+    await closeSortMenu(page);
+    await expectListTitles(page, ['Alpha target', 'Beta target']);
     await deleteFilter(page);
-    await expectListTitles(page, ['Zulu skip', 'Beta target', 'Alpha target']);
+    await expect(page.getByTestId('database-filter-condition')).toHaveCount(0);
+    await expect(page.getByTestId('database-sort-condition')).toHaveCount(1);
+    await expectListTitles(page, ['Alpha target', 'Beta target', 'Zulu skip']);
   });
 
   test('database_list_row_operations.dart: creates a row from List and shares it with Grid', async ({
@@ -544,10 +608,12 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     await expect(page.getByTestId(`list-primary-cell-${rowId}`)).toContainText(emoji);
   });
 
-  test('document_linked_list_test.dart: renders source rows in a Linked List embedded in a document', async ({
+  test('document_linked_list_test.dart: persists a canonical List block and renders source rows after reload', async ({
     page,
     request,
   }) => {
+    test.setTimeout(180_000);
+
     await loginAndCreateGrid(page, request, generateRandomEmail());
 
     const primaryFieldId = await getPrimaryFieldId(page);
@@ -555,19 +621,60 @@ test.describe('Database List view (Flutter desktop parity)', () => {
     await typeTextIntoCell(page, primaryFieldId, 0, 'List Row 1');
     await typeTextIntoCell(page, primaryFieldId, 1, 'List Row 2');
     await typeTextIntoCell(page, primaryFieldId, 2, 'List Row 3');
+    const sourceRowIds = await DatabaseGridSelectors.dataRows(page).evaluateAll((rows) =>
+      rows.map((row) => String(row.getAttribute('data-testid')).replace(/^grid-row-/, ''))
+    );
+    const sourceDatabaseId = await page.evaluate(() => {
+      const context = (window as Window & { __TEST_DATABASE_CONTEXT__?: { databaseDoc?: any } })
+        .__TEST_DATABASE_CONTEXT__;
+      const database = context?.databaseDoc?.getMap('data')?.get('database');
+
+      return String(database?.get('id') ?? '');
+    });
+
+    expect(sourceRowIds).toHaveLength(3);
+    expect(sourceDatabaseId).not.toBe('');
 
     const documentViewId = await createDocumentPageAndNavigate(page);
 
     await insertLinkedDatabaseViaSlash(page, documentViewId, 'New Database', 'List');
 
     const editor = page.locator(`#editor-${documentViewId}`);
-    const embeddedList = editor.getByTestId('database-list');
+    const embeddedListBlock = editor.locator('[data-block-type="list"]');
+    const embeddedList = embeddedListBlock.getByTestId('database-list');
+    const embeddedRows = embeddedList.locator('[data-testid^="list-row-"][data-row-id]');
 
+    await expect(embeddedListBlock).toBeVisible({ timeout: 30000 });
+    await expectSerializedListBlock(page, documentViewId, sourceDatabaseId);
     await expect(embeddedList).toBeVisible({ timeout: 30000 });
+    await expect
+      .poll(() => embeddedRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-row-id'))))
+      .toEqual(sourceRowIds);
     await expect(embeddedList.locator('[data-testid^="list-primary-cell-"]')).toContainText([
       'List Row 1',
       'List Row 2',
       'List Row 3',
     ]);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const reloadedEditor = page.locator(`#editor-${documentViewId}`);
+    const reloadedListBlock = reloadedEditor.locator('[data-block-type="list"]');
+    const reloadedList = reloadedListBlock.getByTestId('database-list');
+    const reloadedRows = reloadedList.locator('[data-testid^="list-row-"][data-row-id]');
+
+    await expect(reloadedEditor).toBeVisible({ timeout: 30000 });
+    await expect(reloadedListBlock).toBeVisible({ timeout: 30000 });
+    await expectSerializedListBlock(page, documentViewId, sourceDatabaseId);
+    await expect(reloadedList).toBeVisible({ timeout: 30000 });
+    await expect
+      .poll(() => reloadedRows.evaluateAll((rows) => rows.map((row) => row.getAttribute('data-row-id'))))
+      .toEqual(sourceRowIds);
+    await expect(reloadedList.locator('[data-testid^="list-primary-cell-"]')).toContainText([
+      'List Row 1',
+      'List Row 2',
+      'List Row 3',
+    ]);
+    await expect(reloadedEditor.getByTestId('unsupported-block')).toHaveCount(0);
   });
 });

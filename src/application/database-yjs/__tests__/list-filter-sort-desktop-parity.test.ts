@@ -324,15 +324,19 @@ describe('database_list_filter_test.dart', () => {
 
   it('checkbox filter - unchecked condition', () => {
     const fixture = createFixture();
-    const filters: FilterConfig[] = [
+    let filters: FilterConfig[] = [
       {
-        condition: CheckboxFilterCondition.IsUnChecked,
+        condition: CheckboxFilterCondition.IsChecked,
         fieldId: checkboxFieldId,
         fieldType: FieldType.Checkbox,
       },
     ];
 
+    expect(titles(fixture, filters)).toEqual(['Charlie', 'Banana']);
+    filters = [{ ...filters[0], condition: CheckboxFilterCondition.IsUnChecked }];
     expect(titles(fixture, filters)).toEqual(['Apple', 'Application', '']);
+    filters = [];
+    expect(titles(fixture, filters)).toEqual(['Charlie', 'Apple', 'Banana', 'Application', '']);
   });
 
   it('select option filter - OptionIsNot condition', () => {
@@ -465,9 +469,9 @@ describe('database_list_sort_test.dart', () => {
 
   it('create multiple sorts in list view', () => {
     const fixture = createFixture();
-    const sorts: SortConfig[] = [{ condition: SortCondition.Ascending, fieldId: checkboxFieldId }, nameAscending];
+    const sorts: SortConfig[] = [{ condition: SortCondition.Descending, fieldId: checkboxFieldId }, nameAscending];
 
-    expect(titles(fixture, [], sorts)).toEqual(['Apple', 'Application', '', 'Banana', 'Charlie']);
+    expect(titles(fixture, [], sorts)).toEqual(['Banana', 'Charlie', 'Apple', 'Application', '']);
   });
 
   it('sort persists when switching views', () => {
@@ -539,7 +543,7 @@ describe('database_list_filter_and_sort_test.dart', () => {
     ).toEqual(['Application', 'Charlie', 'Banana', 'Apple']);
   });
 
-  it('delete filter or sort while other remains active', () => {
+  it('delete filter or sort while the other remains active', () => {
     const fixture = createFixture();
     const checked: FilterConfig = {
       condition: CheckboxFilterCondition.IsChecked,

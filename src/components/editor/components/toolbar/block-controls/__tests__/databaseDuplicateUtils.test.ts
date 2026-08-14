@@ -37,6 +37,8 @@ describe('databaseDuplicateUtils', () => {
     expect(isDatabaseBlockType(BlockType.GridBlock)).toBe(true);
     expect(isDatabaseBlockType(BlockType.BoardBlock)).toBe(true);
     expect(isDatabaseBlockType(BlockType.CalendarBlock)).toBe(true);
+    expect(isDatabaseBlockType(BlockType.ListBlock)).toBe(true);
+    expect(isDatabaseBlockType(BlockType.ChartBlock)).toBe(true);
     expect(isDatabaseBlockType(BlockType.Paragraph)).toBe(false);
   });
 
@@ -44,6 +46,8 @@ describe('databaseDuplicateUtils', () => {
     expect(getDatabaseLayoutFromBlockType(BlockType.GridBlock)).toBe(ViewLayout.Grid);
     expect(getDatabaseLayoutFromBlockType(BlockType.BoardBlock)).toBe(ViewLayout.Board);
     expect(getDatabaseLayoutFromBlockType(BlockType.CalendarBlock)).toBe(ViewLayout.Calendar);
+    expect(getDatabaseLayoutFromBlockType(BlockType.ListBlock)).toBe(ViewLayout.List);
+    expect(getDatabaseLayoutFromBlockType(BlockType.ChartBlock)).toBe(ViewLayout.Chart);
     expect(getDatabaseLayoutFromBlockType(BlockType.Paragraph)).toBeUndefined();
   });
 

@@ -174,6 +174,38 @@ describe('List incremental rendering', () => {
     expect(screen.queryByLabelText('Loading more rows')).toBeNull();
   });
 
+  it('fills a tall standalone viewport even when the initial 50 rows cannot emit a scroll event', () => {
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight');
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight');
+
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 2_000 });
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 1_800 });
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'list-view',
+      isDocumentBlock: false,
+      onRendered,
+      paddingEnd: 96,
+      paddingStart: 96,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    try {
+      render(<List />);
+      expect(screen.getAllByTestId(/^list-row-row-/)).toHaveLength(100);
+    } finally {
+      if (clientHeightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'clientHeight', clientHeightDescriptor);
+      } else {
+        delete (HTMLElement.prototype as { clientHeight?: number }).clientHeight;
+      }
+
+      if (scrollHeightDescriptor) {
+        Object.defineProperty(HTMLElement.prototype, 'scrollHeight', scrollHeightDescriptor);
+      } else {
+        delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight;
+      }
+    }
+  });
+
   it('database_list_load_more.dart: create new row in list view increases count and opens row detail', async () => {
     grouping.rowOrders = grouping.rowOrders.slice(0, 3);
     const { rerender } = render(<List />);
@@ -251,6 +283,30 @@ describe('List incremental rendering', () => {
     expect(screen.getAllByTestId(/^list-row-row-/)).toHaveLength(2);
     expect(screen.getByTestId('list-row-row-1').getAttribute('data-reorderable')).toBe('false');
     expect(screen.queryByTestId('list-new-row')).toBeNull();
+  });
+
+  it('keeps the initial grouped row subscription budget global across many groups', () => {
+    grouping.isGrouped = true;
+    grouping.rowOrders = Array.from({ length: 60 }, (_, index) => ({ height: 36, id: `row-${index + 1}` }));
+    grouping.visibleGroups = grouping.rowOrders.map((row, index) => ({
+      collapsed: false,
+      hidden: false,
+      id: `group-${index + 1}`,
+      isDefault: false,
+      label: `Group ${index + 1}`,
+      rows: [row],
+      visible: true,
+    }));
+
+    render(<List />);
+
+    expect(screen.getAllByTestId(/^list-group-header-/)).toHaveLength(60);
+    expect(screen.getAllByTestId(/^list-row-row-/)).toHaveLength(50);
+    expect(screen.getAllByTestId('list-load-more')).toHaveLength(10);
+
+    fireEvent.click(screen.getAllByTestId('list-load-more')[0]);
+    expect(screen.getAllByTestId(/^list-row-row-/)).toHaveLength(60);
+    expect(screen.queryByTestId('list-load-more')).toBeNull();
   });
 
   it('does not leak ungrouped rows when all groups are hidden', () => {

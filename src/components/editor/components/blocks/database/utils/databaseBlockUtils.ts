@@ -54,6 +54,7 @@ export function createDatabaseNodeData(params: {
   return {
     parent_id: params.parentId,
     view_ids: uniqueViewIds,
+    view_id: uniqueViewIds[0],
     database_id: params.databaseId,
   };
 }
@@ -83,6 +84,7 @@ export function addViewId(data: DatabaseNodeData, viewId: string): DatabaseNodeD
   return {
     ...data,
     view_ids: currentIds,
+    view_id: currentIds[0],
   };
 }
 
@@ -90,11 +92,12 @@ export function addViewId(data: DatabaseNodeData, viewId: string): DatabaseNodeD
  * Remove a view ID from existing database node data (returns new data object).
  */
 export function removeViewId(data: DatabaseNodeData, viewId: string): DatabaseNodeData {
-  const currentIds = getViewIds(data).filter(id => id !== viewId);
+  const currentIds = getViewIds(data).filter((id) => id !== viewId);
 
   return {
     ...data,
     view_ids: currentIds,
+    view_id: currentIds[0],
   };
 }
 

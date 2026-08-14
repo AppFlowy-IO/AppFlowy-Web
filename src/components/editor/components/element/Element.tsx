@@ -4,6 +4,7 @@ import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo } from 'rea
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
 import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
@@ -168,6 +169,10 @@ export const Element = ({
     onDrop: onDropBlock,
   });
   const Component = useMemo(() => {
+    if (isDatabaseBlockType(type)) {
+      return DatabaseBlock;
+    }
+
     switch (type) {
       case BlockType.HeadingBlock:
         return Heading;
@@ -201,11 +206,6 @@ export const Element = ({
         return TableBlock;
       case BlockType.TableCell:
         return TableCellBlock;
-      case BlockType.GridBlock:
-      case BlockType.BoardBlock:
-      case BlockType.CalendarBlock:
-      case BlockType.ChartBlock:
-        return DatabaseBlock;
       case BlockType.LinkPreview:
         return LinkPreview;
       case BlockType.FileBlock:

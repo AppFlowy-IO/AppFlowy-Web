@@ -24,6 +24,7 @@ declare global {
         renderedViewIds: string[][];
         latestTabsProps?: CapturedDatabaseTabsProps;
         gridGroupingProviderRenderCount?: number;
+        listGroupingProviderRenderCount?: number;
       }
     | undefined;
 }
@@ -50,6 +51,18 @@ jest.mock('@/components/database/grid/GridGroupingContext', () => ({
       ...global.__databaseViewsOrderTestState,
       renderedViewIds: global.__databaseViewsOrderTestState?.renderedViewIds ?? [],
       gridGroupingProviderRenderCount: (global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0) + 1,
+    };
+
+    return <>{children}</>;
+  },
+}));
+
+jest.mock('@/components/database/list/ListGroupingContext', () => ({
+  ListGroupingProvider: ({ children }: { children: ReactNode }) => {
+    global.__databaseViewsOrderTestState = {
+      ...global.__databaseViewsOrderTestState,
+      renderedViewIds: global.__databaseViewsOrderTestState?.renderedViewIds ?? [],
+      listGroupingProviderRenderCount: (global.__databaseViewsOrderTestState?.listGroupingProviderRenderCount ?? 0) + 1,
     };
 
     return <>{children}</>;
@@ -297,6 +310,41 @@ describe('DatabaseViews order', () => {
     });
 
     rendered.unmount();
+    doc.destroy();
+  });
+
+  it('mounts one shared List grouping provider around the renderer and settings', async () => {
+    const visibleViewIds = ['list', 'grid', 'grid2'];
+    const doc = createDatabaseDoc('db-list-provider', [
+      { viewId: 'list', name: 'List', createdAt: '100', layout: DatabaseViewLayout.List },
+      { viewId: 'grid', name: 'Grid', createdAt: '200' },
+      { viewId: 'grid2', name: 'Grid 2', createdAt: '300' },
+    ]);
+    const contextValue: DatabaseContextState = {
+      readOnly: true,
+      databaseDoc: doc,
+      databasePageId: 'list',
+      activeViewId: 'list',
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+    };
+
+    render(
+      <DatabaseContext.Provider value={contextValue}>
+        <DatabaseViews
+          activeViewId='list'
+          databasePageId='list'
+          onChangeView={jest.fn()}
+          visibleViewIds={visibleViewIds}
+        />
+      </DatabaseContext.Provider>
+    );
+
+    await waitFor(() => {
+      expect(global.__databaseViewsOrderTestState?.listGroupingProviderRenderCount).toBeGreaterThan(0);
+    });
+    expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
+
     doc.destroy();
   });
 });

@@ -1,6 +1,7 @@
 import { Element } from 'slate';
 import { ReactEditor } from 'slate-react';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { BlockType } from '@/application/types';
 import { HeadingNode } from '@/components/editor/editor.type';
 
@@ -29,6 +30,10 @@ export function getBlockCssProperty(node: Element) {
     return `level-${(node as HeadingNode).data.level} mt-[3px]`;
   }
 
+  if (isDatabaseBlockType(node.type)) {
+    return 'my-1.5';
+  }
+
   switch (node.type) {
     case BlockType.Paragraph:
     case BlockType.NumberedListBlock:
@@ -41,11 +46,6 @@ export function getBlockCssProperty(node: Element) {
       return 'leading-[1.85em]';
     case BlockType.OutlineBlock:
       return 'py-[7px]';
-    case BlockType.GridBlock:
-    case BlockType.BoardBlock:
-    case BlockType.CalendarBlock:
-    case BlockType.ChartBlock:
-      return 'my-1.5';
     case BlockType.TableBlock:
       return 'my-3';
     case BlockType.GalleryBlock:

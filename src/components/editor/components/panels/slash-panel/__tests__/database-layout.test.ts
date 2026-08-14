@@ -5,7 +5,7 @@ import { getDatabaseBlockTypeForLayout, isSlashMenuDatabaseLayout } from '../dat
 describe('slash menu database layout plumbing', () => {
   it.each([
     ['Grid', ViewLayout.Grid, BlockType.GridBlock],
-    ['List', ViewLayout.List, BlockType.GridBlock],
+    ['List', ViewLayout.List, BlockType.ListBlock],
     ['Board', ViewLayout.Board, BlockType.BoardBlock],
     ['Calendar', ViewLayout.Calendar, BlockType.CalendarBlock],
     ['Chart', ViewLayout.Chart, BlockType.ChartBlock],

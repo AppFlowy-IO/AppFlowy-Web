@@ -15,6 +15,7 @@ import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
+import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import {
   getDatabaseViewportStyle,
   shouldAutoShrinkDatabaseViewport,
@@ -427,7 +428,14 @@ function DatabaseViews({
     </DatabaseConditionsContext.Provider>
   );
 
-  return effectiveLayout === DatabaseViewLayout.Grid ? <GridGroupingProvider>{content}</GridGroupingProvider> : content;
+  switch (effectiveLayout) {
+    case DatabaseViewLayout.Grid:
+      return <GridGroupingProvider>{content}</GridGroupingProvider>;
+    case DatabaseViewLayout.List:
+      return <ListGroupingProvider>{content}</ListGroupingProvider>;
+    default:
+      return content;
+  }
 }
 
 export default DatabaseViews;

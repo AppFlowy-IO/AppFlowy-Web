@@ -93,7 +93,7 @@ Then('the List row detail remains open and readonly', async ({ page }) => {
 
   await expect(modal).toBeVisible();
   await expect.poll(() => title.evaluate((element) => (element as HTMLTextAreaElement).readOnly)).toBe(true);
-  await expect(modal.getByTestId('row-detail-open-full-page')).toHaveCount(0);
+  await expect(modal.getByTestId('row-detail-open-full-page')).toBeVisible();
   await expect(modal.getByTestId('row-detail-more-actions')).toHaveCount(0);
   await expect(modal.getByTestId('add-icon-button')).toHaveCount(0);
   await expect(modal.getByRole('button', { name: 'Add Cover', exact: true })).toHaveCount(0);

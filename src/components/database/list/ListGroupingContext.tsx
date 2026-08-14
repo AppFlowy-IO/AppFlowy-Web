@@ -45,10 +45,7 @@ export function useSyncListGroupingMetadata(grouping: DatabaseGrouping) {
   ]);
 }
 
-/**
- * List owns its grouping provider so DatabaseViews can render it like Board or
- * Calendar while keeping List's layout settings independent from Grid.
- */
+/** Share one List grouping selector between the renderer and its settings. */
 export function ListGroupingProvider({ children, value }: { children: ReactNode; value?: DatabaseGrouping }) {
   const selectedGrouping = useListGroupingSelector();
   const grouping = value ?? selectedGrouping;

@@ -62,9 +62,9 @@ import {
   normalizeDatabaseGroupColumn,
 } from '@/application/database-yjs/group-column';
 import {
-  generateListFieldSettings,
   initializeListLayoutSetting,
   normalizeCreatedDatabaseListView,
+  removeCreatedDatabaseView,
 } from '@/application/database-yjs/list-layout';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
@@ -2524,7 +2524,7 @@ function useEnhanceCalendarLayoutByFieldExists() {
  */
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
-  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, loadViewMeta, isDocumentBlock } =
+  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, deletePage, loadViewMeta, isDocumentBlock } =
     useDatabaseContext();
   const sharedRoot = useSharedRoot();
 
@@ -2637,6 +2637,8 @@ export function useAddDatabaseView() {
         };
       })();
 
+      const existingViewIds = new Set(database?.get(YjsDatabaseKey.views)?.keys() ?? []);
+
       // Create new view as a child of the database container (or document for embedded linked views).
       const response = await createDatabaseView(requestViewId, {
         parent_view_id: tabsParentViewId,
@@ -2647,18 +2649,53 @@ export function useAddDatabaseView() {
         embedded: isDocumentBlock ?? false,
       });
 
-      if (response?.database_update?.length) {
+      if (response.database_update?.length) {
         applyYDoc(databaseDoc, new Uint8Array(response.database_update));
-        if (layout === DatabaseViewLayout.List && !normalizeCreatedDatabaseListView(databaseDoc, response.view_id)) {
-          Log.warn('[useAddDatabaseView] failed to normalize server-created List field settings', {
-            viewId: response.view_id,
-          });
+      }
+
+      if (layout === DatabaseViewLayout.List) {
+        const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
+        const createdViewWasNew = !existingViewIds.has(response.view_id);
+        const isExactReturnedView =
+          Boolean(response.view_id) &&
+          createdViewWasNew &&
+          response.database_id === databaseId &&
+          Boolean(createdView?.get(YjsDatabaseKey.field_orders));
+
+        if (
+          !isExactReturnedView ||
+          normalizeCreatedDatabaseListView(databaseDoc, response.view_id) !== response.view_id
+        ) {
+          if (response.view_id && createdViewWasNew) {
+            removeCreatedDatabaseView(databaseDoc, response.view_id);
+
+            try {
+              await deletePage?.(response.view_id);
+            } catch (error) {
+              Log.warn('[useAddDatabaseView] failed to roll back an invalid List view', {
+                viewId: response.view_id,
+                error,
+              });
+            }
+          }
+
+          throw new Error('The server did not return the requested List database view');
         }
       }
 
       return response.view_id;
     },
-    [createDatabaseView, databaseDoc, databasePageId, databaseId, activeViewId, loadViewMeta, isDocumentBlock]
+    [
+      createDatabaseView,
+      database,
+      databaseDoc,
+      databasePageId,
+      databaseId,
+      activeViewId,
+      deletePage,
+      loadViewMeta,
+      isDocumentBlock,
+    ]
   );
 }
 
@@ -2715,10 +2752,8 @@ export function useUpdateDatabaseLayout(viewId: string) {
 
             if (layout === DatabaseViewLayout.List) {
               const groups = view.get(YjsDatabaseKey.groups);
-              const settings = generateListFieldSettings(database, fieldOrders);
 
               if (groups?.length) groups.delete(0, groups.length);
-              view.set(YjsDatabaseKey.field_settings, settings);
               initializeListLayoutSetting(view);
             }
 

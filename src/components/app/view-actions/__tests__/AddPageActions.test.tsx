@@ -30,6 +30,7 @@ const mockDeletePage = jest.fn();
 const mockDeleteTrash = jest.fn();
 const mockUpdatePage = jest.fn();
 const mockFlush = jest.fn();
+const mockScheduleDeferredCleanup = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -59,6 +60,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   }),
   useCurrentWorkspaceId: () => 'workspace-id',
   useOpenPageModal: () => mockOpenPageModal,
+  useScheduleDeferredCleanup: () => mockScheduleDeferredCleanup,
   useToView: () => mockToView,
 }));
 
@@ -269,6 +271,7 @@ describe('AddPageActions', () => {
     expect(databaseViews?.has('grid-view-id')).toBe(false);
     expect(Array.from(databaseViews?.keys() ?? [])).toEqual(['list-view-id']);
     expect(mockFlush).toHaveBeenCalledTimes(2);
+    expect(mockScheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
     await waitFor(() => expect(mockToView).toHaveBeenCalledWith('list-view-id'));
     expect(mockFlush.mock.invocationCallOrder[0]).toBeLessThan(mockDeletePage.mock.invocationCallOrder[0]);
     expect(mockDeletePage.mock.invocationCallOrder[0]).toBeLessThan(mockDeleteTrash.mock.invocationCallOrder[0]);
@@ -342,6 +345,7 @@ describe('AddPageActions', () => {
     expect(mockDeleteTrash.mock.calls).toEqual([['list-container-id']]);
     expect(database?.get(YjsDatabaseKey.metas)?.get(YjsDatabaseKey.iid)).toBe('list-view-id');
     expect(database?.get(YjsDatabaseKey.views)?.has('grid-view-id')).toBe(true);
+    expect(mockScheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
     expect(mockToView).not.toHaveBeenCalled();
   });
 

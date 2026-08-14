@@ -8,16 +8,13 @@ const DATABASE_LAYOUTS = new Set<ViewLayout>([
   ViewLayout.List,
 ]);
 
-/**
- * List views use the generic grid database block on Web. The block data points
- * at the created view, and the database renderer reads that view's actual
- * layout from Yjs.
- */
+/** Map each database view layout to its cross-client document block type. */
 export function getDatabaseBlockTypeForLayout(layout: ViewLayout): BlockType | null {
   switch (layout) {
     case ViewLayout.Grid:
-    case ViewLayout.List:
       return BlockType.GridBlock;
+    case ViewLayout.List:
+      return BlockType.ListBlock;
     case ViewLayout.Board:
       return BlockType.BoardBlock;
     case ViewLayout.Calendar:

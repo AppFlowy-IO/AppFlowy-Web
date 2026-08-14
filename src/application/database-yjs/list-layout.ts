@@ -209,6 +209,69 @@ async function compensateCreatedListView(
   }
 }
 
+export function removeCreatedDatabaseView(databaseDoc: YDoc, viewId: string): boolean {
+  const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
+  const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+  const views = database?.get(YjsDatabaseKey.views);
+
+  if (!views?.has(viewId)) return false;
+
+  databaseDoc.transact(() => {
+    views.delete(viewId);
+  }, 'removeCreatedDatabaseView');
+
+  return true;
+}
+
+function updateCreatesExactDatabaseView(params: {
+  databaseId: string;
+  existingViewIds: ReadonlySet<string>;
+  preRequestState: Uint8Array;
+  update: number[];
+  viewId: string;
+}): boolean {
+  if (params.existingViewIds.has(params.viewId)) return false;
+
+  const validationDoc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(validationDoc, params.preRequestState);
+    Y.applyUpdate(validationDoc, new Uint8Array(params.update));
+
+    const sharedRoot = validationDoc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+    const view = database?.get(YjsDatabaseKey.views)?.get(params.viewId);
+
+    return database?.get(YjsDatabaseKey.id) === params.databaseId && Boolean(view?.get(YjsDatabaseKey.field_orders));
+  } catch (error) {
+    Log.warn('[List creation] failed to validate the linked List update', {
+      viewId: params.viewId,
+      error,
+    });
+    return false;
+  } finally {
+    validationDoc.destroy();
+  }
+}
+
+function releaseTemporarySyncOwner(
+  databaseDoc: YDoc | null,
+  scheduleDeferredCleanup: ((objectId: string, delayMs?: number) => void) | undefined
+): void {
+  if (!databaseDoc || !scheduleDeferredCleanup) return;
+
+  try {
+    scheduleDeferredCleanup(databaseDoc.guid);
+  } catch (error) {
+    // Cleanup is best-effort and must not replace the creation result or the
+    // original failure. A later lifecycle owner can still release this doc.
+    Log.warn('[List creation] failed to release a temporary sync owner', {
+      objectId: databaseDoc.guid,
+      error,
+    });
+  }
+}
+
 /**
  * Create and durably initialize a linked List view.
  *
@@ -220,26 +283,67 @@ async function compensateCreatedListView(
  */
 export async function createLinkedDatabaseListView(params: {
   requestViewId: string;
+  sourceViewId: string;
   payload: Omit<CreateDatabaseViewPayload, 'layout'>;
   createDatabaseView: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   deletePage?: (viewId: string) => Promise<void>;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
 }): Promise<CreateDatabaseViewResponse> {
-  const { bindViewSync, createDatabaseView, deletePage, loadView, payload, requestViewId } = params;
+  const {
+    bindViewSync,
+    createDatabaseView,
+    deletePage,
+    loadView,
+    payload,
+    requestViewId,
+    scheduleDeferredCleanup,
+    sourceViewId,
+  } = params;
 
   // These capabilities are all required after Cloud creates the child. Check
   // them first so an unavailable editor context cannot leak a server object.
-  if (!loadView || !bindViewSync || !deletePage) {
+  if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
     throw new Error('Linked List creation is not available right now');
   }
 
-  const response = await createDatabaseView(requestViewId, {
-    ...payload,
-    layout: ViewLayout.List,
-  });
+  let databaseDoc: YDoc | null = null;
+  let syncOwnerDoc: YDoc | null = null;
+  let response: CreateDatabaseViewResponse | null = null;
+  let existingViewIds: Set<string> | null = null;
+  let preRequestState: Uint8Array | null = null;
 
   try {
+    databaseDoc = await loadView(sourceViewId, false, false, {
+      databaseId: payload.database_id,
+      forceFetch: true,
+    });
+
+    const syncContext = bindViewSync(databaseDoc);
+
+    if (!syncContext) {
+      throw new Error('The linked List could not be connected for persistence');
+    }
+
+    syncOwnerDoc = databaseDoc;
+
+    const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+    const views = database?.get(YjsDatabaseKey.views);
+
+    if (database?.get(YjsDatabaseKey.id) !== payload.database_id || !views?.has(sourceViewId)) {
+      throw new Error('The source database is not available for linked List creation');
+    }
+
+    existingViewIds = new Set(views.keys());
+    preRequestState = Y.encodeStateAsUpdate(databaseDoc);
+
+    response = await createDatabaseView(requestViewId, {
+      ...payload,
+      layout: ViewLayout.List,
+    });
+
     if (!response.view_id || response.database_id !== payload.database_id) {
       throw new Error('The server returned invalid metadata for the linked List');
     }
@@ -248,26 +352,28 @@ export async function createLinkedDatabaseListView(params: {
       throw new Error('The server did not return the linked List database update');
     }
 
-    const databaseDoc = await loadView(response.view_id, false, false, {
-      databaseId: response.database_id,
-    });
-
-    applyYDoc(databaseDoc, new Uint8Array(response.database_update));
-
-    // Do not let the normalizer's standalone fallback select an existing view
-    // when the linked-view update did not actually contain the returned child.
-    const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
-    const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
-    const createdView = database?.get(YjsDatabaseKey.views)?.get(response.view_id);
-
-    if (!createdView?.get(YjsDatabaseKey.field_orders)) {
+    if (
+      !updateCreatesExactDatabaseView({
+        databaseId: response.database_id,
+        existingViewIds,
+        preRequestState,
+        update: response.database_update,
+        viewId: response.view_id,
+      })
+    ) {
       throw new Error('The server did not return the linked List database view');
     }
 
-    const syncContext = bindViewSync(databaseDoc);
+    applyYDoc(databaseDoc, new Uint8Array(response.database_update));
+    const updatedDatabase = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+    const updatedViews = updatedDatabase?.get(YjsDatabaseKey.views);
 
-    if (!syncContext) {
-      throw new Error('The linked List could not be connected for persistence');
+    // Do not let the normalizer's standalone fallback select an existing view
+    // when the linked-view update did not actually contain the returned child.
+    const createdView = updatedViews?.get(response.view_id);
+
+    if (!createdView?.get(YjsDatabaseKey.field_orders)) {
+      throw new Error('The server did not return the linked List database view');
     }
 
     const normalizedViewId = normalizeCreatedDatabaseListView(databaseDoc, response.view_id);
@@ -284,11 +390,14 @@ export async function createLinkedDatabaseListView(params: {
   } catch (error) {
     // `response.view_id` is the only child authorized for rollback by this
     // operation. Preserve the core error if the best-effort cleanup fails.
-    if (response.view_id) {
+    if (response?.view_id && existingViewIds && !existingViewIds.has(response.view_id)) {
+      if (databaseDoc) removeCreatedDatabaseView(databaseDoc, response.view_id);
       await compensateCreatedListView(response.view_id, deletePage);
     }
 
     throw error;
+  } finally {
+    releaseTemporarySyncOwner(syncOwnerDoc, scheduleDeferredCleanup);
   }
 }
 
@@ -308,14 +417,16 @@ export async function createDatabaseListPageViaGrid(params: {
   deletePage?: (viewId: string) => Promise<void>;
   deleteTrash?: (viewId: string) => Promise<void>;
   updatePage?: (viewId: string, payload: { name: string }) => Promise<void>;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
 }): Promise<CreatePageResponse> {
   const deletePage = params.deletePage;
   const deleteTrash = params.deleteTrash;
+  const scheduleDeferredCleanup = params.scheduleDeferredCleanup;
 
   // Validate every capability needed for compensation before creating any
   // server object. Standalone creation additionally needs the linked-view and
   // permanent-delete APIs for its two-phase Grid replacement.
-  if (!deletePage) {
+  if (!deletePage || !scheduleDeferredCleanup) {
     throw new Error('List creation is not available right now');
   }
 
@@ -330,6 +441,8 @@ export async function createDatabaseListPageViaGrid(params: {
     name: params.name,
     prev_view_id: params.prevViewId,
   });
+
+  let syncOwnerDoc: YDoc | null = null;
 
   try {
     if (!response.database_id) {
@@ -358,11 +471,16 @@ export async function createDatabaseListPageViaGrid(params: {
         databaseId: response.database_id,
         forceFetch: true,
       });
+      const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
+      const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+      const existingViewIds = new Set(database?.get(YjsDatabaseKey.views)?.keys() ?? []);
       const syncContext = params.bindViewSync(databaseDoc);
 
       if (!syncContext) {
         throw new Error('The new List database could not be connected for persistence');
       }
+
+      syncOwnerDoc = databaseDoc;
 
       const listResponse = await createDatabaseView(gridViewId, {
         parent_view_id: response.view_id,
@@ -384,13 +502,18 @@ export async function createDatabaseListPageViaGrid(params: {
         applyYDoc(databaseDoc, new Uint8Array(listResponse.database_update));
       }
 
-      const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
-      const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
-      const views = database?.get(YjsDatabaseKey.views);
-      const metas = database?.get(YjsDatabaseKey.metas);
+      const updatedDatabase = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+      const views = updatedDatabase?.get(YjsDatabaseKey.views);
+      const metas = updatedDatabase?.get(YjsDatabaseKey.metas);
       const listView = views?.get(listResponse.view_id);
 
-      if (!database || !views || !metas || !listView?.get(YjsDatabaseKey.field_orders)) {
+      if (
+        !updatedDatabase ||
+        !views ||
+        !metas ||
+        existingViewIds.has(listResponse.view_id) ||
+        !listView?.get(YjsDatabaseKey.field_orders)
+      ) {
         throw new Error('The server did not return the new List database view');
       }
 
@@ -450,9 +573,19 @@ export async function createDatabaseListPageViaGrid(params: {
       throw new Error('The new embedded List could not be connected for persistence');
     }
 
+    syncOwnerDoc = databaseDoc;
+
+    const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+    const createdView = database?.get(YjsDatabaseKey.views)?.get(createdViewId);
+
+    if (!createdView?.get(YjsDatabaseKey.field_orders)) {
+      throw new Error('The server did not return the embedded List database view');
+    }
+
     const normalizedViewId = normalizeCreatedDatabaseListView(databaseDoc, createdViewId, { name: 'List' });
 
-    if (!normalizedViewId) {
+    if (normalizedViewId !== createdViewId) {
       throw new Error('The new database could not be converted to List');
     }
 
@@ -472,5 +605,7 @@ export async function createDatabaseListPageViaGrid(params: {
     // child returned by addPage.
     await compensateCreatedListView(response.view_id, deletePage, params.standalone ? deleteTrash : undefined);
     throw error;
+  } finally {
+    releaseTemporarySyncOwner(syncOwnerDoc, scheduleDeferredCleanup);
   }
 }

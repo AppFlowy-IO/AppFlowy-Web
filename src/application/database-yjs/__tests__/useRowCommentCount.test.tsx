@@ -51,4 +51,25 @@ describe('useRowCommentCount', () => {
     act(() => comments.delete('comment-1'));
     expect(result.current).toBe(1);
   });
+
+  it('keeps the row observer when unrelated row-map entries change', () => {
+    const rowDoc = new Y.Doc();
+    const otherRowDoc = new Y.Doc();
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    const observe = jest.spyOn(rowSharedRoot, 'observe');
+    const unobserve = jest.spyOn(rowSharedRoot, 'unobserve');
+
+    mockUseRowMap.mockReturnValue({ 'row-1': rowDoc });
+    const { rerender, unmount } = renderHook(() => useRowCommentCount('row-1'));
+
+    expect(observe).toHaveBeenCalledTimes(1);
+    mockUseRowMap.mockReturnValue({ 'row-1': rowDoc, 'row-2': otherRowDoc });
+    rerender();
+
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(unobserve).not.toHaveBeenCalled();
+
+    unmount();
+    expect(unobserve).toHaveBeenCalledTimes(1);
+  });
 });

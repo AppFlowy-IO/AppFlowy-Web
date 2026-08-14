@@ -28,12 +28,15 @@ jest.mock('@/application/database-yjs', () => ({
   ...jest.requireActual('@/application/database-yjs'),
   useClearGroupByFieldDispatch: () => jest.fn(),
   useGroupByFieldDispatch: () => jest.fn(),
-  useListGroupingSelector: () => mockGrouping,
   usePropertiesSelector: () => ({ properties: [] }),
   useSetAllListGroupsVisibilityDispatch: () => jest.fn(),
   useSetListGroupVisibilityDispatch: () => jest.fn(),
   useToggleListHideEmptyGroups: () => jest.fn(),
   useUpdateDateGroupConditionDispatch: () => jest.fn(),
+}));
+
+jest.mock('@/components/database/list/ListGroupingContext', () => ({
+  useListGrouping: () => mockGrouping,
 }));
 
 jest.mock('react-i18next', () => ({

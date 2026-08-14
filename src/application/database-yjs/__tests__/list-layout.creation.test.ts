@@ -4,7 +4,7 @@ import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/a
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DatabaseViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey, ViewLayout } from '@/application/types';
 
-function createGridDatabaseDoc(): YDoc {
+function createGridDatabaseDoc(viewId = 'grid-view-id'): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map();
@@ -19,15 +19,15 @@ function createGridDatabaseDoc(): YDoc {
   primaryField.set(YjsDatabaseKey.is_primary, true);
   fields.set('primary-field', primaryField);
   fieldOrders.push([{ id: 'primary-field' }]);
-  gridView.set(YjsDatabaseKey.id, 'grid-view-id');
+  gridView.set(YjsDatabaseKey.id, viewId);
   gridView.set(YjsDatabaseKey.name, 'Grid');
   gridView.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
   gridView.set(YjsDatabaseKey.field_orders, fieldOrders);
   gridView.set(YjsDatabaseKey.field_settings, new Y.Map());
   gridView.set(YjsDatabaseKey.groups, new Y.Array());
   gridView.set(YjsDatabaseKey.layout_settings, new Y.Map());
-  views.set('grid-view-id', gridView);
-  metas.set(YjsDatabaseKey.iid, 'grid-view-id');
+  views.set(viewId, gridView);
+  metas.set(YjsDatabaseKey.iid, viewId);
   database.set(YjsDatabaseKey.id, 'database-id');
   database.set(YjsDatabaseKey.fields, fields);
   database.set(YjsDatabaseKey.views, views);
@@ -72,6 +72,8 @@ function createUpdateWithoutLinkedView(databaseDoc: YDoc): number[] {
 }
 
 describe('createLinkedDatabaseListView lifecycle', () => {
+  const scheduleDeferredCleanup = jest.fn();
+  const sourceViewId = 'grid-view-id';
   const payload = {
     parent_view_id: 'document-id',
     database_id: 'database-id',
@@ -87,6 +89,7 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     ['database loader', { loadView: undefined }],
     ['sync binder', { bindViewSync: undefined }],
     ['rollback operation', { deletePage: undefined }],
+    ['sync cleanup scheduler', { scheduleDeferredCleanup: undefined }],
   ])('prevalidates the %s before creating a linked child', async (_, missingCapability) => {
     const createDatabaseView = jest.fn();
     const loadView = jest.fn(async () => createGridDatabaseDoc());
@@ -96,11 +99,13 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     await expect(
       createLinkedDatabaseListView({
         requestViewId: 'document-id',
+        sourceViewId,
         payload,
         createDatabaseView,
         loadView,
         bindViewSync,
         deletePage,
+        scheduleDeferredCleanup,
         ...missingCapability,
       })
     ).rejects.toThrow('Linked List creation is not available right now');
@@ -124,11 +129,13 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     await expect(
       createLinkedDatabaseListView({
         requestViewId: 'document-id',
+        sourceViewId,
         payload,
         createDatabaseView,
         loadView,
         bindViewSync,
         deletePage,
+        scheduleDeferredCleanup,
       })
     ).resolves.toEqual(response);
 
@@ -136,11 +143,14 @@ describe('createLinkedDatabaseListView lifecycle', () => {
       ...payload,
       layout: ViewLayout.List,
     });
-    expect(loadView).toHaveBeenCalledWith('linked-list-id', false, false, {
+    expect(loadView).toHaveBeenCalledWith(sourceViewId, false, false, {
       databaseId: 'database-id',
+      forceFetch: true,
     });
     expect(bindViewSync).toHaveBeenCalledWith(databaseDoc);
     expect(flush).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
     expect(deletePage).not.toHaveBeenCalled();
 
     const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
@@ -150,30 +160,100 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     expect(linkedList?.get(YjsDatabaseKey.field_settings)?.size).toBe(1);
   });
 
+  it('accepts the exact new child when realtime applies it before the create response resolves', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const response = {
+      view_id: 'linked-list-id',
+      database_id: 'database-id',
+      database_update: createLinkedListUpdate(databaseDoc),
+    };
+    const createDatabaseView = jest.fn(async () => {
+      Y.applyUpdate(databaseDoc, new Uint8Array(response.database_update));
+      return response;
+    });
+    const flush = jest.fn().mockResolvedValue(true);
+
+    await expect(
+      createLinkedDatabaseListView({
+        requestViewId: 'document-id',
+        sourceViewId,
+        payload,
+        createDatabaseView,
+        loadView: jest.fn().mockResolvedValue(databaseDoc),
+        bindViewSync: jest.fn(() => ({ flush } as unknown as SyncContext)),
+        deletePage: jest.fn(),
+        scheduleDeferredCleanup,
+      })
+    ).resolves.toEqual(response);
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+    expect(database.get(YjsDatabaseKey.views).get(response.view_id)?.get(YjsDatabaseKey.layout)).toBe(
+      DatabaseViewLayout.List
+    );
+    expect(flush).toHaveBeenCalledTimes(1);
+  });
+
   it('rolls back the exact linked child when the response omits its database update', async () => {
+    const databaseDoc = createGridDatabaseDoc();
     const createDatabaseView = jest.fn().mockResolvedValue({
       view_id: 'linked-list-id',
       database_id: 'database-id',
     });
-    const loadView = jest.fn();
-    const bindViewSync = jest.fn();
+    const loadView = jest.fn().mockResolvedValue(databaseDoc);
+    const bindViewSync = jest.fn(() => ({ flush: jest.fn() } as unknown as SyncContext));
     const deletePage = jest.fn().mockResolvedValue(undefined);
 
     await expect(
       createLinkedDatabaseListView({
         requestViewId: 'document-id',
+        sourceViewId,
         payload,
         createDatabaseView,
         loadView,
         bindViewSync,
         deletePage,
+        scheduleDeferredCleanup,
       })
     ).rejects.toThrow('The server did not return the linked List database update');
 
-    expect(loadView).not.toHaveBeenCalled();
-    expect(bindViewSync).not.toHaveBeenCalled();
+    expect(loadView).toHaveBeenCalledWith(sourceViewId, false, false, {
+      databaseId: 'database-id',
+      forceFetch: true,
+    });
+    expect(bindViewSync).toHaveBeenCalledWith(databaseDoc);
     expect(deletePage).toHaveBeenCalledTimes(1);
     expect(deletePage).toHaveBeenCalledWith('linked-list-id');
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
+  });
+
+  it('does not compensate a pre-existing view ID when a stale response omits its update', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: sourceViewId,
+      database_id: 'database-id',
+    });
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      createLinkedDatabaseListView({
+        requestViewId: 'document-id',
+        sourceViewId,
+        payload,
+        createDatabaseView,
+        loadView: jest.fn().mockResolvedValue(databaseDoc),
+        bindViewSync: jest.fn(() => ({ flush: jest.fn() } as unknown as SyncContext)),
+        deletePage,
+        scheduleDeferredCleanup,
+      })
+    ).rejects.toThrow('The server did not return the linked List database update');
+
+    expect(deletePage).not.toHaveBeenCalled();
+    expect(
+      (databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase)
+        .get(YjsDatabaseKey.views)
+        .has(sourceViewId)
+    ).toBe(true);
   });
 
   it('does not normalize an existing Grid when the update lacks the returned linked child', async () => {
@@ -188,11 +268,13 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     await expect(
       createLinkedDatabaseListView({
         requestViewId: 'document-id',
+        sourceViewId,
         payload,
         createDatabaseView,
         loadView: jest.fn().mockResolvedValue(databaseDoc),
-        bindViewSync: jest.fn(),
+        bindViewSync: jest.fn(() => ({ flush: jest.fn() } as unknown as SyncContext)),
         deletePage,
+        scheduleDeferredCleanup,
       })
     ).rejects.toThrow('The server did not return the linked List database view');
 
@@ -204,7 +286,37 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     expect(deletePage).toHaveBeenCalledWith('linked-list-id');
   });
 
-  it('rolls back the exact linked child when sync binding returns null', async () => {
+  it('does not normalize or compensate a pre-existing view ID returned by a stale response', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: 'grid-view-id',
+      database_id: 'database-id',
+      database_update: createUpdateWithoutLinkedView(databaseDoc),
+    });
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      createLinkedDatabaseListView({
+        requestViewId: 'document-id',
+        sourceViewId,
+        payload,
+        createDatabaseView,
+        loadView: jest.fn().mockResolvedValue(databaseDoc),
+        bindViewSync: jest.fn(() => ({ flush: jest.fn() } as unknown as SyncContext)),
+        deletePage,
+        scheduleDeferredCleanup,
+      })
+    ).rejects.toThrow('The server did not return the linked List database view');
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+    expect(database.get(YjsDatabaseKey.views).get('grid-view-id')?.get(YjsDatabaseKey.layout)).toBe(
+      DatabaseViewLayout.Grid
+    );
+    expect(deletePage).not.toHaveBeenCalled();
+  });
+
+  it('does not create a linked child when source sync binding returns null', async () => {
     const databaseDoc = createGridDatabaseDoc();
     const createDatabaseView = jest.fn().mockResolvedValue({
       view_id: 'linked-list-id',
@@ -216,16 +328,19 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     await expect(
       createLinkedDatabaseListView({
         requestViewId: 'document-id',
+        sourceViewId,
         payload,
         createDatabaseView,
         loadView: jest.fn().mockResolvedValue(databaseDoc),
         bindViewSync: jest.fn(() => null),
         deletePage,
+        scheduleDeferredCleanup,
       })
     ).rejects.toThrow('The linked List could not be connected for persistence');
 
-    expect(deletePage).toHaveBeenCalledTimes(1);
-    expect(deletePage).toHaveBeenCalledWith('linked-list-id');
+    expect(createDatabaseView).not.toHaveBeenCalled();
+    expect(deletePage).not.toHaveBeenCalled();
+    expect(scheduleDeferredCleanup).not.toHaveBeenCalled();
   });
 
   it('rolls back the exact linked child when normalization cannot be durably flushed', async () => {
@@ -241,23 +356,32 @@ describe('createLinkedDatabaseListView lifecycle', () => {
     await expect(
       createLinkedDatabaseListView({
         requestViewId: 'document-id',
+        sourceViewId,
         payload,
         createDatabaseView,
         loadView: jest.fn().mockResolvedValue(databaseDoc),
         bindViewSync: jest.fn(() => ({ flush } as unknown as SyncContext)),
         deletePage,
+        scheduleDeferredCleanup,
       })
     ).rejects.toThrow('The linked List could not be persisted');
 
     expect(flush).toHaveBeenCalledTimes(1);
     expect(deletePage).toHaveBeenCalledTimes(1);
     expect(deletePage).toHaveBeenCalledWith('linked-list-id');
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+    expect(database.get(YjsDatabaseKey.views).has('linked-list-id')).toBe(false);
+    expect(database.get(YjsDatabaseKey.views).has('grid-view-id')).toBe(true);
   });
 });
 
 describe('createDatabaseListPageViaGrid lifecycle', () => {
   const loadView = jest.fn(async () => new Y.Doc() as unknown as YDoc);
   const bindViewSync = jest.fn(() => null);
+  const scheduleDeferredCleanup = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -276,6 +400,7 @@ describe('createDatabaseListPageViaGrid lifecycle', () => {
         bindViewSync,
         createDatabaseView: jest.fn(),
         deletePage: jest.fn(),
+        scheduleDeferredCleanup,
         // Deliberately omit deleteTrash: standalone creation cannot guarantee
         // exact-container compensation without it.
       })
@@ -293,10 +418,82 @@ describe('createDatabaseListPageViaGrid lifecycle', () => {
         addPage,
         loadView,
         bindViewSync,
+        scheduleDeferredCleanup,
       })
     ).rejects.toThrow('List creation is not available right now');
 
     expect(addPage).not.toHaveBeenCalled();
+  });
+
+  it('prevalidates sync cleanup ownership before creating an embedded Grid child', async () => {
+    const addPage = jest.fn();
+
+    await expect(
+      createDatabaseListPageViaGrid({
+        parentViewId: 'document-id',
+        addPage,
+        loadView,
+        bindViewSync,
+        deletePage: jest.fn(),
+      })
+    ).rejects.toThrow('List creation is not available right now');
+
+    expect(addPage).not.toHaveBeenCalled();
+  });
+
+  it('releases the temporary sync owner after embedded List normalization', async () => {
+    const databaseDoc = createGridDatabaseDoc('embedded-grid-id');
+    const addPage = jest.fn().mockResolvedValue({
+      view_id: 'embedded-grid-id',
+      database_id: 'database-id',
+    });
+    const flush = jest.fn().mockResolvedValue(true);
+
+    await expect(
+      createDatabaseListPageViaGrid({
+        parentViewId: 'document-id',
+        addPage,
+        loadView: jest.fn().mockResolvedValue(databaseDoc),
+        bindViewSync: jest.fn(() => ({ flush } as unknown as SyncContext)),
+        deletePage: jest.fn(),
+        scheduleDeferredCleanup,
+      })
+    ).resolves.toEqual({
+      view_id: 'embedded-grid-id',
+      database_id: 'database-id',
+    });
+
+    expect(flush).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(1);
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
+  });
+
+  it('does not normalize a different embedded view when the returned child is missing', async () => {
+    const databaseDoc = createGridDatabaseDoc();
+    const addPage = jest.fn().mockResolvedValue({
+      view_id: 'embedded-grid-id',
+      database_id: 'database-id',
+    });
+    const deletePage = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      createDatabaseListPageViaGrid({
+        parentViewId: 'document-id',
+        addPage,
+        loadView: jest.fn().mockResolvedValue(databaseDoc),
+        bindViewSync: jest.fn(() => ({ flush: jest.fn() } as unknown as SyncContext)),
+        deletePage,
+        scheduleDeferredCleanup,
+      })
+    ).rejects.toThrow('The server did not return the embedded List database view');
+
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+    expect(database.get(YjsDatabaseKey.views).get('grid-view-id')?.get(YjsDatabaseKey.layout)).toBe(
+      DatabaseViewLayout.Grid
+    );
+    expect(deletePage).toHaveBeenCalledWith('embedded-grid-id');
+    expect(scheduleDeferredCleanup).toHaveBeenCalledWith(databaseDoc.guid);
   });
 
   it('soft-deletes only the just-created embedded database when sync binding fails', async () => {
@@ -314,6 +511,7 @@ describe('createDatabaseListPageViaGrid lifecycle', () => {
         loadView,
         bindViewSync,
         deletePage,
+        scheduleDeferredCleanup,
       })
     ).rejects.toThrow('The new embedded List could not be connected for persistence');
 

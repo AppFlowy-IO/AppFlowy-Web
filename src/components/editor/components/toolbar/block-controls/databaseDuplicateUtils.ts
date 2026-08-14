@@ -1,30 +1,6 @@
-import { BlockType, View, ViewLayout } from '@/application/types';
+import { View } from '@/application/types';
 
-const DATABASE_BLOCK_TYPES = new Set([
-  BlockType.GridBlock,
-  BlockType.BoardBlock,
-  BlockType.CalendarBlock,
-  BlockType.ChartBlock,
-]);
-
-export function isDatabaseBlockType(type: BlockType | undefined): boolean {
-  return type ? DATABASE_BLOCK_TYPES.has(type) : false;
-}
-
-export function getDatabaseLayoutFromBlockType(type: BlockType): ViewLayout | undefined {
-  switch (type) {
-    case BlockType.GridBlock:
-      return ViewLayout.Grid;
-    case BlockType.BoardBlock:
-      return ViewLayout.Board;
-    case BlockType.CalendarBlock:
-      return ViewLayout.Calendar;
-    case BlockType.ChartBlock:
-      return ViewLayout.Chart;
-    default:
-      return undefined;
-  }
-}
+export { getDatabaseLayoutFromBlockType, isDatabaseBlockType } from '@/application/database-block';
 
 export async function loadDatabaseDuplicateSourceViews(params: {
   sourceViewIds: string[];

@@ -1,16 +1,16 @@
 import {
   useClearGroupByFieldDispatch,
   useGroupByFieldDispatch,
-  useListGroupingSelector,
   useSetAllListGroupsVisibilityDispatch,
   useSetListGroupVisibilityDispatch,
   useToggleListHideEmptyGroups,
   useUpdateDateGroupConditionDispatch,
 } from '@/application/database-yjs';
 import { DatabaseSettingGroup } from '@/components/database/components/settings/GridSettingGroup';
+import { useListGrouping } from '@/components/database/list/ListGroupingContext';
 
 function ListSettingGroup() {
-  const grouping = useListGroupingSelector();
+  const grouping = useListGrouping();
   const groupBy = useGroupByFieldDispatch();
   const clearGrouping = useClearGroupByFieldDispatch();
   const toggleHideEmpty = useToggleListHideEmptyGroups();

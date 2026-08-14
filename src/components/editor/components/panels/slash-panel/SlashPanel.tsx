@@ -5,11 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { getFirstChildView } from '@/application/view-utils';
 import {
   findSlateEntryByBlockId,
   getBlockEntry,
@@ -246,6 +248,7 @@ export function SlashPanel({
     loadViewMeta,
     loadView,
     bindViewSync,
+    scheduleDeferredCleanup,
     deletePage,
     updatePage,
     getMoreAIContext,
@@ -386,14 +389,7 @@ export function SlashPanel({
       if (newBlockId && isEmbedBlockTypes(type)) {
         // Skip selection for database blocks as they open in a modal
         // and don't need cursor positioning. Explicitly deselect to prevent Slate from scrolling.
-        const isDatabaseBlock = [
-          BlockType.GridBlock,
-          BlockType.BoardBlock,
-          BlockType.CalendarBlock,
-          BlockType.ChartBlock,
-        ].includes(type);
-
-        if (isDatabaseBlock) {
+        if (isDatabaseBlockType(type)) {
           Transforms.deselect(editor);
         } else {
           const entry = findSlateEntryByBlockId(editor, newBlockId);
@@ -455,7 +451,7 @@ export function SlashPanel({
         const response =
           layout === ViewLayout.List
             ? await (() => {
-                if (!loadView || !bindViewSync || !deletePage) {
+                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
                   throw new Error('List creation is not available right now');
                 }
 
@@ -466,6 +462,7 @@ export function SlashPanel({
                   loadViewMeta,
                   loadView,
                   bindViewSync,
+                  scheduleDeferredCleanup,
                   deletePage,
                   updatePage,
                 });
@@ -531,6 +528,7 @@ export function SlashPanel({
       loadView,
       loadViewMeta,
       openPageModal,
+      scheduleDeferredCleanup,
       t,
       turnInto,
       updatePage,
@@ -775,11 +773,13 @@ export function SlashPanel({
           }
         })();
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
+        const sourceViewId = getFirstChildView(option.view)?.view_id ?? databaseViewId;
 
         const response =
           linkedPicker.layout === ViewLayout.List
             ? await createLinkedDatabaseListView({
                 requestViewId: documentId,
+                sourceViewId,
                 payload: {
                   parent_view_id: documentId,
                   database_id: databaseId,
@@ -790,6 +790,7 @@ export function SlashPanel({
                 loadView,
                 bindViewSync,
                 deletePage,
+                scheduleDeferredCleanup,
               })
             : await createDatabaseView(documentId, {
                 parent_view_id: documentId,
@@ -850,6 +851,7 @@ export function SlashPanel({
       loadView,
       loadViewMeta,
       loadDatabaseRelations,
+      scheduleDeferredCleanup,
     ]
   );
 
