@@ -424,11 +424,9 @@ test.describe('Database row templates (Desktop parity)', () => {
     const nestedEditor = await editTemplate(page, renamed);
     const nestedDocumentEditor = nestedEditor.getByTestId('editor-content').first();
     const copiedTemplateBody = 'Template body preserved by database duplication';
-    const slateEditor = nestedDocumentEditor.locator('[data-slate-editor="true"]').first();
 
     await expect(nestedDocumentEditor).toBeVisible({ timeout: 30000 });
-    await expect(slateEditor).toBeVisible({ timeout: 30000 });
-    await slateEditor.click({ force: true });
+    await nestedDocumentEditor.click();
     await expect
       .poll(() => nestedDocumentEditor.evaluate((element) => element.contains(document.activeElement)), {
         timeout: 5000,
