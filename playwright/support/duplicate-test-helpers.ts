@@ -13,7 +13,6 @@ import {
 } from './selectors';
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { createDocumentPageAndNavigate, currentViewIdFromUrl, ensurePageExpandedByViewId } from './page-utils';
-import { getSlashMenuItemName } from './i18n-constants';
 import {
   changeCheckboxFilterCondition,
   changeFilterCondition,
@@ -485,7 +484,10 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await openSlashMenuInEditor(page, editor, line);
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
+      const gridOption = SlashCommandSelectors.slashMenuGrid(page);
+
+      await expect(gridOption).toBeVisible({ timeout: 10000 });
+      await gridOption.click();
 
       await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
 

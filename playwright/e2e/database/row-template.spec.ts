@@ -33,12 +33,11 @@ async function closeTemplateEditor(page: Page): Promise<void> {
   const editor = page.getByTestId(TEMPLATE_EDITOR);
 
   if (!(await editor.isVisible().catch(() => false))) return;
-  await page.getByRole('dialog', { name: 'Edit database template' }).dispatchEvent('keydown', {
-    key: 'Escape',
-    code: 'Escape',
-    bubbles: true,
-    cancelable: true,
-  });
+  const dialogRoot = page.locator('.MuiDialog-root').filter({ has: editor });
+  const dialogContainer = dialogRoot.locator('.MuiDialog-container');
+
+  await expect(dialogContainer).toBeVisible();
+  await dialogContainer.click({ force: true, position: { x: 5, y: 5 } });
   await expect(editor).toBeHidden({ timeout: 15000 });
 }
 
@@ -422,18 +421,18 @@ test.describe('Database row templates (Desktop parity)', () => {
     await expect(persistedMenu.getByText('Default', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
 
+    // Inline and linked database deep-copy behavior is covered by the focused
+    // scenarios below. Keep this path scoped to root database duplication and
+    // template metadata/document preservation.
     const nestedEditor = await editTemplate(page, renamed);
     const nestedDocumentEditor = nestedEditor.getByTestId('editor-content').first();
-    const nestedDocumentId = (await nestedDocumentEditor.getAttribute('id'))?.replace('editor-', '');
+    const copiedTemplateBody = 'Template body preserved by database duplication';
+    const emptyDocumentPlaceholder = nestedEditor.getByText('Enter a / to insert a block, or start typing').last();
 
-    expect(nestedDocumentId).toBeTruthy();
-    await insertInlineGridViaSlash(page, nestedDocumentId as string);
-    const nestedBlock = databaseBlocks(nestedDocumentEditor).first();
-
-    await addDatabaseView(page, nestedBlock, 'Board');
-    await addDatabaseView(page, nestedBlock, 'Calendar');
-    await addDatabaseView(page, nestedBlock, 'Chart');
-    await expectDatabaseBlockViews(nestedBlock, 4);
+    await expect(nestedDocumentEditor).toBeVisible({ timeout: 30000 });
+    await expect(emptyDocumentPlaceholder).toBeVisible({ timeout: 30000 });
+    await emptyDocumentPlaceholder.click();
+    await page.keyboard.type(copiedTemplateBody);
     await closeTemplateEditor(page);
     await page.waitForTimeout(3000);
 
@@ -448,11 +447,16 @@ test.describe('Database row templates (Desktop parity)', () => {
     const copiedMenu = await openTemplateMenu(page);
 
     await expect(copiedMenu.getByText(renamed, { exact: true })).toBeVisible();
+    await expect(copiedMenu.getByText('Default', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     const copiedRowId = await createRowAndGetId(page, () => selectTemplate(page, renamed));
-    const copiedRow = await openRowWithDatabaseBlock(page, copiedRowId);
+    const copiedRow = DatabaseGridSelectors.rowById(page, copiedRowId);
 
-    await expectDatabaseBlockViews(copiedRow.block, 4);
+    await expect(copiedRow).toContainText(renamed);
+    await openRowDetailByRowId(page, copiedRowId);
+    const copiedRowEditor = page.locator('.MuiDialog-paper').last().getByTestId('editor-content').first();
+
+    await expect(copiedRowEditor).toContainText(copiedTemplateBody, { timeout: 30000 });
     await closeRowDetailWithEscape(page);
   });
 
