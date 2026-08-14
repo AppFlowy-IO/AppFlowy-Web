@@ -33,7 +33,12 @@ async function closeTemplateEditor(page: Page): Promise<void> {
   const editor = page.getByTestId(TEMPLATE_EDITOR);
 
   if (!(await editor.isVisible().catch(() => false))) return;
-  await page.getByRole('dialog', { name: 'Edit database template' }).press('Escape');
+  await page.getByRole('dialog', { name: 'Edit database template' }).dispatchEvent('keydown', {
+    key: 'Escape',
+    code: 'Escape',
+    bubbles: true,
+    cancelable: true,
+  });
   await expect(editor).toBeHidden({ timeout: 15000 });
 }
 
@@ -108,9 +113,31 @@ async function openRowWithDatabaseBlock(page: Page, rowId: string): Promise<{ ed
     const editor = modal.getByTestId('editor-content').first();
     const block = databaseBlocks(editor).first();
 
-    if (await block.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await expect(block.locator('[data-testid^="grid-cell-"]').first()).toBeVisible({ timeout: 30000 });
-      await expect(block.locator('[data-testid^="primary-cell-loading-"]')).toHaveCount(0, { timeout: 30000 });
+    const blockVisible = await block.waitFor({ state: 'visible', timeout: 5000 }).then(
+      () => true,
+      () => false
+    );
+    const gridReady = blockVisible
+      ? await block
+          .locator('[data-testid^="grid-cell-"]')
+          .first()
+          .waitFor({ state: 'visible', timeout: 8000 })
+          .then(
+            () => true,
+            () => false
+          )
+      : false;
+
+    const loadingFinished = gridReady
+      ? await expect(block.locator('[data-testid^="primary-cell-loading-"]'))
+          .toHaveCount(0, { timeout: 10000 })
+          .then(
+            () => true,
+            () => false
+          )
+      : false;
+
+    if (gridReady && loadingFinished) {
       return { editor, block };
     }
 

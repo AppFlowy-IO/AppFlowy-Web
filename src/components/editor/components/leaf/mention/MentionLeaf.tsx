@@ -40,7 +40,10 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
   }, [reminder_id, reminder_option]);
 
   const content = useMemo(() => {
-    if (type === MentionType.PageRef && database_id && databaseRowId) {
+    // New database mentions include their selected display title. Keep legacy
+    // title-less database references on MentionPage so they can still resolve
+    // their label from the outline.
+    if (type === MentionType.PageRef && database_id && (databaseRowId || databaseTitle)) {
       return (
         <MentionDatabase
           databaseId={database_id}
