@@ -201,7 +201,7 @@ describe('PeopleWithAccess', () => {
   });
 
   it('keeps inherited or stronger-effective group rows visible but disabled', () => {
-    render(
+    const { container } = render(
       <PeopleWithAccess
         viewId='view-1'
         people={[]}
@@ -218,6 +218,8 @@ describe('PeopleWithAccess', () => {
     );
 
     expect(screen.getByText(sharedGroup.name)).toBeTruthy();
+    expect(container.querySelector("[data-slot='workspace-group-icon']")).not.toBeNull();
+    expect(container.querySelector("[data-slot='workspace-group-icon-container']")).not.toBeNull();
     expect(screen.getByRole('button', { name: `update:${sharedGroup.group_id}` }).disabled).toBe(true);
     expect(screen.getByRole('button', { name: `remove:${sharedGroup.group_id}` }).disabled).toBe(true);
   });

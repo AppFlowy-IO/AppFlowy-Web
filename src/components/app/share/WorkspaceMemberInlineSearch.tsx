@@ -85,6 +85,9 @@ interface WorkspaceMemberInlineSearchProps {
   inputDisabled?: boolean;
   addingUid?: string | null;
   maxResults?: number;
+  compact?: boolean;
+  noResultsLabel?: string;
+  formatRole?: (role: Role) => string;
   inputClassName?: string;
   onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   onAddButtonClick?: () => void;
@@ -101,6 +104,7 @@ interface WorkspaceMemberInlineSearchInputProps {
   addButtonIcon?: ReactNode;
   inputDisabled?: boolean;
   inputClassName?: string;
+  compact?: boolean;
   inputTestId?: string;
   addButtonTestId?: string;
   onInputKeyDown?: KeyboardEventHandler<HTMLInputElement>;
@@ -116,22 +120,32 @@ export function WorkspaceMemberInlineSearchInput({
   addButtonLoading = false,
   addButtonIcon,
   inputDisabled = false,
-  inputClassName = 'h-10 flex-1',
+  inputClassName,
+  compact = false,
   inputTestId = 'workspace-member-inline-search-input',
   addButtonTestId,
   onInputKeyDown,
   onAddButtonClick,
 }: WorkspaceMemberInlineSearchInputProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const ButtonIcon = addButtonIcon === undefined ? <UserPlus className='h-5 w-5' /> : addButtonIcon;
+  const resolvedInputClassName = inputClassName ?? (compact ? 'h-8 flex-1 [&>svg]:h-4 [&>svg]:w-4' : 'h-10 flex-1');
+  const ButtonIcon =
+    addButtonIcon === undefined ? (
+      <UserPlus aria-hidden='true' className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
+    ) : (
+      addButtonIcon
+    );
 
   return (
-    <div className='flex items-center gap-2'>
+    <div className={compact ? 'flex items-center gap-1.5' : 'flex items-center gap-2'}>
       <SearchInput
+        name='workspace-member-search'
+        aria-label={searchPlaceholder}
+        autoComplete='off'
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
         placeholder={searchPlaceholder}
-        className={inputClassName}
+        className={resolvedInputClassName}
         inputRef={inputRef}
         disabled={inputDisabled}
         onKeyDown={onInputKeyDown}
@@ -139,7 +153,7 @@ export function WorkspaceMemberInlineSearchInput({
       />
       <Button
         type='button'
-        size='lg'
+        size={compact ? 'default' : 'lg'}
         disabled={addButtonDisabled}
         loading={addButtonLoading}
         onClick={() => {
@@ -174,7 +188,10 @@ export function WorkspaceMemberInlineSearch({
   inputDisabled = false,
   addingUid = null,
   maxResults = 12,
-  inputClassName = 'h-10 flex-1',
+  inputClassName,
+  compact = false,
+  noResultsLabel,
+  formatRole,
   onInputKeyDown,
   onAddButtonClick,
   onAddMember,
@@ -192,13 +209,34 @@ export function WorkspaceMemberInlineSearch({
         addButtonDisabled={addButtonDisabled}
         inputDisabled={inputDisabled}
         inputClassName={inputClassName}
+        compact={compact}
         onInputKeyDown={onInputKeyDown}
         onAddButtonClick={onAddButtonClick}
       />
 
+      {search.trim() && visibleMembers.length === 0 && noResultsLabel && (
+        <div className='border-t border-border-primary py-3 text-center text-sm text-text-secondary'>
+          {noResultsLabel}
+        </div>
+      )}
+
       {visibleMembers.length > 0 && (
-        <div className='flex flex-col gap-2 border-t border-border-primary pt-4'>
-          <div className='text-sm font-medium text-text-secondary'>{addResultLabel}</div>
+        <div
+          className={
+            compact
+              ? 'flex flex-col gap-1 border-t border-border-primary pt-2'
+              : 'flex flex-col gap-2 border-t border-border-primary pt-4'
+          }
+        >
+          <div
+            className={
+              compact
+                ? 'text-xs font-medium leading-[18px] text-text-secondary'
+                : 'text-sm font-medium text-text-secondary'
+            }
+          >
+            {addResultLabel}
+          </div>
           <div className='flex flex-col'>
             {visibleMembers.map((member) => {
               const uid = getWorkspaceMemberUid(member);
@@ -207,10 +245,14 @@ export function WorkspaceMemberInlineSearch({
               return (
                 <div
                   key={`${member.email}-${uid ?? 'missing-uid'}`}
-                  className='flex items-center gap-3 rounded-300 px-2 py-2 hover:bg-fill-content-hover'
+                  className={
+                    compact
+                      ? 'flex items-center gap-1.5 px-0 py-1'
+                      : 'flex items-center gap-3 rounded-300 px-2 py-2 hover:bg-fill-content-hover'
+                  }
                   data-testid='workspace-member-inline-search-result'
                 >
-                  <Avatar size='md'>
+                  <Avatar size={compact ? 'sm' : 'md'}>
                     <AvatarImage src={member.avatar_url} alt={member.name} />
                     <AvatarFallback name={workspaceMemberDisplayName(member)}>
                       {workspaceMemberInitial(member)}
@@ -227,19 +269,33 @@ export function WorkspaceMemberInlineSearch({
                     </div>
                     <div className='truncate text-xs text-text-secondary'>{member.email}</div>
                   </div>
+                  {compact && formatRole && (
+                    <span className='shrink-0 text-xs leading-[18px] text-text-secondary'>
+                      {formatRole(member.role)}
+                    </span>
+                  )}
                   <Button
                     type='button'
                     size='sm'
                     variant='ghost'
-                    className='text-text-action hover:text-text-action-hover'
+                    aria-label={`${addActionLabel} ${workspaceMemberDisplayName(member)}`}
+                    className='text-text-action hover:text-text-action-hover focus-visible:ring-1 focus-visible:ring-border-theme-thick'
                     disabled={addButtonDisabled || unavailable || addingUid === uid}
                     loading={addingUid === uid}
                     onClick={() => onAddMember(member)}
                     title={unavailable ? unavailableTitle : undefined}
                     data-testid='workspace-member-inline-search-result-add'
                   >
-                    {addingUid === uid ? <Progress variant='inherit' /> : <Plus className='h-4 w-4' />}
-                    {addActionLabel}
+                    {addingUid === uid ? (
+                      <Progress variant='inherit' />
+                    ) : compact ? (
+                      `+ ${addActionLabel}`
+                    ) : (
+                      <>
+                        <Plus aria-hidden='true' className='h-4 w-4' />
+                        {addActionLabel}
+                      </>
+                    )}
                   </Button>
                 </div>
               );

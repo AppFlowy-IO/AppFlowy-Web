@@ -86,7 +86,7 @@ const dropdownMenuItemVariants = cva(
     variants: {
       variant: {
         default: 'text-text-primary',
-        destructive: 'hover:text-text-error hover:*:[svg]:!text-text-error',
+        destructive: 'text-text-error [&_svg]:text-text-error hover:text-text-error focus:text-text-error',
       },
     },
     defaultVariants: {
@@ -254,7 +254,7 @@ const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<t
           // Position-based animations
           'data-[side=bottom]:slide-in-from-top-2',
           'data-[side=left]:slide-in-from-right-2',
-          'data-[side=right]:slide-in-from-left-2 data-[side=right]:ml-2',
+          'data-[side=right]:ml-2 data-[side=right]:slide-in-from-left-2',
           'data-[side=top]:slide-in-from-bottom-2',
 
           className

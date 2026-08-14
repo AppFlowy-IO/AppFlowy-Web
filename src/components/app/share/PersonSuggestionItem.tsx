@@ -1,4 +1,3 @@
-import { Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { MentionablePerson, MentionPersonRole, WorkspaceGroup } from '@/application/types';
@@ -6,6 +5,7 @@ import { ReactComponent as AtIcon } from '@/assets/icons/invite_user.svg';
 import { cn } from '@/lib/utils';
 
 import { PersonAvatar } from './PersonAvatar';
+import { WorkspaceGroupIcon } from './WorkspaceGroupIcon';
 
 export type InviteSuggestion =
   | { type: 'user'; data: MentionablePerson }
@@ -35,9 +35,7 @@ export function PersonSuggestionItem({ suggestion, isHovered, onClick, onMouseEn
         onMouseEnter={onMouseEnter}
         onClick={onClick}
       >
-        <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fill-content-hover text-icon-secondary'>
-          <Users className='h-5 w-5' />
-        </div>
+        <WorkspaceGroupIcon variant='row' />
         <div className='flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden'>
           <div className='truncate text-sm text-text-primary'>{group.name}</div>
           <div className='truncate whitespace-nowrap text-xs text-text-secondary'>

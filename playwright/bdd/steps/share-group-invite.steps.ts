@@ -13,6 +13,9 @@ const TEMPORARY_PAGE_PREFIX = 'bdd share group page';
 const TEMPORARY_PRIVATE_SPACE_PREFIX = 'bdd share group private space';
 const TEMPORARY_PRIVATE_PAGE_PREFIX = 'bdd share group private page';
 const TEMPORARY_GROUP_PREFIX = 'bdd share group';
+const SPM_GROUP_NAME = 'spm0622 Full Access Space Group';
+const SPM_PRIVATE_PAGE_ID = 'd79a7c58-79fb-4c98-a550-83bc4a8685c5';
+const SPM_PRIVATE_PAGE_TITLE = 'spm0622 Private Matrix Page';
 const SPACE_PERMISSION_PRIVATE = 1;
 const VIEW_LAYOUT_DOCUMENT = 0;
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
@@ -50,6 +53,14 @@ type WorkspaceGroup = {
   associated_space_count?: number;
 };
 
+type WorkspaceGroupsPayload = {
+  groups: WorkspaceGroup[];
+};
+
+type WorkspaceGroupViewPermissionsPayload = {
+  groups?: Array<{ group_id: string }>;
+};
+
 type WorkspaceMember = {
   uid?: string | number;
   email: string;
@@ -62,6 +73,7 @@ type ScenarioState = {
   workspaceId?: string;
   ownerToken?: string;
   group?: WorkspaceGroup;
+  fixtureBacked?: boolean;
 };
 
 const stateByPage = new WeakMap<Page, ScenarioState>();
@@ -79,11 +91,33 @@ After(async ({ page, request }) => {
 
   const token = state.ownerToken || (await getAuthToken(page));
 
-  if (!token) return;
+  if (!token) {
+    if (state.fixtureBacked) throw new Error('Seeded group-share cleanup has no owner token');
+    return;
+  }
 
   const workspaceId = state.workspaceId || (await getCurrentWorkspaceId(request, token).catch(() => undefined));
 
-  if (!workspaceId) return;
+  if (!workspaceId) {
+    if (state.fixtureBacked) throw new Error('Seeded group-share cleanup has no workspace id');
+    return;
+  }
+
+  if (state.fixtureBacked) {
+    if (!state.group || !state.viewId) {
+      throw new Error('Seeded group-share cleanup is missing its fixed group or page');
+    }
+
+    if (await hasExactGroupPageGrant(request, token, workspaceId, state.viewId, state.group.group_id)) {
+      await deleteApiStrict(
+        request,
+        token,
+        `/api/workspace/${workspaceId}/views/${state.viewId}/group/${state.group.group_id}`
+      );
+    }
+
+    return;
+  }
 
   if (state.group) {
     if (state.viewId) {
@@ -131,16 +165,11 @@ When('I create a temporary private-space share-menu page', async ({ page, reques
     space_icon_color: '#555555',
     space_permission: SPACE_PERMISSION_PRIVATE,
   });
-  const pageResponse = await postApi<{ view_id: string }>(
-    request,
-    token,
-    `/api/workspace/${workspaceId}/page-view`,
-    {
-      parent_view_id: space.view_id,
-      layout: VIEW_LAYOUT_DOCUMENT,
-      name: pageTitle,
-    }
-  );
+  const pageResponse = await postApi<{ view_id: string }>(request, token, `/api/workspace/${workspaceId}/page-view`, {
+    parent_view_id: space.view_id,
+    layout: VIEW_LAYOUT_DOCUMENT,
+    name: pageTitle,
+  });
 
   state.ownerToken = token;
   state.workspaceId = workspaceId;
@@ -187,6 +216,41 @@ When(
   }
 );
 
+When('I prepare the seeded private page and workspace group for sharing', async ({ page, request }) => {
+  const state = requireState(page);
+  const token = await requireAuthToken(page);
+  const workspaceId = await getCurrentWorkspaceId(request, token);
+  const groups = await getApi<WorkspaceGroupsPayload>(request, token, `/api/workspace/${workspaceId}/groups`);
+  const group = groups.groups.find((candidate) => candidate.name === SPM_GROUP_NAME);
+
+  if (!group) {
+    throw new Error(`Seeded workspace group not found: ${SPM_GROUP_NAME}`);
+  }
+
+  const permissions = await getApi<WorkspaceGroupViewPermissionsPayload>(
+    request,
+    token,
+    `/api/workspace/${workspaceId}/views/${SPM_PRIVATE_PAGE_ID}/group`
+  );
+
+  if (permissions.groups?.some((permission) => permission.group_id === group.group_id)) {
+    await deleteApiStrict(
+      request,
+      token,
+      `/api/workspace/${workspaceId}/views/${SPM_PRIVATE_PAGE_ID}/group/${group.group_id}`
+    );
+  }
+
+  state.ownerToken = token;
+  state.workspaceId = workspaceId;
+  state.viewId = SPM_PRIVATE_PAGE_ID;
+  state.pageTitle = SPM_PRIVATE_PAGE_TITLE;
+  state.group = group;
+  state.fixtureBacked = true;
+
+  await openTemporaryPage(page, workspaceId, SPM_PRIVATE_PAGE_ID, SPM_PRIVATE_PAGE_TITLE);
+});
+
 When('I open the temporary share-menu page as owner', async ({ page }) => {
   const pageDetails = requireTemporaryPage(page);
 
@@ -195,10 +259,16 @@ When('I open the temporary share-menu page as owner', async ({ page }) => {
 
 When(
   'I sign in as seeded spm0622 {string} and cannot open the temporary share-menu page',
-  async ({ page }, accountAliasValue: string) => {
+  async ({ page, request }, accountAliasValue: string) => {
     const pageDetails = requireTemporaryPage(page);
 
     await signInSeededSpmAccount(page, accountAliasValue);
+    await waitForTemporaryPageNoAccess(
+      request,
+      await requireAuthToken(page),
+      pageDetails.workspaceId,
+      pageDetails.viewId
+    );
     await page.goto(`/app/${pageDetails.workspaceId}/${pageDetails.viewId}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('No access to this page', { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(page.getByRole('heading', { name: pageDetails.pageTitle, exact: true })).toHaveCount(0);
@@ -206,8 +276,37 @@ When(
   }
 );
 
+Then(
+  'seeded spm0622 {string} cannot open the seeded group-share page',
+  async ({ page, request }, accountAliasValue: string) => {
+    const pageDetails = requireTemporaryPage(page);
+
+    await signInSeededSpmAccount(page, accountAliasValue);
+    await waitForTemporaryPageNoAccess(
+      request,
+      await requireAuthToken(page),
+      pageDetails.workspaceId,
+      pageDetails.viewId
+    );
+    await page.goto(`/app/${pageDetails.workspaceId}/${pageDetails.viewId}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('No access to this page', { exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(pageDetails.pageTitle, { exact: true })).toHaveCount(0);
+    await expect(PageSelectors.titleInput(page)).toHaveCount(0);
+  }
+);
+
 When(
   'I sign in as seeded spm0622 {string} and open the temporary share-menu page as owner',
+  async ({ page }, accountAliasValue: string) => {
+    const pageDetails = requireTemporaryPage(page);
+
+    await signInSeededSpmAccount(page, accountAliasValue);
+    await openTemporaryPage(page, pageDetails.workspaceId, pageDetails.viewId, pageDetails.pageTitle);
+  }
+);
+
+When(
+  'I sign in as seeded spm0622 {string} and open the seeded group-share page as owner',
   async ({ page }, accountAliasValue: string) => {
     const pageDetails = requireTemporaryPage(page);
 
@@ -225,7 +324,22 @@ When('I search the share invite input for the temporary share-menu group', async
   await input.fill(group.name);
 });
 
+When('I search the share invite input for the seeded workspace group', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const input = inviteInput(page);
+
+  await expect(input).toBeVisible({ timeout: 15000 });
+  await expect.poll(async () => input.evaluate((element) => (element as HTMLInputElement).readOnly)).toBe(false);
+  await input.fill(group.name);
+});
+
 Then('the share invite suggestions show the temporary share-menu group', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+
+  await expect(shareInviteSuggestion(page, group.name)).toBeVisible({ timeout: 15000 });
+});
+
+Then('the share invite suggestions show the seeded workspace group', async ({ page }) => {
   const group = requireTemporaryGroup(page);
 
   await expect(shareInviteSuggestion(page, group.name)).toBeVisible({ timeout: 15000 });
@@ -248,10 +362,37 @@ When('I tag the temporary share-menu group in the share invite input', async ({ 
 
   await expect(input).toBeVisible({ timeout: 15000 });
   await input.fill(group.name);
-  await shareInviteSuggestion(page, group.name).click();
+  await shareInviteSuggestion(page, group.name).click({ force: true });
   await expect(ShareSelectors.emailTagInput(page).getByText(group.name, { exact: true })).toBeVisible({
     timeout: 15000,
   });
+});
+
+When('I tag the seeded workspace group in the share invite input', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const input = inviteInput(page);
+
+  await expect(input).toBeVisible({ timeout: 15000 });
+  await input.fill(group.name);
+  await shareInviteSuggestion(page, group.name).click({ force: true });
+  await expect(ShareSelectors.emailTagInput(page).getByText(group.name, { exact: true })).toBeVisible({
+    timeout: 15000,
+  });
+});
+
+When('I set the share panel invitation access to {string}', async ({ page }, accessText: string) => {
+  const accessSelector = ShareSelectors.emailTagInput(page)
+    .getByRole('button', { name: /Can view|Can edit|Full access/ })
+    .first();
+
+  await expect(accessSelector).toBeVisible({ timeout: 15000 });
+  await accessSelector.click({ force: true });
+
+  const accessOptions = page.locator('[data-slot="popover-content"]').last();
+
+  await expect(accessOptions).toBeVisible({ timeout: 15000 });
+  await accessOptions.getByText(accessText, { exact: true }).first().click();
+  await expect(accessSelector).toContainText(accessText, { timeout: 15000 });
 });
 
 When('I send the share panel invites', async ({ page }) => {
@@ -290,7 +431,26 @@ Then('the share panel shows the temporary share-menu group with {string}', async
   await expect(row.getByText(accessText, { exact: true })).toBeVisible();
 });
 
+Then('the share panel shows the seeded workspace group with {string}', async ({ page }, accessText: string) => {
+  const group = requireTemporaryGroup(page);
+  const row = shareGroupRow(page, group.name);
+
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await expect(row.getByText(group.name, { exact: true })).toBeVisible();
+  await expect(row.getByText('Group', { exact: true })).toBeVisible();
+  await expect(row.getByText(accessText, { exact: true })).toBeVisible();
+});
+
 When('I remove the temporary share-menu group access from the share panel', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const row = shareGroupRow(page, group.name);
+
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await row.getByRole('button', { name: /Can view|Can edit|Full access/ }).click();
+  await page.getByRole('menuitem', { name: 'Remove access' }).click();
+});
+
+When('I remove the seeded workspace group access from the share panel', async ({ page }) => {
   const group = requireTemporaryGroup(page);
   const row = shareGroupRow(page, group.name);
 
@@ -305,13 +465,40 @@ Then('the temporary share-menu group is not shown in the share panel', async ({ 
   await expect(shareGroupRow(page, group.name)).toHaveCount(0, { timeout: 15000 });
 });
 
+Then('the seeded workspace group is not shown in the share panel', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+
+  await expect(shareGroupRow(page, group.name)).toHaveCount(0, { timeout: 15000 });
+});
+
 When(
   'I sign in as seeded spm0622 {string} and open the temporary share-menu page',
   async ({ page, request }, accountAliasValue: string) => {
     const pageDetails = requireTemporaryPage(page);
 
     await signInSeededSpmAccount(page, accountAliasValue);
-    await waitForTemporaryPageReadAccess(request, await requireAuthToken(page), pageDetails.workspaceId, pageDetails.viewId);
+    await waitForTemporaryPageReadAccess(
+      request,
+      await requireAuthToken(page),
+      pageDetails.workspaceId,
+      pageDetails.viewId
+    );
+    await openTemporaryPage(page, pageDetails.workspaceId, pageDetails.viewId, pageDetails.pageTitle);
+  }
+);
+
+When(
+  'I sign in as seeded spm0622 {string} and open the seeded group-share page',
+  async ({ page, request }, accountAliasValue: string) => {
+    const pageDetails = requireTemporaryPage(page);
+
+    await signInSeededSpmAccount(page, accountAliasValue);
+    await waitForTemporaryPageReadAccess(
+      request,
+      await requireAuthToken(page),
+      pageDetails.workspaceId,
+      pageDetails.viewId
+    );
     await openTemporaryPage(page, pageDetails.workspaceId, pageDetails.viewId, pageDetails.pageTitle);
   }
 );
@@ -327,6 +514,26 @@ Then('the temporary share-menu page is read only', async ({ page }) => {
 
   await expect(editor).toBeVisible({ timeout: 30000 });
   await expect(editor).toHaveAttribute('contenteditable', 'false');
+});
+
+Then('the seeded group-share page is editable but share controls are read only', async ({ page }) => {
+  const group = requireTemporaryGroup(page);
+  const titleInput = PageSelectors.titleInput(page).first();
+  const editor = EditorSelectors.firstEditor(page);
+  const input = inviteInput(page);
+  const groupAccessButton = shareGroupRow(page, group.name)
+    .getByRole('button', { name: /Can view|Can edit|Full access/ })
+    .first();
+
+  await expect(titleInput).toBeVisible({ timeout: 15000 });
+  await expect(titleInput).toBeEnabled();
+  await expect(editor).toBeVisible({ timeout: 30000 });
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+  await expect(input).toBeVisible({ timeout: 15000 });
+  await expect.poll(async () => input.evaluate((element) => (element as HTMLInputElement).readOnly)).toBe(true);
+  await expect(ShareSelectors.inviteButton(page)).toBeDisabled();
+  await expect(groupAccessButton).toBeVisible({ timeout: 15000 });
+  await expect(groupAccessButton).toBeDisabled();
 });
 
 function requireState(page: Page): ScenarioState {
@@ -428,9 +635,42 @@ async function waitForTemporaryPageReadAccess(
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(`Timed out waiting for access to temporary page ${viewId}`);
+  throw lastError instanceof Error ? lastError : new Error(`Timed out waiting for access to temporary page ${viewId}`);
+}
+
+async function waitForTemporaryPageNoAccess(
+  request: APIRequestContext,
+  token: string,
+  workspaceId: string,
+  viewId: string
+) {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      await getApi<unknown>(request, token, `/api/workspace/${workspaceId}/page-view/${viewId}`);
+    } catch {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  throw new Error(`Timed out waiting for access to be revoked from temporary page ${viewId}`);
+}
+
+async function hasExactGroupPageGrant(
+  request: APIRequestContext,
+  token: string,
+  workspaceId: string,
+  viewId: string,
+  groupId: string
+): Promise<boolean> {
+  const permissions = await getApi<WorkspaceGroupViewPermissionsPayload>(
+    request,
+    token,
+    `/api/workspace/${workspaceId}/views/${viewId}/group`
+  );
+
+  return Boolean(permissions.groups?.some((permission) => permission.group_id === groupId));
 }
 
 async function getCurrentWorkspaceId(request: APIRequestContext, token: string): Promise<string> {
@@ -513,10 +753,25 @@ async function deleteApi(request: APIRequestContext, token: string, path: string
     headers: apiHeaders(token),
     failOnStatusCode: false,
   });
+  const text = await response.text();
+  const body = parseApiResponse<void>(text, false);
 
-  if (response.ok() || response.status() === 404) return;
+  if (response.status() === 404 || (response.ok() && (!text || body?.code === 0))) return;
 
-  console.warn(`API DELETE cleanup failed for ${path}: HTTP ${response.status()} ${await response.text()}`);
+  console.warn(`API DELETE cleanup failed for ${path}: HTTP ${response.status()} ${text}`);
+}
+
+async function deleteApiStrict(request: APIRequestContext, token: string, path: string): Promise<void> {
+  const response = await request.delete(`${TestConfig.apiUrl}${path}`, {
+    headers: apiHeaders(token),
+    failOnStatusCode: false,
+  });
+  const text = await response.text();
+  const body = parseApiResponse<void>(text, false);
+
+  if (response.status() === 404 || (response.ok() && (!text || body?.code === 0))) return;
+
+  throw new Error(`API DELETE failed for ${path}: HTTP ${response.status()} ${text}`);
 }
 
 function apiHeaders(token: string) {

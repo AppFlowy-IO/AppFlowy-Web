@@ -4,6 +4,7 @@ import {
   AccessLevel,
   Role,
   SpaceInvitePolicy,
+  SpaceMember,
   SpaceMemberRole,
   SpacePermissionSettings,
   SpaceSidebarEditPolicy,
@@ -216,6 +217,17 @@ function group(groupId: string, name: string, role = SpaceMemberRole.Member): Wo
   };
 }
 
+function manualMember(): SpaceMember {
+  return {
+    uid: '2345678901234567',
+    name: 'Manual member',
+    email: 'manual-member@appflowy.io',
+    role: SpaceMemberRole.Member,
+    access_level: AccessLevel.ReadAndWrite,
+    source: 'manual',
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -285,6 +297,32 @@ describe('ManageSpace ACL management', () => {
     });
     expect(mockUpdateSpace).not.toHaveBeenCalled();
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('space_permission');
+  });
+
+  it('changes the member default without overwriting a manual member grant', async () => {
+    const member = manualMember();
+
+    mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await screen.findByTestId(`space-member-row-${member.uid}`);
+    const defaultAccessRow = screen.getByTestId('manage-space-members-default-access-row');
+
+    fireEvent.click(within(defaultAccessRow).getByRole('button', { name: 'shareAction.canView' }));
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith(
+        'workspace-1',
+        'space-1',
+        expect.objectContaining({
+          permission: expect.objectContaining({
+            member_default_access_level: AccessLevel.ReadOnly,
+          }),
+        })
+      )
+    );
+    expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
   });
 
   it('renders, updates, and revokes returned workspace-group grants', async () => {

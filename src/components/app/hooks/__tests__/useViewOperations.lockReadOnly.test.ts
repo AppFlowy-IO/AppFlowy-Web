@@ -100,6 +100,18 @@ describe('getViewReadOnlyStatus (lock + access)', () => {
     expect(getViewReadOnlyStatus('view-id', [], fallback)).toBe(true);
   });
 
+  it.each([
+    [AccessLevel.ReadOnly, true],
+    [AccessLevel.ReadAndComment, true],
+    [AccessLevel.ReadAndWrite, false],
+    [AccessLevel.FullAccess, false],
+  ])('honors fallback access level %s before the outline is available', (accessLevel, expected) => {
+    const fallback = createView({ view_id: 'view-id', access_level: accessLevel });
+
+    expect(getViewReadOnlyStatus('view-id', undefined, fallback)).toBe(expected);
+    expect(getViewReadOnlyStatus('view-id', [], fallback)).toBe(expected);
+  });
+
   it('ignores a fallback view that does not match the requested viewId', () => {
     const fallback = createView({ view_id: 'some-other-view', is_locked: true });
 

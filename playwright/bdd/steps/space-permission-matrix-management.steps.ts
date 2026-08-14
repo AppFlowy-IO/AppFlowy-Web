@@ -1,8 +1,8 @@
-import { APIRequestContext, expect, Page } from '@playwright/test';
+import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
-import { ModalSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
+import { EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { When, Then, Before, After } = createBdd();
@@ -33,22 +33,59 @@ const SPM_ACCOUNTS = {
 } as const;
 
 const SPM_SPACES = {
+  'default space': {
+    // The fixture reuses the workspace's built-in space, whose id is generated
+    // when the owner workspace is created.
+    viewId: undefined,
+    name: 'General',
+  },
+  'open space': {
+    // The fixture reuses the workspace's built-in space, whose id is generated
+    // when the owner workspace is created.
+    viewId: undefined,
+    name: 'Shared',
+  },
+  'closed space': {
+    viewId: 'c7e01ef6-d221-4c93-8976-3a1d5c00f603',
+    name: 'spm0622 Closed Matrix Space',
+  },
   'private space': {
     viewId: 'bf0d2d13-6466-4420-a0c0-d4a225f882dc',
     name: 'spm0622 Private Matrix Space',
   },
+  'group full access space': {
+    viewId: '2d6aa207-656a-4562-926b-307270a76079',
+    name: 'spm0622 Group Full Access Space',
+  },
 } as const;
 
 const SPM_PAGES = {
+  'default page': {
+    viewId: '25fe29de-a747-482e-8d1f-ea5d0dc17d9a',
+    title: 'spm0622 Default Matrix Page',
+  },
+  'open page': {
+    viewId: '370d83d6-911c-4375-8df1-1541f72c95a6',
+    title: 'spm0622 Open Matrix Page',
+  },
+  'closed page': {
+    viewId: '7d4b3710-df1d-4d04-9d7e-cfa7a9b1ad62',
+    title: 'spm0622 Closed Matrix Page',
+  },
   'private page': {
     viewId: 'd79a7c58-79fb-4c98-a550-83bc4a8685c5',
     title: 'spm0622 Private Matrix Page',
+  },
+  'group full access page': {
+    viewId: 'ff52f801-5960-44d9-850f-8099a8faf4bc',
+    title: 'spm0622 Group Full Access Page',
   },
 } as const;
 
 type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 type SpmSpaceAlias = keyof typeof SPM_SPACES;
 type SpmPageAlias = keyof typeof SPM_PAGES;
+type SeededSpmPage = (typeof SPM_PAGES)[SpmPageAlias];
 
 type ApiResponse<T> = {
   code?: number;
@@ -107,6 +144,7 @@ type ScenarioState = {
   workspaceId?: string;
   ownerToken?: string;
   currentSpaceId?: string;
+  currentSeededPage?: SeededSpmPage;
   temporarySpace?: TemporarySpace;
   addedSpaceMemberEmails: Set<string>;
   restorePrivateSpaceMemberDefaultAccess?: boolean;
@@ -134,24 +172,25 @@ After(async ({ page, request }) => {
 
   const token = state.ownerToken || (await getAuthToken(page));
 
-  if (!token) return;
+  if (!token) throw new Error('Space-permission fixture cleanup has no owner token');
 
-  const workspaceId = state.workspaceId || (await getCurrentWorkspaceId(request, token).catch(() => undefined));
+  const workspaceId = state.workspaceId || (await getCurrentWorkspaceId(request, token));
 
-  if (!workspaceId) return;
+  if (!workspaceId) throw new Error('Space-permission fixture cleanup has no workspace id');
 
   const temporarySpace = state.temporarySpace || (page as PageWithTemporarySpace).__spmTemporarySpace;
   const cleanupSpaceId = state.currentSpaceId || temporarySpace?.spaceId || SPM_SPACES['private space'].viewId;
+  const cleanupErrors: string[] = [];
 
   if (state.restorePrivateSpaceMemberDefaultAccess) {
     await restoreSeededPrivateSpaceMemberDefaultAccess(request, token, workspaceId).catch((error) => {
-      console.warn(`Failed to restore seeded private space member default access: ${String(error)}`);
+      cleanupErrors.push(`seeded private-space default access: ${String(error)}`);
     });
   }
 
   for (const email of state.addedSpaceMemberEmails) {
     await cleanupSpaceMember(request, token, workspaceId, cleanupSpaceId, email).catch((error) => {
-      console.warn(`Failed to cleanup seeded space member "${email}": ${String(error)}`);
+      cleanupErrors.push(`seeded space member "${email}": ${String(error)}`);
     });
   }
 
@@ -159,10 +198,14 @@ After(async ({ page, request }) => {
     for (const viewId of [temporarySpace.pageId, temporarySpace.spaceId]) {
       await postApi<void>(request, token, `/api/workspace/${workspaceId}/page-view/${viewId}/move-to-trash`, {}).catch(
         (error) => {
-          console.warn(`Failed to trash temporary seeded space view "${viewId}": ${String(error)}`);
+          cleanupErrors.push(`temporary seeded space view "${viewId}": ${String(error)}`);
         }
       );
     }
+  }
+
+  if (cleanupErrors.length > 0) {
+    throw new Error(`Space-permission fixture cleanup failed:\n${cleanupErrors.join('\n')}`);
   }
 });
 
@@ -180,6 +223,115 @@ When('I open the seeded spm0622 {string}', async ({ page, request }, pageAliasVa
   await page.goto(`/app/${state.workspaceId}/${seededPage.viewId}`, { waitUntil: 'domcontentloaded' });
   await expect(page.getByText(seededPage.title, { exact: true }).first()).toBeVisible({ timeout: 30000 });
 });
+
+When('I directly open the seeded spm0622 {string}', async ({ page, request }, pageAliasValue: string) => {
+  const seededPage = spmPage(pageAliasValue);
+  const state = requireState(page);
+  const workspaceId = state.workspaceId || (await getSeededSpmWorkspaceId(request));
+
+  state.workspaceId = workspaceId;
+  state.currentSeededPage = seededPage;
+
+  const pathname = `/app/${workspaceId}/${seededPage.viewId}`;
+
+  await page.goto(pathname, { waitUntil: 'domcontentloaded' });
+  await expect.poll(() => new URL(page.url()).pathname, { timeout: 30000 }).toBe(pathname);
+});
+
+Then(
+  'the seeded spm0622 {string} space navigation is {string}',
+  async ({ page }, spaceAliasValue: string, visibility: string) => {
+    const seededSpace = spmSpace(spaceAliasValue);
+    const spaceItem = SpaceSelectors.itemByName(page, seededSpace.name);
+    const folderViews = page.locator('.folder-views');
+    const noAccess = page.getByText('No access to this page', { exact: true });
+
+    // A denied direct URL intentionally replaces the whole app shell. For an
+    // accessible page, absence is meaningful only after the sidebar has
+    // replaced its loading directory with the resolved outline.
+    await expect
+      .poll(
+        async () =>
+          (await noAccess.isVisible().catch(() => false)) || (await folderViews.isVisible().catch(() => false)),
+        {
+          timeout: 30000,
+        }
+      )
+      .toBe(true);
+    if (await folderViews.isVisible().catch(() => false)) {
+      await expect(folderViews.locator('.animate-pulse')).toHaveCount(0, { timeout: 30000 });
+    }
+
+    switch (visibility) {
+      case 'visible':
+        await expect(spaceItem).toBeVisible({ timeout: 30000 });
+        break;
+      case 'hidden':
+        await expect(spaceItem).toHaveCount(0, { timeout: 15000 });
+        break;
+      default:
+        throw new Error(`Unsupported seeded spm0622 space navigation visibility: ${visibility}`);
+    }
+  }
+);
+
+Then('the directly opened seeded spm0622 page is {string}', async ({ page }, access: string) => {
+  const seededPage = requireCurrentSeededPage(page);
+  const title = page.getByText(seededPage.title, { exact: true });
+  const titleInput = PageSelectors.titleInput(page);
+  const editor = EditorSelectors.firstEditor(page);
+
+  switch (access) {
+    case 'editable':
+      await expect(title.first()).toBeVisible({ timeout: 30000 });
+      await expect(titleInput.first()).toBeVisible({ timeout: 15000 });
+      await expect(titleInput.first()).toBeEnabled();
+      await expect(editor).toBeVisible({ timeout: 30000 });
+      await expect(editor).toHaveAttribute('contenteditable', 'true');
+      break;
+    case 'read-only':
+      await expect(title.first()).toBeVisible({ timeout: 30000 });
+      await expect(titleInput).toHaveCount(0, { timeout: 15000 });
+      await expect(editor).toBeVisible({ timeout: 30000 });
+      await expect(editor).toHaveAttribute('contenteditable', 'false');
+      await selectFirstEditorWord(page, editor);
+      await waitForSelectionEffects(page);
+      await expect(page.getByTestId('inline-comment-readonly-trigger')).toHaveCount(0);
+      break;
+    case 'comment-only':
+      await expect(title.first()).toBeVisible({ timeout: 30000 });
+      await expect(titleInput).toHaveCount(0, { timeout: 15000 });
+      await expect(editor).toBeVisible({ timeout: 30000 });
+      await expect(editor).toHaveAttribute('contenteditable', 'false');
+      await selectFirstEditorWord(page, editor);
+      await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible({ timeout: 15000 });
+      break;
+    case 'denied':
+      await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout: 30000 });
+      await expect(title).toHaveCount(0);
+      await expect(titleInput).toHaveCount(0);
+      break;
+    default:
+      throw new Error(`Unsupported seeded spm0622 page access expectation: ${access}`);
+  }
+});
+
+async function selectFirstEditorWord(page: Page, editor: Locator) {
+  const firstText = editor.locator('[data-slate-string="true"]').first();
+
+  await expect(firstText).toBeVisible({ timeout: 15000 });
+  await firstText.dblclick({ position: { x: 4, y: 4 } });
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().trim().length ?? 0)).toBeGreaterThan(0);
+}
+
+async function waitForSelectionEffects(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      })
+  );
+}
 
 When('I create a temporary seeded spm0622 private space', async ({ page, request }) => {
   const state = await ensureWorkspaceContext(page, request);
@@ -290,8 +442,18 @@ When('I add seeded spm0622 {string} to the current space', async ({ page }, acco
   const addButton = resultRow.getByTestId('workspace-member-inline-search-result-add');
 
   await expect(addButton).toBeEnabled({ timeout: 15000 });
-  await addButton.click();
+  // Register cleanup before starting the mutation so a post-commit UI failure
+  // cannot leave the canonical fixture member attached.
   requireState(page).addedSpaceMemberEmails.add(email);
+  await addButton.click();
+
+  // The click starts an async mutation. Wait for its roster revalidation before
+  // the next step clears this owner session; otherwise navigation can abort the
+  // in-flight request and the newly signed-in member never receives the space.
+  const memberRow = spaceMemberRow(page, email);
+
+  await expect(memberRow).toBeVisible({ timeout: 15000 });
+  await expect(memberRow.getByText(email, { exact: true }).first()).toBeVisible();
 });
 
 When(
@@ -314,12 +476,14 @@ When('I remove seeded spm0622 {string} from the current space', async ({ page },
   await row.getByRole('button', { name: 'Member' }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await expect(row).toHaveCount(0, { timeout: 15000 });
+  requireState(page).addedSpaceMemberEmails.delete(email);
 });
 
 Then('seeded spm0622 {string} cannot see the temporary private space', async ({ page }, accountAliasValue: string) => {
   const temporarySpace = requireTemporarySpace(page);
 
   await signInSeededSpmAccount(page, accountAliasValue);
+  await waitForResolvedFolderOutline(page);
   await expect(SpaceSelectors.itemByName(page, temporarySpace.spaceName)).toHaveCount(0, { timeout: 15000 });
 });
 
@@ -329,6 +493,44 @@ Then('seeded spm0622 {string} can see the temporary private space', async ({ pag
   await signInSeededSpmAccount(page, accountAliasValue);
   await expect(SpaceSelectors.itemByName(page, temporarySpace.spaceName)).toBeVisible({ timeout: 30000 });
 });
+
+Then('seeded spm0622 {string} can use the temporary private page', async ({ page }, accountAliasValue: string) => {
+  const temporarySpace = requireTemporarySpace(page);
+  const workspaceId = requireWorkspaceId(page);
+
+  await expectCurrentSeededAccount(page, accountAliasValue);
+  await page.goto(`/app/${workspaceId}/${temporarySpace.pageId}`, { waitUntil: 'domcontentloaded' });
+  await expect
+    .poll(() => new URL(page.url()).pathname, { timeout: 30000 })
+    .toBe(`/app/${workspaceId}/${temporarySpace.pageId}`);
+
+  const titleInput = PageSelectors.titleInput(page).first();
+  const editor = EditorSelectors.firstEditor(page);
+
+  await expect(titleInput).toBeVisible({ timeout: 15000 });
+  await expect(titleInput).toHaveText(temporarySpace.pageTitle);
+  await expect(titleInput).toBeEnabled();
+  await expect(editor).toBeVisible({ timeout: 30000 });
+  await expect(editor).toHaveAttribute('contenteditable', 'true');
+});
+
+Then(
+  'seeded spm0622 {string} receives no access to the temporary private page',
+  async ({ page }, accountAliasValue: string) => {
+    const temporarySpace = requireTemporarySpace(page);
+    const workspaceId = requireWorkspaceId(page);
+
+    await expectCurrentSeededAccount(page, accountAliasValue);
+    await page.goto(`/app/${workspaceId}/${temporarySpace.pageId}`, { waitUntil: 'domcontentloaded' });
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 30000 })
+      .toBe(`/app/${workspaceId}/${temporarySpace.pageId}`);
+    await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(temporarySpace.pageTitle, { exact: true })).toHaveCount(0);
+    await expect(PageSelectors.titleInput(page)).toHaveCount(0);
+    await expect(EditorSelectors.firstEditor(page)).toHaveCount(0);
+  }
+);
 
 When(
   'I sign in as seeded spm0622 {string} and open the seeded spm0622 {string}',
@@ -400,6 +602,26 @@ function requireTemporarySpace(page: Page): TemporarySpace {
   return temporarySpace;
 }
 
+function requireCurrentSeededPage(page: Page): SeededSpmPage {
+  const seededPage = requireState(page).currentSeededPage;
+
+  if (!seededPage) {
+    throw new Error('No seeded spm0622 page has been opened directly');
+  }
+
+  return seededPage;
+}
+
+function requireWorkspaceId(page: Page): string {
+  const workspaceId = requireState(page).workspaceId;
+
+  if (!workspaceId) {
+    throw new Error('No seeded spm0622 workspace id has been resolved');
+  }
+
+  return workspaceId;
+}
+
 function manageSpaceModal(page: Page) {
   return page.getByTestId('manage-space-modal');
 }
@@ -429,6 +651,13 @@ async function openManageSpaceMembersTab(page: Page) {
   await expect(modal.getByTestId('workspace-member-inline-search-input')).toBeVisible({ timeout: 15000 });
 }
 
+async function waitForResolvedFolderOutline(page: Page) {
+  const folderViews = page.locator('.folder-views');
+
+  await expect(folderViews).toBeVisible({ timeout: 30000 });
+  await expect(folderViews.locator('.animate-pulse')).toHaveCount(0, { timeout: 30000 });
+}
+
 async function searchSpaceMemberCandidate(page: Page, email: string) {
   const modal = manageSpaceModal(page);
   const input = modal.getByTestId('workspace-member-inline-search-input');
@@ -452,7 +681,7 @@ async function cleanupSpaceMember(
 ) {
   const uid = await findWorkspaceMemberUid(request, token, workspaceId, email);
 
-  if (!uid) return;
+  if (!uid) throw new Error(`Workspace member uid not found during cleanup: ${email}`);
 
   await deleteApi(request, token, `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`);
 }
@@ -509,15 +738,10 @@ async function restoreSeededPrivateSpaceMembers(request: APIRequestContext, toke
       throw new Error(`Could not restore seeded private space member "${target.email}": workspace uid not found`);
     }
 
-    await patchApi(
-      request,
-      token,
-      `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`,
-      {
-        role: target.role,
-        access_level: target.accessLevel,
-      }
-    );
+    await patchApi(request, token, `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`, {
+      role: target.role,
+      access_level: target.accessLevel,
+    });
   }
 }
 
@@ -547,6 +771,32 @@ async function getCurrentWorkspaceId(request: APIRequestContext, token: string):
   }
 
   return workspaceId;
+}
+
+async function getSeededSpmWorkspaceId(request: APIRequestContext): Promise<string> {
+  const response = await request.post(`${TestConfig.gotrueUrl}/token?grant_type=password`, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: {
+      email: SPM_ACCOUNTS['owner 1'],
+      password: PASSWORD,
+    },
+    failOnStatusCode: false,
+  });
+  const text = await response.text();
+
+  if (!response.ok()) {
+    throw new Error(`Could not authenticate the seeded spm0622 owner: HTTP ${response.status()} ${text}`);
+  }
+
+  const token = (parseJson(text) as { access_token?: string } | null)?.access_token;
+
+  if (!token) {
+    throw new Error(`Seeded spm0622 owner sign-in response has no access token: ${text}`);
+  }
+
+  return getCurrentWorkspaceId(request, token);
 }
 
 async function getApi<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
@@ -624,17 +874,24 @@ async function deleteApi(request: APIRequestContext, token: string, path: string
     headers: apiHeaders(token),
     failOnStatusCode: false,
   });
+  const text = await response.text();
+  const body = parseApiResponse<void>(text, false);
+  const alreadyAbsent = body?.code === -2 && body.message?.toLowerCase().includes('record not found');
 
-  if (response.ok() || response.status() === 404) return;
+  if (response.status() === 404 || alreadyAbsent || (response.ok() && (!text || body?.code === 0))) return;
 
-  throw new Error(`API DELETE failed for ${path}: HTTP ${response.status()} ${await response.text()}`);
+  throw new Error(`API DELETE failed for ${path}: HTTP ${response.status()} ${text}`);
 }
 
 function parseApiResponse<T>(text: string, preserveUid: boolean): ApiResponse<T> | null {
   if (!text) return null;
 
+  return parseJson(preserveUid ? text.replace(UID_FIELD_REGEX, '"uid":"$1"') : text) as ApiResponse<T> | null;
+}
+
+function parseJson(text: string): unknown | null {
   try {
-    return JSON.parse(preserveUid ? text.replace(UID_FIELD_REGEX, '"uid":"$1"') : text) as ApiResponse<T>;
+    return JSON.parse(text) as unknown;
   } catch {
     return null;
   }
@@ -702,6 +959,17 @@ async function currentSessionEmail(page: Page): Promise<string> {
       return '';
     }
   });
+}
+
+async function expectCurrentSeededAccount(page: Page, accountAliasValue: string) {
+  const expectedEmail = spmAccountEmail(accountAliasValue);
+
+  await expect
+    .poll(() => currentSessionEmail(page), {
+      message: `expected the current seeded session to use ${expectedEmail}`,
+      timeout: 10000,
+    })
+    .toBe(expectedEmail);
 }
 
 async function getAuthToken(page: Page): Promise<string> {

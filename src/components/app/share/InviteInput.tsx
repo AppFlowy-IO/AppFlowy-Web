@@ -1,5 +1,4 @@
 import { cva } from 'class-variance-authority';
-import { Users } from 'lucide-react';
 import * as React from 'react';
 import { forwardRef, useEffect, useRef, useState } from 'react';
 
@@ -9,6 +8,8 @@ import { PersonAvatar } from '@/components/app/share/PersonAvatar';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+import { WorkspaceGroupIcon } from './WorkspaceGroupIcon';
 
 export interface EmailTag {
   id: string;
@@ -94,7 +95,7 @@ const EmailTagComponent = ({ tag, onRemove, getTooltipText }: EmailTagComponentP
           )}
         >
           {tag.kind === 'group' ? (
-            <Users className='h-4 w-4 shrink-0 text-icon-secondary' />
+            <WorkspaceGroupIcon variant='chip' />
           ) : tag.avatar ? (
             <PersonAvatar size={16} avatarUrl={tag.avatar} name={avatarName} />
           ) : (

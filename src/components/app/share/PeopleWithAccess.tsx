@@ -1,4 +1,3 @@
-import { Users } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -14,6 +13,7 @@ import { Progress } from '@/components/ui/progress';
 import { GroupAccessLevelDropdown } from './GroupAccessLevelDropdown';
 import { PersonItem } from './PersonItem';
 import { isInheritedWorkspaceAccess, ShareSectionType } from './shareSectionType';
+import { WorkspaceGroupIcon } from './WorkspaceGroupIcon';
 
 import type { ShareAccessRefreshResult } from './useShareAccessDetails';
 
@@ -178,9 +178,7 @@ export function PeopleWithAccess({
             className='group flex w-full items-center gap-2 rounded-300 px-2 py-1.5 hover:bg-fill-content-hover'
           >
             <div className='flex w-full flex-row items-center gap-2 overflow-hidden'>
-              <div className='flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fill-content-hover text-icon-secondary'>
-                <Users className='h-5 w-5' />
-              </div>
+              <WorkspaceGroupIcon variant='row' />
               <div className='flex w-full flex-1 flex-col gap-0.5 overflow-hidden'>
                 <div className='flex items-center gap-2'>
                   <div className='truncate text-sm text-text-primary'>{group.name}</div>

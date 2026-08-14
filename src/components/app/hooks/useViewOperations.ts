@@ -46,26 +46,33 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
   // direct-URL loads (before outline arrives) still honor the lock.
   if (fallbackView?.view_id === viewId && fallbackView.is_locked) return true;
 
-  if (!outline) return false;
+  if (outline) {
+    // A locked page is read-only for everyone until it is unlocked. The outline
+    // includes the hidden "Shared with me" space, so findView also resolves views
+    // shared with the current user.
+    const view = findView(outline, viewId);
 
-  // A locked page is read-only for everyone until it is unlocked. The outline
-  // includes the hidden "Shared with me" space, so findView also resolves views
-  // shared with the current user.
-  const view = findView(outline, viewId);
+    if (view?.is_locked) return true;
 
-  if (view?.is_locked) return true;
+    // Resolve the effective shared access level, inheriting from the nearest
+    // ancestor inside the "Shared with me" space. This makes pages inside a
+    // View-only private space read-only even though the page itself carries no
+    // explicit access level.
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
 
-  // Resolve the effective shared access level, inheriting from the nearest
-  // ancestor inside the "Shared with me" space. This makes pages inside a
-  // View-only private space read-only even though the page itself carries no
-  // explicit access level.
-  const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
-
-  if (sharedAccessLevel !== undefined) {
-    return sharedAccessLevel <= AccessLevel.ReadAndComment;
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel <= AccessLevel.ReadAndComment;
+    }
   }
 
-  // If not part of the shared-with-me space, default is false (editable)
+  // Structured-space members can receive a normal-outline view whose effective
+  // access is available only on the direct-URL fallback. Keep the title and
+  // editor presentation aligned with the same fallback used by canWrite.
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level <= AccessLevel.ReadAndComment;
+  }
+
+  // If no permission-bearing view is available, default is false (editable).
   return false;
 }
 

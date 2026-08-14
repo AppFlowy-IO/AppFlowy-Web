@@ -67,47 +67,6 @@ jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => ({ uid: 'different-owner-id' }),
 }));
 
-jest.mock('@/components/_shared/modal', () => ({
-  NormalModal: ({
-    children,
-    open,
-    onClose,
-    onOk,
-    okText,
-    okButtonProps,
-    PaperProps,
-    title,
-  }: {
-    children: ReactNode;
-    open: boolean;
-    onClose?: () => void;
-    onOk?: () => void;
-    okText?: string;
-    okButtonProps?: { disabled?: boolean; 'data-testid'?: string };
-    PaperProps?: { 'data-testid'?: string };
-    title: ReactNode;
-  }) =>
-    open ? (
-      <div data-testid={PaperProps?.['data-testid']}>
-        <div>{title}</div>
-        <button type='button' data-testid='modal-close' onClick={onClose}>
-          close
-        </button>
-        {children}
-        {onOk && (
-          <button
-            type='button'
-            data-testid={okButtonProps?.['data-testid'] ?? 'modal-ok'}
-            disabled={okButtonProps?.disabled}
-            onClick={onOk}
-          >
-            {okText}
-          </button>
-        )}
-      </div>
-    ) : null,
-}));
-
 jest.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -175,6 +134,10 @@ function groupRow() {
   return screen.getByTestId(`group-row-${group.group_id}`);
 }
 
+function groupEditButton() {
+  return screen.getByTestId(`group-edit-${group.group_id}`);
+}
+
 describe('MembersPanel workspace group parity', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -196,10 +159,12 @@ describe('MembersPanel workspace group parity', () => {
 
     const modal = screen.getByTestId('rename-group-modal');
     const input = within(modal).getByTestId('people-rename-group-name-input');
+    const submit = within(modal).getByTestId('people-rename-group-submit');
 
     expect((input as HTMLInputElement).value).toBe(group.name);
+    expect(submit.getAttribute('aria-label')).toBe('button.confirm');
     fireEvent.change(input, { target: { value: 'Platform' } });
-    fireEvent.click(within(modal).getByTestId('people-rename-group-submit'));
+    fireEvent.click(submit);
 
     await waitFor(() =>
       expect(mockUpdateWorkspaceGroup).toHaveBeenCalledWith('workspace-1', group.group_id, { name: 'Platform' })
@@ -213,6 +178,75 @@ describe('MembersPanel workspace group parity', () => {
 
     expect(mockRemoveWorkspaceGroup).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('people-delete-group-confirm'));
+
+    await waitFor(() => expect(mockRemoveWorkspaceGroup).toHaveBeenCalledWith('workspace-1', group.group_id));
+  });
+
+  it('opens group management from a quiet, visible edit action instead of the row', async () => {
+    await renderGroupsPanel();
+
+    expect(groupRow().className).not.toContain('cursor-pointer');
+    expect(groupRow().className).not.toContain('hover:bg-');
+
+    fireEvent.click(groupRow());
+    expect(screen.queryByTestId('group-detail-modal')).toBeNull();
+
+    fireEvent.click(groupEditButton());
+    expect(await screen.findByTestId('group-detail-modal')).toBeTruthy();
+  });
+
+  it('places Create Group beside the name and closes without creating by default', async () => {
+    await renderGroupsPanel();
+
+    fireEvent.click(screen.getByTestId('people-create-group-button'));
+
+    const modal = screen.getByTestId('create-group-modal');
+    const input = screen.getByTestId('people-create-group-name-input');
+    const submit = screen.getByTestId('people-create-group-submit');
+
+    expect(modal.className).toContain('w-[720px]');
+    expect(modal.className).toContain('bg-surface-primary');
+    expect(modal.className).toContain('rounded-500');
+    expect(modal.className).toContain('shadow-dialog');
+    expect(screen.getByTestId('workspace-group-icon-hero').getAttribute('class')).toContain('h-12');
+    expect(screen.getByTestId('workspace-group-icon-name').className).toContain('rounded-400');
+    expect(submit.className).toContain('w-[120px]');
+    expect(submit.getAttribute('aria-label')).toBe('settings.appearance.people.createGroupAction');
+    expect(input.parentElement).toBe(submit.parentElement);
+    expect(input.nextElementSibling).toBe(submit);
+    expect(screen.queryByTestId('people-create-group-cancel')).toBeNull();
+
+    fireEvent.click(within(modal).getByRole('button', { name: 'button.close' }));
+
+    expect(screen.queryByTestId('create-group-modal')).toBeNull();
+    expect(mockCreateWorkspaceGroup).not.toHaveBeenCalled();
+  });
+
+  it('requires confirmation before deleting from group management and supports cancel', async () => {
+    await renderGroupsPanel();
+
+    fireEvent.click(groupEditButton());
+    const detailModal = await screen.findByTestId('group-detail-modal');
+
+    expect(detailModal.className).toContain('w-[720px]');
+    expect(detailModal.className).toContain('bg-surface-primary');
+    expect(screen.getByTestId('workspace-group-icon-detail').className).toContain('h-16');
+    fireEvent.click(screen.getByTestId('group-detail-delete-button'));
+
+    let confirmation = screen.getByTestId('delete-group-confirmation');
+
+    expect(confirmation.className).toContain('w-[440px]');
+    expect(confirmation.className).toContain('rounded-400');
+    expect(within(confirmation).getByRole('button', { name: 'button.close' })).toBeTruthy();
+    expect(mockRemoveWorkspaceGroup).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByTestId('modal-cancel'));
+    expect(screen.queryByTestId('delete-group-confirmation')).toBeNull();
+    expect(screen.getByTestId('group-detail-modal')).toBeTruthy();
+    expect(mockRemoveWorkspaceGroup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('group-detail-delete-button'));
+    confirmation = screen.getByTestId('delete-group-confirmation');
+    fireEvent.click(within(confirmation).getByTestId('people-delete-group-confirm'));
 
     await waitFor(() => expect(mockRemoveWorkspaceGroup).toHaveBeenCalledWith('workspace-1', group.group_id));
   });
@@ -234,7 +268,7 @@ describe('MembersPanel workspace group parity', () => {
   it.each(['button', 'enter'] as const)('adds the sole matching member with %s interaction', async (interaction) => {
     await renderGroupsPanel();
 
-    fireEvent.click(groupRow());
+    fireEvent.click(groupEditButton());
     await waitFor(() => expect(mockGetWorkspaceGroupMembers).toHaveBeenCalledWith('workspace-1', group.group_id));
 
     const detailModal = screen.getByTestId('group-detail-modal');
@@ -316,7 +350,7 @@ describe('MembersPanel workspace group parity', () => {
       fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
 
       if (openUi === 'detail') {
-        fireEvent.click(groupRow());
+        fireEvent.click(groupEditButton());
         expect(await screen.findByTestId('group-detail-modal')).toBeTruthy();
       } else if (openUi === 'rename') {
         fireEvent.click(within(groupRow()).getByText('settings.appearance.people.renameGroup'));

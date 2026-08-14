@@ -2,7 +2,13 @@ import { APIRequestContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
-import { AccountSelectors, WorkspaceSelectors } from '../../support/selectors';
+import {
+  AccountSelectors,
+  PageSelectors,
+  ShareSelectors,
+  SpaceSelectors,
+  WorkspaceSelectors,
+} from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
@@ -11,6 +17,9 @@ const PASSWORD = 'AppFlowy!@123';
 const NATHAN_EMAIL = 'nathan@appflowy.io';
 const TEMPORARY_GROUP_PREFIX = 'bdd group management';
 const SPM_GROUP_NAME = 'spm0622 Full Access Space Group';
+const SPM_GROUP_SPACE_NAME = 'spm0622 Group Full Access Space';
+const SPM_GROUP_PAGE_ID = 'ff52f801-5960-44d9-850f-8099a8faf4bc';
+const SPM_GROUP_PAGE_TITLE = 'spm0622 Group Full Access Page';
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
 const SPM_ACCOUNTS = {
@@ -24,7 +33,6 @@ const SPM_ACCOUNTS = {
   'guest private': 'spm0622-guest-private@appflowy.local',
   'guest none': 'spm0622-guest-none@appflowy.local',
 } as const;
-
 type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 
 type ApiResponse<T> = {
@@ -77,18 +85,23 @@ After(async ({ page, request }) => {
   const state = stateByPage.get(page);
 
   if (!state) return;
+  const cleanupErrors: string[] = [];
 
   for (const email of state.seededGroupCleanupEmails) {
     await cleanupSeededGroupMember(request, state, email).catch((error) => {
-      console.warn(`Failed to cleanup seeded workspace group member "${email}": ${String(error)}`);
+      cleanupErrors.push(`seeded workspace group member "${email}": ${String(error)}`);
     });
   }
 
-  if (!state.groupName || state.groupDeleted) return;
+  if (state.groupName && !state.groupDeleted) {
+    await cleanupTemporaryGroup(request, page, state).catch((error) => {
+      cleanupErrors.push(`temporary workspace group "${state.groupName}": ${String(error)}`);
+    });
+  }
 
-  await cleanupTemporaryGroup(request, page, state).catch((error) => {
-    console.warn(`Failed to cleanup temporary workspace group "${state.groupName}": ${String(error)}`);
-  });
+  if (cleanupErrors.length > 0) {
+    throw new Error(`Workspace-group fixture cleanup failed:\n${cleanupErrors.join('\n')}`);
+  }
 });
 
 Given('the seeded spm0622 space permission fixture exists', async () => {
@@ -104,11 +117,14 @@ Given('I sign in as seeded spm0622 {string}', async ({ page, request }, accountA
   const email = spmAccountEmail(accountAliasValue);
 
   await signInAsWorkspaceOwner(page, request, email);
-
-  if (email === SPM_ACCOUNTS['owner 1']) {
-    await cleanupSeededGroupMember(request, requireState(page), SPM_ACCOUNTS['member closed']);
-  }
 });
+
+When(
+  'I return as seeded spm0622 {string} without resetting group membership',
+  async ({ page, request }, accountAliasValue: string) => {
+    await signInAsWorkspaceOwner(page, request, spmAccountEmail(accountAliasValue));
+  }
+);
 
 When('I open the People settings groups tab', async ({ page }) => {
   await expect(WorkspaceSelectors.dropdownTrigger(page)).toBeVisible({ timeout: 30000 });
@@ -132,8 +148,11 @@ When('I create a temporary workspace group', async ({ page }) => {
 
   state.groupName = groupName;
   await dialog.getByTestId('people-create-group-button').click();
-  await dialog.getByTestId('people-create-group-name-input').fill(groupName);
-  await dialog.getByTestId('people-create-group-submit').click();
+  const modal = createGroupModal(page);
+
+  await expect(modal).toBeVisible({ timeout: 15000 });
+  await modal.getByTestId('people-create-group-name-input').fill(groupName);
+  await modal.getByTestId('people-create-group-submit').click();
   await expect(groupRow(page, groupName)).toBeVisible({ timeout: 15000 });
 });
 
@@ -145,24 +164,34 @@ When('I open workspace group {string}', async ({ page }, groupName: string) => {
   await openWorkspaceGroup(page, groupName);
 });
 
-Then('the workspace groups list shows {string} with {string}', async ({ page }, groupName: string, memberCount: string) => {
-  const row = groupRow(page, groupName);
+Then(
+  'the workspace groups list shows {string} with {string}',
+  async ({ page }, groupName: string, memberCount: string) => {
+    const row = groupRow(page, groupName);
 
-  await expect(row).toBeVisible({ timeout: 15000 });
-  await expect(row.getByText(groupName, { exact: true })).toBeVisible();
-  await expect(row.getByText(memberCount, { exact: true })).toBeVisible();
-});
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.getByText(groupName, { exact: true })).toBeVisible();
+    await expect(row.getByText(memberCount, { exact: true })).toBeVisible();
+  }
+);
 
 When('I add workspace member {string} to the temporary group', async ({ page }, email: string) => {
   await addWorkspaceMemberToOpenGroup(page, email);
 });
 
 When('I add workspace member {string} to the open group', async ({ page }, email: string) => {
-  await addWorkspaceMemberToOpenGroup(page, email);
+  const isSeededGroup = await groupDetailModal(page)
+    .getByText(SPM_GROUP_NAME, { exact: true })
+    .isVisible()
+    .catch(() => false);
 
-  if (await groupDetailModal(page).getByText(SPM_GROUP_NAME, { exact: true }).isVisible().catch(() => false)) {
+  // Register cleanup before starting the mutation so a post-commit UI failure
+  // cannot leave the canonical fixture member attached.
+  if (isSeededGroup) {
     requireState(page).seededGroupCleanupEmails.add(email);
   }
+
+  await addWorkspaceMemberToOpenGroup(page, email);
 });
 
 Then('the temporary group shows workspace member {string}', async ({ page }, email: string) => {
@@ -205,6 +234,11 @@ When('I delete the temporary workspace group', async ({ page }) => {
 
   await modal.getByRole('tab', { name: 'General' }).click();
   await modal.getByRole('button', { name: 'Delete group' }).click();
+  const confirmation = page.getByTestId('delete-group-confirmation');
+
+  await expect(confirmation).toBeVisible({ timeout: 15000 });
+  await confirmation.getByTestId('people-delete-group-confirm').click();
+  await expect(confirmation).toHaveCount(0, { timeout: 15000 });
   await expect(modal).toHaveCount(0, { timeout: 15000 });
   requireState(page).groupDeleted = true;
 });
@@ -212,6 +246,45 @@ When('I delete the temporary workspace group', async ({ page }) => {
 Then('the temporary workspace group is not listed', async ({ page }) => {
   await expect(groupRow(page, requireGroupName(page))).toHaveCount(0, { timeout: 15000 });
 });
+
+Then(
+  'seeded spm0622 {string} cannot open the seeded group Full Access page',
+  async ({ page }, accountAliasValue: string) => {
+    const state = requireState(page);
+
+    await signInSeededAccountForAccessCheck(page, accountAliasValue);
+    await expect(SpaceSelectors.itemByName(page, SPM_GROUP_SPACE_NAME)).toHaveCount(0, { timeout: 15000 });
+    await page.goto(`/app/${state.workspaceId}/${SPM_GROUP_PAGE_ID}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('No access to this page', { exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(SPM_GROUP_PAGE_TITLE, { exact: true })).toHaveCount(0);
+    await expect(PageSelectors.titleInput(page)).toHaveCount(0);
+  }
+);
+
+Then(
+  'seeded spm0622 {string} can manage the seeded group Full Access page',
+  async ({ page }, accountAliasValue: string) => {
+    const state = requireState(page);
+
+    await signInSeededAccountForAccessCheck(page, accountAliasValue);
+    await expect(SpaceSelectors.itemByName(page, SPM_GROUP_SPACE_NAME)).toBeVisible({ timeout: 30000 });
+    await page.goto(`/app/${state.workspaceId}/${SPM_GROUP_PAGE_ID}`, { waitUntil: 'domcontentloaded' });
+    await expectSeededGroupPageTitle(page);
+
+    const titleInput = PageSelectors.titleInput(page).first();
+
+    await expect(titleInput).toBeVisible({ timeout: 15000 });
+    await expect(titleInput).toBeEnabled();
+    await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 30000 });
+    await ShareSelectors.shareButton(page).evaluate((element: HTMLElement) => element.click());
+    await expect(ShareSelectors.sharePopover(page)).toBeVisible({ timeout: 15000 });
+
+    const inviteInput = ShareSelectors.emailTagInput(page).locator('input[type="text"]');
+
+    await expect(inviteInput).toBeVisible({ timeout: 15000 });
+    await expect.poll(async () => inviteInput.evaluate((element) => (element as HTMLInputElement).readOnly)).toBe(false);
+  }
+);
 
 async function signInAsWorkspaceOwner(page: Page, request: APIRequestContext, email: string) {
   await resetBrowserSession(page);
@@ -227,7 +300,13 @@ async function signInAsWorkspaceOwner(page: Page, request: APIRequestContext, em
 
   state.ownerToken = ownerToken;
   state.workspaceId = await getCurrentWorkspaceId(request, ownerToken);
-  await cleanupStaleTemporaryGroups(request, ownerToken, state.workspaceId);
+}
+
+async function signInSeededAccountForAccessCheck(page: Page, accountAliasValue: string) {
+  await resetBrowserSession(page);
+  await signInWithPasswordViaUi(page, spmAccountEmail(accountAliasValue), PASSWORD, 2000);
+  await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
+  await expect(WorkspaceSelectors.dropdownTrigger(page)).toBeVisible({ timeout: 30000 });
 }
 
 function requireState(page: Page): ScenarioState {
@@ -258,6 +337,10 @@ function groupDetailModal(page: Page) {
   return page.getByTestId('group-detail-modal');
 }
 
+function createGroupModal(page: Page) {
+  return page.getByTestId('create-group-modal');
+}
+
 function groupRow(page: Page, groupName: string) {
   return settingsDialog(page).locator('[data-testid^="group-row-"]').filter({ hasText: groupName }).first();
 }
@@ -267,7 +350,15 @@ function groupMemberRow(page: Page, email: string) {
 }
 
 async function openWorkspaceGroup(page: Page, groupName: string) {
-  await groupRow(page, groupName).click();
+  const row = groupRow(page, groupName);
+  const editButton = row.locator('[data-testid^="group-edit-"]');
+
+  await expect(row).toBeVisible({ timeout: 15000 });
+  if (await editButton.isVisible().catch(() => false)) {
+    await editButton.click();
+  } else {
+    await row.click();
+  }
 
   const modal = groupDetailModal(page);
 
@@ -284,11 +375,11 @@ async function addWorkspaceMemberToOpenGroup(page: Page, email: string) {
 }
 
 async function removeWorkspaceMemberFromOpenGroup(page: Page, email: string) {
+  await openGroupMembersTab(page);
   const row = groupMemberRow(page, email);
 
   await expect(row).toBeVisible({ timeout: 15000 });
-  await row.getByRole('button', { name: 'Group member actions' }).click();
-  await page.getByRole('menuitem', { name: 'Remove from group' }).click();
+  await row.getByRole('button', { name: 'Remove', exact: true }).click();
 }
 
 async function searchGroupMemberCandidate(page: Page, email: string) {
@@ -315,6 +406,24 @@ async function openGroupMembersTab(page: Page) {
   await expect(modal.getByTestId('workspace-member-inline-search-input')).toBeVisible({ timeout: 15000 });
 }
 
+async function expectSeededGroupPageTitle(page: Page) {
+  const editableTitle = PageSelectors.titleInput(page).first();
+  const readOnlyTitle = page.getByRole('heading', { name: SPM_GROUP_PAGE_TITLE, exact: true }).first();
+
+  await expect
+    .poll(
+      async () => {
+        const editableText = await editableTitle.textContent().catch(() => undefined);
+
+        if (editableText?.trim() === SPM_GROUP_PAGE_TITLE) return SPM_GROUP_PAGE_TITLE;
+
+        return (await readOnlyTitle.textContent().catch(() => ''))?.trim();
+      },
+      { timeout: 30000 }
+    )
+    .toBe(SPM_GROUP_PAGE_TITLE);
+}
+
 async function cleanupTemporaryGroup(request: APIRequestContext, page: Page, state: ScenarioState) {
   const token = state.ownerToken || (await getAuthToken(page));
 
@@ -324,10 +433,6 @@ async function cleanupTemporaryGroup(request: APIRequestContext, page: Page, sta
 
   if (!workspaceId) return;
   await cleanupGroupsByName(request, token, workspaceId, (group) => group.name === state.groupName);
-}
-
-async function cleanupStaleTemporaryGroups(request: APIRequestContext, token: string, workspaceId: string) {
-  await cleanupGroupsByName(request, token, workspaceId, (group) => group.name.startsWith(TEMPORARY_GROUP_PREFIX));
 }
 
 async function cleanupGroupsByName(
@@ -349,9 +454,14 @@ async function cleanupSeededGroupMember(request: APIRequestContext, state: Scena
   const group = await findWorkspaceGroup(request, state.ownerToken, state.workspaceId, SPM_GROUP_NAME);
   const uid = await findWorkspaceMemberUid(request, state.ownerToken, state.workspaceId, email);
 
-  if (!group || !uid) return;
+  if (!group) throw new Error(`Seeded workspace group not found: ${SPM_GROUP_NAME}`);
+  if (!uid) throw new Error(`Seeded workspace member uid not found: ${email}`);
 
-  await deleteApi(request, state.ownerToken, `/api/workspace/${state.workspaceId}/groups/${group.group_id}/members/${uid}`);
+  await deleteApi(
+    request,
+    state.ownerToken,
+    `/api/workspace/${state.workspaceId}/groups/${group.group_id}/members/${uid}`
+  );
 }
 
 async function findWorkspaceGroup(
@@ -426,10 +536,13 @@ async function deleteApi(request: APIRequestContext, token: string, path: string
     headers: apiHeaders(token),
     failOnStatusCode: false,
   });
+  const text = await response.text();
+  const body = parseApiResponse<void>(text, false);
+  const alreadyAbsent = body?.code === -2 && body.message?.toLowerCase().includes('record not found');
 
-  if (response.ok() || response.status() === 404) return;
+  if (response.status() === 404 || alreadyAbsent || (response.ok() && (!text || body?.code === 0))) return;
 
-  throw new Error(`API DELETE failed for ${path}: HTTP ${response.status()} ${await response.text()}`);
+  throw new Error(`API DELETE failed for ${path}: HTTP ${response.status()} ${text}`);
 }
 
 function parseApiResponse<T>(text: string, preserveUid: boolean): ApiResponse<T> | null {

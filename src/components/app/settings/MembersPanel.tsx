@@ -1,5 +1,4 @@
 import dayjs from 'dayjs';
-import { MoreHorizontal, Search, Trash2, Users, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -7,8 +6,13 @@ import { toast } from 'sonner';
 import { ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { Role, WorkspaceGroup, WorkspaceGroupMember, WorkspaceMember } from '@/application/types';
-import { NormalModal } from '@/components/_shared/modal';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
@@ -17,8 +21,24 @@ import {
   workspaceMemberDisplayName,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -443,19 +463,20 @@ function MembersPanelForWorkspace({
 
   return (
     <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
-      <div className='px-8 pb-4 pt-7'>
-        <h2 className='text-[28px] font-semibold leading-9 text-text-primary'>
-          {t('settings.appearance.people.title')}
-        </h2>
-        <div className='mt-2 flex items-center gap-3 text-sm text-text-primary'>
+      <div className='px-6 pb-4 pt-6'>
+        <h2 className='text-2xl font-semibold leading-8 text-text-primary'>{t('settings.appearance.people.title')}</h2>
+        <div className='mt-1 flex items-center gap-3 text-xs leading-[18px] text-text-secondary'>
           <span>{t('settings.appearance.people.description')}</span>
-          <button type='button' className='text-text-action hover:text-text-action-hover'>
+          <button
+            type='button'
+            className='rounded-100 text-text-action hover:text-text-action-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+          >
             {t('workspace.learnMore')}
           </button>
         </div>
       </div>
 
-      <div className='appflowy-scroller flex-1 overflow-y-auto px-8 pb-6'>
+      <div className='appflowy-scroller flex-1 overflow-y-auto px-6 pb-6'>
         <div className='flex flex-col gap-6'>
           {isOwner && (
             <section className='flex items-start justify-between gap-4 pt-10'>
@@ -490,16 +511,16 @@ function MembersPanelForWorkspace({
 
           <Tabs value={tab} onValueChange={(value) => setTab(value as PeopleTab)} className='gap-5'>
             <div className='flex items-center gap-4'>
-              <TabsList className='gap-1'>
+              <TabsList className='gap-1.5'>
                 <TabsTrigger
                   value='members'
-                  className='h-9 rounded-300 px-3 py-1 text-base data-[state=active]:bg-fill-content-hover data-[state=active]:after:hidden'
+                  className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
                 >
                   {tabLabel(t('settings.appearance.people.membersTab'), members.length)}
                 </TabsTrigger>
                 <TabsTrigger
                   value='groups'
-                  className='h-9 rounded-300 px-3 py-1 text-base data-[state=active]:bg-fill-content-hover data-[state=active]:after:hidden'
+                  className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
                 >
                   {tabLabel(t('settings.appearance.people.groupsTab'), groups.length)}
                 </TabsTrigger>
@@ -594,7 +615,7 @@ function MembersPanelForWorkspace({
                                   className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
                                   aria-label={t('settings.appearance.people.memberActions')}
                                 >
-                                  <MoreHorizontal className='h-4 w-4' />
+                                  <MoreIcon aria-hidden='true' className='h-4 w-4' />
                                 </button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align='end'>
@@ -632,6 +653,9 @@ function MembersPanelForWorkspace({
                           <SearchInput
                             value={groupSearch}
                             inputRef={groupSearchInputRef}
+                            name='workspace-group-search'
+                            aria-label={t('settings.appearance.people.searchGroups')}
+                            autoComplete='off'
                             onChange={(e) => setGroupSearch(e.target.value)}
                             onKeyDown={(e) => {
                               if (e.key !== 'Escape') return;
@@ -641,7 +665,7 @@ function MembersPanelForWorkspace({
                               setShowGroupSearch(false);
                             }}
                             placeholder={t('settings.appearance.people.searchGroupsByName')}
-                            className='h-9 w-[260px]'
+                            className='h-8 w-[260px] [&>svg]:h-4 [&>svg]:w-4'
                           />
                         ) : (
                           <Button
@@ -651,8 +675,9 @@ function MembersPanelForWorkspace({
                             onClick={() => setShowGroupSearch(true)}
                             aria-label={t('settings.appearance.people.searchGroups')}
                             data-testid='people-groups-open-search-button'
+                            className='focus-visible:ring-1 focus-visible:ring-border-theme-thick'
                           >
-                            <Search className='h-5 w-5' />
+                            <SearchIcon aria-hidden='true' className='h-5 w-5' />
                           </Button>
                         ))}
                       <Button
@@ -660,23 +685,24 @@ function MembersPanelForWorkspace({
                         size='lg'
                         onClick={() => setShowCreateGroup(true)}
                         data-testid='people-create-group-button'
+                        className='focus-visible:ring-1 focus-visible:ring-border-theme-thick'
                       >
                         {t('settings.appearance.people.createGroup')}
                       </Button>
                     </div>
 
                     <div className='flex flex-col'>
-                      <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium text-text-secondary'>
+                      <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium leading-[18px] text-text-secondary'>
                         <span>{t('settings.appearance.people.groupsTab')}</span>
                         <span>{t('settings.appearance.people.membersTab')}</span>
-                        <span className='w-6' aria-hidden='true' />
+                        <span className='col-span-2 w-16' aria-hidden='true' />
                       </div>
                       {loadingGroups && groups.length === 0 ? (
-                        <div className='py-6 text-center text-sm text-text-secondary'>
+                        <div className='py-5 text-center text-sm text-text-secondary'>
                           <Progress />
                         </div>
                       ) : visibleGroups.length === 0 ? (
-                        <div className='py-6 text-center text-sm text-text-secondary'>
+                        <div className='py-5 text-center text-sm text-text-secondary'>
                           {t('settings.appearance.people.noGroups')}
                         </div>
                       ) : (
@@ -685,31 +711,37 @@ function MembersPanelForWorkspace({
                             <div
                               key={group.group_id}
                               data-testid={`group-row-${group.group_id}`}
-                              className='grid cursor-pointer grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px] items-center gap-4 border-b border-border-primary py-3 text-sm hover:bg-fill-content-hover'
-                              onClick={() => setSelectedGroup(group)}
+                              className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px_32px] items-center gap-4 border-b border-border-primary py-3 text-sm'
                             >
                               <div className='flex min-w-0 items-center gap-3'>
-                                <div className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-fill-content-hover text-icon-secondary'>
-                                  <Users className='h-5 w-5' />
-                                </div>
+                                <WorkspaceGroupIcon variant='settings-row' />
                                 <span className='truncate font-medium text-text-primary'>{group.name}</span>
                               </div>
                               <span className='truncate text-text-secondary'>
                                 {groupMemberCountLabel(group.member_count, t)}
                               </span>
-                              <div onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type='button'
+                                data-testid={`group-edit-${group.group_id}`}
+                                className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                                aria-label={`${t('button.edit')} ${group.name}`}
+                                onClick={() => setSelectedGroup(group)}
+                              >
+                                <EditIcon aria-hidden='true' className='h-5 w-5' />
+                              </button>
+                              <div>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <button
                                       type='button'
                                       disabled={deletingGroupId === group.group_id}
-                                      className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
-                                      aria-label={t('settings.appearance.people.groupActions')}
+                                      className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
+                                      aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
                                     >
-                                      <MoreHorizontal className='h-4 w-4' />
+                                      <MoreIcon aria-hidden='true' className='h-4 w-4' />
                                     </button>
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent align='end'>
+                                  <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
                                     <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
                                       {t('settings.appearance.people.renameGroup')}
                                     </DropdownMenuItem>
@@ -741,10 +773,7 @@ function MembersPanelForWorkspace({
           group={selectedGroupForPanel}
           onClose={() => setSelectedGroup(null)}
           onGroupChanged={refreshGroups}
-          onGroupDeleted={() => {
-            setSelectedGroup(null);
-            void refreshGroups();
-          }}
+          onDeleteRequested={() => setDeleteConfirmationGroup(selectedGroupForPanel)}
           workspaceMembers={members}
         />
       )}
@@ -758,62 +787,123 @@ function MembersPanelForWorkspace({
         />
       )}
       {renamingGroup && (
-        <NormalModal
+        <Dialog
           open
-          title={t('settings.appearance.people.renameGroup')}
-          onClose={closeRenameGroup}
-          onCancel={closeRenameGroup}
-          onOk={() => void handleRenameGroup(renamingGroup)}
-          okText={t('button.save')}
-          okLoading={updatingGroupId === renamingGroup.group_id}
-          okButtonProps={{
-            disabled:
-              !renamingGroupName.trim() ||
-              renamingGroupName.trim() === renamingGroup.name ||
-              updatingGroupId === renamingGroup.group_id,
-            'data-testid': 'people-rename-group-submit',
-          }}
-          cancelButtonProps={{ disabled: updatingGroupId === renamingGroup.group_id }}
-          PaperProps={{
-            className: 'w-[420px] max-w-[calc(100vw-32px)]',
-            'data-testid': 'rename-group-modal',
+          onOpenChange={(isOpen) => {
+            if (!isOpen) closeRenameGroup();
           }}
         >
-          <Input
-            value={renamingGroupName}
-            onChange={(event) => setRenamingGroupName(event.target.value)}
-            placeholder={t('settings.appearance.people.groupNamePlaceholder')}
-            autoFocus
-            disabled={updatingGroupId === renamingGroup.group_id}
-            data-testid='people-rename-group-name-input'
-          />
-        </NormalModal>
+          <DialogContent
+            size='sm'
+            closeLabel={t('button.close')}
+            className='bg-surface-primary p-5'
+            aria-busy={updatingGroupId === renamingGroup.group_id}
+            onEscapeKeyDown={(event) => {
+              if (updatingGroupId === renamingGroup.group_id) event.preventDefault();
+            }}
+            onPointerDownOutside={(event) => {
+              if (updatingGroupId === renamingGroup.group_id) event.preventDefault();
+            }}
+          >
+            <form
+              data-testid='rename-group-modal'
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleRenameGroup(renamingGroup);
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>{t('settings.appearance.people.renameGroup')}</DialogTitle>
+                <DialogDescription className='sr-only'>
+                  {t('settings.appearance.people.groupNamePlaceholder')}
+                </DialogDescription>
+              </DialogHeader>
+              <Input
+                id='people-rename-group-name-input'
+                name='workspace-group-name'
+                size='sm'
+                value={renamingGroupName}
+                onChange={(event) => setRenamingGroupName(event.target.value)}
+                placeholder={t('settings.appearance.people.groupNamePlaceholder')}
+                aria-label={t('settings.appearance.people.groupNamePlaceholder')}
+                autoFocus
+                disabled={updatingGroupId === renamingGroup.group_id}
+                data-testid='people-rename-group-name-input'
+              />
+              <DialogFooter className='gap-3'>
+                <Button
+                  type='button'
+                  variant='outline'
+                  disabled={updatingGroupId === renamingGroup.group_id}
+                  onClick={closeRenameGroup}
+                  data-testid='modal-cancel'
+                >
+                  {t('button.cancel')}
+                </Button>
+                <Button
+                  type='submit'
+                  aria-label={t('button.confirm')}
+                  disabled={
+                    !renamingGroupName.trim() ||
+                    renamingGroupName.trim() === renamingGroup.name ||
+                    updatingGroupId === renamingGroup.group_id
+                  }
+                  loading={updatingGroupId === renamingGroup.group_id}
+                  data-testid='people-rename-group-submit'
+                >
+                  {updatingGroupId === renamingGroup.group_id ? <Progress variant='inherit' /> : t('button.confirm')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       )}
       {deleteConfirmationGroup && (
-        <NormalModal
+        <AlertDialog
           open
-          danger
-          title={t('settings.appearance.people.deleteGroupQuestion')}
-          onClose={() => {
-            if (!deletingGroupId) setDeleteConfirmationGroup(null);
-          }}
-          onCancel={() => {
-            if (!deletingGroupId) setDeleteConfirmationGroup(null);
-          }}
-          onOk={() => void handleDeleteGroup(deleteConfirmationGroup)}
-          okText={t('button.delete')}
-          okLoading={deletingGroupId === deleteConfirmationGroup.group_id}
-          okButtonProps={{
-            'data-testid': 'people-delete-group-confirm',
-          }}
-          cancelButtonProps={{ disabled: deletingGroupId === deleteConfirmationGroup.group_id }}
-          PaperProps={{
-            className: 'w-[420px] max-w-[calc(100vw-32px)]',
-            'data-testid': 'delete-group-confirmation',
+          onOpenChange={(isOpen) => {
+            if (!isOpen && !deletingGroupId) setDeleteConfirmationGroup(null);
           }}
         >
-          <div className='text-sm text-text-secondary'>{t('settings.appearance.people.deleteGroupDescription')}</div>
-        </NormalModal>
+          <AlertDialogContent
+            className='w-[440px] max-w-[calc(100%-2rem)] gap-5 rounded-400 border-0 bg-surface-primary p-5'
+            data-testid='delete-group-confirmation'
+            aria-busy={deletingGroupId === deleteConfirmationGroup.group_id}
+            showCloseButton={deletingGroupId !== deleteConfirmationGroup.group_id}
+            closeLabel={t('button.close')}
+          >
+            <AlertDialogHeader className='gap-3 pr-8 text-left'>
+              <AlertDialogTitle className='text-base font-bold leading-[22px] text-text-primary'>
+                {t('settings.appearance.people.deleteGroupQuestion')}
+              </AlertDialogTitle>
+              <AlertDialogDescription className='text-sm leading-5 text-text-primary'>
+                {t('settings.appearance.people.deleteGroupDescription')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className='gap-3'>
+              <Button
+                type='button'
+                variant='outline'
+                disabled={deletingGroupId === deleteConfirmationGroup.group_id}
+                onClick={() => setDeleteConfirmationGroup(null)}
+                data-testid='modal-cancel'
+              >
+                {t('button.cancel')}
+              </Button>
+              <Button
+                type='button'
+                variant='destructive'
+                disabled={deletingGroupId === deleteConfirmationGroup.group_id}
+                loading={deletingGroupId === deleteConfirmationGroup.group_id}
+                onClick={() => void handleDeleteGroup(deleteConfirmationGroup)}
+                data-testid='people-delete-group-confirm'
+              >
+                {deletingGroupId === deleteConfirmationGroup.group_id && <Progress variant='inherit' />}
+                {t('button.delete')}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );
@@ -826,7 +916,7 @@ interface GroupDetailModalProps {
   workspaceMembers: WorkspaceMember[];
   onClose: () => void;
   onGroupChanged: () => Promise<void>;
-  onGroupDeleted: () => void;
+  onDeleteRequested: () => void;
 }
 
 interface CreateGroupModalProps {
@@ -873,8 +963,7 @@ function CreateGroupMemberPicker({
   return (
     <div className='flex flex-col'>
       <div
-        className='rounded-300 bg-fill-content px-2 py-1'
-        onClick={() => inputRef.current?.focus()}
+        className='rounded-300 bg-fill-content px-2 py-1 focus-within:ring-1 focus-within:ring-border-theme-thick'
         data-testid='create-group-member-picker'
       >
         {selectedMembers.map((member) => {
@@ -897,7 +986,7 @@ function CreateGroupMemberPicker({
               </div>
               <button
                 type='button'
-                className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover disabled:opacity-50'
+                className='flex h-6 w-6 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
                 onClick={(e) => {
                   e.stopPropagation();
                   onRemoveMember(member);
@@ -905,13 +994,15 @@ function CreateGroupMemberPicker({
                 disabled={disabled}
                 aria-label={removeMemberLabel}
               >
-                <X className='h-4 w-4' />
+                <CloseIcon aria-hidden='true' className='h-4 w-4' />
               </button>
             </div>
           );
         })}
         <input
+          id='create-group-member-search-input'
           ref={inputRef}
+          name='workspace-group-member-search'
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           onKeyDown={(e) => {
@@ -937,13 +1028,18 @@ function CreateGroupMemberPicker({
           }}
           disabled={disabled}
           placeholder={selectedMembers.length === 0 ? noMembersLabel : searchPlaceholder}
+          aria-label={searchPlaceholder}
+          autoComplete='off'
           className='h-10 w-full bg-transparent px-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed'
           data-testid='create-group-member-search-input'
         />
       </div>
 
       {hasSearch && (
-        <div className='mt-2 max-h-[240px] overflow-y-auto rounded-400 border border-border-primary bg-fill-content p-2 shadow-xl'>
+        <div
+          className='mt-2 max-h-[240px] overflow-y-auto overscroll-contain rounded-400 border border-border-primary bg-surface-primary p-2 shadow-dialog'
+          aria-live='polite'
+        >
           {visibleMembers.length === 0 ? (
             <div className='px-3 py-2 text-sm text-text-tertiary'>{noResultsLabel}</div>
           ) : (
@@ -956,7 +1052,7 @@ function CreateGroupMemberPicker({
                 <button
                   key={`${member.email}-${uid ?? 'missing-uid'}`}
                   type='button'
-                  className='flex w-full items-center gap-3 rounded-300 px-3 py-2 text-left hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none disabled:cursor-not-allowed disabled:opacity-50'
+                  className='flex w-full items-center gap-3 rounded-300 px-3 py-2 text-left hover:bg-fill-content-hover focus-visible:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:cursor-not-allowed disabled:opacity-50'
                   onClick={() => onAddMember(member)}
                   disabled={disabled || !uid}
                   title={!uid ? unavailableTitle : undefined}
@@ -966,9 +1062,9 @@ function CreateGroupMemberPicker({
                     <AvatarImage src={member.avatar_url} alt={displayName} />
                     <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
                   </Avatar>
-                  <div className='min-w-0 flex-1 truncate text-sm text-text-primary'>
-                    <span className='font-semibold'>{displayName}</span>
-                    {showEmail && <span className='ml-1 text-text-secondary'>{member.email}</span>}
+                  <div className='min-w-0 flex-1'>
+                    <div className='truncate text-sm font-semibold text-text-primary'>{displayName}</div>
+                    {showEmail && <div className='truncate text-xs text-text-secondary'>{member.email}</div>}
                   </div>
                 </button>
               );
@@ -1081,91 +1177,102 @@ function CreateGroupModal({ open, workspaceId, workspaceMembers, onClose, onCrea
   }, [creating, groupName, onClose, onCreated, selectedMemberUids, selectedMembers.length, t, workspaceId]);
 
   return (
-    <NormalModal
+    <Dialog
       open={open}
-      onClose={onClose}
-      title=''
-      maxWidth={false}
-      PaperProps={{
-        className: 'w-[720px] max-w-[calc(100vw-32px)]',
-        'data-testid': 'create-group-modal',
+      onOpenChange={(isOpen) => {
+        if (!isOpen && !creating) onClose();
       }}
-      cancelButtonProps={{ style: { display: 'none' } }}
-      okButtonProps={{ style: { display: 'none' } }}
     >
-      <div className='flex max-h-[76vh] min-h-[520px] flex-col gap-7 px-2 pb-2'>
-        <div className='flex flex-col items-center gap-4 pt-3 text-center'>
-          <Users className='h-12 w-12 text-icon-secondary' />
-          <div className='flex flex-col gap-2'>
-            <div className='text-2xl font-semibold text-text-primary'>
-              {t('settings.appearance.people.createNewGroup')}
+      <DialogContent
+        size='lg'
+        closeLabel={t('button.close')}
+        closeButtonClassName='right-5 top-4'
+        className='h-[min(620px,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] overflow-hidden bg-surface-primary p-0'
+        data-testid='create-group-modal'
+        aria-busy={creating}
+        onEscapeKeyDown={(event) => {
+          if (creating) event.preventDefault();
+        }}
+        onPointerDownOutside={(event) => {
+          if (creating) event.preventDefault();
+        }}
+      >
+        <div className='flex h-full min-h-0 flex-col'>
+          <div className='h-12 shrink-0' aria-hidden='true' />
+          <div className='appflowy-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-7 pt-3'>
+            <div className='flex flex-col items-center text-center'>
+              <WorkspaceGroupIcon variant='hero' />
+              <DialogHeader className='mb-0 mt-4 gap-2 text-center'>
+                <DialogTitle className='text-2xl font-semibold leading-8 text-text-primary'>
+                  {t('settings.appearance.people.createNewGroup')}
+                </DialogTitle>
+                <DialogDescription className='text-base leading-[22px] text-text-secondary'>
+                  {t('settings.appearance.people.createGroupDescription')}
+                </DialogDescription>
+              </DialogHeader>
             </div>
-            <div className='text-base text-text-secondary'>{t('settings.appearance.people.createGroupDescription')}</div>
+
+            <div className='mt-7 flex flex-col gap-5'>
+              <section className='flex flex-col gap-2'>
+                <label htmlFor='people-create-group-name-input' className='text-sm font-medium text-text-primary'>
+                  {t('settings.appearance.people.iconAndName')}
+                </label>
+                <div className='flex items-center gap-2'>
+                  <WorkspaceGroupIcon variant='name' />
+                  <Input
+                    id='people-create-group-name-input'
+                    name='workspace-group-name'
+                    size='md'
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleCreateGroup();
+                      }
+                    }}
+                    placeholder={t('settings.appearance.people.createGroupNamePlaceholder')}
+                    autoFocus
+                    className='h-12 flex-1 text-base'
+                    data-testid='people-create-group-name-input'
+                  />
+                  <Button
+                    type='button'
+                    size='lg'
+                    aria-label={t('settings.appearance.people.createGroupAction')}
+                    disabled={!groupName.trim() || creating}
+                    loading={creating}
+                    onClick={() => void handleCreateGroup()}
+                    data-testid='people-create-group-submit'
+                    className='h-12 w-[120px] text-base font-semibold focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                  >
+                    {creating ? <Progress variant='inherit' /> : t('settings.appearance.people.createGroupAction')}
+                  </Button>
+                </div>
+              </section>
+
+              <section className='flex flex-col gap-3'>
+                <div className='text-sm font-medium text-text-primary'>{t('settings.appearance.people.membersTab')}</div>
+                <CreateGroupMemberPicker
+                  search={memberSearch}
+                  selectedMembers={selectedMembers}
+                  addableMembers={addableWorkspaceMembers}
+                  disabled={creating}
+                  noMembersLabel={t('settings.appearance.people.noMembersYet')}
+                  searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
+                  noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
+                  unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
+                  removeMemberLabel={t('settings.appearance.people.removeFromGroup')}
+                  onSearchChange={setMemberSearch}
+                  onAddMember={handleAddMember}
+                  onRemoveMember={handleRemoveSelectedMember}
+                />
+              </section>
+            </div>
           </div>
         </div>
-
-        <div className='flex flex-col gap-5'>
-          <section className='flex flex-col gap-2'>
-            <div className='text-sm font-medium text-text-primary'>{t('settings.appearance.people.iconAndName')}</div>
-            <div className='flex items-center gap-2'>
-              <div className='flex h-12 w-12 shrink-0 items-center justify-center rounded-400 border border-border-primary bg-fill-content-hover text-icon-secondary'>
-                <Users className='h-7 w-7' />
-              </div>
-              <Input
-                value={groupName}
-                onChange={(e) => setGroupName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void handleCreateGroup();
-                  }
-                }}
-                placeholder={t('settings.appearance.people.createGroupNamePlaceholder')}
-                autoFocus
-                className='h-12 flex-1 text-base'
-                data-testid='people-create-group-name-input'
-              />
-            </div>
-          </section>
-
-          <section className='flex flex-col gap-3'>
-            <div className='text-sm font-medium text-text-primary'>{t('settings.appearance.people.membersTab')}</div>
-            <CreateGroupMemberPicker
-              search={memberSearch}
-              selectedMembers={selectedMembers}
-              addableMembers={addableWorkspaceMembers}
-              disabled={creating}
-              noMembersLabel={t('settings.appearance.people.noMembersYet')}
-              searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
-              noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
-              unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
-              removeMemberLabel={t('settings.appearance.people.removeFromGroup')}
-              onSearchChange={setMemberSearch}
-              onAddMember={handleAddMember}
-              onRemoveMember={handleRemoveSelectedMember}
-            />
-          </section>
-        </div>
-
-        <div className='flex flex-col gap-3'>
-          <Button
-            type='button'
-            size='lg'
-            disabled={!groupName.trim() || creating}
-            loading={creating}
-            onClick={() => void handleCreateGroup()}
-            data-testid='people-create-group-submit'
-            className='h-12 w-full text-base font-medium'
-          >
-            {creating && <Progress variant='inherit' />}
-            {t('settings.appearance.people.createGroupAction')}
-          </Button>
-          <Button type='button' variant='ghost' size='lg' onClick={onClose} disabled={creating} className='w-full'>
-            {t('button.cancel')}
-          </Button>
-        </div>
-      </div>
-    </NormalModal>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1176,7 +1283,7 @@ function GroupDetailModal({
   workspaceMembers,
   onClose,
   onGroupChanged,
-  onGroupDeleted,
+  onDeleteRequested,
 }: GroupDetailModalProps) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<GroupDetailTab>('general');
@@ -1185,7 +1292,6 @@ function GroupDetailModal({
   const [loadingGroupMembers, setLoadingGroupMembers] = useState(false);
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [removingUid, setRemovingUid] = useState<string | null>(null);
-  const [deletingGroup, setDeletingGroup] = useState(false);
 
   useEffect(() => {
     if (!open || !workspaceId) return;
@@ -1310,165 +1416,169 @@ function GroupDetailModal({
     [group.group_id, onGroupChanged, t, workspaceId]
   );
 
-  const handleDeleteGroup = useCallback(async () => {
-    setDeletingGroup(true);
-    try {
-      await WorkspaceService.removeWorkspaceGroup(workspaceId, group.group_id);
-      toast.success(t('settings.appearance.people.deleteGroupSuccess'));
-      setDeletingGroup(false);
-      onGroupDeleted();
-    } catch (e) {
-      setDeletingGroup(false);
-      toast.error(getErrorMessage(e, t('settings.appearance.people.deleteGroupFailed')));
-    }
-  }, [group.group_id, onGroupDeleted, t, workspaceId]);
-
   return (
-    <NormalModal
+    <Dialog
       open={open}
-      onClose={onClose}
-      title={t('settings.appearance.people.manageGroup')}
-      maxWidth={false}
-      PaperProps={{
-        className: 'w-[720px] max-w-[calc(100vw-32px)]',
-        'data-testid': 'group-detail-modal',
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
       }}
-      cancelButtonProps={{ style: { display: 'none' } }}
-      okButtonProps={{ style: { display: 'none' } }}
     >
-      <div className='flex max-h-[72vh] min-h-[460px] flex-col gap-5 overflow-hidden'>
-        <div className='flex items-start gap-4 px-1'>
-          <div className='flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-fill-content-hover text-icon-secondary'>
-            <Users className='h-9 w-9' />
+      <DialogContent
+        size='lg'
+        closeLabel={t('button.close')}
+        closeButtonClassName='right-5 top-5'
+        className='h-[min(560px,calc(100vh-2rem))] max-h-[calc(100vh-2rem)] overflow-hidden bg-surface-primary p-0'
+        data-testid='group-detail-modal'
+      >
+        <div className='flex h-full min-h-0 flex-col p-5'>
+          <div className='relative flex h-8 shrink-0 items-center justify-center'>
+            <DialogTitle className='text-base font-semibold text-text-primary'>
+              {t('settings.appearance.people.manageGroup')}
+            </DialogTitle>
           </div>
-          <div className='min-w-0 pt-1'>
-            <div className='truncate text-2xl font-semibold text-text-primary'>{group.name}</div>
-            <div className='mt-1 text-sm text-text-secondary'>{groupMemberCountLabel(displayedMemberCount, t)}</div>
+          <DialogDescription className='sr-only'>{groupMemberCountLabel(displayedMemberCount, t)}</DialogDescription>
+
+          <div className='mt-5 flex items-start gap-4 px-1'>
+            <WorkspaceGroupIcon variant='detail' />
+            <div className='min-w-0 pt-1'>
+              <div className='truncate text-2xl font-semibold leading-8 text-text-primary'>{group.name}</div>
+              <div className='mt-1 text-sm text-text-secondary'>{groupMemberCountLabel(displayedMemberCount, t)}</div>
+            </div>
           </div>
-        </div>
 
-        <Tabs value={tab} onValueChange={(value) => setTab(value as GroupDetailTab)} className='min-h-0 flex-1 gap-4'>
-          <TabsList className='gap-1'>
-            <TabsTrigger
-              value='general'
-              className='h-9 rounded-300 px-3 py-1 text-base data-[state=active]:bg-fill-content-hover data-[state=active]:after:hidden'
-            >
-              {t('settings.appearance.people.generalTab')}
-            </TabsTrigger>
-            <TabsTrigger
-              value='members'
-              className='h-9 rounded-300 px-3 py-1 text-base data-[state=active]:bg-fill-content-hover data-[state=active]:after:hidden'
-            >
-              {t('settings.appearance.people.membersTab')}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value='general' className='outline-none'>
-            <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
-              <div className='min-w-0'>
-                <div className='text-sm font-semibold text-text-primary'>
-                  {t('settings.appearance.people.deleteGroup')}
-                </div>
-                <div className='mt-1 text-sm leading-6 text-text-secondary'>
-                  {t('settings.appearance.people.deleteGroupDescription')}
-                </div>
-              </div>
-              <Button
-                type='button'
-                variant='destructive-outline'
-                disabled={deletingGroup}
-                loading={deletingGroup}
-                onClick={() => void handleDeleteGroup()}
+          <Tabs
+            value={tab}
+            onValueChange={(value) => setTab(value as GroupDetailTab)}
+            className='mt-5 min-h-0 flex-1 gap-4'
+          >
+            <TabsList className='gap-1'>
+              <TabsTrigger
+                value='general'
+                className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
               >
-                {deletingGroup ? <Progress variant='inherit' /> : <Trash2 className='h-4 w-4' />}
-                {t('settings.appearance.people.deleteGroup')}
-              </Button>
-            </div>
-          </TabsContent>
+                {t('settings.appearance.people.generalTab')}
+              </TabsTrigger>
+              <TabsTrigger
+                value='members'
+                className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
+              >
+                {t('settings.appearance.people.membersTab')}
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value='members' className='min-h-0 flex-1 outline-none'>
-            <div className='flex h-full min-h-0 flex-col gap-4'>
-              <WorkspaceMemberInlineSearch
-                search={memberSearch}
-                onSearchChange={setMemberSearch}
-                addableMembers={addableWorkspaceMembers}
-                searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
-                addButtonLabel={t('settings.appearance.people.addUser')}
-                addResultLabel={t('settings.appearance.people.notInGroup')}
-                addActionLabel={t('button.add')}
-                ownerBadgeLabel={t('settings.appearance.people.workspaceOwner')}
-                unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
-                inputDisabled={loadingGroupMembers}
-                addButtonDisabled={loadingGroupMembers || Boolean(addingUid) || !selectedAddableMember}
-                addingUid={addingUid}
-                maxResults={2}
-                inputClassName='h-9 flex-1'
-                onAddButtonClick={() => {
-                  if (selectedAddableMember) void handleAddMember(selectedAddableMember);
-                }}
-                onInputKeyDown={(event) => {
-                  if (event.key !== 'Enter' || !selectedAddableMember || addingUid) return;
-                  event.preventDefault();
-                  void handleAddMember(selectedAddableMember);
-                }}
-                onAddMember={(member) => void handleAddMember(member)}
-              />
-
-              <div className='appflowy-scroller min-h-0 flex-1 overflow-y-auto'>
-                {loadingGroupMembers && groupMembers.length === 0 ? (
-                  <div className='py-6 text-center text-sm text-text-secondary'>
-                    <Progress />
+            <TabsContent value='general' className='outline-none'>
+              <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
+                <div className='min-w-0'>
+                  <div className='text-sm font-semibold text-text-primary'>
+                    {t('settings.appearance.people.deleteGroup')}
                   </div>
-                ) : groupMembers.length === 0 ? (
-                  <div className='py-6 text-center text-sm text-text-secondary'>
-                    {t('settings.appearance.people.noGroupMembers')}
+                  <div className='mt-1 text-sm leading-5 text-text-secondary'>
+                    {t('settings.appearance.people.deleteGroupDescription')}
                   </div>
-                ) : (
-                  groupMembers.map((member) => {
-                    const workspaceMember =
-                      workspaceMembersByUid.get(member.uid) ||
-                      (member.email ? workspaceMembersByEmail.get(member.email.trim().toLowerCase()) : undefined);
-                    const displayName =
-                      member.name?.trim() || workspaceMember?.name || groupMemberDisplayName(member, t);
-                    const email = member.email?.trim() || workspaceMember?.email;
-
-                    return (
-                      <div
-                        key={member.uid}
-                        data-testid={`group-member-row-${member.uid}`}
-                        className='flex items-center justify-between gap-3 border-b border-border-primary py-3 text-sm'
-                      >
-                        <div className='flex min-w-0 items-center gap-3'>
-                          <Avatar size='md'>
-                            <AvatarImage src={workspaceMember?.avatar_url} alt={displayName} />
-                            <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
-                          </Avatar>
-                          <div className='flex min-w-0 flex-col'>
-                            <span className='truncate font-medium text-text-primary'>{displayName}</span>
-                            {email && <span className='truncate text-xs text-text-secondary'>{email}</span>}
-                          </div>
-                        </div>
-                        <Button
-                          type='button'
-                          size='sm'
-                          variant='ghost'
-                          className='text-text-action hover:text-text-action-hover'
-                          disabled={removingUid === member.uid}
-                          loading={removingUid === member.uid}
-                          onClick={() => void handleRemoveMember(member)}
-                        >
-                          {t('button.remove')}
-                        </Button>
-                      </div>
-                    );
-                  })
-                )}
+                </div>
+                <Button
+                  type='button'
+                  variant='destructive-outline'
+                  data-testid='group-detail-delete-button'
+                  onClick={onDeleteRequested}
+                  className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
+                >
+                  <DeleteIcon aria-hidden='true' className='h-4 w-4' />
+                  {t('settings.appearance.people.deleteGroup')}
+                </Button>
               </div>
-            </div>
-          </TabsContent>
-        </Tabs>
-      </div>
-    </NormalModal>
+            </TabsContent>
+
+            <TabsContent value='members' className='min-h-0 flex-1 outline-none'>
+              <div className='flex h-full min-h-0 flex-col gap-3'>
+                <WorkspaceMemberInlineSearch
+                  search={memberSearch}
+                  onSearchChange={setMemberSearch}
+                  addableMembers={addableWorkspaceMembers}
+                  searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
+                  addButtonLabel={t('settings.appearance.people.addUser')}
+                  addResultLabel={t('settings.appearance.people.notInGroup')}
+                  addActionLabel={t('button.add')}
+                  ownerBadgeLabel={t('settings.appearance.people.workspaceOwner')}
+                  unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
+                  noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
+                  formatRole={(role) => roleLabel(role, t)}
+                  inputDisabled={loadingGroupMembers}
+                  addButtonDisabled={loadingGroupMembers || Boolean(addingUid) || !selectedAddableMember}
+                  addingUid={addingUid}
+                  maxResults={2}
+                  compact
+                  onAddButtonClick={() => {
+                    if (selectedAddableMember) void handleAddMember(selectedAddableMember);
+                  }}
+                  onInputKeyDown={(event) => {
+                    if (event.key !== 'Enter' || !selectedAddableMember || addingUid) return;
+                    event.preventDefault();
+                    void handleAddMember(selectedAddableMember);
+                  }}
+                  onAddMember={(member) => void handleAddMember(member)}
+                />
+
+                <div className='appflowy-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain'>
+                  {loadingGroupMembers && groupMembers.length === 0 ? (
+                    <div className='py-6 text-center text-sm text-text-secondary'>
+                      <Progress />
+                    </div>
+                  ) : groupMembers.length === 0 ? (
+                    <div className='py-6 text-center text-sm text-text-secondary'>
+                      {t('settings.appearance.people.noGroupMembers')}
+                    </div>
+                  ) : (
+                    <div className='divide-y divide-border-primary'>
+                      {groupMembers.map((member) => {
+                        const workspaceMember =
+                          workspaceMembersByUid.get(member.uid) ||
+                          (member.email ? workspaceMembersByEmail.get(member.email.trim().toLowerCase()) : undefined);
+                        const displayName =
+                          member.name?.trim() || workspaceMember?.name || groupMemberDisplayName(member, t);
+                        const email = member.email?.trim() || workspaceMember?.email;
+
+                        return (
+                          <div
+                            key={member.uid}
+                            data-testid={`group-member-row-${member.uid}`}
+                            className='flex items-center justify-between gap-3 py-3 text-sm'
+                          >
+                            <div className='flex min-w-0 items-center gap-3'>
+                              <Avatar size='md'>
+                                <AvatarImage src={workspaceMember?.avatar_url} alt={displayName} />
+                                <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
+                              </Avatar>
+                              <div className='flex min-w-0 flex-col'>
+                                <span className='truncate font-medium text-text-primary'>{displayName}</span>
+                                {email && (
+                                  <span className='truncate text-xs leading-[18px] text-text-secondary'>{email}</span>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              type='button'
+                              size='sm'
+                              variant='ghost'
+                              className='text-text-action hover:text-text-action-hover focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                              disabled={removingUid === member.uid}
+                              loading={removingUid === member.uid}
+                              onClick={() => void handleRemoveMember(member)}
+                            >
+                              {t('button.remove')}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

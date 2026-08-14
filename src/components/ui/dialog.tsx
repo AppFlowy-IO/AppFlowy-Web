@@ -59,7 +59,7 @@ const dialogVariants = cva(
     'translate-x-[-50%] translate-y-[-50%]', // Center perfectly
     'max-w-[calc(100%-2rem)] sm:max-w-lg', // Responsive width
     'max-h-[85vh]',
-    'focus:outline-hidde focus-visible:outline-none',
+    'focus:outline-hidden focus-visible:outline-none',
 
     // Internal layout
     'grid px-5 py-4',
@@ -79,6 +79,7 @@ const dialogVariants = cva(
         xs: 'w-[300px]',
         sm: 'w-[400px]',
         md: 'w-[560px]',
+        lg: 'w-[720px] sm:max-w-[720px]',
       },
     },
     defaultVariants: {
@@ -92,10 +93,14 @@ function DialogContent({
   children,
   size,
   showCloseButton = true,
+  closeLabel = 'Close',
+  closeButtonClassName,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  size?: 'xs' | 'sm' | 'md';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   showCloseButton?: boolean;
+  closeLabel?: string;
+  closeButtonClassName?: string;
 }) {
   return (
     <DialogPortal data-slot='dialog-portal'>
@@ -103,7 +108,9 @@ function DialogContent({
       <DialogPrimitive.Content data-slot='dialog-content' className={cn(dialogVariants({ size, className }))} {...props}>
         {children}
         <DialogPrimitive.Close
+          aria-label={closeLabel}
           className={cn(
+            buttonVariants({ size: 'icon-lg', variant: 'ghost' }),
             // Positioning
             'absolute right-5 top-3.5',
             showCloseButton ? 'visible' : 'invisible',
@@ -112,7 +119,7 @@ function DialogContent({
             'rounded-300 text-icon-primary',
 
             // Interactive states
-            'focus:outline-hidde focus-visible:outline-none',
+            'focus:outline-hidden focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick',
             'disabled:pointer-events-none disabled:text-text-tertiary',
 
             // Open state styling
@@ -122,12 +129,11 @@ function DialogContent({
             'transition-opacity',
 
             // SVG specific styling
-            '[&_svg]:pointer-events-none [&_svg]:h-5 [&_svg]:w-5 [&_svg]:shrink-0'
+            '[&_svg]:pointer-events-none [&_svg]:h-5 [&_svg]:w-5 [&_svg]:shrink-0',
+            closeButtonClassName
           )}
         >
-          <div className={buttonVariants({ size: 'icon', variant: 'ghost' })}>
-            <XIcon />
-          </div>
+          <XIcon aria-hidden='true' />
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPortal>
