@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { FieldType, useFieldSelector, useFilterSelector, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useFilterSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
@@ -15,10 +15,10 @@ import { useFilterChipLabel } from './overview/useFilterChipLabel';
 function Filter({ filterId }: { filterId: string }) {
   const filter = useFilterSelector(filterId);
   const readOnly = useReadOnly();
-  const openFilterId = useConditionsContext()?.openFilterId;
-  const setOpenFilterId = useConditionsContext()?.setOpenFilterId;
-  const { field } = useFieldSelector(filter?.fieldId ?? '');
-  const { description, hasContent } = useFilterChipLabel(filter);
+  const conditionsContext = useConditionsContext();
+  const openFilterId = conditionsContext?.openFilterId;
+  const setOpenFilterId = conditionsContext?.setOpenFilterId;
+  const { description, hasContent, field } = useFilterChipLabel(filter);
 
   const open = openFilterId === filterId;
 

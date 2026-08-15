@@ -298,8 +298,10 @@ function relationChipLabel(filter: Filter, t: Translate): FilterChipLabel {
  * the chip reads `FieldName: <description>` when `hasContent` is true and
  * plain `FieldName` otherwise (desktop `ChoiceChipButton`).
  */
-export function useFilterChipLabel(filter: Filter | null): FilterChipLabel {
+export function useFilterChipLabel(filter: Filter | null): FilterChipLabel & { field: YDatabaseField | undefined } {
   const { t } = useTranslation();
+  // The field is returned alongside the label so chip components don't attach
+  // a second useFieldSelector subscription on the same field.
   const { field } = useFieldSelector(filter?.fieldId ?? '');
   const currentUser = useCurrentUser();
   const dateFormat = getDateFormat(
@@ -310,6 +312,15 @@ export function useFilterChipLabel(filter: Filter | null): FilterChipLabel {
   // a stable identity, so a useMemo keyed on it would serve stale labels after
   // field-config edits (e.g. renaming a select option). useFieldSelector
   // re-renders us via its internal clock; the label is cheap string assembly.
+  return { ...buildChipLabel(filter, field, dateFormat, t), field };
+}
+
+function buildChipLabel(
+  filter: Filter | null,
+  field: YDatabaseField | undefined,
+  dateFormat: string,
+  t: Translate
+): FilterChipLabel {
   if (!filter || !field) return { description: '', hasContent: false };
 
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;

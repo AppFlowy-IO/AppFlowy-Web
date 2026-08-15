@@ -412,7 +412,7 @@ function DatabaseViews({
       setAdvancedPanelOpen,
       setSortMenuOpen,
     }),
-    [setExpanded]
+    [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
   );
 
   const content = (

@@ -17,8 +17,9 @@ function ClearSelectionItem({ onClear }: { onClear: () => void }) {
   return (
     <>
       <div className={'my-2 border-t border-border-primary'} />
-      <div
-        className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+      <button
+        type='button'
+        className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
         data-testid={'filter-clear-selection'}
         onClick={(e) => {
           e.stopPropagation();
@@ -26,7 +27,7 @@ function ClearSelectionItem({ onClear }: { onClear: () => void }) {
         }}
       >
         {t('grid.filter.clearSelection')}
-      </div>
+      </button>
     </>
   );
 }

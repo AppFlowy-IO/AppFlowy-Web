@@ -98,12 +98,13 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
                 const displayName = user.name || user.email || '?';
 
                 return (
-                  <div
+                  <button
+                    type='button'
                     key={user.person_id}
                     data-testid={'person-filter-option'}
                     data-checked={isSelected}
                     className={cn(
-                      'flex min-h-[32px] cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5',
+                      'flex min-h-[32px] w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left',
                       'hover:bg-fill-content-hover',
                     )}
                     onClick={() => handleToggleUser(user.person_id)}
@@ -114,16 +115,17 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
                     </Avatar>
                     <span className={'flex-1 truncate text-sm'}>{displayName}</span>
                     {isSelected && <CheckIcon className={'h-5 w-5 flex-shrink-0 text-icon-info-thick'} />}
-                  </div>
+                  </button>
                 );
               })}
               {unknownUserIds.map((id) => (
-                <div
+                <button
+                  type='button'
                   key={id}
                   data-testid={'person-filter-option'}
                   data-checked={true}
                   className={cn(
-                    'flex min-h-[32px] cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5',
+                    'flex min-h-[32px] w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left',
                     'hover:bg-fill-content-hover',
                   )}
                   onClick={() => handleToggleUser(id)}
@@ -131,7 +133,7 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
                   <PersonIcon className={'h-5 w-5 text-icon-primary'} />
                   <span className={'flex-1 truncate text-sm'}>{t('grid.person.unknownUser')}</span>
                   <CheckIcon className={'h-5 w-5 flex-shrink-0 text-icon-info-thick'} />
-                </div>
+                </button>
               ))}
             </>
           )}

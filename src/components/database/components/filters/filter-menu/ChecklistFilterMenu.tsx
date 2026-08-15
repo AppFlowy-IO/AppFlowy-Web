@@ -35,11 +35,12 @@ function ChecklistFilterMenu({ filter }: { filter: ChecklistFilter }) {
     <div className={'flex flex-col gap-1'} data-testid='checklist-filter'>
       <FieldMenuTitle fieldId={filter.fieldId} filterId={filter.id} renderConditionSelect={null} />
       {conditions.map((condition) => (
-        <div
+        <button
+          type='button'
           key={condition.value}
           data-testid={`filter-condition-${condition.value}`}
           data-checked={filter.condition === condition.value}
-          className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+          className={cn(dropdownMenuItemVariants({ variant: 'default' }), 'w-full text-left')}
           onClick={(e) => {
             e.stopPropagation();
             if (readOnly) return;
@@ -53,7 +54,7 @@ function ChecklistFilterMenu({ filter }: { filter: ChecklistFilter }) {
         >
           {condition.text}
           {filter.condition === condition.value && <DropdownMenuItemTick />}
-        </div>
+        </button>
       ))}
     </div>
   );
