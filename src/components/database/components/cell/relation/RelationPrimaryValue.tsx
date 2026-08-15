@@ -18,10 +18,12 @@ export function RelationPrimaryValue({
   rowDoc,
   fieldId,
   field,
+  onTextChange,
 }: {
   rowDoc: YDoc;
   fieldId?: FieldId;
   field?: YDatabaseField;
+  onTextChange?: (text: string) => void;
 }) {
   const [text, setText] = useState<string | null>(null);
   const [row, setRow] = useState<YDatabaseRow | null>(null);
@@ -82,6 +84,10 @@ export function RelationPrimaryValue({
       observerCleanups.forEach((cleanup) => cleanup());
     };
   }, [row, fieldId, field]);
+
+  useEffect(() => {
+    onTextChange?.(text ?? '');
+  }, [onTextChange, text]);
 
   return <div>{text}</div>;
 }

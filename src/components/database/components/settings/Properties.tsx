@@ -25,8 +25,9 @@ function Properties() {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger data-testid='database-properties-settings-trigger'>
-        <Checklist />
-        {t('grid.settings.properties')}
+        <Checklist aria-hidden='true' />
+        <span>{t('grid.settings.properties')}</span>
+        <span className='ml-auto text-xs text-text-tertiary'>{properties.length}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent

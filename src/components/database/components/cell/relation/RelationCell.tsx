@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { CellProps, RelationCell as RelationCellType } from '@/application/database-yjs/cell.type';
 import RelationCellMenu from '@/components/database/components/cell/relation/RelationCellMenu';
@@ -13,7 +13,12 @@ export function RelationCell({
   setEditing,
   rowId,
   wrap,
+  onTextChange,
 }: CellProps<RelationCellType>) {
+  useEffect(() => {
+    if (!cell?.data) onTextChange?.('');
+  }, [cell?.data, onTextChange]);
+
   const handleOpenChange = useCallback(
     (status: boolean) => {
       setEditing?.(status);
@@ -29,20 +34,14 @@ export function RelationCell({
         </div>
       ) : null;
 
-    return <RelationItems cell={cell} fieldId={fieldId} style={style} wrap={wrap} />;
-  }, [cell, wrap, fieldId, placeholder, style]);
+    return <RelationItems cell={cell} fieldId={fieldId} onTextChange={onTextChange} style={style} wrap={wrap} />;
+  }, [cell, wrap, fieldId, onTextChange, placeholder, style]);
 
   return (
-    <div className="relative w-full">
+    <div className='relative w-full'>
       {children}
       {editing ? (
-        <RelationCellMenu
-          cell={cell}
-          fieldId={fieldId}
-          rowId={rowId}
-          open={editing}
-          onOpenChange={handleOpenChange}
-        />
+        <RelationCellMenu cell={cell} fieldId={fieldId} rowId={rowId} open={editing} onOpenChange={handleOpenChange} />
       ) : null}
     </div>
   );

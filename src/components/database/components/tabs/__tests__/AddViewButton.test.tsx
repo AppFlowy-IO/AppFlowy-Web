@@ -66,4 +66,15 @@ describe('AddViewButton', () => {
     expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.List, 'list.menuName');
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('list-view-id'));
   });
+
+  it('creates an enabled Gallery view and selects it', async () => {
+    const onViewAdded = jest.fn();
+
+    mockAddView.mockResolvedValue('gallery-view-id');
+    render(<AddViewButton onViewAdded={onViewAdded} />);
+    fireEvent.click(screen.getByTestId('add-gallery-view-button'));
+
+    expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Gallery, 'gallery.menuName');
+    await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('gallery-view-id'));
+  });
 });

@@ -30,7 +30,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { useGroupByFieldDispatch as useGroupByFieldDispatchCompatibility } from '@/application/database-yjs/dispatch/group';
 import { generateListFieldSettings } from '@/application/database-yjs/list-layout';
-import { DatabaseViewLayout, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { DatabaseViewLayout, GalleryCardSize, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import type { ReactNode } from 'react';
 
@@ -694,6 +694,289 @@ describe('useGroup', () => {
     expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.visibility)).toBe(FieldVisibility.AlwaysHidden);
     expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.wrap)).toBe(true);
     expect(fieldSettings?.get(primaryFieldId)?.get(YjsDatabaseKey.width)).toBe('420');
+  });
+
+  it('initializes a default Board group when the view has no persisted groups', () => {
+    const fieldId = 'field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId: 'group-id',
+      groupColumns: [],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+
+    fieldOrders.push([{ id: fieldId }]);
+    view?.get(YjsDatabaseKey.groups)?.delete(0, 1);
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.Board));
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
+    expect(view?.get(YjsDatabaseKey.groups)?.length).toBe(1);
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+  });
+
+  it.each([
+    ['a missing field', undefined],
+    ['a RichText field', FieldType.RichText],
+    ['a Number field', FieldType.Number],
+    ['a URL field', FieldType.URL],
+    ['a DateTime field', FieldType.DateTime],
+  ])('replaces a persisted Board group that references %s', (_description, fieldType) => {
+    const fieldId = 'incompatible-field-id';
+    const fallbackFieldId = 'board-field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId: 'incompatible-group-id',
+      groupColumns: [{ id: fieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const fallbackField = new Y.Map();
+    const incompatibleGroups = view?.get(YjsDatabaseKey.groups);
+
+    if (fieldType === undefined) {
+      fields?.delete(fieldId);
+    } else {
+      fields?.get(fieldId)?.set(YjsDatabaseKey.type, fieldType);
+    }
+
+    fallbackField.set(YjsDatabaseKey.id, fallbackFieldId);
+    fallbackField.set(YjsDatabaseKey.type, FieldType.Checkbox);
+    fields?.set(fallbackFieldId, fallbackField);
+    fieldOrders.push([{ id: fieldId }, { id: fallbackFieldId }]);
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.Board));
+
+    const boardGroups = view?.get(YjsDatabaseKey.groups);
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
+    expect(boardGroups).not.toBe(incompatibleGroups);
+    expect(boardGroups?.get(0)?.get(YjsDatabaseKey.field_id)).toBe(fallbackFieldId);
+    expect(boardGroups?.get(0)?.get(YjsDatabaseKey.type)).toBe(FieldType.Checkbox);
+  });
+
+  it('preserves field settings, layout settings, and Board groups across a Gallery round trip', () => {
+    const fieldId = 'selected-field-id';
+    const fallbackFieldId = 'fallback-field-id';
+    const viewId = 'board-view-id';
+    const hiddenColumn = new Y.Map();
+    const visibleColumn = new Y.Map();
+
+    hiddenColumn.set(YjsDatabaseKey.id, 'hidden-option');
+    hiddenColumn.set(YjsDatabaseKey.visible, false);
+    hiddenColumn.set(YjsDatabaseKey.group_color, 'purple');
+    visibleColumn.set(YjsDatabaseKey.id, 'visible-option');
+    visibleColumn.set(YjsDatabaseKey.visible, true);
+
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId: 'custom-board-group',
+      groupColumns: [hiddenColumn, visibleColumn],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fallbackField = new Y.Map();
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const fieldSettings = new Y.Map();
+    const fieldSetting = new Y.Map();
+    const layoutSettings = view?.get(YjsDatabaseKey.layout_settings);
+    const boardSetting = layoutSettings?.get('1');
+    const gallerySetting = new Y.Map();
+    const persistedGroups = view?.get(YjsDatabaseKey.groups);
+    const persistedGroup = persistedGroups?.get(0);
+    const persistedColumns = persistedGroup?.get(YjsDatabaseKey.groups);
+    const collapsedGroupIds = new Y.Array<string>();
+
+    fallbackField.set(YjsDatabaseKey.id, fallbackFieldId);
+    fallbackField.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+    fields?.set(fallbackFieldId, fallbackField);
+    fieldOrders.push([{ id: fallbackFieldId }, { id: fieldId }]);
+    fieldSetting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+    fieldSetting.set(YjsDatabaseKey.wrap, true);
+    fieldSetting.set(YjsDatabaseKey.width, '420');
+    fieldSettings.set(fieldId, fieldSetting);
+    collapsedGroupIds.push(['hidden-option']);
+    persistedGroup?.set(YjsDatabaseKey.collapsed_group_ids, collapsedGroupIds);
+    persistedGroup?.set(YjsDatabaseKey.content, JSON.stringify({ hide_empty: true }));
+    gallerySetting.set(YjsDatabaseKey.card_size, GalleryCardSize.Large);
+    gallerySetting.set(YjsDatabaseKey.card_width, 420);
+    layoutSettings?.set('5', gallerySetting);
+    boardSetting?.set(YjsDatabaseKey.hide_empty_groups, true);
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.field_settings, fieldSettings);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Board);
+
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.Gallery));
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Gallery);
+    expect(view?.get(YjsDatabaseKey.groups)).toBe(persistedGroups);
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)).toBe(persistedGroup);
+    expect(persistedGroup?.get(YjsDatabaseKey.id)).toBe('custom-board-group');
+    expect(persistedGroup?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(persistedGroup?.get(YjsDatabaseKey.groups)).toBe(persistedColumns);
+    expect(persistedColumns?.toJSON()).toEqual([
+      { group_color: 'purple', id: 'hidden-option', visible: false },
+      { id: 'visible-option', visible: true },
+    ]);
+    expect(persistedGroup?.get(YjsDatabaseKey.collapsed_group_ids)).toBe(collapsedGroupIds);
+    expect(collapsedGroupIds.toArray()).toEqual(['hidden-option']);
+    expect(view?.get(YjsDatabaseKey.field_settings)).toBe(fieldSettings);
+    expect(view?.get(YjsDatabaseKey.layout_settings)).toBe(layoutSettings);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('1')).toBe(boardSetting);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('5')).toBe(gallerySetting);
+    expect(gallerySetting.get(YjsDatabaseKey.card_size)).toBe(GalleryCardSize.Large);
+    expect(gallerySetting.get(YjsDatabaseKey.card_width)).toBe(420);
+
+    act(() => result.current(DatabaseViewLayout.Board));
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Board);
+    expect(view?.get(YjsDatabaseKey.groups)).toBe(persistedGroups);
+    expect(view?.get(YjsDatabaseKey.groups)?.get(0)).toBe(persistedGroup);
+    expect(persistedGroup?.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(persistedGroup?.get(YjsDatabaseKey.groups)).toBe(persistedColumns);
+    expect(persistedColumns?.toJSON()).toEqual([
+      { group_color: 'purple', id: 'hidden-option', visible: false },
+      { id: 'visible-option', visible: true },
+    ]);
+    expect(persistedGroup?.get(YjsDatabaseKey.collapsed_group_ids)).toBe(collapsedGroupIds);
+    expect(collapsedGroupIds.toArray()).toEqual(['hidden-option']);
+    expect(view?.get(YjsDatabaseKey.field_settings)).toBe(fieldSettings);
+    expect(view?.get(YjsDatabaseKey.layout_settings)).toBe(layoutSettings);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('1')).toBe(boardSetting);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('5')).toBe(gallerySetting);
+  });
+
+  it('preserves other layouts and existing Calendar settings when switching to Calendar', () => {
+    const fieldId = 'date-field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId: 'group-id',
+      groupColumns: [{ id: fieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const firstDateFieldId = 'first-date-field-id';
+    const fieldSettings = new Y.Map();
+    const fieldSetting = new Y.Map();
+    const layoutSettings = view?.get(YjsDatabaseKey.layout_settings);
+    const boardSetting = layoutSettings?.get('1');
+    const calendarSetting = new Y.Map();
+    const gallerySetting = new Y.Map();
+
+    const firstDateField = new Y.Map();
+
+    database?.get(YjsDatabaseKey.fields)?.get(fieldId)?.set(YjsDatabaseKey.type, FieldType.DateTime);
+    firstDateField.set(YjsDatabaseKey.id, firstDateFieldId);
+    firstDateField.set(YjsDatabaseKey.type, FieldType.DateTime);
+    database?.get(YjsDatabaseKey.fields)?.set(firstDateFieldId, firstDateField);
+    fieldOrders.push([{ id: firstDateFieldId }, { id: fieldId }]);
+    fieldSetting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+    fieldSettings.set(fieldId, fieldSetting);
+    calendarSetting.set(YjsDatabaseKey.field_id, fieldId);
+    calendarSetting.set(YjsDatabaseKey.show_weekends, false);
+    gallerySetting.set(YjsDatabaseKey.card_width, 360);
+    layoutSettings?.set('2', calendarSetting);
+    layoutSettings?.set('5', gallerySetting);
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.field_settings, fieldSettings);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.Calendar));
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Calendar);
+    expect(view?.get(YjsDatabaseKey.field_settings)).toBe(fieldSettings);
+    expect(view?.get(YjsDatabaseKey.layout_settings)).toBe(layoutSettings);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('1')).toBe(boardSetting);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('2')).toBe(calendarSetting);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('5')).toBe(gallerySetting);
+    expect(calendarSetting.get(YjsDatabaseKey.field_id)).toBe(fieldId);
+    expect(calendarSetting.get(YjsDatabaseKey.show_weekends)).toBe(false);
+  });
+
+  it.each([
+    ['deleted', true],
+    ['converted', false],
+  ])('refreshes a %s Calendar field while preserving the other Calendar options', (_state, deleted) => {
+    const invalidFieldId = 'invalid-date-field-id';
+    const replacementFieldId = 'replacement-date-field-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId: invalidFieldId,
+      groupId: 'group-id',
+      groupColumns: [{ id: invalidFieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const fields = database?.get(YjsDatabaseKey.fields);
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const fieldOrders = new Y.Array<{ id: string }>();
+    const replacementField = new Y.Map();
+    const calendarSetting = new Y.Map();
+    const layoutSettings = view?.get(YjsDatabaseKey.layout_settings);
+
+    if (deleted) {
+      fields?.delete(invalidFieldId);
+    } else {
+      fields?.get(invalidFieldId)?.set(YjsDatabaseKey.type, FieldType.RichText);
+    }
+
+    replacementField.set(YjsDatabaseKey.id, replacementFieldId);
+    replacementField.set(YjsDatabaseKey.type, FieldType.DateTime);
+    fields?.set(replacementFieldId, replacementField);
+    fieldOrders.push([{ id: invalidFieldId }, { id: replacementFieldId }]);
+    calendarSetting.set(YjsDatabaseKey.field_id, invalidFieldId);
+    calendarSetting.set(YjsDatabaseKey.layout_ty, 1);
+    calendarSetting.set(YjsDatabaseKey.show_week_numbers, false);
+    calendarSetting.set(YjsDatabaseKey.show_weekends, false);
+    layoutSettings?.set('2', calendarSetting);
+    view?.set(YjsDatabaseKey.field_orders, fieldOrders);
+    view?.set(YjsDatabaseKey.layout, DatabaseViewLayout.Grid);
+    const { result } = renderHook(() => useUpdateDatabaseLayout(viewId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current(DatabaseViewLayout.Calendar));
+
+    expect(view?.get(YjsDatabaseKey.layout)).toBe(DatabaseViewLayout.Calendar);
+    expect(view?.get(YjsDatabaseKey.layout_settings)?.get('2')).toBe(calendarSetting);
+    expect(calendarSetting.toJSON()).toEqual({
+      field_id: replacementFieldId,
+      layout_ty: 1,
+      show_week_numbers: false,
+      show_weekends: false,
+    });
   });
 
   it("keeps List's primary field visible when it is ordered after Desktop's three-field cutoff", () => {

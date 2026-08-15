@@ -49,7 +49,9 @@ export function filterDocumentViews(views: View[]): View[] {
 
 export function hasDatabaseViewChild(view: View): boolean {
   return (
-    [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.List].includes(view.layout) ||
+    [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar, ViewLayout.List, ViewLayout.Gallery].includes(
+      view.layout
+    ) ||
     (view.layout === ViewLayout.Document && view.children.some((child) => hasDatabaseViewChild(child)))
   );
 }

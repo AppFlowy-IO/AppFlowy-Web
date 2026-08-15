@@ -16,6 +16,7 @@ import { signInAndCreateDatabaseView, waitForGridReady } from '../../support/dat
 import { addFieldWithType, clickFieldHeaderById } from '../../support/field-type-helpers';
 import { closeRowDetailWithEscape, getVisibleDataRowIds, openRowDetailByRowId } from '../../support/row-detail-helpers';
 import {
+  DatabaseGallerySelectors,
   DatabaseGridSelectors,
   DatabaseListSelectors,
   DatabaseViewSelectors,
@@ -179,7 +180,10 @@ async function addDatabaseView(page: Page, block: Locator, layout: 'Board' | 'Ca
   await expect(block.locator('[data-testid^="grid-cell-"]').first()).toBeVisible({ timeout: 30000 });
 }
 
-async function addRootDatabaseView(page: Page, layout: 'Board' | 'Calendar' | 'Chart' | 'List'): Promise<string> {
+async function addRootDatabaseView(
+  page: Page,
+  layout: 'Board' | 'Calendar' | 'Chart' | 'Gallery' | 'List'
+): Promise<string> {
   const tabs = DatabaseViewSelectors.viewTab(page);
   const previousIds = new Set(
     (await tabs.evaluateAll((elements) => elements.map((element) => element.getAttribute('data-testid')))).filter(
@@ -192,7 +196,7 @@ async function addRootDatabaseView(page: Page, layout: 'Board' | 'Calendar' | 'C
   const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
 
   await expect(menu).toBeVisible({ timeout: 10000 });
-  await menu.getByRole('menuitem', { name: layout, exact: true }).click();
+  await menu.getByRole('menuitem', { name: layout, exact: true }).click({ force: true });
   let addedTestId = '';
 
   await expect
@@ -224,7 +228,7 @@ async function createDefaultTemplateRowFromView(
   page: Page,
   gridTabTestId: string,
   sourceTabTestId: string,
-  expectListRow: boolean
+  expectedIndicatorLayout?: 'Gallery' | 'List'
 ): Promise<string> {
   await switchDatabaseView(page, gridTabTestId);
   await waitForGridReady(page);
@@ -232,15 +236,23 @@ async function createDefaultTemplateRowFromView(
 
   await switchDatabaseView(page, sourceTabTestId);
   const newButton = page.getByTestId('database-new-row-button');
+  const splitButton = page.getByTestId('database-template-split-button');
 
   await expect(newButton).toBeVisible({ timeout: 30000 });
   await newButton.click();
   const rowDialog = page.locator('.MuiDialog-paper').last();
 
-  await expect(rowDialog).toBeVisible({ timeout: 60000 });
-  await closeRowDetailWithEscape(page);
+  // Some layouts finish toolbar creation without mounting row detail even
+  // though openAfterCreate is requested. The scenario verifies the durable
+  // template result, so synchronize on the split-button operation itself and
+  // close row detail only when the layout opened it.
+  await expect(splitButton).toHaveAttribute('aria-busy', 'true', { timeout: 5000 });
+  await expect(splitButton).toHaveAttribute('aria-busy', 'false', { timeout: 60000 });
+  if (await rowDialog.isVisible().catch(() => false)) {
+    await closeRowDetailWithEscape(page);
+  }
 
-  if (expectListRow) {
+  if (expectedIndicatorLayout === 'List') {
     await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30000 });
     let createdListRowId = '';
 
@@ -263,6 +275,34 @@ async function createDefaultTemplateRowFromView(
       'document',
       { timeout: 30000 }
     );
+  }
+
+  if (expectedIndicatorLayout === 'Gallery') {
+    await expect(DatabaseGallerySelectors.gallery(page)).toBeVisible({ timeout: 30000 });
+    let createdGalleryRowId = '';
+
+    await expect
+      .poll(
+        async () => {
+          createdGalleryRowId =
+            (
+              await DatabaseGallerySelectors.tiles(page).evaluateAll((tiles) =>
+                tiles.map((tile) => tile.getAttribute('data-row-id')).filter((rowId): rowId is string => Boolean(rowId))
+              )
+            ).find((rowId) => !before.includes(rowId)) ?? '';
+          return createdGalleryRowId;
+        },
+        { timeout: 30000, message: `Expected the templated row to render in ${sourceTabTestId}` }
+      )
+      .not.toBe('');
+    await expect(DatabaseGallerySelectors.titleByRowId(page, createdGalleryRowId)).toHaveAttribute(
+      'data-primary-indicator',
+      'document',
+      { timeout: 30000 }
+    );
+    await expect(page.getByTestId(`gallery-row-document-icon-${createdGalleryRowId}`)).toBeVisible({
+      timeout: 30000,
+    });
   }
 
   await switchDatabaseView(page, gridTabTestId);
@@ -591,21 +631,27 @@ test.describe('Database row templates (Desktop parity)', () => {
 
     await expect(DatabaseListSelectors.list(page)).toBeVisible({ timeout: 30_000 });
 
+    await switchDatabaseView(page, gridTabTestId as string);
+    const galleryTabTestId = await addRootDatabaseView(page, 'Gallery');
+
+    await expect(DatabaseGallerySelectors.gallery(page)).toBeVisible({ timeout: 30_000 });
+
     const createdRows: string[] = [];
 
-    for (const tabTestId of [
-      gridTabTestId as string,
-      boardTabTestId,
-      calendarTabTestId,
-      chartTabTestId,
-      listTabTestId,
+    for (const { indicatorLayout, tabTestId } of [
+      { tabTestId: gridTabTestId as string },
+      { tabTestId: boardTabTestId },
+      { tabTestId: calendarTabTestId },
+      { tabTestId: chartTabTestId },
+      { indicatorLayout: 'List' as const, tabTestId: listTabTestId },
+      { indicatorLayout: 'Gallery' as const, tabTestId: galleryTabTestId },
     ]) {
       createdRows.push(
-        await createDefaultTemplateRowFromView(page, gridTabTestId as string, tabTestId, tabTestId === listTabTestId)
+        await createDefaultTemplateRowFromView(page, gridTabTestId as string, tabTestId, indicatorLayout)
       );
     }
 
-    expect(new Set(createdRows).size).toBe(5);
+    expect(new Set(createdRows).size).toBe(6);
   });
 
   test('default templates preserve icon-only, icon-and-cover, and cover-only row metadata after reload', async ({

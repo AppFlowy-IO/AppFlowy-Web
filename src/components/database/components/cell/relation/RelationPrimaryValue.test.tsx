@@ -1,14 +1,9 @@
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { FieldType, SelectOptionColor } from '@/application/database-yjs';
 import { createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
-import {
-  YDatabaseField,
-  YDatabaseRow,
-  YjsDatabaseKey,
-  YjsEditorKey,
-} from '@/application/types';
+import { YDatabaseField, YDatabaseRow, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -42,9 +37,7 @@ describe('RelationPrimaryValue', () => {
     const rowDoc = createRowDoc('row-id', 'database-id', {
       [fieldId]: { fieldType: FieldType.MultiSelect, data: 'option-a' },
     });
-    const row = rowDoc
-      .getMap(YjsEditorKey.data_section)
-      .get(YjsEditorKey.database_row) as YDatabaseRow;
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
     const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
     const { container } = render(<RelationPrimaryValue field={field} fieldId={fieldId} rowDoc={rowDoc} />);
 
@@ -62,5 +55,31 @@ describe('RelationPrimaryValue', () => {
     });
 
     await waitFor(() => expect(container.textContent).toBe('Edited'));
+  });
+
+  it('reports the decoded title as the related row changes', async () => {
+    const fieldId = 'primary-field';
+    const fieldDoc = new Y.Doc();
+    const field = fieldDoc.getMap('field') as YDatabaseField;
+    const onTextChange = jest.fn();
+    const rowDoc = createRowDoc('row-id', 'database-id', {
+      [fieldId]: { fieldType: FieldType.RichText, data: 'Acme' },
+    });
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
+
+    field.set(YjsDatabaseKey.type, FieldType.RichText);
+
+    render(<RelationPrimaryValue field={field} fieldId={fieldId} onTextChange={onTextChange} rowDoc={rowDoc} />);
+
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Acme'));
+    expect(screen.getByText('Acme')).toBeTruthy();
+
+    act(() => {
+      cell.set(YjsDatabaseKey.data, 'Globex');
+    });
+
+    await waitFor(() => expect(onTextChange).toHaveBeenLastCalledWith('Globex'));
+    expect(screen.getByText('Globex')).toBeTruthy();
   });
 });

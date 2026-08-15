@@ -160,8 +160,26 @@ export async function addFilterByFieldName(page: Page, fieldName: string): Promi
     await filterBtn.evaluate((el) => (el as HTMLElement).click());
   }
 
-  // Wait for the property list popover to appear with [data-item-id] elements
-  await expect(page.locator('[data-item-id]').first()).toBeVisible({ timeout: 10000 });
+  // Wait for the property list popover to appear with [data-item-id] elements.
+  // A condition update can close and immediately rebuild the conditions row;
+  // retry the user action once if the first click landed on the stale button.
+  const propertyItems = page.locator('[data-item-id]:visible');
+  const propertyListOpened = await propertyItems
+    .first()
+    .waitFor({ state: 'visible', timeout: 1500 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!propertyListOpened) {
+    const currentAddFilterButton = DatabaseFilterSelectors.addFilterButton(page);
+
+    if (await currentAddFilterButton.isVisible().catch(() => false)) {
+      await currentAddFilterButton.click({ force: true });
+    } else {
+      await DatabaseFilterSelectors.filterButton(page).click({ force: true });
+    }
+  }
+  await expect(propertyItems.first()).toBeVisible({ timeout: 10000 });
 
   // Search for the field and click it using JS click
   await DatabaseFilterSelectors.propertyItemByName(page, fieldName).evaluate((el) => (el as HTMLElement).click());
@@ -185,56 +203,47 @@ export async function clickFilterChip(page: Page): Promise<void> {
  * Change the filter condition by selecting from the dropdown
  */
 export async function changeFilterCondition(page: Page, conditionValue: number): Promise<void> {
-  // Find the condition dropdown trigger button inside the filter popover
-  const conditionTexts = [
-    'is',
-    'contains',
-    'starts',
-    'ends',
-    'empty',
-    'equals',
-    'not equal',
-    'greater',
-    'less',
-    '=',
-    '>',
-    '<',
-  ];
+  let expectedLabel = '';
 
-  const popoverButtons = page.locator('[data-radix-popper-content-wrapper]').last().locator('button');
+  // A condition update rebuilds the filter row. Under parallel browser load,
+  // the first forced click can land on the detached menu item while the old
+  // default condition remains selected. Verify the trigger label and retry
+  // once so subsequent assertions exercise the requested condition.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const trigger = page.locator('[data-testid="filter-condition-trigger"]:visible').last();
 
-  const buttonCount = await popoverButtons.count();
-  for (let i = 0; i < buttonCount; i++) {
-    const text = (await popoverButtons.nth(i).textContent())?.toLowerCase() || '';
-    if (conditionTexts.some((t) => text.includes(t))) {
-      await popoverButtons.nth(i).click({ force: true });
-      break;
-    }
+    await expect(trigger).toBeVisible({ timeout: 10000 });
+    await trigger.click({ force: true });
+
+    const option = page.locator(`[data-testid="filter-condition-${conditionValue}"]:visible`).last();
+
+    await expect(option).toBeVisible({ timeout: 10000 });
+    expectedLabel = (await option.textContent())?.trim() ?? '';
+    await option.click({ force: true });
+
+    const updatedTrigger = page.locator('[data-testid="filter-condition-trigger"]:visible').last();
+    const selected = await expect(updatedTrigger)
+      .toContainText(expectedLabel, { timeout: 2000 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (selected) return;
   }
-  await page.waitForTimeout(500);
 
-  // Select the condition option
-  await page.getByTestId(`filter-condition-${conditionValue}`).click({ force: true });
-  await page.waitForTimeout(500);
+  await expect(page.locator('[data-testid="filter-condition-trigger"]:visible').last()).toContainText(expectedLabel, {
+    timeout: 10000,
+  });
 }
 
 /**
  * Change the checkbox filter condition ("Is checked" / "Is unchecked")
  */
 export async function changeCheckboxFilterCondition(page: Page, condition: CheckboxFilterCondition): Promise<void> {
-  const popoverButtons = page.locator('[data-radix-popper-content-wrapper]').last().locator('button');
+  const trigger = page.locator('[data-testid="filter-condition-trigger"]:visible').last();
 
-  const buttonCount = await popoverButtons.count();
-  for (let i = 0; i < buttonCount; i++) {
-    const text = (await popoverButtons.nth(i).textContent())?.toLowerCase() || '';
-    if (text.includes('checked') || text.includes('unchecked')) {
-      await popoverButtons.nth(i).click({ force: true });
-      break;
-    }
-  }
-  await page.waitForTimeout(500);
-
-  await page.getByTestId(`filter-condition-${condition}`).click({ force: true });
+  await expect(trigger).toBeVisible({ timeout: 10000 });
+  await trigger.click({ force: true });
+  await page.locator(`[data-testid="filter-condition-${condition}"]:visible`).last().click({ force: true });
   await page.waitForTimeout(500);
 }
 
@@ -245,7 +254,10 @@ export async function enterFilterText(page: Page, text: string): Promise<void> {
   const input = DatabaseFilterSelectors.filterInput(page);
   await input.clear();
   await input.pressSequentially(text, { delay: 30 });
-  await page.waitForTimeout(500);
+  // The editor deliberately debounces Yjs updates. Wait for the visible chip
+  // to reflect the persisted content before closing the popover; sleeping for
+  // exactly the debounce interval races the callback on slower CI workers.
+  await expect(DatabaseFilterSelectors.filterCondition(page).last()).toContainText(text, { timeout: 5000 });
 }
 
 /**
@@ -397,19 +409,11 @@ export async function selectFilterOption(page: Page, optionName: string): Promis
  * Change the select filter condition
  */
 export async function changeSelectFilterCondition(page: Page, condition: SelectFilterCondition): Promise<void> {
-  const popoverButtons = page.locator('[data-radix-popper-content-wrapper]').last().locator('button');
+  const trigger = page.locator('[data-testid="filter-condition-trigger"]:visible').last();
 
-  const buttonCount = await popoverButtons.count();
-  for (let i = 0; i < buttonCount; i++) {
-    const text = (await popoverButtons.nth(i).textContent())?.toLowerCase() || '';
-    if (text.includes('is') || text.includes('contains') || text.includes('empty')) {
-      await popoverButtons.nth(i).click({ force: true });
-      break;
-    }
-  }
-  await page.waitForTimeout(500);
-
-  await page.getByTestId(`filter-condition-${condition}`).click({ force: true });
+  await expect(trigger).toBeVisible({ timeout: 10000 });
+  await trigger.click({ force: true });
+  await page.locator(`[data-testid="filter-condition-${condition}"]:visible`).last().click({ force: true });
   await page.waitForTimeout(500);
 }
 

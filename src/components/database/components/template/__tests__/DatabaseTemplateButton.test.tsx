@@ -172,6 +172,17 @@ describe('DatabaseTemplateButton', () => {
     fireEvent.keyDown(trigger, { key: 'ArrowRight' });
   }
 
+  it('uses the 24px compact controls requested by the Gallery action bar', () => {
+    const { Wrapper } = setup();
+
+    render(<DatabaseTemplateButton compact />, { wrapper: Wrapper });
+
+    expect(screen.getByTestId('database-template-split-button').className).toContain('h-6');
+    expect(screen.getByTestId('database-new-row-button').className).toContain('h-6');
+    expect(screen.getByTestId('database-template-menu-trigger').className).toContain('h-6');
+    expect(screen.getByTestId('database-template-menu-trigger').className).toContain('w-6');
+  });
+
   it('shows the empty menu, creates a hidden template row, and opens its editor without server registration', async () => {
     const { Wrapper, context, database, view, rows, createRowDocument } = setup();
     const loadViewMeta = jest.fn().mockRejectedValue(new Error('new templates must not need a view lookup'));

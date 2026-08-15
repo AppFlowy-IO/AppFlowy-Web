@@ -19,16 +19,17 @@ import { Cell } from '@/components/database/components/cell/Cell';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { cn } from '@/lib/utils';
 
-function ListCheckboxCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
+function ListCheckboxCell({ cell, fieldId, fieldName, rowId }: ListSpecialCellProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
   const checked = getChecked(cell?.data as string | number | boolean | undefined);
+  const stateLabel = checked ? t('button.checked') : t('button.unchecked');
 
   return (
     <button
       aria-checked={checked}
-      aria-label={t('grid.field.checkbox', { defaultValue: checked ? 'Checked' : 'Unchecked' })}
+      aria-label={fieldName ? `${fieldName}: ${stateLabel}` : stateLabel}
       aria-readonly={readOnly}
       className='flex h-5 w-5 shrink-0 items-center justify-center text-text-action'
       data-checked={checked}
@@ -207,23 +208,26 @@ function ListChecklistCell({ cell, fieldId, rowId }: ListSpecialCellProps) {
 interface ListSpecialCellProps {
   cell?: DatabaseCell;
   fieldId: string;
+  fieldName?: string;
   rowId: string;
 }
 
 export function ListCell({
   cell,
   field,
+  onTextChange,
   rowId,
   style,
 }: {
   cell?: DatabaseCell;
   field: Column;
+  onTextChange?: (text: string) => void;
   rowId: string;
   style: CSSProperties;
 }) {
   switch (field.fieldType) {
     case FieldType.Checkbox:
-      return <ListCheckboxCell cell={cell} fieldId={field.fieldId} rowId={rowId} />;
+      return <ListCheckboxCell cell={cell} fieldId={field.fieldId} fieldName={field.fieldName} rowId={rowId} />;
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
       return <ListSelectOptionCell cell={cell} fieldId={field.fieldId} rowId={rowId} />;
@@ -249,7 +253,15 @@ export function ListCell({
           data-field-type={field.fieldType}
           data-testid={`list-shared-cell-${rowId}-${field.fieldId}`}
         >
-          <Cell cell={cell} fieldId={field.fieldId} readOnly rowId={rowId} style={style} wrap={false} />
+          <Cell
+            cell={cell}
+            fieldId={field.fieldId}
+            onTextChange={onTextChange}
+            readOnly
+            rowId={rowId}
+            style={style}
+            wrap={false}
+          />
         </div>
       );
     default:

@@ -30,6 +30,8 @@ export interface DatabaseTabItemProps {
   visibleViewIds: string[];
   onSetMenuViewId: (id: string | null) => void;
   onOpenDeleteModal: (id: string) => void;
+  onDuplicate?: (id: string) => void;
+  duplicateDisabled?: boolean;
   onOpenRenameModal: (view: View) => void;
   setTabRef: (id: string, el: HTMLElement | null) => void;
   /** Drag instance of the tab bar group; undefined disables reordering for this tab. */
@@ -47,6 +49,8 @@ export const DatabaseTabItem = memo(
     visibleViewIds,
     onSetMenuViewId,
     onOpenDeleteModal,
+    onDuplicate,
+    duplicateDisabled,
     onOpenRenameModal,
     setTabRef,
     reorderInstanceId,
@@ -113,6 +117,8 @@ export const DatabaseTabItem = memo(
           return 'Chart';
         case DatabaseViewLayout.List:
           return 'List';
+        case DatabaseViewLayout.Gallery:
+          return 'Gallery';
         default:
           return t('untitled');
       }
@@ -134,6 +140,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.Chart
         : databaseLayout === DatabaseViewLayout.List
         ? ViewLayout.List
+        : databaseLayout === DatabaseViewLayout.Gallery
+        ? ViewLayout.Gallery
         : ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu
@@ -225,8 +233,10 @@ export const DatabaseTabItem = memo(
             {menuViewId === viewId && (
               <DatabaseViewActions
                 onOpenDeleteModal={onOpenDeleteModal}
+                onDuplicate={onDuplicate}
                 onOpenRenameModal={onOpenRenameModal}
                 deleteDisabled={visibleViewIds.length <= 1}
+                duplicateDisabled={duplicateDisabled}
                 view={viewForActions}
               />
             )}

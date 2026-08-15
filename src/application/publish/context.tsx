@@ -414,6 +414,7 @@ export const PublishProvider = ({
             case ViewLayout.Board:
             case ViewLayout.Calendar:
             case ViewLayout.List:
+            case ViewLayout.Gallery:
               searchParams.set('r', blockId);
               break;
             default:

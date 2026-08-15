@@ -32,6 +32,8 @@ export interface DatabaseViewTabsProps {
   setMenuViewId: (id: string | null) => void;
   setDeleteConfirmOpen: (id: string | null) => void;
   setRenameView: (view: View) => void;
+  onDuplicateView?: (viewId: string) => void;
+  duplicateDisabled?: boolean;
   pendingScrollToViewId?: string | null;
   setPendingScrollToViewId?: (id: string | null) => void;
   onBeforeViewAdded?: () => void;
@@ -54,6 +56,8 @@ export function DatabaseViewTabs({
   setMenuViewId,
   setDeleteConfirmOpen,
   setRenameView,
+  onDuplicateView,
+  duplicateDisabled,
   pendingScrollToViewId,
   setPendingScrollToViewId,
   onBeforeViewAdded,
@@ -247,6 +251,8 @@ export function DatabaseViewTabs({
                     visibleViewIds={visibleViewIds}
                     onSetMenuViewId={setMenuViewId}
                     onOpenDeleteModal={setDeleteConfirmOpen}
+                    onDuplicate={onDuplicateView}
+                    duplicateDisabled={duplicateDisabled}
                     onOpenRenameModal={setRenameView}
                     setTabRef={setTabRef}
                     reorderInstanceId={reorderEnabled ? reorderInstanceId : undefined}

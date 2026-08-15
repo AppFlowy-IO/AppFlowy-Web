@@ -128,4 +128,5 @@ export interface CellProps<T extends Cell> {
   isHovering?: boolean;
   wrap: boolean;
   onCellUpdated?: (cell: Cell) => void;
+  onTextChange?: (text: string) => void;
 }

@@ -62,8 +62,8 @@ const mockUseFieldSelector = useFieldSelector as jest.MockedFunction<typeof useF
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
 const mockUseUpdateCellDispatch = useUpdateCellDispatch as jest.MockedFunction<typeof useUpdateCellDispatch>;
 
-function makeField(fieldId: string, fieldType: FieldType): Column {
-  return { fieldId, fieldType, isPrimary: false, visibility: 0, width: 140 } as Column;
+function makeField(fieldId: string, fieldType: FieldType, fieldName?: string): Column {
+  return { fieldId, fieldName, fieldType, isPrimary: false, visibility: 0, width: 140 } as Column;
 }
 
 function makeCell(fieldType: FieldType, data: unknown): DatabaseCell {
@@ -88,7 +88,7 @@ describe('database_list_field_display.dart: list view displays multiple field ty
     render(
       <ListCell
         cell={makeCell(FieldType.Checkbox, 'Yes')}
-        field={makeField('done', FieldType.Checkbox)}
+        field={makeField('done', FieldType.Checkbox, 'Done')}
         rowId='row-1'
         style={{}}
       />
@@ -99,6 +99,7 @@ describe('database_list_field_display.dart: list view displays multiple field ty
     expect(checkbox.className).toContain('w-5');
     expect(checkbox.className).toContain('justify-center');
     expect(checkbox.getAttribute('aria-checked')).toBe('true');
+    expect(checkbox.getAttribute('aria-label')).toBe('Done: button.checked');
     expect(checkbox.querySelector('svg')?.getAttribute('class')).toContain('h-3.5');
 
     fireEvent.click(checkbox);
