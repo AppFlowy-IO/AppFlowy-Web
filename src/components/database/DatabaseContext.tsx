@@ -18,10 +18,7 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
   // `window.Y` is also exposed here (not only in CollaborativeEditor) so that
   // standalone database pages without an editor can still use yjs-inject-helpers.
   useEffect(() => {
-    const isE2ETest =
-      isDevelopmentOrTestEnvironment() ||
-      (typeof navigator !== 'undefined' && navigator.webdriver) ||
-      (typeof window !== 'undefined' && 'Cypress' in window);
+    const isE2ETest = isDevelopmentOrTestEnvironment() || (typeof window !== 'undefined' && 'Cypress' in window);
 
     if (!isE2ETest) return;
     if (value.isDatabaseRowPage) return;
