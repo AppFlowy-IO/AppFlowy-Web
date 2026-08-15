@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
+import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { exposeDatabaseTestContext, type DatabaseTestWindow } from './database-test-context';
 
@@ -18,7 +19,9 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
   // standalone database pages without an editor can still use yjs-inject-helpers.
   useEffect(() => {
     const isE2ETest =
-      import.meta.env.DEV || import.meta.env.MODE === 'test' || (typeof window !== 'undefined' && 'Cypress' in window);
+      isDevelopmentOrTestEnvironment() ||
+      (typeof navigator !== 'undefined' && navigator.webdriver) ||
+      (typeof window !== 'undefined' && 'Cypress' in window);
 
     if (!isE2ETest) return;
     if (value.isDatabaseRowPage) return;
