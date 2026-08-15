@@ -825,9 +825,13 @@ export function InlineCommentProvider({
         setActive(false);
         setPanelOpen(false);
         setFocusedCommentId(null);
+        // The provider outlives the document (it is deliberately not keyed, so
+        // navigation cannot remount the app shell) — restore the default filter
+        // here so the next document starts a fresh comment session.
+        setFilter('open');
       };
     },
-    [cancelPendingComment, setFocusedCommentId, stopAnchorRefreshRetry, updateAnchors, viewId]
+    [cancelPendingComment, setFilter, setFocusedCommentId, stopAnchorRefreshRetry, updateAnchors, viewId]
   );
 
   const updateEditorAccess = useCallback(
