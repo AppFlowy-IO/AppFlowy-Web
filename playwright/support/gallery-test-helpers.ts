@@ -180,6 +180,8 @@ export async function addRowsFromGallery(page: Page, count: number): Promise<voi
   for (let index = 0; index < count; index += 1) {
     await DatabaseGallerySelectors.newRowButton(page).scrollIntoViewIfNeeded();
     await DatabaseGallerySelectors.newRowButton(page).click();
+    await expect(RowDetailSelectors.modal(page)).toHaveCount(1, { timeout: 15_000 });
+    await closeRowDetailWithEscape(page);
     await expect.poll(() => getActiveRowIds(page), { timeout: 15_000 }).toHaveLength(initialCount + index + 1);
   }
 }

@@ -59,13 +59,18 @@ async function addImageLinkToOpenRow(page: Page, imageUrl: string): Promise<void
   await editor.click({ force: true });
   await page.keyboard.type('/image', { delay: 30 });
   await page.getByTestId('slash-menu-image').click({ force: true });
+  await expect(page.getByTestId('slash-panel')).toBeHidden();
 
   const popover = page.locator('.MuiPopover-root:visible').last();
 
   await expect(popover).toBeVisible({ timeout: 10_000 });
-  await popover.getByText('Embed link', { exact: true }).click({ force: true });
+  const embedLinkTab = popover.getByRole('tab', { name: 'Embed link' });
+
+  await embedLinkTab.click();
+  await expect(embedLinkTab).toHaveAttribute('aria-selected', 'true');
   const input = popover.getByPlaceholder('Paste or type an image link');
 
+  await expect(input).toBeVisible();
   await input.fill(imageUrl);
   await input.press('Enter');
   await expect(popover).toBeHidden({ timeout: 10_000 });

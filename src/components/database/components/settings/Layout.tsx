@@ -51,7 +51,7 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
+      <DropdownMenuSubTrigger aria-label={t('grid.settings.layout')}>
         <LayoutIcon aria-hidden='true' />
         <span>{t('grid.settings.layout')}</span>
         <span className='ml-auto text-xs text-text-tertiary'>
