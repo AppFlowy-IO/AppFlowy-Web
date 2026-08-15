@@ -10,6 +10,9 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   CreateSpaceWithInitialPageResponse,
+  SpacePermission,
+  SpacePermissionSettings,
+  SpaceVisibility,
   UpdatePagePayload,
   UpdateSpacePayload,
   ViewIconType,
@@ -131,14 +134,61 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
   );
 }
 
-export async function createSpace(workspaceId: string, payload: CreateSpacePayload) {
+/**
+ * A missing route on an older AppFlowy Cloud responds with a bare HTTP
+ * 404/405 instead of an APIResponse envelope, so `code` falls back to the
+ * HTTP status in `handleAPIError`. A payload-level 404 (e.g. unknown
+ * workspace) would fail the legacy retry with the same error, so treating
+ * both cases as "endpoint unavailable" never masks a real failure.
+ */
+function isEndpointUnavailableError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const { code, httpStatus } = error as { code?: unknown; httpStatus?: unknown };
+  const status = typeof httpStatus === 'number' ? httpStatus : code;
+
+  return status === 404 || status === 405;
+}
+
+/**
+ * Downgrade structured permission settings to the legacy binary permission
+ * for servers that predate the structured `/spaces` endpoint. Open and
+ * Default spaces grant everyone-else access, which is what legacy Public
+ * means; Closed and Private do not, which is legacy Private.
+ */
+function legacySpacePermissionFromSettings(permission: SpacePermissionSettings): SpacePermission {
+  return permission.visibility === SpaceVisibility.Open || permission.visibility === SpaceVisibility.Default
+    ? SpacePermission.Public
+    : SpacePermission.Private;
+}
+
+export async function createSpace(workspaceId: string, payload: CreateSpacePayload): Promise<string> {
   if (payload.permission) {
     const url = `/api/workspace/${workspaceId}/spaces`;
     const { space_permission: _legacyPermission, ...structuredPayload } = payload;
 
-    return executeAPIRequest<{ view_id: string }>(() =>
-      getAxios()?.post<APIResponse<{ view_id: string }>>(url, structuredPayload)
-    ).then((data) => data.view_id);
+    try {
+      const data = await executeAPIRequest<{ view_id: string }>(() =>
+        getAxios()?.post<APIResponse<{ view_id: string }>>(url, structuredPayload)
+      );
+
+      return data.view_id;
+    } catch (error) {
+      if (!isEndpointUnavailableError(error)) throw error;
+
+      // Older servers do not expose the structured endpoint. Fall back to the
+      // legacy one so space creation keeps working; only the binary
+      // public/private part of the settings can be preserved there.
+      Log.warn('[createSpace] structured /spaces endpoint unavailable, falling back to legacy /space', {
+        workspaceId,
+      });
+
+      const { permission, ...legacyPayload } = payload;
+
+      return createSpace(workspaceId, {
+        ...legacyPayload,
+        space_permission: legacySpacePermissionFromSettings(permission),
+      });
+    }
   }
 
   const url = `/api/workspace/${workspaceId}/space`;

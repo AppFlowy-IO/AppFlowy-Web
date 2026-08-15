@@ -9,7 +9,7 @@ import {
 } from '@/application/types';
 import { executeAPIRequest, executeAPIVoidRequest, getAxios } from '@/application/services/js-services/http/core';
 
-import { createSpaceWithInitialPage } from '../page-api';
+import { createSpace, createSpaceWithInitialPage } from '../page-api';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'generated-space-id'),
@@ -246,5 +246,96 @@ describe('createSpaceWithInitialPage', () => {
     await expect(createSpaceWithInitialPage('workspace-id', payload)).resolves.toEqual(response);
     expect(post).toHaveBeenCalledTimes(1);
     expect(post).toHaveBeenCalledWith('/api/workspace/workspace-id/v2/space', payload);
+  });
+
+  it('composes the legacy space and page endpoints when the structured endpoint is missing', async () => {
+    const endpointMissing = { code: 404, message: 'Not Found', httpStatus: 404 };
+
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') throw endpointMissing;
+      if (url === '/api/workspace/workspace-id/space') return apiResponse({ view_id: 'space-id' });
+      if (url === '/api/workspace/workspace-id/page-view') return apiResponse({ view_id: 'page-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpaceWithInitialPage('workspace-id', {
+        name: 'Closed space',
+        space_icon: '',
+        space_icon_color: '',
+        view_id: 'space-id',
+        permission: closedPermission,
+        initial_page: { layout: ViewLayout.Document, view_id: 'page-id' },
+      })
+    ).resolves.toEqual({
+      space: { view_id: 'space-id' },
+      page: { view_id: 'page-id' },
+    });
+
+    expect(post).toHaveBeenNthCalledWith(
+      2,
+      '/api/workspace/workspace-id/space',
+      expect.objectContaining({ space_permission: SpacePermission.Private })
+    );
+    expect(deleteRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('createSpace legacy fallback', () => {
+  const post = jest.fn();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(getAxios).mockReturnValue({ post } as never);
+    (executeAPIRequest as jest.Mock).mockImplementation(
+      async (request: () => Promise<ReturnType<typeof apiResponse>>) => {
+        const response = await request();
+
+        return response.data.data;
+      }
+    );
+  });
+
+  const endpointMissing = { code: 404, message: 'Not Found', httpStatus: 404 };
+
+  function structuredPayload(visibility: SpaceVisibility): SpacePermissionSettings {
+    return { ...closedPermission, visibility };
+  }
+
+  it.each([
+    [SpaceVisibility.Open, SpacePermission.Public],
+    [SpaceVisibility.Default, SpacePermission.Public],
+    [SpaceVisibility.Closed, SpacePermission.Private],
+    [SpaceVisibility.Private, SpacePermission.Private],
+  ])('downgrades %s visibility to the legacy binary permission on a 404', async (visibility, expectedLegacy) => {
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') throw endpointMissing;
+      if (url === '/api/workspace/workspace-id/space') return apiResponse({ view_id: 'space-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpace('workspace-id', { name: 'A space', permission: structuredPayload(visibility) })
+    ).resolves.toBe('space-id');
+
+    expect(post).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-id/space', {
+      name: 'A space',
+      space_permission: expectedLegacy,
+    });
+  });
+
+  it('rethrows structured-endpoint failures that are not endpoint-unavailable', async () => {
+    const serverError = { code: 500, message: 'boom', httpStatus: 500 };
+
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') throw serverError;
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpace('workspace-id', { name: 'A space', permission: closedPermission })
+    ).rejects.toBe(serverError);
+
+    expect(post).toHaveBeenCalledTimes(1);
   });
 });
