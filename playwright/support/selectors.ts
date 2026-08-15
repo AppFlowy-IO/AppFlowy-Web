@@ -611,7 +611,7 @@ export const SortSelectors = {
   sortCondition: (page: Page) => page.getByTestId('database-sort-condition'),
   sortItem: (page: Page) => page.getByTestId('sort-condition'),
   addSortButton: (page: Page) => page.getByRole('button', { name: /add.*sort/i }),
-  deleteAllSortsButton: (page: Page) => page.getByRole('button', { name: /delete.*all.*sort/i }),
+  deleteAllSortsButton: (page: Page) => page.getByRole('button', { name: /delete\s+(all\s+)?sorts/i }),
 };
 
 /**
