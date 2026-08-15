@@ -1,1 +1,1 @@
-export * from './FilterContentOverview';
+export * from './useFilterChipLabel';

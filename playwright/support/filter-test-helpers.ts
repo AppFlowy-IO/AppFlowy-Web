@@ -236,14 +236,16 @@ export async function changeFilterCondition(page: Page, conditionValue: number):
 }
 
 /**
- * Change the checkbox filter condition ("Is checked" / "Is unchecked")
+ * Change the checkbox filter condition ("Checked" / "Unchecked")
+ *
+ * Desktop-parity checkbox editor: the popover body IS the value list — there is
+ * no condition dropdown. Clicking a value applies it and closes the popover.
  */
 export async function changeCheckboxFilterCondition(page: Page, condition: CheckboxFilterCondition): Promise<void> {
-  const trigger = page.locator('[data-testid="filter-condition-trigger"]:visible').last();
+  const option = page.locator(`[data-testid="filter-condition-${condition}"]:visible`).last();
 
-  await expect(trigger).toBeVisible({ timeout: 10000 });
-  await trigger.click({ force: true });
-  await page.locator(`[data-testid="filter-condition-${condition}"]:visible`).last().click({ force: true });
+  await expect(option).toBeVisible({ timeout: 10000 });
+  await option.click({ force: true });
   await page.waitForTimeout(500);
 }
 

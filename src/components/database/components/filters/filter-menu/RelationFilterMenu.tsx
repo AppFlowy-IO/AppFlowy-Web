@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Filter, RelationFilterCondition, useReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
+import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import RelationFilterConditionsSelect from '@/components/database/components/filters/filter-menu/RelationFilterConditionsSelect';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
@@ -60,7 +61,7 @@ function RelationFilterMenu({ filter }: { filter: Filter }) {
   );
 
   return (
-    <div className="flex flex-col gap-2" data-testid="relation-filter">
+    <div className="flex flex-col gap-1" data-testid="relation-filter">
       <FieldMenuTitle
         filterId={filter.id}
         fieldId={filter.fieldId}
@@ -72,14 +73,19 @@ function RelationFilterMenu({ filter }: { filter: Filter }) {
             {loading ? <Progress variant="primary" /> : t('grid.relation.inRelatedDatabase')}
           </div>
         ) : (
-          <RelationCellMenuContent
-            relationRowIds={selectedRowIds}
-            selectedView={selectedView}
-            relatedDatabaseId={relatedDatabaseId}
-            loading={loading}
-            onAddRelationRowId={handleAddRelationRowId}
-            onRemoveRelationRowId={handleRemoveRelationRowId}
-          />
+          <>
+            <RelationCellMenuContent
+              relationRowIds={selectedRowIds}
+              selectedView={selectedView}
+              relatedDatabaseId={relatedDatabaseId}
+              loading={loading}
+              onAddRelationRowId={handleAddRelationRowId}
+              onRemoveRelationRowId={handleRemoveRelationRowId}
+            />
+            {selectedRowIds.length > 0 && (
+              <ClearSelectionItem onClear={() => updateSelectedRowIds([])} />
+            )}
+          </>
         )
       ) : null}
     </div>

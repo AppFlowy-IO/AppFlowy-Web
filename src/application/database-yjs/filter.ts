@@ -318,6 +318,23 @@ export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDataba
   return getEffectiveFiltersSnapshot(filters, fields).length > 0;
 }
 
+/**
+ * Whether the view's filters are stored as an advanced AND/OR tree
+ * (root node is an And/Or group) rather than a flat list of Data filters.
+ * Handles both Yjs maps and plain objects arriving from desktop sync.
+ */
+export function hasAdvancedFilterRoot(filters?: YDatabaseFilters): boolean {
+  if (!filters || filters.length === 0) return false;
+
+  const root = normalizeFilterNode(filters.get(0));
+
+  if (!root) return false;
+
+  const filterType = Number(root.get(YjsDatabaseKey.filter_type));
+
+  return filterType === FilterType.And || filterType === FilterType.Or;
+}
+
 function parseRelationFilterIds(content: string): string[] | null {
   const trimmed = content.trim();
 

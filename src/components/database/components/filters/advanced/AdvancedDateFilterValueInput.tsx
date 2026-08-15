@@ -126,11 +126,11 @@ function AdvancedDateFilterValueInput({ filter, disabled }: AdvancedDateFilterVa
     <Popover>
       <PopoverTrigger asChild>
         <button
-          className='flex h-7 w-full items-center gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 text-left hover:border-content-blue-400 disabled:opacity-50'
+          className='flex h-8 w-full items-center gap-1 overflow-hidden rounded-md border border-border-primary bg-transparent px-2 text-left data-[state=open]:border-border-theme-thick disabled:opacity-50'
           disabled={disabled}
           data-testid='advanced-filter-date-input'
         >
-          <span className={`truncate text-xs ${filter.content ? 'text-text-primary' : 'text-text-caption'}`}>
+          <span className={`truncate text-sm ${filter.content ? 'text-text-primary' : 'text-text-tertiary'}`}>
             {text}
           </span>
         </button>

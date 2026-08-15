@@ -41,7 +41,7 @@ async function clickFilterMoreOptions(page: Page): Promise<void> {
 async function clickAddToAdvancedFilter(page: Page): Promise<void> {
   await page
     .locator('[data-slot="dropdown-menu-item"]')
-    .filter({ hasText: /add to advanced filter/i })
+    .filter({ hasText: /switch to advanced filter/i })
     .click({ force: true });
   await page.waitForTimeout(2000);
 }
@@ -70,7 +70,9 @@ async function deleteFilterInPanelByIndex(page: Page, index: number): Promise<vo
 }
 
 async function deleteAllFilters(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /delete filter/i }).click({ force: true });
+  await page.getByTestId('delete-all-filters-button').click({ force: true });
+  // Desktop parity: deleting all filters asks for confirmation first.
+  await page.getByTestId('confirm-delete-all-filters').click({ force: true });
   await page.waitForTimeout(500);
 }
 
@@ -189,7 +191,7 @@ test.describe('Database Advanced Filter Tests (Desktop Parity)', () => {
       await expect(
         page
           .locator('[data-slot="dropdown-menu-item"]')
-          .filter({ hasText: /add to advanced filter/i })
+          .filter({ hasText: /switch to advanced filter/i })
       ).toBeVisible();
     });
 

@@ -73,7 +73,7 @@ async function convertFiltersToAdvanced(page: Page) {
   await page.getByTestId('filter-more-options-button').click({ force: true });
   await page
     .locator('[data-slot="dropdown-menu-item"]')
-    .filter({ hasText: /add to advanced filter/i })
+    .filter({ hasText: /switch to advanced filter/i })
     .click({ force: true });
   await expect(page.getByTestId('advanced-filters-badge')).toBeVisible();
 }
