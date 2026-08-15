@@ -58,6 +58,7 @@ const LAYOUT_COLLAB_TYPE_MAP: Partial<Record<ViewLayout, Types>> = {
   [ViewLayout.Calendar]: Types.Database,
   [ViewLayout.Chart]: Types.Database,
   [ViewLayout.List]: Types.Database,
+  [ViewLayout.Gallery]: Types.Database,
 };
 
 const DOC_KEY_COLLAB_TYPE_MAP: Record<string, Types> = {

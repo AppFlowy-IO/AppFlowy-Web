@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
-import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseContextState } from '@/application/database-yjs/context';
-import { UIVariant, View, ViewLayout } from '@/application/types';
+import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
+import { UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
 
 jest.mock('@/application/database-yjs', () => ({
@@ -12,25 +12,35 @@ jest.mock('@/application/database-yjs', () => ({
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
+  useDuplicateDatabaseView: jest.fn(),
   useUpdateDatabaseView: jest.fn(),
 }));
 
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => (key === 'menuAppHeader.pageNameSuffix' ? 'Copy' : key),
+  }),
+}));
+
 jest.mock('@/components/database/components/conditions', () => ({
-  DatabaseActions: () => null,
+  DatabaseActions: () => <div data-testid='database-actions-mock' />,
 }));
 
 jest.mock('@/components/database/components/tabs/DatabaseViewTabs', () => ({
   DatabaseViewTabs: ({
     viewNameById,
     setRenameView,
+    onDuplicateView,
   }: {
     viewNameById?: Record<string, string>;
     setRenameView: (view: View) => void;
+    onDuplicateView?: (viewId: string) => void;
   }) => (
     <div data-testid='database-view-tabs'>
       {viewNameById?.['database-view-id'] ?? 'Yjs view name'}
       <button onClick={() => setRenameView(mockNewDatabaseView)}>Rename new view</button>
       <button onClick={() => setRenameView(mockLiveRenameView)}>Rename live view</button>
+      {onDuplicateView ? <button onClick={() => onDuplicateView(databaseView.view_id)}>Duplicate view</button> : null}
     </div>
   ),
 }));
@@ -89,7 +99,74 @@ describe('DatabaseTabs', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useDatabase as jest.Mock).mockReturnValue(undefined);
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
     (useUpdateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
+  });
+
+  it('duplicates a tab through the database-view hook and selects the returned view', async () => {
+    const duplicatedViewId = 'duplicated-view-id';
+    const duplicateView = jest.fn().mockResolvedValue(duplicatedViewId);
+    const setSelectedViewId = jest.fn();
+    const onViewAddedToDatabase = jest.fn();
+    const onViewIdsChanged = jest.fn();
+    const onReorderTabs = jest.fn();
+    const onBeforeViewAddedToDatabase = jest.fn();
+    const onAfterViewAddedToDatabase = jest.fn();
+    const sourceYjsView = {
+      get: jest.fn((key: YjsDatabaseKey) => (key === YjsDatabaseKey.name ? 'Gallery' : undefined)),
+    };
+    const views = new Map([[databaseView.view_id, sourceYjsView]]);
+    const galleryContainer = {
+      ...databaseContainer,
+      children: [{ ...databaseView, name: 'Gallery', layout: ViewLayout.Gallery }],
+    };
+
+    (useDatabase as jest.Mock).mockReturnValue({
+      get: () => views,
+    });
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      createDatabaseView: jest.fn(),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => galleryContainer),
+      readOnly: false,
+      showActions: true,
+    } as unknown as DatabaseContextState);
+
+    render(
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        setSelectedViewId={setSelectedViewId}
+        viewIds={[databaseView.view_id]}
+        onViewAddedToDatabase={onViewAddedToDatabase}
+        onViewIdsChanged={onViewIdsChanged}
+        onReorderTabs={onReorderTabs}
+        onBeforeViewAddedToDatabase={onBeforeViewAddedToDatabase}
+        onAfterViewAddedToDatabase={onAfterViewAddedToDatabase}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('database-view-tabs').textContent).toContain('Gallery');
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
+
+    await waitFor(() => {
+      expect(duplicateView).toHaveBeenCalledWith(databaseView.view_id, 'Gallery (Copy)');
+      expect(onViewAddedToDatabase).toHaveBeenCalledWith(duplicatedViewId);
+      expect(onViewIdsChanged).toHaveBeenCalledWith([duplicatedViewId, databaseView.view_id]);
+      expect(onReorderTabs).toHaveBeenCalledWith({
+        movedId: duplicatedViewId,
+        prevId: null,
+        nextIds: [duplicatedViewId, databaseView.view_id],
+        fromIndex: 1,
+        toIndex: 0,
+      });
+      expect(setSelectedViewId).toHaveBeenCalledWith(duplicatedViewId);
+      expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1);
+    });
+    expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
   });
 
   it('renders the database container name for an embedded database', async () => {
@@ -177,6 +254,8 @@ describe('DatabaseTabs', () => {
     await waitFor(() => {
       expect(screen.getByTestId('database-view-tabs').textContent).toContain('Grid');
     });
+    expect(screen.getByTestId('database-actions-mock')).toBeTruthy();
+    expect(screen.getByTestId('database-actions-container').style.opacity).toBe('1');
   });
 
   it('opens rename from the action view when a newly created view is not in the current caches', async () => {

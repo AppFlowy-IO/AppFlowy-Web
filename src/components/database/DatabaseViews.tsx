@@ -8,10 +8,10 @@ import { FilterType } from '@/application/database-yjs/database.type';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import { Board } from '@/components/database/board';
+import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
-import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
@@ -37,6 +37,7 @@ import { Log } from '@/utils/log';
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
 
 const List = lazy(() => import('@/components/database/list/List'));
+const Gallery = lazy(() => import('@/components/database/gallery'));
 
 function DatabaseViews({
   onChangeView,
@@ -296,7 +297,17 @@ function DatabaseViews({
   const handleReorderTabs = useCallback(
     ({ nextIds, movedId, prevId }: ReorderResult) => {
       const previousIds = orderedViewIdsRef.current.length > 0 ? orderedViewIdsRef.current : viewIds;
+      const previousPendingExpectedViewIds = pendingExpectedViewIdsRef.current;
+      const pendingCreatedViewId = previousPendingExpectedViewIds?.[previousPendingExpectedViewIds.length - 1];
+      const isPendingCreationReorder = pendingCreatedViewId === movedId;
       const requestSeq = ++tabReorderRequestSeqRef.current;
+
+      // A newly created duplicate is first appended, then moved next to its
+      // source. Keep the pending creation order aligned so the next Yjs
+      // reconciliation cannot restore the temporary appended order.
+      if (isPendingCreationReorder) {
+        pendingExpectedViewIdsRef.current = nextIds;
+      }
 
       // Optimistically apply the new tab order and persist it locally.
       orderedViewIdsRef.current = nextIds;
@@ -312,6 +323,10 @@ function DatabaseViews({
           await onReorderViews(movedId, prevId);
         } catch (error) {
           if (tabReorderRequestSeqRef.current !== requestSeq) return;
+
+          if (isPendingCreationReorder) {
+            pendingExpectedViewIdsRef.current = previousPendingExpectedViewIds;
+          }
 
           orderedViewIdsRef.current = previousIds;
           setOrderedViewIds(previousIds);
@@ -344,11 +359,11 @@ function DatabaseViews({
       case DatabaseViewLayout.List:
         return <List />;
       case DatabaseViewLayout.Gallery:
-        return <UnsupportedView />;
+        return <Gallery key={activeViewId} />;
       default:
         return null;
     }
-  }, [effectiveLayout]);
+  }, [activeViewId, effectiveLayout]);
   const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
     embeddedHeight: fixedHeight,
     isDocumentBlock,
@@ -383,49 +398,51 @@ function DatabaseViews({
   );
 
   const content = (
-    <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
-      <DatabaseTabs
-        viewName={viewName}
-        databasePageId={databasePageId}
-        selectedViewId={activeViewId}
-        setSelectedViewId={handleViewChange}
-        viewIds={displayedViewIds}
-        onViewAddedToDatabase={handleViewAddedToDatabase}
-        onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-        onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-        onViewIdsChanged={onViewIdsChanged}
-        onReorderTabs={handleReorderTabs}
-      />
+    <DatabaseSearchProvider activeViewId={activeViewId}>
+      <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
+        <DatabaseTabs
+          viewName={viewName}
+          databasePageId={databasePageId}
+          selectedViewId={activeViewId}
+          setSelectedViewId={handleViewChange}
+          viewIds={displayedViewIds}
+          onViewAddedToDatabase={handleViewAddedToDatabase}
+          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+          onViewIdsChanged={onViewIdsChanged}
+          onReorderTabs={handleReorderTabs}
+        />
 
-      <DatabaseConditions />
+        <DatabaseConditions />
 
-      <div
-        className={cn(
-          'relative flex w-full flex-col',
-          shouldUseFixedViewport
-            ? shouldAutoShrinkViewport
-              ? shouldScrollEmbeddedViewport
-                ? 'min-h-0 overflow-y-auto overflow-x-hidden'
-                : 'min-h-0 overflow-hidden'
-              : 'h-full min-h-0 flex-1 overflow-hidden'
-            : 'overflow-visible'
-        )}
-        style={viewportStyle}
-      >
         <div
           className={cn(
-            'w-full',
-            shouldUseFixedViewport &&
-              (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+            'relative flex w-full flex-col',
+            shouldUseFixedViewport
+              ? shouldAutoShrinkViewport
+                ? shouldScrollEmbeddedViewport
+                  ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+                  : 'min-h-0 overflow-hidden'
+                : 'h-full min-h-0 flex-1 overflow-hidden'
+              : 'overflow-visible'
           )}
           style={viewportStyle}
         >
-          <Suspense fallback={null}>
-            <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-          </Suspense>
+          <div
+            className={cn(
+              'w-full',
+              shouldUseFixedViewport &&
+                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+            )}
+            style={viewportStyle}
+          >
+            <Suspense fallback={null}>
+              <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+            </Suspense>
+          </div>
         </div>
-      </div>
-    </DatabaseConditionsContext.Provider>
+      </DatabaseConditionsContext.Provider>
+    </DatabaseSearchProvider>
   );
 
   switch (effectiveLayout) {

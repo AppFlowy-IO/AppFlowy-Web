@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
@@ -48,6 +49,28 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
                 }
 
                 return createDatabaseListPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : layout === ViewLayout.Gallery
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('Gallery creation is not available right now');
+                }
+
+                return createDatabaseGalleryPageViaGrid({
                   parentViewId: view.view_id,
                   name,
                   prevViewId: lastChildViewId,
@@ -196,10 +219,10 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       {
         label: t('gallery.menuName'),
         icon: <ViewIcon layout={ViewLayout.Gallery} size={'small'} />,
-        disabled: true,
-        tooltip: t('common.desktopOnly'),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onSelect: () => {},
+        testId: 'add-gallery-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Gallery, t('document.plugins.database.newDatabase'));
+        },
       },
       {
         label: t('moreAction.import'),

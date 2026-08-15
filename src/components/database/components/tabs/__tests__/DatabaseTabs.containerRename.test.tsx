@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
-import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
+import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { View, ViewLayout } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
 
@@ -15,7 +15,14 @@ jest.mock('@/application/database-yjs', () => ({
 }));
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
+  useDuplicateDatabaseView: jest.fn(),
   useUpdateDatabaseView: jest.fn(),
+}));
+
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
 }));
 
 jest.mock('@/components/database/components/conditions', () => ({
@@ -113,6 +120,7 @@ describe('DatabaseTabs embedded database title rename', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (useDatabase as jest.Mock).mockReturnValue(undefined);
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
     (useUpdateDatabaseView as jest.Mock).mockReturnValue(updateDatabaseView);
   });
 

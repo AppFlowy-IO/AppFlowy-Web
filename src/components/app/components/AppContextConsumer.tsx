@@ -69,10 +69,10 @@ function InlineCommentScope({ children, openModalViewId }: { children: React.Rea
 
   return (
     <InlineCommentProvider
-      // Keyed by the route view only: opening the modal or a full-page row swaps
-      // `viewId` while staying on the same route, and remounting here would tear
-      // down the whole app shell underneath it.
-      key={`${workspaceId ?? ''}:${routeViewId ?? ''}`}
+      // Never key this provider: it wraps the whole app shell (sidebar, header,
+      // content), so a key remounts all of it on every change. Document swaps
+      // are handled in place — the outgoing editor's unregister cleanup resets
+      // the comment state, exactly as the page modal and row-page flows rely on.
       eventEmitter={eventEmitter}
       viewId={viewId}
       workspaceId={workspaceId}

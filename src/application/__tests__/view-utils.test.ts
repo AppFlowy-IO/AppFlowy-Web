@@ -58,6 +58,10 @@ describe('view-utils', () => {
       expect(isDatabaseLayout(ViewLayout.List)).toBe(true);
     });
 
+    it('should return true for Gallery layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Gallery)).toBe(true);
+    });
+
     it('should return false for Document layout', () => {
       expect(isDatabaseLayout(ViewLayout.Document)).toBe(false);
     });
@@ -818,6 +822,7 @@ describe('view-utils', () => {
         ViewLayout.Calendar,
         ViewLayout.Chart,
         ViewLayout.List,
+        ViewLayout.Gallery,
       ];
       const parentView = createMockView({
         view_id: 'parent-doc',

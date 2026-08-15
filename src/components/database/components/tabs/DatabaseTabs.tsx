@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
-import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
+import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { View, YjsDatabaseKey } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
@@ -78,12 +78,14 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       updatePage: updateContainerPage,
     } = context;
     const updateDatabaseView = useUpdateDatabaseView();
+    const duplicateView = useDuplicateDatabaseView();
     const [meta, setMeta] = useState<View | null>(null);
     const [pendingContainerName, setPendingContainerName] = useState<{ viewId: string; name: string } | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
     const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
+    const [duplicatingViewId, setDuplicatingViewId] = useState<string | null>(null);
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
@@ -350,6 +352,88 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       setEditingTitle(false);
     }, [embeddedDatabaseViewId]);
 
+    const handleViewAdded = useCallback(
+      (viewId: string, insertBeforeViewId?: string) => {
+        const viewIdsWithoutAddedView = viewIds.filter((existingViewId) => existingViewId !== viewId);
+        const appendedViewIds = [...viewIdsWithoutAddedView, viewId];
+        const insertBeforeIndex = insertBeforeViewId ? viewIdsWithoutAddedView.indexOf(insertBeforeViewId) : -1;
+        let nextViewIds = viewIds.includes(viewId) ? viewIds : appendedViewIds;
+
+        if (insertBeforeIndex >= 0) {
+          nextViewIds = [
+            ...viewIdsWithoutAddedView.slice(0, insertBeforeIndex),
+            viewId,
+            ...viewIdsWithoutAddedView.slice(insertBeforeIndex),
+          ];
+        }
+
+        // For embedded databases, notify the parent immediately.
+        onViewAddedToDatabase?.(viewId);
+
+        // Update embedded block data before selecting the new view so the
+        // database context already allows the new ID.
+        onViewIdsChanged?.(nextViewIds);
+
+        // DatabaseViews initially appends every created view. Reapply the
+        // duplicate's source-relative position locally and, when available,
+        // persist the same move in the folder hierarchy.
+        if (insertBeforeIndex >= 0 && onReorderTabs) {
+          const fromIndex = appendedViewIds.indexOf(viewId);
+          const toIndex = nextViewIds.indexOf(viewId);
+
+          if (fromIndex !== toIndex) {
+            onReorderTabs({
+              movedId: viewId,
+              prevId: toIndex > 0 ? nextViewIds[toIndex - 1] : null,
+              nextIds: nextViewIds,
+              fromIndex,
+              toIndex,
+            });
+          }
+        }
+
+        setSelectedViewId?.(viewId);
+        setPendingScrollToViewId(viewId);
+      },
+      [onReorderTabs, onViewAddedToDatabase, onViewIdsChanged, setSelectedViewId, viewIds]
+    );
+
+    const duplicateDatabaseView = useCallback(
+      async (viewId: string) => {
+        if (!context.createDatabaseView || !views || duplicatingViewId) return;
+        const sourceName = viewNameById?.[viewId] ?? views.get(viewId)?.get(YjsDatabaseKey.name);
+        const copySuffix = t('menuAppHeader.pageNameSuffix');
+        const duplicatedName = `${sourceName ? String(sourceName).trim() : 'View'} (${copySuffix})`;
+
+        onBeforeViewAddedToDatabase?.();
+        setDuplicatingViewId(viewId);
+        setMenuViewId(null);
+
+        try {
+          const duplicatedViewId = await duplicateView(viewId, duplicatedName);
+
+          handleViewAdded(duplicatedViewId, viewId);
+          toast.success(t('button.duplicateSuccessfully'));
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage'));
+        } finally {
+          setDuplicatingViewId(null);
+          onAfterViewAddedToDatabase?.();
+        }
+      },
+      [
+        context.createDatabaseView,
+        duplicateView,
+        duplicatingViewId,
+        handleViewAdded,
+        onAfterViewAddedToDatabase,
+        onBeforeViewAddedToDatabase,
+        t,
+        viewNameById,
+        views,
+      ]
+    );
+
     return (
       <div
         ref={ref}
@@ -418,45 +502,23 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             setMenuViewId={setMenuViewId}
             setDeleteConfirmOpen={setDeleteConfirmOpen}
             setRenameView={openRenameModal}
+            onDuplicateView={context.createDatabaseView ? duplicateDatabaseView : undefined}
+            duplicateDisabled={Boolean(duplicatingViewId)}
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
             onReorderTabs={onReorderTabs}
             onBeforeViewAdded={onBeforeViewAddedToDatabase}
             onAfterViewAdded={onAfterViewAddedToDatabase}
-            onViewAdded={(viewId) => {
-              // For embedded databases, notify parent immediately
-              if (onViewAddedToDatabase) {
-                onViewAddedToDatabase(viewId);
-              }
-
-              // Update the block data with the new view ID BEFORE selecting
-              // This ensures allowedViewIds includes the new view when selection happens
-              if (onViewIdsChanged) {
-                const newViewIds = [...viewIds, viewId];
-
-                onViewIdsChanged(newViewIds);
-              }
-
-              // Always call setSelectedViewId to trigger the view change flow
-              // This handles both embedded and standalone databases
-              if (setSelectedViewId) {
-                setSelectedViewId(viewId);
-              }
-
-              setPendingScrollToViewId(viewId);
-              // Note: We don't call reloadView() here because:
-              // 1. The view tab already appears from Yjs (useDatabaseViewsSelector)
-              // 2. The outline will be loaded by createDatabaseView in usePageOperations
-              // 3. OUTLINE_LOADED event will update meta with view names
-              // Calling reloadView() here would cause redundant setMeta() calls.
-            }}
+            onViewAdded={handleViewAdded}
           />
 
-          {!readOnly ? (
-            <div style={{ opacity: showActions ? 1 : 0 }} className={'mb-1 ml-auto'}>
-              <DatabaseActions />
-            </div>
-          ) : null}
+          <div
+            className='mb-1 ml-auto'
+            data-testid='database-actions-container'
+            style={{ opacity: readOnly || showActions ? 1 : 0 }}
+          >
+            <DatabaseActions />
+          </div>
         </div>
 
         {renameTarget && (

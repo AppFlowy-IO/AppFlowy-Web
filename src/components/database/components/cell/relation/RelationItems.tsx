@@ -15,14 +15,34 @@ import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
 import { cn } from '@/lib/utils';
 
+function RelationItemValue({
+  field,
+  fieldId,
+  onTextChange,
+  rowDoc,
+  rowId,
+}: {
+  field?: YDatabaseField;
+  fieldId?: string;
+  onTextChange: (rowId: string, text: string) => void;
+  rowDoc: YDoc;
+  rowId: string;
+}) {
+  const handleTextChange = useCallback((text: string) => onTextChange(rowId, text), [onTextChange, rowId]);
+
+  return <RelationPrimaryValue field={field} fieldId={fieldId} onTextChange={handleTextChange} rowDoc={rowDoc} />;
+}
+
 function RelationItems({
   style,
   cell,
   fieldId,
+  onTextChange,
   wrap,
 }: {
   cell: RelationCell;
   fieldId: string;
+  onTextChange?: (text: string) => void;
   style?: React.CSSProperties;
   wrap: boolean;
 }) {
@@ -46,8 +66,22 @@ function RelationItems({
   const [relatedField, setRelatedField] = useState<YDatabaseField | undefined>();
 
   const [rowIds, setRowIds] = useState([] as string[]);
+  const [rowTexts, setRowTexts] = useState<Record<string, string>>({});
 
   const navigateToView = context?.navigateToView;
+
+  const handleRowTextChange = useCallback((rowId: string, text: string) => {
+    setRowTexts((current) => (current[rowId] === text ? current : { ...current, [rowId]: text }));
+  }, []);
+  const searchText = rowIds.reduce((result, rowId) => {
+    const text = rowTexts[rowId];
+
+    return text ? `${result}${result ? ' ' : ''}${text}` : result;
+  }, '');
+
+  useEffect(() => {
+    onTextChange?.(searchText);
+  }, [onTextChange, searchText]);
 
   const handleUpdateRowIds = useCallback(() => {
     const data = cell?.data;
@@ -203,7 +237,13 @@ function RelationItems({
                 relatedViewId ? 'cursor-pointer hover:text-text-action' : ''
               }`}
             >
-              <RelationPrimaryValue field={relatedField} fieldId={relatedFieldId} rowDoc={rowDoc} />
+              <RelationItemValue
+                field={relatedField}
+                fieldId={relatedFieldId}
+                onTextChange={handleRowTextChange}
+                rowDoc={rowDoc}
+                rowId={rowId}
+              />
             </div>
           );
         })

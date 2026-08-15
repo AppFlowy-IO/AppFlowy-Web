@@ -6,6 +6,10 @@ import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { isDatabaseBlockType } from '@/application/database-block';
+import {
+  createDatabaseGalleryPageViaGrid,
+  createLinkedDatabaseGalleryView,
+} from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -467,6 +471,24 @@ export function SlashPanel({
                   updatePage,
                 });
               })()
+            : layout === ViewLayout.Gallery
+            ? await (() => {
+                if (!loadView || !bindViewSync || !deletePage || !scheduleDeferredCleanup) {
+                  throw new Error('Gallery creation is not available right now');
+                }
+
+                return createDatabaseGalleryPageViaGrid({
+                  parentViewId: documentId,
+                  name,
+                  addPage,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  deletePage,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
             : await addPage(documentId, { layout, name });
 
         Log.debug('[SlashPanel] {} created inline database', {
@@ -764,6 +786,10 @@ export function SlashPanel({
               return t('list.referencedListPrefix', {
                 defaultValue: 'View of',
               });
+            case ViewLayout.Gallery:
+              return t('gallery.referencedGalleryPrefix', {
+                defaultValue: 'View of',
+              });
             case ViewLayout.Chart:
               return t('document.chart.referencedChartPrefix', {
                 defaultValue: 'View of',
@@ -778,6 +804,22 @@ export function SlashPanel({
         const response =
           linkedPicker.layout === ViewLayout.List
             ? await createLinkedDatabaseListView({
+                requestViewId: documentId,
+                sourceViewId,
+                payload: {
+                  parent_view_id: documentId,
+                  database_id: databaseId,
+                  name: referencedName,
+                  embedded: true,
+                },
+                createDatabaseView,
+                loadView,
+                bindViewSync,
+                deletePage,
+                scheduleDeferredCleanup,
+              })
+            : linkedPicker.layout === ViewLayout.Gallery
+            ? await createLinkedDatabaseGalleryView({
                 requestViewId: documentId,
                 sourceViewId,
                 payload: {
@@ -807,7 +849,12 @@ export function SlashPanel({
           referencedName,
         });
 
-        if (linkedPicker.layout !== ViewLayout.List && response.database_update?.length && loadView) {
+        if (
+          linkedPicker.layout !== ViewLayout.List &&
+          linkedPicker.layout !== ViewLayout.Gallery &&
+          response.database_update?.length &&
+          loadView
+        ) {
           try {
             const databaseDoc = await loadView(response.view_id, false, false, {
               databaseId: response.database_id || databaseId,
@@ -1444,6 +1491,28 @@ export function SlashPanel({
         aliases: ['link to list', 'referenced list'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.List, 'linkedList');
+        },
+      },
+      {
+        label: t('gallery.menuName'),
+        key: 'databaseGallery',
+        icon: <GalleryIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['gallery', 'database', 'cards'],
+        aliases: ['gallery database'],
+        onClick: () => {
+          void createInlineDatabase(ViewLayout.Gallery);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.linkedGallery', { defaultValue: 'Linked Gallery' }),
+        key: 'linkedGallery',
+        icon: <GalleryIcon />,
+        group: SlashMenuGroupKey.Database,
+        keywords: ['linked', 'gallery', 'database', 'cards'],
+        aliases: ['link to gallery', 'referenced gallery'],
+        onClick: () => {
+          void handleOpenLinkedDatabasePicker(ViewLayout.Gallery, 'linkedGallery');
         },
       },
       {

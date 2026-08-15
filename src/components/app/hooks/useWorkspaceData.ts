@@ -719,6 +719,7 @@ export function useWorkspaceData() {
             ViewLayout.Grid,
             ViewLayout.Calendar,
             ViewLayout.List,
+            ViewLayout.Gallery,
           ]);
 
           if (firstView) {
@@ -752,6 +753,7 @@ export function useWorkspaceData() {
                   ViewLayout.Grid,
                   ViewLayout.Calendar,
                   ViewLayout.List,
+                  ViewLayout.Gallery,
                 ]);
 
                 if (firstChild) {

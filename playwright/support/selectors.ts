@@ -291,6 +291,31 @@ export const DatabaseListSelectors = {
 };
 
 /**
+ * Database Gallery selectors (kept aligned with Flutter's stable Gallery
+ * finders so migrated scenarios can address the same semantic elements).
+ */
+export const DatabaseGallerySelectors = {
+  gallery: (page: Page) => page.getByTestId('database-gallery'),
+  grid: (page: Page) => page.getByTestId('gallery-grid'),
+  tiles: (page: Page) => page.locator('[data-testid^="gallery-tile-"][data-row-id]'),
+  cards: (page: Page) => page.locator('[data-testid^="gallery-tile-"][data-row-id] > [data-testid^="gallery-card-"]'),
+  tileByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-tile-${rowId}`),
+  cardByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-${rowId}`),
+  titleByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-title-${rowId}`),
+  titles: (page: Page) => page.locator('.gallery-card-title'),
+  previewByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-preview-${rowId}`),
+  previewImageByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-preview-image-${rowId}`),
+  propertiesByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-properties-${rowId}`),
+  fieldsForField: (page: Page, fieldId: string) => page.locator(`[data-testid^="gallery-field-${fieldId}-"]`),
+  editButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-edit-${rowId}`),
+  moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-more-${rowId}`),
+  newRowButton: (page: Page) => page.getByTestId('gallery-new-row'),
+  loadMoreButton: (page: Page) => page.getByTestId('gallery-load-more'),
+  settingsTrigger: (page: Page) => page.getByTestId('gallery-layout-settings-trigger'),
+  settingsMenu: (page: Page) => page.getByTestId('gallery-layout-settings-menu'),
+};
+
+/**
  * Database View selectors
  */
 export const DatabaseViewSelectors = {
@@ -298,14 +323,16 @@ export const DatabaseViewSelectors = {
     viewId ? page.getByTestId(`view-tab-${viewId}`) : page.locator('[data-testid^="view-tab-"]'),
   activeViewTab: (page: Page) => page.locator('[data-testid^="view-tab-"][data-state="active"]'),
   tabActionRename: (page: Page) => page.getByTestId('database-view-action-rename'),
+  tabActionDuplicate: (page: Page) => page.getByTestId('database-view-action-duplicate'),
   tabActionDelete: (page: Page) => page.getByTestId('database-view-action-delete'),
   deleteViewConfirmButton: (page: Page) => page.getByTestId('database-view-delete-confirm'),
   viewNameInput: (page: Page) => page.getByTestId('view-name-input'),
   addViewButton: (page: Page) => page.getByTestId('add-view-button'),
-  gridView: (page: Page) => page.getByTestId('grid-view'),
+  gridView: (page: Page) => page.getByTestId('database-grid'),
   boardView: (page: Page) => page.locator('[data-testid*="board"]'),
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
   listView: (page: Page) => page.getByTestId('database-list'),
+  galleryView: (page: Page) => page.getByTestId('database-gallery'),
   /**
    * Locator for a layout option inside the AddViewButton dropdown
    * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
@@ -536,6 +563,7 @@ export const AddPageSelectors = {
   addAIChatButton: (page: Page) => page.getByTestId('add-ai-chat-button'),
   addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
   addListButton: (page: Page) => page.getByTestId('add-list-button'),
+  addGalleryButton: (page: Page) => page.getByTestId('add-gallery-button'),
   addImportButton: (page: Page) => page.getByTestId('add-import-button'),
 };
 

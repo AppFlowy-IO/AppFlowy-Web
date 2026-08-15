@@ -141,7 +141,7 @@ function ViewItem({
   // Dot icon for referenced database views (like desktop)
   const getDotIcon = useCallback(() => {
     return (
-      <span className={'flex h-full w-5 items-center justify-end'}>
+      <span className={'flex h-full w-5 items-center justify-end'} data-testid='database-view-dot'>
         <span className={'p-1.5'}>
           <span className={'block h-1 w-1 rounded-full bg-text-secondary'} />
         </span>

@@ -222,7 +222,7 @@ function DatabaseTemplateEditor({
   );
 }
 
-export function DatabaseTemplateButton() {
+export function DatabaseTemplateButton({ compact = false }: { compact?: boolean }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const database = useDatabase();
@@ -558,9 +558,13 @@ export function DatabaseTemplateButton() {
 
   return (
     <>
-      <div aria-busy={busy} className='flex h-7 items-stretch' data-testid='database-template-split-button'>
+      <div
+        aria-busy={busy}
+        className={`flex items-stretch ${compact ? 'h-6' : 'h-7'}`}
+        data-testid='database-template-split-button'
+      >
         <Button
-          className='h-7 rounded-r-none px-1.5 text-xs font-normal leading-3'
+          className={`${compact ? 'h-6' : 'h-7'} rounded-r-none px-1.5 text-xs font-normal leading-3`}
           disabled={busy}
           loading={busy}
           onClick={() =>
@@ -570,18 +574,20 @@ export function DatabaseTemplateButton() {
           }
           data-testid='database-new-row-button'
         >
-          {busy ? <LoaderCircle className='h-4 w-4 animate-spin' /> : null}
+          {busy ? <LoaderCircle aria-hidden='true' className='h-4 w-4 animate-spin' /> : null}
           {t('grid.createView', { defaultValue: 'New' })}
         </Button>
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button
               aria-label='Open database templates'
-              className='relative h-7 w-7 rounded-l-none p-0 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-white/30'
+              className={`relative ${
+                compact ? 'h-6 w-6' : 'h-7 w-7'
+              } rounded-l-none p-0 before:absolute before:left-0 before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-white/30`}
               disabled={busy}
               data-testid='database-template-menu-trigger'
             >
-              <ChevronDown className='h-4 w-4' />
+              <ChevronDown aria-hidden='true' className='h-4 w-4' />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent

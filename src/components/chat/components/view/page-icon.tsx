@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
+import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as ListIcon } from '@/assets/icons/list.svg';
 import { ReactComponent as DocIcon } from '@/assets/icons/page.svg';
@@ -69,6 +70,8 @@ function PageIcon({ view }: { view: View }) {
         return <GridIcon className='h-5 w-5' />;
       case ViewLayout.List:
         return <ListIcon className='h-5 w-5' />;
+      case ViewLayout.Gallery:
+        return <GalleryIcon className='h-5 w-5' />;
       default:
         return <DocIcon className='h-5 w-5' />;
     }

@@ -29,12 +29,18 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { FieldType, FilterType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
-import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
+import {
+  dateFilterFillData,
+  filterFillData,
+  getFilterChildren,
+  normalizeFilterNode,
+  relationFilterFillData,
+} from '@/application/database-yjs/filter';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
@@ -62,6 +68,8 @@ import {
   DatabaseViewLayout,
   FieldId,
   YDatabaseCell,
+  YDatabaseFilter,
+  YDatabaseFilters,
   YDatabaseRow,
   YDatabaseView,
   YDoc,
@@ -74,6 +82,41 @@ import { Log } from '@/utils/log';
 import { applyRelationReciprocalInserts } from './relation';
 import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
 import { executeOperationWithAllViews } from './utils';
+
+export function collectNewRowPrefillFilters(filters: YDatabaseFilters | undefined): YDatabaseFilter[] {
+  if (!filters) return [];
+
+  const leaves: YDatabaseFilter[] = [];
+  const visit = (rawNode: unknown) => {
+    const node = normalizeFilterNode(rawNode);
+
+    if (!node) return;
+
+    const rawType = node.get(YjsDatabaseKey.filter_type);
+    const parsedType = Number(rawType);
+    const type =
+      rawType === undefined || rawType === null || !Number.isFinite(parsedType) ? FilterType.Data : parsedType;
+
+    if (type === FilterType.Data) {
+      leaves.push(node);
+      return;
+    }
+
+    const children = getFilterChildren(node);
+
+    if (type === FilterType.And) {
+      children.forEach(visit);
+      return;
+    }
+
+    if (type === FilterType.Or && children.length > 0) {
+      visit(children[0]);
+    }
+  };
+
+  filters.toArray().forEach(visit);
+  return leaves;
+}
 
 /**
  * Helper: Reorder a row within a view's row_orders
@@ -554,11 +597,12 @@ export function useNewRowDispatch() {
       const [selectedTemplate, rowDoc] = await Promise.all([templatePromise, createRow(rowKey)]);
       // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
       // JS array on each call, and we read it twice (length check + forEach).
-      const filterArray = filters?.toArray() ?? [];
+      const hasActiveFilters = (filters?.length ?? 0) > 0;
+      const filterArray = collectNewRowPrefillFilters(filters);
       // Open the row detail page whenever filters are active so the user can
       // see and complete the new row (its primary "Name" cell is always empty,
       // and other cells get pre-filled from filters but still need user input).
-      let shouldOpenRowModal = filterArray.length > 0;
+      let shouldOpenRowModal = hasActiveFilters;
       // Relation prefills are written synchronously in the transact below, but
       // their reciprocal/back-link updates must run async after the row exists.
       // Keyed by fieldId so multiple filters on the same relation field don't

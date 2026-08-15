@@ -215,7 +215,10 @@ describe('convert yjs data to slate content', () => {
     ]);
   });
 
-  it('preserves a native embedded List database block and its cross-client payload', () => {
+  it.each([
+    ['List', BlockType.ListBlock],
+    ['Gallery', BlockType.DatabaseGalleryBlock],
+  ])('preserves a native embedded %s database block and its cross-client payload', (_name, blockType) => {
     const doc = withTestingYDoc('1');
     const id = generateId();
     const data = {
@@ -229,7 +232,7 @@ describe('convert yjs data to slate content', () => {
       doc,
       blockObject: {
         id,
-        ty: BlockType.ListBlock,
+        ty: blockType,
         relation_id: id,
         text_id: id,
         data: JSON.stringify(data),
@@ -242,7 +245,7 @@ describe('convert yjs data to slate content', () => {
       {
         blockId: id,
         relationId: id,
-        type: BlockType.ListBlock,
+        type: blockType,
         data,
         children: [{ text: '' }],
       },

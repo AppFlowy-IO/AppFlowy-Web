@@ -461,6 +461,7 @@ export function useViewOperations({
           case ViewLayout.Calendar:
           case ViewLayout.Chart:
           case ViewLayout.List:
+          case ViewLayout.Gallery:
             searchParams.set('r', blockId);
             break;
           default:

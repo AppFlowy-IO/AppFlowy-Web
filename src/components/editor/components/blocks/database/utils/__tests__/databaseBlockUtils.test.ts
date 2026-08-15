@@ -1,4 +1,10 @@
-import { addViewId, createDatabaseNodeData, removeViewId, serializeDatabaseNodeData } from '../databaseBlockUtils';
+import {
+  addViewId,
+  createDatabaseNodeData,
+  removeViewId,
+  replaceViewIds,
+  serializeDatabaseNodeData,
+} from '../databaseBlockUtils';
 
 describe('database block view ID compatibility', () => {
   it('creates the canonical cross-client payload with both ID representations', () => {
@@ -37,5 +43,17 @@ describe('database block view ID compatibility', () => {
     expect(empty.view_ids).toEqual([]);
     expect(empty.view_id).toBeUndefined();
     expect(serializeDatabaseNodeData(empty)).not.toContain('"view_id":');
+  });
+
+  it('persists the exact callback order when a duplicate is inserted before its source', () => {
+    const initial = createDatabaseNodeData({
+      parentId: 'document-id',
+      viewIds: ['source-view', 'board-view'],
+    });
+
+    expect(replaceViewIds(initial, ['duplicated-view', 'source-view', 'board-view', 'source-view'])).toMatchObject({
+      view_ids: ['duplicated-view', 'source-view', 'board-view'],
+      view_id: 'duplicated-view',
+    });
   });
 });

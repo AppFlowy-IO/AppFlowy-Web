@@ -12,7 +12,10 @@ describe('database block types', () => {
     expect(isDatabaseBlockType(undefined)).toBe(false);
   });
 
-  it('maps the native List block to the List database layout', () => {
-    expect(getDatabaseLayoutFromBlockType(BlockType.ListBlock)).toBe(ViewLayout.List);
+  it.each([
+    [BlockType.ListBlock, ViewLayout.List],
+    [BlockType.DatabaseGalleryBlock, ViewLayout.Gallery],
+  ])('maps the native %s block to database layout %s', (blockType, layout) => {
+    expect(getDatabaseLayoutFromBlockType(blockType)).toBe(layout);
   });
 });

@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import { useConditionsContext } from './context';
 
-function FiltersButton({ toggleExpanded }: { toggleExpanded?: () => void }) {
+function FiltersButton({ compact = false, toggleExpanded }: { compact?: boolean; toggleExpanded?: () => void }) {
   const filters = useFiltersSelector();
   const readOnly = useReadOnly();
   const { t } = useTranslation();
@@ -50,8 +50,9 @@ function FiltersButton({ toggleExpanded }: { toggleExpanded?: () => void }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              aria-label={t('grid.settings.filter')}
               variant={'ghost'}
-              size={'icon'}
+              size={compact ? 'icon-sm' : 'icon'}
               className={'relative'}
               data-testid={'database-actions-filter'}
               onClick={(e) => {
@@ -65,8 +66,9 @@ function FiltersButton({ toggleExpanded }: { toggleExpanded?: () => void }) {
               style={{
                 color: filters.length > 0 ? 'var(--text-action)' : undefined,
               }}
+              type='button'
             >
-              <FilterIcon className={'h-5 w-5'} />
+              <FilterIcon aria-hidden='true' className={'h-5 w-5'} />
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t('grid.settings.filter')}</TooltipContent>
