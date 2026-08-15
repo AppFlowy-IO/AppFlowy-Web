@@ -73,7 +73,9 @@ function AdvancedDateFilterValueInput({ filter, disabled }: AdvancedDateFilterVa
   const onSelect = useCallback(
     (newDateRange: { from: Date | undefined; to?: Date | undefined } | undefined) => {
       setDateRange(newDateRange);
-      const data = newDateRange?.from ? dayjs(newDateRange.from).unix() : '';
+      // Desktop's DateFilterContent deserializes Option<i64>; an empty string fails
+      // serde and silently degrades the filter on desktop — write null instead.
+      const data = newDateRange?.from ? dayjs(newDateRange.from).unix() : null;
       const endTimestamp = newDateRange?.to ? dayjs(newDateRange.to).unix() : undefined;
 
       const content = JSON.stringify({

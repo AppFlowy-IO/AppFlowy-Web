@@ -188,14 +188,14 @@ function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): Fi
       const prefix = t('grid.dateFilter.choicechipPrefix.between');
 
       description =
-        filter.start !== undefined && filter.end !== undefined
+        typeof filter.start === 'number' && typeof filter.end === 'number'
           ? `${prefix} ${format(filter.start)} - ${format(filter.end)}`
           : prefix;
       break;
     }
 
     case DateFilterCondition.DateStartsOn:
-      description = filter.timestamp !== undefined ? format(filter.timestamp) : '';
+      description = typeof filter.timestamp === 'number' ? format(filter.timestamp) : '';
       break;
     default: {
       // before / after / onOrBefore / onOrAfter
@@ -208,7 +208,7 @@ function dateChipLabel(filter: DateFilter, dateFormat: string, t: Translate): Fi
           ? t('grid.dateFilter.choicechipPrefix.onOrBefore')
           : t('grid.dateFilter.choicechipPrefix.onOrAfter');
 
-      description = filter.timestamp !== undefined ? `${prefix} ${format(filter.timestamp)}` : prefix;
+      description = typeof filter.timestamp === 'number' ? `${prefix} ${format(filter.timestamp)}` : prefix;
       break;
     }
   }
