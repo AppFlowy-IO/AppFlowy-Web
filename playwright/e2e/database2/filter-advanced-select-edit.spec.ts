@@ -46,7 +46,7 @@ async function clickFilterMoreOptions(page: Page): Promise<void> {
 async function clickAddToAdvancedFilter(page: Page): Promise<void> {
   await page
     .locator('[data-slot="dropdown-menu-item"]')
-    .filter({ hasText: /add to advanced filter/i })
+    .filter({ hasText: /switch to advanced filter/i })
     .click({ force: true });
   await page.waitForTimeout(2000);
 }
@@ -76,6 +76,8 @@ async function clearAllFilters(page: Page): Promise<void> {
     }
 
     await page.getByTestId('delete-all-filters-button').click({ force: true });
+    // Desktop parity: deleting all filters asks for confirmation first.
+    await page.getByTestId('confirm-delete-all-filters').click({ force: true });
     await page.waitForTimeout(500);
     return;
   }

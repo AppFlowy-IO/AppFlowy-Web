@@ -5,12 +5,21 @@ import { useFiltersSelector, useReadOnly } from '@/application/database-yjs';
 import { useAddFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
+import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { useConditionsContext } from './context';
 
-function FiltersButton({ compact = false, toggleExpanded }: { compact?: boolean; toggleExpanded?: () => void }) {
+function FiltersButton({
+  compact = false,
+  toggleExpanded,
+  expanded,
+}: {
+  compact?: boolean;
+  toggleExpanded?: () => void;
+  expanded?: boolean;
+}) {
   const filters = useFiltersSelector();
   const readOnly = useReadOnly();
   const { t } = useTranslation();
@@ -39,6 +48,7 @@ function FiltersButton({ compact = false, toggleExpanded }: { compact?: boolean;
       open={open}
       onOpenChange={setOpen}
       searchPlaceholder={t('grid.settings.filterBy')}
+      excludedTypes={FILTER_EXCLUDED_FIELD_TYPES}
       onSelect={(fieldId) => {
         const filterId = addFilter(fieldId);
 
@@ -57,6 +67,13 @@ function FiltersButton({ compact = false, toggleExpanded }: { compact?: boolean;
               data-testid={'database-actions-filter'}
               onClick={(e) => {
                 e.stopPropagation();
+                // Desktop parity: an open bar always collapses first; otherwise
+                // no filters → open the field picker, filters → reveal the bar.
+                if (expanded) {
+                  toggleExpanded?.();
+                  return;
+                }
+
                 if (readOnly || filters.length > 0) {
                   toggleExpanded?.();
                 } else {
@@ -64,7 +81,7 @@ function FiltersButton({ compact = false, toggleExpanded }: { compact?: boolean;
                 }
               }}
               style={{
-                color: filters.length > 0 ? 'var(--text-action)' : undefined,
+                color: filters.length > 0 ? 'var(--icon-info-thick)' : undefined,
               }}
               type='button'
             >

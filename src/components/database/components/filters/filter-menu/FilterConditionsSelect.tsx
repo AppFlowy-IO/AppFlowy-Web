@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { Filter } from '@/application/database-yjs';
+import { Filter, useReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ function FilterConditionsSelect ({
   onSelect?: (condition: number) => void;
 }) {
   const updateFilter = useUpdateFilter();
+  const readOnly = useReadOnly();
   const selectedCondition = useMemo(() => {
     return conditions.find((c) => c.value === filter.condition);
   }, [filter.condition, conditions]);
@@ -33,16 +34,17 @@ function FilterConditionsSelect ({
     <DropdownMenu>
       <DropdownMenuTrigger
         asChild
+        disabled={readOnly}
         className={'w-full'}
       >
         <Button
           variant={'ghost'}
           size={'sm'}
-          className={'min-w-fit w-fit'}
+          className={'h-7 w-fit min-w-fit px-2 text-xs font-medium text-text-primary'}
           data-testid="filter-condition-trigger"
         >
           {selectedCondition?.text ?? ''}
-          <ArrowDownSvg className={'w-5 h-5'} />
+          <ArrowDownSvg className={'h-5 w-5 text-icon-secondary'} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className={'min-w-fit'}>

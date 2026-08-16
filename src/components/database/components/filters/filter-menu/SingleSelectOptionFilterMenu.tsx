@@ -1,12 +1,21 @@
 import { useCallback, useMemo } from 'react';
 
-import { SelectOptionFilter, SelectOptionFilterCondition } from '@/application/database-yjs';
+import {
+  parseSelectOptionTypeOptions,
+  SelectOptionFilter,
+  SelectOptionFilterCondition,
+  useFieldSelector,
+  useReadOnly,
+} from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
+import ClearSelectionItem from '@/components/database/components/filters/filter-menu/ClearSelectionItem';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import SingleSelectFilterConditionsSelect from '@/components/database/components/filters/filter-menu/SingleSelectOptionFilterConditionsSelect';
 
 function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }) {
+  const readOnly = useReadOnly();
+  const { field } = useFieldSelector(filter.fieldId);
   const displaySelectOptionList = useMemo(() => {
     return ![SelectOptionFilterCondition.OptionIsEmpty, SelectOptionFilterCondition.OptionIsNotEmpty].includes(
       filter.condition
@@ -16,34 +25,54 @@ function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }
   const updateFilter = useUpdateFilter();
   const handleToggleSelectOption = useCallback(
     (id: string) => {
-      const selectedIds = filter.optionIds;
-      const newSelectedIds = selectedIds.slice();
-      const index = newSelectedIds.indexOf(id);
+      if (readOnly) return;
+      const selectedIds = new Set(filter.optionIds);
 
-      if (index > -1) {
-        newSelectedIds.splice(index, 1);
+      if (selectedIds.has(id)) {
+        selectedIds.delete(id);
       } else {
-        newSelectedIds.push(id);
+        selectedIds.add(id);
       }
+
+      // Desktop parity: persist the selection in field option order.
+      const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
+      const orderedIds = typeOption
+        ? typeOption.options.filter((option) => option && selectedIds.has(option.id)).map((option) => option.id)
+        : [...selectedIds];
 
       updateFilter({
         filterId: filter.id,
         fieldId: filter.fieldId,
-        content: newSelectedIds.filter((id) => id !== '').join(','),
+        content: orderedIds.filter((id) => id !== '').join(','),
       });
     },
-    [filter, updateFilter]
+    [field, filter, readOnly, updateFilter]
   );
 
+  const handleClearSelection = useCallback(() => {
+    updateFilter({
+      filterId: filter.id,
+      fieldId: filter.fieldId,
+      content: '',
+    });
+  }, [filter.fieldId, filter.id, updateFilter]);
+
   return (
-    <div className={'flex flex-col'}>
+    <div className={'flex flex-col gap-1'}>
       <FieldMenuTitle
         fieldId={filter.fieldId}
         filterId={filter.id}
         renderConditionSelect={<SingleSelectFilterConditionsSelect filter={filter} />}
       />
       {displaySelectOptionList && (
-        <SelectOptionList fieldId={filter.fieldId} selectedIds={filter.optionIds} onSelect={handleToggleSelectOption} />
+        <>
+          <SelectOptionList
+            fieldId={filter.fieldId}
+            selectedIds={filter.optionIds}
+            onSelect={handleToggleSelectOption}
+          />
+          {filter.optionIds.length > 0 && <ClearSelectionItem onClear={handleClearSelection} />}
+        </>
       )}
     </div>
   );

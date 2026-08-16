@@ -1,14 +1,17 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useFieldSelector, useFieldWrap } from '@/application/database-yjs';
+import { FieldType, useDatabaseView, useFieldSelector, useFieldWrap } from '@/application/database-yjs';
 import {
+  useAddAdvancedFilterAndRebuild,
+  useAddFilter,
   useAddPropertyLeftDispatch,
   useAddPropertyRightDispatch,
   useDuplicatePropertyDispatch,
   useHidePropertyDispatch,
   useTogglePropertyWrapDispatch,
 } from '@/application/database-yjs/dispatch';
+import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as LeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as RightIcon } from '@/assets/icons/arrow_right.svg';
@@ -16,7 +19,10 @@ import { ReactComponent as EditIcon } from '@/assets/icons/controller.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as EraserIcon } from '@/assets/icons/eraser.svg';
+import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
+import { useConditionsActions } from '@/components/database/components/conditions/context';
+import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
 import ClearCellsConfirm from '@/components/database/components/property/ClearCellsConfirm';
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
 import PropertyMenu from '@/components/database/components/property/PropertyMenu';
@@ -72,6 +78,34 @@ function GridFieldMenu({
 
   const { t } = useTranslation();
 
+  // Desktop parity: the field editor exposes a "Filter" action that creates a
+  // filter on this field and immediately opens its editor in the filter bar.
+  // Only the stable actions context is consumed here, and advanced mode is
+  // read from the view on demand — column headers must not re-render (or hold
+  // Yjs observers) for filter-state churn they only need at click time.
+  const conditionsActions = useConditionsActions();
+  const databaseView = useDatabaseView();
+  const addFilter = useAddFilter();
+  const addAdvancedFilter = useAddAdvancedFilterAndRebuild();
+  const canCreateFilter = !FILTER_EXCLUDED_FIELD_TYPES.includes(type) && Boolean(conditionsActions);
+
+  const handleCreateFilter = React.useCallback(() => {
+    if (!conditionsActions) return;
+
+    conditionsActions.setExpanded(true);
+
+    if (hasAdvancedFilterRoot(databaseView?.get(YjsDatabaseKey.filters))) {
+      addAdvancedFilter(fieldId);
+      conditionsActions.setAdvancedPanelOpen(true);
+    } else {
+      const filterId = addFilter(fieldId);
+
+      conditionsActions.setOpenFilterId(filterId);
+    }
+
+    setMenuOpen(false);
+  }, [addAdvancedFilter, addFilter, conditionsActions, databaseView, fieldId, setMenuOpen]);
+
   const operations = useMemo<FieldOperation[]>(() => {
     const items: FieldOperation[] = [];
 
@@ -112,6 +146,15 @@ function GridFieldMenu({
           onHideProperty(fieldId);
         },
       },
+      ...(canCreateFilter
+        ? [
+            {
+              label: t('grid.settings.filter'),
+              icon: <FilterIcon />,
+              onSelect: handleCreateFilter,
+            },
+          ]
+        : []),
       {
         label: t('grid.field.duplicate'),
         icon: <DuplicateIcon />,
@@ -150,6 +193,8 @@ function GridFieldMenu({
     onHideProperty,
     onDuplicateProperty,
     isEditingDisabled,
+    canCreateFilter,
+    handleCreateFilter,
   ]);
 
   const secondItemRef = useRef<HTMLDivElement | null>(null);

@@ -2388,6 +2388,7 @@ export function useRowOrdersSelector() {
       computedRowOrders = filterBy(computedRowOrders ?? rowsWithDocs, filters, fields, rowDocsForConditions, {
         getRelationCellText: relationTextGetter,
         getRollupCellText: rollupTextGetter,
+        getRollupCellValue: rollupValueGetter,
       });
     }
 

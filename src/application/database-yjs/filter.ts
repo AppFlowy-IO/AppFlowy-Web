@@ -318,6 +318,23 @@ export function hasEffectiveFilters(filters?: YDatabaseFilters, fields?: YDataba
   return getEffectiveFiltersSnapshot(filters, fields).length > 0;
 }
 
+/**
+ * Whether the view's filters are stored as an advanced AND/OR tree
+ * (root node is an And/Or group) rather than a flat list of Data filters.
+ * Handles both Yjs maps and plain objects arriving from desktop sync.
+ */
+export function hasAdvancedFilterRoot(filters?: YDatabaseFilters): boolean {
+  if (!filters || filters.length === 0) return false;
+
+  const root = normalizeFilterNode(filters.get(0));
+
+  if (!root) return false;
+
+  const filterType = Number(root.get(YjsDatabaseKey.filter_type));
+
+  return filterType === FilterType.And || filterType === FilterType.Or;
+}
+
 function parseRelationFilterIds(content: string): string[] | null {
   const trimmed = content.trim();
 
@@ -587,6 +604,8 @@ export function groupByConsecutiveOperator(
 type FilterOptions = {
   getRelationCellText?: (rowId: string, fieldId: string) => string;
   getRollupCellText?: (rowId: string, fieldId: string) => string;
+  /** Full rollup result including the raw numeric, for desktop-parity numeric comparison. */
+  getRollupCellValue?: (rowId: string, fieldId: string) => { value: string; rawNumeric?: number };
 };
 
 type SelectOptionFilterContext = {
@@ -828,13 +847,29 @@ export function filterBy(
         case FieldType.RichText:
           return textFilterCheck(getConditionCellText(snapshot, fieldId, field), content, condition);
         case FieldType.Rollup: {
+          if (isNumericRollupField(field)) {
+            // Desktop parity: numeric rollups compare the raw calculated
+            // number. The formatted display can be currency/percent text
+            // ("$10.00", "50.0%") that would fail or skew string parsing.
+            const rollupValue = options?.getRollupCellValue?.(rowId, fieldId);
+
+            if (rollupValue) {
+              const numericData =
+                rollupValue.rawNumeric !== undefined && Number.isFinite(rollupValue.rawNumeric)
+                  ? String(rollupValue.rawNumeric)
+                  : '';
+
+              return numberFilterCheck(numericData, content, condition);
+            }
+
+            // Legacy callers that only supply the text getter keep the old
+            // formatted-string comparison.
+            return numberFilterCheck(options?.getRollupCellText?.(rowId, fieldId) ?? '', content, condition);
+          }
+
           const cellText = options?.getRollupCellText?.(rowId, fieldId) ?? '';
 
-          // Numeric rollups compare the calculated number; non-numeric rollups
-          // fall back to text matching against the joined-value rendering.
-          return isNumericRollupField(field)
-            ? numberFilterCheck(cellText, content, condition)
-            : textFilterCheck(cellText, content, condition);
+          return textFilterCheck(cellText, content, condition);
         }
 
         case FieldType.Time:

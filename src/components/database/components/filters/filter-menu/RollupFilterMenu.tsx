@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { FieldType, NumberFilter, TextFilter, useFieldSelector } from '@/application/database-yjs';
+import { FieldType, NumberFilter, TextFilter, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
@@ -19,7 +19,9 @@ function RollupFilterMenu({ filter }: { filter: TextFilter | NumberFilter }) {
   const { targetField, selectOptions } = useRollupData(filter.fieldId);
 
   if (isNumericRollupField(field)) {
-    return <NumberFilterMenu filter={filter as NumberFilter} />;
+    // Desktop parity: rollup→Number filters use the compact symbol labels
+    // (=, ≠, <, ≤, >, ≥) instead of the verbose Number filter labels.
+    return <NumberFilterMenu filter={filter as NumberFilter} conditionLabelStyle='symbols' />;
   }
 
   const isSelectTarget =
@@ -34,9 +36,11 @@ function RollupFilterMenu({ filter }: { filter: TextFilter | NumberFilter }) {
 
 function RollupSelectOptionFilter({ filter, options }: { filter: TextFilter; options: SelectOption[] }) {
   const updateFilter = useUpdateFilter();
+  const readOnly = useReadOnly();
 
   const handleToggleOption = useCallback(
     (optionName: string) => {
+      if (readOnly) return;
       // Mirrors desktop: clicking the selected option clears the filter content,
       // clicking a different option replaces it. Single-selection only.
       const next = filter.content === optionName ? '' : optionName;
@@ -47,7 +51,7 @@ function RollupSelectOptionFilter({ filter, options }: { filter: TextFilter; opt
         content: next,
       });
     },
-    [filter.content, filter.id, filter.fieldId, updateFilter],
+    [filter.content, filter.id, filter.fieldId, readOnly, updateFilter],
   );
 
   return (

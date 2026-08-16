@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { useCallback, useMemo, useState } from 'react';
 
-import { DateFilter, DateFilterCondition } from '@/application/database-yjs';
+import { DateFilter, DateFilterCondition, useReadOnly } from '@/application/database-yjs';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
@@ -14,6 +14,7 @@ import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
 function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
   const currentUser = useCurrentUser();
+  const readOnly = useReadOnly();
 
   const weekStartsOn = useMemo(() => {
     const value = Number(currentUser?.metadata?.[MetadataKey.StartWeekOn]) || 0;
@@ -50,7 +51,9 @@ function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
       const newDateRange = dateRange;
 
       setDateRange(newDateRange);
-      const data = newDateRange?.from ? dayjs(newDateRange.from).unix() : '';
+      // Desktop's DateFilterContent deserializes Option<i64>; an empty string fails
+      // serde and silently degrades the filter on desktop — write null instead.
+      const data = newDateRange?.from ? dayjs(newDateRange.from).unix() : null;
       const endTimestamp = newDateRange?.to ? dayjs(newDateRange.to).unix() : undefined;
 
       const content = JSON.stringify({
@@ -102,7 +105,13 @@ function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={'outline'} size={'sm'} className={'w-full justify-start'} data-testid="date-filter-date-picker">
+        <Button
+          variant={'outline'}
+          size={'sm'}
+          disabled={readOnly}
+          className={'w-full justify-start'}
+          data-testid="date-filter-date-picker"
+        >
           {text}
         </Button>
       </PopoverTrigger>

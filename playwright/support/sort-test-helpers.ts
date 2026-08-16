@@ -39,6 +39,17 @@ export async function clickSortButton(page: Page): Promise<void> {
 }
 
 /**
+ * Whether the sort editor popover is currently open. Sort rows with
+ * data-testid="sort-condition" only render inside the open popover.
+ */
+async function isSortMenuOpen(page: Page): Promise<boolean> {
+  return SortSelectors.sortItem(page)
+    .first()
+    .isVisible()
+    .catch(() => false);
+}
+
+/**
  * Add a sort on a field by name
  */
 export async function addSortByFieldName(page: Page, fieldName: string): Promise<void> {
@@ -46,8 +57,7 @@ export async function addSortByFieldName(page: Page, fieldName: string): Promise
 
   if (hasSorts) {
     // Click the existing sort condition to open menu
-    await SortSelectors.sortCondition(page).first().click({ force: true });
-    await page.waitForTimeout(500);
+    await openSortMenu(page);
 
     // Click add sort button
     await SortSelectors.addSortButton(page).click({ force: true });
@@ -61,12 +71,22 @@ export async function addSortByFieldName(page: Page, fieldName: string): Promise
   // Find and click the field by name
   await DatabaseFilterSelectors.propertyItemByName(page, fieldName).click({ force: true });
   await page.waitForTimeout(1000);
+
+  // Adding a sort opens (or keeps open) the modal sort editor popover, which
+  // blocks pointer events everywhere else on the page. Close it so callers
+  // always start from a deterministic "menu closed" state.
+  for (let attempt = 0; attempt < 3 && (await isSortMenuOpen(page)); attempt++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
 }
 
 /**
- * Open the sort menu by clicking on the sort condition chip
+ * Open the sort menu by clicking on the sort condition chip.
+ * No-op when the menu is already open: the chip click would toggle it closed.
  */
 export async function openSortMenu(page: Page): Promise<void> {
+  if (await isSortMenuOpen(page)) return;
   await SortSelectors.sortCondition(page).first().click({ force: true });
   await page.waitForTimeout(500);
 }
