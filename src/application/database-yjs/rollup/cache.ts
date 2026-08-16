@@ -13,6 +13,7 @@ import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
   YDatabase,
+  YDatabaseCell,
   YDatabaseField,
   YDatabaseFields,
   YDatabaseRow,
@@ -188,6 +189,90 @@ function isEmptyValue(value: string) {
   return value.trim() === '';
 }
 
+function getPrimaryFieldId(database: YDatabase): string | undefined {
+  const fields = database?.get(YjsDatabaseKey.fields);
+
+  return Array.from(fields?.keys() || []).find((fieldId) => fields?.get(fieldId)?.get(YjsDatabaseKey.is_primary));
+}
+
+/**
+ * A Rollup whose target is itself a Relation yields row ids, not text. Resolving
+ * them needs a second hop into the database that Relation points at, mirroring
+ * how a Relation cell renders its own value.
+ */
+type RelationTargetResolver = {
+  doc: YDoc;
+  primaryFieldId: string;
+  primaryField: YDatabaseField;
+};
+
+async function createRelationTargetResolver(
+  targetField: YDatabaseField,
+  context: RollupComputeContext
+): Promise<RelationTargetResolver | null> {
+  const targetRelationOption = parseRelationTypeOption(targetField);
+
+  if (!targetRelationOption?.database_id) return null;
+
+  const viewId = await context.getViewIdFromDatabaseId?.(targetRelationOption.database_id);
+
+  if (!viewId) return null;
+
+  const doc = await loadRelatedDoc(viewId, context.loadView);
+
+  if (!doc) return null;
+
+  const database = doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined;
+
+  if (!database) return null;
+
+  const primaryFieldId = getPrimaryFieldId(database);
+
+  if (!primaryFieldId) return null;
+
+  const primaryField = (database.get(YjsDatabaseKey.fields) as YDatabaseFields | undefined)?.get(primaryFieldId);
+
+  if (!primaryField) return null;
+
+  return { doc, primaryFieldId, primaryField };
+}
+
+/**
+ * Row ids that no longer resolve are dropped rather than shown raw, matching how
+ * a Relation cell renders and keeping row ids out of the UI.
+ */
+async function resolveRelationTargetText(
+  cell: YDatabaseCell,
+  resolver: RelationTargetResolver,
+  context: RollupComputeContext
+): Promise<string> {
+  const nestedRowIds = getRelationRowIdsFromCell(cell);
+
+  if (nestedRowIds.length === 0) return '';
+
+  const names: string[] = [];
+
+  for (const nestedRowId of nestedRowIds) {
+    if (!context.createRow) continue;
+    const nestedRowDoc = await context.createRow(getRowKey(resolver.doc.guid, nestedRowId));
+    const nestedRow = nestedRowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as
+      | YDatabaseRow
+      | undefined;
+
+    if (!nestedRow) continue;
+    const primaryCell = nestedRow.get(YjsDatabaseKey.cells)?.get(resolver.primaryFieldId);
+
+    if (!primaryCell) continue;
+    const name = decodeCellToText(primaryCell, resolver.primaryField);
+
+    if (!isEmptyValue(name)) {
+      names.push(name);
+    }
+  }
+
+  return names.join(', ');
+}
+
 function parseNumber(value: unknown): number | null {
   if (typeof value === 'number') {
     return Number.isFinite(value) ? value : null;
@@ -359,6 +444,8 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   if (!relatedDatabase || !targetField) return { value: '' };
 
   const targetFieldType = Number(targetField.get(YjsDatabaseKey.type)) as FieldType;
+  const relationTargetResolver =
+    targetFieldType === FieldType.Relation ? await createRelationTargetResolver(targetField, context) : null;
   const values: string[] = [];
   const numericValues: number[] = [];
   const timestampValues: number[] = [];
@@ -393,6 +480,8 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         text = formatDateValue(targetField, ts);
         timestampValues.push(ts);
       }
+    } else if (cell && targetFieldType === FieldType.Relation) {
+      text = relationTargetResolver ? await resolveRelationTargetText(cell, relationTargetResolver, context) : '';
     } else if (cell) {
       text = decodeCellToText(cell, targetField);
       if (targetFieldType === FieldType.DateTime) {
