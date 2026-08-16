@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 import { WorkspaceService } from '@/application/services/domains';
 import { NormalModal } from '@/components/_shared/modal';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceId, useRefreshUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
 
@@ -22,6 +22,7 @@ function DeleteWorkspace({
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const refreshUserWorkspaceInfo = useRefreshUserWorkspaceInfo();
 
   const handleOk = async () => {
     try {
@@ -30,6 +31,10 @@ function DeleteWorkspace({
       openOnChange(false);
       if (currentWorkspaceId === workspaceId) {
         window.location.href = `/app`;
+      } else {
+        // Deleting a non-current workspace doesn't reload the page — refresh
+        // the workspace list so the deleted workspace doesn't linger in it.
+        void refreshUserWorkspaceInfo?.();
       }
       // eslint-disable-next-line
     } catch (e: any) {

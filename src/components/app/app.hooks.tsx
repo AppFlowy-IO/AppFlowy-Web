@@ -146,6 +146,21 @@ export function useUserWorkspaceInfo() {
 }
 
 /**
+ * Returns a function that force-refreshes the workspace list. Call after
+ * mutations that change it (rename/delete/leave, membership changes).
+ * Throws if used outside AppProvider.
+ */
+export function useRefreshUserWorkspaceInfo() {
+  const context = useContext(AuthInternalContext);
+
+  if (!context) {
+    throw new Error('useRefreshUserWorkspaceInfo must be used within an AppProvider');
+  }
+
+  return context.refreshUserWorkspaceInfo;
+}
+
+/**
  * Returns whether page history is enabled for the current workspace plan.
  * Fails open (returns true) when outside AppProvider — e.g. on publish pages.
  */

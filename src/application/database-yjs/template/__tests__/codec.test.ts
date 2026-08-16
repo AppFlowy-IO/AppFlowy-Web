@@ -21,6 +21,7 @@ const template: DatabaseRowTemplate = {
     title: { type: 'text', value: 'Bug' },
     done: { type: 'checkbox', value: true },
     labels: { type: 'select', value: ['urgent', 'web'] },
+    project: { type: 'relation', value: ['row-a', 'row-b'] },
   },
   icon: '🐞',
   cover: '{"cover_type":0,"data":"1"}',
@@ -89,6 +90,7 @@ describe('database row template codec', () => {
             { field_id: 'url', type: 'url', value: 'https://appflowy.io' },
             { field_id: 'select', type: 'select', value: ['one', '', 'two'] },
             { field_id: 'person', type: 'person', value: ['person-id', ''] },
+            { field_id: 'relation', type: 'relation', value: ['row-a', 'row-b'] },
           ],
           created_at_ms: 1,
           updated_at_ms: 2,
@@ -105,6 +107,7 @@ describe('database row template codec', () => {
       url: { type: 'url', value: 'https://appflowy.io' },
       select: { type: 'select', value: ['one', '', 'two'] },
       person: { type: 'person', value: ['person-id', ''] },
+      relation: { type: 'relation', value: ['row-a', 'row-b'] },
     });
   });
 
@@ -220,6 +223,7 @@ describe('database row template codec', () => {
           { field_id: 'title', type: 'text', value: 'Bug' },
           { field_id: 'done', type: 'checkbox', value: true },
           { field_id: 'labels', type: 'select', value: ['urgent', 'web'] },
+          { field_id: 'project', type: 'relation', value: ['row-a', 'row-b'] },
         ],
         created_at_ms: 10,
         updated_at_ms: 20,

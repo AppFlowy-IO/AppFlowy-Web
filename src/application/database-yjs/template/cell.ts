@@ -4,7 +4,10 @@ import * as Y from 'yjs';
 
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON } from '@/application/database-yjs/row_meta';
 import {
@@ -133,6 +136,29 @@ export function sanitizeTemplateCells(
               .filter((id) => id.length > 0 && isUuid(id));
 
       if (ids.length > 0) sanitized = { type: 'person', value: ids };
+    } else if (fieldType === FieldType.Relation) {
+      const rawIds =
+        value.type === 'relation'
+          ? value.value
+          : (stringValue(value) ?? '')
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean);
+      const seen = new Set<string>();
+      const validIds = rawIds.filter((id) => isUuid(id) && !seen.has(id) && seen.add(id));
+
+      if (validIds.length > 0) {
+        const typeOption = parseRelationTypeOption(field);
+
+        // Desktop drops relation defaults whose field has no target database;
+        // whether the linked rows still exist is resolved lazily on display.
+        if (typeOption.database_id) {
+          sanitized = {
+            type: 'relation',
+            value: typeOption.source_limit === RelationLimit.OneOnly ? validIds.slice(0, 1) : validIds,
+          };
+        }
+      }
     }
 
     if (sanitized) result[fieldId] = sanitized;
@@ -159,6 +185,8 @@ export function templateCellToRawData(value: TemplateCellValue, fieldType: Field
       // Web's person-cell codec is a JSON string; Desktop's template codec is
       // an ID list, so the boundary conversion intentionally happens here.
       return fieldType === FieldType.Person ? JSON.stringify(value.value) : value.value.join(',');
+    case 'relation':
+      return value.value.join(',');
   }
 }
 
@@ -167,7 +195,16 @@ export function createTemplateCell(fieldId: string, fieldType: FieldType, value:
   const cell = new Y.Map() as YDatabaseCell;
 
   cell.set(YjsDatabaseKey.id, fieldId);
-  cell.set(YjsDatabaseKey.data, templateCellToRawData(value, fieldType));
+  if (value.type === 'relation' && fieldType === FieldType.Relation) {
+    // Relation cells store a Y.Array of row ids, not a string payload.
+    const data = new Y.Array<string>();
+
+    data.push([...value.value]);
+    cell.set(YjsDatabaseKey.data, data);
+  } else {
+    cell.set(YjsDatabaseKey.data, templateCellToRawData(value, fieldType));
+  }
+
   cell.set(YjsDatabaseKey.field_type, fieldType);
   cell.set(YjsDatabaseKey.created_at, now);
   cell.set(YjsDatabaseKey.last_modified, now);
@@ -242,6 +279,10 @@ export function extractTemplateCellsFromRow(row: YDatabaseRow, database: YDataba
       const ids = parsePersonIds(raw);
 
       if (ids.length > 0) values[fieldId] = { type: 'person', value: Array.from(new Set(ids)) };
+    } else if (fieldType === FieldType.Relation) {
+      const ids = getRelationRowIdsFromCell(cell);
+
+      if (ids.length > 0) values[fieldId] = { type: 'relation', value: [...ids] };
     }
   });
 

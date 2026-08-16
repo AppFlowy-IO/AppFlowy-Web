@@ -1304,3 +1304,71 @@ async function addRelationFieldToCurrentDatabase(
     { fieldId, options }
   );
 }
+
+/**
+ * Injects a Count rollup field over the given relation field into the current
+ * database. Count is the one calculation that needs no target field, which
+ * keeps the rendered value deterministic for assertions.
+ */
+export async function createRollupCountFieldDirect(
+  page: Page,
+  options: { fieldName: string; relationFieldId: string }
+): Promise<string> {
+  const fieldId = makeTestId('rollup');
+
+  await waitForDatabaseTestContext(page);
+  await page.evaluate(
+    ({ fieldId, options }) => {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const win = window as any;
+      const ctx = win.__TEST_DATABASE_CONTEXT__;
+      const Y = win.Y;
+      const doc = ctx.databaseDoc;
+      const database = doc.getMap('data').get('database');
+      const now = String(Math.floor(Date.now() / 1000));
+      const field = new Y.Map();
+      const typeOptionMap = new Y.Map();
+      const typeOption = new Y.Map();
+
+      field.set('name', options.fieldName);
+      field.set('id', fieldId);
+      field.set('ty', 16);
+      field.set('created_at', now);
+      field.set('last_modified', now);
+      field.set('is_primary', false);
+      field.set('icon', '');
+
+      typeOption.set('relation_field_id', options.relationFieldId);
+      typeOption.set('target_field_id', '');
+      typeOption.set('calculation_type', 5);
+      typeOption.set('show_as', 0);
+      typeOption.set('condition_value', '');
+      typeOptionMap.set('16', typeOption);
+      field.set('type_option', typeOptionMap);
+
+      doc.transact(() => {
+        database.get('fields').set(fieldId, field);
+        database.get('views').forEach((view: any) => {
+          const fieldOrders = view.get('field_orders');
+
+          if (!fieldOrders.toArray().some((order: { id: string }) => order.id === fieldId)) {
+            fieldOrders.push([{ id: fieldId }]);
+          }
+
+          const fieldSettings = view.get('field_settings');
+
+          if (!fieldSettings.get(fieldId)) {
+            const setting = new Y.Map();
+
+            setting.set('visibility', 0);
+            fieldSettings.set(fieldId, setting);
+          }
+        });
+      });
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    },
+    { fieldId, options }
+  );
+  await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toBeVisible({ timeout: 20000 });
+  return fieldId;
+}

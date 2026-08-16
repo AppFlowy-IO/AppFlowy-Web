@@ -97,6 +97,7 @@ export function usePageOperations({
       try {
         const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
 
+        ViewService.invalidateCache(currentWorkspaceId, parentViewId);
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
         void loadOutline?.(currentWorkspaceId, false);
@@ -122,7 +123,14 @@ export function usePageOperations({
       }
 
       try {
+        const parentView = findParentView(outlineRef.current || [], id);
+
         await PageService.moveToTrash(currentWorkspaceId, id);
+        ViewService.invalidateCache(currentWorkspaceId, id);
+        if (parentView) {
+          ViewService.invalidateCache(currentWorkspaceId, parentView.view_id);
+        }
+
         void loadTrash?.(currentWorkspaceId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
@@ -142,6 +150,9 @@ export function usePageOperations({
 
       try {
         await PageService.update(currentWorkspaceId, viewId, payload);
+        // Drop the cached view metadata (memory + disk) so a stale name/icon
+        // can't be re-served if the WebSocket notification is dropped.
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
         // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
@@ -160,6 +171,7 @@ export function usePageOperations({
 
       try {
         await PageService.updateIcon(currentWorkspaceId, viewId, icon);
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
         return;
       } catch (e) {
         return Promise.reject(e);
@@ -177,6 +189,7 @@ export function usePageOperations({
 
       try {
         await PageService.updateName(currentWorkspaceId, viewId, name);
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
         // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
@@ -239,8 +252,15 @@ export function usePageOperations({
       try {
         const lastChild = findView(outlineRef.current || [], parentId)?.children?.slice(-1)[0];
         const prevId = prevViewId || lastChild?.view_id;
+        const oldParentView = findParentView(outlineRef.current || [], viewId);
 
         await PageService.moveTo(currentWorkspaceId, viewId, parentId, prevId);
+        // Both the old and new parents' cached subtrees changed.
+        if (oldParentView) {
+          ViewService.invalidateCache(currentWorkspaceId, oldParentView.view_id);
+        }
+
+        ViewService.invalidateCache(currentWorkspaceId, parentId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {

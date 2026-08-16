@@ -9,6 +9,22 @@ import { initGrantService, refreshToken } from './gotrue';
 
 let axiosInstance: AxiosInstance | null = null;
 
+// References to the ETag/response stores created inside initAPIService, so the
+// session layer can clear them on logout/session invalidation.
+let activeEtagStore: Map<string, string> | null = null;
+let activeResponseStore: Map<string, unknown> | null = null;
+
+/**
+ * Clear the ETag/304 response caches. Must be called when the session becomes
+ * invalid (logout, token expiry): the cache key is the request URL without any
+ * user identity, so stale entries could otherwise be replayed to a different
+ * user logging in later in the same tab.
+ */
+export function clearHttpResponseCaches() {
+  activeEtagStore?.clear();
+  activeResponseStore?.clear();
+}
+
 export function getAxiosInstance() {
   return axiosInstance;
 }
@@ -493,9 +509,17 @@ export function initAPIService(config: AFCloudConfig) {
   // For programmatic requests (axios.get), the browser doesn't always use its HTTP
   // cache, so we also keep a lightweight JS response cache as fallback. Query params
   // are part of the key so GET endpoints with different targets cannot collide.
+  //
+  // The cache key does NOT include the user identity, so these stores must be
+  // cleared when the session ends (see clearHttpResponseCaches) — otherwise a
+  // later login as a different user in the same tab could be served the
+  // previous user's cached bodies via 304 replay.
   // ---------------------------------------------------------------------------
   const etagStore = new Map<string, string>();
   const responseStore = new Map<string, unknown>();
+
+  activeEtagStore = etagStore;
+  activeResponseStore = responseStore;
 
   // Request: attach stored ETag as If-None-Match
   axiosInstance.interceptors.request.use((config) => {
