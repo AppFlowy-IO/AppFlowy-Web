@@ -1,139 +1,80 @@
-import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 
-import { UserService } from '@/application/services/domains';
-import { MentionablePerson } from '@/application/types';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import BannerImages from '@/components/app/settings/profile/BannerImages';
+import ProfileAboutMe from '@/components/app/settings/profile/ProfileAboutMe';
+import ProfileAvatar from '@/components/app/settings/profile/ProfileAvatar';
+import ProfileDisplayName from '@/components/app/settings/profile/ProfileDisplayName';
+import ProfilePreview from '@/components/app/settings/profile/ProfilePreview';
+import { Banner } from '@/components/app/settings/profile/banner';
+import { useProfileSetting } from '@/components/app/settings/profile/useProfileSetting';
 import { useAppConfig } from '@/components/main/app.hooks';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { getErrorMessage } from '@/utils/errors';
+import { Progress } from '@/components/ui/progress';
 
 export function ProfilePanel() {
   const { t } = useTranslation();
-  const { currentUser, updateCurrentUser } = useAppConfig();
-  const currentWorkspaceId = useCurrentWorkspaceId();
+  const { currentUser } = useAppConfig();
+  const { draft, loading, email, roleLabelKey, update, uploadAction } = useProfileSetting();
 
-  const [name, setName] = useState(currentUser?.name ?? '');
-  const [profile, setProfile] = useState<MentionablePerson | null>(null);
-  const initializedRef = useRef(false);
-  const currentUserRef = useRef(currentUser);
-  const updateCurrentUserRef = useRef(updateCurrentUser);
-  const profileRef = useRef<MentionablePerson | null>(null);
+  // Stable identities: these feed memoised tab option lists further down, and a new
+  // closure each render would churn them (and re-render the picker) on every keystroke.
+  const handleAvatarChange = useCallback((avatar: string) => update({ avatar }, true), [update]);
+  const handleNameChange = useCallback((name: string) => update({ name }), [update]);
+  const handleAboutMeChange = useCallback((aboutMe: string) => update({ aboutMe }), [update]);
+  const handleBannerSelect = useCallback((banner: Banner) => update({ banner }, true), [update]);
+  const handleUploadCustom = useCallback(
+    (url: string) => {
+      const banner: Banner = { kind: 'network', url };
 
-  useEffect(() => {
-    currentUserRef.current = currentUser;
-    updateCurrentUserRef.current = updateCurrentUser;
-  }, [currentUser, updateCurrentUser]);
-
-  useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
-
-  useEffect(() => {
-    if (!currentWorkspaceId) return;
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const fetched = await UserService.getWorkspaceMemberProfile(currentWorkspaceId);
-
-        if (cancelled || initializedRef.current) return;
-        setProfile(fetched);
-        setName(fetched.name ?? currentUserRef.current?.name ?? '');
-        initializedRef.current = true;
-      } catch (e) {
-        if (!cancelled) toast.error(getErrorMessage(e));
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentWorkspaceId]);
-
-  const debouncedSave = useMemo(
-    () =>
-      // Preserve sibling profile fields — the backend upsert overwrites every
-      // column, so omitting avatar_url/description/etc. would null them out.
-      debounce(async (workspaceId: string, payload: { name: string }) => {
-        try {
-          const current = profileRef.current;
-
-          await UserService.updateWorkspaceMemberProfile(workspaceId, {
-            name: payload.name,
-            avatar_url: current?.avatar_url ?? undefined,
-            cover_image_url: current?.cover_image_url ?? undefined,
-            custom_image_url: current?.custom_image_url ?? undefined,
-            description: current?.description ?? undefined,
-          });
-          const u = currentUserRef.current;
-
-          if (u) {
-            await updateCurrentUserRef.current({ ...u, name: payload.name });
-          }
-        } catch (e) {
-          toast.error(getErrorMessage(e));
-        }
-      }, 500),
-    []
-  );
-
-  useEffect(() => {
-    return () => {
-      void debouncedSave.flush();
-    };
-  }, [debouncedSave]);
-
-  const handleNameChange = useCallback(
-    (value: string) => {
-      setName(value);
-      if (!currentWorkspaceId) return;
-      void debouncedSave(currentWorkspaceId, { name: value });
+      update({ banner, customBanner: banner }, true);
     },
-    [currentWorkspaceId, debouncedSave]
+    [update]
   );
 
   if (!currentUser) return null;
 
-  const initial = (name || currentUser.name || currentUser.email || '?').charAt(0).toUpperCase();
-  const avatar = profile?.avatar_url ?? currentUser.avatar ?? '';
-  const isInlineAvatar =
-    avatar.length > 0 &&
-    !avatar.startsWith('http://') &&
-    !avatar.startsWith('https://') &&
-    !avatar.startsWith('/') &&
-    !avatar.startsWith('data:') &&
-    !avatar.startsWith('blob:');
-
   return (
     <div className='flex h-full min-h-0 flex-1 flex-col overflow-hidden'>
-      <div className='border-b border-border-primary px-8 py-5'>
-        <h2 className='text-xl font-semibold text-text-primary'>{t('settings.accountPage.profile.title')}</h2>
+      <div className='flex items-center justify-between gap-2 border-b border-border-primary px-8 py-5'>
+        <h2 className='text-xl font-semibold text-text-primary'>{t('settings.profilePage.title')}</h2>
+        <ProfilePreview
+          name={draft.name}
+          email={email}
+          avatar={draft.avatar}
+          aboutMe={draft.aboutMe}
+          banner={draft.banner}
+          role={roleLabelKey ? t(roleLabelKey) : undefined}
+        />
       </div>
-      <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-6'>
-        <div className='flex flex-col gap-6'>
-          <div className='flex items-center gap-4'>
-            <Avatar size='xl'>
-              <AvatarImage src={isInlineAvatar ? '' : avatar} alt={name} />
-              <AvatarFallback name={name}>
-                {isInlineAvatar ? <span className='text-2xl'>{avatar}</span> : initial}
-              </AvatarFallback>
-            </Avatar>
-            <div className='flex flex-1 flex-col gap-1'>
-              <Label htmlFor='profile-display-name'>{t('settings.accountPage.profile.displayName')}</Label>
-              <Input
-                id='profile-display-name'
-                value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
-                data-testid='profile-display-name-input'
-              />
-            </div>
+
+      <div className='appflowy-scroller flex-1 overflow-y-auto px-8 py-5'>
+        {loading ? (
+          <div className='flex h-full items-center justify-center'>
+            <Progress variant='primary' />
           </div>
-        </div>
+        ) : (
+          <div className='flex flex-col gap-5'>
+            <div className='flex items-center gap-5'>
+              <ProfileAvatar
+                avatar={draft.avatar}
+                name={draft.name}
+                uploadAction={uploadAction}
+                onChange={handleAvatarChange}
+              />
+              <ProfileDisplayName value={draft.name} onChange={handleNameChange} />
+            </div>
+
+            <ProfileAboutMe value={draft.aboutMe} onChange={handleAboutMeChange} />
+
+            <BannerImages
+              selected={draft.banner}
+              customBanner={draft.customBanner}
+              uploadAction={uploadAction}
+              onSelect={handleBannerSelect}
+              onUploadCustom={handleUploadCustom}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
