@@ -17,9 +17,12 @@ const STRIKE = /~~([^~]+)~~/;
 const CODE = /`([^`]+)`/;
 const ITALIC = /\*([^*]+)\*|_([^_]+)_/;
 
+const SAFE_HREF = /^(https?:\/\/|mailto:|\/|#)/i;
+const PARAGRAPH_BREAK = /\n+/;
+
 function isSafeHref(href: string): boolean {
   // Block javascript:/data: and friends; allow relative and http(s)/mailto.
-  return /^(https?:\/\/|mailto:|\/|#)/i.test(href);
+  return SAFE_HREF.test(href);
 }
 
 // Hoisted: parseInline recurses, so rebuilding this per call allocates once per nesting level.
@@ -77,7 +80,7 @@ function parseInline(text: string, key = 0): ReactNode[] {
 }
 
 export function renderProfileMarkdown(text: string): ReactNode {
-  return text.split(/\n+/).map((line, index) => (
+  return text.split(PARAGRAPH_BREAK).map((line, index) => (
     <p key={index} className='whitespace-pre-wrap break-words'>
       {parseInline(line)}
     </p>

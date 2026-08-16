@@ -56,13 +56,26 @@ export function ProfileAvatar({
     [onChange]
   );
 
+  // Desktop caps avatars at 2 MB; enforce the same before spending an upload.
+  // UploadImage surfaces a thrown message as an error toast.
+  const uploadAvatar = useCallback(
+    async (file: File) => {
+      if (file.size > AVATAR_MAX_SIZE_BYTES) {
+        throw new Error(t('settings.profilePage.avatarSizeLimit', { size: AVATAR_MAX_SIZE_BYTES / (1024 * 1024) }));
+      }
+
+      return uploadAction(file);
+    },
+    [t, uploadAction]
+  );
+
   const tabOptions: TabOption[] = useMemo(
     () => [
       {
         key: TAB_KEY.UPLOAD,
         label: t('button.upload'),
         Component: UploadImage,
-        uploadAction,
+        uploadAction: uploadAvatar,
         onDone: handleDone,
       },
       {
@@ -72,7 +85,7 @@ export function ProfileAvatar({
         onDone: handleDone,
       },
     ],
-    [handleDone, t, uploadAction]
+    [handleDone, t, uploadAvatar]
   );
 
   return (

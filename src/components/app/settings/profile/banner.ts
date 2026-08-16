@@ -48,6 +48,10 @@ export function getAssetBannerSrc(path: string): string {
   return ASSET_SOURCES[path] ?? bannerPurple;
 }
 
+const HEX_PREFIX = /^0x/i;
+const HEX_DIGITS = /^[0-9a-f]+$/i;
+const BANNER_URI = /^image:\/\/(color-image|asset-image)\?(.*)$/;
+
 /** `0xAARRGGBB` (Flutter's `Color.toHexString`) — alpha first, lowercase. */
 function toFlutterHex(cssColor: string): string {
   const hex = cssColor.replace('#', '').toLowerCase();
@@ -60,9 +64,9 @@ function toFlutterHex(cssColor: string): string {
  * `ColorExtension.toColor` in banner.dart. Returns a CSS `#RRGGBB(AA)` string.
  */
 function fromFlutterHex(value: string): string | null {
-  const hex = value.replace('#', '').replace(/^0x/i, '');
+  const hex = value.replace('#', '').replace(HEX_PREFIX, '');
 
-  if (!/^[0-9a-f]+$/i.test(hex)) return null;
+  if (!HEX_DIGITS.test(hex)) return null;
 
   if (hex.length === 6) return `#${hex.toUpperCase()}`;
   // Flutter stores ARGB; CSS hex is RGBA.
@@ -96,7 +100,7 @@ export function bannerFromUrl(url: string | null | undefined): Banner {
     return { kind: 'network', url };
   }
 
-  const match = /^image:\/\/(color-image|asset-image)\?(.*)$/.exec(url);
+  const match = BANNER_URI.exec(url);
 
   if (!match) return DEFAULT_BANNER;
 

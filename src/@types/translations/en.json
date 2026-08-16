@@ -895,6 +895,7 @@
       "aboutMeHint": "Briefly introduce yourself...",
       "aboutMeMarkdownHint": "You can use markdown or links if you'd like",
       "editAvatar": "Edit Avatar",
+      "avatarSizeLimit": "Image must be smaller than {{size}} MB",
       "bannerImage": "Banner Image",
       "customImage": "Custom Image",
       "wallpapers": "Wallpapers",
