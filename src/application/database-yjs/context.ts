@@ -61,6 +61,12 @@ export interface DatabaseContextState {
    */
   activeViewId: string;
   rowMap: Record<RowId, YDoc> | null;
+  /**
+   * Set while the row-template editor edits its hidden source row. That row
+   * never joins `row_orders`, so relation edits on it must not write
+   * reciprocal back-links from real rows to the phantom template row.
+   */
+  templateEditingRowId?: RowId;
   ensureRow?: (rowId: string) => Promise<YDoc | undefined> | void;
   loadRowFromSeed?: (rowId: string) => Promise<YDoc | undefined>;
   /**

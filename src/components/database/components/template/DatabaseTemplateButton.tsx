@@ -167,6 +167,7 @@ function DatabaseTemplateEditor({
     () => ({
       ...parentContext,
       isDatabaseRowPage: false,
+      templateEditingRowId: editing.templateId,
       rowMap: { ...(parentContext.rowMap ?? {}), [editing.templateId]: editing.rowDoc },
       ensureRow: (rowId: string) =>
         rowId === editing.templateId ? Promise.resolve(editing.rowDoc) : parentContext.ensureRow?.(rowId),

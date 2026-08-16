@@ -1,6 +1,8 @@
 import * as Y from 'yjs';
 
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import {
@@ -25,6 +27,8 @@ import { DatabaseRowTemplate, TemplateCellValue } from '../types';
 const databaseId = 'database-id';
 const rowId = 'f73d479a-ae7e-438f-8fc8-e62b985f8126';
 const personId = '6ca46703-b9ad-4476-912a-273d78e53cc0';
+const relatedRowIdA = '0a67d8f8-4e07-4a2f-9c26-1b8a34cfd6b1';
+const relatedRowIdB = '55f24c1e-9d92-4b3b-8a49-6f2f3f6a7c02';
 
 function field(id: string, type: FieldType, primary = false, optionIds: string[] = []): YDatabaseField {
   const value = new Y.Map() as YDatabaseField;
@@ -64,7 +68,13 @@ function database(): YDatabase {
   fields.set('single', field('single', FieldType.SingleSelect, false, ['one', 'two']));
   fields.set('multi', field('multi', FieldType.MultiSelect, false, ['one', 'two']));
   fields.set('person', field('person', FieldType.Person));
-  fields.set('unsupported', field('unsupported', FieldType.Relation));
+  fields.set('relation', createRelationField('relation', { database_id: 'related-db-id' }));
+  fields.set(
+    'relationOne',
+    createRelationField('relationOne', { database_id: 'related-db-id', source_limit: RelationLimit.OneOnly })
+  );
+  fields.set('relationNoDb', createRelationField('relationNoDb'));
+  fields.set('unsupported', field('unsupported', FieldType.Rollup));
   value.set(YjsDatabaseKey.id, databaseId);
   value.set(YjsDatabaseKey.fields, fields);
   root.set(YjsEditorKey.database, value);
@@ -98,6 +108,7 @@ describe('database row template cells', () => {
       single: { type: 'select', value: ['missing', 'two', 'one'] },
       multi: { type: 'select', value: ['one', 'missing', 'one', 'two'] },
       person: { type: 'person', value: ['not-a-uuid', personId] },
+      relation: { type: 'relation', value: [relatedRowIdA, 'not-a-uuid', relatedRowIdA, relatedRowIdB] },
       deleted: { type: 'text', value: 'drop me' },
       unsupported: { type: 'text', value: 'drop me too' },
     });
@@ -112,6 +123,7 @@ describe('database row template cells', () => {
       single: { type: 'select', value: ['two'] },
       multi: { type: 'select', value: ['one', 'two'] },
       person: { type: 'person', value: ['not-a-uuid', personId] },
+      relation: { type: 'relation', value: [relatedRowIdA, relatedRowIdB] },
     });
   });
 
@@ -127,18 +139,35 @@ describe('database row template cells', () => {
       check: { type: 'checkbox', value: false },
       multi: { type: 'select', value: ['one', 'two'] },
       person: { type: 'person', value: [personId] },
+      relation: { type: 'relation', value: [relatedRowIdA, relatedRowIdB] },
     });
 
     const cells = row.get(YjsDatabaseKey.cells);
+    const relationData = cells.get('relation')?.get(YjsDatabaseKey.data);
 
     expect(cells.get('check')?.get(YjsDatabaseKey.data)).toBe('false');
     expect(cells.get('multi')?.get(YjsDatabaseKey.data)).toBe('one,two');
     expect(cells.get('person')?.get(YjsDatabaseKey.data)).toBe(JSON.stringify([personId]));
+    expect(relationData).toBeInstanceOf(Y.Array);
+    expect((relationData as Y.Array<string>).toArray()).toEqual([relatedRowIdA, relatedRowIdB]);
+    expect(cells.get('relation')?.get(YjsDatabaseKey.field_type)).toBe(FieldType.Relation);
     expect(extractTemplateCellsFromRow(row, db)).toEqual({
       name: { type: 'text', value: 'Issue' },
       check: { type: 'checkbox', value: false },
       multi: { type: 'select', value: ['one', 'two'] },
       person: { type: 'person', value: [personId] },
+      relation: { type: 'relation', value: [relatedRowIdA, relatedRowIdB] },
+    });
+  });
+
+  it('enforces relation source limits and target database presence like Desktop', () => {
+    const result = sanitizeTemplateCells(database(), {
+      relationOne: { type: 'relation', value: [relatedRowIdA, relatedRowIdB] },
+      relationNoDb: { type: 'relation', value: [relatedRowIdA] },
+    });
+
+    expect(result).toEqual({
+      relationOne: { type: 'relation', value: [relatedRowIdA] },
     });
   });
 
@@ -202,12 +231,14 @@ describe('database row template cells', () => {
       single: { type: 'legacy', value: '["missing","one","two"]' },
       multi: { type: 'legacy', value: 'two, missing, one, two' },
       person: { type: 'legacy', value: `${personId},not-valid` },
+      relation: { type: 'legacy', value: `${relatedRowIdB}, not-valid, ${relatedRowIdA}` },
     });
 
     expect(result).toEqual({
       single: { type: 'select', value: ['one'] },
       multi: { type: 'select', value: ['two', 'one'] },
       person: { type: 'person', value: [personId] },
+      relation: { type: 'relation', value: [relatedRowIdB, relatedRowIdA] },
     });
   });
 

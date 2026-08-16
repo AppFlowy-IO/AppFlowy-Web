@@ -549,6 +549,14 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         return;
       }
 
+      // The template editor edits a hidden source row that never joins
+      // row_orders; reciprocal links would point real rows at that phantom
+      // row id. The default is applied to real rows created from the
+      // template, whose reciprocals are backfilled by useNewRowDispatch.
+      if (context.templateEditingRowId === rowId) {
+        return;
+      }
+
       const relatedDoc = await loadRelatedDatabaseDoc({
         sourceDatabase: database,
         sourceDatabaseDoc: context.databaseDoc,

@@ -167,7 +167,7 @@ export const DatabaseTabItem = memo(
         value={viewId}
         id={`view-tab-${viewId}`}
         data-testid={`view-tab-${viewId}`}
-        className={cn('min-w-[80px] max-w-[200px]', dragState.type === 'dragging' && 'opacity-40')}
+        className={cn('min-w-[80px] max-w-[360px]', dragState.type === 'dragging' && 'opacity-40')}
         ref={setRefs}
         onClickCapture={(e) => {
           // Swallow the click that fires right after a drag so the dragged tab

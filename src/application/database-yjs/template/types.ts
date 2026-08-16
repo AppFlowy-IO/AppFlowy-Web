@@ -12,6 +12,7 @@ export type TemplateCellValue =
   | { type: 'url'; value: string }
   | { type: 'select'; value: string[] }
   | { type: 'person'; value: string[] }
+  | { type: 'relation'; value: string[] }
   | { type: 'legacy'; value: string };
 
 /**

@@ -26,12 +26,12 @@ export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
       return (
         <>
           {firstCrumb.extra?.is_hidden_space ? null : (
-            <div className={'flex min-w-0 max-w-[160px] items-center gap-2 truncate text-text-primary'}>
+            <div className={'flex min-w-0 items-center gap-2 truncate text-text-primary'}>
               <BreadcrumbItem variant={variant} toView={toView} crumb={firstCrumb} disableClick={true} />
               <RightIcon className={'h-5 w-5 shrink-0'} />
             </div>
           )}
-          <div className={'flex min-w-0 max-w-[160px] shrink-0 items-center gap-2 truncate text-text-primary'}>
+          <div className={'flex min-w-0 shrink-0 items-center gap-2 truncate text-text-primary'}>
             <IconButton
               onClick={() => {
                 setOpenMore(true);
@@ -46,7 +46,7 @@ export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
             const key = `${crumb.view_id}-${index}`;
 
             return (
-              <div className={'flex min-w-0 max-w-[160px] items-center gap-2 truncate text-text-primary'} key={key}>
+              <div className={'flex min-w-0 items-center gap-2 truncate text-text-primary'} key={key}>
                 <BreadcrumbItem
                   variant={variant}
                   toView={toView}
@@ -71,8 +71,7 @@ export function Breadcrumb({ crumbs, toView, variant }: BreadcrumbProps) {
 
       return (
         <div
-          className={`${isLast ? 'text-text-primary' : 'text-text-secondary'
-            } flex min-w-0 max-w-[160px] items-center gap-2 truncate`}
+          className={`${isLast ? 'text-text-primary' : 'text-text-secondary'} flex min-w-0 items-center gap-2 truncate`}
           key={key}
         >
           <BreadcrumbItem toView={toView} crumb={crumb} disableClick={isLast} variant={variant} />

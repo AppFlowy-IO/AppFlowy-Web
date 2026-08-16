@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NumberFilter, NumberFilterCondition, useReadOnly } from '@/application/database-yjs';
@@ -6,9 +6,24 @@ import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
+import { numberConditionShortName } from '@/components/database/components/filters/overview/useFilterChipLabel';
 import { Input } from '@/components/ui/input';
 
-function NumberFilterMenu ({ filter }: { filter: NumberFilter }) {
+// Desktop parity: `_NumberFilterTextFormatter` — reject any edit that doesn't
+// match an optional minus, digits, at most one decimal point.
+const NUMBER_INPUT_PATTERN = /^-?\d*\.?\d*$/;
+
+function NumberFilterMenu({
+  filter,
+  conditionLabelStyle = 'words',
+}: {
+  filter: NumberFilter;
+  /**
+   * 'words' renders "Equals" / "Is less than"… (standalone Number filters);
+   * 'symbols' renders "=" / "<" / "≤"… (rollup→Number filters, per desktop).
+   */
+  conditionLabelStyle?: 'words' | 'symbols';
+}) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const updateFilter = useUpdateFilter();
@@ -18,68 +33,66 @@ function NumberFilterMenu ({ filter }: { filter: NumberFilter }) {
     fieldId: filter.fieldId,
     updateFilter,
   });
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateValue(e.target.value);
-  };
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const next = e.target.value;
+
+      // Keep the previous value when the edit doesn't match the numeric pattern.
+      if (next !== '' && !NUMBER_INPUT_PATTERN.test(next)) return;
+      updateValue(next);
+    },
+    [updateValue]
+  );
 
   const conditions = useMemo(() => {
-    return [
-      {
-        value: NumberFilterCondition.Equal,
-        text: t('grid.numberFilter.equal'),
-      },
-      {
-        value: NumberFilterCondition.NotEqual,
-        text: t('grid.numberFilter.notEqual'),
-      },
-      {
-        value: NumberFilterCondition.GreaterThan,
-        text: t('grid.numberFilter.greaterThan'),
-      },
-      {
-        value: NumberFilterCondition.LessThan,
-        text: t('grid.numberFilter.lessThan'),
-      },
-      {
-        value: NumberFilterCondition.GreaterThanOrEqualTo,
-        text: t('grid.numberFilter.greaterThanOrEqualTo'),
-      },
-      {
-        value: NumberFilterCondition.LessThanOrEqualTo,
-        text: t('grid.numberFilter.lessThanOrEqualTo'),
-      },
-      {
-        value: NumberFilterCondition.NumberIsEmpty,
-        text: t('grid.textFilter.isEmpty'),
-      },
-      {
-        value: NumberFilterCondition.NumberIsNotEmpty,
-        text: t('grid.textFilter.isNotEmpty'),
-      },
+    const wordLabels: Record<number, string> = {
+      [NumberFilterCondition.Equal]: t('grid.numberFilter.equal'),
+      [NumberFilterCondition.NotEqual]: t('grid.numberFilter.notEqual'),
+      [NumberFilterCondition.LessThan]: t('grid.numberFilter.lessThan'),
+      [NumberFilterCondition.LessThanOrEqualTo]: t('grid.numberFilter.lessThanOrEqualTo'),
+      [NumberFilterCondition.GreaterThan]: t('grid.numberFilter.greaterThan'),
+      [NumberFilterCondition.GreaterThanOrEqualTo]: t('grid.numberFilter.greaterThanOrEqualTo'),
+      [NumberFilterCondition.NumberIsEmpty]: t('grid.numberFilter.isEmpty'),
+      [NumberFilterCondition.NumberIsNotEmpty]: t('grid.numberFilter.isNotEmpty'),
+    };
+
+    // Desktop order: protobuf ordinal order (=, ≠, <, ≤, >, ≥, empty, not empty).
+    const values = [
+      NumberFilterCondition.Equal,
+      NumberFilterCondition.NotEqual,
+      NumberFilterCondition.LessThan,
+      NumberFilterCondition.LessThanOrEqualTo,
+      NumberFilterCondition.GreaterThan,
+      NumberFilterCondition.GreaterThanOrEqualTo,
+      NumberFilterCondition.NumberIsEmpty,
+      NumberFilterCondition.NumberIsNotEmpty,
     ];
-  }, [t]);
-  
+
+    return values.map((value) => ({
+      value,
+      text: conditionLabelStyle === 'symbols' ? numberConditionShortName(value, t) : wordLabels[value],
+    }));
+  }, [conditionLabelStyle, t]);
+
   const displayTextField = useMemo(() => {
     return ![NumberFilterCondition.NumberIsEmpty, NumberFilterCondition.NumberIsNotEmpty].includes(filter.condition);
   }, [filter.condition]);
 
   return (
-    <div className={'flex flex-col gap-2 p-2'}>
+    <div className={'flex flex-col gap-1'}>
       <FieldMenuTitle
         fieldId={filter.fieldId}
         filterId={filter.id}
-        renderConditionSelect={<FilterConditionsSelect
-          filter={filter}
-          conditions={conditions}
-        />}
+        renderConditionSelect={<FilterConditionsSelect filter={filter} conditions={conditions} />}
       />
       {displayTextField && (
         <Input
           autoFocus
-          data-testid="text-filter-input"
+          data-testid='text-filter-input'
           disabled={readOnly}
           spellCheck={false}
           size={'sm'}
+          inputMode={'decimal'}
           value={value}
           onChange={handleChange}
           placeholder={t('grid.settings.typeAValue')}

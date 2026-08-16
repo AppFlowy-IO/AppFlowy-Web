@@ -39,7 +39,7 @@ import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/datab
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
-import { FieldDisplay } from '@/components/database/components/field';
+import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
 import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import AdvancedDateFilterValueInput from './AdvancedDateFilterValueInput';
@@ -62,6 +63,11 @@ interface FilterPanelRowProps {
   isFirst: boolean;
   onOperatorChange?: (filterId: string, newOperator: FilterType.And | FilterType.Or) => void;
 }
+
+// Desktop parity: SingleSelectBox — 32px tall, 6px radius, primary border that
+// turns theme-thick while its popover is open.
+const selectBoxClass =
+  'flex h-8 items-center justify-between gap-1 overflow-hidden rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary data-[state=open]:border-border-theme-thick disabled:opacity-50';
 
 export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPanelRowProps) {
   const { t } = useTranslation();
@@ -73,10 +79,9 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
 
   const [fieldSelectorOpen, setFieldSelectorOpen] = useState(false);
 
-  const fieldType: FieldType | null = useMemo(() => {
-    if (!field) return null;
-    return Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  }, [field]);
+  // Not memoized: `field` is a Yjs map with a stable identity that mutates in
+  // place, so a [field]-keyed memo would go stale after in-place field edits.
+  const fieldType: FieldType | null = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : null;
 
   const handleRemove = useCallback(() => {
     removeFilter(filter.id);
@@ -108,23 +113,25 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
 
   if (!field) return null;
 
+  const fieldName = field.get(YjsDatabaseKey.name) ?? '';
+
   return (
-    <div className='flex items-center gap-2 px-2 py-1.5' data-testid='advanced-filter-row'>
-      {/* Where / And / Or selector - fixed width */}
-      <div className='w-[56px] shrink-0'>
+    <div className='flex items-center gap-1.5 px-2' data-testid='advanced-filter-row'>
+      {/* Where / And / Or selector - fixed width (desktop: 68px) */}
+      <div className='w-[68px] shrink-0'>
         {isFirst ? (
-          <span className='pl-1 text-sm text-text-primary'>{t('grid.filter.where')}</span>
+          <div className='text-center text-sm text-text-tertiary'>{t('grid.filter.where')}</div>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild disabled={readOnly}>
-              <button className='flex h-7 w-full items-center justify-between gap-1 rounded-md px-2 hover:bg-fill-list-hover'>
-                <span className='text-xs text-text-primary'>
+              <button className={cn(selectBoxClass, 'w-full')}>
+                <span className='truncate'>
                   {filter.operator === FilterType.Or ? t('grid.filter.or') : t('grid.filter.and')}
                 </span>
-                <ArrowDownSvg className='h-3 w-3 text-text-primary' />
+                <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align='start' className='min-w-[80px]'>
+            <DropdownMenuContent align='start' className='min-w-[100px]'>
               <DropdownMenuItem onSelect={() => onOperatorChange?.(filter.id, FilterType.And)}>
                 {t('grid.filter.and')}
                 {filter.operator === FilterType.And && <DropdownMenuItemTick />}
@@ -138,24 +145,24 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
         )}
       </div>
 
-      {/* Field selector - flex-[2] */}
-      <PropertiesMenu
-        asChild
-        searchPlaceholder={t('grid.settings.filterBy')}
-        onSelect={handleFieldChange}
-        open={fieldSelectorOpen}
-        onOpenChange={setFieldSelectorOpen}
-      >
-        <button
-          className='flex h-7 flex-[2] items-center justify-between gap-1 overflow-hidden rounded-md px-2 hover:bg-fill-list-hover disabled:opacity-50'
-          disabled={readOnly}
+      {/* Field selector - flex-[5] */}
+      <div className='min-w-0 flex-[5]'>
+        <PropertiesMenu
+          asChild
+          searchPlaceholder={t('grid.settings.filterBy')}
+          excludedTypes={FILTER_EXCLUDED_FIELD_TYPES}
+          onSelect={handleFieldChange}
+          open={fieldSelectorOpen}
+          onOpenChange={setFieldSelectorOpen}
         >
-          <FieldDisplay fieldId={filter.fieldId} className='truncate text-xs' />
-          <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
-        </button>
-      </PropertiesMenu>
+          <button className={cn(selectBoxClass, 'w-full')} disabled={readOnly} title={fieldName}>
+            <span className='truncate'>{fieldName}</span>
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
+          </button>
+        </PropertiesMenu>
+      </div>
 
-      {/* Condition selector - flex-[2] */}
+      {/* Condition selector - flex-[7] */}
       <ConditionSelector
         filter={filter}
         fieldType={fieldType}
@@ -164,18 +171,23 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
         disabled={readOnly}
       />
 
-      {/* Value input - flex-[3] */}
+      {/* Value input - flex-[7] */}
       <ValueInput filter={filter} fieldType={fieldType} field={field} disabled={readOnly} />
 
-      {/* Delete button - 24px */}
+      {/* Delete button */}
       {!readOnly && (
-        <button
-          className='flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-fill-list-hover'
-          onClick={handleRemove}
-          data-testid='delete-advanced-filter-button'
-        >
-          <DeleteIcon className='h-4 w-4 text-text-caption' />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className='group flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-fill-content-hover'
+              onClick={handleRemove}
+              data-testid='delete-advanced-filter-button'
+            >
+              <DeleteIcon className='h-5 w-5 text-icon-tertiary group-hover:text-icon-error-thick' />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side='bottom'>{t('grid.settings.deleteFilter')}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
@@ -206,38 +218,39 @@ function ConditionSelector({ filter, fieldType, field, onConditionChange, disabl
   // For Checkbox, the condition dropdown is non-interactive (just shows "Is")
   if (fieldType === FieldType.Checkbox) {
     return (
-      <div className='flex h-7 flex-[2] items-center gap-1 overflow-hidden rounded-md px-2'>
-        <span className='truncate text-xs text-text-primary'>{selectedCondition?.text}</span>
+      <div className={cn(selectBoxClass, 'min-w-0 flex-[7] border-transparent')}>
+        <span className='truncate'>{selectedCondition?.text}</span>
       </div>
     );
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <button
-          className='flex h-7 flex-[2] items-center justify-between gap-1 overflow-hidden rounded-md px-2 hover:bg-fill-list-hover disabled:opacity-50'
-          data-testid='filter-condition-selector'
-        >
-          <span className='truncate text-xs text-text-primary'>
-            {selectedCondition?.text || t('grid.filter.conditon')}
-          </span>
-          <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align='start' className='min-w-[140px]'>
-        {conditions.map((condition) => (
-          <DropdownMenuItem
-            key={condition.value}
-            data-testid={`filter-condition-${condition.value}`}
-            onSelect={() => onConditionChange(condition.value)}
+    <div className='min-w-0 flex-[7]'>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <button
+            className={cn(selectBoxClass, 'w-full')}
+            title={selectedCondition?.text}
+            data-testid='filter-condition-selector'
           >
-            {condition.text}
-            {condition.value === filter.condition && <DropdownMenuItemTick />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <span className='truncate'>{selectedCondition?.text || t('grid.filter.conditon')}</span>
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='start' className='max-h-[300px] w-[240px] overflow-y-auto'>
+          {conditions.map((condition) => (
+            <DropdownMenuItem
+              key={condition.value}
+              data-testid={`filter-condition-${condition.value}`}
+              onSelect={() => onConditionChange(condition.value)}
+            >
+              {condition.text}
+              {condition.value === filter.condition && <DropdownMenuItemTick />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
@@ -451,12 +464,12 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
     [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <input
-        className='h-7 w-full rounded-md border border-line-border bg-transparent px-2 text-xs text-text-primary placeholder:text-text-caption focus:border-content-blue-400 focus:outline-none disabled:opacity-50'
+        className='h-8 w-full rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-theme-thick focus:outline-none disabled:opacity-50'
         placeholder={t('grid.settings.typeAValue')}
         value={value}
         onChange={handleChange}
@@ -518,20 +531,20 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
     [selectedRowIds, updateSelectedRowIds]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild disabled={disabled}>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             data-testid='advanced-filter-relation-input'
           >
-            <span className={cn('truncate text-xs', selectedRowIds.length > 0 ? 'text-text-primary' : 'text-text-caption')}>
+            <span className={cn('truncate text-sm', selectedRowIds.length > 0 ? 'text-text-primary' : 'text-text-tertiary')}>
               {selectedRowIds.length > 0 ? `${selectedRowIds.length} selected` : t('grid.settings.typeAValue')}
             </span>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </PopoverTrigger>
         <PopoverContent align='start' className='w-[340px] p-1'>
@@ -578,12 +591,12 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
     [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <input
-        className='h-7 w-full rounded-md border border-line-border bg-transparent px-2 text-xs text-text-primary placeholder:text-text-caption focus:border-content-blue-400 focus:outline-none disabled:opacity-50'
+        className='h-8 w-full rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-theme-thick focus:outline-none disabled:opacity-50'
         placeholder={t('grid.settings.typeAValue')}
         value={value}
         onChange={handleChange}
@@ -609,10 +622,10 @@ function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: b
     ].includes(filter.condition);
   }, [filter.condition]);
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <AdvancedDateFilterValueInput filter={filter} disabled={disabled} />
     </div>
   );
@@ -634,19 +647,13 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     );
   }, [filter.condition]);
 
-  const typeOption = useMemo(() => {
-    if (!field) return null;
-    return parseSelectOptionTypeOptions(field);
-  }, [field]);
+  // Not memoized: `field` is a Yjs map with a stable identity that mutates in
+  // place, so a [field]-keyed memo would serve stale options after edits.
+  const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
 
-  const selectedIds = useMemo(() => {
-    return filter.optionIds?.filter((id) => id !== '') || [];
-  }, [filter.optionIds]);
-
-  const selectedOptions = useMemo(() => {
-    if (!typeOption) return [];
-    return typeOption.options.filter((opt) => selectedIds.includes(opt.id));
-  }, [typeOption, selectedIds]);
+  const selectedIds = filter.optionIds?.filter((id) => id !== '') || [];
+  const selectedIdSet = new Set(selectedIds);
+  const selectedOptions = typeOption ? typeOption.options.filter((opt) => selectedIdSet.has(opt.id)) : [];
 
   const handleToggleOption = useCallback(
     (optionId: string) => {
@@ -669,36 +676,47 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     [filter, updateFilter]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md px-2 hover:bg-fill-list-hover disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             disabled={disabled}
             data-testid='advanced-filter-select-input'
           >
             <div className='flex min-w-0 flex-1 items-center gap-1 overflow-hidden'>
               {selectedOptions.length > 0 ? (
                 selectedOptions.map((opt) => (
-                  <Tag
-                    key={opt.id}
-                    label={opt.name}
-                    textColor={SelectOptionFgColorMap[opt.color]}
-                    bgColor={SelectOptionColorMap[opt.color]}
-                  />
+                  <Tooltip key={opt.id}>
+                    <TooltipTrigger asChild>
+                      <span className='shrink-0'>
+                        <Tag
+                          label={opt.name}
+                          textColor={SelectOptionFgColorMap[opt.color]}
+                          bgColor={SelectOptionColorMap[opt.color]}
+                        />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side='top'>{opt.name}</TooltipContent>
+                  </Tooltip>
                 ))
               ) : (
-                <span className='truncate text-xs text-text-caption'>{t('grid.settings.typeAValue')}</span>
+                <span className='truncate text-sm text-text-tertiary'>{t('grid.settings.typeAValue')}</span>
               )}
             </div>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </PopoverTrigger>
-        <PopoverContent align='start' className='w-[200px] p-1'>
-          <SelectOptionList fieldId={filter.fieldId} selectedIds={filter.optionIds || []} onSelect={handleToggleOption} />
+        <PopoverContent align='start' className='w-[240px] p-1'>
+          <SelectOptionList
+            fieldId={filter.fieldId}
+            selectedIds={filter.optionIds || []}
+            onSelect={handleToggleOption}
+            showTooltips
+          />
         </PopoverContent>
       </Popover>
     </div>
@@ -728,15 +746,15 @@ function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disa
   }, [filter.condition, t]);
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <DropdownMenu>
         <DropdownMenuTrigger asChild disabled={disabled}>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             data-testid='advanced-filter-checkbox-input'
           >
-            <span className='truncate text-xs text-text-primary'>{selectedText}</span>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <span className='truncate text-sm text-text-primary'>{selectedText}</span>
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='start' className='min-w-[120px]'>
@@ -817,26 +835,26 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
     return `${selectedUsers.length} selected`;
   }, [selectedUserIds, mentionableUsers, t]);
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             disabled={disabled}
             data-testid='advanced-filter-person-input'
           >
             <span
               className={cn(
-                'truncate text-xs',
-                selectedUserIds.length > 0 ? 'text-text-primary' : 'text-text-caption'
+                'truncate text-sm',
+                selectedUserIds.length > 0 ? 'text-text-primary' : 'text-text-tertiary'
               )}
             >
               {displayText}
             </span>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </PopoverTrigger>
         <PopoverContent align='start' className='w-[280px] p-0'>
@@ -871,7 +889,7 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
                     <div className='flex flex-1 flex-col overflow-hidden'>
                       <span className='truncate text-sm'>{user.name || user.email}</span>
                       {user.name && user.email && (
-                        <span className='truncate text-xs text-text-tertiary'>{user.email}</span>
+                        <span className='truncate text-sm text-text-tertiary'>{user.email}</span>
                       )}
                     </div>
                     {isSelected && <CheckIcon className='h-4 w-4 flex-shrink-0 text-text-action' />}

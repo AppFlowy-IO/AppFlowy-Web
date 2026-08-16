@@ -29,7 +29,7 @@ function TextFilterMenu ({ filter }: { filter: TextFilter }) {
 
   return (
     <div
-      className={'flex flex-col gap-2'}
+      className={'flex flex-col gap-1'}
       data-testid="text-filter"
     >
 

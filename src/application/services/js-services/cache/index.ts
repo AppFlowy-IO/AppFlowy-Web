@@ -1043,6 +1043,15 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
 
   rowSubDocs.set(documentId, entry);
 
+  // Auto-evict when the doc is destroyed via an external path (version reset,
+  // access revoked, deleteCollabDB) so later callers don't get a stale,
+  // destroyed Y.Doc back from this cache.
+  entry.doc.on('destroy', () => {
+    if (rowSubDocs.get(documentId) === entry) {
+      rowSubDocs.delete(documentId);
+    }
+  });
+
   await whenSynced;
 
   // Log final state after sync

@@ -620,7 +620,17 @@ export function useNewRowDispatch() {
         const cells = row.get(YjsDatabaseKey.cells);
 
         if (selectedTemplate) {
-          applyTemplateCellsToRow(row, database, selectedTemplate.defaultCells);
+          const appliedCells = applyTemplateCellsToRow(row, database, selectedTemplate.defaultCells);
+
+          // Template relation defaults join the same reciprocal-backfill queue
+          // as filter prefills. A later filter prefill on the same field
+          // overwrites both the cell and this queue entry, so the backfill
+          // always mirrors the final cell state.
+          Object.entries(appliedCells).forEach(([fieldId, value]) => {
+            if (value.type === 'relation' && value.value.length > 0) {
+              relationPrefills.set(fieldId, value.value);
+            }
+          });
         }
 
         filterArray.forEach((filter) => {
@@ -715,6 +725,11 @@ export function useNewRowDispatch() {
           Object.entries(cellsData).forEach(([fieldId, data]) => {
             const cell = new Y.Map() as YDatabaseCell;
             const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+            // The raw cell payload replaces whatever a template or filter
+            // wrote for this field, so any queued reciprocal backfill for it
+            // would no longer match the final cell state.
+            relationPrefills.delete(fieldId);
 
             const type = Number(field.get(YjsDatabaseKey.type));
 

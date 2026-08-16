@@ -41,6 +41,17 @@ function WorkspaceList({
   autoScrollContainerRef?: ScrollContainerRef;
 }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>(defaultWorkspaces || []);
+
+  // `defaultWorkspaces` seeds the initial paint, but the shared workspace list
+  // can be force-refreshed while this list stays mounted (rename/delete/leave
+  // from a modal, mobile drawer kept open). Follow those updates instead of
+  // freezing the mount-time snapshot.
+  useEffect(() => {
+    if (defaultWorkspaces) {
+      setWorkspaces(defaultWorkspaces);
+    }
+  }, [defaultWorkspaces]);
+
   const fetchWorkspaces = useCallback(async () => {
     try {
       const workspaces = await WorkspaceService.getAll();

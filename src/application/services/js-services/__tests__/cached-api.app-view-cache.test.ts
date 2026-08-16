@@ -154,12 +154,30 @@ describe('cached app view cache user scoping', () => {
       workspace_id: 'workspace-a',
       view_id: view.view_id,
       data: view,
-      updated_at: 1,
+      updated_at: Date.now(),
     });
 
     await expect(getCachedAppViewFromDisk('workspace-a', view.view_id)).resolves.toBe(view);
 
     expect(appViewCacheTable.get).toHaveBeenCalledWith(['user-a', 'workspace-a', view.view_id]);
+  });
+
+  it('drops and deletes over-age durable view cache records', async () => {
+    const view = createView('view-too-old', 'stale disk cache');
+    const eightDaysMs = 8 * 24 * 60 * 60 * 1000;
+
+    setCurrentUser('user-a');
+    appViewCacheTable.get.mockResolvedValue({
+      user_id: 'user-a',
+      workspace_id: 'workspace-a',
+      view_id: view.view_id,
+      data: view,
+      updated_at: Date.now() - eightDaysMs,
+    });
+
+    await expect(getCachedAppViewFromDisk('workspace-a', view.view_id)).resolves.toBeUndefined();
+
+    expect(appViewCacheTable.delete).toHaveBeenCalledWith(['user-a', 'workspace-a', view.view_id]);
   });
 
   it('does not promote durable fallback data into the fresh in-memory cache', async () => {
@@ -174,7 +192,7 @@ describe('cached app view cache user scoping', () => {
       workspace_id: workspaceId,
       view_id: viewId,
       data: diskView,
-      updated_at: 1,
+      updated_at: Date.now(),
     });
     getViewMock.mockResolvedValue(serverView);
 

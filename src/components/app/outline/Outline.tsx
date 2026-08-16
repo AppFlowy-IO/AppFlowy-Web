@@ -41,6 +41,7 @@ import { Log } from '@/utils/log';
 const ImportDialog = lazy(() => import('@/components/app/import/ImportDialog'));
 
 const AUTO_LOAD_RETRY_DELAY_MS = 15000;
+const NAVIGATION_HYDRATION_RETRY_DELAY_MS = 15000;
 
 function collectSubtreeViewIds(rootView: View): string[] {
   const ids: string[] = [];
@@ -115,9 +116,12 @@ export function Outline({ width }: { width: number }) {
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
   const navigationHydrationInFlightRef = useRef<Set<string>>(new Set());
   // Selected views that navigation hydration could not place in the outline
-  // (not found server-side, or access denied). Tracked so we don't re-fetch
-  // navigation on every subsequent `outline` change for an unresolvable id.
-  const navigationHydrationUnresolvedRef = useRef<Set<string>>(new Set());
+  // (not found server-side, or access denied), mapped to a retry-after
+  // timestamp. Throttles re-fetching navigation on every `outline` change for
+  // an unresolvable id, while still retrying later — a freshly duplicated view
+  // can race the folder projection and become resolvable seconds after the
+  // first attempt fails.
+  const navigationHydrationRetryAfterRef = useRef<Map<string, number>>(new Map());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
   const validatedExistingRestoreIdsRef = useRef<Set<string>>(new Set());
@@ -138,7 +142,7 @@ export function Outline({ width }: { width: number }) {
     if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
     if (findView(outline, selectedViewId)) return;
     if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
-    if (navigationHydrationUnresolvedRef.current.has(selectedViewId)) return;
+    if ((navigationHydrationRetryAfterRef.current.get(selectedViewId) ?? 0) > Date.now()) return;
 
     navigationHydrationInFlightRef.current.add(selectedViewId);
 
@@ -147,12 +151,13 @@ export function Outline({ width }: { width: number }) {
         if (ancestorIds.length === 0) {
           // Either the view resolved at the sidebar root (it's now in the
           // outline, so findView short-circuits on the next run) or it could
-          // not be resolved. Mark it so we don't re-fetch on every outline
+          // not be resolved. Throttle so we don't re-fetch on every outline
           // change while it stays selected.
-          navigationHydrationUnresolvedRef.current.add(selectedViewId);
+          navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
           return;
         }
 
+        navigationHydrationRetryAfterRef.current.delete(selectedViewId);
         ancestorIds.forEach((id) => setOutlineExpands(id, true));
         setExpandViewIds((prev) => {
           const next = new Set(prev);
@@ -167,7 +172,7 @@ export function Outline({ width }: { width: number }) {
         });
       })
       .catch((error) => {
-        navigationHydrationUnresolvedRef.current.add(selectedViewId);
+        navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
         Log.warn('[Outline] [navigation-context] failed to hydrate selected view', {
           viewId: selectedViewId,
           error,
@@ -190,7 +195,7 @@ export function Outline({ width }: { width: number }) {
     setPendingAutoLoadIds(restoredExpandedIds);
     loadingViewIdsRef.current = new Set();
     navigationHydrationInFlightRef.current = new Set();
-    navigationHydrationUnresolvedRef.current = new Set();
+    navigationHydrationRetryAfterRef.current = new Map();
     autoLoadRetryAfterRef.current = new Map();
     validatingRestoreIdsRef.current = new Set();
     validatedExistingRestoreIdsRef.current = new Set();

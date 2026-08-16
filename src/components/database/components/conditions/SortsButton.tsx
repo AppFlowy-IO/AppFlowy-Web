@@ -61,6 +61,9 @@ function SortsButton({
         if (!expanded) {
           toggleExpanded?.();
         }
+
+        // Desktop parity: adding a sort from the toolbar opens the sort editor.
+        conditionsContext?.setSortMenuOpen?.(true);
       }}
       excludedTypes={excludedTypes}
       propertyFilter={propertyFilter}
@@ -84,7 +87,7 @@ function SortsButton({
                 }
               }}
               style={{
-                color: sorts.length > 0 ? 'var(--text-action)' : undefined,
+                color: sorts.length > 0 ? 'var(--icon-info-thick)' : undefined,
               }}
               type='button'
             >

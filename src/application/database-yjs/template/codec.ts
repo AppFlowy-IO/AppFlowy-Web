@@ -69,7 +69,8 @@ export function parseTemplateCellValue(value: unknown): TemplateCellValue | null
     }
 
     case 'select':
-    case 'person': {
+    case 'person':
+    case 'relation': {
       const items = parseStringList(value.value);
 
       return items ? { type, value: items } : null;

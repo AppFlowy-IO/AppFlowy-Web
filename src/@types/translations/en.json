@@ -898,6 +898,24 @@
         "failed": "Failed to delete account"
       }
     },
+    "profilePage": {
+      "menuLabel": "Profile",
+      "title": "Profile",
+      "preview": "Preview",
+      "previewButtonTooltip": "Click to preview your personalized profile card",
+      "displayName": "Display name",
+      "aboutMe": "About me",
+      "aboutMeHint": "Briefly introduce yourself...",
+      "aboutMeMarkdownHint": "You can use markdown or links if you'd like",
+      "editAvatar": "Edit Avatar",
+      "avatarSizeLimit": "Image must be smaller than {{size}} MB",
+      "bannerImage": "Banner Image",
+      "customImage": "Custom Image",
+      "wallpapers": "Wallpapers",
+      "default": "Default",
+      "replaceImage": "Replace image",
+      "limitCharactersReached": "{{limit}}-character limit reached"
+    },
     "workspacePage": {
       "menuLabel": "Workspace",
       "title": "Workspace",
@@ -1766,6 +1784,8 @@
       "group": "Group",
       "addFilter": "Add Filter",
       "deleteFilter": "Delete filter",
+      "deleteFilterConfirmationTitle": "Delete all filters?",
+      "deleteFilterConfirmationDescription": "This will remove all filters from this view.",
       "filterBy": "Filter by",
       "typeAValue": "Type a value...",
       "layout": "Layout",
@@ -1796,6 +1816,8 @@
       "advancedFilter": "Advanced Filter",
       "useAdvancedFilter": "Use Advanced Filter",
       "addToAdvancedFilter": "Add to advanced filter",
+      "switchToAdvancedFilter": "Switch to advanced filter",
+      "clearSelection": "Clear selection",
       "addFilterRule": "Add filter rule",
       "deleteAllFilters": "Delete filter"
     },
@@ -1876,6 +1898,11 @@
       "isEmpty": "Is empty",
       "isNotEmpty": "Is not empty",
       "selectPerson": "Select person"
+    },
+    "person": {
+      "count_one": "{{count}} person",
+      "count_other": "{{count}} persons",
+      "unknownUser": "Unknown user"
     },
     "field": {
       "label": "Property",
@@ -1966,7 +1993,8 @@
       "by": "By",
       "empty": "No active sorts",
       "cannotFindCreatableField": "Cannot find a suitable field to sort by",
-      "deleteAllSorts": "Delete all sorts",
+      "deleteAllSorts": "Delete sorts",
+      "sorts": "sorts",
       "addSort": "Add sort",
       "sortsActive": "Cannot {{intention}} while sorting",
       "removeSorting": "Would you like to remove all the sorts in this view and continue?",

@@ -1989,6 +1989,9 @@ export function useWorkspaceData() {
     favoriteViewsLoadedRef.current = false;
     setFavoriteViews(undefined);
     setRecentViews(undefined);
+    // Deleted-page routing derives from `trashList` — without this reset the
+    // previous workspace's trash stays live until the new loadTrash resolves.
+    setTrashList(undefined);
     // Clear database relations cache when switching workspaces to prevent
     // cross-workspace data contamination
     workspaceDatabasesRef.current = undefined;

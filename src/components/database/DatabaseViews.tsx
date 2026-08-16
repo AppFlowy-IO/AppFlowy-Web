@@ -4,13 +4,16 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
 
 import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
-import { FilterType } from '@/application/database-yjs/database.type';
+import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import { Board } from '@/components/database/board';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { Chart } from '@/components/database/chart';
-import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
+import {
+  DatabaseConditionsActionsContext,
+  DatabaseConditionsContext,
+} from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
@@ -187,6 +190,8 @@ function DatabaseViews({
 
   // Advanced filter mode state
   const [isAdvancedMode, setAdvancedMode] = useState(false);
+  const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   // Auto-detect advanced mode on mount/view change and auto-expand when filters exist
   useEffect(() => {
@@ -206,24 +211,7 @@ function DatabaseViews({
     // Auto-expand when filters exist (from desktop sync or any source)
     setConditionsExpanded(true);
 
-    const rootFilter = filters.get(0);
-
-    if (!rootFilter) {
-      setAdvancedMode(false);
-      return;
-    }
-
-    // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
-    const isYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
-    const filterType = isYjsMap
-      ? Number((rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.filter_type))
-      : Number((rootFilter as unknown as Record<string, unknown>)[YjsDatabaseKey.filter_type]);
-
-    if (filterType === FilterType.And || filterType === FilterType.Or) {
-      setAdvancedMode(true);
-    } else {
-      setAdvancedMode(false);
-    }
+    setAdvancedMode(hasAdvancedFilterRoot(filters));
   }, [activeViewId, views]);
 
   // Get active view from selector state, or directly from Yjs if not yet in state
@@ -393,13 +381,44 @@ function DatabaseViews({
       setOpenFilterId,
       isAdvancedMode,
       setAdvancedMode,
+      advancedPanelOpen,
+      setAdvancedPanelOpen,
+      sortMenuOpen,
+      setSortMenuOpen,
     }),
-    [conditionsExpanded, toggleExpanded, setExpanded, openFilterId, setOpenFilterId, isAdvancedMode, setAdvancedMode]
+    [
+      conditionsExpanded,
+      toggleExpanded,
+      setExpanded,
+      openFilterId,
+      setOpenFilterId,
+      isAdvancedMode,
+      setAdvancedMode,
+      advancedPanelOpen,
+      setAdvancedPanelOpen,
+      sortMenuOpen,
+      setSortMenuOpen,
+    ]
+  );
+
+  // Stable identity: every entry is a useState setter or an empty-deps
+  // useCallback, so action-only consumers (e.g. grid column header menus)
+  // never re-render on conditions state churn.
+  const databaseConditionsActions = useMemo(
+    () => ({
+      setExpanded,
+      setOpenFilterId,
+      setAdvancedMode,
+      setAdvancedPanelOpen,
+      setSortMenuOpen,
+    }),
+    [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
   );
 
   const content = (
     <DatabaseSearchProvider activeViewId={activeViewId}>
       <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
+        <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
         <DatabaseTabs
           viewName={viewName}
           databasePageId={databasePageId}
@@ -441,6 +460,7 @@ function DatabaseViews({
             </Suspense>
           </div>
         </div>
+        </DatabaseConditionsActionsContext.Provider>
       </DatabaseConditionsContext.Provider>
     </DatabaseSearchProvider>
   );
