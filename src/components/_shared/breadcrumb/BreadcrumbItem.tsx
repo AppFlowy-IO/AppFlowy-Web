@@ -67,7 +67,7 @@ function BreadcrumbItem({
         <PageIcon view={crumb} className={'!max-md:text-[20px] flex h-5 w-5 min-w-5 items-center justify-center'} />
       )}
       <Tooltip title={name} placement={'bottom'} enterDelay={1000} enterNextDelay={1000}>
-        <span className={'min-w-[2.5rem] max-w-[250px] flex-1 overflow-hidden truncate '}>
+        <span className={'min-w-[2.5rem] flex-1 overflow-hidden truncate'}>
           {name || t('menuAppHeader.defaultNewPageName')}
         </span>
       </Tooltip>

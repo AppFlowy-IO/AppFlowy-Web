@@ -885,6 +885,24 @@
         "failed": "Failed to delete account"
       }
     },
+    "profilePage": {
+      "menuLabel": "Profile",
+      "title": "Profile",
+      "preview": "Preview",
+      "previewButtonTooltip": "Click to preview your personalized profile card",
+      "displayName": "Display name",
+      "aboutMe": "About me",
+      "aboutMeHint": "Briefly introduce yourself...",
+      "aboutMeMarkdownHint": "You can use markdown or links if you'd like",
+      "editAvatar": "Edit Avatar",
+      "avatarSizeLimit": "Image must be smaller than {{size}} MB",
+      "bannerImage": "Banner Image",
+      "customImage": "Custom Image",
+      "wallpapers": "Wallpapers",
+      "default": "Default",
+      "replaceImage": "Replace image",
+      "limitCharactersReached": "{{limit}}-character limit reached"
+    },
     "workspacePage": {
       "menuLabel": "Workspace",
       "title": "Workspace",
