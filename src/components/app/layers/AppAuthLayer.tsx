@@ -15,6 +15,9 @@ interface AppAuthLayerProps {
 }
 
 const RETRY_WORKSPACE_INFO_DELAY_MS = 5000;
+// Minimum age of the loaded workspace info before a focus/visibility/online
+// event triggers a background revalidation.
+const REVALIDATE_WORKSPACE_INFO_MIN_AGE_MS = 30_000;
 
 type LoadWorkspaceInfoOptions = { force?: boolean };
 
@@ -68,6 +71,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [syncLimitsLoaded, setSyncLimitsLoaded] = useState(false);
   const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
   const workspaceInfoRequestIdRef = useRef(0);
+  const workspaceInfoLoadedAtRef = useRef(0);
   const pendingWorkspaceChangeRef = useRef<string | null>(null);
 
   // Calculate current workspace ID from URL params or user info
@@ -97,6 +101,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       .then(() => UserService.getWorkspaceInfo())
       .then((res) => {
         if (workspaceInfoRequestIdRef.current === requestId) {
+          workspaceInfoLoadedAtRef.current = Date.now();
           setUserWorkspaceInfo(res);
         }
 
@@ -331,7 +336,37 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     };
   }, [isAuthenticated, userWorkspaceInfo, workspaceInfoError, loadUserWorkspaceInfo]);
 
+  // Once loaded, the workspace list (names, icons, roles, member counts) is a
+  // mount-time snapshot: nothing else re-reads it and there is no membership
+  // WebSocket notification. Revalidate on focus/visibility/online (throttled)
+  // so changes made on other devices eventually reach a long-lived tab.
+  useEffect(() => {
+    if (!isAuthenticated || !userWorkspaceInfo) return;
+
+    const revalidate = () => {
+      if (Date.now() - workspaceInfoLoadedAtRef.current < REVALIDATE_WORKSPACE_INFO_MIN_AGE_MS) return;
+      void loadUserWorkspaceInfo();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        revalidate();
+      }
+    };
+
+    window.addEventListener('online', revalidate);
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('online', revalidate);
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, userWorkspaceInfo, loadUserWorkspaceInfo]);
+
   const retryLoadWorkspaceInfo = useCallback(() => loadUserWorkspaceInfo({ force: true }), [loadUserWorkspaceInfo]);
+  const refreshUserWorkspaceInfo = useCallback(() => loadUserWorkspaceInfo({ force: true }), [loadUserWorkspaceInfo]);
 
   // Auto-switch workspace when the URL points to a different workspace than
   // the currently selected one (e.g. guest opening a shared direct link).
@@ -386,6 +421,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo,
+      refreshUserWorkspaceInfo,
     }),
     [
       userWorkspaceInfo,
@@ -399,6 +435,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo,
+      refreshUserWorkspaceInfo,
     ]
   );
 

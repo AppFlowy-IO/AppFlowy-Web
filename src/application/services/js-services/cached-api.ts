@@ -102,6 +102,10 @@ const publishViewInfo = new Map<
 const _getAppViewInFlight = new Map<string, Promise<View>>();
 const _getAppViewCache = new Map<string, { data: View; expiresAt: number }>();
 const VIEW_CACHE_TTL_MS = 5000;
+// Disk records are a fast-paint/offline fallback that is normally replaced by a
+// network refresh; the age cap only bounds how stale that fallback can get when
+// the refresh fails.
+const VIEW_DISK_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const ANONYMOUS_VIEW_CACHE_SCOPE = 'anonymous';
 
 const _getAppTrashInFlight = new Map<string, Promise<View[]>>();
@@ -200,7 +204,17 @@ export async function getAppViewCached(workspaceId: string, viewId: string) {
 }
 
 export function getCachedAppView(workspaceId: string, viewId: string): View | undefined {
-  return _getAppViewCache.get(getAppViewCacheKey(getCurrentAppViewCacheUserId(), workspaceId, viewId))?.data;
+  const key = getAppViewCacheKey(getCurrentAppViewCacheUserId(), workspaceId, viewId);
+  const cached = _getAppViewCache.get(key);
+
+  if (!cached) return undefined;
+
+  if (Date.now() >= cached.expiresAt) {
+    _getAppViewCache.delete(key);
+    return undefined;
+  }
+
+  return cached.data;
 }
 
 export async function getCachedAppViewFromDisk(workspaceId: string, viewId: string): Promise<View | undefined> {
@@ -210,7 +224,14 @@ export async function getCachedAppViewFromDisk(workspaceId: string, viewId: stri
 
   const record = await db.app_view_cache.get([userId, workspaceId, viewId]);
 
-  return record?.data;
+  if (!record) return undefined;
+
+  if (Date.now() - record.updated_at > VIEW_DISK_CACHE_MAX_AGE_MS) {
+    void db.app_view_cache.delete([userId, workspaceId, viewId]).catch(() => undefined);
+    return undefined;
+  }
+
+  return record.data;
 }
 
 export async function refreshAppViewCache(workspaceId: string, viewId: string) {

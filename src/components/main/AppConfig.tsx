@@ -4,7 +4,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'reac
 
 import { clearData, db } from '@/application/db';
 import { UserService } from '@/application/services/domains';
-import { initAPIService } from '@/application/services/js-services/http/core';
+import { clearHttpResponseCaches, initAPIService } from '@/application/services/js-services/http/core';
 import { EventType, on } from '@/application/session';
 import { getTokenParsed, isTokenValid } from '@/application/session/token';
 import { User } from '@/application/types';
@@ -84,7 +84,14 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   // 1. Cross-tab synchronization via storage events
   useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === 'token') setIsAuthenticated(isTokenValid());
+      if (event.key !== 'token') return;
+
+      const valid = isTokenValid();
+
+      // Token removed/replaced by another tab — same cross-user replay
+      // concern as the SESSION_INVALID handler below.
+      if (!valid) clearHttpResponseCaches();
+      setIsAuthenticated(valid);
     };
 
     window.addEventListener('storage', handleStorageChange);
@@ -139,6 +146,10 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   // 4. Event-based session invalidation from failed API calls
   useEffect(() => {
     return on(EventType.SESSION_INVALID, () => {
+      // The HTTP ETag/response cache is keyed by URL without user identity —
+      // drop it so a later login as a different user can't be served the
+      // previous user's cached bodies.
+      clearHttpResponseCaches();
       setIsAuthenticated(false);
     });
   }, []);

@@ -50,6 +50,12 @@ export interface AuthInternalContextType {
   workspaceInfoError?: Error;
   /** Retry loading workspace info after a failure. */
   retryLoadWorkspaceInfo?: () => Promise<UserWorkspaceInfo | undefined>;
+  /**
+   * Force-refresh the workspace list. Call after mutations that change it
+   * (rename/delete/leave a workspace, membership changes) so consumers of
+   * `userWorkspaceInfo` don't keep a stale snapshot.
+   */
+  refreshUserWorkspaceInfo?: () => Promise<UserWorkspaceInfo | undefined>;
 }
 
 export const AuthInternalContext = createContext<AuthInternalContextType | null>(null);
