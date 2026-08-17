@@ -224,6 +224,7 @@ describe('view-loader row document retry policy', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    mockDeleteCollabDB.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -258,6 +259,23 @@ describe('view-loader row document retry policy', () => {
 
     expect(result.doc).toBe(doc);
     expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('rejects immediately and evicts the cache when a row document fetch is forbidden', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000009';
+    const doc = createEmptyDoc(documentId);
+
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchPageCollab.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
+
+    const rejection = expect(openRowSubDocument('workspace-id', documentId)).rejects.toMatchObject({ code: 1012 });
+
+    await jest.runAllTimersAsync();
+    await rejection;
+
+    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockDeleteCollabDB).toHaveBeenCalledWith(documentId, { destroyDoc: true });
     expect(jest.getTimerCount()).toBe(0);
   });
 });

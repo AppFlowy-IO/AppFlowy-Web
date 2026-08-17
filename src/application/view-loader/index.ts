@@ -24,7 +24,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
+import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/application/utils/error-utils';
 import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -469,6 +469,17 @@ export async function openRowSubDocument(
         fetched = true;
         break;
       } catch (e) {
+        // A permission denial cannot be repaired by retrying or by creating the
+        // row document. Remove the authoritative local copy before propagating
+        // the original error so the UI can render a terminal no-access state.
+        if (isPermissionDeniedError(e)) {
+          Log.debug('[ViewLoader] rowSubDoc permission denial — evicting local cache', {
+            documentId,
+          });
+          await deleteCollabDB(documentId, { destroyDoc: true }).catch(() => undefined);
+          throw e;
+        }
+
         Log.debug('[ViewLoader] rowSubDoc fetch failed', {
           documentId,
           attempt,
