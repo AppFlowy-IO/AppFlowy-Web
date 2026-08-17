@@ -71,7 +71,11 @@ const dialogVariants = cva(
     // react-remove-scroll unmount (which releases pointer-events on body)
     'data-[state=open]:animate-in',
     'data-[state=open]:fade-in-0',
-    'data-[state=open]:zoom-in-95'
+    'data-[state=open]:zoom-in-95',
+    // Keep the -50% centering translate during the enter keyframes,
+    // otherwise the animation starts with the top-left corner at screen center
+    'data-[state=open]:slide-in-from-left-1/2',
+    'data-[state=open]:slide-in-from-top-1/2'
   ),
   {
     variants: {
