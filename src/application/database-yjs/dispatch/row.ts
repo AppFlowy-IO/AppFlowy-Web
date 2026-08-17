@@ -41,6 +41,7 @@ import {
   normalizeFilterNode,
   relationFilterFillData,
 } from '@/application/database-yjs/filter';
+import { normalizeGroupIdentifiers } from '@/application/database-yjs/group';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
@@ -726,17 +727,35 @@ export function useNewRowDispatch() {
             const cell = new Y.Map() as YDatabaseCell;
             const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
+            if (!field) return;
+
             // The raw cell payload replaces whatever a template or filter
             // wrote for this field, so any queued reciprocal backfill for it
             // would no longer match the final cell state.
             relationPrefills.delete(fieldId);
 
             const type = Number(field.get(YjsDatabaseKey.type));
+            const rawData = typeof data === 'object' ? data.data : data;
 
             cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
             cell.set(YjsDatabaseKey.field_type, type);
 
-            if (typeof data === 'object') {
+            if (type === FieldType.Relation) {
+              const relationOption = parseRelationTypeOption(field);
+              const identifiers = normalizeGroupIdentifiers(rawData);
+              const rowIds =
+                relationOption.source_limit === RelationLimit.OneOnly && identifiers.length > 1
+                  ? [identifiers[identifiers.length - 1]]
+                  : identifiers;
+              const relationData = new Y.Array<string>();
+
+              if (rowIds.length > 0) {
+                relationData.push(rowIds);
+                relationPrefills.set(fieldId, rowIds);
+              }
+
+              cell.set(YjsDatabaseKey.data, relationData);
+            } else if (typeof data === 'object') {
               cell.set(YjsDatabaseKey.data, data.data);
               cell.set(YjsDatabaseKey.end_timestamp, data.endTimestamp);
               cell.set(YjsDatabaseKey.is_range, data.isRange);

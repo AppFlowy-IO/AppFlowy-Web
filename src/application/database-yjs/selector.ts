@@ -63,7 +63,9 @@ import {
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
 import {
+  getRelationCacheRevision,
   invalidateRelationCell,
+  readRelationGroupLabel,
   readRelationCellText,
   subscribeRelationCache,
 } from '@/application/database-yjs/relation/cache';
@@ -105,6 +107,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
@@ -1714,7 +1717,14 @@ function orderDatabaseGroupsForPrimarySort(
  * observing only the database view is not sufficient when a cell is edited.
  */
 export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): DatabaseGrouping {
-  const { getCellLocalMutationRevision, hasCellLocalMutation, subscribeToCellLocalMutations } = useDatabaseContext();
+  const {
+    createRow,
+    getCellLocalMutationRevision,
+    getViewIdFromDatabaseId,
+    hasCellLocalMutation,
+    loadView,
+    subscribeToCellLocalMutations,
+  } = useDatabaseContext();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const database = useDatabase();
@@ -1724,6 +1734,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const persistedGroups = view?.get(YjsDatabaseKey.groups);
   const persistedGroup = persistedGroups?.toArray()?.[0];
   const fieldId = persistedGroup?.get(YjsDatabaseKey.field_id);
+  const persistedGroupingField = fieldId ? fields?.get(fieldId) : undefined;
+  const persistedGroupingFieldType = Number(persistedGroupingField?.get(YjsDatabaseKey.type)) as FieldType;
+  const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(persistedGroupingFieldType === FieldType.Person);
   const rawRowOrders = view?.get(YjsDatabaseKey.row_orders);
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
@@ -1839,6 +1852,11 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     getCellLocalMutationSnapshot,
     getCellLocalMutationSnapshot
   );
+  const relationGroupLabelRevision = useSyncExternalStore(
+    subscribeRelationCache,
+    getRelationCacheRevision,
+    getRelationCacheRevision
+  );
 
   const rowsHydrated = Boolean(allRowOrders && areGroupRowsHydrated(allRowOrders, groupingRows));
   const metadataSyncKey = useMemo(() => {
@@ -1867,6 +1885,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   return useMemo(() => {
     void groupingViewRevision;
     void cellLocalMutationRevision;
+    void relationGroupLabelRevision;
 
     const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
     const currentFieldId = group?.get(YjsDatabaseKey.field_id);
@@ -1974,6 +1993,30 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       primarySortCondition === undefined
         ? orderedIds
         : orderDatabaseGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
+    const identifierLabels = new Map<string, string>();
+
+    if (fieldType === FieldType.Person) {
+      mentionableUsers.forEach((person) => {
+        const label = person.name?.trim() || person.email?.trim();
+
+        if (label) identifierLabels.set(person.person_id, label);
+      });
+    } else if (fieldType === FieldType.Relation) {
+      displayIds.forEach((id) => {
+        if (id === currentFieldId) return;
+
+        const label = readRelationGroupLabel({
+          relationField: field,
+          relatedRowId: id,
+          loadView,
+          createRow,
+          getViewIdFromDatabaseId,
+        });
+
+        if (label) identifierLabels.set(id, label);
+      });
+    }
+
     const groups = displayIds.map((id): GridGroup => {
       const groupRows = result?.get(id) ?? [];
       const hidden = columnsById.get(id)?.visible === false;
@@ -1988,7 +2031,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
 
       return {
         id,
-        label: getGroupLabel(id, field, content),
+        label: getGroupLabel(id, field, content, new Date(), identifierLabels),
         rows: groupRows,
         isDefault: id === currentFieldId,
         visible: !hidden && !automaticallyHidden,
@@ -2019,12 +2062,17 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     };
   }, [
     allRowOrders,
+    createRow,
     fields,
+    getViewIdFromDatabaseId,
     groupingRows,
     groupingViewRevision,
     hasCellLocalMutation,
     layout,
+    loadView,
     metadataSyncKey,
+    mentionableUsers,
+    relationGroupLabelRevision,
     cellLocalMutationRevision,
     rowOrders,
     rowsHydrated,

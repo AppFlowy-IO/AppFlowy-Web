@@ -261,6 +261,8 @@ function generateGroupByField(field: YDatabaseField) {
     case FieldType.RichText:
     case FieldType.Number:
     case FieldType.URL:
+    case FieldType.Relation:
+    case FieldType.Person:
       group.set(YjsDatabaseKey.content, '');
       columns.push([createYDatabaseGroupColumn({ id: fieldId })]);
       break;

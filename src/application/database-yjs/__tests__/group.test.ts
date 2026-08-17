@@ -11,6 +11,7 @@ import {
   groupByCheckbox,
   groupByDate,
   groupByField,
+  groupByIdentifier,
   groupByNumber,
   groupBySelectOption,
   groupByText,
@@ -18,6 +19,8 @@ import {
   getGroupLabel,
   getNumberGroupId,
   isDatabaseGroupableFieldType,
+  isDynamicDatabaseGroupFieldType,
+  normalizeGroupIdentifiers,
 } from '@/application/database-yjs/group';
 import { DateGroupCondition, FieldType, FilterType } from '@/application/database-yjs/database.type';
 import { CheckboxFilterCondition, SelectOptionFilterCondition } from '@/application/database-yjs/fields';
@@ -32,7 +35,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-import { createCell, createField, createRowDoc } from './test-helpers';
+import { createCell, createField, createFieldWithTypeOption, createRowDoc } from './test-helpers';
 
 function createFilter(fieldId: string, condition: number, content: string = ''): YDatabaseFilter {
   const doc = new Y.Doc();
@@ -194,16 +197,85 @@ describe('desktop-model lazy conversion grouping', () => {
     expect(result?.get('opt-a')?.map((row) => row.id)).toEqual(['row-a']);
     expect(result?.get(fieldId)).toEqual([]);
   });
+
+  it('does not treat a preserved text payload as person identifiers', () => {
+    const fieldId = 'converted-person';
+    const field = createField(fieldId, FieldType.Person);
+    const rows: Row[] = [{ id: 'row-a', height: 0 }];
+    const rowMetas: Record<RowId, YDoc> = {
+      'row-a': createRowDoc('row-a', databaseId, {
+        [fieldId]: createCell(FieldType.RichText, 'person-a,person-b'),
+      }),
+    };
+
+    const result = groupByIdentifier(rows, rowMetas, field);
+
+    expect([...result.keys()]).toEqual([fieldId]);
+    expect(result.get(fieldId)?.map((row) => row.id)).toEqual(['row-a']);
+  });
 });
 
 describe('group by field fallback', () => {
   it('returns undefined for unsupported field types', () => {
     const fields = new Y.Map() as YDatabaseFields;
-    const field = createField('relation-field', FieldType.Relation);
-    fields.set('relation-field', field);
+    const field = createField('media-field', FieldType.Media);
+    fields.set('media-field', field);
 
     const result = groupByField([], {}, field);
     expect(result).toBeUndefined();
+  });
+});
+
+describe.each([
+  ['Relation', FieldType.Relation],
+  ['Person', FieldType.Person],
+] as const)('%s identifier grouping', (_name, fieldType) => {
+  const fieldId = `${String(_name).toLowerCase()}-field`;
+  const field = createField(fieldId, fieldType);
+  const rows: Row[] = ['multi', 'single', 'empty', 'duplicate'].map((id) => ({ id, height: 0 }));
+  const value = (identifiers: string[]) => (fieldType === FieldType.Person ? JSON.stringify(identifiers) : identifiers);
+  const rowMetas: Record<RowId, YDoc> = {
+    multi: createRowDoc('multi', 'identifier-db', {
+      [fieldId]: createCell(fieldType, value([' id-a ', 'id-b'])),
+    }),
+    single: createRowDoc('single', 'identifier-db', {
+      [fieldId]: createCell(fieldType, value(['id-b'])),
+    }),
+    empty: createRowDoc('empty', 'identifier-db', {
+      [fieldId]: createCell(fieldType, value([])),
+    }),
+    duplicate: createRowDoc('duplicate', 'identifier-db', {
+      [fieldId]: createCell(fieldType, value(['id-a', 'id-a', ' ', 'id-c'])),
+    }),
+  };
+
+  it('places multi-value rows in every stable, normalized identifier group', () => {
+    const result = groupByIdentifier(rows, rowMetas, field);
+
+    expect([...result.keys()]).toEqual([fieldId, 'id-a', 'id-b', 'id-c']);
+    expect(result.get('id-a')?.map(({ id }) => id)).toEqual(['multi', 'duplicate']);
+    expect(result.get('id-b')?.map(({ id }) => id)).toEqual(['multi', 'single']);
+    expect(result.get('id-c')?.map(({ id }) => id)).toEqual(['duplicate']);
+    expect(result.get(fieldId)?.map(({ id }) => id)).toEqual(['empty']);
+  });
+
+  it('moves a row between concrete and default groups after a live cell edit', () => {
+    const row = rowMetas.single.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
+
+    cell?.set(YjsDatabaseKey.data, value([]));
+    const result = groupByField(rows, rowMetas, field);
+
+    expect(result?.get('id-b')?.map(({ id }) => id)).toEqual(['multi']);
+    expect(result?.get(fieldId)?.map(({ id }) => id)).toEqual(['single', 'empty']);
+  });
+});
+
+describe('identifier normalization', () => {
+  it('accepts JSON, comma-delimited, and array values without duplicate identifiers', () => {
+    expect(normalizeGroupIdentifiers('[" a ","b","a",""]')).toEqual(['a', 'b']);
+    expect(normalizeGroupIdentifiers(' a, b, a, ')).toEqual(['a', 'b']);
+    expect(normalizeGroupIdentifiers(['a', ' a ', 'b'])).toEqual(['a', 'b']);
   });
 });
 
@@ -334,7 +406,7 @@ describe('desktop Grid dynamic grouping parity', () => {
     expect(result.get('A')?.map(({ id }) => id)).toEqual(['row-2', 'row-0']);
   });
 
-  it('supports exactly the seven desktop Grid grouping field types', () => {
+  it('supports exactly the nine desktop Grid grouping field types', () => {
     expect(
       [
         FieldType.RichText,
@@ -344,10 +416,14 @@ describe('desktop Grid dynamic grouping parity', () => {
         FieldType.SingleSelect,
         FieldType.MultiSelect,
         FieldType.DateTime,
+        FieldType.Relation,
+        FieldType.Person,
       ].every(isDatabaseGroupableFieldType)
     ).toBe(true);
-    expect(isDatabaseGroupableFieldType(FieldType.Relation)).toBe(false);
     expect(isDatabaseGroupableFieldType(FieldType.Media)).toBe(false);
+    expect(isDynamicDatabaseGroupFieldType(FieldType.Relation)).toBe(true);
+    expect(isDynamicDatabaseGroupFieldType(FieldType.Person)).toBe(true);
+    expect(isDynamicDatabaseGroupFieldType(FieldType.SingleSelect)).toBe(false);
   });
 
   it('uses desktop-compatible group labels and new-row values', () => {
@@ -358,6 +434,13 @@ describe('desktop Grid dynamic grouping parity', () => {
       disable_color: false,
       options: [{ id: 'todo', name: 'To do', color: 1 }],
     });
+    const personField = createField('assignee', FieldType.Person, {
+      persons: [{ id: 'person-a', name: 'Annie' }],
+    });
+    const splitPersonField = createFieldWithTypeOption('watchers', FieldType.Person, {
+      [YjsDatabaseKey.persons]: JSON.stringify([{ id: 'person-b', name: 'Eva' }]),
+    });
+    const relationField = createField('project', FieldType.Relation);
 
     expect(getGroupLabel('number_range_-100_0', numberField)).toBe('-100 to 0');
     expect(getGroupLabel('amount', numberField)).toBe('No Amount');
@@ -365,6 +448,15 @@ describe('desktop Grid dynamic grouping parity', () => {
     expect(getGroupCellData('number_range_200_300', numberField)).toBe('200');
     expect(getGroupCellData('status', selectField)).toBeUndefined();
     expect(getGroupCellData('2026/08/13', dateField)).toMatch(/^\d+$/);
+    expect(getGroupCellData('person-a', personField)).toBe('["person-a"]');
+    expect(getGroupCellData('row-a', relationField)).toBe('["row-a"]');
+    expect(getGroupLabel('person-a', personField)).toBe('Annie');
+    expect(getGroupLabel('person-b', splitPersonField)).toBe('Eva');
+    expect(getGroupLabel('person-missing', personField)).toBe('Unknown person');
+    expect(getGroupLabel('row-a', relationField, undefined, new Date(), new Map([['row-a', 'Project A']]))).toBe(
+      'Project A'
+    );
+    expect(getGroupLabel('row-missing', relationField)).toBe('Untitled relation');
   });
 
   it('calculates number group IDs at desktop range boundaries', () => {
@@ -442,6 +534,15 @@ describe('get group columns', () => {
     const field = createField('checkbox-field', FieldType.Checkbox);
     expect(getGroupColumns(field)).toEqual([{ id: 'Yes' }, { id: 'No' }]);
   });
+
+  it.each([FieldType.Relation, FieldType.Person])(
+    'starts identifier field type %s with only its default group',
+    (type) => {
+      const field = createField('identifier-field', type);
+
+      expect(getGroupColumns(field)).toEqual([{ id: 'identifier-field' }]);
+    }
+  );
 });
 
 describe('rows loading in a grouped board', () => {

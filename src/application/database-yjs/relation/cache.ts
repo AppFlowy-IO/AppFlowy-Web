@@ -36,6 +36,14 @@ export type RelationComputeContext = {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
 
+export type RelationGroupLabelContext = {
+  relationField: YDatabaseField;
+  relatedRowId: RowId;
+  loadView?: (viewId: string) => Promise<YDoc | null>;
+  createRow?: (rowKey: string) => Promise<YDoc>;
+  getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
+};
+
 const RELATION_CACHE_TTL_MS = 5_000;
 const RELATION_CACHE_PRUNE_INTERVAL_MS = 2_000;
 const RELATION_MAX_CONCURRENCY = 8;
@@ -71,10 +79,15 @@ class Semaphore {
 const semaphore = new Semaphore(RELATION_MAX_CONCURRENCY);
 const cache = new Map<string, RelationCacheEntry>();
 const inflight = new Map<string, Promise<RelationCellValue>>();
+const groupLabelCache = new Map<string, RelationCacheEntry>();
+const groupLabelInflight = new Map<string, Promise<RelationCellValue>>();
+const groupLabelGenerations = new Map<string, number>();
+const observedGroupLabelDocs = new WeakMap<YDoc, Set<string>>();
 const generations = new Map<string, number>();
 const listeners = new Set<() => void>();
 const relatedDocCache = new Map<string, Promise<YDoc | null>>();
 let lastPruneAt = 0;
+let relationCacheRevision = 0;
 
 function getGeneration(cellId: string) {
   return generations.get(cellId) ?? 0;
@@ -95,7 +108,40 @@ function isEntryFresh(entry: RelationCacheEntry, generation: number) {
 }
 
 function emit() {
+  relationCacheRevision += 1;
   listeners.forEach((cb) => cb());
+}
+
+function getGroupLabelGeneration(labelId: string) {
+  return groupLabelGenerations.get(labelId) ?? 0;
+}
+
+function bumpGroupLabelGeneration(labelId: string) {
+  groupLabelGenerations.set(labelId, getGroupLabelGeneration(labelId) + 1);
+  groupLabelCache.delete(labelId);
+  // The work cannot be cancelled, but removing its identity lets the next
+  // render start a fresh lookup. Its captured generation prevents a stale
+  // completion from overwriting the newer value.
+  groupLabelInflight.delete(labelId);
+}
+
+function observeGroupLabelDoc(rowDoc: YDoc, labelId: string) {
+  const observedLabels = observedGroupLabelDocs.get(rowDoc);
+
+  if (observedLabels) {
+    observedLabels.add(labelId);
+    return;
+  }
+
+  const labelIds = new Set([labelId]);
+
+  observedGroupLabelDocs.set(rowDoc, labelIds);
+  rowDoc.on('update', () => {
+    labelIds.forEach((id) => {
+      bumpGroupLabelGeneration(id);
+    });
+    emit();
+  });
 }
 
 function pruneCache(now = Date.now()) {
@@ -105,6 +151,12 @@ function pruneCache(now = Date.now()) {
   for (const [cellId, entry] of cache) {
     if (now - entry.updatedAt > RELATION_CACHE_TTL_MS) {
       cache.delete(cellId);
+    }
+  }
+
+  for (const [labelId, entry] of groupLabelCache) {
+    if (now - entry.updatedAt > RELATION_CACHE_TTL_MS) {
+      groupLabelCache.delete(labelId);
     }
   }
 }
@@ -128,10 +180,11 @@ function getPrimaryFieldId(database: YDatabase): string | undefined {
   return Array.from(fields?.keys() || []).find((fieldId) => fields?.get(fieldId)?.get(YjsDatabaseKey.is_primary));
 }
 
-async function loadRelatedDoc(
-  viewId: string,
-  loadView?: (viewId: string) => Promise<YDoc | null>
-) {
+function getDatabaseFromDoc(doc: YDoc): YDatabase | undefined {
+  return doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined;
+}
+
+async function loadRelatedDoc(viewId: string, loadView?: (viewId: string) => Promise<YDoc | null>) {
   if (!loadView) return null;
   const cached = relatedDocCache.get(viewId);
 
@@ -217,6 +270,50 @@ async function computeRelationCellValue(context: RelationComputeContext): Promis
   }
 }
 
+async function computeRelationGroupLabel(
+  context: RelationGroupLabelContext,
+  labelId: string
+): Promise<RelationCellValue> {
+  try {
+    if (Number(context.relationField.get(YjsDatabaseKey.type)) !== FieldType.Relation) {
+      return { value: '' };
+    }
+
+    const relationOption = parseRelationTypeOption(context.relationField);
+
+    if (!relationOption.database_id || !context.relatedRowId || !context.createRow) {
+      return { value: '' };
+    }
+
+    const viewId = await context.getViewIdFromDatabaseId?.(relationOption.database_id);
+
+    if (!viewId) return { value: '' };
+
+    const relatedDoc = await loadRelatedDoc(viewId, context.loadView);
+
+    if (!relatedDoc) return { value: '' };
+
+    const relatedDatabase = getDatabaseFromDoc(relatedDoc);
+    const primaryFieldId = relatedDatabase ? getPrimaryFieldId(relatedDatabase) : undefined;
+    const primaryField = primaryFieldId ? relatedDatabase?.get(YjsDatabaseKey.fields)?.get(primaryFieldId) : undefined;
+
+    if (!primaryFieldId || !primaryField) return { value: '' };
+
+    const relatedRowDoc = await context.createRow(getRowKey(relatedDoc.guid, context.relatedRowId));
+
+    observeGroupLabelDoc(relatedRowDoc, labelId);
+    const relatedRow = relatedRowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as
+      | YDatabaseRow
+      | undefined;
+    const primaryCell = relatedRow?.get(YjsDatabaseKey.cells)?.get(primaryFieldId);
+
+    return { value: primaryCell ? decodeCellToText(primaryCell, primaryField).trim() : '' };
+  } catch (error) {
+    Log.error('Failed to compute relation group label', error);
+    return { value: '' };
+  }
+}
+
 export function subscribeRelationCache(cb: () => void) {
   listeners.add(cb);
   return () => {
@@ -224,8 +321,60 @@ export function subscribeRelationCache(cb: () => void) {
   };
 }
 
+export function getRelationCacheRevision() {
+  return relationCacheRevision;
+}
+
 export function invalidateRelationCell(cellId: string) {
   bumpGeneration(cellId);
+}
+
+/**
+ * Returns the cached primary-field title immediately and starts one bounded
+ * lookup when it is missing. Consumers subscribe through relation cache so
+ * headers update without exposing relation row UUIDs while data is loading.
+ */
+export function readRelationGroupLabel(context: RelationGroupLabelContext): string {
+  pruneCache();
+  const databaseId = parseRelationTypeOption(context.relationField).database_id;
+
+  if (!databaseId || !context.relatedRowId) return '';
+
+  const labelId = `${databaseId}:${context.relatedRowId}`;
+  const generation = getGroupLabelGeneration(labelId);
+  const cached = groupLabelCache.get(labelId);
+
+  if (cached && isEntryFresh(cached, generation)) return cached.value;
+
+  if (!groupLabelInflight.has(labelId)) {
+    const promise = (async () => {
+      const release = await semaphore.acquire();
+
+      try {
+        const value = await computeRelationGroupLabel(context, labelId);
+
+        if (getGroupLabelGeneration(labelId) === generation) {
+          groupLabelCache.set(labelId, {
+            value: value.value,
+            generation,
+            updatedAt: Date.now(),
+          });
+          emit();
+        }
+
+        return value;
+      } finally {
+        release();
+        if (getGroupLabelGeneration(labelId) === generation) {
+          groupLabelInflight.delete(labelId);
+        }
+      }
+    })();
+
+    groupLabelInflight.set(labelId, promise);
+  }
+
+  return cached?.value ?? '';
 }
 
 export function readRelationCellText(context: RelationComputeContext): string {

@@ -5,6 +5,7 @@ import { DatabaseContext, DatabaseContextState } from '@/application/database-yj
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { TextFilterCondition } from '@/application/database-yjs/fields';
+import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { DatabaseRowTemplateStore } from '@/application/database-yjs/template';
 import {
@@ -124,6 +125,42 @@ function createWrapper(context: DatabaseContextState): ({ children }: { children
 }
 
 describe('useNewRowDispatch database templates', () => {
+  it('writes grouped relation prefills as canonical relation data before reciprocal handling', async () => {
+    const { doc, database } = createDatabaseDoc();
+    const relationFieldId = 'relation-field-id';
+    const relationField = createRelationField(relationFieldId);
+
+    database.get(YjsDatabaseKey.fields)?.set(relationFieldId, relationField);
+    const createdRows = new Map<string, YDoc>();
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow: async (key) => {
+        const rowDoc = new Y.Doc({ guid: key }) as YDoc;
+
+        createdRows.set(key, rowDoc);
+        return rowDoc;
+      },
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = (await result.current({
+        cellsData: { [relationFieldId]: '[" related-row ","related-row"]' },
+      })) as string;
+    });
+
+    const data = cellData(createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc, relationFieldId);
+
+    expect(data).toBeInstanceOf(Y.Array);
+    expect((data as Y.Array<string>).toJSON()).toEqual(['related-row']);
+  });
+
   it('uses an explicit template and lets contextual cells override defaults in every view', async () => {
     const { doc, database } = createDatabaseDoc();
     const template = addTemplate(database);

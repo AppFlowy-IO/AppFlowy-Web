@@ -1,3 +1,5 @@
+import { renderHook, waitFor } from '@testing-library/react';
+import { useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -8,7 +10,12 @@ import { CalculationType, FieldType, RollupDisplayMode } from '@/application/dat
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
-import { readRelationCellText, subscribeRelationCache } from '@/application/database-yjs/relation/cache';
+import {
+  getRelationCacheRevision,
+  readRelationCellText,
+  readRelationGroupLabel,
+  subscribeRelationCache,
+} from '@/application/database-yjs/relation/cache';
 import { readRollupCellSync, subscribeRollupCell } from '@/application/database-yjs/rollup/cache';
 import {
   YDatabase,
@@ -60,11 +67,7 @@ function createCell(data: unknown, fieldType: FieldType): YDatabaseCell {
   return cell;
 }
 
-function createRowDoc(
-  rowId: string,
-  databaseId: string,
-  cellMap: Record<string, YDatabaseCell>
-): YDoc {
+function createRowDoc(rowId: string, databaseId: string, cellMap: Record<string, YDatabaseCell>): YDoc {
   const doc = new Y.Doc() as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const row = new Y.Map() as YDatabaseRow;
@@ -143,9 +146,7 @@ function createFixture({
   const baseRowDoc = createRowDoc(baseRowId, baseDatabaseId, {
     [relationFieldId]: createCell(relationIds, FieldType.Relation),
   });
-  const baseRow = baseRowDoc
-    .getMap(YjsEditorKey.data_section)
-    .get(YjsEditorKey.database_row) as YDatabaseRow;
+  const baseRow = baseRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
   const createRow = async (rowKey: string) => {
     const rowId = rowKey.includes('_rows_') ? rowKey.split('_rows_').pop() ?? '' : rowKey;
@@ -155,25 +156,19 @@ function createFixture({
   const getViewIdFromDatabaseId = async (databaseId: string) =>
     databaseId === relatedDatabaseId ? relatedViewId : null;
 
-  const baseDatabase = baseDoc
-    .getMap(YjsEditorKey.data_section)
-    .get(YjsEditorKey.database) as YDatabase;
+  const baseDatabase = baseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
 
-  const integratedRelationField = baseDatabase
-    .get(YjsDatabaseKey.fields)
-    ?.get(relationFieldId) as YDatabaseField | undefined;
+  const integratedRelationField = baseDatabase.get(YjsDatabaseKey.fields)?.get(relationFieldId) as
+    | YDatabaseField
+    | undefined;
   const integratedRelationOption = integratedRelationField
     ?.get(YjsDatabaseKey.type_option)
     ?.get(String(FieldType.Relation));
   integratedRelationOption?.set(YjsDatabaseKey.database_id, relatedDatabaseId);
 
   rollups.forEach((rollupConfig) => {
-    const rollupField = baseDatabase
-      .get(YjsDatabaseKey.fields)
-      ?.get(rollupConfig.fieldId) as YDatabaseField | undefined;
-    const rollupOption = rollupField
-      ?.get(YjsDatabaseKey.type_option)
-      ?.get(String(FieldType.Rollup));
+    const rollupField = baseDatabase.get(YjsDatabaseKey.fields)?.get(rollupConfig.fieldId) as YDatabaseField | undefined;
+    const rollupOption = rollupField?.get(YjsDatabaseKey.type_option)?.get(String(FieldType.Rollup));
     rollupOption?.set(YjsDatabaseKey.relation_field_id, relationFieldId);
     rollupOption?.set(YjsDatabaseKey.target_field_id, rollupConfig.targetFieldId);
     rollupOption?.set(YjsDatabaseKey.calculation_type, rollupConfig.calculationType);
@@ -199,6 +194,159 @@ function createFixture({
 }
 
 describe('relation and rollup basics', () => {
+  it('observes a group-label resolution that emits between render and subscription', async () => {
+    const fixture = createFixture({ suffix: 'group-label-external-store' });
+    const context = {
+      relationField: fixture.relationField,
+      relatedRowId: fixture.relatedRowIds[0],
+      loadView: fixture.loadView,
+      createRow: fixture.createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+    const initialRevision = getRelationCacheRevision();
+    const { result } = renderHook(() => {
+      const revision = useSyncExternalStore(subscribeRelationCache, getRelationCacheRevision, getRelationCacheRevision);
+
+      return { label: readRelationGroupLabel(context), revision };
+    });
+
+    expect(result.current.label).toBe('');
+    await waitFor(() => expect(result.current.label).toBe('Alice'));
+    expect(result.current.revision).toBeGreaterThan(initialRevision);
+  });
+
+  it('resolves a relation group identifier to the related primary title', async () => {
+    const fixture = createFixture({ suffix: 'group-label' });
+    const context = {
+      relationField: fixture.relationField,
+      relatedRowId: fixture.relatedRowIds[0],
+      loadView: fixture.loadView,
+      createRow: fixture.createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+
+    const resultPromise = new Promise<string>((resolve) => {
+      const unsubscribe = subscribeRelationCache(() => {
+        const value = readRelationGroupLabel(context);
+
+        if (!value) return;
+        unsubscribe();
+        resolve(value);
+      });
+    });
+
+    expect(readRelationGroupLabel(context)).toBe('');
+    await expect(resultPromise).resolves.toBe('Alice');
+  });
+
+  it('refreshes a relation group label when the related primary cell changes', async () => {
+    const fixture = createFixture({ suffix: 'live-group-label' });
+    const relatedRowId = fixture.relatedRowIds[0];
+    const context = {
+      relationField: fixture.relationField,
+      relatedRowId,
+      loadView: fixture.loadView,
+      createRow: fixture.createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+    const initial = new Promise<string>((resolve) => {
+      const unsubscribe = subscribeRelationCache(() => {
+        const value = readRelationGroupLabel(context);
+
+        if (!value) return;
+        unsubscribe();
+        resolve(value);
+      });
+    });
+
+    readRelationGroupLabel(context);
+    await expect(initial).resolves.toBe('Alice');
+
+    const updated = new Promise<string>((resolve) => {
+      const unsubscribe = subscribeRelationCache(() => {
+        const value = readRelationGroupLabel(context);
+
+        if (value !== 'Alicia') return;
+        unsubscribe();
+        resolve(value);
+      });
+    });
+    const relatedRowDoc = await fixture.createRow(`${fixture.relatedViewId}_rows_${relatedRowId}`);
+    const relatedRow = relatedRowDoc?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    relatedRow.get(YjsDatabaseKey.cells).get(fixture.primaryFieldId)?.set(YjsDatabaseKey.data, 'Alicia');
+
+    await expect(updated).resolves.toBe('Alicia');
+  });
+
+  it('does not let stale in-flight label work overwrite a newer related title', async () => {
+    const fixture = createFixture({ suffix: 'group-label-race' });
+    const relatedRowId = fixture.relatedRowIds[0];
+    const canonicalRowDoc = await fixture.createRow(`${fixture.relatedViewId}_rows_${relatedRowId}`);
+    const staleRowDoc = createRowDoc(relatedRowId, fixture.relatedDatabaseId, {
+      [fixture.primaryFieldId]: createCell('Alice', FieldType.RichText),
+    });
+    let createRowCall = 0;
+    let releaseStaleLookup: ((rowDoc: YDoc) => void) | undefined;
+    let markStaleLookupStarted: (() => void) | undefined;
+    const staleLookupStarted = new Promise<void>((resolve) => {
+      markStaleLookupStarted = resolve;
+    });
+    const staleLookup = new Promise<YDoc>((resolve) => {
+      releaseStaleLookup = resolve;
+    });
+    const context = {
+      relationField: fixture.relationField,
+      relatedRowId,
+      loadView: fixture.loadView,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+      createRow: async () => {
+        createRowCall += 1;
+
+        if (createRowCall === 2) {
+          markStaleLookupStarted?.();
+          return staleLookup;
+        }
+
+        return canonicalRowDoc as YDoc;
+      },
+    };
+    const waitForLabel = (expected: string) =>
+      new Promise<string>((resolve) => {
+        const unsubscribe = subscribeRelationCache(() => {
+          const value = readRelationGroupLabel(context);
+
+          if (value !== expected) return;
+          unsubscribe();
+          resolve(value);
+        });
+
+        readRelationGroupLabel(context);
+      });
+
+    await expect(waitForLabel('Alice')).resolves.toBe('Alice');
+
+    const canonicalPrimaryCell = canonicalRowDoc
+      ?.getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database_row)
+      ?.get(YjsDatabaseKey.cells)
+      .get(fixture.primaryFieldId);
+
+    canonicalPrimaryCell?.set(YjsDatabaseKey.data, 'Alicia');
+    readRelationGroupLabel(context);
+    await staleLookupStarted;
+
+    canonicalPrimaryCell?.set(YjsDatabaseKey.data, 'Beatrice');
+    const newestLabel = waitForLabel('Beatrice');
+
+    await expect(newestLabel).resolves.toBe('Beatrice');
+    releaseStaleLookup?.(staleRowDoc);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(readRelationGroupLabel(context)).toBe('Beatrice');
+  });
+
   it('resolves relation cell text from related primary field values', async () => {
     const fixture = createFixture({ suffix: 'relation' });
     const relationOption = parseRelationTypeOption(fixture.relationField);
