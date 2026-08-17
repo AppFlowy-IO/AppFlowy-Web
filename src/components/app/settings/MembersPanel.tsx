@@ -12,6 +12,7 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { PersonAvatar } from '@/components/app/share/PersonAvatar';
 import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 import {
   getWorkspaceMemberUid,
@@ -44,6 +45,7 @@ import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { SearchInput } from '@/components/ui/search-input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { cn } from '@/lib/utils';
 import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 
 import type { TFunction } from 'i18next';
@@ -648,38 +650,53 @@ function MembersPanelForWorkspace({
                 ) : (
                   <>
                     <div className='flex items-center justify-end gap-2'>
-                      {groups.length > 0 &&
-                        (showGroupSearch ? (
-                          <SearchInput
-                            value={groupSearch}
-                            inputRef={groupSearchInputRef}
-                            name='workspace-group-search'
-                            aria-label={t('settings.appearance.people.searchGroups')}
-                            autoComplete='off'
-                            onChange={(e) => setGroupSearch(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key !== 'Escape') return;
+                      {groups.length > 0 && (
+                        // Same expand/collapse motion as the desktop database
+                        // toolbar search: the box grows leftward from the right
+                        // edge over 150ms while the incoming child fades in.
+                        <div
+                          className={cn(
+                            'flex h-8 shrink-0 items-center justify-end overflow-hidden transition-[width] duration-150 ease-out motion-reduce:transition-none',
+                            showGroupSearch ? 'w-[260px]' : 'w-8'
+                          )}
+                        >
+                          {showGroupSearch ? (
+                            <SearchInput
+                              value={groupSearch}
+                              inputRef={groupSearchInputRef}
+                              name='workspace-group-search'
+                              aria-label={t('settings.appearance.people.searchGroups')}
+                              autoComplete='off'
+                              onChange={(e) => setGroupSearch(e.target.value)}
+                              onBlur={() => {
+                                // Keep an in-progress query open on blur.
+                                if (!groupSearch.trim()) setShowGroupSearch(false);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key !== 'Escape') return;
 
-                              e.preventDefault();
-                              setGroupSearch('');
-                              setShowGroupSearch(false);
-                            }}
-                            placeholder={t('settings.appearance.people.searchGroupsByName')}
-                            className='h-8 w-[260px] [&>svg]:h-4 [&>svg]:w-4'
-                          />
-                        ) : (
-                          <Button
-                            type='button'
-                            variant='ghost'
-                            size='icon-lg'
-                            onClick={() => setShowGroupSearch(true)}
-                            aria-label={t('settings.appearance.people.searchGroups')}
-                            data-testid='people-groups-open-search-button'
-                            className='focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                          >
-                            <SearchIcon aria-hidden='true' className='h-5 w-5' />
-                          </Button>
-                        ))}
+                                e.preventDefault();
+                                setGroupSearch('');
+                                setShowGroupSearch(false);
+                              }}
+                              placeholder={t('settings.appearance.people.searchGroupsByName')}
+                              className='h-8 w-[260px] shrink-0 duration-150 animate-in fade-in [&>svg]:h-4 [&>svg]:w-4'
+                            />
+                          ) : (
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='icon-lg'
+                              onClick={() => setShowGroupSearch(true)}
+                              aria-label={t('settings.appearance.people.searchGroups')}
+                              data-testid='people-groups-open-search-button'
+                              className='shrink-0 duration-150 animate-in fade-in focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-theme-thick'
+                            >
+                              <SearchIcon aria-hidden='true' className='h-4 w-4' />
+                            </Button>
+                          )}
+                        </div>
+                      )}
                       <Button
                         type='button'
                         size='lg'
@@ -955,13 +972,12 @@ function CreateGroupMemberPicker({
   onRemoveMember,
 }: CreateGroupMemberPickerProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const visibleMembers = addableMembers.slice(0, 8);
   const hasSearch = search.trim().length > 0;
 
   return (
     <div className='flex flex-col'>
       <div
-        className='cursor-text rounded-400 border border-border-primary bg-fill-content px-2 py-1 transition-colors hover:border-border-primary-hover focus-within:border-border-theme-thick focus-within:ring-[0.5px] focus-within:ring-border-theme-thick'
+        className='cursor-text rounded-400 border border-border-primary bg-fill-content px-2 py-1 transition-colors focus-within:border-border-theme-thick focus-within:ring-[0.5px] focus-within:ring-border-theme-thick hover:border-border-primary-hover'
         onClick={() => inputRef.current?.focus()}
         data-testid='create-group-member-picker'
       >
@@ -971,16 +987,13 @@ function CreateGroupMemberPicker({
           return (
             <div
               key={getWorkspaceMemberUid(member) ?? member.email}
-              className='flex items-center gap-3 rounded-300 px-2 py-2'
+              className='flex items-center gap-2 rounded-300 px-2 py-1.5'
             >
-              <Avatar size='md'>
-                <AvatarImage src={member.avatar_url} alt={displayName} />
-                <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
-              </Avatar>
-              <div className='min-w-0 flex-1'>
-                <div className='truncate text-sm font-medium text-text-primary'>{displayName}</div>
+              <PersonAvatar avatarUrl={member.avatar_url} name={displayName} />
+              <div className='flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden'>
+                <div className='truncate text-sm text-text-primary'>{displayName}</div>
                 {member.email !== displayName && (
-                  <div className='truncate text-xs text-text-secondary'>{member.email}</div>
+                  <div className='truncate whitespace-nowrap text-xs text-text-secondary'>{member.email}</div>
                 )}
               </div>
               <button
@@ -1020,7 +1033,10 @@ function CreateGroupMemberPicker({
               }
 
               if (e.key === 'Enter') {
-                const firstAvailableMember = visibleMembers.find((member) => getWorkspaceMemberUid(member));
+                // The list is shown unfiltered before the user types, so only
+                // treat Enter as "add the top match" once there is a query.
+                if (!hasSearch) return;
+                const firstAvailableMember = addableMembers.find((member) => getWorkspaceMemberUid(member));
 
                 if (!firstAvailableMember) return;
                 e.preventDefault();
@@ -1037,43 +1053,41 @@ function CreateGroupMemberPicker({
         </div>
       </div>
 
-      {hasSearch && (
-        <div
-          className='mt-2 max-h-[240px] overflow-y-auto overscroll-contain rounded-400 border border-border-primary bg-surface-primary p-2 shadow-dialog'
-          aria-live='polite'
-        >
-          {visibleMembers.length === 0 ? (
-            <div className='px-3 py-2 text-sm text-text-tertiary'>{noResultsLabel}</div>
-          ) : (
-            visibleMembers.map((member) => {
-              const uid = getWorkspaceMemberUid(member);
-              const displayName = workspaceMemberDisplayName(member);
-              const showEmail = Boolean(member.email && member.email !== displayName);
+      <div
+        className='mt-2 max-h-[240px] space-y-1 overflow-y-auto overscroll-contain rounded-400 border border-border-primary bg-surface-primary p-2 shadow-dialog'
+        aria-live='polite'
+        data-testid='create-group-member-results'
+      >
+        {addableMembers.length === 0 ? (
+          <div className='px-3 py-2 text-sm text-text-tertiary'>{noResultsLabel}</div>
+        ) : (
+          addableMembers.map((member) => {
+            const uid = getWorkspaceMemberUid(member);
+            const displayName = workspaceMemberDisplayName(member);
+            const showEmail = Boolean(member.email && member.email !== displayName);
 
-              return (
-                <button
-                  key={`${member.email}-${uid ?? 'missing-uid'}`}
-                  type='button'
-                  className='flex w-full items-center gap-3 rounded-300 px-3 py-2 text-left hover:bg-fill-content-hover focus-visible:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:cursor-not-allowed disabled:opacity-50'
-                  onClick={() => onAddMember(member)}
-                  disabled={disabled || !uid}
-                  title={!uid ? unavailableTitle : undefined}
-                  data-testid='create-group-member-search-result'
-                >
-                  <Avatar size='md'>
-                    <AvatarImage src={member.avatar_url} alt={displayName} />
-                    <AvatarFallback name={displayName}>{fallbackInitial(displayName)}</AvatarFallback>
-                  </Avatar>
-                  <div className='min-w-0 flex-1'>
-                    <div className='truncate text-sm font-semibold text-text-primary'>{displayName}</div>
-                    {showEmail && <div className='truncate text-xs text-text-secondary'>{member.email}</div>}
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
+            return (
+              <button
+                key={`${member.email}-${uid ?? 'missing-uid'}`}
+                type='button'
+                className='flex w-full items-center gap-2 rounded-300 px-2 py-1.5 text-left hover:bg-fill-content-hover focus-visible:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:cursor-not-allowed disabled:opacity-50'
+                onClick={() => onAddMember(member)}
+                disabled={disabled || !uid}
+                title={!uid ? unavailableTitle : undefined}
+                data-testid='create-group-member-search-result'
+              >
+                <PersonAvatar avatarUrl={member.avatar_url} name={displayName} />
+                <div className='flex min-w-0 flex-1 flex-col gap-0.5 overflow-hidden'>
+                  <div className='truncate text-sm text-text-primary'>{displayName}</div>
+                  {showEmail && (
+                    <div className='truncate whitespace-nowrap text-xs text-text-secondary'>{member.email}</div>
+                  )}
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
@@ -1101,6 +1115,7 @@ function CreateGroupModal({ open, workspaceId, workspaceMembers, onClose, onCrea
     excludedEmails: selectedMemberEmailSet,
     excludedRoles: GROUP_EXCLUDED_WORKSPACE_ROLES,
     excludePending: true,
+    listAllWhenEmpty: true,
   });
 
   const handleAddMember = useCallback(

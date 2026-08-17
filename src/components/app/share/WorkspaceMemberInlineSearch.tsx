@@ -37,6 +37,12 @@ interface UseAddableWorkspaceMembersArgs {
   excludedEmails?: Set<string>;
   excludedRoles?: Role[];
   excludePending?: boolean;
+  /**
+   * When true, an empty search yields every addable member instead of nothing.
+   * Pickers that render their list up front opt in; type-ahead callers that
+   * only reveal results once the user types leave it off.
+   */
+  listAllWhenEmpty?: boolean;
 }
 
 export function useAddableWorkspaceMembers({
@@ -46,18 +52,21 @@ export function useAddableWorkspaceMembers({
   excludedEmails,
   excludedRoles = EMPTY_EXCLUDED_ROLES,
   excludePending = false,
+  listAllWhenEmpty = false,
 }: UseAddableWorkspaceMembersArgs): WorkspaceMember[] {
   const normalizedSearch = search.trim().toLowerCase();
   const excludedRoleSet = useMemo(() => new Set(excludedRoles), [excludedRoles]);
 
   return useMemo(() => {
-    if (!normalizedSearch) return [];
+    if (!normalizedSearch && !listAllWhenEmpty) return [];
 
     return workspaceMembers.filter((member) => {
       const uid = getWorkspaceMemberUid(member);
       const email = member.email.trim().toLowerCase();
       const matchesSearch =
-        workspaceMemberDisplayName(member).toLowerCase().includes(normalizedSearch) || email.includes(normalizedSearch);
+        !normalizedSearch ||
+        workspaceMemberDisplayName(member).toLowerCase().includes(normalizedSearch) ||
+        email.includes(normalizedSearch);
 
       if (!matchesSearch) return false;
       if (uid && excludedUids.has(uid)) return false;
@@ -67,7 +76,15 @@ export function useAddableWorkspaceMembers({
 
       return true;
     });
-  }, [excludePending, excludedEmails, excludedRoleSet, excludedUids, normalizedSearch, workspaceMembers]);
+  }, [
+    excludePending,
+    excludedEmails,
+    excludedRoleSet,
+    excludedUids,
+    listAllWhenEmpty,
+    normalizedSearch,
+    workspaceMembers,
+  ]);
 }
 
 interface WorkspaceMemberInlineSearchProps {
