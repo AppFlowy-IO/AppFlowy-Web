@@ -932,7 +932,6 @@ interface CreateGroupMemberPickerProps {
   selectedMembers: WorkspaceMember[];
   addableMembers: WorkspaceMember[];
   disabled?: boolean;
-  noMembersLabel: string;
   searchPlaceholder: string;
   noResultsLabel: string;
   unavailableTitle: string;
@@ -947,7 +946,6 @@ function CreateGroupMemberPicker({
   selectedMembers,
   addableMembers,
   disabled = false,
-  noMembersLabel,
   searchPlaceholder,
   noResultsLabel,
   unavailableTitle,
@@ -963,7 +961,8 @@ function CreateGroupMemberPicker({
   return (
     <div className='flex flex-col'>
       <div
-        className='rounded-300 bg-fill-content px-2 py-1 focus-within:ring-1 focus-within:ring-border-theme-thick'
+        className='cursor-text rounded-400 border border-border-primary bg-fill-content px-2 py-1 transition-colors hover:border-border-primary-hover focus-within:border-border-theme-thick focus-within:ring-[0.5px] focus-within:ring-border-theme-thick'
+        onClick={() => inputRef.current?.focus()}
         data-testid='create-group-member-picker'
       >
         {selectedMembers.map((member) => {
@@ -999,40 +998,43 @@ function CreateGroupMemberPicker({
             </div>
           );
         })}
-        <input
-          id='create-group-member-search-input'
-          ref={inputRef}
-          name='workspace-group-member-search'
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              onSearchChange('');
-              inputRef.current?.blur();
-              return;
-            }
+        <div className='flex items-center gap-2 px-2'>
+          <SearchIcon aria-hidden='true' className='h-4 w-4 shrink-0 text-icon-secondary' />
+          <input
+            id='create-group-member-search-input'
+            ref={inputRef}
+            name='workspace-group-member-search'
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                onSearchChange('');
+                inputRef.current?.blur();
+                return;
+              }
 
-            if (e.key === 'Backspace' && !search && selectedMembers.length > 0) {
-              onRemoveMember(selectedMembers[selectedMembers.length - 1]);
-              return;
-            }
+              if (e.key === 'Backspace' && !search && selectedMembers.length > 0) {
+                onRemoveMember(selectedMembers[selectedMembers.length - 1]);
+                return;
+              }
 
-            if (e.key === 'Enter') {
-              const firstAvailableMember = visibleMembers.find((member) => getWorkspaceMemberUid(member));
+              if (e.key === 'Enter') {
+                const firstAvailableMember = visibleMembers.find((member) => getWorkspaceMemberUid(member));
 
-              if (!firstAvailableMember) return;
-              e.preventDefault();
-              onAddMember(firstAvailableMember);
-            }
-          }}
-          disabled={disabled}
-          placeholder={selectedMembers.length === 0 ? noMembersLabel : searchPlaceholder}
-          aria-label={searchPlaceholder}
-          autoComplete='off'
-          className='h-10 w-full bg-transparent px-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed'
-          data-testid='create-group-member-search-input'
-        />
+                if (!firstAvailableMember) return;
+                e.preventDefault();
+                onAddMember(firstAvailableMember);
+              }
+            }}
+            disabled={disabled}
+            placeholder={searchPlaceholder}
+            aria-label={searchPlaceholder}
+            autoComplete='off'
+            className='h-10 w-full min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed'
+            data-testid='create-group-member-search-input'
+          />
+        </div>
       </div>
 
       {hasSearch && (
@@ -1258,8 +1260,7 @@ function CreateGroupModal({ open, workspaceId, workspaceMembers, onClose, onCrea
                   selectedMembers={selectedMembers}
                   addableMembers={addableWorkspaceMembers}
                   disabled={creating}
-                  noMembersLabel={t('settings.appearance.people.noMembersYet')}
-                  searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
+                  searchPlaceholder={t('settings.appearance.people.typeToSearchMembers')}
                   noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
                   unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
                   removeMemberLabel={t('settings.appearance.people.removeFromGroup')}

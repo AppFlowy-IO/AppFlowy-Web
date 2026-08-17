@@ -1669,6 +1669,7 @@
         "addUserToGroupTooltip": "Add {{email}} to group",
         "filterUsers": "Filter users",
         "searchWorkspaceMembers": "Search workspace members",
+        "typeToSearchMembers": "Type to search members",
         "notInGroup": "Not in group",
         "groupMembersCount_zero": "{{count}} members",
         "groupMembersCount_one": "{{count}} member",
