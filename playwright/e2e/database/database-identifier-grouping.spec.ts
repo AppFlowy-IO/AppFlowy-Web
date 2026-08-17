@@ -1,35 +1,39 @@
 /**
  * Relation and Person grouping coverage for multi-value identifier fields.
  *
- * Both scenarios create isolated databases. The Person fixture uses the real
- * member IDs in Nathan's seeded workspace and deletes its temporary database;
- * the Relation fixture runs in a fresh test account. Number grouping remains
- * covered by database-grid-grouping.spec.ts.
+ * Both scenarios use Nathan's seeded workspaces without changing a shared
+ * database view. Relation grouping creates and deletes a temporary view of the
+ * seeded 03_epics database. Person grouping creates and deletes a temporary
+ * database populated with the real workspace member IDs. Number grouping
+ * remains covered by database-grid-grouping.spec.ts.
  */
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 
-import { signInAndWaitForApp, signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
+import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { waitForGridReady } from '../../support/database-ui-helpers';
-import { deletePageByExactText } from '../../support/duplicate-test-helpers';
+import { openPageByExactText } from '../../support/duplicate-test-helpers';
 import { addFieldWithType, setupFieldTypeTest } from '../../support/field-type-helpers';
+import { createNamedGridDatabase } from '../../support/relation-test-helpers';
 import {
-  createNamedGridDatabase,
-  createOneWayRelationField,
-  setRelationCellDirect,
-} from '../../support/relation-test-helpers';
-import { FieldType, WorkspaceSelectors } from '../../support/selectors';
-import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
+  DatabaseViewSelectors,
+  FieldType,
+  HeaderSelectors,
+  ModalSelectors,
+  ViewActionSelectors,
+  WorkspaceSelectors,
+} from '../../support/selectors';
+import { expandSpaceByName } from '../../support/page/flows';
+import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const SEEDED_USER_EMAIL = process.env.SEEDED_USER_EMAIL || 'nathan@appflowy.io';
 const SEEDED_USER_PASSWORD = process.env.SEEDED_USER_PASSWORD || 'AppFlowy!@123';
 const PERSON_WORKSPACE_NAME = 'nathan workspace';
+const RELATION_WORKSPACE_NAME = 'project_templates';
+const RELATION_SPACE_NAME = 'Project Management';
+const RELATION_DATABASE_NAME = '03_epics';
 
 const gridGroupHeaders = (page: Page) => page.locator('[data-testid^="grid-group-header-"]');
-const groupHeaderByLabel = (page: Page, label: string) =>
-  gridGroupHeaders(page).filter({
-    has: page.getByText(label, { exact: true }),
-  });
 
 async function openGridGroupSettings(page: Page) {
   await page.getByTestId('database-actions-settings').click();
@@ -58,6 +62,158 @@ async function expectRowInExactlyTheseGroups(row: Locator, expectedGroupIds: str
   );
 
   expect([...actualGroupIds].sort()).toEqual([...expectedGroupIds].sort());
+}
+
+type ExpectedGridGroupDisplay = {
+  groupId: string;
+  label: string;
+  rows: Array<{ rowId: string; title: string }>;
+};
+
+async function expectFinalGroupedGridDisplay(
+  page: Page,
+  expectedGroups: ExpectedGridGroupDisplay[],
+  options: { exactGroups?: boolean } = {}
+) {
+  const exactGroups = options.exactGroups ?? true;
+
+  if (exactGroups) {
+    await expect(gridGroupHeaders(page)).toHaveCount(expectedGroups.length);
+    await expect
+      .poll(() =>
+        gridGroupHeaders(page).evaluateAll((headers) =>
+          headers.map((header) => header.getAttribute('data-group-id') || '').sort()
+        )
+      )
+      .toEqual(expectedGroups.map(({ groupId }) => groupId).sort());
+  }
+
+  const expectedRowKeys: string[] = [];
+
+  for (const group of expectedGroups) {
+    const header = page.getByTestId(`grid-group-header-${group.groupId}`);
+
+    await expect(header).toBeVisible();
+    await expect(header.getByText(group.label, { exact: true })).toBeVisible();
+    await expect(header.getByTestId('grid-group-row-count')).toHaveText(String(group.rows.length));
+
+    for (const row of group.rows) {
+      const rowKey = `group:${group.groupId}:row:${row.rowId}`;
+      const renderedRow = page.locator(`[data-testid="grid-row-${row.rowId}"][data-row-key="${rowKey}"]`);
+
+      expectedRowKeys.push(rowKey);
+      await expect(renderedRow).toHaveCount(1);
+      await expect(renderedRow).toContainText(row.title);
+    }
+  }
+
+  if (exactGroups) {
+    await expect
+      .poll(() =>
+        page
+          .locator('[data-testid^="grid-row-"][data-row-key^="group:"][data-row-key*=":row:"]')
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute('data-row-key') || '').sort())
+      )
+      .toEqual(expectedRowKeys.sort());
+  }
+}
+
+async function createTemporaryGridView(page: Page) {
+  const existingViewIds = await DatabaseViewSelectors.viewTab(page).evaluateAll((tabs) =>
+    tabs.map((tab) => tab.getAttribute('data-testid') || '')
+  );
+
+  await DatabaseViewSelectors.addViewButton(page).click({ force: true });
+  await DatabaseViewSelectors.viewTypeOption(page, 'Grid').click({ force: true });
+  await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(existingViewIds.length + 1, { timeout: 20000 });
+
+  const activeTab = DatabaseViewSelectors.activeViewTab(page);
+
+  await expect(activeTab).toBeVisible({ timeout: 20000 });
+  const testId = await activeTab.getAttribute('data-testid');
+  const viewId = testId?.replace('view-tab-', '') || '';
+
+  if (!viewId || existingViewIds.includes(`view-tab-${viewId}`)) {
+    throw new Error(`Expected a newly created active Grid view, received ${String(testId)}`);
+  }
+
+  await waitForGridReady(page);
+  return viewId;
+}
+
+async function deleteDatabaseView(page: Page, viewId: string) {
+  const tab = DatabaseViewSelectors.viewTab(page, viewId);
+
+  if ((await tab.count()) === 0) return;
+
+  await tab.click({ button: 'right', force: true });
+  await expect(DatabaseViewSelectors.tabActionDelete(page)).toBeVisible({ timeout: 10000 });
+  await DatabaseViewSelectors.tabActionDelete(page).click({ force: true });
+  await expect(DatabaseViewSelectors.deleteViewConfirmButton(page)).toBeVisible({ timeout: 10000 });
+  await DatabaseViewSelectors.deleteViewConfirmButton(page).click({ force: true });
+  await expect(tab).toHaveCount(0, { timeout: 20000 });
+}
+
+async function deleteCurrentPage(page: Page, pageName: string) {
+  await HeaderSelectors.moreActionsButton(page).click({ force: true });
+  await expect(ViewActionSelectors.deleteButton(page)).toBeVisible({ timeout: 10000 });
+  await ViewActionSelectors.deleteButton(page).click({ force: true });
+
+  const confirmButton = ModalSelectors.confirmDeleteButton(page);
+
+  if (await confirmButton.isVisible().catch(() => false)) {
+    await confirmButton.click({ force: true });
+  }
+
+  await expect(page.getByTestId('page-title-input').filter({ hasText: pageName })).toHaveCount(0, { timeout: 30000 });
+}
+
+async function gridRowIdByTitle(page: Page, title: string) {
+  const row = page.locator('[data-testid^="grid-row-"]').filter({ hasText: title }).first();
+
+  await expect(row).toBeVisible({ timeout: 20000 });
+  const testId = await row.getAttribute('data-testid');
+  const rowId = testId?.replace('grid-row-', '') || '';
+
+  if (!rowId) throw new Error(`Could not resolve the row ID for ${title}`);
+  return rowId;
+}
+
+async function databaseFieldIdByName(page: Page, fieldName: string) {
+  let fieldId = '';
+
+  await expect
+    .poll(
+      async () => {
+        fieldId = await page.evaluate((expectedName) => {
+          const database = (window as any).__TEST_DATABASE_CONTEXT__?.databaseDoc?.getMap('data').get('database');
+          const fields = database?.get('fields');
+          let match = '';
+
+          fields?.forEach((field: any, id: string) => {
+            if (field.get('name') === expectedName) match = id;
+          });
+          return match;
+        }, fieldName);
+        return fieldId;
+      },
+      { timeout: 20000, message: `Waiting for the ${fieldName} database field` }
+    )
+    .not.toBe('');
+
+  return fieldId;
+}
+
+async function groupIdByLabel(page: Page, label: string) {
+  const header = gridGroupHeaders(page)
+    .filter({ has: page.getByText(label, { exact: true }) })
+    .first();
+
+  await expect(header).toBeVisible({ timeout: 20000 });
+  const groupId = (await header.getAttribute('data-group-id')) || '';
+
+  if (!groupId) throw new Error(`Could not resolve the group ID for ${label}`);
+  return groupId;
 }
 
 async function switchWorkspace(page: Page, workspaceName: string) {
@@ -185,31 +341,45 @@ test.describe('Database identifier grouping', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
 
-  test('groups one source row into exactly three Relation groups using related row titles', async ({
-    page,
-    request,
-  }) => {
-    await signInAndWaitForApp(page, request, generateRandomEmail());
+  test('groups EPC-001 into its three rendered Relation groups in an isolated 03_epics view', async ({ page }) => {
+    await signInWithPasswordViaUi(page, SEEDED_USER_EMAIL, SEEDED_USER_PASSWORD);
+    await switchWorkspace(page, RELATION_WORKSPACE_NAME);
+    await expandSpaceByName(page, RELATION_SPACE_NAME);
+    await openPageByExactText(page, RELATION_DATABASE_NAME);
 
-    const runId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const target = await createNamedGridDatabase(page, `Relation targets ${runId}`, ['TSK-001', 'TSK-002', 'TSK-003']);
-    const source = await createNamedGridDatabase(page, `Relation sources ${runId}`, ['EPC-001', 'EPC-002', 'EPC-003']);
-    const relationFieldId = await createOneWayRelationField(page, {
-      fieldName: 'Tasks',
-      relatedDatabaseId: target.databaseId,
-    });
+    let temporaryViewId = '';
 
-    await setRelationCellDirect(page, relationFieldId, 0, target.rowIds.slice(0, 3));
-    await groupGridByField(page, relationFieldId);
+    try {
+      temporaryViewId = await createTemporaryGridView(page);
+      const relationFieldId = await databaseFieldIdByName(page, 'Tasks');
 
-    for (const title of ['TSK-001', 'TSK-002', 'TSK-003']) {
-      await expect(groupHeaderByLabel(page, title)).toBeVisible({ timeout: 30000 });
+      if (!relationFieldId) throw new Error('The seeded 03_epics database must contain the Tasks relation field');
+
+      const epicRowId = await gridRowIdByTitle(page, 'EPC-001');
+
+      await groupGridByField(page, relationFieldId);
+
+      const taskGroups = await Promise.all(
+        ['TSK-001', 'TSK-002', 'TSK-003'].map(async (label) => ({ label, groupId: await groupIdByLabel(page, label) }))
+      );
+
+      await expectRowInExactlyTheseGroups(
+        page.getByTestId(`grid-row-${epicRowId}`),
+        taskGroups.map(({ groupId }) => groupId)
+      );
+      await expectFinalGroupedGridDisplay(
+        page,
+        taskGroups.map(({ groupId, label }) => ({
+          groupId,
+          label,
+          rows: [{ rowId: epicRowId, title: 'EPC-001' }],
+        })),
+        { exactGroups: false }
+      );
+    } finally {
+      await page.keyboard.press('Escape').catch(() => undefined);
+      if (temporaryViewId) await deleteDatabaseView(page, temporaryViewId);
     }
-
-    await expectRowInExactlyTheseGroups(page.getByTestId(`grid-row-${source.rowIds[0]}`), target.rowIds.slice(0, 3));
-    await expect(
-      page.getByTestId(`grid-group-header-${relationFieldId}`).getByTestId('grid-group-row-count')
-    ).toHaveText('2');
   });
 
   test('groups rows by the real Annie and Eva members in a temporary Person grid', async ({ page, request }) => {
@@ -249,20 +419,36 @@ test.describe('Database identifier grouping', () => {
 
       await groupGridByField(page, personFieldId);
 
-      await expect(groupHeaderByLabel(page, annieLabel)).toBeVisible({ timeout: 30000 });
-      await expect(groupHeaderByLabel(page, evaLabel)).toBeVisible({ timeout: 30000 });
       await expectRowInExactlyTheseGroups(page.getByTestId(`grid-row-${database.rowIds[0]}`), [
         annie.person_id,
         eva.person_id,
       ]);
       await expectRowInExactlyTheseGroups(page.getByTestId(`grid-row-${database.rowIds[1]}`), [annie.person_id]);
-      await expect(
-        page.getByTestId(`grid-group-header-${personFieldId}`).getByTestId('grid-group-row-count')
-      ).toHaveText('1');
+      await expectRowInExactlyTheseGroups(page.getByTestId(`grid-row-${database.rowIds[2]}`), [personFieldId]);
+      await expectFinalGroupedGridDisplay(page, [
+        {
+          groupId: annie.person_id,
+          label: annieLabel,
+          rows: [
+            { rowId: database.rowIds[0], title: 'Shared task' },
+            { rowId: database.rowIds[1], title: 'Annie task' },
+          ],
+        },
+        {
+          groupId: eva.person_id,
+          label: evaLabel,
+          rows: [{ rowId: database.rowIds[0], title: 'Shared task' }],
+        },
+        {
+          groupId: personFieldId,
+          label: 'No Assignee',
+          rows: [{ rowId: database.rowIds[2], title: 'Unassigned task' }],
+        },
+      ]);
     } finally {
       await page.keyboard.press('Escape').catch(() => undefined);
       await waitForGridReady(page).catch(() => undefined);
-      if (databaseCreated) await deletePageByExactText(page, databaseName);
+      if (databaseCreated) await deleteCurrentPage(page, databaseName);
     }
   });
 });
