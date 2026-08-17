@@ -1,5 +1,5 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import { useSyncExternalStore } from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { useEffect, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -11,10 +11,13 @@ import { parseRelationTypeOption } from '@/application/database-yjs/fields/relat
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import {
-  getRelationCacheRevision,
+  ensureRelationGroupLabel,
+  getRelationGroupLabelRevision,
   readRelationCellText,
   readRelationGroupLabel,
+  retainRelationGroupLabels,
   subscribeRelationCache,
+  subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
 import { readRollupCellSync, subscribeRollupCell } from '@/application/database-yjs/rollup/cache';
 import {
@@ -203,9 +206,19 @@ describe('relation and rollup basics', () => {
       createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     };
-    const initialRevision = getRelationCacheRevision();
+    const initialRevision = getRelationGroupLabelRevision();
     const { result } = renderHook(() => {
-      const revision = useSyncExternalStore(subscribeRelationCache, getRelationCacheRevision, getRelationCacheRevision);
+      const revision = useSyncExternalStore(
+        subscribeRelationGroupLabels,
+        getRelationGroupLabelRevision,
+        getRelationGroupLabelRevision
+      );
+
+      // Reading stays pure; the lookup runs after commit, matching how
+      // useDatabaseGroupingSelector drives it.
+      useEffect(() => {
+        ensureRelationGroupLabel(context);
+      });
 
       return { label: readRelationGroupLabel(context), revision };
     });
@@ -213,6 +226,87 @@ describe('relation and rollup basics', () => {
     expect(result.current.label).toBe('');
     await waitFor(() => expect(result.current.label).toBe('Alice'));
     expect(result.current.revision).toBeGreaterThan(initialRevision);
+  });
+
+  it('refreshes an empty group label when its cold row document hydrates', async () => {
+    const fixture = createFixture({ suffix: 'group-label-cold-hydration' });
+    const coldRowDoc = new Y.Doc() as YDoc;
+    const createRow = jest.fn(async () => coldRowDoc);
+    const context = {
+      relationField: fixture.relationField,
+      relatedRowId: fixture.relatedRowIds[0],
+      loadView: fixture.loadView,
+      createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+    const initialRevision = getRelationGroupLabelRevision();
+    const { result } = renderHook(() => {
+      const revision = useSyncExternalStore(
+        subscribeRelationGroupLabels,
+        getRelationGroupLabelRevision,
+        getRelationGroupLabelRevision
+      );
+
+      useEffect(() => {
+        ensureRelationGroupLabel(context);
+      });
+
+      return { label: readRelationGroupLabel(context), revision };
+    });
+
+    await waitFor(() => {
+      expect(createRow).toHaveBeenCalledTimes(1);
+      expect(result.current.revision).toBeGreaterThan(initialRevision);
+    });
+    expect(result.current.label).toBe('');
+
+    const hydratedRowDoc = createRowDoc(fixture.relatedRowIds[0], fixture.relatedDatabaseId, {
+      [fixture.primaryFieldId]: createCell('Alice', FieldType.RichText),
+    });
+
+    act(() => {
+      Y.applyUpdate(coldRowDoc, Y.encodeStateAsUpdate(hydratedRowDoc));
+    });
+
+    await waitFor(() => expect(result.current.label).toBe('Alice'));
+    expect(createRow).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps serving a resolved group label after its cache entry goes stale', async () => {
+    const fixture = createFixture({ suffix: 'group-label-ttl' });
+    const context = {
+      relationField: fixture.relationField,
+      relatedRowId: fixture.relatedRowIds[0],
+      loadView: fixture.loadView,
+      createRow: fixture.createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+    const resolved = new Promise<string>((resolve) => {
+      const unsubscribe = subscribeRelationGroupLabels(() => {
+        const value = readRelationGroupLabel(context);
+
+        if (!value) return;
+        unsubscribe();
+        resolve(value);
+      });
+    });
+
+    ensureRelationGroupLabel(context);
+    await expect(resolved).resolves.toBe('Alice');
+
+    const realNow = Date.now;
+    const base = realNow();
+
+    // Well past both the 5s entry TTL and the 2s prune interval, with no edit
+    // to the related row. A header must never fall back to its placeholder
+    // just because the entry is due for revalidation.
+    Date.now = () => base + 60_000;
+    try {
+      ensureRelationGroupLabel(context);
+      expect(readRelationGroupLabel(context)).toBe('Alice');
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   it('resolves a relation group identifier to the related primary title', async () => {
@@ -226,7 +320,7 @@ describe('relation and rollup basics', () => {
     };
 
     const resultPromise = new Promise<string>((resolve) => {
-      const unsubscribe = subscribeRelationCache(() => {
+      const unsubscribe = subscribeRelationGroupLabels(() => {
         const value = readRelationGroupLabel(context);
 
         if (!value) return;
@@ -236,7 +330,74 @@ describe('relation and rollup basics', () => {
     });
 
     expect(readRelationGroupLabel(context)).toBe('');
+    ensureRelationGroupLabel(context);
     await expect(resultPromise).resolves.toBe('Alice');
+  });
+
+  it('keeps every active group label cached when a grouping exceeds the soft limit', async () => {
+    const fixture = createFixture({ suffix: 'group-label-active-cache' });
+    const sharedRowDoc = createRowDoc('shared-active-row', fixture.relatedDatabaseId, {
+      [fixture.primaryFieldId]: createCell('Alice', FieldType.RichText),
+    });
+    const createRow = jest.fn(async () => sharedRowDoc);
+    const contexts = Array.from({ length: 501 }, (_, index) => ({
+      relationField: fixture.relationField,
+      relatedRowId: `active-row-${index}`,
+      loadView: fixture.loadView,
+      createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    }));
+    const release = retainRelationGroupLabels(contexts);
+
+    try {
+      contexts.forEach(ensureRelationGroupLabel);
+
+      await waitFor(
+        () => {
+          expect(contexts.every((context) => readRelationGroupLabel(context) === 'Alice')).toBe(true);
+        },
+        { timeout: 3_000 }
+      );
+      expect(createRow).toHaveBeenCalledTimes(contexts.length);
+
+      contexts.forEach(ensureRelationGroupLabel);
+      await Promise.resolve();
+      expect(createRow).toHaveBeenCalledTimes(contexts.length);
+    } finally {
+      release();
+    }
+  });
+
+  it('does not wake group-label subscribers when a relation cell resolves', async () => {
+    const fixture = createFixture({ suffix: 'group-label-channel' });
+    const cellContext = {
+      baseDoc: fixture.baseDoc,
+      database: fixture.baseDatabase,
+      relationField: fixture.relationField,
+      row: fixture.baseRow,
+      rowId: fixture.baseRowId,
+      fieldId: fixture.relationFieldId,
+      loadView: fixture.loadView,
+      createRow: fixture.createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+    const groupLabelWakeups = jest.fn();
+    const unsubscribe = subscribeRelationGroupLabels(groupLabelWakeups);
+    const cellResolved = new Promise<string>((resolve) => {
+      const unsubscribeCells = subscribeRelationCache(() => {
+        const value = readRelationCellText(cellContext);
+
+        if (!value) return;
+        unsubscribeCells();
+        resolve(value);
+      });
+    });
+
+    readRelationCellText(cellContext);
+    await expect(cellResolved).resolves.toContain('Alice');
+
+    unsubscribe();
+    expect(groupLabelWakeups).not.toHaveBeenCalled();
   });
 
   it('refreshes a relation group label when the related primary cell changes', async () => {
@@ -250,7 +411,7 @@ describe('relation and rollup basics', () => {
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     };
     const initial = new Promise<string>((resolve) => {
-      const unsubscribe = subscribeRelationCache(() => {
+      const unsubscribe = subscribeRelationGroupLabels(() => {
         const value = readRelationGroupLabel(context);
 
         if (!value) return;
@@ -259,11 +420,14 @@ describe('relation and rollup basics', () => {
       });
     });
 
-    readRelationGroupLabel(context);
+    ensureRelationGroupLabel(context);
     await expect(initial).resolves.toBe('Alice');
 
     const updated = new Promise<string>((resolve) => {
-      const unsubscribe = subscribeRelationCache(() => {
+      const unsubscribe = subscribeRelationGroupLabels(() => {
+        // A revision bump is what sends the consumer back through its effect,
+        // so re-requesting here mirrors useDatabaseGroupingSelector.
+        ensureRelationGroupLabel(context);
         const value = readRelationGroupLabel(context);
 
         if (value !== 'Alicia') return;
@@ -313,7 +477,8 @@ describe('relation and rollup basics', () => {
     };
     const waitForLabel = (expected: string) =>
       new Promise<string>((resolve) => {
-        const unsubscribe = subscribeRelationCache(() => {
+        const unsubscribe = subscribeRelationGroupLabels(() => {
+          ensureRelationGroupLabel(context);
           const value = readRelationGroupLabel(context);
 
           if (value !== expected) return;
@@ -321,7 +486,7 @@ describe('relation and rollup basics', () => {
           resolve(value);
         });
 
-        readRelationGroupLabel(context);
+        ensureRelationGroupLabel(context);
       });
 
     await expect(waitForLabel('Alice')).resolves.toBe('Alice');
@@ -333,7 +498,7 @@ describe('relation and rollup basics', () => {
       .get(fixture.primaryFieldId);
 
     canonicalPrimaryCell?.set(YjsDatabaseKey.data, 'Alicia');
-    readRelationGroupLabel(context);
+    ensureRelationGroupLabel(context);
     await staleLookupStarted;
 
     canonicalPrimaryCell?.set(YjsDatabaseKey.data, 'Beatrice');

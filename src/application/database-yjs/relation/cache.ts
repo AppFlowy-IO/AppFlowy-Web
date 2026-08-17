@@ -15,6 +15,8 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
+import type { YEvent } from 'yjs';
+
 type RelationCellValue = {
   value: string;
 };
@@ -36,9 +38,14 @@ export type RelationComputeContext = {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
 
-export type RelationGroupLabelContext = {
+/** Identifies a group label. This is all a render-time read needs. */
+export type RelationGroupLabelKey = {
   relationField: YDatabaseField;
   relatedRowId: RowId;
+};
+
+/** Adds the loaders only a resolution needs, so reads cannot trigger one. */
+export type RelationGroupLabelContext = RelationGroupLabelKey & {
   loadView?: (viewId: string) => Promise<YDoc | null>;
   createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
@@ -48,6 +55,7 @@ const RELATION_CACHE_TTL_MS = 5_000;
 const RELATION_CACHE_PRUNE_INTERVAL_MS = 2_000;
 const RELATION_MAX_CONCURRENCY = 8;
 const RELATION_RELATED_DOC_CACHE_MAX = 50;
+const RELATION_GROUP_LABEL_CACHE_MAX = 500;
 
 class Semaphore {
   private count = 0;
@@ -82,12 +90,17 @@ const inflight = new Map<string, Promise<RelationCellValue>>();
 const groupLabelCache = new Map<string, RelationCacheEntry>();
 const groupLabelInflight = new Map<string, Promise<RelationCellValue>>();
 const groupLabelGenerations = new Map<string, number>();
+const retainedGroupLabels = new Map<string, number>();
 const observedGroupLabelDocs = new WeakMap<YDoc, Set<string>>();
 const generations = new Map<string, number>();
 const listeners = new Set<() => void>();
+// Group labels get their own channel. Cell text resolves once per relation cell
+// during sorting and filtering, so folding both into one counter would make
+// every one of those resolutions invalidate every grouped view's memo.
+const groupLabelListeners = new Set<() => void>();
 const relatedDocCache = new Map<string, Promise<YDoc | null>>();
 let lastPruneAt = 0;
-let relationCacheRevision = 0;
+let groupLabelRevision = 0;
 
 function getGeneration(cellId: string) {
   return generations.get(cellId) ?? 0;
@@ -108,8 +121,12 @@ function isEntryFresh(entry: RelationCacheEntry, generation: number) {
 }
 
 function emit() {
-  relationCacheRevision += 1;
   listeners.forEach((cb) => cb());
+}
+
+function emitGroupLabels() {
+  groupLabelRevision += 1;
+  groupLabelListeners.forEach((cb) => cb());
 }
 
 function getGroupLabelGeneration(labelId: string) {
@@ -120,12 +137,46 @@ function bumpGroupLabelGeneration(labelId: string) {
   groupLabelGenerations.set(labelId, getGroupLabelGeneration(labelId) + 1);
   groupLabelCache.delete(labelId);
   // The work cannot be cancelled, but removing its identity lets the next
-  // render start a fresh lookup. Its captured generation prevents a stale
-  // completion from overwriting the newer value.
+  // lookup start fresh. Its captured generation prevents a stale completion
+  // from overwriting the newer value.
   groupLabelInflight.delete(labelId);
 }
 
-function observeGroupLabelDoc(rowDoc: YDoc, labelId: string) {
+function pruneGroupLabelCacheToLimit() {
+  if (groupLabelCache.size <= RELATION_GROUP_LABEL_CACHE_MAX) return;
+
+  for (const labelId of groupLabelCache.keys()) {
+    if (retainedGroupLabels.has(labelId)) continue;
+
+    // Only the title is dropped. groupLabelGenerations must survive eviction:
+    // resetting a label's generation would let work that is still in flight
+    // match again and write its stale title back.
+    groupLabelCache.delete(labelId);
+    if (groupLabelCache.size <= RELATION_GROUP_LABEL_CACHE_MAX) return;
+  }
+}
+
+function touchGroupLabelCache(labelId: string, entry: RelationCacheEntry) {
+  groupLabelCache.delete(labelId);
+  groupLabelCache.set(labelId, entry);
+  pruneGroupLabelCacheToLimit();
+}
+
+function eventTouchesGroupLabel(event: YEvent, primaryFieldId: string) {
+  const [rowKey, cellsKey, fieldId] = event.path;
+
+  // A cold row document has no nested row/cells maps yet. Treat creation of
+  // either map as label hydration so an initially empty lookup is retried.
+  if (rowKey === undefined) return event.changes.keys.has(YjsEditorKey.database_row);
+  if (rowKey !== YjsEditorKey.database_row) return false;
+  if (cellsKey === undefined) return event.changes.keys.has(YjsDatabaseKey.cells);
+  if (cellsKey !== YjsDatabaseKey.cells) return false;
+  if (fieldId === undefined) return event.changes.keys.has(primaryFieldId);
+
+  return fieldId === primaryFieldId;
+}
+
+function observeGroupLabelRow(rowDoc: YDoc, primaryFieldId: string, labelId: string) {
   const observedLabels = observedGroupLabelDocs.get(rowDoc);
 
   if (observedLabels) {
@@ -136,11 +187,15 @@ function observeGroupLabelDoc(rowDoc: YDoc, labelId: string) {
   const labelIds = new Set([labelId]);
 
   observedGroupLabelDocs.set(rowDoc, labelIds);
-  rowDoc.on('update', () => {
+  // Observe the always-available root before reading its nested maps. This
+  // catches WebSocket hydration of a row that was absent from IndexedDB while
+  // still ignoring edits outside the primary cell once the row exists.
+  rowDoc.getMap(YjsEditorKey.data_section).observeDeep((events: YEvent[]) => {
+    if (!events.some((event) => eventTouchesGroupLabel(event, primaryFieldId))) return;
     labelIds.forEach((id) => {
       bumpGroupLabelGeneration(id);
     });
-    emit();
+    emitGroupLabels();
   });
 }
 
@@ -154,11 +209,11 @@ function pruneCache(now = Date.now()) {
     }
   }
 
-  for (const [labelId, entry] of groupLabelCache) {
-    if (now - entry.updatedAt > RELATION_CACHE_TTL_MS) {
-      groupLabelCache.delete(labelId);
-    }
-  }
+  // Group labels are deliberately not evicted on TTL. A header that dropped
+  // back to its "Untitled relation" placeholder while revalidating would read
+  // as real data, so the stale title is served until a newer one resolves.
+  // Live edits already invalidate through bumpGroupLabelGeneration, and size
+  // is bounded by touchGroupLabelCache.
 }
 
 function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
@@ -301,11 +356,15 @@ async function computeRelationGroupLabel(
 
     const relatedRowDoc = await context.createRow(getRowKey(relatedDoc.guid, context.relatedRowId));
 
-    observeGroupLabelDoc(relatedRowDoc, labelId);
-    const relatedRow = relatedRowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as
+    // createRow can resolve with a sync-bound but still empty document. Install
+    // the observer before the first read so later hydration invalidates the
+    // empty result and schedules a fresh lookup through subscribers.
+    observeGroupLabelRow(relatedRowDoc, primaryFieldId, labelId);
+    const relatedRow = relatedRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
       | YDatabaseRow
       | undefined;
-    const primaryCell = relatedRow?.get(YjsDatabaseKey.cells)?.get(primaryFieldId);
+    const relatedCells = relatedRow?.get(YjsDatabaseKey.cells);
+    const primaryCell = relatedCells?.get(primaryFieldId);
 
     return { value: primaryCell ? decodeCellToText(primaryCell, primaryField).trim() : '' };
   } catch (error) {
@@ -321,60 +380,129 @@ export function subscribeRelationCache(cb: () => void) {
   };
 }
 
-export function getRelationCacheRevision() {
-  return relationCacheRevision;
+/**
+ * Group labels resolve independently of relation cell text, so they publish on
+ * their own channel. Subscribers here are not woken by the per-cell lookups
+ * that sorting and filtering trigger.
+ */
+export function subscribeRelationGroupLabels(cb: () => void) {
+  groupLabelListeners.add(cb);
+  return () => {
+    groupLabelListeners.delete(cb);
+  };
+}
+
+export function getRelationGroupLabelRevision() {
+  return groupLabelRevision;
 }
 
 export function invalidateRelationCell(cellId: string) {
   bumpGeneration(cellId);
 }
 
-/**
- * Returns the cached primary-field title immediately and starts one bounded
- * lookup when it is missing. Consumers subscribe through relation cache so
- * headers update without exposing relation row UUIDs while data is loading.
- */
-export function readRelationGroupLabel(context: RelationGroupLabelContext): string {
-  pruneCache();
+function getGroupLabelId(context: RelationGroupLabelKey): string | undefined {
   const databaseId = parseRelationTypeOption(context.relationField).database_id;
 
-  if (!databaseId || !context.relatedRowId) return '';
+  if (!databaseId || !context.relatedRowId) return undefined;
 
-  const labelId = `${databaseId}:${context.relatedRowId}`;
+  return `${databaseId}:${context.relatedRowId}`;
+}
+
+/**
+ * Pins labels used by a mounted grouping so the bounded LRU only evicts
+ * inactive entries. The cache may exceed its soft limit when a single active
+ * grouping contains more labels; it returns to the limit after release.
+ */
+export function retainRelationGroupLabels(contexts: readonly RelationGroupLabelKey[]): () => void {
+  const labelIds = new Set<string>();
+
+  contexts.forEach((context) => {
+    const labelId = getGroupLabelId(context);
+
+    if (labelId) labelIds.add(labelId);
+  });
+  labelIds.forEach((labelId) => {
+    retainedGroupLabels.set(labelId, (retainedGroupLabels.get(labelId) ?? 0) + 1);
+  });
+
+  let released = false;
+
+  return () => {
+    if (released) return;
+    released = true;
+    labelIds.forEach((labelId) => {
+      const retainCount = retainedGroupLabels.get(labelId) ?? 0;
+
+      if (retainCount <= 1) {
+        retainedGroupLabels.delete(labelId);
+      } else {
+        retainedGroupLabels.set(labelId, retainCount - 1);
+      }
+    });
+    pruneGroupLabelCacheToLimit();
+  };
+}
+
+/**
+ * Pure read of the last resolved primary-field title, or '' when nothing has
+ * resolved yet. Safe to call while rendering: it never starts work and never
+ * mutates module state. Pair it with ensureRelationGroupLabel in an effect.
+ */
+export function readRelationGroupLabel(context: RelationGroupLabelKey): string {
+  const labelId = getGroupLabelId(context);
+
+  if (!labelId) return '';
+
+  return groupLabelCache.get(labelId)?.value ?? '';
+}
+
+/**
+ * Starts one bounded lookup when the cached title is missing or past its TTL.
+ * This mutates module state and schedules async work, so call it from an
+ * effect rather than during render.
+ */
+export function ensureRelationGroupLabel(context: RelationGroupLabelContext): void {
+  pruneCache();
+  const labelId = getGroupLabelId(context);
+
+  if (!labelId) return;
+
   const generation = getGroupLabelGeneration(labelId);
   const cached = groupLabelCache.get(labelId);
 
-  if (cached && isEntryFresh(cached, generation)) return cached.value;
+  if (cached && isEntryFresh(cached, generation)) return;
+  if (groupLabelInflight.has(labelId)) return;
 
-  if (!groupLabelInflight.has(labelId)) {
-    const promise = (async () => {
-      const release = await semaphore.acquire();
+  const promise = (async () => {
+    const release = await semaphore.acquire();
 
-      try {
-        const value = await computeRelationGroupLabel(context, labelId);
+    try {
+      const value = await computeRelationGroupLabel(context, labelId);
 
-        if (getGroupLabelGeneration(labelId) === generation) {
-          groupLabelCache.set(labelId, {
-            value: value.value,
-            generation,
-            updatedAt: Date.now(),
-          });
-          emit();
-        }
+      if (getGroupLabelGeneration(labelId) === generation) {
+        const changed = cached?.value !== value.value;
 
-        return value;
-      } finally {
-        release();
-        if (getGroupLabelGeneration(labelId) === generation) {
-          groupLabelInflight.delete(labelId);
-        }
+        touchGroupLabelCache(labelId, {
+          value: value.value,
+          generation,
+          updatedAt: Date.now(),
+        });
+        // A TTL revalidation that confirms the same title must not wake
+        // subscribers; re-rendering every grouped view on an unchanged
+        // value is exactly the churn this cache exists to avoid.
+        if (changed) emitGroupLabels();
       }
-    })();
 
-    groupLabelInflight.set(labelId, promise);
-  }
+      return value;
+    } finally {
+      release();
+      if (getGroupLabelGeneration(labelId) === generation) {
+        groupLabelInflight.delete(labelId);
+      }
+    }
+  })();
 
-  return cached?.value ?? '';
+  groupLabelInflight.set(labelId, promise);
 }
 
 export function readRelationCellText(context: RelationComputeContext): string {
