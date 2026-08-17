@@ -2064,6 +2064,9 @@
     }
   },
   "document": {
+    "rowDocument": {
+      "noAccess": "You don't have permission to view this row document"
+    },
     "inlineDatabase": {
       "viewInTrash": "This referenced database is in Trash",
       "viewDeleted": "This referenced database was permanently deleted",

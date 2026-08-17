@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
 import {
@@ -12,7 +13,7 @@ import {
 } from '@/application/database-yjs';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
-import { openCollabDB } from '@/application/db';
+import { deleteCollabDB, openCollabDB } from '@/application/db';
 import { getCachedRowSubDoc, getOrCreateRowSubDoc, trackRowDocEnsure } from '@/application/services/js-services/cache';
 import { YjsEditor } from '@/application/slate-yjs';
 import { dataStringTOJson } from '@/application/slate-yjs/utils/yjs';
@@ -30,6 +31,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { Editor } from '@/components/editor';
@@ -46,6 +48,7 @@ type ContentNode = {
 };
 
 type IsCurrentRowDocumentRequest = () => boolean;
+type RowDocumentAttempt = 'ready' | 'retryable' | 'forbidden';
 
 const ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST = () => true;
 const CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS: LoadRowDocumentOptions = { maxAttempts: 1 };
@@ -58,9 +61,7 @@ function hasImageContent(data: Record<string, unknown> | undefined) {
   if (!data) return false;
 
   return (
-    hasNonEmptyString(data.url) ||
-    hasNonEmptyString(data.retry_local_url) ||
-    hasNonEmptyString(data.pending_upload_id)
+    hasNonEmptyString(data.url) || hasNonEmptyString(data.retry_local_url) || hasNonEmptyString(data.pending_upload_id)
   );
 }
 
@@ -128,6 +129,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   contentPadding,
   onRegisterPendingMetaFlush,
 }: DatabaseRowSubDocumentProps) {
+  const { t } = useTranslation();
   const meta = useRowMetaSelector(rowId);
   const documentId = meta?.documentId;
   const database = useDatabase();
@@ -240,7 +242,43 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   const retryLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadRequestGenerationRef = useRef(0);
+  const deniedDocumentIdRef = useRef<string | null>(null);
+  const mountedRef = useRef(true);
+  const [deniedDocumentId, setDeniedDocumentId] = useState<string | null>(null);
   const loadedDocMatchesCurrent = Boolean(doc && documentId && loadedDocumentIdRef.current === documentId);
+  const noAccess = Boolean(documentId && deniedDocumentId === documentId);
+
+  const markPermissionDenied = useCallback((deniedId: string) => {
+    if (!mountedRef.current || activeDocumentIdRef.current !== deniedId) return;
+
+    deniedDocumentIdRef.current = deniedId;
+    loadRequestGenerationRef.current += 1;
+    docReadyRef.current = false;
+    loadedDocumentIdRef.current = null;
+    editorRef.current = null;
+    rowDocEnsuredRef.current = false;
+    pendingNonEmptyRef.current = false;
+
+    if (pendingMetaUpdateRef.current) {
+      clearTimeout(pendingMetaUpdateRef.current);
+      pendingMetaUpdateRef.current = null;
+    }
+
+    if (retryLoadTimerRef.current) {
+      clearTimeout(retryLoadTimerRef.current);
+      retryLoadTimerRef.current = null;
+    }
+
+    if (ensureDocRetryTimerRef.current) {
+      clearTimeout(ensureDocRetryTimerRef.current);
+      ensureDocRetryTimerRef.current = null;
+    }
+
+    setDoc(null);
+    setLoading(false);
+    setDeniedDocumentId(deniedId);
+    void deleteCollabDB(deniedId, { destroyDoc: true }).catch(() => undefined);
+  }, []);
 
   const document = loadedDocMatchesCurrent ? doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document) : null;
   // undefined = meta hasn't loaded from Yjs yet (wait)
@@ -311,10 +349,10 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       documentId: string,
       options?: LoadRowDocumentOptions,
       isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
-    ): Promise<boolean> => {
+    ): Promise<RowDocumentAttempt> => {
       const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
 
-      if (!isCurrent()) return false;
+      if (!isCurrent()) return 'retryable';
 
       Log.debug('[DatabaseRowSubDocument] handleOpenDocument start', { rowId, documentId });
       setLoading(true);
@@ -325,16 +363,16 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
         if (!loadRowDocument) {
           Log.debug('[DatabaseRowSubDocument] loadRowDocument not available', { documentId });
-          return false;
+          return 'retryable';
         }
 
         const doc = await loadRowDocument(documentId, options);
 
-        if (!isCurrent()) return false;
+        if (!isCurrent()) return 'retryable';
 
         if (!doc) {
           Log.debug('[DatabaseRowSubDocument] loadRowDocument returned null', { documentId });
-          return false;
+          return 'retryable';
         }
 
         // Log document state after loading
@@ -376,28 +414,35 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
             rowId,
             documentId,
           });
-          return false;
+          return 'retryable';
         }
 
-        if (!isCurrent()) return false;
+        if (!isCurrent()) return 'retryable';
 
         setDoc(doc);
         loadedDocumentIdRef.current = documentId;
         docReadyRef.current = true;
         rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
-        return true;
+        deniedDocumentIdRef.current = null;
+        setDeniedDocumentId(null);
+        return 'ready';
       } catch (e) {
+        if (isPermissionDeniedError(e)) {
+          if (isCurrent()) markPermissionDenied(documentId);
+          return 'forbidden';
+        }
+
         Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', {
           message: e instanceof Error ? e.message : String(e),
         });
-        return false;
+        return 'retryable';
       } finally {
         if (isCurrent()) {
           setLoading(false);
         }
       }
     },
-    [loadRowDocument, rowId]
+    [loadRowDocument, markPermissionDenied, rowId]
   );
   // Open document with server-provided doc_state (Y.js update)
   const openDocumentWithState = useCallback(
@@ -480,10 +525,10 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       documentId: string,
       requireServerReady: boolean = false,
       isCurrentRequest: IsCurrentRowDocumentRequest = ALWAYS_CURRENT_ROW_DOCUMENT_REQUEST
-    ): Promise<boolean> => {
+    ): Promise<RowDocumentAttempt> => {
       const isCurrent = () => isCurrentRequest() && activeDocumentIdRef.current === documentId;
 
-      if (!documentId || !isCurrent()) return false;
+      if (!documentId || !isCurrent()) return 'retryable';
       setLoading(true);
       let docState: Uint8Array | null = null;
 
@@ -500,7 +545,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
         const localHasContent = await hasLocalDocContent(documentId);
 
-        if (!isCurrent()) return false;
+        if (!isCurrent()) return 'retryable';
 
         if (localHasContent) {
           Log.debug('[DatabaseRowSubDocument] local doc has content; creating server collab before binding', {
@@ -514,27 +559,32 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
             documentId,
             requireServerReady,
           });
-          return false;
+          return 'retryable';
         }
 
         try {
           Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId, requireServerReady });
           docState = await createRowDocument(documentId, rowDocumentSource);
         } catch (e) {
+          if (isPermissionDeniedError(e)) {
+            if (isCurrent()) markPermissionDenied(documentId);
+            return 'forbidden';
+          }
+
           Log.error('[DatabaseRowSubDocument] createRowDocument failed', e);
-          return false;
+          return 'retryable';
         }
 
-        if (!isCurrent()) return false;
+        if (!isCurrent()) return 'retryable';
 
-        // createRowDocument swallows API errors and returns null (e.g. the server
-        // hasn't persisted a freshly created row yet). Treat that as a failure so
-        // the caller schedules a retry instead of binding to a structureless doc.
+        // Retryable API failures resolve to null (e.g. the server hasn't persisted
+        // a freshly created row yet). Permission denials throw and were handled
+        // above, so only transient failures reach this retry path.
         if (!docState) {
           Log.warn('[DatabaseRowSubDocument] createRowDocument returned no doc state; will retry', {
             documentId,
           });
-          return false;
+          return 'retryable';
         }
 
         Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
@@ -547,7 +597,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           const success = await openDocumentWithState(documentId, docState, isCurrent);
 
           if (success) {
-            return true;
+            deniedDocumentIdRef.current = null;
+            setDeniedDocumentId(null);
+            return 'ready';
           }
 
           Log.warn('[DatabaseRowSubDocument] server doc_state invalid; will retry without local fallback', {
@@ -557,17 +609,17 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         }
 
         if (loadRowDocument) {
-          const loaded = await handleOpenDocument(documentId, undefined, isCurrent);
+          const loadAttempt = await handleOpenDocument(documentId, undefined, isCurrent);
 
-          if (loaded) {
-            return true;
+          if (loadAttempt !== 'retryable') {
+            return loadAttempt;
           }
         }
 
         Log.warn('[DatabaseRowSubDocument] row document was not opened after server create', {
           documentId,
         });
-        return false;
+        return 'retryable';
       } finally {
         if (isCurrent()) {
           setLoading(false);
@@ -579,6 +631,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       handleOpenDocument,
       hasLocalDocContent,
       loadRowDocument,
+      markPermissionDenied,
       openDocumentWithState,
       rowDocumentSource,
       rowId,
@@ -586,14 +639,19 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
-    if (!documentId || activeDocumentIdRef.current !== documentId || ensureDocRetryTimerRef.current) {
+    if (
+      !documentId ||
+      activeDocumentIdRef.current !== documentId ||
+      deniedDocumentIdRef.current === documentId ||
+      ensureDocRetryTimerRef.current
+    ) {
       return;
     }
 
     ensureDocRetryTimerRef.current = setTimeout(async () => {
       ensureDocRetryTimerRef.current = null;
 
-      if (activeDocumentIdRef.current !== documentId) {
+      if (activeDocumentIdRef.current !== documentId || deniedDocumentIdRef.current === documentId) {
         return;
       }
 
@@ -638,7 +696,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
           pendingNonEmptyRef.current = false;
         }
-      } catch {
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          markPermissionDenied(documentId);
+          return;
+        }
+
         // Keep retrying until the backend accepts the row document.
       }
 
@@ -649,6 +712,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     createRowDocument,
     documentId,
     isDocumentEmpty,
+    markPermissionDenied,
     rowDocumentSource,
     updateRowMeta,
     rowId,
@@ -663,6 +727,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     lastIsEmptyRef.current = null;
     pendingNonEmptyRef.current = false;
     rowDocEnsuredRef.current = false;
+    deniedDocumentIdRef.current = null;
 
     if (pendingMetaUpdateRef.current) {
       clearTimeout(pendingMetaUpdateRef.current);
@@ -680,11 +745,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     }
 
     setDoc(null);
+    setDeniedDocumentId(null);
     setLoading(Boolean(documentId));
   }, [documentId]);
 
   useEffect(() => {
-    if (!documentId) return;
+    if (!documentId || deniedDocumentIdRef.current === documentId) return;
 
     let cancelled = false;
     const requestGeneration = ++loadRequestGenerationRef.current;
@@ -700,9 +766,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     };
 
     const scheduleRetry = (loadOptions?: LoadRowDocumentOptions) => {
-      if (retryLoadTimerRef.current) return;
+      if (retryLoadTimerRef.current || deniedDocumentIdRef.current === documentId) return;
       retryLoadTimerRef.current = setTimeout(async () => {
-        if (!isCurrentRequest()) return;
+        if (!isCurrentRequest() || deniedDocumentIdRef.current === documentId) return;
 
         // If doc is already loaded (e.g., by handleCreateDocument), skip retry
         // This prevents resetting the editor mid-typing
@@ -725,11 +791,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         // entire retry window, so retry creation directly after propagation has
         // had another chance to complete.
         const retryingEmptyDocument = isDocumentEmptyResolved === true;
-        const retried = retryingEmptyDocument
+        const retryAttempt = retryingEmptyDocument
           ? await handleCreateDocument(documentId, false, isCurrentRequest)
           : await handleOpenDocument(documentId, loadOptions, isCurrentRequest);
 
-        if (retried || !isCurrentRequest()) {
+        if (retryAttempt !== 'retryable' || !isCurrentRequest()) {
           return;
         }
 
@@ -756,11 +822,14 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           if (!isCurrentRequest()) return;
 
           if (localHasContent) {
-            Log.debug('[DatabaseRowSubDocument] max retries reached; local content found, creating server doc before binding', {
-              rowId,
-              documentId,
-              retryCount,
-            });
+            Log.debug(
+              '[DatabaseRowSubDocument] max retries reached; local content found, creating server doc before binding',
+              {
+                rowId,
+                documentId,
+                retryCount,
+              }
+            );
           }
 
           Log.debug('[DatabaseRowSubDocument] max retries reached; creating document', {
@@ -768,9 +837,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
             documentId,
             retryCount,
           });
-          const created = await handleCreateDocument(documentId, true, isCurrentRequest);
+          const createAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-          if (!created && isCurrentRequest()) {
+          if (createAttempt === 'retryable' && isCurrentRequest()) {
             Log.warn('[DatabaseRowSubDocument] final row document creation attempt rejected', {
               rowId,
               documentId,
@@ -823,9 +892,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           rowId,
           documentId,
         });
-        const created = await handleCreateDocument(documentId, false, isCurrentRequest);
+        const createAttempt = await handleCreateDocument(documentId, false, isCurrentRequest);
 
-        if (!created && isCurrentRequest()) {
+        if (createAttempt === 'retryable' && isCurrentRequest()) {
           scheduleRetry();
         }
 
@@ -847,9 +916,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         }
 
         void (async () => {
-          const created = await handleCreateDocument(documentId, true, isCurrentRequest);
+          const createAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-          if (!created && isCurrentRequest()) {
+          if (createAttempt === 'retryable' && isCurrentRequest()) {
             scheduleRetry();
           }
         })();
@@ -881,16 +950,20 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           // present. Do one read attempt, then repair its row-document
           // registration and open the returned state instead of waiting
           // through the duplication-oriented backoff loop.
-          const success = await handleOpenDocument(documentId, CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS, isCurrentRequest);
+          const loadAttempt = await handleOpenDocument(
+            documentId,
+            CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS,
+            isCurrentRequest
+          );
 
-          if (!success && isCurrentRequest()) {
+          if (loadAttempt === 'retryable' && isCurrentRequest()) {
             Log.debug('[DatabaseRowSubDocument] repairing row document after load failure', {
               rowId,
               documentId,
             });
-            const repaired = await handleCreateDocument(documentId, true, isCurrentRequest);
+            const repairAttempt = await handleCreateDocument(documentId, true, isCurrentRequest);
 
-            if (!repaired && isCurrentRequest()) {
+            if (repairAttempt === 'retryable' && isCurrentRequest()) {
               scheduleRetry(CONFIRMED_ROW_DOCUMENT_LOAD_OPTIONS);
             }
           }
@@ -907,6 +980,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         scheduleRetry();
       } catch (e) {
         if (!isCurrentRequest()) return;
+
+        if (isPermissionDeniedError(e)) {
+          markPermissionDenied(documentId);
+          return;
+        }
 
         Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry', {
           rowId,
@@ -927,6 +1005,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     checkIfRowDocumentExists,
     isDocumentEmptyResolved,
     hasLocalDocContent,
+    markPermissionDenied,
     rowId,
     doc,
   ]);
@@ -1002,7 +1081,9 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   }, []);
 
   const ensureRowDocumentExists = useCallback(async () => {
-    if (!documentId || activeDocumentIdRef.current !== documentId) return false;
+    if (!documentId || activeDocumentIdRef.current !== documentId || deniedDocumentIdRef.current === documentId) {
+      return false;
+    }
 
     // Skip if we've already ensured this document exists (memoize to avoid redundant API calls)
     if (rowDocEnsuredRef.current) {
@@ -1018,7 +1099,12 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         if (activeDocumentIdRef.current !== documentId) {
           return false;
         }
-      } catch {
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          markPermissionDenied(documentId);
+          return false;
+        }
+
         // Ignore and fall through to orphaned view creation attempt.
       }
     }
@@ -1045,14 +1131,18 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
         rowDocEnsuredRef.current = true;
         return true;
-      } catch {
+      } catch (error) {
+        if (isPermissionDeniedError(error)) {
+          markPermissionDenied(documentId);
+        }
+
         // Creation failed - don't mark as ensured so we can retry
         return false;
       }
     }
 
     return false;
-  }, [checkIfRowDocumentExists, createRowDocument, documentId, rowDocumentSource]);
+  }, [checkIfRowDocumentExists, createRowDocument, documentId, markPermissionDenied, rowDocumentSource]);
 
   useEffect(() => {
     if (!doc || !documentId || !loadedDocMatchesCurrent) return;
@@ -1161,13 +1251,30 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   ]);
 
   useEffect(() => {
+    mountedRef.current = true;
+
     return () => {
+      mountedRef.current = false;
+
       if (ensureDocRetryTimerRef.current) {
         clearTimeout(ensureDocRetryTimerRef.current);
         ensureDocRetryTimerRef.current = null;
       }
     };
   }, []);
+
+  if (noAccess) {
+    return (
+      <div
+        role='alert'
+        data-testid='row-document-no-access'
+        className='flex min-h-[300px] w-full flex-col items-center justify-center gap-2 px-8 py-10 text-center'
+      >
+        <div className='text-base font-medium text-text-primary'>{t('landingPage.forbidden.title')}</div>
+        <div className='text-sm text-text-secondary'>{t('document.rowDocument.noAccess')}</div>
+      </div>
+    );
+  }
 
   if (loading || (doc && documentId && !loadedDocMatchesCurrent)) {
     return <EditorSkeleton />;

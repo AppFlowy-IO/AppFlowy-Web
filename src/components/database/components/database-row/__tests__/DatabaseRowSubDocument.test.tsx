@@ -25,6 +25,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('@/application/db', () => ({
+  deleteCollabDB: jest.fn().mockResolvedValue(true),
   openCollabDB: jest.fn(),
 }));
 
@@ -130,6 +131,7 @@ function configureRowDocumentTest({
   loadRowDocument,
   createRowDocument,
   checkIfRowDocumentExists,
+  isEmptyDocument = false,
   readOnly = false,
   canComment = false,
   canWrite = !readOnly,
@@ -139,6 +141,7 @@ function configureRowDocumentTest({
   loadRowDocument: jest.Mock;
   createRowDocument: jest.Mock;
   checkIfRowDocumentExists: jest.Mock;
+  isEmptyDocument?: boolean;
   readOnly?: boolean;
   canComment?: boolean;
   canWrite?: boolean;
@@ -163,7 +166,7 @@ function configureRowDocumentTest({
   mockUseRowData.mockImplementation((rowId) => rows.get(rowId));
   mockUseRowMetaSelector.mockImplementation((rowId) => ({
     documentId: documentIds[rowId],
-    isEmptyDocument: false,
+    isEmptyDocument,
   }));
   mockUseUpdateRowMetaDispatch.mockReturnValue(jest.fn());
   mockUseCurrentWorkspaceIdOptional.mockReturnValue('workspace-id');
@@ -271,6 +274,85 @@ describe('DatabaseRowSubDocument', () => {
     });
 
     expect(loadRowDocument).toHaveBeenNthCalledWith(2, documentId, { maxAttempts: 1 });
+  });
+
+  it('shows no access without repairing or retrying when an existing row document is forbidden', async () => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+    const loadRowDocument = jest
+      .fn()
+      .mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
+    const createRowDocument = jest.fn();
+    const checkIfRowDocumentExists = jest.fn().mockResolvedValue(true);
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+    });
+
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+
+    await act(flushAsyncWork);
+
+    expect(screen.getByTestId('row-document-no-access')).not.toBeNull();
+    expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(1);
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(loadRowDocument).toHaveBeenCalledWith(documentId, { maxAttempts: 1 });
+    expect(createRowDocument).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+      await flushAsyncWork();
+    });
+
+    expect(loadRowDocument).toHaveBeenCalledTimes(1);
+    expect(createRowDocument).not.toHaveBeenCalled();
+  });
+
+  it('shows no access without retrying when empty row document creation is forbidden', async () => {
+    jest.useFakeTimers();
+
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+    const loadRowDocument = jest.fn();
+    const createRowDocument = jest
+      .fn()
+      .mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
+    const checkIfRowDocumentExists = jest.fn();
+
+    configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument,
+      createRowDocument,
+      checkIfRowDocumentExists,
+      isEmptyDocument: true,
+    });
+
+    render(<DatabaseRowSubDocument rowId={rowId} />);
+
+    await act(flushAsyncWork);
+
+    expect(screen.getByTestId('row-document-no-access')).not.toBeNull();
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
+    expect(loadRowDocument).not.toHaveBeenCalled();
+    expect(checkIfRowDocumentExists).not.toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(10000);
+      await flushAsyncWork();
+    });
+
+    expect(createRowDocument).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a stale repair response after switching rows', async () => {
