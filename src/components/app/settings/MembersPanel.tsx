@@ -53,6 +53,7 @@ import type { TFunction } from 'i18next';
 type PeopleTab = 'members' | 'groups';
 type GroupDetailTab = 'general' | 'members';
 const GROUP_EXCLUDED_WORKSPACE_ROLES = [Role.Guest];
+const PEOPLE_GUIDE_URL = 'https://appflowy.com/guide/getting-started-with-appflowy';
 
 function parseInviteEmails(value: string): string[] {
   return Array.from(
@@ -469,12 +470,14 @@ function MembersPanelForWorkspace({
         <h2 className='text-2xl font-semibold leading-8 text-text-primary'>{t('settings.appearance.people.title')}</h2>
         <div className='mt-1 flex items-center gap-3 text-xs leading-[18px] text-text-secondary'>
           <span>{t('settings.appearance.people.description')}</span>
-          <button
-            type='button'
+          <a
+            href={PEOPLE_GUIDE_URL}
+            target='_blank'
+            rel='noreferrer'
             className='rounded-100 text-text-action hover:text-text-action-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
           >
             {t('workspace.learnMore')}
-          </button>
+          </a>
         </div>
       </div>
 

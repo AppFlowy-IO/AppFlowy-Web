@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
-import { AccessService } from '@/application/services/domains';
-import { AccessLevel, IPeopleWithAccessType, ObjectPermission, WorkspaceGroupViewPermission } from '@/application/types';
+import { AccessService, WorkspaceService } from '@/application/services/domains';
+import {
+  AccessLevel,
+  IPeopleWithAccessType,
+  ObjectPermission,
+  Role,
+  SpaceVisibility,
+  WorkspaceGroupViewPermission,
+} from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
-import { useAppOutline, useCurrentWorkspaceId, useEventEmitter, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import {
+  useAppOutline,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useUserWorkspaceInfo,
+} from '@/components/app/app.hooks';
 import { resolveCurrentUserAccessLevel } from '@/components/app/share/shareAccessLevel';
 import { resolveShareSectionType, ShareSectionType } from '@/components/app/share/shareSectionType';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -48,8 +60,58 @@ interface DirectGroupSnapshot {
   loaded: boolean;
 }
 
+type FullAccessAuthorityContext =
+  | { kind: 'unknown' }
+  | { kind: 'private' }
+  | { kind: 'space'; spaceId: string; publicCanManage: boolean }
+  | { kind: 'public'; canManage: boolean };
+
+interface FullAccessAuthorityResolution {
+  canManage: boolean;
+  acceptsLegacyCreatorSignals: boolean;
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function sameUserId(first: string | number | null | undefined, second: string | number | null | undefined) {
+  return first !== undefined && first !== null && second !== undefined && second !== null && String(first) === String(second);
+}
+
+function resolveFullAccessAuthorityContext({
+  ancestry,
+  currentUserId,
+  workspaceRole,
+}: {
+  ancestry: ReturnType<typeof findAncestors>;
+  currentUserId?: string | null;
+  workspaceRole?: Role;
+}): FullAccessAuthorityContext {
+  if (!ancestry || ancestry.length === 0) return { kind: 'unknown' };
+
+  const realSpace = ancestry.find(
+    (view) => (view.is_space === true || view.extra?.is_space === true) && !view.extra?.is_hidden_space
+  );
+
+  if (realSpace) {
+    return {
+      kind: 'space',
+      spaceId: realSpace.view_id,
+      publicCanManage:
+        workspaceRole === Role.Owner || ancestry.some((view) => sameUserId(view.created_by, currentUserId)),
+    };
+  } else if (ancestry.some((view) => view.is_private)) {
+    // Legacy private sections do not expose an owner capability through the
+    // structured-space endpoint. Fail closed rather than inferring ownership.
+    return { kind: 'private' };
+  }
+
+  return {
+    kind: 'public',
+    canManage:
+      workspaceRole === Role.Owner || ancestry.some((view) => sameUserId(view.created_by, currentUserId)),
+  };
 }
 
 function parseAccessDetailsError(error: unknown): AccessDetailsError {
@@ -115,6 +177,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   const [hasLoadedPeople, setHasLoadedPeople] = useState(false);
   const [loadedPeopleViewId, setLoadedPeopleViewId] = useState<string | null>(null);
   const [currentUserPermission, setCurrentUserPermission] = useState<ObjectPermission | null>(null);
+  const [fullAccessAuthority, setFullAccessAuthority] = useState({ viewId, canManage: false });
   const [deniedViewId, setDeniedViewId] = useState<string | null>(null);
   const loadPeopleRequestSeq = useRef(0);
   const pendingRevocations = useRef<{ viewId: string; emails: Map<string, number> }>({
@@ -128,9 +191,16 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     viewId,
     updates: new Map(),
   });
-  const ancestorViewIds = useMemo(
-    () => findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [],
-    [outline, viewId]
+  const viewAncestry = useMemo(() => findAncestors(outline || [], viewId), [outline, viewId]);
+  const ancestorViewIds = useMemo(() => viewAncestry?.map((item) => item.view_id) || [], [viewAncestry]);
+  const fullAccessAuthorityContext = useMemo(
+    () =>
+      resolveFullAccessAuthorityContext({
+        ancestry: viewAncestry,
+        currentUserId: currentUser?.uid,
+        workspaceRole: userWorkspaceInfo?.selectedWorkspace?.role,
+      }),
+    [currentUser?.uid, userWorkspaceInfo?.selectedWorkspace?.role, viewAncestry]
   );
 
   if (directGroupSnapshotRef.current.viewId !== viewId) {
@@ -144,11 +214,30 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
       }
 
       const requestSeq = ++loadPeopleRequestSeq.current;
-      // Start both independent reads together. Effective access controls what is
-      // displayed, while direct grants control which rows may be edited here.
+      // Start independent reads together. Effective access controls what is
+      // displayed, direct grants control which rows may be edited here, and a
+      // governing-space policy identifies the owner tier protected by Full
+      // Access mutations even if the outline projection is stale.
       const directGroupsPromise = Promise.allSettled([AccessService.getSharedGroups(currentWorkspaceId, viewId)]).then(
         ([result]) => result
       );
+      const fullAccessAuthorityPromise: Promise<FullAccessAuthorityResolution> =
+        fullAccessAuthorityContext.kind === 'space'
+          ? WorkspaceService.getSpacePermission(currentWorkspaceId, fullAccessAuthorityContext.spaceId)
+              .then((permission) => {
+                const isPrivate = permission.permission.visibility === SpaceVisibility.Private;
+
+                return {
+                  canManage: isPrivate ? permission.can_manage_space : fullAccessAuthorityContext.publicCanManage,
+                  acceptsLegacyCreatorSignals: !isPrivate,
+                };
+              })
+              .catch(() => ({ canManage: false, acceptsLegacyCreatorSignals: false }))
+          : Promise.resolve({
+              canManage:
+                fullAccessAuthorityContext.kind === 'public' ? fullAccessAuthorityContext.canManage : false,
+              acceptsLegacyCreatorSignals: fullAccessAuthorityContext.kind === 'public',
+            });
 
       setIsLoadingPeople(true);
 
@@ -156,7 +245,10 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         for (let retryIndex = 0; retryIndex <= ACCESS_DETAILS_MAX_TRANSIENT_RETRIES; retryIndex += 1) {
           try {
             const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
-            const directGroupResult = await directGroupsPromise;
+            const [directGroupResult, resolvedFullAccessAuthority] = await Promise.all([
+              directGroupsPromise,
+              fullAccessAuthorityPromise,
+            ]);
 
             if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
 
@@ -236,6 +328,14 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
             }
 
             setCurrentUserPermission(detail.current_user_permission ?? null);
+            setFullAccessAuthority({
+              viewId,
+              canManage:
+                resolvedFullAccessAuthority.canManage ||
+                (resolvedFullAccessAuthority.acceptsLegacyCreatorSignals &&
+                  (detail.current_user_permission?.object_creator === true ||
+                    detail.current_user_permission?.ancestor_creator === true)),
+            });
             setDeniedViewId(null);
             setHasLoadedPeople(true);
             setLoadedPeopleViewId(viewId);
@@ -260,6 +360,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
               setDirectGroups([]);
               setDirectGroupsLoaded(false);
               setCurrentUserPermission(null);
+              setFullAccessAuthority({ viewId, canManage: false });
               setDeniedViewId(viewId);
               setHasLoadedPeople(false);
               setLoadedPeopleViewId(viewId);
@@ -289,7 +390,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         }
       }
     },
-    [ancestorViewIds, currentUserEmail, currentWorkspaceId, viewId]
+    [ancestorViewIds, currentUserEmail, currentWorkspaceId, fullAccessAuthorityContext, viewId]
   );
 
   useEffect(() => {
@@ -316,10 +417,23 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
       void loadPeople(controller.signal);
     };
 
+    const handlePermissionChanged = () => {
+      // Group grants and membership changes use this broader notification, so
+      // they cannot be safely filtered to a view from the event payload. The
+      // always-mounted workspace layer invalidates access details and reloads
+      // the outline synchronously; defer this panel-only row refresh until all
+      // event listeners have observed the notification.
+      queueMicrotask(() => {
+        if (!controller.signal.aborted) void loadPeople(controller.signal);
+      });
+    };
+
     eventEmitter.on(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     return () => {
       controller.abort();
       eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     };
   }, [ancestorViewIds, currentWorkspaceId, eventEmitter, loadPeople, opened, viewId]);
 
@@ -412,6 +526,10 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   }, [directGroupsForCurrentView, directGroupsLoaded, groupsForCurrentView, loadedPeopleViewId, viewId]);
   const currentUserPermissionForCurrentView = loadedPeopleViewId === viewId ? currentUserPermission : null;
   const accessDetailsDenied = deniedViewId === viewId;
+  const canManageFullAccess =
+    hasLoadedPeople && loadedPeopleViewId === viewId && fullAccessAuthority.viewId === viewId
+      ? fullAccessAuthority.canManage
+      : false;
   const currentUserAccessLevel = useMemo(() => {
     if (accessDetailsDenied) return undefined;
 
@@ -460,6 +578,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     updateGroupInAccessList,
     currentUserAccessLevel,
     hasFullAccess: currentUserAccessLevel === AccessLevel.FullAccess,
+    canManageFullAccess,
     sectionType,
   };
 }

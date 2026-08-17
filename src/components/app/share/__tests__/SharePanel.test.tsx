@@ -8,6 +8,7 @@ import { ShareSectionType } from '../shareSectionType';
 
 const mockGetSubscriptions = jest.fn(async () => []);
 const mockLoadMentionableUsers = jest.fn(async () => []);
+const mockInviteGuestProps = jest.fn();
 const mockPeopleWithAccessProps = jest.fn();
 let mockIsHosted = false;
 
@@ -33,7 +34,10 @@ jest.mock('@/utils/subscription', () => ({
 }));
 
 jest.mock('../InviteGuest', () => ({
-  InviteGuest: () => <div data-testid='invite-guest' />,
+  InviteGuest: (props: unknown) => {
+    mockInviteGuestProps(props);
+    return <div data-testid='invite-guest' />;
+  },
 }));
 
 jest.mock('../PeopleWithAccess', () => ({
@@ -51,7 +55,11 @@ jest.mock('../CopyLink', () => ({
   CopyLink: () => <div data-testid='copy-link' />,
 }));
 
-function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined, updateGroupInAccessList = jest.fn()) {
+function renderSharePanel(
+  currentUserAccessLevel: AccessLevel | undefined,
+  updateGroupInAccessList = jest.fn(),
+  canManageFullAccess = false
+) {
   return render(
     <SharePanel
       viewId='view-1'
@@ -63,6 +71,7 @@ function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined, updat
       onPersonRemoved={() => undefined}
       updateGroupInAccessList={updateGroupInAccessList}
       hasFullAccess={currentUserAccessLevel === AccessLevel.FullAccess}
+      canManageFullAccess={canManageFullAccess}
       currentUserAccessLevel={currentUserAccessLevel}
       sectionType={ShareSectionType.Private}
     />
@@ -73,6 +82,7 @@ describe('SharePanel', () => {
   beforeEach(() => {
     mockGetSubscriptions.mockClear();
     mockLoadMentionableUsers.mockClear();
+    mockInviteGuestProps.mockClear();
     mockPeopleWithAccessProps.mockClear();
     mockIsHosted = false;
   });
@@ -103,11 +113,23 @@ describe('SharePanel', () => {
     expect(mockGetSubscriptions).not.toHaveBeenCalled();
   });
 
-  it('forwards the optimistic group updater to the access list', () => {
+  it('forwards group mutation state to the access list', () => {
     const updateGroupInAccessList = jest.fn();
 
-    renderSharePanel(AccessLevel.ReadOnly, updateGroupInAccessList);
+    renderSharePanel(AccessLevel.ReadOnly, updateGroupInAccessList, true);
 
-    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ updateGroupInAccessList }));
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ updateGroupInAccessList, canManageFullAccess: true })
+    );
+  });
+
+  it('uses owner-tier authority for Full Access invite and row controls', async () => {
+    renderSharePanel(AccessLevel.FullAccess, jest.fn(), false);
+
+    await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ canGrantFullAccess: false }));
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canGrantFullAccess: false, canManageFullAccess: false, hasFullAccess: true })
+    );
   });
 });

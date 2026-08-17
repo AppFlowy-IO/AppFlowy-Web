@@ -35,6 +35,7 @@ export {
   leaveWorkspace,
   inviteMembers,
   getMembers,
+  getSpaces,
   getSpacePermission,
   updateSpacePermission,
   updateStructuredSpace,

@@ -1,9 +1,13 @@
+import EventEmitter from 'events';
+
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
+import { APP_EVENTS } from '@/application/constants';
 import {
   AccessLevel,
   Role,
   SpaceInvitePolicy,
+  SpaceListItem,
   SpaceMember,
   SpaceMemberRole,
   SpacePermissionSettings,
@@ -20,6 +24,7 @@ import type { ReactNode } from 'react';
 
 const mockUpdateSpace = jest.fn();
 const mockGetSpacePermission = jest.fn();
+const mockGetSpaces = jest.fn();
 const mockUpdateStructuredSpace = jest.fn();
 const mockGetSpaceMembers = jest.fn();
 const mockGetMembers = jest.fn();
@@ -28,6 +33,11 @@ const mockUpdateSpaceMember = jest.fn();
 const mockRemoveSpaceMember = jest.fn();
 const mockUpdateSpaceGroupPermission = jest.fn();
 const mockRemoveSpaceGroupPermission = jest.fn();
+const mockEventEmitter = new EventEmitter();
+const mockUseAddableWorkspaceMembers = jest.fn(
+  ({ workspaceMembers, excludePending }: { workspaceMembers: WorkspaceMember[]; excludePending?: boolean }) =>
+    workspaceMembers.filter((member) => !excludePending || !member.is_pending_invitation)
+);
 const mockTranslate = (key: string) => key;
 
 const mockViews: Record<string, View> = {
@@ -49,6 +59,7 @@ jest.mock('sonner', () => ({
 jest.mock('@/application/services/domains', () => ({
   WorkspaceService: {
     getSpacePermission: (...args: unknown[]) => mockGetSpacePermission(...args),
+    getSpaces: (...args: unknown[]) => mockGetSpaces(...args),
     updateStructuredSpace: (...args: unknown[]) => mockUpdateStructuredSpace(...args),
     getSpaceMembers: (...args: unknown[]) => mockGetSpaceMembers(...args),
     getMembers: (...args: unknown[]) => mockGetMembers(...args),
@@ -64,6 +75,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useAppOperations: () => ({ updateSpace: mockUpdateSpace }),
   useAppView: (viewId: string) => mockViews[viewId],
   useCurrentWorkspaceId: () => 'workspace-1',
+  useEventEmitter: () => mockEventEmitter,
   useUserWorkspaceInfo: () => ({ selectedWorkspace: { name: 'Workspace one' } }),
 }));
 
@@ -91,7 +103,7 @@ jest.mock('@/components/_shared/modal', () => ({
 
 jest.mock('@/components/app/share/WorkspaceMemberInlineSearch', () => ({
   getWorkspaceMemberUid: (member: WorkspaceMember) => member.uid,
-  useAddableWorkspaceMembers: ({ workspaceMembers }: { workspaceMembers: WorkspaceMember[] }) => workspaceMembers,
+  useAddableWorkspaceMembers: (args: unknown) => mockUseAddableWorkspaceMembers(args),
   WorkspaceMemberInlineSearch: ({
     addableMembers,
     inputDisabled,
@@ -128,12 +140,14 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
     children,
     disabled,
     onSelect,
+    'data-testid': testId,
   }: {
     children: ReactNode;
     disabled?: boolean;
     onSelect?: () => void;
+    'data-testid'?: string;
   }) => (
-    <button type='button' disabled={disabled} onClick={() => onSelect?.()}>
+    <button data-testid={testId} type='button' disabled={disabled} onClick={() => onSelect?.()}>
       {children}
     </button>
   ),
@@ -194,15 +208,36 @@ function createView(viewId: string, name: string): View {
   };
 }
 
-function permissionResponse(overrides: { canManageMembers?: boolean; canInviteMembers?: boolean } = {}) {
+function permissionResponse(
+  overrides: {
+    permission?: SpacePermissionSettings;
+    canManageSpace?: boolean;
+    canManageMembers?: boolean;
+    canInviteMembers?: boolean;
+    canEditSidebar?: boolean;
+  } = {}
+) {
   return {
     space_id: 'space-1',
-    permission: openPermission,
-    can_manage_space: true,
+    permission: overrides.permission ?? openPermission,
+    can_manage_space: overrides.canManageSpace ?? true,
     can_manage_members: overrides.canManageMembers ?? true,
     can_invite_members: overrides.canInviteMembers ?? true,
-    can_edit_sidebar: true,
+    can_edit_sidebar: overrides.canEditSidebar ?? true,
     explicit_member_count: 0,
+  };
+}
+
+function listedSpace(spaceId: string, visibility: SpaceVisibility): SpaceListItem {
+  return {
+    space_id: spaceId,
+    name: spaceId,
+    permission: { ...openPermission, visibility },
+    current_user_access_level: AccessLevel.FullAccess,
+    explicit_member_count: 1,
+    is_explicit_member: true,
+    can_join: false,
+    can_leave: visibility !== SpaceVisibility.Default,
   };
 }
 
@@ -228,6 +263,17 @@ function manualMember(): SpaceMember {
   };
 }
 
+function creatorMember(): SpaceMember {
+  return {
+    uid: '3456789012345678',
+    name: 'Space creator',
+    email: 'space-creator@appflowy.io',
+    role: SpaceMemberRole.Owner,
+    access_level: AccessLevel.FullAccess,
+    source: 'creator',
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -242,9 +288,11 @@ function deferred<T>() {
 describe('ManageSpace ACL management', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockEventEmitter.removeAllListeners();
     mockUpdateSpace.mockResolvedValue(undefined);
     mockUpdateStructuredSpace.mockResolvedValue({ view_id: 'space-1' });
     mockGetSpacePermission.mockResolvedValue(permissionResponse());
+    mockGetSpaces.mockResolvedValue({ spaces: [] });
     mockGetSpaceMembers.mockResolvedValue({ members: [], groups: [] });
     mockGetMembers.mockResolvedValue([workspaceCandidate]);
     mockAddSpaceMember.mockResolvedValue(undefined);
@@ -282,21 +330,234 @@ describe('ManageSpace ACL management', () => {
     );
   });
 
-  it('atomically saves metadata and structured ACL without a legacy visibility update', async () => {
+  it('atomically saves metadata and a changed structured ACL without a legacy visibility update', async () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-    await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    const defaultAccessRow = screen.getByTestId('manage-space-members-default-access-row');
+
+    fireEvent.click(within(defaultAccessRow).getByRole('button', { name: 'shareAction.canView' }));
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Updated space' },
+    });
     fireEvent.click(screen.getByTestId('manage-space-save'));
 
     await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
     expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
-      name: 'Space one',
+      name: 'Updated space',
       space_icon: 'space',
       space_icon_color: '#000000',
-      permission: openPermission,
+      permission: {
+        ...openPermission,
+        member_default_access_level: AccessLevel.ReadOnly,
+      },
     });
     expect(mockUpdateSpace).not.toHaveBeenCalled();
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('space_permission');
+  });
+
+  it('omits an unchanged permission from a manager metadata-only save', async () => {
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(false));
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Metadata only' },
+    });
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+        name: 'Metadata only',
+        space_icon: 'space',
+        space_icon_color: '#000000',
+      })
+    );
+    expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
+  });
+
+  it('lets sidebar editors save metadata without sending a permission update', async () => {
+    mockGetSpacePermission.mockResolvedValue(
+      permissionResponse({
+        canManageSpace: false,
+        canManageMembers: false,
+        canInviteMembers: false,
+        canEditSidebar: true,
+      })
+    );
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(false));
+    expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(true);
+
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Renamed by member' },
+    });
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+        name: 'Renamed by member',
+        space_icon: 'space',
+        space_icon_color: '#000000',
+      })
+    );
+    expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
+  });
+
+  it('revalidates live permissions and member groups while failing closed after sidebar access is revoked', async () => {
+    const initialGroup = group('group-1', 'Initial group');
+    const refreshedGroup = group('group-2', 'Refreshed group');
+    const revokedPermission = deferred<ReturnType<typeof permissionResponse>>();
+
+    mockGetSpacePermission
+      .mockResolvedValueOnce(
+        permissionResponse({
+          canManageSpace: false,
+          canManageMembers: true,
+          canInviteMembers: false,
+          canEditSidebar: true,
+        })
+      )
+      .mockReturnValueOnce(revokedPermission.promise);
+    mockGetSpaceMembers
+      .mockResolvedValueOnce({ members: [], groups: [initialGroup] })
+      .mockResolvedValueOnce({ members: [], groups: [refreshedGroup] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await screen.findByTestId('space-group-row-group-1');
+    expect(screen.getByTestId('manage-space-save').disabled).toBe(false);
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false);
+
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('manage-space-save').disabled).toBe(true);
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+    expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
+
+    await act(async () => {
+      revokedPermission.resolve(
+        permissionResponse({
+          canManageSpace: false,
+          canManageMembers: true,
+          canInviteMembers: false,
+          canEditSidebar: false,
+        })
+      );
+    });
+
+    await screen.findByTestId('space-group-row-group-2');
+    expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
+    expect(screen.getByTestId('manage-space-save').disabled).toBe(true);
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('ignores an older permission refresh that resolves after a newer revocation', async () => {
+    const stalePermission = deferred<ReturnType<typeof permissionResponse>>();
+    const latestPermission = deferred<ReturnType<typeof permissionResponse>>();
+
+    mockGetSpacePermission
+      .mockResolvedValueOnce(
+        permissionResponse({
+          canManageSpace: false,
+          canManageMembers: false,
+          canInviteMembers: false,
+          canEditSidebar: true,
+        })
+      )
+      .mockReturnValueOnce(stalePermission.promise)
+      .mockReturnValueOnce(latestPermission.promise);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(false));
+
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'first-change' });
+    });
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'newer-change' });
+    });
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      latestPermission.resolve(
+        permissionResponse({
+          canManageSpace: false,
+          canManageMembers: false,
+          canInviteMembers: false,
+          canEditSidebar: false,
+        })
+      );
+    });
+    await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(true));
+
+    await act(async () => {
+      stalePermission.resolve(
+        permissionResponse({
+          canManageSpace: false,
+          canManageMembers: false,
+          canInviteMembers: false,
+          canEditSidebar: true,
+        })
+      );
+    });
+
+    expect(screen.getByTestId('manage-space-save').disabled).toBe(true);
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('hides Default when another active Default space already exists', async () => {
+    mockGetSpaces.mockResolvedValue({ spaces: [listedSpace('space-default', SpaceVisibility.Default)] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+
+    expect(screen.queryByTestId('manage-space-visibility-option-default')).toBeNull();
+  });
+
+  it('retains the current legacy Default and omits its unchanged ACL when another Default exists', async () => {
+    const defaultPermission = { ...openPermission, visibility: SpaceVisibility.Default };
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: defaultPermission }));
+    mockGetSpaces.mockResolvedValue({
+      spaces: [listedSpace('space-1', SpaceVisibility.Default), listedSpace('space-default', SpaceVisibility.Default)],
+    });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+
+    expect(screen.getByTestId('manage-space-visibility-option-default')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('manage-space-visibility-option-open'));
+    expect(screen.getByTestId('manage-space-visibility-option-default')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('manage-space-visibility-option-default'));
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Legacy Default renamed' },
+    });
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+        name: 'Legacy Default renamed',
+        space_icon: 'space',
+        space_icon_color: '#000000',
+      })
+    );
+    expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
+  });
+
+  it('keeps management available but hides Default when space discovery fails', async () => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ canManageSpace: true, canEditSidebar: false }));
+    mockGetSpaces.mockRejectedValue(new Error('space list unavailable'));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(false));
+
+    expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false);
+    expect(screen.queryByTestId('manage-space-visibility-option-default')).toBeNull();
   });
 
   it('changes the member default without overwriting a manual member grant', async () => {
@@ -323,6 +584,62 @@ describe('ManageSpace ACL management', () => {
       )
     );
     expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
+  });
+
+  it('updates and allows removal of creator-sourced explicit members', async () => {
+    const member = creatorMember();
+
+    mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+    const removeButton = within(row).getByRole('button', { name: 'space.permissionManager.remove' });
+
+    expect(removeButton.disabled).toBe(false);
+    fireEvent.click(
+      within(row).getByRole('button', {
+        name: 'space.permissionManager.member space.permissionManager.memberRoleDescription',
+      })
+    );
+
+    await waitFor(() =>
+      expect(mockUpdateSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', member.uid, {
+        role: SpaceMemberRole.Member,
+        access_level: AccessLevel.ReadAndWrite,
+      })
+    );
+    expect(mockAddSpaceMember).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(removeButton.disabled).toBe(false));
+    fireEvent.click(removeButton);
+    await waitFor(() => expect(mockRemoveSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', member.uid));
+  });
+
+  it('fetches active workspace members and defensively filters pending invitations', async () => {
+    const pendingInvitation: WorkspaceMember = {
+      name: 'Pending invite',
+      email: 'pending@appflowy.io',
+      avatar_url: '',
+      role: Role.Member,
+      is_pending_invitation: true,
+    };
+
+    mockGetMembers.mockResolvedValue([pendingInvitation, workspaceCandidate]);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
+
+    expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
+    expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(expect.objectContaining({ excludePending: true }));
+    fireEvent.click(screen.getByTestId('inline-member-add'));
+
+    await waitFor(() =>
+      expect(mockAddSpaceMember).toHaveBeenCalledWith(
+        'workspace-1',
+        'space-1',
+        expect.objectContaining({ uid: workspaceCandidate.uid })
+      )
+    );
   });
 
   it('renders, updates, and revokes returned workspace-group grants', async () => {

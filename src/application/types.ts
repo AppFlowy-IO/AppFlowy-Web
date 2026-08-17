@@ -1479,6 +1479,21 @@ export interface SpacePermissionResponse {
   explicit_member_count: number;
 }
 
+export interface SpaceListItem {
+  space_id: string;
+  name: string;
+  permission: SpacePermissionSettings;
+  current_user_access_level?: AccessLevel | null;
+  explicit_member_count: number;
+  is_explicit_member: boolean;
+  can_join: boolean;
+  can_leave: boolean;
+}
+
+export interface Spaces {
+  spaces: SpaceListItem[];
+}
+
 export interface SpaceMember {
   uid: string;
   email?: string | null;
@@ -1653,6 +1668,8 @@ export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
 export interface View {
   folder_rid?: string;
   view_id: string;
+  /** Numeric user id of the creator, returned by folder-view endpoints. */
+  created_by?: string | number | null;
   name: string;
   icon: ViewIcon | null;
   layout: ViewLayout;

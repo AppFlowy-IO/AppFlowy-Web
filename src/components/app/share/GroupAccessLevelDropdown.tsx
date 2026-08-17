@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, WorkspaceGroupViewPermission } from '@/application/types';
@@ -22,6 +22,7 @@ interface GroupAccessLevelDropdownProps {
   group: WorkspaceGroupViewPermission;
   canModify: boolean;
   currentUserHasFullAccess: boolean;
+  canManageFullAccess: boolean;
   onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<AccessLevel | null | undefined>;
   onRemoveAccess: (groupId: string) => Promise<AccessLevel | null | undefined>;
 }
@@ -30,12 +31,14 @@ export function GroupAccessLevelDropdown({
   group,
   canModify,
   currentUserHasFullAccess,
+  canManageFullAccess,
   onAccessLevelChange,
   onRemoveAccess,
 }: GroupAccessLevelDropdownProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
+  const mutationPendingRef = useRef(false);
 
   const getAccessLevelText = (accessLevel?: AccessLevel) => {
     switch (accessLevel) {
@@ -53,6 +56,9 @@ export function GroupAccessLevelDropdown({
 
   const changeAccess = useCallback(
     async (loadingKey: string, accessLevel: AccessLevel) => {
+      if (mutationPendingRef.current || (accessLevel === AccessLevel.FullAccess && !canManageFullAccess)) return;
+
+      mutationPendingRef.current = true;
       setLoading(loadingKey);
       try {
         const effectiveAccessLevel = await onAccessLevelChange(group.group_id, accessLevel);
@@ -66,13 +72,17 @@ export function GroupAccessLevelDropdown({
       } catch (error) {
         notify.error(t('shareAction.changeAccessError'));
       } finally {
+        mutationPendingRef.current = false;
         setLoading(null);
       }
     },
-    [group.group_id, group.name, onAccessLevelChange, t]
+    [canManageFullAccess, group.group_id, group.name, onAccessLevelChange, t]
   );
 
   const handleRemoveAccess = useCallback(async () => {
+    if (mutationPendingRef.current || (group.access_level === AccessLevel.FullAccess && !canManageFullAccess)) return;
+
+    mutationPendingRef.current = true;
     setLoading('remove');
     try {
       const effectiveAccessLevel = await onRemoveAccess(group.group_id);
@@ -86,11 +96,12 @@ export function GroupAccessLevelDropdown({
     } catch (error) {
       notify.error(t('shareAction.removeAccessError'));
     } finally {
+      mutationPendingRef.current = false;
       setLoading(null);
     }
-  }, [group.group_id, group.name, onRemoveAccess, t]);
+  }, [canManageFullAccess, group.access_level, group.group_id, group.name, onRemoveAccess, t]);
 
-  if (group.access_level === AccessLevel.FullAccess && !canModify) {
+  if (group.access_level === AccessLevel.FullAccess && (!canModify || !canManageFullAccess)) {
     return (
       <div className='mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary'>
         {getAccessLevelText(group.access_level)}
@@ -110,7 +121,7 @@ export function GroupAccessLevelDropdown({
         {currentUserHasFullAccess && (
           <>
             <DropdownMenuItem
-              disabled={loading === 'view'}
+              disabled={loading !== null}
               onSelect={(e) => {
                 e.preventDefault();
                 void changeAccess('view', AccessLevel.ReadOnly);
@@ -127,7 +138,7 @@ export function GroupAccessLevelDropdown({
               {loading === 'view' && <Progress variant='primary' />}
             </DropdownMenuItem>
             <DropdownMenuItem
-              disabled={loading === 'edit'}
+              disabled={loading !== null}
               onSelect={(e) => {
                 e.preventDefault();
                 void changeAccess('edit', AccessLevel.ReadAndWrite);
@@ -143,27 +154,29 @@ export function GroupAccessLevelDropdown({
               {!loading && group.access_level === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
               {loading === 'edit' && <Progress variant='primary' />}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={loading === 'full'}
-              onSelect={(e) => {
-                e.preventDefault();
-                void changeAccess('full', AccessLevel.FullAccess);
-              }}
-            >
-              <div className='flex items-center gap-2'>
-                <CrownIcon />
-                <div className='flex flex-col'>
-                  <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
-                  <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+            {canManageFullAccess && (
+              <DropdownMenuItem
+                disabled={loading !== null}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  void changeAccess('full', AccessLevel.FullAccess);
+                }}
+              >
+                <div className='flex items-center gap-2'>
+                  <CrownIcon />
+                  <div className='flex flex-col'>
+                    <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                    <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+                  </div>
                 </div>
-              </div>
-              {!loading && group.access_level === AccessLevel.FullAccess && <DropdownMenuItemTick />}
-              {loading === 'full' && <Progress variant='primary' />}
-            </DropdownMenuItem>
+                {!loading && group.access_level === AccessLevel.FullAccess && <DropdownMenuItemTick />}
+                {loading === 'full' && <Progress variant='primary' />}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant='destructive'
-              disabled={loading === 'remove'}
+              disabled={loading !== null}
               onSelect={(e) => {
                 e.preventDefault();
                 void handleRemoveAccess();

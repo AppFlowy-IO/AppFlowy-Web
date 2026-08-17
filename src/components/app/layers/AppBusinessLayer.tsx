@@ -527,9 +527,10 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     permissionProbeRefreshRevision,
   ]);
 
-  // Push path: a share-change notification proved we lost access to a view
-  // (useWorkspaceData already evicted its local cache). Record the denial so
-  // the page swaps to the no-access screen if it is (or becomes) current.
+  // Push path: targeted share notifications carry a view id, while broad
+  // permission notifications can identify a workspace group. Keep the active
+  // route and modal probes outside the outline layer so both rendered targets
+  // are re-checked even when the notification cannot name an affected view.
   useEffect(() => {
     const invalidatePermissionProbe = (changedViewId: string) => {
       if (!currentWorkspaceId || !requesterId) return;
@@ -540,20 +541,25 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       bumpPermissionProbeRevision(permissionProbeRevisionRef.current, cacheKey);
     };
 
-    const revalidateOtherActiveViews = (changedViewId: string) => {
-      // A share notification names the view whose share changed, not all of
-      // its descendants. The outline may already have been refreshed (and the
-      // revoked branch removed) by the time this event arrives, so ancestry
-      // cannot be determined reliably here. Conservatively re-probe the few
-      // currently rendered targets. This covers inherited parent shares while
-      // adding at most one route and one modal request per notification.
+    const revalidateActiveViews = (excludedViewId?: string) => {
+      // A targeted share notification does not name affected descendants, and
+      // a broad permission notification may name a group instead of a view.
+      // Conservatively re-probe the few currently rendered targets.
       const activeViewIds = Array.from(
-        new Set([viewId, openModalViewId].filter((activeViewId): activeViewId is string => Boolean(activeViewId)))
-      ).filter((activeViewId) => activeViewId !== changedViewId);
+        new Set(
+          [viewHasBeenDeleted ? undefined : viewId, openModalViewId].filter(
+            (activeViewId): activeViewId is string => Boolean(activeViewId)
+          )
+        )
+      ).filter((activeViewId) => activeViewId !== excludedViewId);
 
       if (activeViewIds.length === 0) return;
       activeViewIds.forEach(invalidatePermissionProbe);
       setPermissionProbeRefreshRevision((revision) => revision + 1);
+    };
+
+    const handlePermissionChanged = () => {
+      revalidateActiveViews();
     };
 
     const handleViewAccessRevoked = (payload?: { viewId?: string | null }) => {
@@ -565,7 +571,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       setOpenModalViewId((currentModalViewId) =>
         currentModalViewId === revokedViewId ? undefined : currentModalViewId
       );
-      revalidateOtherActiveViews(revokedViewId);
+      revalidateActiveViews(revokedViewId);
     };
 
     const handleViewAccessRestored = (payload?: { viewId?: string | null }) => {
@@ -574,17 +580,19 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!restoredViewId) return;
       invalidatePermissionProbe(restoredViewId);
       setNoAccessViewId((prev) => (prev === restoredViewId ? null : prev));
-      revalidateOtherActiveViews(restoredViewId);
+      revalidateActiveViews(restoredViewId);
     };
 
+    syncContext.eventEmitter?.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
 
     return () => {
+      syncContext.eventEmitter?.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
       syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
       syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
     };
-  }, [syncContext.eventEmitter, currentWorkspaceId, requesterId, viewId, openModalViewId]);
+  }, [syncContext.eventEmitter, currentWorkspaceId, requesterId, viewId, openModalViewId, viewHasBeenDeleted]);
 
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {

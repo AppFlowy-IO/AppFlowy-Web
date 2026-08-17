@@ -167,6 +167,44 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.patch.mock.calls[0][1]).not.toHaveProperty('space_permission');
   });
 
+  it('lists structured spaces with their permission settings', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const spaces = {
+      spaces: [
+        {
+          space_id: 'space-default',
+          name: 'General',
+          permission: {
+            visibility: SpaceVisibility.Default,
+            owner_access_level: AccessLevel.FullAccess,
+            member_default_access_level: AccessLevel.ReadAndWrite,
+            everyone_else_access_level: AccessLevel.ReadOnly,
+            invite_policy: SpaceInvitePolicy.OwnersOnly,
+            sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+            invite_link_enabled: false,
+            security: {
+              disable_guests: false,
+              disable_public_links: false,
+              disable_export: false,
+            },
+          },
+          current_user_access_level: AccessLevel.FullAccess,
+          explicit_member_count: 1,
+          is_explicit_member: true,
+          can_join: false,
+          can_leave: false,
+        },
+      ],
+    };
+
+    mockAxiosInstance.get.mockResolvedValueOnce({ data: { code: 0, data: spaces } });
+
+    await expect(module.getSpaces('workspace-1')).resolves.toEqual(spaces);
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces');
+  });
+
   it('gets only the group grants owned by a view', async () => {
     const module = await import('../http_api');
 

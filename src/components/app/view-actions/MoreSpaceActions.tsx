@@ -2,11 +2,11 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { PageService } from '@/application/services/domains';
 import { Role, View } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
-import { PageService } from '@/application/services/domains';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useRefreshOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
@@ -17,12 +17,14 @@ function MoreSpaceActions({
   onClose,
   canDuplicateActions,
   canManageActions,
+  canOpenManageActions,
   isLoadingActions,
 }: {
   view: View;
   onClose: () => void;
   canDuplicateActions: boolean;
   canManageActions: boolean;
+  canOpenManageActions: boolean;
   isLoadingActions: boolean;
 }) {
   const { t } = useTranslation();
@@ -57,7 +59,7 @@ function MoreSpaceActions({
 
   return (
     <DropdownMenuGroup>
-      {canManageActions && (
+      {canOpenManageActions && (
         <DropdownMenuItem data-testid={'space-action-manage'} onSelect={handleManageClick}>
           <SettingsIcon />
           {t('space.manage')}

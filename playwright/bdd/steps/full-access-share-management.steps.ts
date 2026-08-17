@@ -8,7 +8,7 @@ import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 const { Given, When, Then, Before, After } = createBdd();
 
 const PASSWORD = 'AppFlowy!@123';
-const WORKSPACE_ID = '2b64f8c8-22d2-4e35-8deb-8a7e85bba4d4';
+const WORKSPACE_ID = 'c2b2e8a3-1df1-49d1-a451-deee5b7d0b7c';
 const INVITE_PROBE_EMAIL = 'fa0522-out@appflowy.local';
 const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -26,27 +26,27 @@ const FULL_ACCESS_ACCOUNTS = {
 
 const FULL_ACCESS_PAGES = {
   'owner control private page': {
-    viewId: 'f8d677a2-cb1f-4a93-9ca1-5449b791a5e4',
+    viewId: 'd8cc0f0a-201c-4e17-8e32-5e89ddad22ce',
     title: 'fa0522 Owner Control Private Page',
   },
   'member full access private page': {
-    viewId: '93f3783e-1777-4718-a467-d11a19824968',
+    viewId: '7f5cd6d8-c6e8-4355-9427-a0b746f02826',
     title: 'fa0522 Member FullAccess Manage Private Page',
   },
   'member edit private page': {
-    viewId: '446b9a2d-293e-4e06-8379-75fafdf2e9a4',
+    viewId: 'd9a01a15-045e-4ee6-943f-b12d5e8fb762',
     title: 'fa0522 Member Edit Only Private Page',
   },
   'guest full access private page': {
-    viewId: '45ed683e-8ed1-4872-8b28-dc6a61937485',
+    viewId: 'ecc9f26a-6544-4910-a673-23c73f4072e1',
     title: 'fa0522 Guest FullAccess Manage Private Page',
   },
   'guest edit private page': {
-    viewId: 'f93e1946-32d3-49be-a5f8-2801309a5d33',
+    viewId: '98869de9-0fe7-4c2f-a0f8-3143cc0e6073',
     title: 'fa0522 Guest Edit Only Private Page',
   },
   'guest read only private page': {
-    viewId: '43230138-2cda-4d96-af0f-2fa5522f054c',
+    viewId: 'edda38c0-91e0-487a-9ace-31d799c05bd7',
     title: 'fa0522 Guest Read Only Private Page',
   },
 } as const;

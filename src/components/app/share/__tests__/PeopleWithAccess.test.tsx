@@ -54,17 +54,20 @@ jest.mock('@/components/app/share/GroupAccessLevelDropdown', () => ({
   GroupAccessLevelDropdown: ({
     group,
     canModify,
+    canManageFullAccess,
     onAccessLevelChange,
     onRemoveAccess,
   }: {
     group: WorkspaceGroupViewPermission;
     canModify: boolean;
+    canManageFullAccess: boolean;
     onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<AccessLevel | null | undefined>;
     onRemoveAccess: (groupId: string) => Promise<AccessLevel | null | undefined>;
   }) => (
     <>
       <button
         disabled={!canModify}
+        data-can-manage-full-access={String(canManageFullAccess)}
         onClick={() => void onAccessLevelChange(group.group_id, group.access_level).then(mockGroupMutationResult)}
       >
         update:{group.group_id}
@@ -120,6 +123,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={onPersonRemoved}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />
@@ -148,6 +152,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={updateGroupInAccessList}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />
@@ -184,6 +189,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={updateGroupInAccessList}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />
@@ -212,6 +218,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />
@@ -222,6 +229,29 @@ describe('PeopleWithAccess', () => {
     expect(container.querySelector("[data-slot='workspace-group-icon-container']")).not.toBeNull();
     expect(screen.getByRole('button', { name: `update:${sharedGroup.group_id}` }).disabled).toBe(true);
     expect(screen.getByRole('button', { name: `remove:${sharedGroup.group_id}` }).disabled).toBe(true);
+  });
+
+  it('passes the narrower Full Access management capability to group rows', () => {
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[]}
+        groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
+        isLoading={false}
+        onPeopleChange={async () => undefined}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={jest.fn()}
+        hasFullAccess
+        canManageFullAccess={false}
+        canGrantFullAccess
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: `update:${sharedGroup.group_id}` }).dataset.canManageFullAccess).toBe(
+      'false'
+    );
   });
 
   it('returns authoritative stronger effective access after a direct downgrade', async () => {
@@ -243,6 +273,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />
@@ -265,6 +296,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />
@@ -294,6 +326,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
       />

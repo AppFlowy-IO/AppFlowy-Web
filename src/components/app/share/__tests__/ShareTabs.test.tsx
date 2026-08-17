@@ -27,6 +27,7 @@ jest.mock('@/components/app/share/useShareAccessDetails', () => ({
     updateGroupInAccessList: mockUpdateGroupInAccessList,
     currentUserAccessLevel: undefined,
     hasFullAccess: true,
+    canManageFullAccess: false,
     sectionType: undefined,
   }),
 }));
@@ -90,11 +91,14 @@ describe('ShareTabs publish availability', () => {
     expect(screen.getByTestId('share-panel')).toBeTruthy();
   });
 
-  it('forwards the optimistic group updater from the access hook', () => {
+  it('forwards group mutation state from the access hook', () => {
     renderShareTabs(false);
 
     expect(mockSharePanelProps).toHaveBeenCalledWith(
-      expect.objectContaining({ updateGroupInAccessList: mockUpdateGroupInAccessList })
+      expect.objectContaining({
+        updateGroupInAccessList: mockUpdateGroupInAccessList,
+        canManageFullAccess: false,
+      })
     );
   });
 });

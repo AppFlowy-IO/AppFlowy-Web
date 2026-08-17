@@ -30,6 +30,7 @@ function SharePanel({
   onPersonRemoved,
   updateGroupInAccessList,
   hasFullAccess,
+  canManageFullAccess,
   currentUserAccessLevel,
   sectionType,
 }: {
@@ -42,6 +43,7 @@ function SharePanel({
   onPersonRemoved: (email: string) => void;
   updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
+  canManageFullAccess: boolean;
   currentUserAccessLevel?: AccessLevel;
   sectionType: ShareSectionType;
 }) {
@@ -148,7 +150,7 @@ function SharePanel({
                 await refreshPeople();
               }}
               hasFullAccess={hasFullAccess}
-              canGrantFullAccess={hasFullAccess}
+              canGrantFullAccess={canManageFullAccess}
             />
             {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
           </>
@@ -163,7 +165,8 @@ function SharePanel({
           onPersonRemoved={onPersonRemoved}
           updateGroupInAccessList={updateGroupInAccessList}
           hasFullAccess={hasFullAccess}
-          canGrantFullAccess={hasFullAccess}
+          canManageFullAccess={canManageFullAccess}
+          canGrantFullAccess={canManageFullAccess}
           sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} />

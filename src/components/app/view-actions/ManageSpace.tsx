@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
@@ -16,7 +17,7 @@ import {
   WorkspaceMember,
 } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
-import { useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAppView, useCurrentWorkspaceId, useEventEmitter, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
@@ -58,7 +59,7 @@ const VISIBILITY_OPTIONS = [
   SpaceVisibility.Default,
 ];
 
-const MUTABLE_MEMBER_SOURCES = new Set(['manual']);
+const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share']);
 const MODAL_WIDTH = 680;
 const CONTENT_WIDTH = 640;
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
@@ -102,6 +103,21 @@ function normalizePermissionSettings(permission: SpacePermissionSettings, isPriv
       ...permission.security,
     },
   };
+}
+
+function equalPermissionSettings(left: SpacePermissionSettings, right: SpacePermissionSettings): boolean {
+  return (
+    left.visibility === right.visibility &&
+    left.owner_access_level === right.owner_access_level &&
+    left.member_default_access_level === right.member_default_access_level &&
+    left.everyone_else_access_level === right.everyone_else_access_level &&
+    left.invite_policy === right.invite_policy &&
+    left.sidebar_edit_policy === right.sidebar_edit_policy &&
+    left.invite_link_enabled === right.invite_link_enabled &&
+    left.security.disable_guests === right.security.disable_guests &&
+    left.security.disable_public_links === right.security.disable_public_links &&
+    left.security.disable_export === right.security.disable_export
+  );
 }
 
 function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction): string {
@@ -172,6 +188,10 @@ function matchesGroupSearch(group: WorkspaceGroupSpacePermission, normalizedSear
   return !normalizedSearch || group.name.toLowerCase().includes(normalizedSearch);
 }
 
+function isMutableSpaceMember(member: SpaceMember): boolean {
+  return !INHERITED_MEMBER_SOURCES.has(member.source);
+}
+
 function AccessDropdown({
   value,
   disabled,
@@ -215,13 +235,18 @@ function AccessDropdown({
 function VisibilityDropdown({
   value,
   disabled,
+  allowDefault,
   onChange,
 }: {
   value: SpaceVisibility;
   disabled?: boolean;
+  allowDefault: boolean;
   onChange: (value: SpaceVisibility) => void;
 }) {
   const { t } = useTranslation();
+  const options = allowDefault
+    ? VISIBILITY_OPTIONS
+    : VISIBILITY_OPTIONS.filter((option) => option !== SpaceVisibility.Default);
 
   return (
     <DropdownMenu>
@@ -239,8 +264,13 @@ function VisibilityDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-[320px]'>
-        {VISIBILITY_OPTIONS.map((option) => (
-          <DropdownMenuItem key={option} onSelect={() => onChange(option)} className='items-start justify-between gap-4'>
+        {options.map((option) => (
+          <DropdownMenuItem
+            key={option}
+            data-testid={`manage-space-visibility-option-${option}`}
+            onSelect={() => onChange(option)}
+            className='items-start justify-between gap-4'
+          >
             <div className='flex flex-col gap-0.5'>
               <span>{visibilityLabel(option, t)}</span>
               <span className='text-xs text-text-secondary'>{visibilityDescription(option, t)}</span>
@@ -321,6 +351,7 @@ function RoleDropdown({
 function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => void; viewId: string }) {
   const view = useAppView(viewId);
   const workspaceId = useCurrentWorkspaceId();
+  const eventEmitter = useEventEmitter();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const { t } = useTranslation();
   const currentWorkspaceName =
@@ -332,7 +363,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [permissionSettings, setPermissionSettings] = useState<SpacePermissionSettings>(
     defaultPermissionSettings(Boolean(view?.is_private))
   );
+  const [loadedPermissionSettings, setLoadedPermissionSettings] = useState<SpacePermissionSettings | null>(null);
   const [canManageSpace, setCanManageSpace] = useState(false);
+  const [canEditSidebar, setCanEditSidebar] = useState(false);
   const [canManageMembers, setCanManageMembers] = useState(false);
   const [canInviteMembers, setCanInviteMembers] = useState(false);
   const [spaceMembers, setSpaceMembers] = useState<SpaceMember[]>([]);
@@ -343,6 +376,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [spaceMembersLoaded, setSpaceMembersLoaded] = useState(false);
   const [permissionLoaded, setPermissionLoaded] = useState(false);
   const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
+  const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
+  const [hasOtherDefaultSpace, setHasOtherDefaultSpace] = useState<boolean>();
   const [saving, setSaving] = useState(false);
   const [mutatingMemberUid, setMutatingMemberUid] = useState<string | null>(null);
   const [mutatingGroupIds, setMutatingGroupIds] = useState<Set<string>>(() => new Set());
@@ -350,6 +385,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [memberSearch, setMemberSearch] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const settingsRequestSequenceRef = useRef(0);
   const spaceRequestRef = useRef({
     generation: 0,
     memberRequestSequence: 0,
@@ -361,6 +397,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   useEffect(() => {
     const currentRequestScope = spaceRequestRef.current;
 
+    settingsRequestSequenceRef.current += 1;
     spaceRequestRef.current = {
       generation: currentRequestScope.generation + 1,
       memberRequestSequence: currentRequestScope.memberRequestSequence + 1,
@@ -369,6 +406,23 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       viewId,
     };
   }, [open, viewId, workspaceId]);
+
+  const beginPermissionRefresh = useCallback(() => {
+    setLoadingSettings(true);
+    setLoadingMembers(false);
+    setPermissionLoaded(false);
+    setPermissionLoadFailed(false);
+    setLoadedPermissionSettings(null);
+    setCanManageSpace(false);
+    setCanEditSidebar(false);
+    setCanManageMembers(false);
+    setCanInviteMembers(false);
+    setHasOtherDefaultSpace(undefined);
+    setSpaceMembersLoaded(false);
+    setSpaceMembers([]);
+    setSpaceGroups([]);
+    setWorkspaceMembers([]);
+  }, []);
 
   // Always hold the latest view without making it an effect dependency: `view`
   // is recomputed whenever the outline changes identity (realtime sync, a
@@ -391,11 +445,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setSpaceIcon(currentView.extra?.space_icon || '');
     setSpaceIconColor(currentView.extra?.space_icon_color || '');
     setPermissionSettings(defaultPermissionSettings(Boolean(currentView.is_private)));
+    setLoadedPermissionSettings(null);
     setCanManageSpace(false);
+    setCanEditSidebar(false);
     setCanManageMembers(false);
     setCanInviteMembers(false);
     setPermissionLoaded(false);
     setPermissionLoadFailed(false);
+    setHasOtherDefaultSpace(undefined);
     setSpaceMembersLoaded(false);
     setLoadingMembers(false);
     setSpaceMembers([]);
@@ -453,34 +510,94 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   }, [t, workspaceId, viewId]);
 
   useEffect(() => {
+    if (!open) return;
+
+    const handlePermissionChanged = () => {
+      settingsRequestSequenceRef.current += 1;
+      const requestScope = spaceRequestRef.current;
+
+      spaceRequestRef.current = {
+        ...requestScope,
+        memberRequestSequence: requestScope.memberRequestSequence + 1,
+      };
+      beginPermissionRefresh();
+      setPermissionRefreshRevision((revision) => revision + 1);
+    };
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
+    };
+  }, [beginPermissionRefresh, eventEmitter, open]);
+
+  useEffect(() => {
     if (!open || !workspaceId || !viewRef.current) return;
     let cancelled = false;
 
-    setLoadingSettings(true);
-    setPermissionLoaded(false);
-    setPermissionLoadFailed(false);
+    const settingsRequestSequence = settingsRequestSequenceRef.current + 1;
+    const requestScope = spaceRequestRef.current;
+
+    settingsRequestSequenceRef.current = settingsRequestSequence;
+    spaceRequestRef.current = {
+      ...requestScope,
+      memberRequestSequence: requestScope.memberRequestSequence + 1,
+    };
+    const isCurrentSettingsRequest = () => {
+      const currentScope = spaceRequestRef.current;
+
+      return (
+        !cancelled &&
+        settingsRequestSequenceRef.current === settingsRequestSequence &&
+        currentScope.open &&
+        currentScope.workspaceId === workspaceId &&
+        currentScope.viewId === viewId
+      );
+    };
+
+    beginPermissionRefresh();
     void (async () => {
       let shouldLoadWorkspaceMembers = false;
       let shouldLoadSpaceMembers = false;
+      const spacesRequest = WorkspaceService.getSpaces(workspaceId).catch(() => null);
 
       try {
         const permission = await WorkspaceService.getSpacePermission(workspaceId, viewId);
 
-        if (cancelled) return;
-        setPermissionSettings(normalizePermissionSettings(permission.permission, Boolean(viewRef.current?.is_private)));
+        if (!isCurrentSettingsRequest()) return;
+        const normalizedPermission = normalizePermissionSettings(
+          permission.permission,
+          Boolean(viewRef.current?.is_private)
+        );
+
+        setPermissionSettings(normalizedPermission);
+        setLoadedPermissionSettings(normalizedPermission);
         setCanManageSpace(permission.can_manage_space);
+        setCanEditSidebar(permission.can_edit_sidebar || permission.can_manage_space);
         setCanManageMembers(permission.can_manage_members);
         setCanInviteMembers(permission.can_invite_members);
+        void spacesRequest.then((spacesResult) => {
+          if (!isCurrentSettingsRequest()) return;
+          setHasOtherDefaultSpace(
+            spacesResult
+              ? spacesResult.spaces.some(
+                  (space) => space.space_id !== viewId && space.permission.visibility === SpaceVisibility.Default
+                )
+              : undefined
+          );
+        });
         setPermissionLoaded(true);
         shouldLoadWorkspaceMembers = permission.can_manage_members || permission.can_invite_members;
         shouldLoadSpaceMembers = permission.can_manage_members;
       } catch (error) {
-        if (!cancelled) {
+        if (isCurrentSettingsRequest()) {
           setCanManageSpace(false);
+          setCanEditSidebar(false);
           setCanManageMembers(false);
           setCanInviteMembers(false);
+          setLoadedPermissionSettings(null);
           setPermissionLoaded(false);
           setPermissionLoadFailed(true);
+          setHasOtherDefaultSpace(undefined);
           setSpaceMembersLoaded(false);
           setSpaceMembers([]);
           setSpaceGroups([]);
@@ -488,24 +605,26 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceSettingsFailed')));
         }
       } finally {
-        if (!cancelled) setLoadingSettings(false);
+        if (isCurrentSettingsRequest()) setLoadingSettings(false);
       }
 
       const loadWorkspaceMembers = async () => {
         if (!shouldLoadWorkspaceMembers) return;
         try {
-          const workspaceMemberList = await WorkspaceService.getMembers(workspaceId, true);
+          const workspaceMemberList = await WorkspaceService.getMembers(workspaceId);
 
-          if (!cancelled) setWorkspaceMembers(workspaceMemberList);
+          if (isCurrentSettingsRequest()) setWorkspaceMembers(workspaceMemberList);
         } catch (error) {
-          if (!cancelled) toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+          if (isCurrentSettingsRequest()) {
+            toast.error(getErrorMessage(error, t('space.permissionManager.loadSpaceMembersFailed')));
+          }
         }
       };
 
       const loadSpaceMembers = async () => {
         if (shouldLoadSpaceMembers) {
           await refreshSpaceMembers();
-        } else if (!cancelled) {
+        } else if (isCurrentSettingsRequest()) {
           setSpaceMembersLoaded(false);
           setSpaceMembers([]);
           setSpaceGroups([]);
@@ -518,7 +637,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     return () => {
       cancelled = true;
     };
-  }, [open, refreshSpaceMembers, t, viewId, workspaceId]);
+  }, [beginPermissionRefresh, open, permissionRefreshRevision, refreshSpaceMembers, t, viewId, workspaceId]);
 
   const normalizedMemberSearch = memberSearch.trim().toLowerCase();
 
@@ -547,6 +666,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     search: memberSearch,
     excludedUids: explicitMemberUids,
     excludedEmails: explicitMemberEmails,
+    excludePending: true,
   });
   const showCurrentSpaceMemberList =
     !normalizedMemberSearch ||
@@ -581,7 +701,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleSave = useCallback(async () => {
     if (!workspaceId) return;
-    if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canManageSpace) {
+    if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canEditSidebar) {
       if (permissionLoadFailed) {
         toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
       }
@@ -598,11 +718,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
     setSaving(true);
     try {
+      const permissionChanged =
+        canManageSpace &&
+        loadedPermissionSettings !== null &&
+        !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
+
       await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
         name: trimmedName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
-        permission: permissionSettings,
+        ...(permissionChanged ? { permission: permissionSettings } : {}),
       });
 
       toast.success(t('space.success.updateSpace'));
@@ -613,7 +738,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       setSaving(false);
     }
   }, [
+    canEditSidebar,
     canManageSpace,
+    loadedPermissionSettings,
     loadingSettings,
     onClose,
     permissionSettings,
@@ -675,7 +802,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
       setMutatingMemberUid(member.uid);
       try {
-        if (MUTABLE_MEMBER_SOURCES.has(member.source)) {
+        if (isMutableSpaceMember(member)) {
           await WorkspaceService.updateSpaceMember(workspaceId, viewId, member.uid, {
             role,
             access_level: accessLevel,
@@ -842,10 +969,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   if (!view) return null;
 
-  const settingsDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
+  const metadataDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canEditSidebar;
+  const permissionSettingsDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
   const membersDisabled =
     loadingMembers || !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canManageMembers;
   const addMembersDisabled = !permissionLoaded || permissionLoadFailed || !canInviteMembers;
+  const allowDefaultVisibility =
+    loadedPermissionSettings?.visibility === SpaceVisibility.Default || hasOtherDefaultSpace === false;
 
   return (
     <NormalModal
@@ -858,7 +988,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[6%]' }}
       okLoading={saving}
       onOk={handleSave}
-      okButtonProps={{ disabled: settingsDisabled || saving }}
+      okButtonProps={{ disabled: metadataDisabled || saving }}
       overflowHidden
       PaperProps={{
         style: {
@@ -893,6 +1023,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       spaceName={spaceName}
                       onSelectSpaceIcon={setSpaceIcon}
                       onSelectSpaceIconColor={setSpaceIconColor}
+                      disabled={metadataDisabled}
                     />
                   )}
 
@@ -908,7 +1039,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                         inputRef.current = input;
                       }
                     }}
-                    disabled={settingsDisabled}
+                    disabled={metadataDisabled}
                     onChange={(e) => setSpaceName(e.target.value)}
                     size='md'
                     placeholder={t('space.spaceNamePlaceholder')}
@@ -947,7 +1078,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     </div>
                     <VisibilityDropdown
                       value={permissionSettings.visibility}
-                      disabled={settingsDisabled}
+                      disabled={permissionSettingsDisabled}
+                      allowDefault={allowDefaultVisibility}
                       onChange={handleVisibilityChange}
                     />
                   </div>
@@ -972,7 +1104,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     trailing={
                       <AccessDropdown
                         value={permissionSettings.member_default_access_level}
-                        disabled={settingsDisabled}
+                        disabled={permissionSettingsDisabled}
                         onChange={(value) => {
                           if (value !== null) updatePermission({ member_default_access_level: value });
                         }}
@@ -989,7 +1121,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       <AccessDropdown
                         value={permissionSettings.everyone_else_access_level}
                         disabled={
-                          settingsDisabled ||
+                          permissionSettingsDisabled ||
                           permissionSettings.visibility === SpaceVisibility.Closed ||
                           permissionSettings.visibility === SpaceVisibility.Private
                         }
@@ -1047,7 +1179,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                   ) : (
                     <div className='flex flex-col'>
                       {visibleSpaceMembers.map((member) => {
-                        const mutable = MUTABLE_MEMBER_SOURCES.has(member.source);
+                        const mutable = isMutableSpaceMember(member);
 
                         return (
                           <div

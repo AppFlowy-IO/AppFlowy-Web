@@ -152,6 +152,15 @@ describe('MembersPanel workspace group parity', () => {
     mockRemoveWorkspaceGroupMember.mockResolvedValue(undefined);
   });
 
+  it('links the People help action to the AppFlowy guide', async () => {
+    await renderGroupsPanel();
+
+    const learnMore = screen.getByRole('link', { name: 'workspace.learnMore' });
+
+    expect(learnMore.getAttribute('href')).toBe('https://appflowy.com/guide/getting-started-with-appflowy');
+    expect(learnMore.getAttribute('target')).toBe('_blank');
+  });
+
   it('renames a group through a modal instead of inline editing', async () => {
     await renderGroupsPanel();
 

@@ -235,6 +235,35 @@ describe('InviteGuest group sharing', () => {
     expect(screen.getByTestId(`tag-group:${successfulGroup.group_id}`)).toBeTruthy();
   });
 
+  it('never submits a Full Access group invite after owner-tier authority is lost', async () => {
+    const { rerender } = render(<InviteGuest {...inviteGuestProps()} />);
+
+    fireEvent.click(await screen.findByTestId(`suggestion-group:${successfulGroup.group_id}`));
+    fireEvent.click(screen.getByText('shareAction.fullAccess'));
+
+    rerender(<InviteGuest {...inviteGuestProps({ canGrantFullAccess: false })} />);
+
+    expect(screen.queryByText('shareAction.fullAccess')).toBeNull();
+    expect(screen.getByRole('button', { name: 'shareAction.canView' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+
+    await waitFor(() =>
+      expect(mockSharePageToGroup).toHaveBeenCalledWith(
+        'workspace-1',
+        'view-1',
+        successfulGroup.group_id,
+        AccessLevel.ReadOnly
+      )
+    );
+    expect(mockSharePageToGroup).not.toHaveBeenCalledWith(
+      'workspace-1',
+      'view-1',
+      successfulGroup.group_id,
+      AccessLevel.FullAccess
+    );
+  });
+
   it('ignores a late invite result after switching to another view', async () => {
     let resolveFirstInvite!: () => void;
     const firstInvite = new Promise<void>((resolve) => {

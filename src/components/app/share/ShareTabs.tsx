@@ -50,6 +50,7 @@ function ShareTabs({
     updateGroupInAccessList,
     currentUserAccessLevel,
     hasFullAccess,
+    canManageFullAccess,
     sectionType,
   } = useShareAccessDetails(viewId, opened);
 
@@ -130,6 +131,7 @@ function ShareTabs({
                 onPersonRemoved={removePersonFromAccessList}
                 updateGroupInAccessList={updateGroupInAccessList}
                 hasFullAccess={hasFullAccess}
+                canManageFullAccess={canManageFullAccess}
                 currentUserAccessLevel={currentUserAccessLevel}
                 sectionType={sectionType}
               />

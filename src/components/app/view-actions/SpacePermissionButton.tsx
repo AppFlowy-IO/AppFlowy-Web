@@ -52,13 +52,18 @@ function visibilityDescription(visibility: SpaceVisibility, t: TFunction): strin
 function SpacePermissionButton({
   onSelected,
   value,
+  allowDefault = true,
 }: {
   value: SpaceVisibility;
   onSelected?: (permission: SpaceVisibility) => void;
+  allowDefault?: boolean;
 }) {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const { t } = useTranslation();
   const SelectedIcon = isRestrictedVisibility(value) ? LockIcon : PublicIcon;
+  const visibilityOptions = allowDefault
+    ? SPACE_VISIBILITY_OPTIONS
+    : SPACE_VISIBILITY_OPTIONS.filter((option) => option !== SpaceVisibility.Default);
 
   return (
     <>
@@ -84,7 +89,7 @@ function SpacePermissionButton({
           }}
           className={'flex flex-col gap-2 p-2'}
         >
-          {SPACE_VISIBILITY_OPTIONS.map((option, index) => {
+          {visibilityOptions.map((option, index) => {
             const OptionIcon = isRestrictedVisibility(option) ? LockIcon : PublicIcon;
 
             return (
@@ -105,7 +110,7 @@ function SpacePermissionButton({
                   </div>
                   {option === value && <TickIcon className={'h-6 w-6 text-function-success'} />}
                 </Button>
-                {index < SPACE_VISIBILITY_OPTIONS.length - 1 && <Divider />}
+                {index < visibilityOptions.length - 1 && <Divider />}
               </React.Fragment>
             );
           })}

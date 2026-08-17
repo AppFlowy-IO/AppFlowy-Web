@@ -27,6 +27,7 @@ interface PeopleWithAccessProps {
   onPersonRemoved: (email: string) => void;
   updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
+  canManageFullAccess: boolean;
   canGrantFullAccess: boolean;
   sectionType: ShareSectionType;
 }
@@ -41,6 +42,7 @@ export function PeopleWithAccess({
   updateGroupInAccessList,
   isLoading,
   hasFullAccess,
+  canManageFullAccess,
   canGrantFullAccess,
   sectionType,
 }: PeopleWithAccessProps) {
@@ -195,6 +197,7 @@ export function PeopleWithAccess({
               group={group}
               canModify={hasFullAccess && editableGroupIds.has(group.group_id)}
               currentUserHasFullAccess={hasFullAccess}
+              canManageFullAccess={canManageFullAccess}
               onAccessLevelChange={handleGroupAccessLevelChange}
               onRemoveAccess={handleRemoveGroupAccess}
             />

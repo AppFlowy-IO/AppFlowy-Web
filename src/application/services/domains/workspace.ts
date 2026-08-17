@@ -9,6 +9,7 @@ export {
   inviteMembers,
   removeMembers,
   getMembers,
+  getSpaces,
   getSpacePermission,
   updateSpacePermission,
   updateStructuredSpace,

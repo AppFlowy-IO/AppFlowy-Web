@@ -13,6 +13,7 @@ import {
   Role,
   SpaceMember,
   SpaceMembers,
+  Spaces,
   SpacePermissionResponse,
   SpacePermissionSettings,
   StructuredSpace,
@@ -211,6 +212,12 @@ export async function getSpacePermission(workspaceId: string, spaceId: string) {
   return executeAPIRequest<SpacePermissionResponse>(() =>
     getAxios()?.get<APIResponse<SpacePermissionResponse>>(url)
   );
+}
+
+export async function getSpaces(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces`;
+
+  return executeAPIRequest<Spaces>(() => getAxios()?.get<APIResponse<Spaces>>(url));
 }
 
 export async function updateSpacePermission(
