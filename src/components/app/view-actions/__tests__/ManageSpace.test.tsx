@@ -10,6 +10,7 @@ import {
   SpaceListItem,
   SpaceMember,
   SpaceMemberRole,
+  SpacePermission,
   SpacePermissionSettings,
   SpaceSidebarEditPolicy,
   SpaceVisibility,
@@ -355,6 +356,38 @@ describe('ManageSpace ACL management', () => {
     expect(mockUpdateSpace).not.toHaveBeenCalled();
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('space_permission');
   });
+
+  it.each([404, 405])(
+    'uses the legacy binary space editor when the structured route returns HTTP %s',
+    async (status) => {
+      mockGetSpacePermission.mockRejectedValueOnce({ code: status, httpStatus: status, message: 'Unsupported route' });
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('manage-space-save').disabled).toBe(false));
+
+      expect(screen.queryByText('space.permissionManager.membersTab')).toBeNull();
+      expect(screen.queryByTestId('manage-space-members-default-access-row')).toBeNull();
+      expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Closed}`)).toBeNull();
+      expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Default}`)).toBeNull();
+
+      fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Private}`));
+      fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+        target: { value: 'Legacy renamed space' },
+      });
+      fireEvent.click(screen.getByTestId('manage-space-save'));
+
+      await waitFor(() =>
+        expect(mockUpdateSpace).toHaveBeenCalledWith({
+          view_id: 'space-1',
+          name: 'Legacy renamed space',
+          space_icon: 'space',
+          space_icon_color: '#000000',
+          space_permission: SpacePermission.Private,
+        })
+      );
+      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
+    }
+  );
 
   it('omits an unchanged permission from a manager metadata-only save', async () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);

@@ -1540,6 +1540,8 @@ export interface WorkspaceGroup {
   group_id: string;
   name: string;
   member_count: number;
+  /** `scim` groups are owned by the external directory and are read-only. */
+  source?: string;
 }
 
 export interface WorkspaceGroups {
@@ -1668,8 +1670,6 @@ export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
 export interface View {
   folder_rid?: string;
   view_id: string;
-  /** Numeric user id of the creator, returned by folder-view endpoints. */
-  created_by?: string | number | null;
   name: string;
   icon: ViewIcon | null;
   layout: ViewLayout;

@@ -11,15 +11,11 @@ import {
   WorkspaceGroupViewPermission,
 } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
-import {
-  useAppOutline,
-  useCurrentWorkspaceId,
-  useEventEmitter,
-  useUserWorkspaceInfo,
-} from '@/components/app/app.hooks';
+import { useAppOutline, useCurrentWorkspaceId, useEventEmitter, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { resolveCurrentUserAccessLevel } from '@/components/app/share/shareAccessLevel';
 import { resolveShareSectionType, ShareSectionType } from '@/components/app/share/shareSectionType';
 import { useCurrentUser } from '@/components/main/app.hooks';
+import { isUnsupportedRouteError } from '@/utils/errors';
 
 const ACCESS_DETAILS_MAX_TRANSIENT_RETRIES = 1;
 const ACCESS_DETAILS_DEFAULT_RETRY_MS = 300;
@@ -75,17 +71,11 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function sameUserId(first: string | number | null | undefined, second: string | number | null | undefined) {
-  return first !== undefined && first !== null && second !== undefined && second !== null && String(first) === String(second);
-}
-
 function resolveFullAccessAuthorityContext({
   ancestry,
-  currentUserId,
   workspaceRole,
 }: {
   ancestry: ReturnType<typeof findAncestors>;
-  currentUserId?: string | null;
   workspaceRole?: Role;
 }): FullAccessAuthorityContext {
   if (!ancestry || ancestry.length === 0) return { kind: 'unknown' };
@@ -98,8 +88,7 @@ function resolveFullAccessAuthorityContext({
     return {
       kind: 'space',
       spaceId: realSpace.view_id,
-      publicCanManage:
-        workspaceRole === Role.Owner || ancestry.some((view) => sameUserId(view.created_by, currentUserId)),
+      publicCanManage: workspaceRole === Role.Owner,
     };
   } else if (ancestry.some((view) => view.is_private)) {
     // Legacy private sections do not expose an owner capability through the
@@ -109,8 +98,7 @@ function resolveFullAccessAuthorityContext({
 
   return {
     kind: 'public',
-    canManage:
-      workspaceRole === Role.Owner || ancestry.some((view) => sameUserId(view.created_by, currentUserId)),
+    canManage: workspaceRole === Role.Owner,
   };
 }
 
@@ -197,10 +185,9 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     () =>
       resolveFullAccessAuthorityContext({
         ancestry: viewAncestry,
-        currentUserId: currentUser?.uid,
         workspaceRole: userWorkspaceInfo?.selectedWorkspace?.role,
       }),
-    [currentUser?.uid, userWorkspaceInfo?.selectedWorkspace?.role, viewAncestry]
+    [userWorkspaceInfo?.selectedWorkspace?.role, viewAncestry]
   );
 
   if (directGroupSnapshotRef.current.viewId !== viewId) {
@@ -232,10 +219,16 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
                   acceptsLegacyCreatorSignals: !isPrivate,
                 };
               })
-              .catch(() => ({ canManage: false, acceptsLegacyCreatorSignals: false }))
+              .catch((error) =>
+                isUnsupportedRouteError(error)
+                  ? {
+                      canManage: fullAccessAuthorityContext.publicCanManage,
+                      acceptsLegacyCreatorSignals: true,
+                    }
+                  : { canManage: false, acceptsLegacyCreatorSignals: false }
+              )
           : Promise.resolve({
-              canManage:
-                fullAccessAuthorityContext.kind === 'public' ? fullAccessAuthorityContext.canManage : false,
+              canManage: fullAccessAuthorityContext.kind === 'public' ? fullAccessAuthorityContext.canManage : false,
               acceptsLegacyCreatorSignals: fullAccessAuthorityContext.kind === 'public',
             });
 

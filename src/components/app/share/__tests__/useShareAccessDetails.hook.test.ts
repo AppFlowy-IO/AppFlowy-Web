@@ -21,6 +21,7 @@ const mockInvalidateShareDetailCache = jest.fn();
 const mockGetSpacePermission = jest.fn();
 let mockOutline: View[] = [];
 let mockWorkspaceRole: Role | undefined;
+let mockCurrentUserId = '1001';
 
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
@@ -41,7 +42,7 @@ jest.mock('@/components/app/app.hooks', () => ({
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
-  useCurrentUser: () => ({ uid: '1001', email: 'owner@appflowy.io' }),
+  useCurrentUser: () => ({ uid: mockCurrentUserId, email: 'owner@appflowy.io' }),
 }));
 
 const removedPerson: IPeopleWithAccessType = {
@@ -73,6 +74,7 @@ describe('useShareAccessDetails', () => {
       permission: { visibility: SpaceVisibility.Open },
       can_manage_space: false,
     });
+    mockCurrentUserId = '1001';
     mockWorkspaceRole = Role.Member;
     mockOutline = [
       {
@@ -135,7 +137,6 @@ describe('useShareAccessDetails', () => {
     mockOutline = [
       {
         view_id: 'space-1',
-        created_by: 1001,
         name: 'Public space',
         icon: null,
         layout: ViewLayout.Document,
@@ -154,6 +155,7 @@ describe('useShareAccessDetails', () => {
       shared_with: [],
       current_user_permission: {
         access_level: AccessLevel.FullAccess,
+        ancestor_creator: true,
       },
     });
 
@@ -161,6 +163,58 @@ describe('useShareAccessDetails', () => {
 
     await waitFor(() => expect(result.current.canManageFullAccess).toBe(true));
     expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', 'space-1');
+  });
+
+  it('preserves legacy creator authority when the structured route returns HTTP 404', async () => {
+    mockOutline = [
+      {
+        view_id: 'space-1',
+        name: 'Legacy public space',
+        icon: null,
+        layout: ViewLayout.Document,
+        extra: { is_space: true },
+        children: [{ ...mockOutline[0], is_private: false }],
+        is_published: false,
+        is_private: false,
+      },
+    ];
+    mockGetSpacePermission.mockRejectedValueOnce({ code: 404, httpStatus: 404, message: 'Unsupported route' });
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [],
+      current_user_permission: {
+        access_level: AccessLevel.FullAccess,
+        ancestor_creator: true,
+      },
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.canManageFullAccess).toBe(true));
+  });
+
+  it('preserves legacy workspace-owner authority when the structured route returns HTTP 405', async () => {
+    mockWorkspaceRole = Role.Owner;
+    mockOutline = [
+      {
+        view_id: 'space-1',
+        name: 'Legacy public space',
+        icon: null,
+        layout: ViewLayout.Document,
+        extra: { is_space: true },
+        children: [{ ...mockOutline[0], is_private: false }],
+        is_published: false,
+        is_private: false,
+      },
+    ];
+    mockGetSpacePermission.mockRejectedValueOnce({ code: 405, httpStatus: 405, message: 'Unsupported route' });
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [],
+      current_user_permission: { access_level: AccessLevel.FullAccess },
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.canManageFullAccess).toBe(true));
   });
 
   it('uses the private-space owner capability to manage Full Access grants', async () => {
@@ -203,12 +257,7 @@ describe('useShareAccessDetails', () => {
         icon: null,
         layout: ViewLayout.Document,
         extra: { is_space: true },
-        children: [
-          {
-            ...mockOutline[0],
-            created_by: '1001',
-          },
-        ],
+        children: [mockOutline[0]],
         is_published: false,
         is_private: true,
       },
@@ -292,12 +341,7 @@ describe('useShareAccessDetails', () => {
         icon: null,
         layout: ViewLayout.Document,
         extra: { is_space: true },
-        children: [
-          {
-            ...mockOutline[0],
-            created_by: 1001,
-          },
-        ],
+        children: [mockOutline[0]],
         is_published: false,
         is_private: false,
       },
@@ -313,6 +357,37 @@ describe('useShareAccessDetails', () => {
 
     await waitFor(() => expect(result.current.canManageFullAccess).toBe(true));
     expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', 'space-1');
+  });
+
+  it('does not infer creator authority from rounded Snowflake IDs', async () => {
+    mockCurrentUserId = '9007199254740992';
+    const roundedCreatorSpace = {
+      view_id: 'space-1',
+      created_by: Number('9007199254740993'),
+      name: 'Public space',
+      icon: null,
+      layout: ViewLayout.Document,
+      extra: { is_space: true },
+      children: [{ ...mockOutline[0], is_private: false }],
+      is_published: false,
+      is_private: false,
+    } as View & { created_by: number };
+
+    expect(String(roundedCreatorSpace.created_by)).toBe(mockCurrentUserId);
+    mockOutline = [roundedCreatorSpace];
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [],
+      current_user_permission: {
+        access_level: AccessLevel.FullAccess,
+        object_creator: false,
+        ancestor_creator: false,
+      },
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.hasFullAccess).toBe(true));
+    expect(result.current.canManageFullAccess).toBe(false);
   });
 
   it('fails closed when governing space visibility cannot be verified', async () => {

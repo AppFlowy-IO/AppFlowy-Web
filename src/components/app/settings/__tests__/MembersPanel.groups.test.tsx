@@ -204,6 +204,45 @@ describe('MembersPanel workspace group parity', () => {
     expect(await screen.findByTestId('group-detail-modal')).toBeTruthy();
   });
 
+  it('keeps SCIM-managed groups visible while making identity and membership controls read-only', async () => {
+    const scimGroup: WorkspaceGroup = {
+      ...group,
+      name: 'Directory Engineering',
+      source: 'scim',
+      member_count: 1,
+    };
+    const scimMember = {
+      uid: workspaceMember.uid as string,
+      email: workspaceMember.email,
+      name: workspaceMember.name,
+    };
+
+    mockGetWorkspaceGroups.mockResolvedValueOnce({ groups: [scimGroup] });
+    mockGetWorkspaceGroupMembers.mockResolvedValueOnce({ members: [scimMember] });
+    await renderGroupsPanel();
+
+    const row = screen.getByTestId(`group-row-${scimGroup.group_id}`);
+
+    expect(within(row).queryByText('settings.appearance.people.renameGroup')).toBeNull();
+    expect(within(row).queryByText('settings.appearance.people.deleteGroup')).toBeNull();
+    expect(
+      within(row).queryByRole('button', {
+        name: `settings.appearance.people.groupActions ${scimGroup.name}`,
+      })
+    ).toBeNull();
+
+    fireEvent.click(screen.getByTestId(`group-edit-${scimGroup.group_id}`));
+    const memberRow = await screen.findByTestId(`group-member-row-${scimMember.uid}`);
+
+    expect(screen.queryByTestId('group-detail-delete-button')).toBeNull();
+    expect(screen.queryByTestId('workspace-member-inline-search-input')).toBeNull();
+    expect(within(memberRow).queryByRole('button', { name: 'button.remove' })).toBeNull();
+    expect(mockUpdateWorkspaceGroup).not.toHaveBeenCalled();
+    expect(mockRemoveWorkspaceGroup).not.toHaveBeenCalled();
+    expect(mockAddWorkspaceGroupMember).not.toHaveBeenCalled();
+    expect(mockRemoveWorkspaceGroupMember).not.toHaveBeenCalled();
+  });
+
   it('places Create Group beside the name and closes without creating by default', async () => {
     await renderGroupsPanel();
 

@@ -237,7 +237,7 @@ describe('view action permission gates', () => {
       </ViewActionsPopover>
     );
 
-    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
+    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true, false);
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
     expect(screen.queryByTestId('space-action-delete')).toBeNull();
   });
@@ -324,6 +324,7 @@ describe('view action permission gates', () => {
 
     expect(screen.queryByTestId('space-action-manage')).toBeNull();
     expect(screen.getByTestId('space-action-delete')).toBeTruthy();
+    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true, true);
   });
 
   it('does not mount add actions until effective permissions allow mutations', () => {

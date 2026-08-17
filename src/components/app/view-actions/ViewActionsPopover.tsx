@@ -50,7 +50,7 @@ function ViewActionsPopover({
     open && popoverType?.category === 'space' && popoverType.type === 'more'
   );
   const { canOpenManageSpace, hasLoadedSpaceActionPermissions, isLoadingSpaceActionPermissions } =
-    useSpaceActionPermissions(view, shouldLoadSpaceActionPermissions);
+    useSpaceActionPermissions(view, shouldLoadSpaceActionPermissions, canManageViewActions);
   const isResolvingViewActionPermissions =
     isLoadingViewActionPermissions ||
     !hasLoadedViewActionPermissions ||

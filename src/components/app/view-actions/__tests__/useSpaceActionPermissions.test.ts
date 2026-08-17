@@ -2,7 +2,7 @@ import EventEmitter from 'events';
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { SpacePermissionResponse, View } from '@/application/types';
 import { useSpaceActionPermissions } from '@/components/app/view-actions/useSpaceActionPermissions';
 
@@ -94,6 +94,31 @@ describe('useSpaceActionPermissions', () => {
 
     mockGetSpacePermission.mockRejectedValue(new Error('permission unavailable'));
     const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
+
+    await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
+
+    expect(result.current.canOpenManageSpace).toBe(false);
+    consoleError.mockRestore();
+  });
+
+  it.each([404, 405])('retains legacy management when the structured route returns HTTP %s', async (status) => {
+    mockGetSpacePermission.mockRejectedValue({ code: status, httpStatus: status, message: 'Unsupported route' });
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true, true));
+
+    await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
+
+    expect(result.current.canOpenManageSpace).toBe(true);
+  });
+
+  it('does not treat a payload-level not-found response as an unsupported route', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    mockGetSpacePermission.mockRejectedValue({
+      code: ERROR_CODE.RECORD_NOT_FOUND,
+      httpStatus: 404,
+      message: 'Space not found',
+    });
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true, true));
 
     await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
 

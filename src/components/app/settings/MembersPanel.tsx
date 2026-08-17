@@ -54,6 +54,7 @@ type PeopleTab = 'members' | 'groups';
 type GroupDetailTab = 'general' | 'members';
 const GROUP_EXCLUDED_WORKSPACE_ROLES = [Role.Guest];
 const PEOPLE_GUIDE_URL = 'https://appflowy.com/guide/getting-started-with-appflowy';
+const SCIM_GROUP_SOURCE = 'scim';
 
 function parseInviteEmails(value: string): string[] {
   return Array.from(
@@ -97,6 +98,10 @@ function tabLabel(label: string, count: number): string {
 function matchesGroup(group: WorkspaceGroup, normalizedSearch: string): boolean {
   if (!normalizedSearch) return true;
   return group.name.toLowerCase().includes(normalizedSearch);
+}
+
+function isScimManagedGroup(group: WorkspaceGroup): boolean {
+  return group.source?.toLowerCase() === SCIM_GROUP_SOURCE;
 }
 
 function groupMemberCountLabel(count: number, t: TFunction): string {
@@ -406,8 +411,14 @@ function MembersPanelForWorkspace({
   }, [currentWorkspaceId, generatingLink, t]);
 
   const startRenameGroup = useCallback((group: WorkspaceGroup) => {
+    if (isScimManagedGroup(group)) return;
     setRenamingGroup(group);
     setRenamingGroupName(group.name);
+  }, []);
+
+  const requestDeleteGroup = useCallback((group: WorkspaceGroup) => {
+    if (isScimManagedGroup(group)) return;
+    setDeleteConfirmationGroup(group);
   }, []);
 
   const closeRenameGroup = useCallback(() => {
@@ -418,7 +429,7 @@ function MembersPanelForWorkspace({
 
   const handleRenameGroup = useCallback(
     async (group: WorkspaceGroup) => {
-      if (!currentWorkspaceId || !isOwner) return;
+      if (!currentWorkspaceId || !isOwner || isScimManagedGroup(group)) return;
       const name = renamingGroupName.trim();
 
       if (!name) return;
@@ -446,7 +457,7 @@ function MembersPanelForWorkspace({
 
   const handleDeleteGroup = useCallback(
     async (group: WorkspaceGroup) => {
-      if (!currentWorkspaceId || !isOwner) return;
+      if (!currentWorkspaceId || !isOwner || isScimManagedGroup(group)) return;
 
       setDeletingGroupId(group.group_id);
       try {
@@ -727,6 +738,8 @@ function MembersPanelForWorkspace({
                         </div>
                       ) : (
                         visibleGroups.map((group) => {
+                          const isScimManaged = isScimManagedGroup(group);
+
                           return (
                             <div
                               key={group.group_id}
@@ -750,29 +763,30 @@ function MembersPanelForWorkspace({
                                 <EditIcon aria-hidden='true' className='h-5 w-5' />
                               </button>
                               <div>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button
-                                      type='button'
-                                      disabled={deletingGroupId === group.group_id}
-                                      className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
-                                      aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
-                                    >
-                                      <MoreIcon aria-hidden='true' className='h-4 w-4' />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
-                                    <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
-                                      {t('settings.appearance.people.renameGroup')}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      variant='destructive'
-                                      onSelect={() => setDeleteConfirmationGroup(group)}
-                                    >
-                                      {t('settings.appearance.people.deleteGroup')}
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                {isScimManaged ? (
+                                  <span className='block h-7 w-7' aria-hidden='true' />
+                                ) : (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button
+                                        type='button'
+                                        disabled={deletingGroupId === group.group_id}
+                                        className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
+                                        aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
+                                      >
+                                        <MoreIcon aria-hidden='true' className='h-4 w-4' />
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
+                                      <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
+                                        {t('settings.appearance.people.renameGroup')}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem variant='destructive' onSelect={() => requestDeleteGroup(group)}>
+                                        {t('settings.appearance.people.deleteGroup')}
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                )}
                               </div>
                             </div>
                           );
@@ -793,7 +807,7 @@ function MembersPanelForWorkspace({
           group={selectedGroupForPanel}
           onClose={() => setSelectedGroup(null)}
           onGroupChanged={refreshGroups}
-          onDeleteRequested={() => setDeleteConfirmationGroup(selectedGroupForPanel)}
+          onDeleteRequested={() => requestDeleteGroup(selectedGroupForPanel)}
           workspaceMembers={members}
         />
       )}
@@ -1305,6 +1319,7 @@ function GroupDetailModal({
   onDeleteRequested,
 }: GroupDetailModalProps) {
   const { t } = useTranslation();
+  const readOnly = isScimManagedGroup(group);
   const [tab, setTab] = useState<GroupDetailTab>('general');
   const [groupMembers, setGroupMembers] = useState<WorkspaceGroupMember[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
@@ -1317,7 +1332,7 @@ function GroupDetailModal({
 
     let cancelled = false;
 
-    setTab('general');
+    setTab(readOnly ? 'members' : 'general');
     setMemberSearch('');
     setLoadingGroupMembers(true);
 
@@ -1339,7 +1354,7 @@ function GroupDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [group.group_id, open, t, workspaceId]);
+  }, [group.group_id, open, readOnly, t, workspaceId]);
 
   const groupMemberUidSet = useMemo(() => new Set(groupMembers.map((member) => member.uid)), [groupMembers]);
   const groupMemberEmailSet = useMemo(
@@ -1385,6 +1400,7 @@ function GroupDetailModal({
 
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
+      if (readOnly) return;
       const uid = getWorkspaceMemberUid(workspaceMember);
 
       if (!uid) {
@@ -1415,11 +1431,12 @@ function GroupDetailModal({
         setAddingUid(null);
       }
     },
-    [group.group_id, onGroupChanged, t, workspaceId]
+    [group.group_id, onGroupChanged, readOnly, t, workspaceId]
   );
 
   const handleRemoveMember = useCallback(
     async (member: WorkspaceGroupMember) => {
+      if (readOnly) return;
       setRemovingUid(member.uid);
       try {
         await WorkspaceService.removeWorkspaceGroupMember(workspaceId, group.group_id, member.uid);
@@ -1432,7 +1449,7 @@ function GroupDetailModal({
         setRemovingUid(null);
       }
     },
-    [group.group_id, onGroupChanged, t, workspaceId]
+    [group.group_id, onGroupChanged, readOnly, t, workspaceId]
   );
 
   return (
@@ -1471,12 +1488,14 @@ function GroupDetailModal({
             className='mt-5 min-h-0 flex-1 gap-4'
           >
             <TabsList className='gap-1'>
-              <TabsTrigger
-                value='general'
-                className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
-              >
-                {t('settings.appearance.people.generalTab')}
-              </TabsTrigger>
+              {!readOnly && (
+                <TabsTrigger
+                  value='general'
+                  className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
+                >
+                  {t('settings.appearance.people.generalTab')}
+                </TabsTrigger>
+              )}
               <TabsTrigger
                 value='members'
                 className='h-8 min-w-0 items-center rounded-300 px-3 py-1.5 text-sm font-medium text-text-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick data-[state=active]:bg-fill-content-hover data-[state=active]:text-text-primary data-[state=active]:after:hidden'
@@ -1485,58 +1504,62 @@ function GroupDetailModal({
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value='general' className='outline-none'>
-              <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
-                <div className='min-w-0'>
-                  <div className='text-sm font-semibold text-text-primary'>
+            {!readOnly && (
+              <TabsContent value='general' className='outline-none'>
+                <div className='flex items-center justify-between gap-4 rounded-400 border border-border-primary p-4'>
+                  <div className='min-w-0'>
+                    <div className='text-sm font-semibold text-text-primary'>
+                      {t('settings.appearance.people.deleteGroup')}
+                    </div>
+                    <div className='mt-1 text-sm leading-5 text-text-secondary'>
+                      {t('settings.appearance.people.deleteGroupDescription')}
+                    </div>
+                  </div>
+                  <Button
+                    type='button'
+                    variant='destructive-outline'
+                    data-testid='group-detail-delete-button'
+                    onClick={onDeleteRequested}
+                    className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
+                  >
+                    <DeleteIcon aria-hidden='true' className='h-4 w-4' />
                     {t('settings.appearance.people.deleteGroup')}
-                  </div>
-                  <div className='mt-1 text-sm leading-5 text-text-secondary'>
-                    {t('settings.appearance.people.deleteGroupDescription')}
-                  </div>
+                  </Button>
                 </div>
-                <Button
-                  type='button'
-                  variant='destructive-outline'
-                  data-testid='group-detail-delete-button'
-                  onClick={onDeleteRequested}
-                  className='px-4 focus-visible:ring-1 focus-visible:ring-border-error-thick'
-                >
-                  <DeleteIcon aria-hidden='true' className='h-4 w-4' />
-                  {t('settings.appearance.people.deleteGroup')}
-                </Button>
-              </div>
-            </TabsContent>
+              </TabsContent>
+            )}
 
             <TabsContent value='members' className='min-h-0 flex-1 outline-none'>
               <div className='flex h-full min-h-0 flex-col gap-3'>
-                <WorkspaceMemberInlineSearch
-                  search={memberSearch}
-                  onSearchChange={setMemberSearch}
-                  addableMembers={addableWorkspaceMembers}
-                  searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
-                  addButtonLabel={t('settings.appearance.people.addUser')}
-                  addResultLabel={t('settings.appearance.people.notInGroup')}
-                  addActionLabel={t('button.add')}
-                  ownerBadgeLabel={t('settings.appearance.people.workspaceOwner')}
-                  unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
-                  noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
-                  formatRole={(role) => roleLabel(role, t)}
-                  inputDisabled={loadingGroupMembers}
-                  addButtonDisabled={loadingGroupMembers || Boolean(addingUid) || !selectedAddableMember}
-                  addingUid={addingUid}
-                  maxResults={2}
-                  compact
-                  onAddButtonClick={() => {
-                    if (selectedAddableMember) void handleAddMember(selectedAddableMember);
-                  }}
-                  onInputKeyDown={(event) => {
-                    if (event.key !== 'Enter' || !selectedAddableMember || addingUid) return;
-                    event.preventDefault();
-                    void handleAddMember(selectedAddableMember);
-                  }}
-                  onAddMember={(member) => void handleAddMember(member)}
-                />
+                {!readOnly && (
+                  <WorkspaceMemberInlineSearch
+                    search={memberSearch}
+                    onSearchChange={setMemberSearch}
+                    addableMembers={addableWorkspaceMembers}
+                    searchPlaceholder={t('settings.appearance.people.searchWorkspaceMembers')}
+                    addButtonLabel={t('settings.appearance.people.addUser')}
+                    addResultLabel={t('settings.appearance.people.notInGroup')}
+                    addActionLabel={t('button.add')}
+                    ownerBadgeLabel={t('settings.appearance.people.workspaceOwner')}
+                    unavailableTitle={t('settings.appearance.people.workspaceMemberUidUnavailable')}
+                    noResultsLabel={t('settings.appearance.people.noWorkspaceMembersToAdd')}
+                    formatRole={(role) => roleLabel(role, t)}
+                    inputDisabled={loadingGroupMembers}
+                    addButtonDisabled={loadingGroupMembers || Boolean(addingUid) || !selectedAddableMember}
+                    addingUid={addingUid}
+                    maxResults={2}
+                    compact
+                    onAddButtonClick={() => {
+                      if (selectedAddableMember) void handleAddMember(selectedAddableMember);
+                    }}
+                    onInputKeyDown={(event) => {
+                      if (event.key !== 'Enter' || !selectedAddableMember || addingUid) return;
+                      event.preventDefault();
+                      void handleAddMember(selectedAddableMember);
+                    }}
+                    onAddMember={(member) => void handleAddMember(member)}
+                  />
+                )}
 
                 <div className='appflowy-scroller min-h-0 flex-1 overflow-y-auto overscroll-contain'>
                   {loadingGroupMembers && groupMembers.length === 0 ? (
@@ -1575,17 +1598,19 @@ function GroupDetailModal({
                                 )}
                               </div>
                             </div>
-                            <Button
-                              type='button'
-                              size='sm'
-                              variant='ghost'
-                              className='text-text-action hover:text-text-action-hover focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                              disabled={removingUid === member.uid}
-                              loading={removingUid === member.uid}
-                              onClick={() => void handleRemoveMember(member)}
-                            >
-                              {t('button.remove')}
-                            </Button>
+                            {!readOnly && (
+                              <Button
+                                type='button'
+                                size='sm'
+                                variant='ghost'
+                                className='text-text-action hover:text-text-action-hover focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                                disabled={removingUid === member.uid}
+                                loading={removingUid === member.uid}
+                                onClick={() => void handleRemoveMember(member)}
+                              >
+                                {t('button.remove')}
+                              </Button>
+                            )}
                           </div>
                         );
                       })}
