@@ -136,7 +136,11 @@ interface AvatarFallbackProps extends React.ComponentProps<typeof AvatarPrimitiv
 function AvatarFallback({ className, name, children, ...props }: AvatarFallbackProps) {
   const isString = typeof children === 'string';
   const char = isString ? children.charAt(0).toUpperCase() : '';
-  const { backgroundColor, color } = getFallbackColor(isString ? children : name || '');
+  // `name` is the colour-hash input (desktop's `AFAvatar.colorHash`) and must
+  // win over `children`: several call sites render just the initial, and
+  // hashing one character gives the same person a different colour in every
+  // component. Fall back to a string child only when no name is supplied.
+  const { backgroundColor, color } = getFallbackColor(name || (isString ? children : ''));
 
   return (
     <AvatarPrimitive.Fallback

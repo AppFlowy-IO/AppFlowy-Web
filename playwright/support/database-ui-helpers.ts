@@ -158,6 +158,14 @@ export async function addPropertyColumn(page: Page, fieldType: number): Promise<
     const dialog = page.getByTestId('relation-creation-dialog');
 
     await expect(dialog).toBeVisible({ timeout: 15000 });
+
+    // The target list lives behind a dropdown trigger (desktop parity with
+    // `AFDropDownMenu`), so open it before the candidates exist in the DOM.
+    const databaseTrigger = page.getByTestId('relation-database-trigger');
+
+    await expect(databaseTrigger).toBeVisible({ timeout: 15000 });
+    await databaseTrigger.click({ force: true });
+
     const firstCandidate = page.locator('[data-testid^="relation-candidate-"]').first();
 
     await expect(firstCandidate).toBeVisible({ timeout: 15000 });

@@ -31,6 +31,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
@@ -363,7 +364,7 @@ function useConditionsForFieldType(
       ];
     }
 
-    if (fieldType === FieldType.Person) {
+    if ([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
       return [
         { value: PersonFilterCondition.PersonContains, text: t('grid.personFilter.contains') },
         { value: PersonFilterCondition.PersonDoesNotContain, text: t('grid.personFilter.doesNotContain') },
@@ -434,8 +435,8 @@ function ValueInput({ filter, fieldType, field, disabled }: ValueInputProps) {
   }
 
   // Person field - person picker
-  if (fieldType === FieldType.Person) {
-    return <PersonValueInput filter={filter as PersonFilter} disabled={disabled} />;
+  if ([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
+    return <PersonValueInput filter={filter as PersonFilter} fieldType={fieldType} disabled={disabled} />;
   }
 
   return null;
@@ -779,13 +780,31 @@ function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disa
 }
 
 // Person Value Input — uses lightweight in-place updater (content-only change)
-function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled?: boolean }) {
+function PersonValueInput({
+  filter,
+  fieldType,
+  disabled,
+}: {
+  filter: PersonFilter;
+  fieldType: FieldType;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
   const [open, setOpen] = useState(false);
 
   // Use cached mentionable users - only fetch when popover is open
   const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(open);
+  const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
+  const mentionableUserOptions = useMemo(
+    () =>
+      mentionableUsers.flatMap((user) => {
+        const identifier = isAttributionField ? canonicalizeUserUid(user.uid) : user.person_id;
+
+        return identifier ? [{ identifier, user }] : [];
+      }),
+    [isAttributionField, mentionableUsers]
+  );
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
@@ -818,11 +837,13 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
       return t('grid.personFilter.selectPerson');
     }
 
-    if (!mentionableUsers || mentionableUsers.length === 0) {
+    if (mentionableUserOptions.length === 0) {
       return `${selectedUserIds.length} selected`;
     }
 
-    const selectedUsers = mentionableUsers.filter((u) => selectedUserIds.includes(u.person_id));
+    const selectedUsers = mentionableUserOptions
+      .filter(({ identifier }) => selectedUserIds.includes(identifier))
+      .map(({ user }) => user);
 
     if (selectedUsers.length === 0) {
       return `${selectedUserIds.length} selected`;
@@ -833,7 +854,7 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
     }
 
     return `${selectedUsers.length} selected`;
-  }, [selectedUserIds, mentionableUsers, t]);
+  }, [mentionableUserOptions, selectedUserIds, t]);
 
   if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
@@ -863,28 +884,30 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
               <div className='flex items-center justify-center py-4'>
                 <Progress />
               </div>
-            ) : !mentionableUsers || mentionableUsers.length === 0 ? (
+            ) : mentionableUserOptions.length === 0 ? (
               <div className='py-4 text-center text-sm text-text-tertiary'>
                 {t('grid.field.person.noMatches')}
               </div>
             ) : (
-              mentionableUsers.map((user) => {
-                const isSelected = selectedUserIds.includes(user.person_id);
+              mentionableUserOptions.map(({ identifier, user }) => {
+                const isSelected = selectedUserIds.includes(identifier);
                 const displayName = user.name || user.email || '?';
 
                 return (
                   <div
-                    key={user.person_id}
+                    key={identifier}
                     className={cn(
                       'flex min-h-[36px] cursor-pointer items-center gap-2 rounded-md px-2 py-1',
                       'hover:bg-fill-content-hover',
                       isSelected && 'bg-fill-content-hover'
                     )}
-                    onClick={() => handleToggleUser(user.person_id)}
+                    onClick={() => handleToggleUser(identifier)}
                   >
                     <Avatar className='h-6 w-6'>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
-                      <AvatarFallback className='text-xs'>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback className='text-xs' name={displayName}>
+                        {displayName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
                     </Avatar>
                     <div className='flex flex-1 flex-col overflow-hidden'>
                       <span className='truncate text-sm'>{user.name || user.email}</span>

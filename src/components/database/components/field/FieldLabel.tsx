@@ -18,6 +18,8 @@ function FieldLabel ({ type, ...props }: { type: FieldType } & React.HTMLAttribu
       [FieldType.Checklist]: t('grid.field.checklistFieldName'),
       [FieldType.LastEditedTime]: t('grid.field.updatedAtFieldName'),
       [FieldType.CreatedTime]: t('grid.field.createdAtFieldName'),
+      [FieldType.CreatedBy]: t('grid.field.createdByFieldName'),
+      [FieldType.LastEditedBy]: t('grid.field.lastEditedByFieldName'),
       [FieldType.Relation]: t('grid.field.relationFieldName'),
       [FieldType.Summary]: t('grid.field.summaryFieldName'),
       [FieldType.Translate]: t('grid.field.translateFieldName'),

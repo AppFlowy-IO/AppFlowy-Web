@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -29,7 +30,12 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import { FieldType, FilterType, RowMetaKey } from '@/application/database-yjs/database.type';
+import {
+  FieldType,
+  FilterType,
+  isAttributionFieldType,
+  RowMetaKey,
+} from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
@@ -79,6 +85,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { Log } from '@/utils/log';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { applyRelationReciprocalInserts } from './relation';
 import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
@@ -178,6 +185,8 @@ export function useMoveCardDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const database = useDatabase();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     ({
@@ -209,6 +218,16 @@ export function useMoveCardDispatch() {
 
             const fieldType = Number(field.get(YjsDatabaseKey.type));
 
+            if (isAttributionFieldType(fieldType)) {
+              // Attribution columns are groupable for display, but moving a
+              // card must never rewrite their read-only row metadata.
+              if (startColumnId === finishColumnId) {
+                reorderRow(rowId, beforeRowId, view);
+              }
+
+              return;
+            }
+
             const rowDoc = rowMap?.[rowId];
 
             if (!rowDoc) {
@@ -219,6 +238,7 @@ export function useMoveCardDispatch() {
 
             const cells = row.get(YjsDatabaseKey.cells);
             const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+            let cellChanged = false;
 
             let cell = cells.get(fieldId);
 
@@ -230,7 +250,10 @@ export function useMoveCardDispatch() {
                 cell = createCheckboxCell(fieldId, finishColumnId);
               }
 
-              cells.set(fieldId, cell);
+              if (cell) {
+                cells.set(fieldId, cell);
+                cellChanged = true;
+              }
             } else {
               const cellData = parseYDatabaseCellToCell(cell, field).data;
               let newCellData = cellData;
@@ -254,7 +277,11 @@ export function useMoveCardDispatch() {
               cell.set(YjsDatabaseKey.data, newCellData);
               setCellStoredType(cell, fieldType);
               cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-              row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+              cellChanged = newCellData !== cellData;
+            }
+
+            if (cellChanged) {
+              touchRowAttribution(row, actorUid);
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -263,7 +290,7 @@ export function useMoveCardDispatch() {
         'reorderCard'
       );
     },
-    [database, rowMap, sharedRoot, view]
+    [actorUid, database, rowMap, sharedRoot, view]
   );
 }
 
@@ -520,6 +547,8 @@ export function useNewRowDispatch() {
     duplicateRowDocument,
   } = useDatabaseContext();
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async ({
@@ -613,7 +642,7 @@ export function useNewRowDispatch() {
       const relationPrefills = new Map<FieldId, string[]>();
 
       rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
+        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
         const meta = rowSharedRoot.get(YjsEditorKey.meta);
@@ -656,6 +685,11 @@ export function useNewRowDispatch() {
           }
 
           const type = Number(field.get(YjsDatabaseKey.type));
+
+          if (isAttributionFieldType(type)) {
+            shouldOpenRowModal = true;
+            return;
+          }
 
           if (type === FieldType.DateTime) {
             const { data, endTimestamp, isRange } = dateFilterFillData(filter);
@@ -735,6 +769,9 @@ export function useNewRowDispatch() {
             relationPrefills.delete(fieldId);
 
             const type = Number(field.get(YjsDatabaseKey.type));
+
+            if (isAttributionFieldType(type)) return;
+
             const rawData = typeof data === 'object' ? data.data : data;
 
             cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
@@ -768,8 +805,6 @@ export function useNewRowDispatch() {
             cells.set(fieldId, cell);
           });
         }
-
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
         const newMeta = generateRowMeta(rowId, {
           [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
@@ -890,6 +925,7 @@ export function useNewRowDispatch() {
             loadView,
             getViewIdFromDatabaseId,
             bindViewSync,
+            actorUid,
           })
         )
       );
@@ -903,6 +939,7 @@ export function useNewRowDispatch() {
     [
       bindViewSync,
       calendarSetting,
+      actorUid,
       createRowDocument,
       createRow,
       currentView,
@@ -931,6 +968,8 @@ export function useDuplicateRowDispatch() {
   const guid = useDocGuid();
   const rowMap = useRowMap();
   const { duplicateRowDocument } = useDatabaseContext();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async (referenceRowId: string) => {
@@ -967,7 +1006,7 @@ export function useDuplicateRowDispatch() {
       const rowDoc = await createRow(rowKey);
 
       rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
+        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
 
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
@@ -996,6 +1035,8 @@ export function useDuplicateRowDispatch() {
 
             const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
 
+            if (isAttributionFieldType(fieldType)) return;
+
             const cell = cloneDatabaseCell(fieldType, referenceCell);
 
             cells.set(fieldId, cell);
@@ -1003,8 +1044,6 @@ export function useDuplicateRowDispatch() {
             console.error(e);
           }
         });
-
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
 
       executeOperationWithAllViews(
@@ -1145,12 +1184,14 @@ export function useDuplicateRowDispatch() {
 
       return rowId;
     },
-    [createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
+    [actorUid, createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   // Store rowMap in a ref so the callback always gets the latest value
   // This fixes a bug where rowDoc might not be in the map when the hook is first called,
@@ -1192,8 +1233,12 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         } else {
           meta.set(keyId, value);
         }
+
+        const row = rowSharedRoot.get(YjsEditorKey.database_row);
+
+        if (row) touchRowAttribution(row, actorUid);
       });
     },
-    [rowId]
+    [actorUid, rowId]
   );
 }

@@ -10,6 +10,11 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 import * as Y from 'yjs';
 
+import {
+  AttributionUid,
+  resolveUserAttributionUid,
+  touchRowAttribution,
+} from '@/application/database-yjs/attribution';
 import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -24,6 +29,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { Log } from '@/utils/log';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 const ROW_DATA_WAIT_MS = 3000;
 
@@ -156,6 +162,7 @@ function writeCellToRow({
   fieldType,
   data,
   dateOpts,
+  actorUid,
 }: {
   rowDoc: YDoc;
   row: YDatabaseRow;
@@ -164,6 +171,7 @@ function writeCellToRow({
   fieldType: FieldType;
   data: CellUpdateData;
   dateOpts?: DateCellOptions;
+  actorUid?: AttributionUid;
 }) {
   const cell = cells.get(fieldId);
 
@@ -198,13 +206,15 @@ function writeCellToRow({
       cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     }
 
-    row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+    touchRowAttribution(row, actorUid);
   });
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
   const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (data: CellUpdateData, dateOpts?: DateCellOptions) => {
@@ -235,18 +245,21 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           fieldType: Number(field.get(YjsDatabaseKey.type)) as FieldType,
           data,
           dateOpts,
+          actorUid,
         });
         markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
+    [actorUid, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
   const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
@@ -287,13 +300,13 @@ export function useUpdateStartEndTimeCell() {
             isRange: !!endTimestamp,
             includeTime: !isAllDay,
           });
-          writableTarget.row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+          touchRowAttribution(writableTarget.row, actorUid);
         });
         markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
         Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [ensureRow, markCellLocalMutation, rowMap]
+    [actorUid, ensureRow, markCellLocalMutation, rowMap]
   );
 }

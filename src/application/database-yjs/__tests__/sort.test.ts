@@ -46,6 +46,12 @@ function createSorts(configs: { fieldId: string; condition: SortCondition }[]): 
   } as YDatabaseSorts;
 }
 
+function setRowAttribution(rowDoc: YDoc, key: YjsDatabaseKey.created_by | YjsDatabaseKey.last_edited_by, uid: number) {
+  const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+  row.set(key, uid);
+}
+
 describe('text sort tests', () => {
   const databaseId = 'db-sort-text';
   const fieldId = 'text-field';
@@ -280,6 +286,41 @@ describe('checkbox sort tests', () => {
     const sorts = createSorts([{ fieldId, condition: SortCondition.Descending }]);
     const result = sortBy(rows, sorts, fields, rowMetas).map((row) => row.id);
     expect(result).toEqual(['row-a', 'row-b']);
+  });
+});
+
+describe.each([
+  ['created by', FieldType.CreatedBy, YjsDatabaseKey.created_by],
+  ['last edited by', FieldType.LastEditedBy, YjsDatabaseKey.last_edited_by],
+] as const)('%s sort tests', (_name, fieldType, attributionKey) => {
+  const databaseId = `db-sort-${fieldType}`;
+  const fieldId = `attribution-${fieldType}`;
+  const fields = new Map() as unknown as YDatabaseFields;
+  const rows: Row[] = ['row-a', 'row-b', 'legacy-row'].map((id) => ({ id, height: 0 }));
+  const rowMetas: Record<RowId, YDoc> = Object.fromEntries(rows.map(({ id }) => [id, createRowDoc(id, databaseId, {})]));
+
+  fields.set(fieldId, createField(fieldId, fieldType));
+  setRowAttribution(rowMetas['row-a'], attributionKey, 101);
+  setRowAttribution(rowMetas['row-b'], attributionKey, 202);
+
+  it('sorts by resolved display name and leaves legacy rows at the end', () => {
+    const sorts = createSorts([{ fieldId, condition: SortCondition.Ascending }]);
+    const names = new Map([
+      ['101', 'Zoe'],
+      ['202', 'Annie'],
+    ]);
+    const result = sortBy(rows, sorts, fields, rowMetas, {
+      getAttributionName: (uid) => names.get(uid),
+    }).map((row) => row.id);
+
+    expect(result).toEqual(['row-b', 'row-a', 'legacy-row']);
+  });
+
+  it('uses a stable user label when the profile is not cached', () => {
+    const sorts = createSorts([{ fieldId, condition: SortCondition.Ascending }]);
+    const result = sortBy(rows, sorts, fields, rowMetas).map((row) => row.id);
+
+    expect(result).toEqual(['row-a', 'row-b', 'legacy-row']);
   });
 });
 
@@ -601,9 +642,7 @@ describe('unicode sort tests', () => {
     const result = sortBy(rows, sorts, fields, rowMetas).map((row) => row.id);
 
     const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true, usage: 'sort' });
-    const expected = [...rows]
-      .sort((a, b) => collator.compare(values[a.id], values[b.id]))
-      .map((row) => row.id);
+    const expected = [...rows].sort((a, b) => collator.compare(values[a.id], values[b.id])).map((row) => row.id);
 
     expect(result).toEqual(expected);
   });
@@ -629,9 +668,7 @@ describe('unicode sort tests', () => {
     const result = sortBy(rows, sorts, fields, rowMetas).map((row) => row.id);
 
     const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true, usage: 'sort' });
-    const expected = [...rows]
-      .sort((a, b) => collator.compare(values[a.id], values[b.id]))
-      .map((row) => row.id);
+    const expected = [...rows].sort((a, b) => collator.compare(values[a.id], values[b.id])).map((row) => row.id);
 
     expect(result).toEqual(expected);
   });
@@ -721,12 +758,8 @@ describe('relation and rollup sort tests', () => {
 
 describe('relation and rollup sort tests (v069)', () => {
   const fixture = createRelationRollupFixtureFromV069({ suffix: 'sort' });
-  const relationField = fixture.baseDatabase
-    .get(YjsDatabaseKey.fields)
-    ?.get(fixture.relationFieldId) as YDatabaseField;
-  const rollupField = fixture.baseDatabase
-    .get(YjsDatabaseKey.fields)
-    ?.get(fixture.rollupSumFieldId) as YDatabaseField;
+  const relationField = fixture.baseDatabase.get(YjsDatabaseKey.fields)?.get(fixture.relationFieldId) as YDatabaseField;
+  const rollupField = fixture.baseDatabase.get(YjsDatabaseKey.fields)?.get(fixture.rollupSumFieldId) as YDatabaseField;
 
   let relationTexts: Record<RowId, string>;
   let rollupValues: Record<RowId, { value: string; rawNumeric?: number }>;
@@ -736,9 +769,7 @@ describe('relation and rollup sort tests (v069)', () => {
     rollupValues = {};
     for (const rowId of fixture.baseRowIds) {
       const rowDoc = fixture.baseRowMetas[rowId];
-      const row = rowDoc
-        .getMap(YjsEditorKey.data_section)
-        .get(YjsEditorKey.database_row) as YDatabaseRow;
+      const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
       relationTexts[rowId] = await resolveRelationText({
         baseDoc: fixture.baseDoc,
         database: fixture.baseDatabase,

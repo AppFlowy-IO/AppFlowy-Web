@@ -1,8 +1,17 @@
-import { Button, ButtonProps, CircularProgress, Dialog, DialogProps, IconButton } from '@mui/material';
+import { CircularProgress, Dialog, DialogProps, IconButton } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+type ModalButtonProps = React.ComponentProps<typeof Button>;
+
+// `AFButtonSize.m`, which every desktop dialog footer uses: spacing.xl of
+// horizontal padding and a `body.enhanced` (w500) label. The shared `Button`
+// defaults to the tighter px-3/w400 pairing.
+const FOOTER_BUTTON_CLASS = 'px-4 font-medium';
 
 const ENTER_HANDLED_BY_CONTROL_SELECTOR = [
   'button',
@@ -26,8 +35,8 @@ export interface NormalModalProps extends DialogProps {
   danger?: boolean;
   onClose?: () => void;
   title: string | React.ReactNode;
-  okButtonProps?: ButtonProps & { 'data-testid'?: string };
-  cancelButtonProps?: ButtonProps;
+  okButtonProps?: ModalButtonProps & { 'data-testid'?: string };
+  cancelButtonProps?: ModalButtonProps;
   okLoading?: boolean;
   closable?: boolean;
   overflowHidden?: boolean;
@@ -106,11 +115,13 @@ export function NormalModal({
         >
           {children}
         </div>
+        {/* Desktop footers are right-aligned with a spacing.l gap, cancel first. */}
         <div className={'flex w-full justify-end gap-3'}>
           <Button
-            color={'inherit'}
-            variant={'outlined'}
-            size={'small'}
+            // MUI's Button defaulted to type="button"; the design-system one
+            // does not, and a bare button inside a <form> would submit it.
+            type={'button'}
+            variant={'outline'}
             onClick={() => {
               if (onCancel) {
                 onCancel();
@@ -119,20 +130,21 @@ export function NormalModal({
               }
             }}
             {...cancelButtonProps}
+            className={cn(FOOTER_BUTTON_CLASS, cancelButtonProps?.className)}
           >
             {modalCancelText}
           </Button>
           <Button
+            type={'button'}
             data-testid={danger ? 'confirm-delete-button' : 'modal-ok-button'}
-            color={danger ? 'error' : 'primary'}
-            variant={'contained'}
-            size={'small'}
+            variant={danger ? 'destructive' : 'default'}
             onClick={() => {
               if (okLoading) return;
               onOk?.();
             }}
             disabled={okLoading}
             {...okButtonProps}
+            className={cn(FOOTER_BUTTON_CLASS, okButtonProps?.className)}
           >
             {okLoading ? <CircularProgress color={'inherit'} size={16} /> : modalOkText}
           </Button>

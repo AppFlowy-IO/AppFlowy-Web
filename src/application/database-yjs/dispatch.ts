@@ -3,6 +3,7 @@ import { nanoid } from 'nanoid';
 import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
+import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
@@ -27,6 +28,7 @@ import {
   FieldType,
   FieldVisibility,
   FilterType,
+  isAttributionFieldType,
   RowMetaKey,
   RollupDisplayMode,
   SortCondition,
@@ -122,6 +124,7 @@ import {
 import { DefaultTimeSetting } from '@/application/user-metadata';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
 export function useResizeColumnWidthDispatch() {
@@ -263,6 +266,8 @@ function generateGroupByField(field: YDatabaseField) {
     case FieldType.URL:
     case FieldType.Relation:
     case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
       group.set(YjsDatabaseKey.content, '');
       columns.push([createYDatabaseGroupColumn({ id: fieldId })]);
       break;
@@ -1247,6 +1252,8 @@ export function useMoveCardDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const database = useDatabase();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     ({
@@ -1278,6 +1285,14 @@ export function useMoveCardDispatch() {
 
             const fieldType = Number(field.get(YjsDatabaseKey.type));
 
+            if (isAttributionFieldType(fieldType)) {
+              if (startColumnId === finishColumnId) {
+                reorderRow(rowId, beforeRowId, view);
+              }
+
+              return;
+            }
+
             const rowDoc = rowMap?.[rowId];
 
             if (!rowDoc) {
@@ -1288,6 +1303,7 @@ export function useMoveCardDispatch() {
 
             const cells = row.get(YjsDatabaseKey.cells);
             const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+            let cellChanged = false;
 
             let cell = cells.get(fieldId);
 
@@ -1299,7 +1315,10 @@ export function useMoveCardDispatch() {
                 cell = createCheckboxCell(fieldId, finishColumnId);
               }
 
-              cells.set(fieldId, cell);
+              if (cell) {
+                cells.set(fieldId, cell);
+                cellChanged = true;
+              }
             } else {
               const cellData = parseYDatabaseCellToCell(cell, field).data;
               let newCellData = cellData;
@@ -1323,7 +1342,11 @@ export function useMoveCardDispatch() {
               cell.set(YjsDatabaseKey.data, newCellData);
               setCellStoredType(cell, fieldType);
               cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-              row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+              cellChanged = newCellData !== cellData;
+            }
+
+            if (cellChanged) {
+              touchRowAttribution(row, actorUid);
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -1332,7 +1355,7 @@ export function useMoveCardDispatch() {
         'reorderCard'
       );
     },
-    [database, rowMap, sharedRoot, view]
+    [actorUid, database, rowMap, sharedRoot, view]
   );
 }
 
@@ -1613,6 +1636,10 @@ function createField(type: FieldType, fieldId: string) {
       return createSimpleField(FieldType.LastEditedTime);
     case FieldType.CreatedTime:
       return createSimpleField(FieldType.CreatedTime);
+    case FieldType.CreatedBy:
+      return createSimpleField(FieldType.CreatedBy);
+    case FieldType.LastEditedBy:
+      return createSimpleField(FieldType.LastEditedBy);
     case FieldType.Relation:
       return createRelationField(fieldId);
     case FieldType.Summary:
@@ -2119,8 +2146,11 @@ export function useShowPropertyDispatch() {
 }
 
 export function useClearCellsWithFieldDispatch() {
+  const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (fieldId: string) => {
@@ -2133,6 +2163,7 @@ export function useClearCellsWithFieldDispatch() {
             }
 
             const rows = Object.keys(rowMap);
+            const fieldType = Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type));
 
             if (!rows) {
               throw new Error(`Row orders not found`);
@@ -2149,9 +2180,13 @@ export function useClearCellsWithFieldDispatch() {
                 const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                 const row = rowSharedRoot.get(YjsEditorKey.database_row);
                 const cells = row.get(YjsDatabaseKey.cells);
+                const hadCell = cells.has(fieldId);
 
                 cells.delete(fieldId);
-                row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+                if (hadCell && !isAttributionFieldType(fieldType)) {
+                  touchRowAttribution(row, actorUid);
+                }
               });
             });
           },
@@ -2159,7 +2194,7 @@ export function useClearCellsWithFieldDispatch() {
         'clearCellsWithFieldDispatch'
       );
     },
-    [rowMap, sharedRoot]
+    [actorUid, database, rowMap, sharedRoot]
   );
 }
 
@@ -2167,6 +2202,8 @@ export function useDuplicatePropertyDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (fieldId: string) => {
@@ -2297,6 +2334,14 @@ export function useDuplicatePropertyDispatch() {
         'insertDuplicateProperty'
       );
 
+      const sourceFieldType = Number(
+        database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type)
+      );
+
+      // Duplicating an attribution column creates another projection of the
+      // same row metadata; it must not create editable per-field cells.
+      if (isAttributionFieldType(sourceFieldType)) return newId;
+
       if (!rowMap) {
         throw new Error(`Row docs not found`);
       }
@@ -2330,19 +2375,21 @@ export function useDuplicatePropertyDispatch() {
           cells.set(newId, newCell);
 
           if (fieldType !== FieldType.CreatedTime && fieldType !== FieldType.LastEditedTime) {
-            rowData.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+            touchRowAttribution(rowData, actorUid);
           }
         });
       });
 
       return newId;
     },
-    [database, rowMap, sharedRoot]
+    [actorUid, database, rowMap, sharedRoot]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   const rowDoc = rowMap?.[rowId];
 
@@ -2373,9 +2420,13 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         } else {
           meta.set(keyId, value);
         }
+
+        const row = rowSharedRoot.get(YjsEditorKey.database_row);
+
+        if (row) touchRowAttribution(row, actorUid);
       });
     },
-    [rowDoc, rowId]
+    [actorUid, rowDoc, rowId]
   );
 }
 
@@ -3241,6 +3292,13 @@ function fieldSwitchRequiresEveryRow(sourceType: FieldType, targetType: FieldTyp
     return true;
   }
 
+  if (
+    [FieldType.CreatedBy, FieldType.LastEditedBy].includes(sourceType) ||
+    [FieldType.CreatedBy, FieldType.LastEditedBy].includes(targetType)
+  ) {
+    return true;
+  }
+
   return (
     (targetType === FieldType.SingleSelect || targetType === FieldType.MultiSelect) &&
     (sourceType === FieldType.RichText || sourceType === FieldType.Checklist)
@@ -3355,6 +3413,8 @@ export function useSwitchPropertyType() {
                   FieldType.DateTime,
                   FieldType.CreatedTime,
                   FieldType.LastEditedTime,
+                  FieldType.CreatedBy,
+                  FieldType.LastEditedBy,
                   FieldType.Media,
                   FieldType.Translate,
                   FieldType.Rollup,
@@ -3551,6 +3611,17 @@ export function useSwitchPropertyType() {
 
                   const cells = row.get(YjsDatabaseKey.cells);
                   const cell = cells.get(fieldId);
+
+                  // Attribution values live only on the row map. Never retain an
+                  // editable cell when entering the type or materialize the actor
+                  // into a normal cell when leaving it.
+                  if (
+                    [FieldType.CreatedBy, FieldType.LastEditedBy].includes(oldFieldType) ||
+                    [FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)
+                  ) {
+                    cells.delete(fieldId);
+                    return;
+                  }
 
                   // Created/LastEditedTime fields have no cell data of their own —
                   // the timestamp lives on the row meta. Materialize it into the
