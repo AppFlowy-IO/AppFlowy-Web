@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import en from '@/@types/translations/en.json';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
-import { getMultiple as getViews } from '@/application/services/domains/view';
+import { getMultiple as getViews, listDatabases } from '@/application/services/domains/view';
 import { View, ViewLayout } from '@/application/types';
 import { RelationCreationDialog } from '@/components/database/components/property/relation/RelationCreationDialog';
 
@@ -15,6 +15,7 @@ jest.mock('@/application/database-yjs', () => ({
 
 jest.mock('@/application/services/domains/view', () => ({
   getMultiple: jest.fn(),
+  listDatabases: jest.fn(),
 }));
 
 // Resolve against the real bundle so the assertions below read as the copy the
@@ -127,16 +128,44 @@ function mockViews(viewsById: Record<string, View>) {
   (getViews as jest.MockedFunction<typeof getViews>).mockImplementation(async (_workspaceId, viewIds) => {
     return viewIds.map((viewId) => viewsById[viewId]).filter((view): view is View => Boolean(view));
   });
+  const viewsByDatabaseId = new Map<string, View[]>();
+
+  for (const view of Object.values(viewsById)) {
+    const databaseId = view.extra?.database_id;
+
+    if (!databaseId) continue;
+    const views = viewsByDatabaseId.get(databaseId) ?? [];
+
+    views.push(view);
+    viewsByDatabaseId.set(databaseId, views);
+  }
+
+  jest.mocked(listDatabases).mockResolvedValue(
+    Array.from(viewsByDatabaseId.entries()).map(([databaseId, views]) => ({
+      database_id: databaseId,
+      views: views.map((view) => ({
+        view_id: view.view_id,
+        layout: view.layout,
+        is_container: Boolean(view.extra?.is_database_container),
+        embedded: Boolean(view.extra?.embedded),
+        name: view.name,
+        icon: view.icon,
+        parent_view_id: view.parent_view_id ?? null,
+      })),
+    }))
+  );
 }
 
 function mockContext({
   viewsById = defaultViewsById,
   databasePageId = currentGrid.view_id,
   loadViewMeta = jest.fn(async (viewId: string) => viewsById[viewId] ?? null),
+  loadViews = jest.fn(async () => Object.values(viewsById)),
 }: {
   viewsById?: Record<string, View>;
   databasePageId?: string;
   loadViewMeta?: jest.Mock;
+  loadViews?: jest.Mock;
 } = {}) {
   (useDatabaseContext as jest.Mock).mockReturnValue({
     workspaceId: 'workspace-1',
@@ -147,6 +176,7 @@ function mockContext({
       'related-database': relatedGrid.view_id,
     }),
     loadViewMeta,
+    loadViews,
   });
 
   return loadViewMeta;
@@ -201,13 +231,8 @@ describe('RelationCreationDialog', () => {
     expect(currentCandidate.textContent).not.toContain('Grid');
     expect(relatedCandidate.textContent).not.toContain('Grid');
 
-    expect(getViews).toHaveBeenNthCalledWith(1, 'workspace-1', [currentGrid.view_id, relatedGrid.view_id], 0);
-    expect(getViews).toHaveBeenNthCalledWith(
-      2,
-      'workspace-1',
-      [currentContainer.view_id, relatedContainer.view_id],
-      0
-    );
+    expect(listDatabases).toHaveBeenCalledWith('workspace-1');
+    expect(getViews).not.toHaveBeenCalled();
     expect(loadViewMeta).not.toHaveBeenCalled();
   });
 
@@ -304,8 +329,9 @@ describe('RelationCreationDialog', () => {
   });
 
   it('falls back to individual view metadata when batch loading is unavailable', async () => {
+    jest.mocked(listDatabases).mockRejectedValue(new Error('Database list endpoint unavailable'));
     (getViews as jest.MockedFunction<typeof getViews>).mockRejectedValue(new Error('Batch endpoint unavailable'));
-    const loadViewMeta = mockContext();
+    const loadViewMeta = mockContext({ loadViews: jest.fn().mockResolvedValue([]) });
 
     renderDialog();
     await openDatabaseDropdown();

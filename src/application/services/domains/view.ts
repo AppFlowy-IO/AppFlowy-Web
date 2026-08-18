@@ -2,6 +2,7 @@ export {
   getAppOutline as getOutline,
   getViewNavigation as getNavigation,
   getViews as getMultiple,
+  listWorkspaceDatabases as listDatabases,
   getAppFavorites as getFavorites,
   getAppRecent as getRecent,
   getAppTrash as getTrash,

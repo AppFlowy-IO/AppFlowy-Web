@@ -50,7 +50,6 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
   const { field } = useFieldSelector(fieldId);
   const {
     loading,
-    relatedViewId,
     selectedView,
     setSelectedView,
     onUpdateDatabaseId,
@@ -197,7 +196,7 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
                           </span>
                         ) : null}
                       </span>
-                      {candidate.viewId === relatedViewId && <DropdownMenuItemTick />}
+                      {candidate.databaseId === relatedDatabaseId && <DropdownMenuItemTick />}
                     </DropdownMenuItem>
                   ))
                 )}
