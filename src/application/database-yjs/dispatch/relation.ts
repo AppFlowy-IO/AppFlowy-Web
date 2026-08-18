@@ -16,6 +16,7 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { waitForDatabaseHydration } from '@/application/database-yjs/database.hydration';
 import { FieldType, FieldVisibility } from '@/application/database-yjs/database.type';
 import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit, RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
@@ -41,6 +42,7 @@ import {
   YMapFieldTypeOption,
 } from '@/application/types';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 type RelationTypeOptionUpdates = Partial<RelationTypeOption>;
 
@@ -232,7 +234,10 @@ function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
     const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-    if (!fieldOrders || !fieldSettings) continue;
+    // `field_orders` is what the grid renders from; `field_settings` only carries visibility and
+    // is optional-chained everywhere it is read. Bailing out on a view that has no settings map
+    // used to drop the reciprocal column from that view entirely.
+    if (!fieldOrders) continue;
 
     const alreadyOrdered = fieldOrders.toArray().some((item) => item.id === fieldId);
 
@@ -240,7 +245,7 @@ function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
       fieldOrders.push([{ id: fieldId }]);
     }
 
-    if (!fieldSettings.get(fieldId)) {
+    if (fieldSettings && !fieldSettings.get(fieldId)) {
       const setting = new Y.Map() as YDatabaseFieldSetting;
 
       setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
@@ -337,6 +342,12 @@ async function loadRelatedDatabaseDoc(args: {
   if (!relatedViewId || !args.loadView) return null;
 
   const doc = await args.loadView(relatedViewId);
+
+  // `loadView` resolves as soon as a doc exists locally, which for a database that has never been
+  // opened can be an empty shell with the first sync still in flight. Every caller reads the
+  // `database` map straight away and silently degrades when it is missing — dropping the relation
+  // back to one-way, or skipping the reciprocal cell write — so wait for it to land.
+  if (doc) await waitForDatabaseHydration(doc);
 
   // loadView may return a cache-only doc that is not bound to server sync.
   // Bind it so reciprocal field/cell mutations propagate to other clients;
@@ -752,6 +763,13 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           // Couldn't load the related database to create a reciprocal field.
           // Fall back to a one-way relation so we don't persist `is_two_way: true`
           // without a reciprocal_field_id, which would silently break cell mirroring.
+          // The toggle flipping itself back off is the only signal the user gets, so leave a
+          // trace: this is the path where "two-way is on but the related database has no
+          // matching property" comes from.
+          Log.warn('[relation] two-way relation disabled: related database could not be loaded', {
+            fieldId,
+            relatedDatabaseId: nextOption.database_id,
+          });
           nextOption = {
             ...nextOption,
             is_two_way: false,
