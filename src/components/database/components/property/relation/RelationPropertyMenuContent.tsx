@@ -74,16 +74,21 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
 
   // Desktop seeds the reciprocal name from the type option, falling back to the
   // relation field's own name (`_TwoWayRelationPopoverContentState.initState`).
-  const [reciprocalName, setReciprocalName] = useState(
-    () => relationOption?.reciprocal_field_name || fieldName
-  );
+  const persistedReciprocalName = relationOption?.reciprocal_field_name || fieldName;
+  // The input needs local state while typing, but the persisted value can also
+  // change underneath us (our own debounced write, or a remote edit). Adjust
+  // during render rather than syncing in an effect, which would cost an extra
+  // commit per change and silently drop `fieldName` from the dependencies.
+  const [reciprocalDraft, setReciprocalDraft] = useState<string | null>(null);
+  const [seededFrom, setSeededFrom] = useState(persistedReciprocalName);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    setReciprocalName(relationOption?.reciprocal_field_name || fieldName);
-    // Re-seed only when the persisted value changes, so typing isn't clobbered.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [relationOption?.reciprocal_field_name]);
+  if (persistedReciprocalName !== seededFrom) {
+    setSeededFrom(persistedReciprocalName);
+    setReciprocalDraft(null);
+  }
+
+  const reciprocalName = reciprocalDraft ?? persistedReciprocalName;
 
   useEffect(
     () => () => {
@@ -94,7 +99,7 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
 
   const handleReciprocalNameChange = useCallback(
     (value: string) => {
-      setReciprocalName(value);
+      setReciprocalDraft(value);
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
       // Desktop debounces the write and ignores empty input.

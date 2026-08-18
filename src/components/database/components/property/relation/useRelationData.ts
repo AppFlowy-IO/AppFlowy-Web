@@ -6,7 +6,7 @@ import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch
 import { RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { DatabaseRelations, View } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
-import { findAncestors, findView } from '@/components/_shared/outline/utils';
+import { findView } from '@/components/_shared/outline/utils';
 
 /**
  * A database that a relation field can point at.
@@ -263,6 +263,37 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
     };
   }, [loadViewMeta, relatedViewId, views]);
 
+  /**
+   * Ancestry for each registered database view, resolved in a single walk.
+   *
+   * `findAncestors` restarts from the root on every call, so calling it once
+   * per database re-walked the whole outline N times. Collect the targets up
+   * front and record paths during one traversal instead, copying the path only
+   * for the handful of nodes we actually care about.
+   */
+  const ancestryByViewId = useMemo(() => {
+    const targets = new Set(Object.values(relations ?? {}).filter(Boolean));
+    const index = new Map<string, View[]>();
+
+    if (targets.size === 0) return index;
+
+    const path: View[] = [];
+    const walk = (nodes: View[]) => {
+      for (const node of nodes) {
+        path.push(node);
+
+        if (targets.has(node.view_id)) index.set(node.view_id, path.slice());
+        if (node.children?.length) walk(node.children);
+
+        path.pop();
+      }
+    };
+
+    walk(outline);
+
+    return index;
+  }, [outline, relations]);
+
   const databaseCandidates = useMemo<RelationDatabaseCandidate[]>(() => {
     if (!relations) return [];
 
@@ -270,7 +301,7 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
       .flatMap(([databaseId, viewId]) => {
         if (!viewId) return [];
 
-        const ancestry = findAncestors(outline, viewId);
+        const ancestry = ancestryByViewId.get(viewId);
         const registeredView = ancestry?.[ancestry.length - 1] ?? findView(views, viewId);
 
         if (!registeredView) return [];
@@ -291,7 +322,7 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
           },
         ];
       });
-  }, [outline, relations, views]);
+  }, [ancestryByViewId, relations, views]);
 
   // Consider loading true if:
   // 1. Explicitly loading relations or views
