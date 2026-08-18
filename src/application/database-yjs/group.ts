@@ -1,14 +1,17 @@
+import { getStoredCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import {
   CheckboxFilterCondition,
+  parsePersonTypeOptions,
   parseSelectOptionTypeOptions,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import type { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
 
@@ -22,6 +25,8 @@ export const DATABASE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
   FieldType.SingleSelect,
   FieldType.MultiSelect,
   FieldType.DateTime,
+  FieldType.Relation,
+  FieldType.Person,
 ];
 
 export const DATABASE_DYNAMIC_GROUP_FIELD_TYPES: readonly FieldType[] = [
@@ -29,6 +34,8 @@ export const DATABASE_DYNAMIC_GROUP_FIELD_TYPES: readonly FieldType[] = [
   FieldType.Number,
   FieldType.URL,
   FieldType.DateTime,
+  FieldType.Relation,
+  FieldType.Person,
 ];
 
 export interface DateGroupConfiguration {
@@ -105,6 +112,10 @@ export function groupByField(
     return groupByDate(rows, rowMetas, field, groupContent);
   }
 
+  if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
+    return groupByIdentifier(rows, rowMetas, field);
+  }
+
   return;
 }
 
@@ -142,6 +153,87 @@ function getGroupingCellData(rowId: RowId, rowMetas: Record<RowId, YDoc>, field:
   const cell = getCell(rowId, fieldId, rowMetas);
 
   return cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
+}
+
+/**
+ * Person and relation cells both model an ordered set of stable identifiers.
+ * Keep this normalization independent of their storage format so imported and
+ * lazily converted data cannot create duplicate or whitespace-only groups.
+ */
+export function normalizeGroupIdentifiers(value: unknown): string[] {
+  let identifiers: unknown[] = [];
+
+  if (Array.isArray(value)) {
+    identifiers = value;
+  } else if (value && typeof value === 'object' && 'toArray' in value) {
+    identifiers = (value as { toArray: () => unknown[] }).toArray();
+  } else if (value && typeof value === 'object' && 'toJSON' in value) {
+    const json = (value as { toJSON: () => unknown }).toJSON();
+
+    identifiers = Array.isArray(json) ? json : [];
+  } else if (typeof value === 'string') {
+    try {
+      const json = JSON.parse(value) as unknown;
+
+      identifiers = Array.isArray(json) ? json : [];
+    } catch {
+      identifiers = value.split(',');
+    }
+  }
+
+  const seen = new Set<string>();
+
+  return identifiers.reduce<string[]>((result, identifier) => {
+    const normalized = String(identifier ?? '').trim();
+
+    if (!normalized || seen.has(normalized)) return result;
+    seen.add(normalized);
+    result.push(normalized);
+    return result;
+  }, []);
+}
+
+function getIdentifierGroupIds(rowId: RowId, rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const cell = getCell(rowId, fieldId, rowMetas);
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if (fieldType === FieldType.Relation) {
+    return normalizeGroupIdentifiers(getRelationRowIdsFromCell(cell));
+  }
+
+  if (!cell || getStoredCellFieldType(cell, FieldType.Person) !== FieldType.Person) {
+    return [];
+  }
+
+  const data = cell?.get(YjsDatabaseKey.data);
+
+  return normalizeGroupIdentifiers(data);
+}
+
+export function groupByIdentifier(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const result = new Map<string, Row[]>([[fieldId, []]]);
+
+  rows.forEach((row) => {
+    if (!hasRowConditionData(rowMetas[row.id])) return;
+
+    const identifiers = getIdentifierGroupIds(row.id, rowMetas, field);
+
+    if (identifiers.length === 0) {
+      result.get(fieldId)?.push(row);
+      return;
+    }
+
+    identifiers.forEach((identifier) => {
+      const groupRows = result.get(identifier) ?? [];
+
+      groupRows.push(row);
+      result.set(identifier, groupRows);
+    });
+  });
+
+  return result;
 }
 
 export function groupByText(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
@@ -354,7 +446,8 @@ export function getGroupLabel(
   groupId: string,
   field: YDatabaseField,
   groupContent?: string,
-  now: Date = new Date()
+  now: Date = new Date(),
+  identifierLabels?: ReadonlyMap<string, string>
 ): string {
   const fieldId = field.get(YjsDatabaseKey.id);
   const fieldName = field.get(YjsDatabaseKey.name) || '';
@@ -362,6 +455,20 @@ export function getGroupLabel(
   if (groupId === fieldId) return `No ${fieldName}`.trim();
 
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
+    const resolved = identifierLabels?.get(groupId)?.trim();
+
+    if (resolved) return resolved;
+
+    if (fieldType === FieldType.Person) {
+      const person = parsePersonTypeOptions(field).persons.find((person) => person.id === groupId);
+
+      return person?.name?.trim() || 'Unknown person';
+    }
+
+    return 'Untitled relation';
+  }
 
   if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
     return parseSelectOptionTypeOptions(field)?.options.find((option) => option.id === groupId)?.name ?? groupId;
@@ -430,6 +537,10 @@ export function getGroupCellData(groupId: string, field: YDatabaseField): string
     const date = parseDateGroupId(groupId);
 
     return date ? String(Math.floor(date.getTime() / 1000)) : undefined;
+  }
+
+  if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
+    return JSON.stringify([groupId]);
   }
 
   return groupId;

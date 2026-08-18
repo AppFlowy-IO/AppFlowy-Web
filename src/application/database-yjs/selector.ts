@@ -30,6 +30,7 @@ import {
   getDateCellStr,
   getFieldDateTimeFormats,
   getTypeOptions,
+  parsePersonTypeOptions,
   parseRelationTypeOption,
   parseRollupTypeOption,
   parseSelectOptionTypeOptions,
@@ -63,9 +64,14 @@ import {
   useRollupFieldObservers,
 } from '@/application/database-yjs/hooks';
 import {
+  ensureRelationGroupLabel,
+  getRelationGroupLabelRevision,
   invalidateRelationCell,
+  readRelationGroupLabel,
   readRelationCellText,
+  retainRelationGroupLabels,
   subscribeRelationCache,
+  subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import {
@@ -105,6 +111,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
+import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
@@ -1714,7 +1721,14 @@ function orderDatabaseGroupsForPrimarySort(
  * observing only the database view is not sufficient when a cell is edited.
  */
 export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): DatabaseGrouping {
-  const { getCellLocalMutationRevision, hasCellLocalMutation, subscribeToCellLocalMutations } = useDatabaseContext();
+  const {
+    createRow,
+    getCellLocalMutationRevision,
+    getViewIdFromDatabaseId,
+    hasCellLocalMutation,
+    loadView,
+    subscribeToCellLocalMutations,
+  } = useDatabaseContext();
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const database = useDatabase();
@@ -1724,6 +1738,9 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const persistedGroups = view?.get(YjsDatabaseKey.groups);
   const persistedGroup = persistedGroups?.toArray()?.[0];
   const fieldId = persistedGroup?.get(YjsDatabaseKey.field_id);
+  const persistedGroupingField = fieldId ? fields?.get(fieldId) : undefined;
+  const persistedGroupingFieldType = Number(persistedGroupingField?.get(YjsDatabaseKey.type)) as FieldType;
+  const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(persistedGroupingFieldType === FieldType.Person);
   const rawRowOrders = view?.get(YjsDatabaseKey.row_orders);
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
@@ -1839,6 +1856,22 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     getCellLocalMutationSnapshot,
     getCellLocalMutationSnapshot
   );
+  // Only relation grouping renders resolved titles, so every other grouping
+  // field type holds a constant snapshot and never recomputes for them.
+  const groupsByRelation = persistedGroupingFieldType === FieldType.Relation;
+  const subscribeToRelationGroupLabels = useCallback(
+    (onStoreChange: () => void) => (groupsByRelation ? subscribeRelationGroupLabels(onStoreChange) : () => undefined),
+    [groupsByRelation]
+  );
+  const getRelationGroupLabelSnapshot = useCallback(
+    () => (groupsByRelation ? getRelationGroupLabelRevision() : 0),
+    [groupsByRelation]
+  );
+  const relationGroupLabelRevision = useSyncExternalStore(
+    subscribeToRelationGroupLabels,
+    getRelationGroupLabelSnapshot,
+    getRelationGroupLabelSnapshot
+  );
 
   const rowsHydrated = Boolean(allRowOrders && areGroupRowsHydrated(allRowOrders, groupingRows));
   const metadataSyncKey = useMemo(() => {
@@ -1864,9 +1897,10 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     cellLocalMutationRevision,
   ]);
 
-  return useMemo(() => {
+  const grouping = useMemo(() => {
     void groupingViewRevision;
     void cellLocalMutationRevision;
+    void relationGroupLabelRevision;
 
     const group = view?.get(YjsDatabaseKey.groups)?.toArray()?.[0];
     const currentFieldId = group?.get(YjsDatabaseKey.field_id);
@@ -1974,6 +2008,32 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
       primarySortCondition === undefined
         ? orderedIds
         : orderDatabaseGroupsForPrimarySort(orderedIds, result, rowOrders, primarySortCondition);
+    const identifierLabels = new Map<string, string>();
+
+    if (fieldType === FieldType.Person) {
+      // Seed from the field's own type option once. getGroupLabel falls back to
+      // parsing it per group otherwise, which is a JSON.parse for every header.
+      parsePersonTypeOptions(field).persons.forEach((person) => {
+        const label = person.name?.trim();
+
+        if (label) identifierLabels.set(person.id, label);
+      });
+      mentionableUsers.forEach((person) => {
+        const label = person.name?.trim() || person.email?.trim();
+
+        if (label) identifierLabels.set(person.person_id, label);
+      });
+    } else if (fieldType === FieldType.Relation) {
+      displayIds.forEach((id) => {
+        if (id === currentFieldId) return;
+
+        const label = readRelationGroupLabel({ relationField: field, relatedRowId: id });
+
+        if (label) identifierLabels.set(id, label);
+      });
+    }
+
+    const now = new Date();
     const groups = displayIds.map((id): GridGroup => {
       const groupRows = result?.get(id) ?? [];
       const hidden = columnsById.get(id)?.visible === false;
@@ -1988,7 +2048,7 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
 
       return {
         id,
-        label: getGroupLabel(id, field, content),
+        label: getGroupLabel(id, field, content, now, identifierLabels),
         rows: groupRows,
         isDefault: id === currentFieldId,
         visible: !hidden && !automaticallyHidden,
@@ -2025,11 +2085,62 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
     hasCellLocalMutation,
     layout,
     metadataSyncKey,
+    mentionableUsers,
+    relationGroupLabelRevision,
     cellLocalMutationRevision,
     rowOrders,
     rowsHydrated,
     view,
   ]);
+
+  const groupingField = grouping.field;
+  const relationDatabaseId =
+    groupingField && grouping.fieldType === FieldType.Relation
+      ? parseRelationTypeOption(groupingField).database_id
+      : undefined;
+  const relationGroupLabelIdsKey = relationDatabaseId
+    ? JSON.stringify(grouping.activeGroupIds.filter((id) => id !== grouping.fieldId))
+    : undefined;
+  const relationGroupLabelIds = useMemo(
+    () => (relationGroupLabelIdsKey === undefined ? undefined : (JSON.parse(relationGroupLabelIdsKey) as RowId[])),
+    [relationGroupLabelIdsKey]
+  );
+
+  useEffect(() => {
+    if (!groupingField || !relationDatabaseId || !relationGroupLabelIds) return;
+
+    return retainRelationGroupLabels(
+      relationGroupLabelIds.map((relatedRowId) => ({ relationField: groupingField, relatedRowId }))
+    );
+  }, [groupingField, relationDatabaseId, relationGroupLabelIds]);
+
+  useEffect(() => {
+    // Resolving a title loads a related document, so it belongs after commit
+    // rather than inside the memo. Each resolution publishes on the group-label
+    // channel, which brings the memo back through relationGroupLabelRevision.
+    void relationGroupLabelRevision;
+    if (!groupingField || !relationDatabaseId || !relationGroupLabelIds) return;
+
+    relationGroupLabelIds.forEach((id) => {
+      ensureRelationGroupLabel({
+        relationField: groupingField,
+        relatedRowId: id,
+        loadView,
+        createRow,
+        getViewIdFromDatabaseId,
+      });
+    });
+  }, [
+    createRow,
+    getViewIdFromDatabaseId,
+    groupingField,
+    loadView,
+    relationDatabaseId,
+    relationGroupLabelIds,
+    relationGroupLabelRevision,
+  ]);
+
+  return grouping;
 }
 
 export function useGridGroupingSelector(): GridGrouping {

@@ -1143,6 +1143,8 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // Person
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.is_single_select | YjsDatabaseKey.disable_notification): boolean;
+
+  get(key: YjsDatabaseKey.persons): string | unknown[] | undefined;
 }
 
 export enum Types {
