@@ -16,6 +16,9 @@ import { deleteBlock, getBlock, getChildrenArray, getPageId } from '@/applicatio
 import { DatabaseCsvImportLayout, DatabaseCsvImportMode, Types, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+// Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
+// HTTP layer; `getErrorMessage` normalises both.
+import { getErrorMessage } from '@/utils/errors';
 import { calculateMd5 } from '@/utils/md5';
 
 const CSV_POLL_INTERVAL_MS = 1500;
@@ -137,7 +140,7 @@ export async function importCsvAsDatabase(input: ImportCsvInput): Promise<Import
 
   try {
     throwIfAborted(signal);
-    await uploadDatabaseCsvImportFile(task.presigned_url, file, onProgress);
+    await uploadDatabaseCsvImportFile(task.presigned_url, file, onProgress, signal);
 
     const start = Date.now();
 
@@ -160,8 +163,74 @@ export async function importCsvAsDatabase(input: ImportCsvInput): Promise<Import
   } catch (err) {
     // Server task is still running — cancel it whether we aborted, timed out, or hit a hard failure.
     void cancelDatabaseCsvImportTask(workspaceId, task.task_id).catch(noop);
+    // An aborted upload surfaces as an axios `CanceledError`, not an `ImportAbortError`.
+    // Normalise it so callers can tell "user cancelled" from "this file failed".
+    throwIfAborted(signal);
     throw err;
   }
+}
+
+export interface ImportCsvBatchInput {
+  workspaceId: string;
+  parentViewId: string;
+  files: File[];
+  /** Called before each file starts, with its zero-based index in `files`. */
+  onFileStart?: (index: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+export interface ImportCsvBatchItem {
+  fileName: string;
+  /** Set when the file imported successfully. */
+  viewId?: string;
+  /**
+   * Set when the file failed; the batch continued with the remaining files. Empty when the
+   * failure carried no message — wording is the caller's job, so it stays translatable.
+   */
+  error?: string;
+}
+
+export interface ImportCsvBatchResult {
+  /** One entry per file that was attempted, in selection order. */
+  items: ImportCsvBatchItem[];
+  /** True when `signal` fired mid-batch, so `items` covers only the files attempted so far. */
+  aborted: boolean;
+}
+
+/**
+ * Import several CSV files as sibling Grid pages under the same parent.
+ *
+ * Files are imported one at a time on purpose: the server caps how many import tasks a user
+ * may have pending (`MAXIMUM_IMPORT_PENDING_TASK`, 3 by default), so fanning out in parallel
+ * makes every file past the cap fail with `TooManyImportTask`.
+ *
+ * One bad file does not sink the batch — its error is recorded and the remaining files still
+ * import. Aborting via `signal` stops the batch and returns what finished, rather than throwing,
+ * so the caller can still report the pages that were created.
+ */
+export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Promise<ImportCsvBatchResult> {
+  const { workspaceId, parentViewId, files, onFileStart, signal } = input;
+  const items: ImportCsvBatchItem[] = [];
+
+  for (let index = 0; index < files.length; index++) {
+    if (signal?.aborted) return { items, aborted: true };
+
+    const file = files[index];
+
+    onFileStart?.(index, files.length);
+
+    try {
+      const { viewId } = await importCsvAsDatabase({ workspaceId, parentViewId, file, signal });
+
+      items.push({ fileName: file.name, viewId });
+    } catch (err) {
+      if (err instanceof ImportAbortError) return { items, aborted: true };
+
+      items.push({ fileName: file.name, error: getErrorMessage(err, '') });
+    }
+  }
+
+  return { items, aborted: false };
 }
 
 /**

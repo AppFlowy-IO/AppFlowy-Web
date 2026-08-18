@@ -257,8 +257,15 @@
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
+    "successCount": "Imported {{total}} files",
+    "partialSuccess": "Imported {{success}} of {{total}} files",
     "notionImportStarted": "Notion import started. Pages will appear in this view when ready.",
-    "failed": "Import failed"
+    "failed": "Import failed",
+    "failedFile": "Could not import {{name}}: {{reason}}",
+    "failedFiles": "Could not import: {{names}}",
+    "failedFilesOverflow": "Could not import: {{names}} and {{extra}} more",
+    "cancelImport": "Cancel import",
+    "importingCount": "{{current}}/{{total}}"
   },
   "teamSpace": "Team space",
   "share": "Share",

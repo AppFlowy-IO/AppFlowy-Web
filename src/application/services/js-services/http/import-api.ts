@@ -231,7 +231,8 @@ export async function createDatabaseCsvImportTask(
 export async function uploadDatabaseCsvImportFile(
   presignedUrl: string,
   file: File,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  signal?: AbortSignal
 ) {
   const response = await axios.put(presignedUrl, file, {
     onUploadProgress: (progressEvent) => {
@@ -244,6 +245,7 @@ export async function uploadDatabaseCsvImportFile(
     headers: {
       'Content-Type': 'text/csv',
     },
+    signal,
   });
 
   if (response.status === 200 || response.status === 204) {
