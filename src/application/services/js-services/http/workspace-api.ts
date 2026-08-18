@@ -13,6 +13,7 @@ import {
   Workspace,
   WorkspaceMember,
 } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
@@ -276,7 +277,10 @@ export async function getMentionableUsers(workspaceId: string) {
     getAxios()?.get<APIResponse<{ persons: MentionablePerson[] }>>(url)
   );
 
-  return payload.persons;
+  return payload.persons.map((person) => ({
+    ...person,
+    uid: canonicalizeUserUid(person.uid) ?? person.uid,
+  }));
 }
 
 export async function searchMentions(workspaceId: string, payload: MentionSearchRequest): Promise<MentionSearchResponse> {

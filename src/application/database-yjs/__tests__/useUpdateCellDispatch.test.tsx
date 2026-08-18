@@ -22,6 +22,10 @@ jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
 
+jest.mock('@/components/main/app.hooks', () => ({
+  useCurrentUserOptional: () => ({ uid: '42', attributionUid: '42' }),
+}));
+
 const databaseId = 'database-id';
 const viewId = 'view-id';
 const rowId = 'row-id';
@@ -126,6 +130,10 @@ describe('useUpdateCellDispatch', () => {
       expect(cell?.get(YjsDatabaseKey.data)).toBe('Edited value');
       expect(cell?.get(YjsDatabaseKey.field_type)).toBe(FieldType.RichText);
       expect(cell?.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+      const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+
+      expect(row?.get(YjsDatabaseKey.last_edited_by)).toBe('42');
+      expect(row?.get(YjsDatabaseKey.created_by)).toBeUndefined();
     });
   });
 });

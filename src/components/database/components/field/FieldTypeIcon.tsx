@@ -36,6 +36,8 @@ export const FieldTypeSvgMap: Record<FieldType, FC<React.SVGProps<SVGSVGElement>
   [FieldType.Person]: PersonSvg,
   [FieldType.Time]: TimeSvg,
   [FieldType.Rollup]: RelationSvg,
+  [FieldType.CreatedBy]: PersonSvg,
+  [FieldType.LastEditedBy]: PersonSvg,
 };
 
 export const FieldTypeIcon: FC<{ type: FieldType; className?: string }> = memo(({ type, ...props }) => {

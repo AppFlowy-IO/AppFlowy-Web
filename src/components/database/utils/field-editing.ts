@@ -4,7 +4,7 @@ import { FieldType } from '@/application/database-yjs';
 // menu (relation/calc config etc.) is still openable for these — gate that
 // at the call site, not here. Rollup cells are computed (read-only) but the
 // property must be configurable, so it is intentionally NOT in this list.
-const unsupportedFieldTypes: FieldType[] = [];
+const unsupportedFieldTypes: FieldType[] = [FieldType.CreatedBy, FieldType.LastEditedBy];
 
 export function isFieldEditingEnabled(fieldType?: FieldType): boolean {
   if (fieldType === undefined) {

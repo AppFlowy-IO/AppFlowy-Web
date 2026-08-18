@@ -7,6 +7,7 @@ import {
   User,
   Workspace,
 } from '@/application/types';
+import { canonicalizeUserUid, resolveCurrentUserUid } from '@/application/user-uid';
 
 import { APIError, APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
@@ -15,7 +16,8 @@ export async function getCurrentUser(workspaceId?: string): Promise<User> {
 
   try {
     const payload = await executeAPIRequest<{
-      uid: number;
+      uid: number | string;
+      uid_string?: string;
       uuid: string;
       email: string;
       name: string;
@@ -25,7 +27,8 @@ export async function getCurrentUser(workspaceId?: string): Promise<User> {
       updated_at: number;
     }>(() =>
       getAxios()?.get<APIResponse<{
-        uid: number;
+        uid: number | string;
+        uid_string?: string;
         uuid: string;
         email: string;
         name: string;
@@ -38,10 +41,13 @@ export async function getCurrentUser(workspaceId?: string): Promise<User> {
       })
     );
 
-    const { uid, uuid, email, name, metadata } = payload;
+    const { uid, uid_string, uuid, email, name, metadata } = payload;
+    const resolvedUid = resolveCurrentUserUid(uid, uid_string);
 
     return {
-      uid: String(uid),
+      // Keep the legacy display/sync identity fallback, but never use a rounded
+      // JSON number for automatic database attribution.
+      ...resolvedUid,
       uuid,
       email,
       name,
@@ -74,9 +80,14 @@ export async function updateUserProfile(metadata: Record<string, unknown>): Prom
 export async function getWorkspaceMemberProfile(workspaceId: string): Promise<MentionablePerson> {
   const url = `/api/workspace/${workspaceId}/workspace-profile`;
 
-  return executeAPIRequest<MentionablePerson>(() =>
+  const profile = await executeAPIRequest<MentionablePerson>(() =>
     getAxios()?.get<APIResponse<MentionablePerson>>(url)
   );
+
+  return {
+    ...profile,
+    uid: canonicalizeUserUid(profile.uid) ?? profile.uid,
+  };
 }
 
 export async function updateWorkspaceMemberProfile(
