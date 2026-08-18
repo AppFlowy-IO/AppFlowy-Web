@@ -736,6 +736,13 @@ export async function createRelationViaCreationDialog(
 
   await expect(dialog).toBeVisible({ timeout: 15000 });
 
+  // The target list lives behind a dropdown trigger (desktop parity with
+  // `AFDropDownMenu`), so open it before the candidates exist in the DOM.
+  const databaseTrigger = page.getByTestId('relation-database-trigger');
+
+  await expect(databaseTrigger).toBeVisible({ timeout: 15000 });
+  await databaseTrigger.click({ force: true });
+
   const candidate = page.getByTestId(`relation-candidate-${args.relatedDatabaseId}`);
 
   await expect(candidate).toBeVisible({ timeout: 15000 });

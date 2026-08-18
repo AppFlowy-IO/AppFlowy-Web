@@ -1,6 +1,6 @@
 
-import { useEffect, useState } from 'react';
 import { TFunction } from 'i18next';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseContext } from '@/application/database-yjs';
@@ -35,9 +35,7 @@ import { Switch } from '@/components/ui/switch';
 import { RelationView } from './RelationView';
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
-  return limit === RelationLimit.OneOnly
-    ? t('grid.relation.limitOnePage', { defaultValue: 'One page' })
-    : t('grid.relation.limitNoLimit', { defaultValue: 'No limit' });
+  return limit === RelationLimit.OneOnly ? t('grid.relation.limitOnePage') : t('grid.relation.limitNoLimit');
 }
 
 function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
@@ -117,7 +115,7 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
         </DropdownMenuSub>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
-            <span className="flex-1">{t('grid.relation.limit', { defaultValue: 'Limit' })}</span>
+            <span className="flex-1">{t('grid.relation.limit')}</span>
             <span className="text-text-tertiary">{relationLimitLabel(t, sourceLimit)}</span>
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>
@@ -158,7 +156,7 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
             });
           }}
         >
-          <span className="flex-1">{t('grid.relation.twoWayRelation', { defaultValue: 'Two-way relation' })}</span>
+          <span className="flex-1">{t('grid.relation.twoWayRelation')}</span>
           <Switch checked={Boolean(relationOption?.is_two_way)} disabled={twoWayDisabled} />
         </DropdownMenuItem>
       </DropdownMenuGroup>
@@ -166,22 +164,20 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('grid.relation.disableTwoWayRelationTitle', { defaultValue: 'Disable two-way relation?' })}
+              {t('grid.relation.disableTwoWayRelationTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t('grid.relation.disableTwoWayRelationDescription', {
-                defaultValue: 'The reciprocal property will be removed from the related database.',
-              })}
+              {t('grid.relation.disableTwoWayRelationDescription')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('button.cancel', { defaultValue: 'Cancel' })}</AlertDialogCancel>
+            <AlertDialogCancel>{t('button.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 void onUpdateTypeOption({ is_two_way: false });
               }}
             >
-              {t('button.confirm', { defaultValue: 'Confirm' })}
+              {t('button.confirm')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
