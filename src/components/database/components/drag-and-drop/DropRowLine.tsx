@@ -15,6 +15,8 @@ function DropRowLine({ edge, style = {} }: DropIndicatorProps) {
 
   return (
     <div
+      data-testid='drop-row-line'
+      data-edge={edge}
       style={{
         position: 'absolute',
         left: 0,
