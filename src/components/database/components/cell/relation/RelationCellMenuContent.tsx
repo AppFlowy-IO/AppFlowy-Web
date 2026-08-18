@@ -105,6 +105,10 @@ function RelationCellMenuContent({
   const [guid, setGuid] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
   const [rowIds, setRowIds] = useState<string[]>([]);
+  // An empty `rowIds` is indistinguishable from a database that genuinely has no rows, and the
+  // picker would announce "no result" on the strength of it. Nothing may be concluded from an
+  // empty list until this flips.
+  const [rowIdsLoaded, setRowIdsLoaded] = useState(false);
   const [rowContents, setRowContents] = useState<Map<string, string>>(new Map());
   const rowDocsRef = useRef<Map<string, YDoc>>(new Map());
   const targetDocRef = useRef<YDoc | null>(null);
@@ -121,6 +125,9 @@ function RelationCellMenuContent({
   });
 
   useEffect(() => {
+    // Switching target database starts the wait over — the previous database's rows say nothing
+    // about this one.
+    setRowIdsLoaded(false);
     void (async () => {
       if (!loadView) {
         return;
@@ -142,6 +149,7 @@ function RelationCellMenuContent({
 
         if (!fieldId) {
           setNoAccess(true);
+          setRowIdsLoaded(true);
           return;
         }
 
@@ -155,8 +163,11 @@ function RelationCellMenuContent({
         const ids = getLiveRelationRowIds(rows.toArray());
 
         setRowIds(ids);
+        setRowIdsLoaded(true);
       } catch (e) {
-        //
+        // The list will not arrive; stop waiting on it so the picker can settle on "no result"
+        // rather than holding placeholders that never resolve.
+        setRowIdsLoaded(true);
       }
     })();
   }, [loadView, selectedViewId]);
@@ -201,21 +212,19 @@ function RelationCellMenuContent({
 
     void (async () => {
       for (const rowId of rowIds) {
-        if (rowDocsRef.current.has(rowId)) {
-          // If the row document already exists, skip creating it
-          setRowContents((prev) => {
-            const newContents = new Map(prev);
+        // If the row document already exists, skip creating it
+        if (!rowDocsRef.current.has(rowId)) {
+          try {
+            const rowDoc = await createRow(getRowKey(guid, rowId));
 
-            newContents.set(rowId, getContent(rowId));
-            return newContents;
-          });
-          continue;
+            rowDocsRef.current.set(rowId, rowDoc);
+          } catch (e) {
+            // Leave the doc missing, but still record the row below. Presence in `rowContents` is
+            // what ends the row's loading placeholder, so bailing out here — or skipping the
+            // write — would leave this row, and with a `continue` every row after it, pulsing
+            // forever. An unreadable row falls back to the "Untitled" wording instead.
+          }
         }
-
-        const rowKey = getRowKey(guid, rowId);
-        const rowDoc = await createRow(rowKey);
-
-        rowDocsRef.current.set(rowId, rowDoc);
 
         // Store the content in the ref
         setRowContents((prev) => {
@@ -260,12 +269,17 @@ function RelationCellMenuContent({
   // covers the cell's already-related ids (including stale/deleted ones).
   // Treating "no result" as both empty avoids hiding deleted relations the user
   // may want to remove.
-  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !loading;
+  // `rowIdsLoaded` keeps an empty list from reading as "nothing matched" while it is really
+  // "nothing has arrived yet".
+  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !loading && rowIdsLoaded;
 
   const renderItem = useCallback(
     (id: string) => {
       const isRelated = relationRowIds?.includes(id);
       const isDeleted = isRelated && !rowIds.includes(id);
+      // A row we know exists but whose primary cell has not landed yet. Deleted rows are excluded:
+      // their wording is final, and their doc is never going to arrive.
+      const isResolving = !isDeleted && !rowContents.has(id);
       const content = isDeleted ? t('document.mention.deletedPage') : rowContents.get(id) || '';
 
       return (
@@ -291,7 +305,7 @@ function RelationCellMenuContent({
           key={id}
           onMouseEnter={() => setSelectedId(id)}
         >
-          <RelationRowItem rowId={id} content={content} />
+          <RelationRowItem rowId={id} content={content} loading={isResolving} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
