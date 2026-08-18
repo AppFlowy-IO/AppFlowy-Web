@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 
-import { importCsvFilesAsDatabases, ImportCsvBatchInput } from '@/components/app/import/import-service';
+import {
+  importCsvFilesAsDatabases,
+  ImportCsvBatchInput,
+  importNotionZipToView,
+} from '@/components/app/import/import-service';
 import ImportDialog from '@/components/app/import/ImportDialog';
 
 const toView = jest.fn();
@@ -43,6 +47,7 @@ jest.mock('@/components/app/import/import-service', () => ({
 const toastSuccess = toast.success as unknown as jest.Mock;
 const toastError = toast.error as unknown as jest.Mock;
 const importCsv = importCsvFilesAsDatabases as jest.Mock;
+const importNotion = importNotionZipToView as jest.Mock;
 
 const PARENT_VIEW_ID = 'parent-1';
 
@@ -52,6 +57,18 @@ function renderDialog() {
   render(<ImportDialog open parentViewId={PARENT_VIEW_ID} onOpenChange={onOpenChange} />);
 
   return { onOpenChange };
+}
+
+function pickNotionFile() {
+  const input = screen.getByTestId('import-notion-input');
+  const file = new File(['zip'], 'export.zip', { type: 'application/zip' });
+
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  fireEvent.change(input);
+}
+
+function closeButton(): HTMLButtonElement {
+  return screen.getByTestId('import-dialog-close');
 }
 
 function pickCsvFiles(names: string[]) {
@@ -100,7 +117,7 @@ describe('ImportDialog — multiple CSV files', () => {
     expect(batchInput.files).toHaveLength(files.length);
     expect(batchInput.files.map((file) => file.name)).toEqual(['one.csv', 'two.csv', 'three.csv']);
     expect(batchInput.files[0]).toBe(files[0]);
-    expect(toastSuccess).toHaveBeenCalledWith('importPanel.successCount:{"total":3}');
+    expect(toastSuccess).toHaveBeenCalledWith('importPanel.successCount:{"count":3}');
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -127,7 +144,7 @@ describe('ImportDialog — multiple CSV files', () => {
     pickCsvFiles(['one.csv', 'two.csv', 'three.csv']);
 
     await waitFor(() => expect(toView).toHaveBeenCalledWith('view-1'));
-    expect(toastSuccess).toHaveBeenCalledWith('importPanel.partialSuccess:{"success":1,"total":3}');
+    expect(toastSuccess).toHaveBeenCalledWith('importPanel.partialSuccess:{"success":1,"count":3}');
     expect(toastError).toHaveBeenCalledWith('importPanel.failedFiles:{"names":"two.csv, three.csv"}');
   });
 
@@ -142,7 +159,7 @@ describe('ImportDialog — multiple CSV files', () => {
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'importPanel.failedFilesOverflow:{"names":"a.csv, b.csv, c.csv","extra":2}'
+        'importPanel.failedFilesOverflow:{"names":"a.csv, b.csv, c.csv","count":2}'
       )
     );
   });
@@ -257,6 +274,82 @@ describe('ImportDialog — multiple CSV files', () => {
         'importPanel.importingCount:{"current":2,"total":3}'
       )
     );
+  });
+
+  it('announces batch progress from outside the disabled button', async () => {
+    await startPendingBatch();
+
+    // Screen readers skip the counter rendered inside the disabled CSV button, so the same
+    // progress has to reach them through a live region.
+    expect(screen.getByTestId('import-csv-progress-announcement').textContent).toBe(
+      'importPanel.importingProgress:{"current":1,"total":2}'
+    );
+  });
+
+  it('reports no denominator when the batch gave up before every file got a turn', async () => {
+    // The server's pending-task cap halts the batch at the second file; the third never ran.
+    importCsv.mockResolvedValue({
+      items: [
+        { fileName: 'one.csv', viewId: 'view-1' },
+        { fileName: 'two.csv', error: '3 import tasks are pending. Please wait until they are completed' },
+      ],
+      aborted: false,
+    });
+
+    const { onOpenChange } = renderDialog();
+
+    pickCsvFiles(['one.csv', 'two.csv', 'three.csv']);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    // "Imported 1 of 3" would count a file that was never attempted as a loss.
+    expect(toastSuccess).toHaveBeenCalledWith('importPanel.success');
+    expect(toastSuccess).not.toHaveBeenCalledWith(expect.stringContaining('partialSuccess'));
+    // The untried file is still worth retrying, so the dialog stays put.
+    expect(toView).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it('lets a long Notion upload be cancelled instead of trapping the dialog', async () => {
+    let notionInput: { signal?: AbortSignal } | undefined;
+
+    importNotion.mockImplementation(
+      (input: { signal?: AbortSignal }) =>
+        new Promise(() => {
+          notionInput = input;
+        })
+    );
+
+    const { onOpenChange } = renderDialog();
+
+    pickNotionFile();
+    await waitFor(() => expect(notionInput).toBeDefined());
+
+    expect(closeButton().disabled).toBe(false);
+    expect(closeButton().getAttribute('aria-label')).toBe('importPanel.cancelImport');
+    expect(notionInput?.signal?.aborted).toBe(false);
+
+    fireEvent.click(closeButton());
+
+    expect(notionInput?.signal?.aborted).toBe(true);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('still blocks the close button while a markdown import is mid-flight', async () => {
+    addPage.mockImplementation(() => new Promise(() => undefined));
+
+    renderDialog();
+
+    const input = screen.getByTestId('import-markdown-input');
+
+    Object.defineProperty(input, 'files', {
+      value: [new File(['# hi'], 'notes.md', { type: 'text/markdown' })],
+      configurable: true,
+    });
+    fireEvent.change(input);
+
+    // Markdown has already created its page by this point — cancelling would strand an empty one.
+    await waitFor(() => expect(closeButton().disabled).toBe(true));
+    expect(closeButton().getAttribute('aria-label')).toBe('button.close');
   });
 
   it('cancels the running batch when the close button is clicked', async () => {

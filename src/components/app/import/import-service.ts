@@ -18,11 +18,16 @@ import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-b
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 // Import failures arrive either as `Error`s or as `{ code, message }` rejections from the
 // HTTP layer; `getErrorMessage` normalises both.
-import { getErrorMessage } from '@/utils/errors';
+import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
 import { calculateMd5 } from '@/utils/md5';
 
 const CSV_POLL_INTERVAL_MS = 1500;
 const CSV_POLL_TIMEOUT_MS = 5 * 60 * 1000;
+
+// AppFlowy Cloud's `ErrorCode::TooManyImportTask`. Unlike a bad delimiter or an oversized file,
+// this describes the account rather than the file, so every remaining file in a batch would fail
+// the same way — see `ensure_import_task_capacity` in the server's workspace/database API.
+const TOO_MANY_IMPORT_TASK_CODE = 1046;
 
 export function stripFileExtension(name: string): string {
   const dot = name.lastIndexOf('.');
@@ -191,7 +196,11 @@ export interface ImportCsvBatchItem {
 }
 
 export interface ImportCsvBatchResult {
-  /** One entry per file that was attempted, in selection order. */
+  /**
+   * One entry per file that was attempted, in selection order. Shorter than the input when the
+   * batch stopped early — either cancelled, or halted by a failure that would repeat for every
+   * remaining file. Callers should treat `items.length`, not the input length, as the denominator.
+   */
   items: ImportCsvBatchItem[];
   /** True when `signal` fired mid-batch, so `items` covers only the files attempted so far. */
   aborted: boolean;
@@ -205,7 +214,11 @@ export interface ImportCsvBatchResult {
  * makes every file past the cap fail with `TooManyImportTask`.
  *
  * One bad file does not sink the batch — its error is recorded and the remaining files still
- * import. Aborting via `signal` stops the batch and returns what finished, rather than throwing,
+ * import. The exception is `TooManyImportTask`, which is about the account rather than the file:
+ * retrying it per file would burn a round trip each and then blame every file for a queue the
+ * user only has to wait out, so the batch stops and reports the server's message once.
+ *
+ * Aborting via `signal` likewise stops the batch and returns what finished, rather than throwing,
  * so the caller can still report the pages that were created.
  */
 export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Promise<ImportCsvBatchResult> {
@@ -227,6 +240,9 @@ export async function importCsvFilesAsDatabases(input: ImportCsvBatchInput): Pro
       if (err instanceof ImportAbortError) return { items, aborted: true };
 
       items.push({ fileName: file.name, error: getErrorMessage(err, '') });
+
+      // Batch-fatal: the pending-task cap belongs to the user, not to this file.
+      if (isAPIErrorCode(err, TOO_MANY_IMPORT_TASK_CODE)) return { items, aborted: false };
     }
   }
 
@@ -252,14 +268,18 @@ export async function importNotionZipToView(input: ImportNotionInput): Promise<I
   try {
     throwIfAborted(signal);
     if (task.multipart) {
-      await uploadImportFileMultipart(file, task.multipart, onProgress ?? noopProgress);
+      await uploadImportFileMultipart(file, task.multipart, onProgress ?? noopProgress, signal);
     } else {
-      await uploadImportFile(task.presignedUrl, file, onProgress ?? noopProgress);
+      await uploadImportFile(task.presignedUrl, file, onProgress ?? noopProgress, signal);
     }
 
     return { taskId: task.taskId };
   } catch (err) {
     void cancelImportTask(task.taskId).catch(noop);
+    // A zip upload is the longest thing this dialog does, so the signal has to reach it — and an
+    // aborted upload surfaces as an axios `CanceledError`. Normalise it so the caller can tell
+    // "user cancelled" from "the upload failed", exactly as the CSV path does.
+    throwIfAborted(signal);
     throw err;
   }
 }

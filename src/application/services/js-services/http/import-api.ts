@@ -91,7 +91,12 @@ export async function createNotionImportTask(
   ).then(toImportUploadTask);
 }
 
-export async function uploadImportFile(presignedUrl: string, file: File, onProgress: (progress: number) => void) {
+export async function uploadImportFile(
+  presignedUrl: string,
+  file: File,
+  onProgress: (progress: number) => void,
+  signal?: AbortSignal
+) {
   const response = await axios.put(presignedUrl, file, {
     onUploadProgress: (progressEvent) => {
       const { progress = 0 } = progressEvent;
@@ -102,6 +107,7 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     headers: {
       'Content-Type': 'application/zip',
     },
+    signal,
   });
 
   if (response.status === 200 || response.status === 204) {
@@ -121,7 +127,8 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
 export async function uploadImportFileMultipart(
   file: File,
   multipart: ImportMultipartUploadInfo,
-  onProgress: (progress: number) => void
+  onProgress: (progress: number) => void,
+  signal?: AbortSignal
 ) {
   const MAX_CONCURRENCY = 5;
   const partCount = multipart.part_presigned_urls.length;
@@ -147,6 +154,7 @@ export async function uploadImportFileMultipart(
 
     const resp = await axios.put(partInfo.presigned_url, blob, {
       validateStatus: () => true,
+      signal,
       headers: {
         'Content-Type': 'application/zip',
       },
@@ -180,7 +188,10 @@ export async function uploadImportFileMultipart(
   // Upload parts with limited concurrency
   const queue = Array.from({ length: partCount }, (_, i) => i);
   const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, partCount) }, async () => {
-    while (queue.length > 0 && !aborted) {
+    // `signal` cancels the in-flight PUTs; this check stops the workers from picking up new
+    // parts once the caller has given up, so a cancelled upload winds down instead of
+    // grinding through the rest of the queue.
+    while (queue.length > 0 && !aborted && !signal?.aborted) {
       const idx = queue.shift()!;
 
       await uploadPart(idx);
@@ -188,6 +199,11 @@ export async function uploadImportFileMultipart(
   });
 
   await Promise.all(workers);
+
+  // Never finalise an upload the caller cancelled — the parts are incomplete.
+  if (signal?.aborted) {
+    return Promise.reject({ code: -1, message: 'Multipart upload cancelled' });
+  }
 
   // Complete the multipart upload on the server
   await completeImportMultipart({

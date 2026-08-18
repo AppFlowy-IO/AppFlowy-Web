@@ -79,9 +79,10 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
     onOpenChange(false);
   }, [active, onOpenChange]);
 
-  // Only a CSV batch is cancellable: it can run for minutes, so the close button aborts it and
-  // keeps the files already imported. Markdown / Notion are single-shot and block the button.
-  const cancellable = active === 'csv';
+  // A CSV batch and a Notion zip upload can both run for minutes, so the close button doubles as
+  // a cancel for them and keeps whatever already imported. Markdown blocks the button instead:
+  // it is two round trips, and its page already exists by the time the upload starts.
+  const cancellable = active === 'csv' || active === 'notion';
   const closeDisabled = active !== null && !cancellable;
 
   // The button doubles as the cancel control during a batch, so it has to say so.
@@ -144,22 +145,21 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           else failed.push(item);
         }
 
-        if (aborted) {
-          // Cancelling leaves the remaining files unattempted, so `files.length` is not a
-          // meaningful denominator — report only what actually landed.
-          if (importedViewIds.length > 0) {
+        // Cancelling — or a batch-fatal server error such as the pending-task cap — leaves the
+        // remaining files unattempted, so `files.length` is not a denominator we can honestly
+        // report. Only claim "x of y" when every selected file actually got a turn.
+        const attemptedAll = !aborted && items.length === files.length;
+
+        if (importedViewIds.length > 0) {
+          if (attemptedAll && importedViewIds.length < files.length) {
+            toast.success(t('importPanel.partialSuccess', { success: importedViewIds.length, count: files.length }));
+          } else {
             toast.success(
               importedViewIds.length === 1
                 ? t('importPanel.success')
-                : t('importPanel.successCount', { total: importedViewIds.length })
+                : t('importPanel.successCount', { count: importedViewIds.length })
             );
           }
-        } else if (importedViewIds.length === files.length) {
-          toast.success(
-            files.length === 1 ? t('importPanel.success') : t('importPanel.successCount', { total: files.length })
-          );
-        } else if (importedViewIds.length > 0) {
-          toast.success(t('importPanel.partialSuccess', { success: importedViewIds.length, total: files.length }));
         }
 
         // Files that were attempted and broke are reported even when the batch was cancelled
@@ -179,12 +179,14 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
 
           toast.error(
             extra > 0
-              ? t('importPanel.failedFilesOverflow', { names, extra, ...RAW_INTERPOLATION })
+              ? t('importPanel.failedFilesOverflow', { names, count: extra, ...RAW_INTERPOLATION })
               : t('importPanel.failedFiles', { names, ...RAW_INTERPOLATION })
           );
         }
 
-        if (aborted || importedViewIds.length === 0) return;
+        // Files left unattempted mean there is still work here — keep the dialog open so the
+        // user can retry them instead of navigating away from a half-finished batch.
+        if (!attemptedAll || importedViewIds.length === 0) return;
 
         close();
         void toView(importedViewIds[0]);
@@ -298,7 +300,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           >
             <TextIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.textAndMarkdown')}</span>
-            {active === 'markdown' && <CircularProgress size={14} className='ml-auto' />}
+            {active === 'markdown' ? <CircularProgress size={14} className='ml-auto' /> : null}
           </button>
 
           <button
@@ -310,16 +312,16 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           >
             <DatabaseIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.csv')}</span>
-            {active === 'csv' && (
+            {active === 'csv' ? (
               <span className='ml-auto flex items-center gap-2'>
-                {csvProgress && csvProgress.total > 1 && (
+                {csvProgress && csvProgress.total > 1 ? (
                   <span className='text-xs text-text-secondary' data-testid='import-csv-progress'>
                     {t('importPanel.importingCount', { current: csvProgress.current, total: csvProgress.total })}
                   </span>
-                )}
+                ) : null}
                 <CircularProgress size={14} />
               </span>
-            )}
+            ) : null}
           </button>
 
           <button
@@ -331,9 +333,17 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           >
             <NotionIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.notionZip')}</span>
-            {active === 'notion' && <CircularProgress size={14} className='ml-auto' />}
+            {active === 'notion' ? <CircularProgress size={14} className='ml-auto' /> : null}
           </button>
         </div>
+
+        {/* The visible counter sits inside a disabled button, which assistive tech skips, so the
+            batch reports its progress from a live region that stays in the accessibility tree. */}
+        <span aria-live='polite' className='sr-only' data-testid='import-csv-progress-announcement'>
+          {active === 'csv' && csvProgress && csvProgress.total > 1
+            ? t('importPanel.importingProgress', { current: csvProgress.current, total: csvProgress.total })
+            : ''}
+        </span>
 
         <input
           ref={markdownInputRef}

@@ -187,6 +187,51 @@ describe('importCsvFilesAsDatabases', () => {
     expect(result.items).toEqual([{ fileName: 'one.csv', error: '' }]);
   });
 
+  it('stops the batch when the pending-task cap trips, instead of failing every remaining file', async () => {
+    stubHappyPath();
+    // ErrorCode::TooManyImportTask — a property of the account, not of the file.
+    createTask.mockRejectedValue({
+      code: 1046,
+      message: '3 import tasks are pending. Please wait until they are completed',
+    });
+
+    const result = await importCsvFilesAsDatabases({
+      workspaceId: WORKSPACE_ID,
+      parentViewId: PARENT_VIEW_ID,
+      files: [csvFile('one.csv'), csvFile('two.csv'), csvFile('three.csv')],
+    });
+
+    expect(result.aborted).toBe(false);
+    // Only the file that actually hit the cap is reported; the rest were never attempted, so
+    // they are neither blamed nor retried a round trip at a time.
+    expect(result.items).toEqual([
+      { fileName: 'one.csv', error: '3 import tasks are pending. Please wait until they are completed' },
+    ]);
+    expect(createTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps going after an ordinary per-file server error', async () => {
+    stubHappyPath();
+    const okTask = createTask.getMockImplementation() as (workspaceId: string, payload: { name: string }) => unknown;
+
+    createTask.mockImplementation((workspaceId: string, payload: { name: string }) => {
+      if (payload.name === 'one') return Promise.reject({ code: 1004, message: 'file too large' });
+      return okTask(workspaceId, payload);
+    });
+
+    const result = await importCsvFilesAsDatabases({
+      workspaceId: WORKSPACE_ID,
+      parentViewId: PARENT_VIEW_ID,
+      files: [csvFile('one.csv'), csvFile('two.csv')],
+    });
+
+    // Only the cap is batch-fatal — a bad file must not cut the batch short.
+    expect(result.items).toEqual([
+      { fileName: 'one.csv', error: 'file too large' },
+      { fileName: 'two.csv', viewId: 'view-task-two' },
+    ]);
+  });
+
   it('hands the signal to the upload and treats a cancelled upload as an abort', async () => {
     stubHappyPath();
     const controller = new AbortController();
