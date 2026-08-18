@@ -1,7 +1,9 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PersonFilter, PersonFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { FieldType, PersonFilter, PersonFilterCondition, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { ReactComponent as PersonIcon } from '@/assets/icons/person.svg';
@@ -19,6 +21,9 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const updateFilter = useUpdateFilter();
+  const { field } = useFieldSelector(filter.fieldId);
+  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
 
   const conditions = useMemo(
     () => [
@@ -39,16 +44,23 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
 
   // Skip the API call when the condition doesn't need the picker (empty/notempty).
   const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(showPicker);
+  const mentionableUserOptions = useMemo(
+    () =>
+      mentionableUsers.flatMap((user) => {
+        const identifier = isAttributionField ? canonicalizeUserUid(user.uid) : user.person_id;
+
+        return identifier ? [{ identifier, user }] : [];
+      }),
+    [isAttributionField, mentionableUsers],
+  );
 
   // Desktop parity: user ids kept in the filter that no longer resolve to a
   // known person still render as selectable "Unknown user" rows.
   const unknownUserIds = useMemo(() => {
-    if (!mentionableUsers) return [];
-
-    const knownIds = new Set(mentionableUsers.map((user) => user.person_id));
+    const knownIds = new Set(mentionableUserOptions.map(({ identifier }) => identifier));
 
     return selectedUserIds.filter((id) => !knownIds.has(id));
-  }, [mentionableUsers, selectedUserIds]);
+  }, [mentionableUserOptions, selectedUserIds]);
 
   const handleToggleUser = useCallback(
     (userId: string) => {
@@ -87,27 +99,27 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
             <div className={'flex items-center justify-center py-4'}>
               <Progress />
             </div>
-          ) : !mentionableUsers || mentionableUsers.length === 0 ? (
+          ) : mentionableUserOptions.length === 0 ? (
             <div className={'py-4 text-center text-sm text-text-tertiary'}>
               {t('grid.field.person.noMatches')}
             </div>
           ) : (
             <>
-              {mentionableUsers.map((user) => {
-                const isSelected = selectedUserIdSet.has(user.person_id);
+              {mentionableUserOptions.map(({ identifier, user }) => {
+                const isSelected = selectedUserIdSet.has(identifier);
                 const displayName = user.name || user.email || '?';
 
                 return (
                   <button
                     type='button'
-                    key={user.person_id}
+                    key={identifier}
                     data-testid={'person-filter-option'}
                     data-checked={isSelected}
                     className={cn(
                       'flex min-h-[32px] w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left',
                       'hover:bg-fill-content-hover',
                     )}
-                    onClick={() => handleToggleUser(user.person_id)}
+                    onClick={() => handleToggleUser(identifier)}
                   >
                     <Avatar className={'h-5 w-5'}>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />

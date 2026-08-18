@@ -606,6 +606,70 @@ describe('filterBy integration for select and person fields', () => {
   });
 });
 
+describe('filterBy integration for attribution fields', () => {
+  const databaseId = 'db-attribution-filter';
+  const createdByFieldId = 'created-by-field';
+  const lastEditedByFieldId = 'last-edited-by-field';
+  const fields = new Map() as unknown as YDatabaseFields;
+
+  fields.set(createdByFieldId, createField(createdByFieldId, FieldType.CreatedBy));
+  fields.set(lastEditedByFieldId, createField(lastEditedByFieldId, FieldType.LastEditedBy));
+
+  const rows: Row[] = ['row-a', 'row-b', 'legacy-row'].map((id) => ({ id, height: 0 }));
+  const rowMetas: Record<RowId, YDoc> = Object.fromEntries(
+    rows.map(({ id }) => [id, createRowDoc(id, databaseId, {})])
+  );
+  const rowA = rowMetas['row-a']
+    .getMap(YjsEditorKey.data_section)
+    .get(YjsEditorKey.database_row) as YDatabaseRow;
+  const rowB = rowMetas['row-b']
+    .getMap(YjsEditorKey.data_section)
+    .get(YjsEditorKey.database_row) as YDatabaseRow;
+
+  rowA.set(YjsDatabaseKey.created_by, 101);
+  rowA.set(YjsDatabaseKey.last_edited_by, 202);
+  rowB.set(YjsDatabaseKey.created_by, 202);
+  rowB.set(YjsDatabaseKey.last_edited_by, 101);
+
+  it('matches created-by using the primitive numeric uid', () => {
+    const filters = createFilters([
+      {
+        fieldId: createdByFieldId,
+        fieldType: FieldType.CreatedBy,
+        condition: PersonFilterCondition.PersonContains,
+        content: JSON.stringify(['101']),
+      },
+    ]);
+
+    expect(filterBy(rows, filters, fields, rowMetas).map((row) => row.id)).toEqual(['row-a']);
+  });
+
+  it('matches last-edited-by independently from the creator', () => {
+    const filters = createFilters([
+      {
+        fieldId: lastEditedByFieldId,
+        fieldType: FieldType.LastEditedBy,
+        condition: PersonFilterCondition.PersonContains,
+        content: JSON.stringify(['101']),
+      },
+    ]);
+
+    expect(filterBy(rows, filters, fields, rowMetas).map((row) => row.id)).toEqual(['row-b']);
+  });
+
+  it('keeps legacy rows empty until attribution is written', () => {
+    const filters = createFilters([
+      {
+        fieldId: lastEditedByFieldId,
+        fieldType: FieldType.LastEditedBy,
+        condition: PersonFilterCondition.PersonIsEmpty,
+      },
+    ]);
+
+    expect(filterBy(rows, filters, fields, rowMetas).map((row) => row.id)).toEqual(['legacy-row']);
+  });
+});
+
 describe('v069 comprehensive filter tests (desktop parity)', () => {
   // Mirrors: database_filter_v069_comprehensive_test.dart
   //

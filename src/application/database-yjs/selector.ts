@@ -52,6 +52,7 @@ import {
   isDatabaseGroupableFieldType,
   isDynamicDatabaseGroupFieldType,
 } from '@/application/database-yjs/group';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import {
   hasPendingLocalDatabaseGroupInitialization,
   normalizeDatabaseGroupColumn,
@@ -1740,7 +1741,10 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
   const fieldId = persistedGroup?.get(YjsDatabaseKey.field_id);
   const persistedGroupingField = fieldId ? fields?.get(fieldId) : undefined;
   const persistedGroupingFieldType = Number(persistedGroupingField?.get(YjsDatabaseKey.type)) as FieldType;
-  const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(persistedGroupingFieldType === FieldType.Person);
+  const isPersonGroupingField = [FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(
+    persistedGroupingFieldType
+  );
+  const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(isPersonGroupingField);
   const rawRowOrders = view?.get(YjsDatabaseKey.row_orders);
   const inlineRowOrders = getInlineViewRowOrders(database);
   const { cachedRowDocs, getCachedRowDocs, subscribeToCachedRowDocChanges } = useBackgroundRowDocLoader(
@@ -2023,6 +2027,13 @@ export function useDatabaseGroupingSelector(layout: DatabaseViewLayout): Databas
 
         if (label) identifierLabels.set(person.person_id, label);
       });
+    } else if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+      mentionableUsers.forEach((person) => {
+        const label = person.name?.trim() || person.email?.trim();
+        const uid = canonicalizeUserUid(person.uid);
+
+        if (label && uid) identifierLabels.set(uid, label);
+      });
     } else if (fieldType === FieldType.Relation) {
       displayIds.forEach((id) => {
         if (id === currentFieldId) return;
@@ -2182,6 +2193,27 @@ export function useRowOrdersSelector() {
     blobPrefetchComplete,
     seedsReady,
   } = useDatabaseContext();
+  const hasAttributionSort =
+    sorts?.toArray().some((sort) => {
+      const field = fields?.get(sort.get(YjsDatabaseKey.field_id));
+      const fieldType = Number(field?.get(YjsDatabaseKey.type));
+
+      return fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
+    }) ?? false;
+  const { users: conditionMentionableUsers } = useMentionableUsersWithAutoFetch(hasAttributionSort);
+  const attributionNameByUid = useMemo(() => {
+    const names = new Map<string, string>();
+
+    conditionMentionableUsers.forEach((person) => {
+      const name = person.name?.trim() || person.email?.trim();
+      const uid = canonicalizeUserUid(person.uid);
+
+      if (name && uid) names.set(uid, name);
+    });
+
+    return names;
+  }, [conditionMentionableUsers]);
+  const attributionNameGetter = useCallback((uid: string) => attributionNameByUid.get(uid), [attributionNameByUid]);
 
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
@@ -2492,6 +2524,7 @@ export function useRowOrdersSelector() {
       computedRowOrders = sortBy(rowsWithDocs, sorts, fields, rowDocsForConditions, {
         getRelationCellText: relationTextGetter,
         getRollupCellValue: rollupValueGetter,
+        getAttributionName: attributionNameGetter,
       });
     }
 
@@ -2510,6 +2543,7 @@ export function useRowOrdersSelector() {
     logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
+    attributionNameGetter,
     filters,
     rowDocsForConditions,
     sorts,

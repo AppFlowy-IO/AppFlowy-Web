@@ -1,6 +1,6 @@
 import { getStoredCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import { getRowConditionSnapshot, hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getCell } from '@/application/database-yjs/const';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import {
@@ -14,6 +14,7 @@ import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/data
 import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import type { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 
 const NUMBER_GROUP_INTERVAL = 100;
 
@@ -27,6 +28,8 @@ export const DATABASE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
   FieldType.DateTime,
   FieldType.Relation,
   FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
 ];
 
 export const DATABASE_DYNAMIC_GROUP_FIELD_TYPES: readonly FieldType[] = [
@@ -36,6 +39,8 @@ export const DATABASE_DYNAMIC_GROUP_FIELD_TYPES: readonly FieldType[] = [
   FieldType.DateTime,
   FieldType.Relation,
   FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
 ];
 
 export interface DateGroupConfiguration {
@@ -112,7 +117,7 @@ export function groupByField(
     return groupByDate(rows, rowMetas, field, groupContent);
   }
 
-  if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
+  if ([FieldType.Relation, FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
     return groupByIdentifier(rows, rowMetas, field);
   }
 
@@ -197,6 +202,15 @@ function getIdentifierGroupIds(rowId: RowId, rowMetas: Record<RowId, YDoc>, fiel
   const fieldId = field.get(YjsDatabaseKey.id);
   const cell = getCell(rowId, fieldId, rowMetas);
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+    const snapshot = getRowConditionSnapshot(rowMetas[rowId]);
+    const attribute = fieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by;
+    const uid = snapshot?.row.get(attribute);
+    const normalized = canonicalizeUserUid(uid);
+
+    return normalized ? [normalized] : [];
+  }
 
   if (fieldType === FieldType.Relation) {
     return normalizeGroupIdentifiers(getRelationRowIdsFromCell(cell));
@@ -456,7 +470,7 @@ export function getGroupLabel(
 
   const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
-  if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
+  if ([FieldType.Relation, FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
     const resolved = identifierLabels?.get(groupId)?.trim();
 
     if (resolved) return resolved;
@@ -466,6 +480,8 @@ export function getGroupLabel(
 
       return person?.name?.trim() || 'Unknown person';
     }
+
+    if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) return 'Unknown user';
 
     return 'Untitled relation';
   }
@@ -542,6 +558,8 @@ export function getGroupCellData(groupId: string, field: YDatabaseField): string
   if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
     return JSON.stringify([groupId]);
   }
+
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) return undefined;
 
   return groupId;
 }

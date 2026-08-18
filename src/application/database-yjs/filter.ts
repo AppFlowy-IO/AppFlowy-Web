@@ -43,6 +43,7 @@ import {
   YDoc,
   YjsDatabaseKey,
 } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
 
 export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
@@ -111,6 +112,8 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
       }
 
     case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
       try {
         const userIds = JSON.parse(value.content) as string[];
 
@@ -241,6 +244,8 @@ function isDataFilterEffective(filter: YDatabaseFilter, field: YDatabaseField) {
         hasListFilterContent(content)
       );
     case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
       return (
         condition === PersonFilterCondition.PersonIsEmpty ||
         condition === PersonFilterCondition.PersonIsNotEmpty ||
@@ -801,7 +806,9 @@ export function filterBy(
       fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect
         ? createSelectOptionFilterContext(field, content)
         : undefined;
-    const personFilterIds = fieldType === FieldType.Person ? parseJsonStringArray(content) : undefined;
+    const personFilterIds = [FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)
+      ? parseJsonStringArray(content)
+      : undefined;
 
     return (row: Row): boolean => {
       const rowId = row.id;
@@ -904,6 +911,16 @@ export function filterBy(
             personFilterIds ?? null,
             condition
           );
+        }
+
+        case FieldType.CreatedBy:
+        case FieldType.LastEditedBy: {
+          const attribute =
+            fieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by;
+          const uid = canonicalizeUserUid(snapshot.row.get(attribute));
+          const userIds = uid === null ? [] : [uid];
+
+          return personFilterCheckWithParsedIds(userIds, personFilterIds ?? [], condition);
         }
 
         default:
@@ -1463,6 +1480,8 @@ export function getDefaultFilterCondition(fieldType: FieldType, field?: YDatabas
         }),
       };
     case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
       return {
         condition: PersonFilterCondition.PersonContains,
         content: '',

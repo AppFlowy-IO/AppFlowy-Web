@@ -360,6 +360,8 @@ function buildChipLabel(
     case FieldType.LastEditedTime:
       return dateChipLabel(filter as DateFilter, dateFormat, t);
     case FieldType.Person:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
       return personChipLabel(filter as PersonFilter, t);
     case FieldType.Relation:
       return relationChipLabel(filter, t);

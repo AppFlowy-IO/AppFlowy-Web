@@ -271,6 +271,41 @@ describe.each([
   });
 });
 
+describe.each([
+  ['Created by', FieldType.CreatedBy, YjsDatabaseKey.created_by],
+  ['Last edited by', FieldType.LastEditedBy, YjsDatabaseKey.last_edited_by],
+] as const)('%s attribution grouping', (_name, fieldType, attributionKey) => {
+  const fieldId = `${fieldType}-field`;
+  const field = createField(fieldId, fieldType);
+  const rows: Row[] = ['row-a', 'row-b', 'legacy-row'].map((id) => ({ id, height: 0 }));
+  const rowMetas: Record<RowId, YDoc> = Object.fromEntries(
+    rows.map(({ id }) => [id, createRowDoc(id, 'attribution-group-db', {})])
+  );
+  const rowA = rowMetas['row-a']
+    .getMap(YjsEditorKey.data_section)
+    .get(YjsEditorKey.database_row) as YDatabaseRow;
+  const rowB = rowMetas['row-b']
+    .getMap(YjsEditorKey.data_section)
+    .get(YjsEditorKey.database_row) as YDatabaseRow;
+
+  rowA.set(attributionKey, 101);
+  rowB.set(attributionKey, 202);
+
+  it('groups by the primitive numeric uid and leaves legacy rows ungrouped', () => {
+    const result = groupByIdentifier(rows, rowMetas, field);
+
+    expect(result.get('101')?.map((row) => row.id)).toEqual(['row-a']);
+    expect(result.get('202')?.map((row) => row.id)).toEqual(['row-b']);
+    expect(result.get(fieldId)?.map((row) => row.id)).toEqual(['legacy-row']);
+  });
+
+  it('uses resolved user labels without making the group writable', () => {
+    expect(getGroupLabel('101', field, undefined, new Date(), new Map([['101', 'Annie']]))).toBe('Annie');
+    expect(getGroupLabel('999', field)).toBe('Unknown user');
+    expect(getGroupCellData('101', field)).toBeUndefined();
+  });
+});
+
 describe('identifier normalization', () => {
   it('accepts JSON, comma-delimited, and array values without duplicate identifiers', () => {
     expect(normalizeGroupIdentifiers('[" a ","b","a",""]')).toEqual(['a', 'b']);
@@ -406,7 +441,7 @@ describe('desktop Grid dynamic grouping parity', () => {
     expect(result.get('A')?.map(({ id }) => id)).toEqual(['row-2', 'row-0']);
   });
 
-  it('supports exactly the nine desktop Grid grouping field types', () => {
+  it('supports the desktop Grid grouping field types plus attribution fields', () => {
     expect(
       [
         FieldType.RichText,
@@ -418,11 +453,15 @@ describe('desktop Grid dynamic grouping parity', () => {
         FieldType.DateTime,
         FieldType.Relation,
         FieldType.Person,
+        FieldType.CreatedBy,
+        FieldType.LastEditedBy,
       ].every(isDatabaseGroupableFieldType)
     ).toBe(true);
     expect(isDatabaseGroupableFieldType(FieldType.Media)).toBe(false);
     expect(isDynamicDatabaseGroupFieldType(FieldType.Relation)).toBe(true);
     expect(isDynamicDatabaseGroupFieldType(FieldType.Person)).toBe(true);
+    expect(isDynamicDatabaseGroupFieldType(FieldType.CreatedBy)).toBe(true);
+    expect(isDynamicDatabaseGroupFieldType(FieldType.LastEditedBy)).toBe(true);
     expect(isDynamicDatabaseGroupFieldType(FieldType.SingleSelect)).toBe(false);
   });
 

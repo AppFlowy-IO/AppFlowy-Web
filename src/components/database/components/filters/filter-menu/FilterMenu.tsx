@@ -44,6 +44,8 @@ export function FilterMenu({ filter }: { filter: Filter }) {
       case FieldType.CreatedTime:
         return <DateTimeFilterMenu filter={filter as DateFilter} />;
       case FieldType.Person:
+      case FieldType.CreatedBy:
+      case FieldType.LastEditedBy:
         return <PersonFilterMenu filter={filter as PersonFilter} />;
       default:
         return null;
