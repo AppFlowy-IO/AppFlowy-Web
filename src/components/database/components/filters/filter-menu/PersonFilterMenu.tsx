@@ -123,7 +123,9 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
                   >
                     <Avatar className={'h-5 w-5'}>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
-                      <AvatarFallback className={'text-xs'}>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback className={'text-xs'} name={displayName}>
+                        {displayName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
                     </Avatar>
                     <span className={'flex-1 truncate text-sm'}>{displayName}</span>
                     {isSelected && <CheckIcon className={'h-5 w-5 flex-shrink-0 text-icon-info-thick'} />}
