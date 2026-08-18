@@ -1,27 +1,37 @@
 import { TFunction } from 'i18next';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // Hoisted out of the component body so they don't allocate per render —
 // MUI Dialog can short-circuit prop comparison when these stay stable.
 const MODAL_CLASSES = { container: 'items-start max-md:mt-auto max-md:items-center mt-[10%] ' };
+// Desktop pins the dialog at 420px (`showRelationCreationDialog` → SizedBox(width: 420)).
 const MODAL_PAPER_PROPS = {
-  className: 'w-[560px] max-w-[90vw]',
+  className: 'w-[420px] max-w-[90vw]',
   // Cast lets us pin a data-testid on the underlying Paper for E2E selectors.
   ...({ 'data-testid': 'relation-creation-dialog' } as Record<string, unknown>),
 };
 
 import { useDatabaseContext } from '@/application/database-yjs';
+import { useUpdatePropertyIconDispatch } from '@/application/database-yjs/dispatch';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { getMultiple as getViews } from '@/application/services/domains/view';
 import { LoadViewMeta, View } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
+import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CountIcon } from '@/assets/icons/count.svg';
+import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
+import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
+import { ReactComponent as TwoWayRelationIcon } from '@/assets/icons/two_way_relation.svg';
 import { NormalModal } from '@/components/_shared/modal';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { SearchInput } from '@/components/ui/search-input';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+
+import CustomIconPopover from 'src/components/_shared/cutsom-icon/CustomIconPopover';
 
 import { RelationView } from './RelationView';
 
@@ -87,36 +97,151 @@ async function loadViewsById(
 }
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
-  return limit === RelationLimit.OneOnly
-    ? t('grid.relation.limitOnePage', { defaultValue: 'One page' })
-    : t('grid.relation.limitNoLimit', { defaultValue: 'No limit' });
+  return limit === RelationLimit.OneOnly ? t('grid.relation.limitOnePage') : t('grid.relation.limitNoLimit');
 }
 
-function relationTypeLabel(t: TFunction, sourceLimit: RelationLimit) {
-  return sourceLimit === RelationLimit.OneOnly
-    ? t('grid.relation.manyToOne', { defaultValue: 'Many to one' })
-    : t('grid.relation.manyToMany', { defaultValue: 'Many to many' });
+/**
+ * Section heading above each control.
+ *
+ * Desktop renders these with `AFTextMenuItem(padding: zero)`, whose default
+ * title style is `body.standard` — 14px/400 in `textColorScheme.primary`, NOT
+ * a muted caption. The control sits `spacing.xs` (4px) below it.
+ */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <div className='mb-1 text-sm text-text-primary'>{children}</div>;
+}
+
+/**
+ * Port of `AFDropDownMenu` in its non-input (button) mode: a bordered trigger
+ * that opens a shadowed popover list beneath it. Deliberately has no search
+ * box — `updateFilteredItems` short-circuits to the full list when
+ * `isInput` is false, which is how both dropdowns in this dialog are built.
+ *
+ * Implemented as a local disclosure rather than a portalled Radix menu because
+ * the dialog is a MUI `Dialog` that runs its own focus trap.
+ */
+function AFDropdown({
+  testId,
+  leadingIcon,
+  title,
+  children,
+}: {
+  testId: string;
+  leadingIcon: ReactNode;
+  title: ReactNode;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className='relative'>
+      <button
+        type='button'
+        data-testid={testId}
+        aria-haspopup='listbox'
+        aria-expanded={open}
+        onClick={() => setOpen((previous) => !previous)}
+        className={cn(
+          // `_DropdownMenuButton`: 1px border inset by spacing.m-1 / spacing.s-1,
+          // children separated by spacing.xs.
+          'flex w-full items-center gap-1 rounded-300 border px-[7px] py-[5px] text-left text-sm',
+          'hover:border-border-primary-hover',
+          open ? 'border-border-theme-thick' : 'border-border-primary'
+        )}
+      >
+        {leadingIcon}
+        <div className='flex min-w-0 flex-1 items-center gap-2'>{title}</div>
+        <ArrowDownIcon className='h-5 w-5 shrink-0 text-icon-primary' />
+      </button>
+
+      {open ? (
+        <div
+          role='listbox'
+          className={cn(
+            // AFPopover: layer-01 surface, radius m, small shadow, offset
+            // spacing.xs below the trigger, capped at 300px; the list itself
+            // is padded by spacing.m.
+            'absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-[300px] overflow-y-auto',
+            'appflowy-scroller rounded-300 bg-surface-layer-01 p-2 shadow-popover'
+          )}
+        >
+          {children(() => setOpen(false))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Row inside an {@link AFDropdown} popover, styled after `AFBaseButton` as used
+ * by `DatabaseMetaItem` / `LimitOptionItem`: spacing.s × spacing.m padding,
+ * radius m, and a hover-only background. Neither desktop builder tints the
+ * selected row — `LimitOptionItem` marks it with a trailing tick instead.
+ */
+function AFDropdownItem({
+  testId,
+  selected,
+  onSelect,
+  showTick = false,
+  children,
+}: {
+  testId: string;
+  selected: boolean;
+  onSelect: () => void;
+  showTick?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type='button'
+      role='option'
+      aria-selected={selected}
+      data-testid={testId}
+      onClick={onSelect}
+      className={cn(
+        'flex w-full items-center gap-2 rounded-300 px-2 py-1.5 text-left text-sm text-text-primary',
+        'hover:bg-fill-content-hover'
+      )}
+    >
+      {children}
+      {showTick && selected ? <TickIcon className='h-5 w-5 shrink-0 text-icon-info-thick' /> : null}
+    </button>
+  );
 }
 
 export function RelationCreationDialog({
   open,
+  fieldId,
   initialFieldName,
   onOpenChange,
   onCreate,
 }: {
   open: boolean;
+  fieldId: string;
   initialFieldName: string;
   onOpenChange: (open: boolean) => void;
   onCreate: (result: RelationCreationResult) => void;
 }) {
   const { t } = useTranslation();
   const { databaseDoc, databasePageId, loadDatabaseRelations, loadViewMeta, workspaceId } = useDatabaseContext();
+  const updateIcon = useUpdatePropertyIconDispatch(fieldId);
   const [fieldName, setFieldName] = useState(initialFieldName);
   const [reciprocalFieldName, setReciprocalFieldName] = useState('');
   const [selectedDatabaseId, setSelectedDatabaseId] = useState('');
   const [sourceLimit, setSourceLimit] = useState(RelationLimit.NoLimit);
   const [isTwoWay, setIsTwoWay] = useState(false);
-  const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   // Keep the registered database view ID for identity, while rendering the
   // database container so users see the database name instead of "Grid".
@@ -134,7 +259,6 @@ export function RelationCreationDialog({
     setSelectedDatabaseId('');
     setSourceLimit(RelationLimit.NoLimit);
     setIsTwoWay(false);
-    setQuery('');
   }, [initialFieldName, open]);
 
   // Capture the latest load-fns in refs so the effect can re-fetch without
@@ -233,13 +357,6 @@ export function RelationCreationDialog({
     };
   }, [open, workspaceId]);
 
-  const filteredCandidates = useMemo(() => {
-    if (!query.trim()) return candidates;
-    const lowered = query.trim().toLowerCase();
-
-    return candidates.filter(({ displayView }) => (displayView.name || '').toLowerCase().includes(lowered));
-  }, [candidates, query]);
-
   const selectedCandidate = useMemo(
     () => candidates.find((entry) => entry.databaseId === selectedDatabaseId),
     [candidates, selectedDatabaseId]
@@ -256,24 +373,54 @@ export function RelationCreationDialog({
     [candidates, databaseDoc.guid, databasePageId]
   );
 
-  const relatedDatabaseName =
-    selectedCandidate?.displayView.name || t('grid.relation.relatedDatabasePlaceholder');
-  const sourceDatabaseName =
-    currentCandidate?.displayView.name || t('grid.relation.thisDatabase', { defaultValue: 'This database' });
+  const isSelfRelation = Boolean(selectedCandidate && selectedCandidate.databaseId === currentCandidate?.databaseId);
+  const sourceDatabaseName = currentCandidate?.displayView.name || t('grid.relation.thisDatabase');
+
+  /**
+   * Desktop rewrites BOTH name fields whenever a target database is picked
+   * (`_RelatedToSection.onSelect`): a cross-database relation is named after
+   * the target and its reciprocal after the source, while a self-relation
+   * gets the dedicated "Related X" / "Related back to X" copy.
+   */
+  const handleSelectCandidate = useCallback(
+    (candidate: RelationCandidate) => {
+      setSelectedDatabaseId(candidate.databaseId);
+
+      const isCurrentDatabase = candidate.databaseId === currentCandidate?.databaseId;
+      const databaseName = candidate.displayView.name || t('menuAppHeader.defaultNewPageName');
+
+      if (isCurrentDatabase) {
+        setFieldName(t('grid.relation.relatedToProject', { name: databaseName }));
+        setReciprocalFieldName(t('grid.relation.relatedBackToProject', { name: databaseName }));
+      } else {
+        setFieldName(databaseName);
+        setReciprocalFieldName(currentCandidate?.displayView.name ?? '');
+      }
+    },
+    [currentCandidate?.displayView.name, currentCandidate?.databaseId, t]
+  );
 
   // Memoize the disabled flag so MUI's Button can bail out when only
-  // unrelated state (search query, two-way toggle, …) changes.
+  // unrelated state (limit, two-way toggle, …) changes.
   const okButtonProps = useMemo(() => ({ disabled: !selectedDatabaseId }), [selectedDatabaseId]);
+  const dialogTitle = useMemo(
+    () => (
+      // Desktop's heading is `textStyle.heading4.prominent` (16px/700) aligned
+      // to the leading edge; NormalModal centres its title by default.
+      <span className='block text-left text-base font-bold text-text-primary'>{t('grid.relation.relatedTo')}</span>
+    ),
+    [t]
+  );
 
   return (
     <NormalModal
       keepMounted={false}
       open={open}
       onClose={() => onOpenChange(false)}
-      title={t('grid.relation.newRelation', { defaultValue: 'New relation' })}
+      title={dialogTitle}
       classes={MODAL_CLASSES}
       PaperProps={MODAL_PAPER_PROPS}
-      okText={t('grid.relation.addRelation', { defaultValue: 'Add relation' })}
+      okText={t('button.add')}
       okButtonProps={okButtonProps}
       onOk={() => {
         // NormalModal triggers onOk on Enter regardless of the disabled state
@@ -289,119 +436,169 @@ export function RelationCreationDialog({
         });
       }}
     >
+      {/* Desktop separates each section by `spacing.xl` (16px). */}
       <div className='grid gap-4'>
-        <div className='text-sm text-text-secondary'>
-          {t('tooltip.relationField', {
-            defaultValue: 'Relate to another database. Useful for linking items across databases',
-          })}
-        </div>
-
-        <label className='grid gap-1.5 text-sm'>
-          <span className='text-text-secondary'>{t('grid.field.fieldName', { defaultValue: 'Property name' })}</span>
-          <Input value={fieldName} onChange={(event) => setFieldName(event.target.value)} />
-        </label>
-
-        <div className='grid gap-2'>
-          <div className='text-sm text-text-secondary'>{t('grid.relation.relatedTo', { defaultValue: 'Related to' })}</div>
-          <SearchInput
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('grid.relation.search', { defaultValue: 'Search' })}
-          />
-          <div className='appflowy-scroller flex max-h-[160px] flex-col overflow-y-auto rounded-300 border border-border-primary p-1'>
-            {loading ? (
-              <div className='px-2 py-3 text-sm text-text-tertiary'>{t('loading')}</div>
-            ) : filteredCandidates.length === 0 ? (
-              <div className='px-2 py-3 text-sm text-text-tertiary'>
-                {t('grid.relation.emptySearchResult')}
-              </div>
-            ) : (
-              filteredCandidates.map(({ databaseId, displayView }) => {
-                const selected = databaseId === selectedDatabaseId;
-
-                return (
-                  <button
-                    key={databaseId}
-                    type='button'
-                    data-testid={`relation-candidate-${databaseId}`}
-                    className={cn(
-                      'flex items-center rounded-300 px-2 py-1.5 text-left text-sm hover:bg-fill-content-hover',
-                      selected && 'bg-fill-theme-select'
-                    )}
-                    onClick={() => setSelectedDatabaseId(databaseId)}
-                  >
-                    <RelationView view={displayView} />
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        <div className='grid gap-2'>
-          <div className='text-sm text-text-secondary'>{t('grid.relation.limit', { defaultValue: 'Limit' })}</div>
-          <div className='grid grid-cols-2 gap-2'>
-            {[RelationLimit.NoLimit, RelationLimit.OneOnly].map((limit) => (
-              <Button
-                key={limit}
-                type='button'
-                variant={sourceLimit === limit ? 'default' : 'outline'}
-                onClick={() => setSourceLimit(limit)}
-              >
-                {relationLimitLabel(t, limit)}
-              </Button>
-            ))}
-          </div>
-        </div>
-
-        <div className='flex items-center justify-between gap-3 rounded-300 border border-border-primary px-3 py-2'>
-          <div className='text-sm'>{t('grid.relation.twoWayRelation', { defaultValue: 'Two-way relation' })}</div>
-          <Switch
-            checked={isTwoWay}
-            disabled={!selectedDatabaseId}
-            onCheckedChange={(checked) => {
-              setIsTwoWay(checked);
-              if (checked && !reciprocalFieldName.trim()) {
-                setReciprocalFieldName(sourceDatabaseName);
-              }
-            }}
-          />
-        </div>
-
-        {isTwoWay ? (
-          <label className='grid gap-1.5 text-sm'>
-            <span className='text-text-secondary'>
-              {t('grid.relation.propertyNameInRelatedDatabase', {
-                defaultValue: 'Property name in related database',
-              })}
-            </span>
-            <Input
-              value={reciprocalFieldName}
-              onChange={(event) => setReciprocalFieldName(event.target.value)}
-              placeholder={sourceDatabaseName}
-            />
-          </label>
-        ) : null}
-
-        <div className='rounded-300 border border-border-primary bg-fill-content px-3 py-2 text-sm'>
+        <div>
+          <SectionLabel>{t('board.propertyName')}</SectionLabel>
+          {/*
+            `_propertyName`: icon button + spacing.m gap + 32px text field. The
+            icon writes through immediately, matching desktop's dialog-scoped
+            FieldEditorBloc.
+          */}
           <div className='flex items-center gap-2'>
-            <span className='min-w-0 flex-1 truncate'>{sourceDatabaseName}</span>
-            <span className='text-text-tertiary'>{isTwoWay ? '<->' : '->'}</span>
-            <span className='min-w-0 flex-1 truncate'>{relatedDatabaseName}</span>
+            <CustomIconPopover
+              tabs={['icon']}
+              defaultActiveTab={'icon'}
+              enableColor={false}
+              removeIcon={() => updateIcon('')}
+              onSelectIcon={(icon) => updateIcon(icon.value)}
+            >
+              <Button
+                variant={'outline'}
+                className={'h-8 w-8 shrink-0 p-0'}
+                data-testid='relation-field-icon-trigger'
+                aria-label={t('board.propertyName')}
+              >
+                <FieldCustomIcon fieldId={fieldId} className={'h-5 w-5 text-text-secondary'} />
+              </Button>
+            </CustomIconPopover>
+            <div className='relative min-w-0 flex-1'>
+              {/*
+                Desktop shows the target database's icon inside the name field,
+                but suppresses it for a self-relation.
+              */}
+              {selectedCandidate && !isSelfRelation ? (
+                <span className='pointer-events-none absolute left-2 top-1/2 flex -translate-y-1/2 items-center'>
+                  <PageIcon
+                    className='flex !h-5 !w-5 items-center justify-center text-xl'
+                    iconSize={20}
+                    view={selectedCandidate.displayView}
+                  />
+                </span>
+              ) : null}
+              <Input
+                className={cn(selectedCandidate && !isSelfRelation && 'pl-9')}
+                data-testid='relation-field-name-input'
+                value={fieldName}
+                placeholder={t('grid.field.newProperty')}
+                onChange={(event) => setFieldName(event.target.value)}
+              />
+            </div>
           </div>
-          <div className='mt-1 text-xs text-text-tertiary'>
-            {isTwoWay
-              ? t('grid.relation.twoWayRelationSummary', {
-                  defaultValue: '{{relationType}}. Source: {{sourceLimit}}, target: {{targetLimit}}.',
-                  relationType: relationTypeLabel(t, sourceLimit),
-                  sourceLimit: relationLimitLabel(t, sourceLimit),
-                  targetLimit: relationLimitLabel(t, RelationLimit.NoLimit),
-                })
-              : t('grid.relation.oneWayRelationSummary', {
-                  defaultValue: 'One-way relation. Source limit: {{limit}}.',
-                  limit: relationLimitLabel(t, sourceLimit),
-                })}
+        </div>
+
+        <div>
+          <SectionLabel>{t('grid.relation.relatedTo')}</SectionLabel>
+          <AFDropdown
+            testId='relation-database-trigger'
+            leadingIcon={<DatabaseIcon className='h-5 w-5 shrink-0 text-icon-secondary' />}
+            title={
+              selectedCandidate ? (
+                <>
+                  {/* `titleBuilder` drops the icon when the target is this database. */}
+                  {isSelfRelation ? null : (
+                    <PageIcon
+                      className='flex !h-5 !w-5 shrink-0 items-center justify-center text-xl'
+                      iconSize={20}
+                      view={selectedCandidate.displayView}
+                    />
+                  )}
+                  <span className='min-w-0 flex-1 truncate text-text-primary'>
+                    {isSelfRelation
+                      ? t('grid.relation.thisDatabase')
+                      : selectedCandidate.displayView.name || t('menuAppHeader.defaultNewPageName')}
+                  </span>
+                </>
+              ) : (
+                <span className='min-w-0 flex-1 truncate text-text-tertiary'>{t('grid.relation.selectADatabse')}</span>
+              )
+            }
+          >
+            {(close) =>
+              loading ? (
+                <div className='px-2 py-1.5 text-sm text-text-tertiary'>{t('loading')}</div>
+              ) : candidates.length === 0 ? (
+                <div className='px-2 py-1.5 text-sm text-text-tertiary'>{t('grid.relation.emptySearchResult')}</div>
+              ) : (
+                // `DatabaseMetaItem` lists every database under its own name —
+                // only the trigger relabels the current one as "This database".
+                candidates.map((candidate) => (
+                  <AFDropdownItem
+                    key={candidate.databaseId}
+                    testId={`relation-candidate-${candidate.databaseId}`}
+                    selected={candidate.databaseId === selectedDatabaseId}
+                    onSelect={() => {
+                      handleSelectCandidate(candidate);
+                      close();
+                    }}
+                  >
+                    <RelationView view={candidate.displayView} />
+                  </AFDropdownItem>
+                ))
+              )
+            }
+          </AFDropdown>
+        </div>
+
+        <div>
+          <SectionLabel>{t('grid.relation.limit')}</SectionLabel>
+          <AFDropdown
+            testId='relation-limit-trigger'
+            leadingIcon={<CountIcon className='h-5 w-5 shrink-0 text-icon-secondary' />}
+            title={<span className='min-w-0 flex-1 truncate text-text-primary'>{relationLimitLabel(t, sourceLimit)}</span>}
+          >
+            {(close) =>
+              [RelationLimit.NoLimit, RelationLimit.OneOnly].map((limit) => (
+                <AFDropdownItem
+                  key={limit}
+                  testId={`relation-limit-option-${limit}`}
+                  selected={sourceLimit === limit}
+                  showTick
+                  onSelect={() => {
+                    setSourceLimit(limit);
+                    close();
+                  }}
+                >
+                  <span className='min-w-0 flex-1 truncate'>{relationLimitLabel(t, limit)}</span>
+                </AFDropdownItem>
+              ))
+            }
+          </AFDropdown>
+        </div>
+
+        {/* `RelationToggle`: bordered card, spacing.xl / spacing.l padding. */}
+        <div className='rounded-300 border border-border-primary px-4 py-3'>
+          <div className='flex items-center gap-2'>
+            <TwoWayRelationIcon
+              className={cn('h-5 w-5 shrink-0', selectedDatabaseId ? 'text-icon-primary' : 'text-icon-tertiary')}
+            />
+            <span className={cn('min-w-0 flex-1 text-sm', selectedDatabaseId ? 'text-text-primary' : 'text-text-tertiary')}>
+              {t('grid.relation.twoWayRelation')}
+            </span>
+            <Switch
+              checked={isTwoWay}
+              disabled={!selectedDatabaseId}
+              data-testid='relation-two-way-switch'
+              onCheckedChange={setIsTwoWay}
+            />
           </div>
+
+          {isTwoWay && selectedDatabaseId ? (
+            <div className='mt-4'>
+              {/* Desktop labels the reciprocal differently for a self-relation. */}
+              <div className='mb-1 text-xs font-medium text-text-secondary'>
+                {isSelfRelation
+                  ? t('grid.relation.inverseRelatedPropertyName')
+                  : t('grid.relation.propertyNameInRelatedDatabase')}
+              </div>
+              <Input
+                data-testid='relation-reciprocal-name-input'
+                value={reciprocalFieldName}
+                placeholder={t('grid.field.newProperty')}
+                onChange={(event) => setReciprocalFieldName(event.target.value)}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </NormalModal>

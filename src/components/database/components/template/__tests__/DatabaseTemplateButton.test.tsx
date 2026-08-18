@@ -540,7 +540,9 @@ describe('DatabaseTemplateButton', () => {
     expect(deleteDialog.className).toContain('MuiDialog-root');
     expect(within(deleteDialog).getByRole('dialog')).toBeTruthy();
     expect(within(deleteDialog).getByText(`Are you sure you want to delete "${copy.name}"?`)).toBeTruthy();
-    expect(deleteConfirm.className).toContain('MuiButton-containedError');
+    // NormalModal's footer uses the design-system Button; `danger` maps to the
+    // destructive variant's error fill.
+    expect(deleteConfirm.className).toContain('bg-fill-error-thick');
     fireEvent.click(deleteConfirm);
     expect(store.read().templates.map((template) => template.templateId)).toEqual([first.templateId, second.templateId]);
     expect(store.read().defaultTemplateId).toBe(first.templateId);

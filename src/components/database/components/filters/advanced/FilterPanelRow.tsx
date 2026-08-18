@@ -905,7 +905,9 @@ function PersonValueInput({
                   >
                     <Avatar className='h-6 w-6'>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
-                      <AvatarFallback className='text-xs'>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback className='text-xs' name={displayName}>
+                        {displayName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
                     </Avatar>
                     <div className='flex flex-1 flex-col overflow-hidden'>
                       <span className='truncate text-sm'>{user.name || user.email}</span>

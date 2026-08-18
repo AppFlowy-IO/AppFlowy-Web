@@ -216,6 +216,7 @@ function PropertyMenu({
       />
       <RelationCreationDialog
         open={relationDialogOpen}
+        fieldId={fieldId}
         initialFieldName={initialRelationFieldName}
         onOpenChange={setRelationDialogOpen}
         onCreate={handleCreateRelation}
