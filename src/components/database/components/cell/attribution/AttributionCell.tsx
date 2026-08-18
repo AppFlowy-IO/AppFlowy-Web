@@ -28,7 +28,7 @@ export function AttributionCell({ fieldId, onTextChange, rowId, style, wrap }: C
   return (
     <div
       className={cn(
-        'flex w-full items-center gap-1 select-text',
+        'flex w-full select-text items-center gap-1',
         wrap ? 'flex-wrap overflow-x-hidden' : 'h-full flex-nowrap overflow-hidden'
       )}
       data-testid={`attribution-cell-${rowId}-${fieldId}`}
@@ -36,7 +36,7 @@ export function AttributionCell({ fieldId, onTextChange, rowId, style, wrap }: C
     >
       <Avatar className='h-5 w-5 shrink-0'>
         <AvatarImage src={user?.avatar_url || undefined} alt={displayName} />
-        <AvatarFallback className='text-xs'>{displayName.slice(0, 1).toUpperCase()}</AvatarFallback>
+        <AvatarFallback className='text-xs'>{displayName}</AvatarFallback>
       </Avatar>
       <span className='truncate text-sm'>{displayName}</span>
     </div>
