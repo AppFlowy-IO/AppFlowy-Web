@@ -526,6 +526,7 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
                   workspace_id: currentWorkspaceId,
                   user_uuid: userUuid,
                   person_id: fetchedProfile.person_id ?? userUuid,
+                  uid: fetchedProfile.uid,
                   name: profileChange.name ?? fetchedProfile.name ?? '',
                   email: fetchedProfile.email ?? '',
                   role: fetchedProfile.role ?? 0,
@@ -577,6 +578,10 @@ export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
           workspace_id: currentWorkspaceId,
           user_uuid: userUuid,
           person_id: existingProfile?.person_id ?? userUuid,
+          // Profile-change notifications identify users by UUID only. Keep a
+          // zero sentinel until the next mentionable-user API refresh supplies
+          // the numeric uid used by attribution row metadata.
+          uid: existingProfile?.uid ?? 0,
           name: profileChange.name ?? existingProfile?.name ?? '',
           email: existingProfile?.email ?? '',
           role: existingProfile?.role ?? 0,

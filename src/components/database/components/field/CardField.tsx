@@ -93,7 +93,9 @@ export function CardField({
     );
   }
 
-  if ([FieldType.LastEditedTime, FieldType.CreatedTime].includes(Number(type))) {
+  if (
+    [FieldType.LastEditedTime, FieldType.CreatedTime, FieldType.CreatedBy, FieldType.LastEditedBy].includes(Number(type))
+  ) {
     return <Cell style={style} readOnly rowId={rowId} fieldId={fieldId} wrap />;
   }
 

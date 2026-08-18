@@ -11,6 +11,7 @@ import {
   useRowData,
   useRowMetaSelector,
 } from '@/application/database-yjs';
+import { touchRowAttribution } from '@/application/database-yjs/attribution';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { deleteCollabDB, openCollabDB } from '@/application/db';
@@ -177,6 +178,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   const editorRef = useRef<YjsEditor | null>(null);
   const lastIsEmptyRef = useRef<boolean | null>(null);
   const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingAttributionUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNonEmptyRef = useRef(false);
   const docReadyRef = useRef(false); // Track if document is loaded to prevent retry timer from resetting it
   // Tracks the documentId this component currently represents, and the one the
@@ -734,6 +736,11 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       pendingMetaUpdateRef.current = null;
     }
 
+    if (pendingAttributionUpdateRef.current) {
+      clearTimeout(pendingAttributionUpdateRef.current);
+      pendingAttributionUpdateRef.current = null;
+    }
+
     if (retryLoadTimerRef.current) {
       clearTimeout(retryLoadTimerRef.current);
       retryLoadTimerRef.current = null;
@@ -1215,6 +1222,27 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       })();
     };
 
+    const flushPendingAttributionUpdate = () => {
+      if (!pendingAttributionUpdateRef.current) return;
+      clearTimeout(pendingAttributionUpdateRef.current);
+      pendingAttributionUpdateRef.current = null;
+
+      if (!row || activeDocumentIdRef.current !== documentId) return;
+
+      const update = () => touchRowAttribution(row, currentUser?.uid);
+
+      if (row.doc) {
+        row.doc.transact(update, CollabOrigin.Local);
+      } else {
+        update();
+      }
+    };
+
+    const flushPendingUpdates = () => {
+      flushPendingAttributionUpdate();
+      flushPendingMetaUpdate();
+    };
+
     const handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
       if (origin !== CollabOrigin.Local && origin !== CollabOrigin.LocalManual) {
         return;
@@ -1225,16 +1253,22 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
       }
 
       pendingMetaUpdateRef.current = setTimeout(flushPendingMetaUpdate, 0);
+
+      if (pendingAttributionUpdateRef.current) {
+        clearTimeout(pendingAttributionUpdateRef.current);
+      }
+
+      pendingAttributionUpdateRef.current = setTimeout(flushPendingAttributionUpdate, 0);
     };
 
     doc.on('update', handleDocUpdate);
-    onRegisterPendingMetaFlush?.(flushPendingMetaUpdate);
+    onRegisterPendingMetaFlush?.(flushPendingUpdates);
 
     return () => {
       doc.off('update', handleDocUpdate);
       // Flush — not cancel — so a close-card immediately after paste still
       // marks the row non-empty and registers the orphan collab on the server.
-      flushPendingMetaUpdate();
+      flushPendingUpdates();
       onRegisterPendingMetaFlush?.(null);
     };
   }, [
@@ -1248,6 +1282,8 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     ensureRowDocumentExists,
     scheduleEnsureRowDocumentExists,
     onRegisterPendingMetaFlush,
+    row,
+    currentUser?.uid,
   ]);
 
   useEffect(() => {

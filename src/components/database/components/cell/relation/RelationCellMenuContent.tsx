@@ -19,6 +19,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 const recentRelationRowsByView = new Map<string, string[]>();
 
@@ -68,6 +69,7 @@ function RelationCellMenuContent({
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
+  const currentUser = useCurrentUserOptional();
   const { navigateToView, loadView, navigateToRow, createRow, bindViewSync } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const selectedViewId = useMemo(() => {
@@ -354,6 +356,7 @@ function RelationCellMenuContent({
         primaryText: trimmedSearch,
         createRow,
         bindViewSync,
+        actorUid: currentUser?.uid,
       });
 
       if (!newRowId) return;
@@ -372,7 +375,7 @@ function RelationCellMenuContent({
       isCreatingRef.current = false;
       setIsCreatingAndLinking(false);
     }
-  }, [bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, trimmedSearch]);
+  }, [bindViewSync, createRow, currentUser?.uid, onAddRelationRowId, primaryFieldId, selectedViewId, trimmedSearch]);
 
   const renderCreateAndLink = useMemo(() => {
     if (!showCreateAndLink) return null;

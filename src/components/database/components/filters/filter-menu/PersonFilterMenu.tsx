@@ -1,7 +1,9 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PersonFilter, PersonFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { FieldType, PersonFilter, PersonFilterCondition, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { ReactComponent as PersonIcon } from '@/assets/icons/person.svg';
@@ -19,6 +21,14 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const updateFilter = useUpdateFilter();
+  const { field } = useFieldSelector(filter.fieldId);
+  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
+  const getUserIdentifier = useCallback(
+    (user: { person_id: string; uid: string | number }) =>
+      isAttributionField ? canonicalizeUserUid(user.uid) ?? String(user.uid) : user.person_id,
+    [isAttributionField],
+  );
 
   const conditions = useMemo(
     () => [
@@ -45,10 +55,10 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
   const unknownUserIds = useMemo(() => {
     if (!mentionableUsers) return [];
 
-    const knownIds = new Set(mentionableUsers.map((user) => user.person_id));
+    const knownIds = new Set(mentionableUsers.map(getUserIdentifier));
 
     return selectedUserIds.filter((id) => !knownIds.has(id));
-  }, [mentionableUsers, selectedUserIds]);
+  }, [getUserIdentifier, mentionableUsers, selectedUserIds]);
 
   const handleToggleUser = useCallback(
     (userId: string) => {
@@ -94,20 +104,21 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
           ) : (
             <>
               {mentionableUsers.map((user) => {
-                const isSelected = selectedUserIdSet.has(user.person_id);
+                const userIdentifier = getUserIdentifier(user);
+                const isSelected = selectedUserIdSet.has(userIdentifier);
                 const displayName = user.name || user.email || '?';
 
                 return (
                   <button
                     type='button'
-                    key={user.person_id}
+                    key={userIdentifier}
                     data-testid={'person-filter-option'}
                     data-checked={isSelected}
                     className={cn(
                       'flex min-h-[32px] w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left',
                       'hover:bg-fill-content-hover',
                     )}
-                    onClick={() => handleToggleUser(user.person_id)}
+                    onClick={() => handleToggleUser(userIdentifier)}
                   >
                     <Avatar className={'h-5 w-5'}>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />

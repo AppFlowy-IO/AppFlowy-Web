@@ -197,6 +197,8 @@ function configureRowDocumentTest({
     rowMap: null,
     workspaceId: 'workspace-id',
   });
+
+  return { rows };
 }
 
 describe('DatabaseRowSubDocument', () => {
@@ -472,5 +474,54 @@ describe('DatabaseRowSubDocument', () => {
     });
 
     expect(updateRowMeta).toHaveBeenCalledWith(RowMetaKey.IsDocumentEmpty, false);
+  });
+
+  it('attributes local body edits without attributing remote document updates', async () => {
+    const rowId = 'row-id';
+    const documentId = 'document-id';
+    const cachedDoc = new Y.Doc({ guid: documentId }) as YDoc;
+    let pendingFlush: (() => void) | null = null;
+    const { rows } = configureRowDocumentTest({
+      documentIds: { [rowId]: documentId },
+      cachedDocs: new Map([[documentId, cachedDoc]]),
+      loadRowDocument: jest.fn().mockResolvedValue(cachedDoc),
+      createRowDocument: jest.fn().mockResolvedValue(createRowDocumentState(documentId)),
+      checkIfRowDocumentExists: jest.fn().mockResolvedValue(true),
+    });
+
+    mockUseCurrentUserOptional.mockReturnValue({
+      uid: '42',
+      uuid: 'user-uuid',
+      email: 'user@appflowy.test',
+      name: 'User',
+      avatar: null,
+      latestWorkspaceId: 'workspace-id',
+    });
+
+    render(
+      <DatabaseRowSubDocument
+        rowId={rowId}
+        onRegisterPendingMetaFlush={(flush) => {
+          pendingFlush = flush;
+        }}
+      />
+    );
+
+    await screen.findByTestId('row-document-editor');
+    await waitFor(() => expect(pendingFlush).toEqual(expect.any(Function)));
+
+    act(() => {
+      cachedDoc.transact(() => cachedDoc.getMap(YjsEditorKey.data_section).set('remote-change', 1), CollabOrigin.Remote);
+      pendingFlush?.();
+    });
+
+    expect(rows.get(rowId)?.get(YjsDatabaseKey.last_edited_by)).toBeUndefined();
+
+    act(() => {
+      cachedDoc.transact(() => cachedDoc.getMap(YjsEditorKey.data_section).set('local-change', 1), CollabOrigin.Local);
+      pendingFlush?.();
+    });
+
+    expect(rows.get(rowId)?.get(YjsDatabaseKey.last_edited_by)).toBe('42');
   });
 });

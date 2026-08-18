@@ -7,19 +7,15 @@ import {
 import { parseRollupTypeOption } from '@/application/database-yjs/fields';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
-import {
-  RowId,
-  YDatabaseFields,
-  YDatabaseSorts,
-  YDoc,
-  YjsDatabaseKey,
-} from '@/application/types';
+import { RowId, YDatabaseFields, YDatabaseSorts, YDoc, YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 
 type SortableValue = ConditionSortValue;
 
 type SortOptions = {
   getRelationCellText?: (rowId: string, fieldId: string) => string;
   getRollupCellValue?: (rowId: string, fieldId: string) => { value: string; rawNumeric?: number };
+  getAttributionName?: (uid: string) => string | undefined;
 };
 
 export function sortBy(
@@ -98,6 +94,15 @@ export function sortBy(
         return snapshot.row.get(YjsDatabaseKey.created_at);
       }
 
+      if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+        const attribute = fieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by;
+        const uid = canonicalizeUserUid(snapshot.row.get(attribute));
+
+        if (uid === null) return defaultData;
+
+        return options?.getAttributionName?.(uid)?.trim() || `User ${uid}`;
+      }
+
       if (fieldType === FieldType.Relation && options?.getRelationCellText) {
         const relationText = options.getRelationCellText(rowId, fieldId);
 
@@ -162,6 +167,8 @@ export function defaultValueForSort(fieldType: FieldType, condition: SortConditi
     case FieldType.Relation:
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
+    case FieldType.CreatedBy:
+    case FieldType.LastEditedBy:
       return condition === SortCondition.Descending ? '\u0000' : '\uFFFF';
     case FieldType.Number:
     case FieldType.Checklist:
@@ -173,8 +180,8 @@ export function defaultValueForSort(fieldType: FieldType, condition: SortConditi
           ? -Infinity
           : Infinity
         : condition === SortCondition.Descending
-          ? '\u0000'
-          : '\uFFFF';
+        ? '\u0000'
+        : '\uFFFF';
     case FieldType.Checkbox:
       return false;
     default:

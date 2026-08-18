@@ -116,7 +116,19 @@ function createWrapper(context: DatabaseContextState): ({ children }: { children
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <AFConfigContext.Provider
-        value={{ isAuthenticated: true, updateCurrentUser: async () => undefined, openLoginModal: () => undefined }}
+        value={{
+          isAuthenticated: true,
+          currentUser: {
+            uid: '42',
+            uuid: 'user-uuid',
+            name: 'Template creator',
+            email: 'creator@appflowy.io',
+            avatar: null,
+            latestWorkspaceId: 'workspace-id',
+          },
+          updateCurrentUser: async () => undefined,
+          openLoginModal: () => undefined,
+        }}
       >
         <DatabaseContext.Provider value={context}>{children}</DatabaseContext.Provider>
       </AFConfigContext.Provider>
@@ -193,6 +205,10 @@ describe('useNewRowDispatch database templates', () => {
 
     expect(cellData(rowDoc, nameFieldId)).toBe('From template');
     expect(cellData(rowDoc, statusFieldId)).toBe('Board override');
+    expect(rowFrom(rowDoc).get(YjsDatabaseKey.created_by)).toBe('42');
+    expect(rowFrom(rowDoc).get(YjsDatabaseKey.last_edited_by)).toBe('42');
+    expect(rowFrom(rowDoc).get(YjsDatabaseKey.created_by)).not.toBeInstanceOf(Y.AbstractType);
+    expect(rowFrom(rowDoc).get(YjsDatabaseKey.last_edited_by)).not.toBeInstanceOf(Y.AbstractType);
     expect(
       (rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>).get(
         getMetaIdMap(rowId).get(RowMetaKey.IconId) ?? ''

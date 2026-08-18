@@ -29,6 +29,32 @@ describe('row operation tests', () => {
     expect(row.get(YjsDatabaseKey.height)).toBe(36);
   });
 
+  it('stores creator and last editor as primitive canonical user IDs', () => {
+    const rowDoc = new Y.Doc() as YDoc;
+    const nathanUid = 577431234519502848;
+
+    initialDatabaseRow('row-attribution', 'db-1', rowDoc, nathanUid);
+
+    const sharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    const row = sharedRoot.get(YjsEditorKey.database_row) as Y.Map<unknown>;
+
+    expect(row.get(YjsDatabaseKey.created_by)).toBe('577431234519502848');
+    expect(row.get(YjsDatabaseKey.last_edited_by)).toBe('577431234519502848');
+    expect(row.get(YjsDatabaseKey.created_by)).not.toBeInstanceOf(Y.AbstractType);
+  });
+
+  it('leaves automatic attribution empty when the actor is unavailable', () => {
+    const rowDoc = new Y.Doc() as YDoc;
+
+    initialDatabaseRow('row-no-attribution', 'db-1', rowDoc);
+
+    const sharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    const row = sharedRoot.get(YjsEditorKey.database_row) as Y.Map<unknown>;
+
+    expect(row.has(YjsDatabaseKey.created_by)).toBe(false);
+    expect(row.has(YjsDatabaseKey.last_edited_by)).toBe(false);
+  });
+
   it('sets created_at and last_modified when row is created', () => {
     const rowDoc = new Y.Doc() as YDoc;
     initialDatabaseRow('row-2', 'db-1', rowDoc);

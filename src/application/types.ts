@@ -560,6 +560,8 @@ export enum YjsDatabaseKey {
   is_primary = 'is_primary',
   last_modified = 'last_modified',
   created_at = 'created_at',
+  created_by = 'created_by',
+  last_edited_by = 'last_edited_by',
   name = 'name',
   type = 'ty',
   type_option = 'type_option',
@@ -709,6 +711,8 @@ export interface YDatabaseRow extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.created_at): CreatedAt;
 
   get(key: YjsDatabaseKey.last_modified): LastModified;
+
+  get(key: YjsDatabaseKey.created_by | YjsDatabaseKey.last_edited_by): string | number | bigint | undefined;
 }
 
 export interface YDatabaseCells extends Y.Map<unknown> {
@@ -2012,6 +2016,8 @@ export enum MentionPersonRole {
   Contact = 3,
 }
 export interface MentionablePerson {
+  /** Numeric workspace user ID used by automatic database attribution fields. */
+  uid: string | number;
   avatar_url: string | null;
   cover_image_url: string | null;
   custom_image_url: string | null;
