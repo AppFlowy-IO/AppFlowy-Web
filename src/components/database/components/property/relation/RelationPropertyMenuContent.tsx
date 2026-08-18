@@ -1,5 +1,5 @@
 import { TFunction } from 'i18next';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useFieldSelector } from '@/application/database-yjs';
@@ -23,11 +23,15 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { SearchInput } from '@/components/ui/search-input';
 import { Switch } from '@/components/ui/switch';
 
-import { RelationView } from './RelationView';
-
 const RECIPROCAL_NAME_DEBOUNCE_MS = 300;
+
+/** Desktop elides the middle of a deep path: `first / ... / last`. */
+function formatCandidatePath(path: string[]) {
+  return (path.length > 2 ? [path[0], '...', path[path.length - 1]] : path).join(' / ');
+}
 
 function relationLimitLabel(t: TFunction, limit: RelationLimit) {
   return limit === RelationLimit.OneOnly ? t('grid.relation.limitOnePage') : t('grid.relation.limitNoLimit');
@@ -46,16 +50,23 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
   const { field } = useFieldSelector(fieldId);
   const {
     loading,
-    relations,
     relatedViewId,
     selectedView,
     setSelectedView,
     onUpdateDatabaseId,
     onUpdateTypeOption,
-    views,
+    databaseCandidates,
     relationOption,
     relatedDatabaseId,
   } = useRelationData(fieldId);
+  const [databaseQuery, setDatabaseQuery] = useState('');
+  const filteredCandidates = useMemo(() => {
+    const query = databaseQuery.trim().toLowerCase();
+
+    if (!query) return databaseCandidates;
+
+    return databaseCandidates.filter((candidate) => candidate.displayView.name?.toLowerCase().includes(query));
+  }, [databaseCandidates, databaseQuery]);
   const sourceLimit = relationOption?.source_limit ?? RelationLimit.NoLimit;
   const isTwoWay = Boolean(relationOption?.is_two_way);
   const twoWayDisabled = !relatedDatabaseId;
@@ -141,24 +152,51 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
             </RowValue>
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>
-            <DropdownMenuSubContent className={'appflowy-scroller max-h-[600px] max-w-[320px] overflow-y-auto'}>
-              {views.map((view) => (
-                <DropdownMenuItem
-                  key={view.view_id}
-                  onSelect={() => {
-                    setSelectedView(view);
-                    const databaseId = Object.entries(relations || []).find(([, id]) => id === view.view_id)?.[0];
-
-                    if (databaseId) {
-                      void onUpdateDatabaseId(databaseId);
-                    }
-                  }}
-                >
-                  <RelationView view={view} />
-
-                  {view.view_id === relatedViewId && <DropdownMenuItemTick />}
-                </DropdownMenuItem>
-              ))}
+            {/* `_DatabaseList`: 320 wide, search field, then the scrolling list. */}
+            <DropdownMenuSubContent className={'w-[320px] p-0'}>
+              <div className={'p-2'}>
+                <SearchInput
+                  value={databaseQuery}
+                  onChange={(event) => setDatabaseQuery(event.target.value)}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  placeholder={t('grid.relation.search')}
+                />
+              </div>
+              <div className={'appflowy-scroller max-h-[520px] overflow-y-auto px-2 pb-2'}>
+                {filteredCandidates.length === 0 ? (
+                  <div className={'flex h-8 items-center justify-center text-sm text-text-secondary'}>
+                    {t('inlineActions.noResults')}
+                  </div>
+                ) : (
+                  filteredCandidates.map((candidate) => (
+                    <DropdownMenuItem
+                      key={candidate.databaseId}
+                      className={'items-start'}
+                      onSelect={() => {
+                        setSelectedView(candidate.displayView);
+                        void onUpdateDatabaseId(candidate.databaseId);
+                      }}
+                    >
+                      <PageIcon
+                        className='mt-0.5 flex !h-5 !w-5 shrink-0 items-center justify-center text-xl'
+                        iconSize={20}
+                        view={candidate.displayView}
+                      />
+                      <span className={'flex min-w-0 flex-1 flex-col'}>
+                        <span className={'truncate'}>
+                          {candidate.displayView.name || t('menuAppHeader.defaultNewPageName')}
+                        </span>
+                        {candidate.path.length > 0 ? (
+                          <span className={'line-clamp-2 text-xs text-text-secondary'}>
+                            {formatCandidatePath(candidate.path)}
+                          </span>
+                        ) : null}
+                      </span>
+                      {candidate.viewId === relatedViewId && <DropdownMenuItemTick />}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </div>
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>

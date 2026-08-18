@@ -1,11 +1,27 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { parseRelationTypeOption, useDatabaseContext, useFieldSelector } from '@/application/database-yjs';
 import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
 import { RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { DatabaseRelations, View } from '@/application/types';
-import { findView } from '@/components/_shared/outline/utils';
+import { isDatabaseContainer } from '@/application/view-utils';
+import { findAncestors, findView } from '@/components/_shared/outline/utils';
+
+/**
+ * A database that a relation field can point at.
+ *
+ * `displayView` is the user-facing database container rather than the
+ * registered inner view, which is usually just named "Grid"; `path` holds the
+ * container's ancestors so the picker can show where it lives, mirroring
+ * desktop's `_DatabaseListItem` subtitle.
+ */
+export interface RelationDatabaseCandidate {
+  databaseId: string;
+  viewId: string;
+  displayView: View;
+  path: string[];
+}
 
 // Workspace-scoped cache for views to enable instant display
 // Only cache the current workspace to prevent memory leaks
@@ -56,6 +72,9 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
   const [selectedView, setSelectedView] = useState<View | undefined>(undefined);
   // Initialize views with cached data if available for this workspace
   const [views, setViews] = useState<View[]>(() => getCachedViews(workspaceId) || []);
+  // The full folder outline, kept in state so candidate resolution re-runs when
+  // it arrives (the module cache alone would not retrigger the memo).
+  const [outline, setOutline] = useState<View[]>(() => getCachedViews(workspaceId) || []);
   const onUpdateTypeOption = useUpdateRelationTypeOption(fieldId);
   const onUpdateDatabaseId = (databaseId: string) => onUpdateTypeOption({ database_id: databaseId });
   const [loadingRelations, setLoadingRelations] = useState<boolean>(false);
@@ -115,6 +134,7 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
 
         // Cache the views for this workspace
         setCachedViews(workspaceId, allViews);
+        setOutline(allViews);
 
         const filteredViews = viewIds.map((viewId: string) => {
           return findView(allViews, viewId);
@@ -138,6 +158,7 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
       if (!Array.isArray(outline)) return;
 
       setCachedViews(workspaceId, outline);
+      setOutline(outline);
 
       const viewIds = Array.from(new Set([
         ...Object.values(relations || {}),
@@ -242,6 +263,36 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
     };
   }, [loadViewMeta, relatedViewId, views]);
 
+  const databaseCandidates = useMemo<RelationDatabaseCandidate[]>(() => {
+    if (!relations) return [];
+
+    return Object.entries(relations)
+      .flatMap(([databaseId, viewId]) => {
+        if (!viewId) return [];
+
+        const ancestry = findAncestors(outline, viewId);
+        const registeredView = ancestry?.[ancestry.length - 1] ?? findView(views, viewId);
+
+        if (!registeredView) return [];
+
+        // The workspace registers the first inner view (usually "Grid"); the
+        // database name lives on its container parent.
+        const parent = ancestry && ancestry.length >= 2 ? ancestry[ancestry.length - 2] : undefined;
+        const displayView = isDatabaseContainer(parent) ? parent : registeredView;
+
+        return [
+          {
+            databaseId,
+            viewId,
+            displayView,
+            // Desktop lists the registered view's ancestors, which already
+            // include the container itself.
+            path: (ancestry ?? []).slice(0, -1).map((view) => view.name).filter(Boolean),
+          },
+        ];
+      });
+  }, [outline, relations, views]);
+
   // Consider loading true if:
   // 1. Explicitly loading relations or views
   // 2. Or enabled but relations haven't been fetched yet (initial load state)
@@ -256,6 +307,7 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
     relatedViewId,
     selectedView,
     views,
+    databaseCandidates,
     onUpdateDatabaseId,
     onUpdateTypeOption,
     setSelectedView,
