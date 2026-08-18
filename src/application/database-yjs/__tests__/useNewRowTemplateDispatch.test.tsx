@@ -120,6 +120,7 @@ function createWrapper(context: DatabaseContextState): ({ children }: { children
           isAuthenticated: true,
           currentUser: {
             uid: '42',
+            attributionUid: '42',
             uuid: 'user-uuid',
             name: 'Template creator',
             email: 'creator@appflowy.io',

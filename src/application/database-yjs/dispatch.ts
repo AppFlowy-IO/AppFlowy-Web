@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { useCallback, useMemo } from 'react';
 import * as Y from 'yjs';
 
-import { touchRowAttribution } from '@/application/database-yjs/attribution';
+import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { normalizeLegacyCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
@@ -1253,6 +1253,7 @@ export function useMoveCardDispatch() {
   const rowMap = useRowMap();
   const database = useDatabase();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     ({
@@ -1345,7 +1346,7 @@ export function useMoveCardDispatch() {
             }
 
             if (cellChanged) {
-              touchRowAttribution(row, currentUser?.uid);
+              touchRowAttribution(row, actorUid);
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -1354,7 +1355,7 @@ export function useMoveCardDispatch() {
         'reorderCard'
       );
     },
-    [currentUser?.uid, database, rowMap, sharedRoot, view]
+    [actorUid, database, rowMap, sharedRoot, view]
   );
 }
 
@@ -2149,6 +2150,7 @@ export function useClearCellsWithFieldDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (fieldId: string) => {
@@ -2183,7 +2185,7 @@ export function useClearCellsWithFieldDispatch() {
                 cells.delete(fieldId);
 
                 if (hadCell && !isAttributionFieldType(fieldType)) {
-                  touchRowAttribution(row, currentUser?.uid);
+                  touchRowAttribution(row, actorUid);
                 }
               });
             });
@@ -2192,7 +2194,7 @@ export function useClearCellsWithFieldDispatch() {
         'clearCellsWithFieldDispatch'
       );
     },
-    [currentUser?.uid, database, rowMap, sharedRoot]
+    [actorUid, database, rowMap, sharedRoot]
   );
 }
 
@@ -2201,6 +2203,7 @@ export function useDuplicatePropertyDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (fieldId: string) => {
@@ -2372,20 +2375,21 @@ export function useDuplicatePropertyDispatch() {
           cells.set(newId, newCell);
 
           if (fieldType !== FieldType.CreatedTime && fieldType !== FieldType.LastEditedTime) {
-            touchRowAttribution(rowData, currentUser?.uid);
+            touchRowAttribution(rowData, actorUid);
           }
         });
       });
 
       return newId;
     },
-    [currentUser?.uid, database, rowMap, sharedRoot]
+    [actorUid, database, rowMap, sharedRoot]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
   const rowMap = useRowMap();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   const rowDoc = rowMap?.[rowId];
 
@@ -2419,10 +2423,10 @@ export function useUpdateRowMetaDispatch(rowId: string) {
 
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
 
-        if (row) touchRowAttribution(row, currentUser?.uid);
+        if (row) touchRowAttribution(row, actorUid);
       });
     },
-    [currentUser?.uid, rowDoc, rowId]
+    [actorUid, rowDoc, rowId]
   );
 }
 

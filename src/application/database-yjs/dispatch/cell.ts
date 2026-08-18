@@ -10,7 +10,11 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 import * as Y from 'yjs';
 
-import { AttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
+import {
+  AttributionUid,
+  resolveUserAttributionUid,
+  touchRowAttribution,
+} from '@/application/database-yjs/attribution';
 import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -210,6 +214,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
   const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (data: CellUpdateData, dateOpts?: DateCellOptions) => {
@@ -240,20 +245,21 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           fieldType: Number(field.get(YjsDatabaseKey.type)) as FieldType,
           data,
           dateOpts,
-          actorUid: currentUser?.uid,
+          actorUid,
         });
         markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [currentUser?.uid, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
+    [actorUid, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
   const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
@@ -294,13 +300,13 @@ export function useUpdateStartEndTimeCell() {
             isRange: !!endTimestamp,
             includeTime: !isAllDay,
           });
-          touchRowAttribution(writableTarget.row, currentUser?.uid);
+          touchRowAttribution(writableTarget.row, actorUid);
         });
         markCellLocalMutation?.(rowId, fieldId);
       })().catch((error: unknown) => {
         Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [currentUser?.uid, ensureRow, markCellLocalMutation, rowMap]
+    [actorUid, ensureRow, markCellLocalMutation, rowMap]
   );
 }

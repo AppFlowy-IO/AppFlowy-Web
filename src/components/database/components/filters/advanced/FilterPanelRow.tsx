@@ -796,10 +796,14 @@ function PersonValueInput({
   // Use cached mentionable users - only fetch when popover is open
   const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(open);
   const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
-  const getUserIdentifier = useCallback(
-    (user: { person_id: string; uid: string | number }) =>
-      isAttributionField ? canonicalizeUserUid(user.uid) ?? String(user.uid) : user.person_id,
-    [isAttributionField]
+  const mentionableUserOptions = useMemo(
+    () =>
+      mentionableUsers.flatMap((user) => {
+        const identifier = isAttributionField ? canonicalizeUserUid(user.uid) : user.person_id;
+
+        return identifier ? [{ identifier, user }] : [];
+      }),
+    [isAttributionField, mentionableUsers]
   );
 
   // Don't show input for isEmpty/isNotEmpty conditions
@@ -833,11 +837,13 @@ function PersonValueInput({
       return t('grid.personFilter.selectPerson');
     }
 
-    if (!mentionableUsers || mentionableUsers.length === 0) {
+    if (mentionableUserOptions.length === 0) {
       return `${selectedUserIds.length} selected`;
     }
 
-    const selectedUsers = mentionableUsers.filter((user) => selectedUserIds.includes(getUserIdentifier(user)));
+    const selectedUsers = mentionableUserOptions
+      .filter(({ identifier }) => selectedUserIds.includes(identifier))
+      .map(({ user }) => user);
 
     if (selectedUsers.length === 0) {
       return `${selectedUserIds.length} selected`;
@@ -848,7 +854,7 @@ function PersonValueInput({
     }
 
     return `${selectedUsers.length} selected`;
-  }, [getUserIdentifier, selectedUserIds, mentionableUsers, t]);
+  }, [mentionableUserOptions, selectedUserIds, t]);
 
   if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
@@ -878,25 +884,24 @@ function PersonValueInput({
               <div className='flex items-center justify-center py-4'>
                 <Progress />
               </div>
-            ) : !mentionableUsers || mentionableUsers.length === 0 ? (
+            ) : mentionableUserOptions.length === 0 ? (
               <div className='py-4 text-center text-sm text-text-tertiary'>
                 {t('grid.field.person.noMatches')}
               </div>
             ) : (
-              mentionableUsers.map((user) => {
-                const userIdentifier = getUserIdentifier(user);
-                const isSelected = selectedUserIds.includes(userIdentifier);
+              mentionableUserOptions.map(({ identifier, user }) => {
+                const isSelected = selectedUserIds.includes(identifier);
                 const displayName = user.name || user.email || '?';
 
                 return (
                   <div
-                    key={userIdentifier}
+                    key={identifier}
                     className={cn(
                       'flex min-h-[36px] cursor-pointer items-center gap-2 rounded-md px-2 py-1',
                       'hover:bg-fill-content-hover',
                       isSelected && 'bg-fill-content-hover'
                     )}
-                    onClick={() => handleToggleUser(userIdentifier)}
+                    onClick={() => handleToggleUser(identifier)}
                   >
                     <Avatar className='h-6 w-6'>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />

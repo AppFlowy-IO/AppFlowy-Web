@@ -11,7 +11,7 @@ import {
   useRowData,
   useRowMetaSelector,
 } from '@/application/database-yjs';
-import { touchRowAttribution } from '@/application/database-yjs/attribution';
+import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { deleteCollabDB, openCollabDB } from '@/application/db';
@@ -136,6 +136,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
   const database = useDatabase();
   const row = useRowData(rowId) as YDatabaseRow | undefined;
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
   const workspaceId = useCurrentWorkspaceIdOptional();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
 
@@ -1229,7 +1230,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
 
       if (!row || activeDocumentIdRef.current !== documentId) return;
 
-      const update = () => touchRowAttribution(row, currentUser?.uid);
+      const update = () => touchRowAttribution(row, actorUid);
 
       if (row.doc) {
         row.doc.transact(update, CollabOrigin.Local);
@@ -1283,7 +1284,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
     scheduleEnsureRowDocumentExists,
     onRegisterPendingMetaFlush,
     row,
-    currentUser?.uid,
+    actorUid,
   ]);
 
   useEffect(() => {

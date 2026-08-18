@@ -1389,6 +1389,8 @@ export interface User {
   email: string | null;
   name: string | null;
   uid: string;
+  /** Exact lossless UID for automatic attribution, or null for a lossy legacy response. */
+  attributionUid?: string | null;
   avatar: string | null;
   uuid: string;
   latestWorkspaceId: string;

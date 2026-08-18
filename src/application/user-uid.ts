@@ -18,7 +18,10 @@ export function canonicalizeUserUid(uid: UserUid): string | null {
     if (typeof uid === 'bigint') {
       value = uid;
     } else if (typeof uid === 'number') {
-      if (!Number.isFinite(uid) || !Number.isInteger(uid)) return null;
+      // Once a JSON number exceeds the safe-integer range its low digits may
+      // already be rounded. Reject it instead of canonically preserving the
+      // wrong user ID; exact large IDs must arrive as a string or bigint.
+      if (!Number.isSafeInteger(uid)) return null;
       value = BigInt(uid);
     } else {
       const trimmed = uid.trim();
@@ -31,4 +34,17 @@ export function canonicalizeUserUid(uid: UserUid): string | null {
   }
 
   return value > 0n && value <= MAX_I64 ? value.toString() : null;
+}
+
+/**
+ * Preserve the legacy current-user identity while exposing a separate value
+ * that is safe to persist in automatic attribution fields.
+ */
+export function resolveCurrentUserUid(uid: string | number, uidString?: string) {
+  const attributionUid = canonicalizeUserUid(uidString) ?? canonicalizeUserUid(uid);
+
+  return {
+    uid: attributionUid ?? String(uid),
+    attributionUid,
+  };
 }

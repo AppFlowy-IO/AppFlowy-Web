@@ -24,11 +24,6 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
   const { field } = useFieldSelector(filter.fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
-  const getUserIdentifier = useCallback(
-    (user: { person_id: string; uid: string | number }) =>
-      isAttributionField ? canonicalizeUserUid(user.uid) ?? String(user.uid) : user.person_id,
-    [isAttributionField],
-  );
 
   const conditions = useMemo(
     () => [
@@ -49,16 +44,23 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
 
   // Skip the API call when the condition doesn't need the picker (empty/notempty).
   const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(showPicker);
+  const mentionableUserOptions = useMemo(
+    () =>
+      mentionableUsers.flatMap((user) => {
+        const identifier = isAttributionField ? canonicalizeUserUid(user.uid) : user.person_id;
+
+        return identifier ? [{ identifier, user }] : [];
+      }),
+    [isAttributionField, mentionableUsers],
+  );
 
   // Desktop parity: user ids kept in the filter that no longer resolve to a
   // known person still render as selectable "Unknown user" rows.
   const unknownUserIds = useMemo(() => {
-    if (!mentionableUsers) return [];
-
-    const knownIds = new Set(mentionableUsers.map(getUserIdentifier));
+    const knownIds = new Set(mentionableUserOptions.map(({ identifier }) => identifier));
 
     return selectedUserIds.filter((id) => !knownIds.has(id));
-  }, [getUserIdentifier, mentionableUsers, selectedUserIds]);
+  }, [mentionableUserOptions, selectedUserIds]);
 
   const handleToggleUser = useCallback(
     (userId: string) => {
@@ -97,28 +99,27 @@ function PersonFilterMenu({ filter }: { filter: PersonFilter }) {
             <div className={'flex items-center justify-center py-4'}>
               <Progress />
             </div>
-          ) : !mentionableUsers || mentionableUsers.length === 0 ? (
+          ) : mentionableUserOptions.length === 0 ? (
             <div className={'py-4 text-center text-sm text-text-tertiary'}>
               {t('grid.field.person.noMatches')}
             </div>
           ) : (
             <>
-              {mentionableUsers.map((user) => {
-                const userIdentifier = getUserIdentifier(user);
-                const isSelected = selectedUserIdSet.has(userIdentifier);
+              {mentionableUserOptions.map(({ identifier, user }) => {
+                const isSelected = selectedUserIdSet.has(identifier);
                 const displayName = user.name || user.email || '?';
 
                 return (
                   <button
                     type='button'
-                    key={userIdentifier}
+                    key={identifier}
                     data-testid={'person-filter-option'}
                     data-checked={isSelected}
                     className={cn(
                       'flex min-h-[32px] w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left',
                       'hover:bg-fill-content-hover',
                     )}
-                    onClick={() => handleToggleUser(userIdentifier)}
+                    onClick={() => handleToggleUser(identifier)}
                   >
                     <Avatar className={'h-5 w-5'}>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />

@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
-import { touchRowAttribution } from '@/application/database-yjs/attribution';
+import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
 import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
@@ -186,6 +186,7 @@ export function useMoveCardDispatch() {
   const rowMap = useRowMap();
   const database = useDatabase();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     ({
@@ -280,7 +281,7 @@ export function useMoveCardDispatch() {
             }
 
             if (cellChanged) {
-              touchRowAttribution(row, currentUser?.uid);
+              touchRowAttribution(row, actorUid);
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -289,7 +290,7 @@ export function useMoveCardDispatch() {
         'reorderCard'
       );
     },
-    [currentUser?.uid, database, rowMap, sharedRoot, view]
+    [actorUid, database, rowMap, sharedRoot, view]
   );
 }
 
@@ -547,6 +548,7 @@ export function useNewRowDispatch() {
   } = useDatabaseContext();
   const rowMap = useRowMap();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async ({
@@ -640,7 +642,7 @@ export function useNewRowDispatch() {
       const relationPrefills = new Map<FieldId, string[]>();
 
       rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, currentUser?.uid);
+        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
         const meta = rowSharedRoot.get(YjsEditorKey.meta);
@@ -804,8 +806,6 @@ export function useNewRowDispatch() {
           });
         }
 
-        touchRowAttribution(row, currentUser?.uid);
-
         const newMeta = generateRowMeta(rowId, {
           [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
           [RowMetaKey.IconId]: selectedTemplate?.icon ?? null,
@@ -925,7 +925,7 @@ export function useNewRowDispatch() {
             loadView,
             getViewIdFromDatabaseId,
             bindViewSync,
-            actorUid: currentUser?.uid,
+            actorUid,
           })
         )
       );
@@ -939,7 +939,7 @@ export function useNewRowDispatch() {
     [
       bindViewSync,
       calendarSetting,
-      currentUser?.uid,
+      actorUid,
       createRowDocument,
       createRow,
       currentView,
@@ -969,6 +969,7 @@ export function useDuplicateRowDispatch() {
   const rowMap = useRowMap();
   const { duplicateRowDocument } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async (referenceRowId: string) => {
@@ -1005,7 +1006,7 @@ export function useDuplicateRowDispatch() {
       const rowDoc = await createRow(rowKey);
 
       rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, currentUser?.uid);
+        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
 
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
@@ -1043,8 +1044,6 @@ export function useDuplicateRowDispatch() {
             console.error(e);
           }
         });
-
-        touchRowAttribution(row, currentUser?.uid);
       });
 
       executeOperationWithAllViews(
@@ -1185,13 +1184,14 @@ export function useDuplicateRowDispatch() {
 
       return rowId;
     },
-    [createRow, currentUser?.uid, database, guid, rowMap, sharedRoot, duplicateRowDocument]
+    [actorUid, createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
   const rowMap = useRowMap();
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   // Store rowMap in a ref so the callback always gets the latest value
   // This fixes a bug where rowDoc might not be in the map when the hook is first called,
@@ -1236,9 +1236,9 @@ export function useUpdateRowMetaDispatch(rowId: string) {
 
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
 
-        if (row) touchRowAttribution(row, currentUser?.uid);
+        if (row) touchRowAttribution(row, actorUid);
       });
     },
-    [currentUser?.uid, rowId]
+    [actorUid, rowId]
   );
 }

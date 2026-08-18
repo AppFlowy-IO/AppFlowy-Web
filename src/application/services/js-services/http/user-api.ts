@@ -7,7 +7,7 @@ import {
   User,
   Workspace,
 } from '@/application/types';
-import { canonicalizeUserUid } from '@/application/user-uid';
+import { canonicalizeUserUid, resolveCurrentUserUid } from '@/application/user-uid';
 
 import { APIError, APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
@@ -42,9 +42,12 @@ export async function getCurrentUser(workspaceId?: string): Promise<User> {
     );
 
     const { uid, uid_string, uuid, email, name, metadata } = payload;
+    const resolvedUid = resolveCurrentUserUid(uid, uid_string);
 
     return {
-      uid: canonicalizeUserUid(uid_string) ?? canonicalizeUserUid(uid) ?? String(uid),
+      // Keep the legacy display/sync identity fallback, but never use a rounded
+      // JSON number for automatic database attribution.
+      ...resolvedUid,
       uuid,
       email,
       name,

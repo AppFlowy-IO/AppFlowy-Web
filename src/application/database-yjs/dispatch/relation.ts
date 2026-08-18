@@ -4,7 +4,11 @@ import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
-import { AttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
+import {
+  AttributionUid,
+  resolveUserAttributionUid,
+  touchRowAttribution,
+} from '@/application/database-yjs/attribution';
 import { getStoredCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import {
   useDatabase,
@@ -546,6 +550,7 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
   const rowMap = useRowMap();
   const { createRow, getViewIdFromDatabaseId, loadView, bindViewSync } = context;
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async (changes: RelationCellChanges) => {
@@ -568,7 +573,7 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         fieldId,
         changes,
         typeOption.source_limit,
-        currentUser?.uid
+        actorUid
       );
 
       if (!typeOption.is_two_way || !typeOption.database_id || !typeOption.reciprocal_field_id) {
@@ -615,7 +620,7 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
           typeOption.reciprocal_field_id as FieldId,
           { removedRowIds: [rowId] },
           reciprocalLimit,
-          currentUser?.uid
+          actorUid
         );
       }));
 
@@ -630,10 +635,10 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         loadView,
         getViewIdFromDatabaseId,
         bindViewSync,
-        actorUid: currentUser?.uid,
+        actorUid,
       });
     },
-    [bindViewSync, context, createRow, currentUser?.uid, database, fieldId, getViewIdFromDatabaseId, loadView, rowId, rowMap]
+    [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowId, rowMap]
   );
 }
 
@@ -644,6 +649,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
   const rowMap = useRowMap();
   const { createRow, getViewIdFromDatabaseId, loadView, bindViewSync } = context;
   const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async (updates: RelationTypeOptionUpdates) => {
@@ -687,7 +693,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           fieldId,
           rowMap,
           createRow,
-          actorUid: currentUser?.uid,
+          actorUid,
         });
         nextOption = {
           ...nextOption,
@@ -740,7 +746,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
             reciprocalFieldId,
             rowMap,
             createRow,
-            actorUid: currentUser?.uid,
+            actorUid,
           });
         } else {
           // Couldn't load the related database to create a reciprocal field.
@@ -800,7 +806,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         }
       }
     },
-    [bindViewSync, context, createRow, currentUser?.uid, database, fieldId, getViewIdFromDatabaseId, loadView, rowMap, sharedRoot]
+    [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowMap, sharedRoot]
   );
 }
 

@@ -491,6 +491,7 @@ describe('DatabaseRowSubDocument', () => {
 
     mockUseCurrentUserOptional.mockReturnValue({
       uid: '42',
+      attributionUid: '42',
       uuid: 'user-uuid',
       email: 'user@appflowy.test',
       name: 'User',

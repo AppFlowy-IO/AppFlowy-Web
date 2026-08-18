@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { db } from '@/application/db';
 import { WorkspaceService } from '@/application/services/domains';
@@ -13,7 +13,10 @@ interface CacheEntry {
 
 // Module-level in-memory cache: workspaceId -> CacheEntry
 const cache = new Map<string, CacheEntry>();
+const diskLoads = new Map<string, Promise<{ users: MentionablePerson[]; fresh: boolean }>>();
 const refreshes = new Map<string, Promise<MentionablePerson[]>>();
+const userIndexes = new WeakMap<readonly MentionablePerson[], ReadonlyMap<string, MentionablePerson>>();
+const EMPTY_USERS: MentionablePerson[] = [];
 const MEMORY_CACHE_TTL_MS = 30 * 1000; // 30 seconds for in-memory
 const DISK_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes for IndexedDB
 
@@ -23,10 +26,30 @@ function isMemoryCacheValid(entry: CacheEntry | undefined): entry is CacheEntry 
 }
 
 function getMemoryCachedUsers(workspaceId: string | undefined): MentionablePerson[] {
-  if (!workspaceId) return [];
+  if (!workspaceId) return EMPTY_USERS;
   const cached = cache.get(workspaceId);
 
-  return isMemoryCacheValid(cached) ? cached.users : [];
+  return isMemoryCacheValid(cached) ? cached.users : EMPTY_USERS;
+}
+
+/** Build one lossless UID index per shared member-list snapshot. */
+export function getMentionableUserIndex(
+  users: readonly MentionablePerson[]
+): ReadonlyMap<string, MentionablePerson> {
+  const cached = userIndexes.get(users);
+
+  if (cached) return cached;
+
+  const index = new Map<string, MentionablePerson>();
+
+  users.forEach((user) => {
+    const uid = canonicalizeUserUid(user.uid);
+
+    if (uid !== null) index.set(uid, user);
+  });
+  userIndexes.set(users, index);
+
+  return index;
 }
 
 /**
@@ -63,6 +86,20 @@ async function loadFromDisk(workspaceId: string): Promise<{ users: MentionablePe
   }
 }
 
+function loadFromDiskDeduplicated(workspaceId: string) {
+  let load = diskLoads.get(workspaceId);
+
+  if (!load) {
+    load = loadFromDisk(workspaceId);
+    diskLoads.set(workspaceId, load);
+    void load.finally(() => {
+      if (diskLoads.get(workspaceId) === load) diskLoads.delete(workspaceId);
+    });
+  }
+
+  return load;
+}
+
 /**
  * Persist mentionable users to IndexedDB.
  */
@@ -82,6 +119,26 @@ async function saveToDisk(workspaceId: string, users: MentionablePerson[]): Prom
   } catch (error) {
     console.error('Failed to save mentionable users to disk:', error);
   }
+}
+
+function refreshFromApi(workspaceId: string): Promise<MentionablePerson[]> {
+  const pending = refreshes.get(workspaceId);
+
+  if (pending) return pending;
+
+  const refresh: Promise<MentionablePerson[]> = WorkspaceService.getMentionableUsers(workspaceId)
+    .then((users) => {
+      cache.set(workspaceId, { users, timestamp: Date.now() });
+      // The request and its persistence are shared by every mounted cell.
+      void saveToDisk(workspaceId, users);
+      return users;
+    })
+    .finally(() => {
+      if (refreshes.get(workspaceId) === refresh) refreshes.delete(workspaceId);
+    });
+
+  refreshes.set(workspaceId, refresh);
+  return refresh;
 }
 
 export function useMentionableUsers() {
@@ -114,7 +171,7 @@ export function useMentionableUsers() {
     // 2. Check disk cache (IndexedDB)
     const { users: diskUsers, fresh } = forceRefresh
       ? { users: [] as MentionablePerson[], fresh: false }
-      : await loadFromDisk(workspaceId);
+      : await loadFromDiskDeduplicated(workspaceId);
 
     if (workspaceIdRef.current !== workspaceId) return;
 
@@ -129,36 +186,19 @@ export function useMentionableUsers() {
 
     // 3. Fetch from API (disk cache expired or empty)
     setLoading(true);
-    let refresh = refreshes.get(workspaceId);
-
-    if (!refresh) {
-      refresh = WorkspaceService.getMentionableUsers(workspaceId);
-      refreshes.set(workspaceId, refresh);
-    }
 
     try {
-      const fetchedUsers = await refresh;
+      const fetchedUsers = await refreshFromApi(workspaceId);
 
       // Only update state if workspaceId hasn't changed during fetch
       if (workspaceIdRef.current === workspaceId) {
-        cache.set(workspaceId, {
-          users: fetchedUsers,
-          timestamp: Date.now(),
-        });
         setUsers(fetchedUsers);
-
-        // Persist to disk in the background
-        void saveToDisk(workspaceId, fetchedUsers);
       }
     } catch (error) {
       if (workspaceIdRef.current === workspaceId) {
         console.error('Failed to fetch mentionable users:', error);
       }
     } finally {
-      if (refreshes.get(workspaceId) === refresh) {
-        refreshes.delete(workspaceId);
-      }
-
       if (workspaceIdRef.current === workspaceId) {
         setLoading(false);
       }
@@ -183,10 +223,12 @@ export function useMentionableUsers() {
 // Hook to auto-fetch when needed (e.g., when menu opens)
 export function useMentionableUsersWithAutoFetch(shouldFetch: boolean, requiredUid?: string | null) {
   const { users, loading, fetchUsers } = useMentionableUsers();
+  const usersByUid = useMemo(() => getMentionableUserIndex(users), [users]);
   const hasRequiredUser =
     requiredUid === undefined ||
     requiredUid === null ||
-    users.some((user) => canonicalizeUserUid(user.uid) === requiredUid);
+    usersByUid.has(requiredUid);
+  const shouldForceRefresh = users.length > 0 && !hasRequiredUser;
 
   useEffect(() => {
     if (shouldFetch) {
@@ -194,9 +236,12 @@ export function useMentionableUsersWithAutoFetch(shouldFetch: boolean, requiredU
       // member. Attribution rows only carry the numeric UID, so force one API
       // refresh when that UID is absent instead of showing a stale fallback for
       // the full cache TTL.
-      void fetchUsers(!hasRequiredUser);
+      // Let an empty memory cache consult IndexedDB first. If that cached list
+      // loads without the required actor, this derived flag changes and the
+      // next effect pass upgrades the shared request to an API refresh.
+      void fetchUsers(shouldForceRefresh);
     }
-  }, [shouldFetch, fetchUsers, hasRequiredUser]);
+  }, [shouldFetch, fetchUsers, requiredUid, shouldForceRefresh]);
 
-  return { users, loading };
+  return { users, usersByUid, loading };
 }

@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 
-import { YDatabaseRow, YjsDatabaseKey } from '@/application/types';
+import { User, YDatabaseRow, YjsDatabaseKey } from '@/application/types';
 import { canonicalizeUserUid, UserUid } from '@/application/user-uid';
 
 export type AttributionUid = UserUid;
@@ -10,6 +10,15 @@ export type AttributionUid = UserUid;
  */
 export function normalizeAttributionUid(uid: AttributionUid): string | null {
   return canonicalizeUserUid(uid);
+}
+
+/** Resolve only the exact actor UID supplied by the current profile response. */
+export function resolveUserAttributionUid(
+  user: Pick<User, 'uid' | 'attributionUid'> | null | undefined
+): string | null {
+  if (!user) return null;
+
+  return normalizeAttributionUid(user.attributionUid);
 }
 
 /** Initialize immutable creator and current-editor metadata for a new row. */

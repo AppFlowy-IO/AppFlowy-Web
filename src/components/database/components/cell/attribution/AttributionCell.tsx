@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 
 import { normalizeAttributionUid } from '@/application/database-yjs/attribution';
 import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.type';
@@ -15,11 +15,8 @@ export function AttributionCell({ fieldId, onTextChange, rowId, style, wrap }: C
   const { row } = useRowDataSelector(rowId);
   const attribute = fieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by;
   const uid = normalizeAttributionUid(row?.get(attribute));
-  const { users } = useMentionableUsersWithAutoFetch(uid !== null, uid);
-  const user = useMemo(
-    () => users.find((candidate) => normalizeAttributionUid(candidate.uid) === uid),
-    [uid, users]
-  );
+  const { usersByUid } = useMentionableUsersWithAutoFetch(uid !== null, uid);
+  const user = uid === null ? undefined : usersByUid.get(uid);
   const displayName = user?.name || user?.email || (uid === null ? '' : `User ${uid}`);
 
   useEffect(() => {

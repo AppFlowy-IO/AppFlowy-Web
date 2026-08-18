@@ -23,7 +23,7 @@ jest.mock('@/utils/runtime-config', () => ({
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
-  useCurrentUserOptional: () => ({ uid: '42' }),
+  useCurrentUserOptional: () => ({ uid: '42', attributionUid: '42' }),
 }));
 
 const databaseId = 'database-id';

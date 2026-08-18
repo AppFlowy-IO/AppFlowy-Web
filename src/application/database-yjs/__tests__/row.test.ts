@@ -31,7 +31,7 @@ describe('row operation tests', () => {
 
   it('stores creator and last editor as primitive canonical user IDs', () => {
     const rowDoc = new Y.Doc() as YDoc;
-    const nathanUid = 577431234519502848;
+    const nathanUid = '577431234519502848';
 
     initialDatabaseRow('row-attribution', 'db-1', rowDoc, nathanUid);
 
