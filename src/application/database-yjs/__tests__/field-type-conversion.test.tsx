@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { getCellDataText, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
+import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import {
   YDatabase,
   YDatabaseCell,
@@ -158,6 +159,36 @@ describe('Bug B (fixed) — field-type conversion preserves select values', () =
     // MultiSelect once more.
     expect(cell.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
     expect(getCellDataText(cell, field)).toBe('0,60,82');
+  });
+
+  it('undoes and redoes the field schema and converted row cell atomically', () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    history.registerRowDoc(rowId, rowDoc);
+
+    act(() => {
+      switchType(fieldId, FieldType.RichText);
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.RichText);
+
+    act(() => {
+      history.undo();
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+    expect(history.canUndo()).toBe(false);
+
+    act(() => {
+      history.redo();
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.RichText);
   });
 });
 

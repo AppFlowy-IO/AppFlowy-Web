@@ -94,7 +94,7 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
 
   useDatabaseRowHistoryHotkeys(undefined, {
     enabled: hasGridFocus && !readOnly,
-    ignoreInput: false,
+    ignoreInput: true,
     useLatest: true,
   });
 

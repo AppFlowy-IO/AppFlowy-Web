@@ -11,6 +11,7 @@ import {
   getDatabaseRowHistoryPolicy,
   getOrCreateDatabaseRowHistoryController,
   runDatabaseAction,
+  runDatabaseHistoryGroup,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs/context';
@@ -121,6 +122,54 @@ describe('database row history', () => {
 
     history?.redo();
     expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('after');
+  });
+
+  it('captures row metadata and sibling last-modified changes', () => {
+    const rowDoc = createRowDoc(
+      rowId,
+      databaseId,
+      {
+        [textFieldId]: {
+          fieldType: FieldType.RichText,
+          data: 'before',
+        },
+      },
+      '0',
+      '1'
+    );
+    const sharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const row = sharedRoot.get(YjsEditorKey.database_row);
+    const meta = new Y.Map<unknown>();
+
+    sharedRoot.set(YjsEditorKey.meta, meta);
+
+    runDatabaseRowAction(
+      rowDoc,
+      { type: 'row.update-cell-and-meta', rowId, fieldId: textFieldId, fieldType: FieldType.RichText },
+      () => {
+        setCellData(rowDoc, textFieldId, 'after');
+        row.set(YjsDatabaseKey.last_modified, '2');
+        meta.set('icon', 'star');
+      }
+    );
+
+    const history = getOrCreateDatabaseRowHistoryController(rowDoc);
+
+    expect(history?.canUndo()).toBe(true);
+    expect(meta.get('icon')).toBe('star');
+    expect(row.get(YjsDatabaseKey.last_modified)).toBe('2');
+
+    history?.undo();
+
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('before');
+    expect(row.get(YjsDatabaseKey.last_modified)).toBe('1');
+    expect(meta.has('icon')).toBe(false);
+
+    history?.redo();
+
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('after');
+    expect(row.get(YjsDatabaseKey.last_modified)).toBe('2');
+    expect(meta.get('icon')).toBe('star');
   });
 
   it('skips relation cell actions', () => {
@@ -352,6 +401,185 @@ describe('database row history', () => {
     expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('');
 
     manager.redo();
+    expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('second');
+  });
+
+  it('does not scan into older same-source history when the latest item is a collaborative no-op', () => {
+    const firstFieldId = 'first-field-id';
+    const secondFieldId = 'second-field-id';
+    const { databaseDoc } = createDatabaseDoc();
+    const firstRowDoc = createRowDoc('first-row-id', databaseId, {
+      [firstFieldId]: { fieldType: FieldType.RichText, data: '' },
+      [secondFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const secondRowDoc = createRowDoc('second-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const remoteFirstRowDoc = new Y.Doc() as YDoc;
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    Y.applyUpdate(remoteFirstRowDoc, Y.encodeStateAsUpdate(firstRowDoc));
+    manager.registerRowDoc('first-row-id', firstRowDoc);
+    manager.registerRowDoc('second-row-id', secondRowDoc);
+
+    runDatabaseRowAction(firstRowDoc, { type: 'cell.update', rowId: 'first-row-id', fieldId: firstFieldId }, () => {
+      setCellData(firstRowDoc, firstFieldId, 'first-action');
+    });
+    runDatabaseRowAction(secondRowDoc, { type: 'cell.update', rowId: 'second-row-id', fieldId: textFieldId }, () => {
+      setCellData(secondRowDoc, textFieldId, 'second-action');
+    });
+    runDatabaseRowAction(firstRowDoc, { type: 'cell.update', rowId: 'first-row-id', fieldId: secondFieldId }, () => {
+      setCellData(firstRowDoc, secondFieldId, 'latest-action');
+    });
+
+    Y.applyUpdate(remoteFirstRowDoc, Y.encodeStateAsUpdate(firstRowDoc));
+    remoteFirstRowDoc.transact(() => {
+      setCellData(remoteFirstRowDoc, secondFieldId, 'remote-value');
+    }, 'remote');
+    Y.applyUpdate(firstRowDoc, Y.encodeStateAsUpdate(remoteFirstRowDoc), 'remote');
+
+    manager.undo();
+
+    expect(getCell(firstRowDoc, firstFieldId)?.get(YjsDatabaseKey.data)).toBe('first-action');
+    expect(getCell(firstRowDoc, secondFieldId)?.get(YjsDatabaseKey.data)).toBe('remote-value');
+    expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('');
+  });
+
+  it('undoes and redoes a compound database-and-rows action atomically', () => {
+    const { databaseDoc, rowOrders } = createDatabaseDoc();
+    const firstRowDoc = createRowDoc('first-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: 'before-first' },
+    });
+    const secondRowDoc = createRowDoc('second-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: 'before-second' },
+    });
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    manager.registerRowDoc('first-row-id', firstRowDoc);
+    manager.registerRowDoc('second-row-id', secondRowDoc);
+
+    runDatabaseAction(databaseDoc, { type: 'database.switch-field-type' }, () => {
+      runDatabaseRowAction(firstRowDoc, { type: 'row.switch-field-type-cell', rowId: 'first-row-id' }, () => {
+        setCellData(firstRowDoc, textFieldId, 'after-first');
+      });
+      runDatabaseRowAction(secondRowDoc, { type: 'row.switch-field-type-cell', rowId: 'second-row-id' }, () => {
+        setCellData(secondRowDoc, textFieldId, 'after-second');
+      });
+      rowOrders.push([{ id: 'first-row-id', height: 36 }]);
+    });
+
+    manager.undo();
+
+    expect(rowOrders.toJSON()).toEqual([]);
+    expect(getCell(firstRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('before-first');
+    expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('before-second');
+    expect(manager.canUndo()).toBe(false);
+
+    manager.redo();
+
+    expect(rowOrders.toJSON()).toEqual([{ id: 'first-row-id', height: 36 }]);
+    expect(getCell(firstRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('after-first');
+    expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('after-second');
+  });
+
+  it('groups sequential database and row transactions into one logical action', () => {
+    const { databaseDoc, rowOrders } = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: 'before' },
+    });
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    manager.registerRowDoc(rowId, rowDoc);
+
+    runDatabaseHistoryGroup(() => {
+      runDatabaseAction(databaseDoc, { type: 'database.duplicate-field' }, () => {
+        rowOrders.push([{ id: rowId, height: 36 }]);
+      });
+      runDatabaseRowAction(rowDoc, { type: 'row.duplicate-field-cell', rowId, fieldId: textFieldId }, () => {
+        setCellData(rowDoc, textFieldId, 'after');
+      });
+    });
+
+    manager.undo();
+
+    expect(rowOrders.toJSON()).toEqual([]);
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('before');
+    expect(manager.canUndo()).toBe(false);
+
+    manager.redo();
+
+    expect(rowOrders.toJSON()).toEqual([{ id: rowId, height: 36 }]);
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('after');
+  });
+
+  it('clears every registered source stack', () => {
+    const { databaseDoc, rowOrders } = createDatabaseDoc();
+    const firstRowDoc = createRowDoc('first-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const secondRowDoc = createRowDoc('second-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+    const firstHistory = manager.registerRowDoc('first-row-id', firstRowDoc);
+    const secondHistory = manager.registerRowDoc('second-row-id', secondRowDoc);
+
+    runDatabaseRowAction(firstRowDoc, { type: 'cell.update', rowId: 'first-row-id' }, () => {
+      setCellData(firstRowDoc, textFieldId, 'first');
+    });
+    runDatabaseRowAction(secondRowDoc, { type: 'cell.update', rowId: 'second-row-id' }, () => {
+      setCellData(secondRowDoc, textFieldId, 'second');
+    });
+    runDatabaseAction(databaseDoc, { type: 'database.add-row-order' }, () => {
+      rowOrders.push([{ id: rowId, height: 36 }]);
+    });
+
+    manager.undo();
+    expect(manager.canRedo()).toBe(true);
+
+    manager.clear();
+
+    expect(manager.canUndo()).toBe(false);
+    expect(manager.canRedo()).toBe(false);
+    expect(firstHistory?.canUndo()).toBe(false);
+    expect(firstHistory?.canRedo()).toBe(false);
+    expect(secondHistory?.canUndo()).toBe(false);
+    expect(secondHistory?.canRedo()).toBe(false);
+    expect(manager.undo()).toBeNull();
+    expect(manager.redo()).toBeNull();
+    expect(getCell(firstRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('first');
+    expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('second');
+    expect(rowOrders.toJSON()).toEqual([]);
+  });
+
+  it('invalidates redo stacks in every source after a new action', () => {
+    const { databaseDoc } = createDatabaseDoc();
+    const firstRowDoc = createRowDoc('first-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const secondRowDoc = createRowDoc('second-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+    const firstHistory = manager.registerRowDoc('first-row-id', firstRowDoc);
+
+    manager.registerRowDoc('second-row-id', secondRowDoc);
+    runDatabaseRowAction(firstRowDoc, { type: 'cell.update', rowId: 'first-row-id' }, () => {
+      setCellData(firstRowDoc, textFieldId, 'first');
+    });
+    manager.undo();
+
+    expect(manager.canRedo()).toBe(true);
+    expect(firstHistory?.canRedo()).toBe(true);
+
+    runDatabaseRowAction(secondRowDoc, { type: 'cell.update', rowId: 'second-row-id' }, () => {
+      setCellData(secondRowDoc, textFieldId, 'second');
+    });
+
+    expect(manager.canRedo()).toBe(false);
+    expect(firstHistory?.canRedo()).toBe(false);
+    expect(manager.redo()).toBeNull();
+    expect(getCell(firstRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('');
     expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('second');
   });
 

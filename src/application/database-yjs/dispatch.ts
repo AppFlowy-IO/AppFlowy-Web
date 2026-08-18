@@ -38,7 +38,7 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
-import { executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
+import { createDatabaseHistoryGroup, executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
 import { getOptionsFromRow } from '@/application/database-yjs/row';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
@@ -1129,7 +1129,8 @@ function executeOperationWithAllViews(
   sharedRoot: YSharedRoot,
   database: YDatabase,
   operation: (view: YDatabaseView, viewId: string) => void,
-  operationName: string
+  operationName: string,
+  historyGroup?: object
 ) {
   const views = database.get(YjsDatabaseKey.views);
   const viewIds = Object.keys(views.toJSON());
@@ -1153,7 +1154,8 @@ function executeOperationWithAllViews(
         });
       },
     ],
-    operationName
+    operationName,
+    { type: `database.${operationName}`, historyGroup }
   );
 }
 
@@ -1525,6 +1527,7 @@ export function useDuplicatePropertyDispatch() {
 
   return useCallback(
     (fieldId: string) => {
+      const historyGroup = createDatabaseHistoryGroup();
       const newId = nanoid(6);
 
       executeOperations(
@@ -1594,7 +1597,8 @@ export function useDuplicatePropertyDispatch() {
             fields.set(newId, newField);
           },
         ],
-        'duplicatePropertyDispatch'
+        'duplicatePropertyDispatch',
+        { type: 'database.duplicatePropertyDispatch', historyGroup }
       );
 
       // Insert new field to all views
@@ -1643,7 +1647,8 @@ export function useDuplicatePropertyDispatch() {
             },
           ]);
         },
-        'insertDuplicateProperty'
+        'insertDuplicateProperty',
+        historyGroup
       );
 
       if (!rowMap) {
@@ -1664,7 +1669,7 @@ export function useDuplicatePropertyDispatch() {
           return;
         }
 
-        runDatabaseRowAction(rowDoc, { type: 'row.duplicate-field-cell', rowId, fieldId }, () => {
+        runDatabaseRowAction(rowDoc, { type: 'row.duplicate-field-cell', rowId, fieldId, historyGroup }, () => {
           const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
           const rowData = rowSharedRoot.get(YjsEditorKey.database_row);
 

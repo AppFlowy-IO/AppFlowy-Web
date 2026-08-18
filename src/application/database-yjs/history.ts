@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { useDatabaseContext, useRow } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { assertDocExists } from '@/application/slate-yjs/utils/yjs';
-import { FieldId, RowId, YDatabaseCells, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
+import { FieldId, RowId, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 
 export type DatabaseHistoryPolicy = 'capture' | 'skip';
 export type DatabaseRowHistoryPolicy = DatabaseHistoryPolicy;
@@ -15,15 +15,18 @@ export type DatabaseHistoryAction = {
   fieldId?: FieldId;
   fieldType?: FieldType | number;
   policy?: DatabaseHistoryPolicy;
+  historyGroup?: object;
 };
 export type DatabaseRowHistoryAction = DatabaseHistoryAction;
 
+type DatabaseHistoryGroup = object;
+
 export class DatabaseHistoryOrigin {
-  constructor(public readonly action: DatabaseHistoryAction) {}
+  constructor(public readonly action: DatabaseHistoryAction, readonly group: DatabaseHistoryGroup | null = null) {}
 }
 
 export class DatabaseNoHistoryOrigin {
-  constructor(public readonly action: DatabaseHistoryAction) {}
+  constructor(public readonly action: DatabaseHistoryAction, readonly group: DatabaseHistoryGroup | null = null) {}
 }
 
 export class DatabaseRowHistoryOrigin extends DatabaseHistoryOrigin {}
@@ -50,7 +53,9 @@ class DatabaseHistorySourceController {
   readonly undoManager: Y.UndoManager;
 
   private subscribers = new Set<HistorySubscriber>();
-  private stackItemAddedSubscribers = new Set<(event: StackItemAddedEvent, source: DatabaseHistorySourceController) => void>();
+  private stackItemAddedSubscribers = new Set<
+    (event: StackItemAddedEvent, source: DatabaseHistorySourceController) => void
+  >();
 
   constructor(
     readonly kind: HistorySourceKind,
@@ -80,6 +85,24 @@ class DatabaseHistorySourceController {
     this.notify();
   }
 
+  clearRedo() {
+    if (this.undoManager.redoStack.length === 0) return;
+
+    // This Yjs version can only clear both stacks. Hide the undo stack while
+    // clearing so redo items release their keep references without losing undo.
+    const undoStack = this.undoManager.undoStack;
+
+    this.undoManager.undoStack = [];
+
+    try {
+      this.undoManager.clear();
+    } finally {
+      this.undoManager.undoStack = undoStack;
+    }
+
+    this.notify();
+  }
+
   undo() {
     const result = this.undoManager.undo();
 
@@ -92,6 +115,33 @@ class DatabaseHistorySourceController {
 
     this.notify();
     return result;
+  }
+
+  replayStackItem(type: 'undo' | 'redo', stackItem: StackItem) {
+    const stackKey = type === 'undo' ? 'undoStack' : 'redoStack';
+    const sourceStack = this.undoManager[stackKey];
+    const stackItemIndex = sourceStack.lastIndexOf(stackItem);
+
+    if (stackItemIndex < 0) return null;
+
+    sourceStack.splice(stackItemIndex, 1);
+    const isolatedStack = [stackItem];
+
+    this.undoManager[stackKey] = isolatedStack;
+
+    try {
+      return type === 'undo' ? this.undoManager.undo() : this.undoManager.redo();
+    } finally {
+      // Restore the source stack without the selected item. If replay threw
+      // before consuming it, put it back at its original position.
+      this.undoManager[stackKey] = sourceStack;
+
+      if (isolatedStack.includes(stackItem)) {
+        sourceStack.splice(stackItemIndex, 0, stackItem);
+      }
+
+      this.notify();
+    }
   }
 
   snapshot(): DatabaseHistorySourceSnapshot {
@@ -109,9 +159,7 @@ class DatabaseHistorySourceController {
     };
   }
 
-  subscribeStackItemAdded(
-    subscriber: (event: StackItemAddedEvent, source: DatabaseHistorySourceController) => void
-  ) {
+  subscribeStackItemAdded(subscriber: (event: StackItemAddedEvent, source: DatabaseHistorySourceController) => void) {
     this.stackItemAddedSubscribers.add(subscriber);
 
     return () => {
@@ -134,16 +182,22 @@ type DatabaseHistoryStackEntry = {
   stackItem: StackItem;
 };
 
+type DatabaseHistoryStackGroup = {
+  group: DatabaseHistoryGroup;
+  entries: DatabaseHistoryStackEntry[];
+};
+
 export class DatabaseHistoryManager {
   private databaseSource: DatabaseHistorySourceController | null = null;
   private rowSources = new WeakMap<YDoc, DatabaseHistorySourceController>();
   private sourceUnsubscribers = new WeakMap<DatabaseHistorySourceController, () => void>();
   private sourceSubscribers = new WeakMap<DatabaseHistorySourceController, () => void>();
-  private undoStack: DatabaseHistoryStackEntry[] = [];
-  private redoStack: DatabaseHistoryStackEntry[] = [];
+  private sources = new Set<DatabaseHistorySourceController>();
+  private undoStack: DatabaseHistoryStackGroup[] = [];
+  private redoStack: DatabaseHistoryStackGroup[] = [];
   private subscribers = new Set<HistorySubscriber>();
   private replaying: 'undo' | 'redo' | null = null;
-  private replayedStackItem: StackItem | null = null;
+  private replayedEntries: DatabaseHistoryStackEntry[] = [];
 
   constructor(readonly databaseDoc: YDoc) {
     this.registerDatabaseDoc(databaseDoc);
@@ -160,68 +214,18 @@ export class DatabaseHistoryManager {
   }
 
   clear() {
+    this.sources.forEach((source) => source.clear());
     this.undoStack = [];
     this.redoStack = [];
-    this.getSources().forEach((source) => source.clear());
     this.notify();
   }
 
   undo() {
-    this.pruneStacks();
-
-    while (this.undoStack.length > 0) {
-      const entry = this.undoStack.pop();
-
-      if (!entry || !this.isTopUndoEntry(entry)) continue;
-
-      this.replaying = 'undo';
-      this.replayedStackItem = null;
-
-      try {
-        const stackItem = entry.source.undo();
-
-        if (!stackItem) continue;
-
-        this.redoStack.push({ source: entry.source, stackItem: this.replayedStackItem ?? stackItem });
-        return stackItem;
-      } finally {
-        this.replaying = null;
-        this.replayedStackItem = null;
-        this.notify();
-      }
-    }
-
-    this.notify();
-    return null;
+    return this.replay('undo');
   }
 
   redo() {
-    this.pruneStacks();
-
-    while (this.redoStack.length > 0) {
-      const entry = this.redoStack.pop();
-
-      if (!entry || !this.isTopRedoEntry(entry)) continue;
-
-      this.replaying = 'redo';
-      this.replayedStackItem = null;
-
-      try {
-        const stackItem = entry.source.redo();
-
-        if (!stackItem) continue;
-
-        this.undoStack.push({ source: entry.source, stackItem: this.replayedStackItem ?? stackItem });
-        return stackItem;
-      } finally {
-        this.replaying = null;
-        this.replayedStackItem = null;
-        this.notify();
-      }
-    }
-
-    this.notify();
-    return null;
+    return this.replay('redo');
   }
 
   registerRowDoc(rowId: RowId, rowDoc: YDoc) {
@@ -265,6 +269,8 @@ export class DatabaseHistoryManager {
   }
 
   private attachSource(source: DatabaseHistorySourceController) {
+    this.sources.add(source);
+
     if (!this.sourceUnsubscribers.has(source)) {
       this.sourceUnsubscribers.set(source, source.subscribeStackItemAdded(this.handleStackItemAdded));
     }
@@ -277,7 +283,7 @@ export class DatabaseHistoryManager {
   private handleStackItemAdded = (event: StackItemAddedEvent, source: DatabaseHistorySourceController) => {
     if (this.replaying) {
       if ((this.replaying === 'undo' && event.type === 'redo') || (this.replaying === 'redo' && event.type === 'undo')) {
-        this.replayedStackItem = event.stackItem;
+        this.replayedEntries.push({ source, stackItem: event.stackItem });
       }
 
       return;
@@ -285,35 +291,89 @@ export class DatabaseHistoryManager {
 
     if (event.type !== 'undo') return;
 
-    this.undoStack.push({ source, stackItem: event.stackItem });
-    this.redoStack = [];
+    const group =
+      event.origin instanceof DatabaseHistoryOrigin && event.origin.group ? event.origin.group : Object.freeze({});
+    const latestGroup = this.undoStack[this.undoStack.length - 1];
+    const entry = { source, stackItem: event.stackItem };
+
+    if (latestGroup?.group === group) {
+      latestGroup.entries.push(entry);
+    } else {
+      this.undoStack.push({ group, entries: [entry] });
+    }
+
+    this.clearRedoHistory(source);
     this.notify();
   };
 
-  private getSources() {
-    return [...new Set(this.undoStack.concat(this.redoStack).map((entry) => entry.source).concat(this.databaseSource ? [this.databaseSource] : []))];
-  }
-
-  private isTopUndoEntry(entry: DatabaseHistoryStackEntry) {
-    const stack = entry.source.undoManager.undoStack;
-
-    return stack.length > 0 && stack[stack.length - 1] === entry.stackItem;
-  }
-
-  private isTopRedoEntry(entry: DatabaseHistoryStackEntry) {
-    const stack = entry.source.undoManager.redoStack;
-
-    return stack.length > 0 && stack[stack.length - 1] === entry.stackItem;
-  }
-
   private pruneStacks() {
-    while (this.undoStack.length > 0 && !this.isTopUndoEntry(this.undoStack[this.undoStack.length - 1])) {
+    while (this.undoStack.length > 0 && !this.hasAvailableEntry(this.undoStack[this.undoStack.length - 1], 'undo')) {
       this.undoStack.pop();
     }
 
-    while (this.redoStack.length > 0 && !this.isTopRedoEntry(this.redoStack[this.redoStack.length - 1])) {
+    while (this.redoStack.length > 0 && !this.hasAvailableEntry(this.redoStack[this.redoStack.length - 1], 'redo')) {
       this.redoStack.pop();
     }
+  }
+
+  private clearRedoHistory(sourceWithAlreadyClearedRedo?: DatabaseHistorySourceController) {
+    this.redoStack = [];
+    this.sources.forEach((source) => {
+      if (source !== sourceWithAlreadyClearedRedo) {
+        source.clearRedo();
+      }
+    });
+  }
+
+  private hasAvailableEntry(group: DatabaseHistoryStackGroup, type: 'undo' | 'redo') {
+    const stackKey = type === 'undo' ? 'undoStack' : 'redoStack';
+
+    return group.entries.some((entry) => entry.source.undoManager[stackKey].includes(entry.stackItem));
+  }
+
+  private replay(type: 'undo' | 'redo') {
+    this.pruneStacks();
+
+    const sourceStack = type === 'undo' ? this.undoStack : this.redoStack;
+    const targetStack = type === 'undo' ? this.redoStack : this.undoStack;
+
+    while (sourceStack.length > 0) {
+      const group = sourceStack.pop();
+
+      if (!group) continue;
+
+      this.replaying = type;
+      this.replayedEntries = [];
+      let result: StackItem | null = null;
+
+      try {
+        // Entries are recorded in mutation order. Replaying in reverse makes a
+        // compound action atomic while respecting dependencies between docs.
+        for (let index = group.entries.length - 1; index >= 0; index -= 1) {
+          const entry = group.entries[index];
+          const replayed = entry.source.replayStackItem(type, entry.stackItem);
+
+          result = result ?? replayed;
+        }
+      } finally {
+        this.replaying = null;
+
+        if (this.replayedEntries.length > 0) {
+          targetStack.push({ group: group.group, entries: this.replayedEntries });
+        }
+
+        this.replayedEntries = [];
+        this.notify();
+      }
+
+      // A remote edit can make a selected item ineffective. Only that exact
+      // item was consumed, so continue at the next global action instead of
+      // allowing the source UndoManager to scan into older local history.
+      if (result) return result;
+    }
+
+    this.notify();
+    return null;
   }
 
   private notify = () => {
@@ -324,6 +384,7 @@ export class DatabaseHistoryManager {
 const rowHistoryControllers = new WeakMap<YDoc, DatabaseHistorySourceController>();
 const databaseHistoryManagers = new WeakMap<YDoc, DatabaseHistoryManager>();
 const rowDocManagers = new WeakMap<YDoc, Set<DatabaseHistoryManager>>();
+let activeDatabaseHistoryGroup: DatabaseHistoryGroup | null = null;
 
 function registerRowDocManager(rowDoc: YDoc, manager: DatabaseHistoryManager) {
   let managers = rowDocManagers.get(rowDoc);
@@ -349,12 +410,11 @@ function getDatabaseHistoryScope(databaseDoc: YDoc): Y.AbstractType<Y.YMapEvent<
   return database ?? sharedRoot;
 }
 
-function getDatabaseRowCells(rowDoc: YDoc): YDatabaseCells | null {
-  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+function getDatabaseRowHistoryScope(rowDoc: YDoc): YSharedRoot | null {
+  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
   const row = rowSharedRoot.get(YjsEditorKey.database_row);
-  const cells = row?.get(YjsDatabaseKey.cells);
 
-  return cells ?? null;
+  return row ? rowSharedRoot : null;
 }
 
 export function getDatabaseHistoryPolicy(action: DatabaseHistoryAction): DatabaseHistoryPolicy {
@@ -367,16 +427,36 @@ export function getDatabaseHistoryPolicy(action: DatabaseHistoryAction): Databas
 
 export const getDatabaseRowHistoryPolicy = getDatabaseHistoryPolicy;
 
+export function createDatabaseHistoryGroup(): object {
+  return Object.freeze({});
+}
+
+export function runDatabaseHistoryGroup<T>(mutate: () => T, historyGroup?: object): T {
+  if (activeDatabaseHistoryGroup) return mutate();
+
+  activeDatabaseHistoryGroup = historyGroup ?? createDatabaseHistoryGroup();
+
+  try {
+    return mutate();
+  } finally {
+    activeDatabaseHistoryGroup = null;
+  }
+}
+
 export function createDatabaseHistoryOrigin(action: DatabaseHistoryAction) {
+  const group = action.historyGroup ?? activeDatabaseHistoryGroup;
+
   return getDatabaseHistoryPolicy(action) === 'capture'
-    ? new DatabaseHistoryOrigin(action)
-    : new DatabaseNoHistoryOrigin(action);
+    ? new DatabaseHistoryOrigin(action, group)
+    : new DatabaseNoHistoryOrigin(action, group);
 }
 
 export function createDatabaseRowHistoryOrigin(action: DatabaseRowHistoryAction) {
+  const group = action.historyGroup ?? activeDatabaseHistoryGroup;
+
   return getDatabaseHistoryPolicy(action) === 'capture'
-    ? new DatabaseRowHistoryOrigin(action)
-    : new DatabaseRowNoHistoryOrigin(action);
+    ? new DatabaseRowHistoryOrigin(action, group)
+    : new DatabaseRowNoHistoryOrigin(action, group);
 }
 
 export function getOrCreateDatabaseHistoryManager(databaseDoc: YDoc) {
@@ -395,11 +475,11 @@ export function getOrCreateDatabaseRowHistoryController(rowDoc: YDoc, rowId?: Ro
 
   if (existing) return existing;
 
-  const cells = getDatabaseRowCells(rowDoc);
+  const scope = getDatabaseRowHistoryScope(rowDoc);
 
-  if (!cells) return null;
+  if (!scope) return null;
 
-  const controller = new DatabaseHistorySourceController('row', rowDoc, cells, rowId);
+  const controller = new DatabaseHistorySourceController('row', rowDoc, scope, rowId);
 
   rowHistoryControllers.set(rowDoc, controller);
   attachRowControllerToManagers(rowDoc, controller);
@@ -407,19 +487,23 @@ export function getOrCreateDatabaseRowHistoryController(rowDoc: YDoc, rowId?: Ro
 }
 
 export function runDatabaseAction(databaseDoc: YDoc, action: DatabaseHistoryAction, mutate: () => void) {
-  if (getDatabaseHistoryPolicy(action) === 'capture') {
-    getOrCreateDatabaseHistoryManager(databaseDoc);
-  }
+  runDatabaseHistoryGroup(() => {
+    if (getDatabaseHistoryPolicy(action) === 'capture') {
+      getOrCreateDatabaseHistoryManager(databaseDoc);
+    }
 
-  databaseDoc.transact(mutate, createDatabaseHistoryOrigin(action));
+    databaseDoc.transact(mutate, createDatabaseHistoryOrigin(action));
+  }, action.historyGroup);
 }
 
 export function runDatabaseRowAction(rowDoc: YDoc, action: DatabaseRowHistoryAction, mutate: () => void) {
-  if (getDatabaseHistoryPolicy(action) === 'capture') {
-    getOrCreateDatabaseRowHistoryController(rowDoc, action.rowId);
-  }
+  runDatabaseHistoryGroup(() => {
+    if (getDatabaseHistoryPolicy(action) === 'capture') {
+      getOrCreateDatabaseRowHistoryController(rowDoc, action.rowId);
+    }
 
-  rowDoc.transact(mutate, createDatabaseRowHistoryOrigin(action));
+    rowDoc.transact(mutate, createDatabaseRowHistoryOrigin(action));
+  }, action.historyGroup);
 }
 
 export function executeDatabaseOperations(

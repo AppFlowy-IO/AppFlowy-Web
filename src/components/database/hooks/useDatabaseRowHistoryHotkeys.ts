@@ -2,10 +2,56 @@ import { useEffect, useRef } from 'react';
 
 import { useDatabaseHistory } from '@/application/database-yjs';
 import { RowId } from '@/application/types';
-import { createHotkey, HOT_KEY_NAME, isInputElement } from '@/utils/hotkeys';
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 const isUndoHotkey = createHotkey(HOT_KEY_NAME.UNDO);
 const isRedoHotkey = createHotkey(HOT_KEY_NAME.REDO);
+
+function getEventTargetElement(event: KeyboardEvent): Element | null {
+  const target = event.target;
+
+  if (target instanceof Element) return target;
+  if (target instanceof Node && target.parentElement) return target.parentElement;
+
+  return document.activeElement;
+}
+
+function isContentEditableElement(element: Element): boolean {
+  let current: Element | null = element;
+
+  while (current) {
+    const contentEditable = current.getAttribute('contenteditable');
+
+    if (contentEditable !== null) {
+      const normalizedValue = contentEditable.toLowerCase();
+
+      if (normalizedValue === 'false') return false;
+      if (normalizedValue === '' || normalizedValue === 'true' || normalizedValue === 'plaintext-only') return true;
+    }
+
+    current = current.parentElement;
+  }
+
+  return false;
+}
+
+function isEditableEventTarget(event: KeyboardEvent): boolean {
+  const element = getEventTargetElement(event);
+
+  if (!element) return false;
+
+  const formControl = element.closest('input, textarea, select');
+
+  if (formControl instanceof HTMLInputElement || formControl instanceof HTMLTextAreaElement) {
+    return !formControl.disabled && !formControl.readOnly;
+  }
+
+  if (formControl instanceof HTMLSelectElement) {
+    return !formControl.disabled;
+  }
+
+  return isContentEditableElement(element);
+}
 
 export function useDatabaseRowHistoryHotkeys(
   rowId?: RowId,
@@ -30,7 +76,7 @@ export function useDatabaseRowHistoryHotkeys(
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
-      if (ignoreInput && isInputElement()) return;
+      if (ignoreInput && isEditableEventTarget(event)) return;
 
       const { canRedo, canUndo, redo, undo } = latest.current;
 
