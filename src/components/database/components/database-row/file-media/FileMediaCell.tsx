@@ -42,19 +42,17 @@ export function FileMediaCell ({
   const [editing, setEditing] = React.useState(false);
   const [openPreview, setOpenPreview] = React.useState(false);
   const previewIndexRef = React.useRef(0);
+  const images = useMemo(() => {
+    return value.filter(item => item.file_type === FileMediaType.Image && item.url);
+  }, [value]);
+
   const photos = useMemo(() => {
-    return value.filter(item => {
-      return item.file_type === FileMediaType.Image && item.url;
-    }).map(image => {
+    return images.map(image => {
       return {
         src: image.url,
       };
     });
-  }, [value]);
-
-  const images = useMemo(() => {
-    return value.filter(item => item.file_type === FileMediaType.Image && item.url);
-  }, [value]);
+  }, [images]);
 
   const handlePreview = useCallback((index: number) => {
     previewIndexRef.current = index;

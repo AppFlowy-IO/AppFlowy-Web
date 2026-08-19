@@ -4,6 +4,10 @@ import { getTypeOptions } from '@/application/database-yjs';
 import { FileMediaCellData, FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
+function isFileMediaItem (item: unknown): item is FileMediaCellDataItem {
+  return Boolean(item) && typeof item === 'object';
+}
+
 /**
  * A cell can briefly still hold the previous field type's payload — a plain
  * string right after a Text field is switched to Files & media, for instance.
@@ -13,7 +17,20 @@ import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 export function toFileMediaCellData (data: unknown): FileMediaCellData {
   if (!Array.isArray(data)) return [];
 
-  return data.filter((item): item is FileMediaCellDataItem => Boolean(item) && typeof item === 'object');
+  return data.filter(isFileMediaItem);
+}
+
+/** Counts the same items as {@link toFileMediaCellData} without building the list. */
+export function countFileMediaItems (data: unknown): number {
+  if (!Array.isArray(data)) return 0;
+
+  let count = 0;
+
+  for (const item of data) {
+    if (isFileMediaItem(item)) count += 1;
+  }
+
+  return count;
 }
 
 export function parseToFilesMediaCellData (newItems: FileMediaCellData) {

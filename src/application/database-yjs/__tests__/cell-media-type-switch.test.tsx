@@ -11,7 +11,7 @@ import {
 } from '@/application/database-yjs';
 import { parseYDatabaseFileMediaCellToCell } from '@/application/database-yjs/cell.parse';
 import { FileMediaCellDataItem, FileMediaType, FileMediaUploadType } from '@/application/database-yjs/cell.type';
-import { toFileMediaCellData } from '@/application/database-yjs/fields/media/parse';
+import { countFileMediaItems, toFileMediaCellData } from '@/application/database-yjs/fields/media/parse';
 import {
   YDatabase,
   YDatabaseCell,
@@ -166,6 +166,24 @@ describe('toFileMediaCellData', () => {
 
   it('drops entries that are not media items', () => {
     expect(toFileMediaCellData([mediaItem, null, undefined, 'row-id'])).toEqual([mediaItem]);
+  });
+});
+
+describe('countFileMediaItems', () => {
+  it('counts the same entries toFileMediaCellData keeps', () => {
+    const payloads: unknown[] = [
+      TEXT_CELL_VALUE,
+      undefined,
+      null,
+      42,
+      [],
+      [mediaItem],
+      [mediaItem, null, undefined, 'row-id', mediaItem],
+    ];
+
+    payloads.forEach((payload) => {
+      expect(countFileMediaItems(payload)).toBe(toFileMediaCellData(payload).length);
+    });
   });
 });
 

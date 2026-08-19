@@ -29,23 +29,17 @@ export function FileMediaCell({
   const { workspaceId, databasePageId } = useDatabaseContext();
   const [openPreview, setOpenPreview] = React.useState(false);
   const previewIndexRef = React.useRef(0);
-  const photos = useMemo(() => {
-    return (
-      value
-        ?.filter((item) => {
-          return item.file_type === FileMediaType.Image && item.url;
-        })
-        .map((image) => {
-          return {
-            src: image.url,
-          };
-        }) || []
-    );
+  const images = useMemo(() => {
+    return value.filter((item) => item.file_type === FileMediaType.Image && item.url);
   }, [value]);
 
-  const images = useMemo(() => {
-    return value?.filter((item) => item.file_type === FileMediaType.Image && item.url) || [];
-  }, [value]);
+  const photos = useMemo(() => {
+    return images.map((image) => {
+      return {
+        src: image.url,
+      };
+    });
+  }, [images]);
 
   const handlePreview = useCallback((index: number) => {
     previewIndexRef.current = index;
@@ -79,13 +73,11 @@ export function FileMediaCell({
   );
 
   const renderChildren = useMemo(() => {
-    const length = value?.length || 0;
-
-    if (length === 0) {
+    if (value.length === 0) {
       return placeholder || null;
     }
 
-    return value?.map(renderItem);
+    return value.map(renderItem);
   }, [placeholder, renderItem, value]);
 
   return (
@@ -94,7 +86,7 @@ export function FileMediaCell({
       className={cn(
         'flex items-center gap-1.5',
         readOnly ? 'cursor-text' : 'cursor-pointer',
-        !value || (value?.length === 0 && 'text-text-tertiary'),
+        value.length === 0 && 'text-text-tertiary',
         wrap ? 'flex-wrap' : 'appflowy-hidden-scroller w-full flex-nowrap overflow-x-auto overflow-y-hidden'
       )}
     >
@@ -107,7 +99,7 @@ export function FileMediaCell({
           cell={cell}
           rowId={rowId}
           onPreview={handlePreview}
-          showUpload={!value || value.length === 0}
+          showUpload={value.length === 0}
         />
       )}
       {openPreview && (
