@@ -37,7 +37,11 @@ export function PersonItem({
 }: PersonItemProps) {
   const { t } = useTranslation();
   const canModifyThisPerson =
-    !isInheritedWorkspaceAccess && currentUserHasFullAccess && !isYou && person.role !== Role.Owner;
+    !isInheritedWorkspaceAccess &&
+    currentUserHasFullAccess &&
+    !isYou &&
+    person.role !== Role.Owner &&
+    (person.access_level !== AccessLevel.FullAccess || currentUserCanGrantFullAccess);
 
   const [turnIntoMemberLoading, setTurnIntoMemberLoading] = useState<boolean>(false);
   // Show "Turn into Member" button if:

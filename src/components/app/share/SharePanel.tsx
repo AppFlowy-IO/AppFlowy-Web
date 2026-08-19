@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
+import {
+  AccessLevel,
+  IPeopleWithAccessType,
+  MentionablePerson,
+  Role,
+  SubscriptionPlan,
+  WorkspaceGroupViewPermission,
+} from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
@@ -11,22 +18,32 @@ import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
 import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
+import type { ShareAccessRefreshResult } from './useShareAccessDetails';
+
 function SharePanel({
   viewId,
   people,
+  groups,
+  editableGroupIds,
   isLoadingPeople,
   onPeopleChange,
   onPersonRemoved,
+  updateGroupInAccessList,
   hasFullAccess,
+  canManageFullAccess,
   currentUserAccessLevel,
   sectionType,
 }: {
   viewId: string;
   people: IPeopleWithAccessType[];
+  groups: WorkspaceGroupViewPermission[];
+  editableGroupIds: ReadonlySet<string>;
   isLoadingPeople: boolean;
-  onPeopleChange: () => Promise<void>;
+  onPeopleChange: () => Promise<ShareAccessRefreshResult | void>;
   onPersonRemoved: (email: string) => void;
+  updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
+  canManageFullAccess: boolean;
   currentUserAccessLevel?: AccessLevel;
   sectionType: ShareSectionType;
 }) {
@@ -71,12 +88,16 @@ function SharePanel({
 
   // Refresh people list after invite or other changes
   const refreshPeople = useCallback(async () => {
-    try {
-      await Promise.all([loadMentionableData(), onPeopleChange()]);
-      // eslint-disable-next-line
-    } catch (error: any) {
-      notify.error(error.message);
+    const [, accessResult] = await Promise.allSettled([loadMentionableData(), onPeopleChange()]);
+
+    if (accessResult.status === 'rejected') {
+      const error = accessResult.reason;
+
+      notify.error(error instanceof Error ? error.message : String(error));
+      return undefined;
     }
+
+    return accessResult.value;
   }, [onPeopleChange, loadMentionableData]);
 
   const getSubscriptions = useGetSubscriptions();
@@ -120,13 +141,16 @@ function SharePanel({
             <InviteGuest
               viewId={viewId}
               sharedPeople={people}
+              sharedGroups={groups}
               isLoadingPeople={isLoadingPeople}
               mentionable={mentionable}
               isLoadingMentionable={isLoadingMentionable}
               mentionableError={mentionableError}
-              onInviteSuccess={refreshPeople}
+              onInviteSuccess={async () => {
+                await refreshPeople();
+              }}
               hasFullAccess={hasFullAccess}
-              canGrantFullAccess={hasFullAccess}
+              canGrantFullAccess={canManageFullAccess}
             />
             {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
           </>
@@ -134,11 +158,15 @@ function SharePanel({
         <PeopleWithAccess
           viewId={viewId}
           people={people}
+          groups={groups}
+          editableGroupIds={editableGroupIds}
           isLoading={isLoadingPeople}
           onPeopleChange={refreshPeople}
           onPersonRemoved={onPersonRemoved}
+          updateGroupInAccessList={updateGroupInAccessList}
           hasFullAccess={hasFullAccess}
-          canGrantFullAccess={hasFullAccess}
+          canManageFullAccess={canManageFullAccess}
+          canGrantFullAccess={canManageFullAccess}
           sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} />

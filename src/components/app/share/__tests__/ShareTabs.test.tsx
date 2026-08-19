@@ -2,6 +2,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import ShareTabs from '@/components/app/share/ShareTabs';
 
+const mockUpdateGroupInAccessList = jest.fn();
+const mockSharePanelProps = jest.fn();
+
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -17,18 +20,24 @@ jest.mock('@/components/main/app.hooks', () => ({
 jest.mock('@/components/app/share/useShareAccessDetails', () => ({
   useShareAccessDetails: () => ({
     people: [],
+    groups: [],
     isLoadingPeople: false,
     loadPeople: jest.fn(),
     removePersonFromAccessList: jest.fn(),
+    updateGroupInAccessList: mockUpdateGroupInAccessList,
     currentUserAccessLevel: undefined,
     hasFullAccess: true,
+    canManageFullAccess: false,
     sectionType: undefined,
   }),
 }));
 
 jest.mock('@/components/app/share/SharePanel', () => ({
   __esModule: true,
-  default: () => <div data-testid='share-panel' />,
+  default: (props: unknown) => {
+    mockSharePanelProps(props);
+    return <div data-testid='share-panel' />;
+  },
 }));
 
 jest.mock('@/components/app/share/PublishPanel', () => ({
@@ -51,6 +60,11 @@ function renderShareTabs(hidePublish: boolean) {
 }
 
 describe('ShareTabs publish availability', () => {
+  beforeEach(() => {
+    mockSharePanelProps.mockClear();
+    mockUpdateGroupInAccessList.mockClear();
+  });
+
   it('keeps Share available while removing Publish when requested', () => {
     renderShareTabs(true);
 
@@ -75,5 +89,16 @@ describe('ShareTabs publish availability', () => {
 
     expect(screen.queryByTestId('publish-tab')).toBeNull();
     expect(screen.getByTestId('share-panel')).toBeTruthy();
+  });
+
+  it('forwards group mutation state from the access hook', () => {
+    renderShareTabs(false);
+
+    expect(mockSharePanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        updateGroupInAccessList: mockUpdateGroupInAccessList,
+        canManageFullAccess: false,
+      })
+    );
   });
 });

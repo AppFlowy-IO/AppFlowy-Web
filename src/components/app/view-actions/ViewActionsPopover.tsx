@@ -4,6 +4,7 @@ import { View } from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
 import MorePageActions from '@/components/app/view-actions/MorePageActions';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
+import { useSpaceActionPermissions } from '@/components/app/view-actions/useSpaceActionPermissions';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import {
   DropdownMenu,
@@ -45,7 +46,16 @@ function ViewActionsPopover({
 } & React.ComponentProps<typeof DropdownMenu>) {
   const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
     useViewActionPermissions(view, Boolean(open && popoverType));
-  const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
+  const shouldLoadSpaceActionPermissions = Boolean(
+    open && popoverType?.category === 'space' && popoverType.type === 'more'
+  );
+  const { canOpenManageSpace, hasLoadedSpaceActionPermissions, isLoadingSpaceActionPermissions } =
+    useSpaceActionPermissions(view, shouldLoadSpaceActionPermissions, canManageViewActions);
+  const isResolvingViewActionPermissions =
+    isLoadingViewActionPermissions ||
+    !hasLoadedViewActionPermissions ||
+    isLoadingSpaceActionPermissions ||
+    !hasLoadedSpaceActionPermissions;
 
   const onClose = useCallback(() => {
     onOpenChange?.(false);
@@ -71,6 +81,7 @@ function ViewActionsPopover({
           view={view}
           canDuplicateActions={canCreateViewActions}
           canManageActions={canManageViewActions}
+          canOpenManageActions={canOpenManageSpace}
           isLoadingActions={isResolvingViewActionPermissions}
         />
       );
@@ -87,6 +98,7 @@ function ViewActionsPopover({
     }
   }, [
     canCreateViewActions,
+    canOpenManageSpace,
     canManageViewActions,
     isResolvingViewActionPermissions,
     onClose,

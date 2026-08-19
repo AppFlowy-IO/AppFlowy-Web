@@ -98,6 +98,39 @@ describe('PersonItem', () => {
     expect(memberAccess.dataset.canModify).toBe('true');
   });
 
+  it('keeps Full Access recipients immutable for delegated share managers', () => {
+    renderPersonItem({
+      currentUserCanGrantFullAccess: false,
+      person: createPerson({
+        email: 'full-access-member@appflowy.local',
+        name: 'Full access member',
+        role: Role.Member,
+      }),
+    });
+
+    const memberAccess = screen.getByTestId('access-level-full-access-member@appflowy.local');
+
+    expect(memberAccess.dataset.canGrantFullAccess).toBe('false');
+    expect(memberAccess.dataset.canModify).toBe('false');
+  });
+
+  it('keeps lower-tier recipients editable for delegated share managers', () => {
+    renderPersonItem({
+      currentUserCanGrantFullAccess: false,
+      person: createPerson({
+        access_level: AccessLevel.ReadAndWrite,
+        email: 'editor@appflowy.local',
+        name: 'Editor',
+        role: Role.Member,
+      }),
+    });
+
+    const memberAccess = screen.getByTestId('access-level-editor@appflowy.local');
+
+    expect(memberAccess.dataset.canGrantFullAccess).toBe('false');
+    expect(memberAccess.dataset.canModify).toBe('true');
+  });
+
   it('does not let read-write users modify their own page permissions', () => {
     renderPersonItem({
       currentUserCanGrantFullAccess: false,

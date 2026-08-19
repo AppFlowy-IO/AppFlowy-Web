@@ -189,7 +189,7 @@ When('I open the share panel', async ({ page }) => {
   await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 30000 });
   await ShareSelectors.shareButton(page).evaluate((element: HTMLElement) => element.click());
   await expect(ShareSelectors.sharePopover(page)).toBeVisible({ timeout: 15000 });
-  await expect(ShareSelectors.sharePopover(page).getByText('People with access', { exact: true })).toBeVisible({
+  await expect(ShareSelectors.sharePopover(page).getByText(/People( and groups)? with access/)).toBeVisible({
     timeout: 15000,
   });
 });

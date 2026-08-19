@@ -8,6 +8,8 @@ import { ShareSectionType } from '../shareSectionType';
 
 const mockGetSubscriptions = jest.fn(async () => []);
 const mockLoadMentionableUsers = jest.fn(async () => []);
+const mockInviteGuestProps = jest.fn();
+const mockPeopleWithAccessProps = jest.fn();
 let mockIsHosted = false;
 
 jest.mock('@/components/app/app.hooks', () => ({
@@ -32,11 +34,17 @@ jest.mock('@/utils/subscription', () => ({
 }));
 
 jest.mock('../InviteGuest', () => ({
-  InviteGuest: () => <div data-testid='invite-guest' />,
+  InviteGuest: (props: unknown) => {
+    mockInviteGuestProps(props);
+    return <div data-testid='invite-guest' />;
+  },
 }));
 
 jest.mock('../PeopleWithAccess', () => ({
-  PeopleWithAccess: () => <div data-testid='people-with-access' />,
+  PeopleWithAccess: (props: unknown) => {
+    mockPeopleWithAccessProps(props);
+    return <div data-testid='people-with-access' />;
+  },
 }));
 
 jest.mock('../GeneralAccess', () => ({
@@ -47,15 +55,23 @@ jest.mock('../CopyLink', () => ({
   CopyLink: () => <div data-testid='copy-link' />,
 }));
 
-function renderSharePanel(currentUserAccessLevel: AccessLevel | undefined) {
+function renderSharePanel(
+  currentUserAccessLevel: AccessLevel | undefined,
+  updateGroupInAccessList = jest.fn(),
+  canManageFullAccess = false
+) {
   return render(
     <SharePanel
       viewId='view-1'
       people={[]}
+      groups={[]}
+      editableGroupIds={new Set()}
       isLoadingPeople={false}
       onPeopleChange={async () => undefined}
       onPersonRemoved={() => undefined}
+      updateGroupInAccessList={updateGroupInAccessList}
       hasFullAccess={currentUserAccessLevel === AccessLevel.FullAccess}
+      canManageFullAccess={canManageFullAccess}
       currentUserAccessLevel={currentUserAccessLevel}
       sectionType={ShareSectionType.Private}
     />
@@ -66,6 +82,8 @@ describe('SharePanel', () => {
   beforeEach(() => {
     mockGetSubscriptions.mockClear();
     mockLoadMentionableUsers.mockClear();
+    mockInviteGuestProps.mockClear();
+    mockPeopleWithAccessProps.mockClear();
     mockIsHosted = false;
   });
 
@@ -93,5 +111,25 @@ describe('SharePanel', () => {
 
     expect(screen.queryByTestId('invite-guest')).toBeNull();
     expect(mockGetSubscriptions).not.toHaveBeenCalled();
+  });
+
+  it('forwards group mutation state to the access list', () => {
+    const updateGroupInAccessList = jest.fn();
+
+    renderSharePanel(AccessLevel.ReadOnly, updateGroupInAccessList, true);
+
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ updateGroupInAccessList, canManageFullAccess: true })
+    );
+  });
+
+  it('uses owner-tier authority for Full Access invite and row controls', async () => {
+    renderSharePanel(AccessLevel.FullAccess, jest.fn(), false);
+
+    await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ canGrantFullAccess: false }));
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canGrantFullAccess: false, canManageFullAccess: false, hasFullAccess: true })
+    );
   });
 });

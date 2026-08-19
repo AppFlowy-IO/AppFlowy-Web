@@ -42,11 +42,15 @@ function ShareTabs({
   const currentUser = useCurrentUser();
   const {
     people,
+    groups,
+    editableGroupIds,
     isLoadingPeople,
     loadPeople,
     removePersonFromAccessList,
+    updateGroupInAccessList,
     currentUserAccessLevel,
     hasFullAccess,
+    canManageFullAccess,
     sectionType,
   } = useShareAccessDetails(viewId, opened);
 
@@ -120,10 +124,14 @@ function ShareTabs({
               <SharePanel
                 viewId={viewId}
                 people={people}
+                groups={groups}
+                editableGroupIds={editableGroupIds}
                 isLoadingPeople={isLoadingPeople}
                 onPeopleChange={loadPeople}
                 onPersonRemoved={removePersonFromAccessList}
+                updateGroupInAccessList={updateGroupInAccessList}
                 hasFullAccess={hasFullAccess}
+                canManageFullAccess={canManageFullAccess}
                 currentUserAccessLevel={currentUserAccessLevel}
                 sectionType={sectionType}
               />

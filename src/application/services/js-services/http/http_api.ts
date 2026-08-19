@@ -5,20 +5,11 @@
  */
 
 // Core infrastructure
-export {
-  getAxiosInstance,
-  initAPIService,
-  getAxios,
-} from './core';
+export { getAxiosInstance, initAPIService, getAxios } from './core';
 export type { APIResponse, APIError } from './core';
 
 // Auth
-export {
-  signInWithUrl,
-  verifyToken,
-  getServerInfo,
-  getAuthProviders,
-} from './auth-api';
+export { signInWithUrl, verifyToken, getServerInfo, getAuthProviders } from './auth-api';
 export type { ServerInfo } from './auth-api';
 
 // GoTrue re-exports (preserved from original)
@@ -44,6 +35,23 @@ export {
   leaveWorkspace,
   inviteMembers,
   getMembers,
+  getSpaces,
+  getSpacePermission,
+  updateSpacePermission,
+  updateStructuredSpace,
+  getSpaceMembers,
+  addSpaceMember,
+  updateSpaceMember,
+  removeSpaceMember,
+  updateSpaceGroupPermission,
+  removeSpaceGroupPermission,
+  getWorkspaceGroups,
+  createWorkspaceGroup,
+  updateWorkspaceGroup,
+  removeWorkspaceGroup,
+  getWorkspaceGroupMembers,
+  addWorkspaceGroupMember,
+  removeWorkspaceGroupMember,
   getWorkspaceInviteCode,
   createWorkspaceInviteCode,
   joinWorkspaceByInvitationCode,
@@ -164,11 +172,7 @@ export {
 } from './import-api';
 
 // File
-export {
-  uploadFile,
-  uploadFileMultipart,
-  MULTIPART_THRESHOLD,
-} from './file-api';
+export { uploadFile, uploadFileMultipart, MULTIPART_THRESHOLD } from './file-api';
 export type { MultipartUploadProgress } from './file-api';
 
 // Access
@@ -181,7 +185,11 @@ export {
   getShareDetail,
   invalidateShareDetailCache,
   sharePageTo,
+  getSharedGroups,
+  sharePageToGroup,
+  sharePageToGroups,
   revokeAccess,
+  revokeGroupAccess,
   turnIntoMember,
   getShareWithMe,
 } from './access-api';
@@ -199,9 +207,7 @@ export {
 } from './misc-api';
 
 // Export
-export {
-  getViewPdfBlob,
-} from './export-api';
+export { getViewPdfBlob } from './export-api';
 export type { ExportPdfOptions, ExportPdfResult } from './export-api';
 
 // Notification

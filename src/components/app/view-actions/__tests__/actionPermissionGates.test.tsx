@@ -9,6 +9,7 @@ import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover
 import type { ReactNode } from 'react';
 
 const mockUseViewActionPermissions = jest.fn();
+const mockUseSpaceActionPermissions = jest.fn();
 let mockWorkspaceRole = Role.Member;
 const mockDocumentView = {
   children: [],
@@ -129,9 +130,19 @@ jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
   useViewActionPermissions: (...args: unknown[]) => mockUseViewActionPermissions(...args),
 }));
 
+jest.mock('@/components/app/view-actions/useSpaceActionPermissions', () => ({
+  useSpaceActionPermissions: (...args: unknown[]) => mockUseSpaceActionPermissions(...args),
+}));
+
 describe('view action permission gates', () => {
   beforeEach(() => {
     mockUseViewActionPermissions.mockReset();
+    mockUseSpaceActionPermissions.mockReset();
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: false,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
     mockWorkspaceRole = Role.Member;
   });
 
@@ -173,6 +184,7 @@ describe('view action permission gates', () => {
         onClose={jest.fn()}
         canDuplicateActions
         canManageActions={false}
+        canOpenManageActions={false}
         isLoadingActions={false}
       />
     );
@@ -192,12 +204,127 @@ describe('view action permission gates', () => {
         onClose={jest.fn()}
         canDuplicateActions
         canManageActions={false}
+        canOpenManageActions={false}
         isLoadingActions={false}
       />
     );
 
     expect(screen.queryByTestId('create-new-space-button')).toBeNull();
     expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
+  });
+
+  it('lets sidebar editors open Manage Space without exposing Delete', () => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canCreateViewActions: true,
+      canManageViewActions: false,
+      hasLoadedViewActionPermissions: true,
+      isLoadingViewActionPermissions: false,
+    });
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: true,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
+
+    render(
+      <ViewActionsPopover
+        view={mockSpaceView}
+        popoverType={{ category: 'space', type: 'more' }}
+        open
+        onOpenChange={jest.fn()}
+      >
+        <button type='button'>trigger</button>
+      </ViewActionsPopover>
+    );
+
+    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true, false);
+    expect(screen.getByTestId('space-action-manage')).toBeTruthy();
+    expect(screen.queryByTestId('space-action-delete')).toBeNull();
+  });
+
+  it('lets invite-only members open Manage Space without exposing Delete', () => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canCreateViewActions: true,
+      canManageViewActions: false,
+      hasLoadedViewActionPermissions: true,
+      isLoadingViewActionPermissions: false,
+    });
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: true,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
+
+    render(
+      <ViewActionsPopover
+        view={mockSpaceView}
+        popoverType={{ category: 'space', type: 'more' }}
+        open
+        onOpenChange={jest.fn()}
+      >
+        <button type='button'>trigger</button>
+      </ViewActionsPopover>
+    );
+
+    expect(screen.getByTestId('space-action-manage')).toBeTruthy();
+    expect(screen.queryByTestId('space-action-delete')).toBeNull();
+  });
+
+  it('lets member managers open Manage Space without exposing Delete', () => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canCreateViewActions: true,
+      canManageViewActions: false,
+      hasLoadedViewActionPermissions: true,
+      isLoadingViewActionPermissions: false,
+    });
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: true,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
+
+    render(
+      <ViewActionsPopover
+        view={mockSpaceView}
+        popoverType={{ category: 'space', type: 'more' }}
+        open
+        onOpenChange={jest.fn()}
+      >
+        <button type='button'>trigger</button>
+      </ViewActionsPopover>
+    );
+
+    expect(screen.getByTestId('space-action-manage')).toBeTruthy();
+    expect(screen.queryByTestId('space-action-delete')).toBeNull();
+  });
+
+  it('keeps Delete available for delegated Full Access without structured space management', () => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canCreateViewActions: true,
+      canManageViewActions: true,
+      hasLoadedViewActionPermissions: true,
+      isLoadingViewActionPermissions: false,
+    });
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: false,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
+
+    render(
+      <ViewActionsPopover
+        view={mockSpaceView}
+        popoverType={{ category: 'space', type: 'more' }}
+        open
+        onOpenChange={jest.fn()}
+      >
+        <button type='button'>trigger</button>
+      </ViewActionsPopover>
+    );
+
+    expect(screen.queryByTestId('space-action-manage')).toBeNull();
+    expect(screen.getByTestId('space-action-delete')).toBeTruthy();
+    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true, true);
   });
 
   it('does not mount add actions until effective permissions allow mutations', () => {

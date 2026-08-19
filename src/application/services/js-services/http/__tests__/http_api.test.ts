@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-import { AuthProvider } from '@/application/types';
+import {
+  AccessLevel,
+  AuthProvider,
+  SpaceInvitePolicy,
+  SpaceMemberRole,
+  SpaceSidebarEditPolicy,
+  SpaceVisibility,
+} from '@/application/types';
 
 const mockAxiosInstance = {
   interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } },
   get: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
+  patch: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
   post: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
   put: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
   delete: jest.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -58,6 +66,7 @@ describe('http_api client (unit)', () => {
     mockAxiosInstance.interceptors.request.use.mockReset();
     mockAxiosInstance.interceptors.response.use.mockReset();
     mockAxiosInstance.get.mockReset();
+    mockAxiosInstance.patch.mockReset();
     mockAxiosInstance.post.mockReset();
     mockVerifyAndRefreshGoTrueToken.mockReset();
     mockAxiosInstance.put.mockReset();
@@ -82,6 +91,138 @@ describe('http_api client (unit)', () => {
     // Subsequent init calls should no-op
     module.initAPIService({ ...baseConfig, baseURL: 'https://ignored.example.com' });
     expect(mockAxiosCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-exports space-group ACL update and revoke clients', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const payload = {
+      role: SpaceMemberRole.Owner,
+      access_level: AccessLevel.FullAccess,
+    };
+    const updatedGroup = {
+      group_id: 'group-1',
+      name: 'Engineering',
+      role: SpaceMemberRole.Owner,
+      access_level: AccessLevel.FullAccess,
+      member_count: 2,
+      source: 'manual',
+    };
+
+    mockAxiosInstance.patch.mockResolvedValueOnce({
+      data: { code: 0, data: updatedGroup },
+    });
+    mockAxiosInstance.delete.mockResolvedValueOnce({
+      status: 200,
+      data: { code: 0 },
+    });
+
+    await expect(module.updateSpaceGroupPermission('workspace-1', 'space-1', 'group-1', payload)).resolves.toEqual(
+      updatedGroup
+    );
+    expect(mockAxiosInstance.patch).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/spaces/space-1/group/group-1',
+      payload
+    );
+
+    await expect(module.removeSpaceGroupPermission('workspace-1', 'space-1', 'group-1')).resolves.toBeUndefined();
+    expect(mockAxiosInstance.delete).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1/group/group-1');
+  });
+
+  it('re-exports the atomic structured space update client', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const payload = {
+      name: 'Closed space',
+      space_icon: 'lock',
+      space_icon_color: '#123456',
+      permission: {
+        visibility: SpaceVisibility.Closed,
+        owner_access_level: AccessLevel.FullAccess,
+        member_default_access_level: AccessLevel.ReadAndWrite,
+        everyone_else_access_level: null,
+        invite_policy: SpaceInvitePolicy.OwnersOnly,
+        sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+        invite_link_enabled: false,
+        security: {
+          disable_guests: false,
+          disable_public_links: false,
+          disable_export: false,
+        },
+      },
+    };
+
+    mockAxiosInstance.patch.mockResolvedValueOnce({
+      data: { code: 0, data: { view_id: 'space-1' } },
+    });
+
+    await expect(module.updateStructuredSpace('workspace-1', 'space-1', payload)).resolves.toEqual({
+      view_id: 'space-1',
+    });
+    expect(mockAxiosInstance.patch).toHaveBeenCalledTimes(1);
+    expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1', payload);
+    expect(mockAxiosInstance.patch.mock.calls[0][0]).not.toBe('/api/workspace/workspace-1/space/space-1');
+    expect(mockAxiosInstance.patch.mock.calls[0][1]).not.toHaveProperty('space_permission');
+  });
+
+  it('lists structured spaces with their permission settings', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const spaces = {
+      spaces: [
+        {
+          space_id: 'space-default',
+          name: 'General',
+          permission: {
+            visibility: SpaceVisibility.Default,
+            owner_access_level: AccessLevel.FullAccess,
+            member_default_access_level: AccessLevel.ReadAndWrite,
+            everyone_else_access_level: AccessLevel.ReadOnly,
+            invite_policy: SpaceInvitePolicy.OwnersOnly,
+            sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+            invite_link_enabled: false,
+            security: {
+              disable_guests: false,
+              disable_public_links: false,
+              disable_export: false,
+            },
+          },
+          current_user_access_level: AccessLevel.FullAccess,
+          explicit_member_count: 1,
+          is_explicit_member: true,
+          can_join: false,
+          can_leave: false,
+        },
+      ],
+    };
+
+    mockAxiosInstance.get.mockResolvedValueOnce({ data: { code: 0, data: spaces } });
+
+    await expect(module.getSpaces('workspace-1')).resolves.toEqual(spaces);
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces');
+  });
+
+  it('gets only the group grants owned by a view', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const directGroup = {
+      group_id: 'group-1',
+      name: 'Engineering',
+      access_level: AccessLevel.ReadOnly,
+      member_count: 2,
+      source: 'direct',
+    };
+
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: { code: 0, data: { groups: [directGroup] } },
+    });
+
+    await expect(module.getSharedGroups('workspace-1', 'page-1')).resolves.toEqual([directGroup]);
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/workspace/workspace-1/views/page-1/group');
   });
 
   it('maps auth providers from API response', async () => {

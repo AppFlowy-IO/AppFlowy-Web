@@ -29,7 +29,7 @@ function SettingMenu({ selectedItem, onSelectItem }: SettingMenuProps) {
       },
       {
         value: SettingMenuItem.MEMBERS,
-        label: t('settings.appearance.members.label'),
+        label: t('settings.appearance.people.label'),
         IconComponent: MembersIcon,
       },
       {

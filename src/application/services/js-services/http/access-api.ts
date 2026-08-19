@@ -10,6 +10,7 @@ import {
   Types,
   View,
   Workspace,
+  WorkspaceGroupViewPermission,
 } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, withRetry } from './core';
@@ -45,17 +46,13 @@ function afWorkspace2Workspace(workspace: AFWorkspace): Workspace {
 export async function getInvitation(invitationId: string) {
   const url = `/api/workspace/invite/${invitationId}`;
 
-  return executeAPIRequest<Invitation>(() =>
-    getAxios()?.get<APIResponse<Invitation>>(url)
-  );
+  return executeAPIRequest<Invitation>(() => getAxios()?.get<APIResponse<Invitation>>(url));
 }
 
 export async function acceptInvitation(invitationId: string) {
   const url = `/api/workspace/accept-invite/${invitationId}`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url)
-  );
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
 }
 
 export async function getRequestAccessInfo(requestId: string): Promise<GetRequestAccessInfoResponse> {
@@ -70,15 +67,17 @@ export async function getRequestAccessInfo(requestId: string): Promise<GetReques
     view: View;
     status: RequestAccessInfoStatus;
   }>(() =>
-    getAxios()?.get<APIResponse<{
-      request_id: string;
-      workspace: AFWorkspace;
-      requester: AFWebUser & {
-        email: string;
-      };
-      view: View;
-      status: RequestAccessInfoStatus;
-    }>>(url)
+    getAxios()?.get<
+      APIResponse<{
+        request_id: string;
+        workspace: AFWorkspace;
+        requester: AFWebUser & {
+          email: string;
+        };
+        view: View;
+        status: RequestAccessInfoStatus;
+      }>
+    >(url)
   );
 
   return {
@@ -176,9 +175,7 @@ async function fetchShareDetail(
       // No withRetry here: the shared axios interceptor already retries GETs on
       // transient failures, and stacking a second retry ladder keeps the share
       // panel blocked for many seconds before the legacy fallback below runs.
-      return await executeAPIRequest<ShareAccessDetails>(() =>
-        getAxios()?.get<APIResponse<ShareAccessDetails>>(url)
-      );
+      return await executeAPIRequest<ShareAccessDetails>(() => getAxios()?.get<APIResponse<ShareAccessDetails>>(url));
     } catch (error) {
       const code = getErrorCode(error);
 
@@ -251,11 +248,7 @@ export interface CollabObjectPermission {
   can_share?: boolean;
 }
 
-export async function getObjectPermission(
-  workspaceId: string,
-  objectId: string,
-  collabType: Types = Types.Document
-) {
+export async function getObjectPermission(workspaceId: string, objectId: string, collabType: Types = Types.Document) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
 
   return executeAPIRequest<CollabObjectPermission>(() =>
@@ -278,12 +271,54 @@ export async function sharePageTo(workspaceId: string, viewId: string, emails: s
   invalidateShareDetailCache(workspaceId);
 }
 
+/** Direct group grants owned by this view.
+ *
+ * Access details contain effective grants after page ancestry is resolved. This
+ * endpoint is deliberately kept separate so callers never offer edit controls
+ * for a grant that can only be changed on an ancestor page.
+ */
+export async function getSharedGroups(workspaceId: string, viewId: string) {
+  const url = `/api/workspace/${workspaceId}/views/${viewId}/group`;
+  const result = await executeAPIRequest<{ groups?: WorkspaceGroupViewPermission[] }>(() =>
+    getAxios()?.get<APIResponse<{ groups?: WorkspaceGroupViewPermission[] }>>(url)
+  );
+
+  return result.groups ?? [];
+}
+
+export async function sharePageToGroup(workspaceId: string, viewId: string, groupId: string, accessLevel?: AccessLevel) {
+  const url = `/api/workspace/${workspaceId}/views/${viewId}/group/${groupId}`;
+
+  const permission = await executeAPIRequest<WorkspaceGroupViewPermission>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroupViewPermission>>(url, {
+      access_level: accessLevel || AccessLevel.ReadOnly,
+    })
+  );
+
+  invalidateShareDetailCache(workspaceId);
+  return permission;
+}
+
+export async function sharePageToGroups(
+  workspaceId: string,
+  viewId: string,
+  groupIds: string[],
+  accessLevel?: AccessLevel
+) {
+  await Promise.all(groupIds.map((groupId) => sharePageToGroup(workspaceId, viewId, groupId, accessLevel)));
+}
+
+export async function revokeGroupAccess(workspaceId: string, viewId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/views/${viewId}/group/${groupId}`;
+
+  await executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+  invalidateShareDetailCache(workspaceId);
+}
+
 export async function revokeAccess(workspaceId: string, viewId: string, emails: string[]) {
   const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/revoke-access`;
 
-  await executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, { emails })
-  );
+  await executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { emails }));
   invalidateShareDetailCache(workspaceId);
 }
 
@@ -302,7 +337,5 @@ export async function turnIntoMember(workspaceId: string, email: string) {
 export async function getShareWithMe(workspaceId: string): Promise<View> {
   const url = `/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
 
-  return executeAPIRequest<View>(() =>
-    getAxios()?.get<APIResponse<View>>(url)
-  );
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
 }
