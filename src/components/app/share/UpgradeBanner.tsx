@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/vector.svg';
 import { BillingService } from '@/application/services/domains';
@@ -19,7 +20,7 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
-  const isOwner = userWorkspaceInfo?.selectedWorkspace.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace.owner?.uid, currentUser?.uid);
   const storageKey = CLOSE_UPGRADE_LOCAL_STORAGE_KEY + currentWorkspaceId;
   const [isClosed, setClosed] = useState(() => localStorage.getItem(storageKey) === 'true');
 

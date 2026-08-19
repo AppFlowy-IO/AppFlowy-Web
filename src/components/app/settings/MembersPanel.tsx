@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { Role, WorkspaceMember } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -74,7 +75,7 @@ export function MembersPanel() {
   const isOwner = useMemo(() => {
     const workspace = userWorkspaceInfo?.workspaces.find((w) => w.id === currentWorkspaceId);
 
-    return workspace?.owner?.uid.toString() === currentUser?.uid.toString();
+    return isSameUserUid(workspace?.owner?.uid, currentUser?.uid);
   }, [userWorkspaceInfo?.workspaces, currentWorkspaceId, currentUser?.uid]);
 
   // Load members — guarded against unmount and workspace switch.

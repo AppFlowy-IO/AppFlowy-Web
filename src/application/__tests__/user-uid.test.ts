@@ -1,5 +1,5 @@
 import { resolveUserAttributionUid } from '@/application/database-yjs/attribution';
-import { canonicalizeUserUid, resolveCurrentUserUid } from '@/application/user-uid';
+import { canonicalizeUserUid, isSameUserUid, resolveCurrentUserUid } from '@/application/user-uid';
 
 describe('canonicalizeUserUid', () => {
   it('preserves exact signed-64-bit IDs supplied as strings or bigints', () => {
@@ -51,5 +51,30 @@ describe('resolveUserAttributionUid', () => {
 
   it('does not guess whether a legacy stored profile UID was lossless', () => {
     expect(resolveUserAttributionUid({ uid: '9007199254740993' })).toBeNull();
+  });
+});
+
+describe('isSameUserUid', () => {
+  it('compares exact identities exactly', () => {
+    expect(isSameUserUid('9007199254740993', '9007199254740993')).toBe(true);
+    expect(isSameUserUid('9007199254740993', 9_007_199_254_740_993n)).toBe(true);
+    expect(isSameUserUid('9007199254740993', '9007199254740995')).toBe(false);
+    expect(isSameUserUid(42, '42')).toBe(true);
+  });
+
+  it('matches an exact uid_string against the same uid rounded through JSON', () => {
+    // 626259007224418304 is exactly float64-representable, but
+    // Number.prototype.toString prints the SHORTEST round-trip decimal
+    // ("…300"), so the old string comparison failed even for this uid.
+    expect(isSameUserUid(626259007224418304, '626259007224418304')).toBe(true);
+    // …816 arrives as a JSON number that prints as "…800".
+    expect(isSameUserUid('626253857260834816', 626253857260834800)).toBe(true);
+  });
+
+  it('does not equate distinct users or invalid identities', () => {
+    expect(isSameUserUid('not-a-uid', 'not-a-uid')).toBe(false);
+    expect(isSameUserUid(null, 42)).toBe(false);
+    expect(isSameUserUid(undefined, undefined)).toBe(false);
+    expect(isSameUserUid('9007199254740993', 12345)).toBe(false);
   });
 });

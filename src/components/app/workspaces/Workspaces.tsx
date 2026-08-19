@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { Workspace } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
@@ -70,7 +71,7 @@ export function Workspaces() {
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
 
-  const isOwner = currentWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
 
   useEffect(() => {
     setCurrentWorkspace(userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId));
