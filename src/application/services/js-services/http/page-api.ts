@@ -1,4 +1,5 @@
 import { omit } from 'lodash-es';
+import { v4 as uuidv4 } from 'uuid';
 
 import {
   CreateDatabaseViewPayload,
@@ -9,10 +10,14 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   CreateSpaceWithInitialPageResponse,
+  SpacePermission,
+  SpacePermissionSettings,
+  SpaceVisibility,
   UpdatePagePayload,
   UpdateSpacePayload,
   ViewIconType,
 } from '@/application/types';
+import { isUnsupportedRouteError } from '@/utils/errors';
 import { Log } from '@/utils/log';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
@@ -20,7 +25,7 @@ import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from 
 export async function addAppPage(
   workspaceId: string,
   parentViewId: string,
-  { layout, name, prev_view_id }: CreatePagePayload
+  { layout, name, page_data, view_id, prev_view_id }: CreatePagePayload
 ) {
   const url = `/api/workspace/${workspaceId}/page-view`;
 
@@ -31,6 +36,8 @@ export async function addAppPage(
       parent_view_id: parentViewId,
       layout,
       name,
+      page_data,
+      view_id,
       prev_view_id,
     })
   );
@@ -128,7 +135,48 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
   );
 }
 
-export async function createSpace(workspaceId: string, payload: CreateSpacePayload) {
+/**
+ * Downgrade structured permission settings to the legacy binary permission
+ * for servers that predate the structured `/spaces` endpoint. Open and
+ * Default spaces grant everyone-else access, which is what legacy Public
+ * means; Closed and Private do not, which is legacy Private.
+ */
+function legacySpacePermissionFromSettings(permission: SpacePermissionSettings): SpacePermission {
+  return permission.visibility === SpaceVisibility.Open || permission.visibility === SpaceVisibility.Default
+    ? SpacePermission.Public
+    : SpacePermission.Private;
+}
+
+export async function createSpace(workspaceId: string, payload: CreateSpacePayload): Promise<string> {
+  if (payload.permission) {
+    const url = `/api/workspace/${workspaceId}/spaces`;
+    const { space_permission: _legacyPermission, ...structuredPayload } = payload;
+
+    try {
+      const data = await executeAPIRequest<{ view_id: string }>(() =>
+        getAxios()?.post<APIResponse<{ view_id: string }>>(url, structuredPayload)
+      );
+
+      return data.view_id;
+    } catch (error) {
+      if (!isUnsupportedRouteError(error)) throw error;
+
+      // Older servers do not expose the structured endpoint. Fall back to the
+      // legacy one so space creation keeps working; only the binary
+      // public/private part of the settings can be preserved there.
+      Log.warn('[createSpace] structured /spaces endpoint unavailable, falling back to legacy /space', {
+        workspaceId,
+      });
+
+      const { permission, ...legacyPayload } = payload;
+
+      return createSpace(workspaceId, {
+        ...legacyPayload,
+        space_permission: legacySpacePermissionFromSettings(permission),
+      });
+    }
+  }
+
   const url = `/api/workspace/${workspaceId}/space`;
 
   return executeAPIRequest<{ view_id: string }>(() =>
@@ -137,11 +185,59 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 }
 
 export async function createSpaceWithInitialPage(workspaceId: string, payload: CreateSpaceWithInitialPagePayload) {
+  if (payload.permission) {
+    // The legacy /v2/space endpoint only understands binary public/private
+    // permissions. Compose the structured endpoints instead so richer ACLs are
+    // never silently downgraded. This is compensating, not server-transactional.
+    const generatedSpaceId = payload.view_id === undefined;
+    const requestedSpaceId = payload.view_id ?? uuidv4();
+    const { initial_page, ...spacePayload } = payload;
+    let spaceId: string;
+
+    try {
+      spaceId = await createSpace(workspaceId, {
+        ...spacePayload,
+        view_id: requestedSpaceId,
+      });
+    } catch (error) {
+      // A transport failure can happen after the server commits. Because the
+      // client generated a fresh ID, a best-effort trash operation also covers
+      // that ambiguous outcome without risking a caller-owned existing space.
+      if (generatedSpaceId) await removePartiallyCreatedSpace(workspaceId, requestedSpaceId, false);
+      throw error;
+    }
+
+    try {
+      const page = await addAppPage(workspaceId, spaceId, initial_page);
+
+      return {
+        space: { view_id: spaceId },
+        page,
+      };
+    } catch (error) {
+      if (generatedSpaceId) await removePartiallyCreatedSpace(workspaceId, spaceId, true);
+      throw error;
+    }
+  }
+
   const url = `/api/workspace/${workspaceId}/v2/space`;
 
   return executeAPIRequest<CreateSpaceWithInitialPageResponse>(() =>
     getAxios()?.post<APIResponse<CreateSpaceWithInitialPageResponse>>(url, payload)
   );
+}
+
+async function removePartiallyCreatedSpace(workspaceId: string, spaceId: string, permanently: boolean) {
+  try {
+    await moveToTrash(workspaceId, spaceId);
+    if (permanently) await deleteTrash(workspaceId, spaceId);
+  } catch (cleanupError) {
+    Log.error('[createSpaceWithInitialPage] Failed to clean up partially created structured space', {
+      workspaceId,
+      spaceId,
+      cleanupError,
+    });
+  }
 }
 
 export async function updateSpace(workspaceId: string, payload: UpdateSpacePayload) {

@@ -8,6 +8,7 @@ import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import { Role, User, View, ViewLayout } from '@/application/types';
+import { findView } from '@/components/_shared/outline/utils';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
 import { MAX_SIDEBAR_OUTLINE_REVALIDATION_EXPANDED_IDS } from '@/components/app/outline/sidebarRevalidation';
@@ -41,6 +42,7 @@ jest.mock('@/application/services/domains', () => ({
     getCached: jest.fn(),
     getCachedFromDisk: jest.fn(),
     getDatabaseRelations: jest.fn(),
+    getFavorites: jest.fn(),
     getMultiple: jest.fn(),
     getNavigation: jest.fn(),
     getOutline: jest.fn(),
@@ -167,6 +169,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     (ViewService.getCached as jest.Mock).mockReturnValue(undefined);
     (ViewService.getCachedFromDisk as jest.Mock).mockResolvedValue(undefined);
     (ViewService.getDatabaseRelations as jest.Mock).mockResolvedValue({});
+    (ViewService.getFavorites as jest.Mock).mockResolvedValue([]);
     (ViewService.getMultiple as jest.Mock).mockResolvedValue([]);
     (ViewService.getNavigation as jest.Mock).mockResolvedValue(createView('navigation-root'));
     (ViewService.refresh as jest.Mock).mockImplementation((activeWorkspaceId: string, viewId: string) =>
@@ -197,6 +200,366 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
     unmount();
+  });
+
+  it('refreshes permission-derived state when the share panel is closed', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('initial-space-id')];
+    const refreshedOutline = [createView('refreshed-space-id')];
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: initialOutline, folderRid: '1-1' })
+      .mockResolvedValueOnce({ outline: refreshedOutline, folderRid: '1-2' });
+
+    const { result, unmount } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+    (AccessService.invalidateShareDetailCache as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
+    await waitFor(() => expect(result.current.outline).toEqual(refreshedOutline));
+    expect(ViewService.getOutline).toHaveBeenCalledTimes(2);
+
+    unmount();
+    expect(eventEmitter.listenerCount(APP_EVENTS.PERMISSION_CHANGED)).toBe(0);
+  });
+
+  it('drops a loaded deep subtree that a permission refresh omits from the shallow root', async () => {
+    const eventEmitter = new EventEmitter();
+    const boundaryId = 'depth-six-boundary-id';
+    const revokedViewId = 'revoked-deep-view-id';
+    const shallowRoot = [
+      createView('space-id', {
+        children: [
+          createView('level-two-id', {
+            children: [
+              createView('level-three-id', {
+                children: [
+                  createView('level-four-id', {
+                    children: [
+                      createView('level-five-id', {
+                        children: [createView(boundaryId, { has_children: true })],
+                        has_children: true,
+                      }),
+                    ],
+                    has_children: true,
+                  }),
+                ],
+                has_children: true,
+              }),
+            ],
+            has_children: true,
+          }),
+        ],
+        has_children: true,
+      }),
+    ];
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-1' })
+      .mockResolvedValueOnce({ outline: shallowRoot, folderRid: '1-2' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValueOnce([
+      createView(boundaryId, {
+        children: [createView(revokedViewId)],
+        has_children: true,
+      }),
+    ]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([boundaryId]);
+    });
+    expect(result.current.loadedViewIds?.has(boundaryId)).toBe(true);
+    expect(findView(result.current.outline ?? [], revokedViewId)).not.toBeNull();
+
+    (ViewService.invalidateCache as jest.Mock).mockClear();
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(findView(result.current.outline ?? [], revokedViewId)).toBeNull());
+    expect(result.current.loadedViewIds?.has(boundaryId)).toBe(false);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, boundaryId);
+  });
+
+  it('authoritatively restores unaffected expanded roots when a revoked sibling rejects', async () => {
+    const eventEmitter = new EventEmitter();
+    const revokedBoundaryId = 'revoked-boundary-id';
+    const unaffectedBoundaryId = 'unaffected-boundary-id';
+    const revokedChildId = 'revoked-child-id';
+    const oldUnaffectedChildId = 'old-unaffected-child-id';
+    const freshUnaffectedChildId = 'fresh-unaffected-child-id';
+    const shallowRoot = [
+      createView('space-id', {
+        children: [
+          createView(revokedBoundaryId, { has_children: true }),
+          createView(unaffectedBoundaryId, { has_children: true }),
+        ],
+        has_children: true,
+      }),
+    ];
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock)
+      .mockResolvedValueOnce([
+        createView(revokedBoundaryId, {
+          children: [createView(revokedChildId)],
+          has_children: true,
+        }),
+        createView(unaffectedBoundaryId, {
+          children: [createView(oldUnaffectedChildId)],
+          has_children: true,
+        }),
+      ])
+      .mockRejectedValueOnce({ code: ERROR_CODE.NOT_HAS_PERMISSION, message: 'revoked' })
+      .mockResolvedValueOnce([
+        createView(unaffectedBoundaryId, {
+          children: [createView(freshUnaffectedChildId)],
+          has_children: true,
+        }),
+      ]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([revokedBoundaryId, unaffectedBoundaryId]);
+    });
+    expect(findView(result.current.outline ?? [], revokedChildId)).not.toBeNull();
+    expect(findView(result.current.outline ?? [], oldUnaffectedChildId)).not.toBeNull();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(findView(result.current.outline ?? [], freshUnaffectedChildId)).not.toBeNull());
+    expect(findView(result.current.outline ?? [], revokedChildId)).toBeNull();
+    expect(findView(result.current.outline ?? [], oldUnaffectedChildId)).toBeNull();
+    expect(result.current.loadedViewIds?.has(unaffectedBoundaryId)).toBe(true);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('retries a transient expanded-root failure after a permission refresh', async () => {
+    const eventEmitter = new EventEmitter();
+    const boundaryId = 'transient-boundary-id';
+    const oldChildId = 'old-transient-child-id';
+    const freshChildId = 'fresh-transient-child-id';
+    const shallowRoot = [
+      createView('space-id', {
+        children: [createView(boundaryId, { has_children: true })],
+        has_children: true,
+      }),
+    ];
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock)
+      .mockResolvedValueOnce([
+        createView(boundaryId, {
+          children: [createView(oldChildId)],
+          has_children: true,
+        }),
+      ])
+      .mockRejectedValueOnce({ code: ERROR_CODE.REQUEST_TIMEOUT, message: 'try again' })
+      .mockResolvedValueOnce([
+        createView(boundaryId, {
+          children: [createView(freshChildId)],
+          has_children: true,
+        }),
+      ]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([boundaryId]);
+    });
+    expect(findView(result.current.outline ?? [], oldChildId)).not.toBeNull();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(findView(result.current.outline ?? [], freshChildId)).not.toBeNull());
+    expect(findView(result.current.outline ?? [], oldChildId)).toBeNull();
+    expect(ViewService.getMultiple).toHaveBeenCalledTimes(3);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('refreshes an already-loaded favorites list after a permission change', async () => {
+    const eventEmitter = new EventEmitter();
+    const revokedFavorite = createView('revoked-favorite-id', { is_favorite: true });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [createView('space-id')],
+      folderRid: '1-1',
+    });
+    (ViewService.getFavorites as jest.Mock)
+      .mockResolvedValueOnce([revokedFavorite])
+      .mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await act(async () => {
+      await result.current.loadFavoriteViews?.();
+    });
+    expect(result.current.favoriteViews).toEqual([revokedFavorite]);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(result.current.favoriteViews).toEqual([]));
+    expect(ViewService.getFavorites).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an older favorites response after a newer permission refresh', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialFavorite = createView('initial-favorite-id', { is_favorite: true });
+    const staleFavorite = createView('stale-favorite-id', { is_favorite: true });
+    const olderRefresh = createDeferred<View[]>();
+    const newerRefresh = createDeferred<View[]>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [createView('space-id')],
+      folderRid: '1-1',
+    });
+    (ViewService.getFavorites as jest.Mock)
+      .mockResolvedValueOnce([initialFavorite])
+      .mockReturnValueOnce(olderRefresh.promise)
+      .mockReturnValueOnce(newerRefresh.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await act(async () => {
+      await result.current.loadFavoriteViews?.();
+    });
+    expect(result.current.favoriteViews).toEqual([initialFavorite]);
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(ViewService.getFavorites).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(ViewService.getFavorites).toHaveBeenCalledTimes(3));
+
+    await act(async () => {
+      newerRefresh.resolve([]);
+      await newerRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.favoriteViews).toEqual([]));
+
+    await act(async () => {
+      olderRefresh.resolve([staleFavorite]);
+      await olderRefresh.promise;
+    });
+    expect(result.current.favoriteViews).toEqual([]);
+  });
+
+  it('restarts an in-flight initial favorites load after a permission change', async () => {
+    const eventEmitter = new EventEmitter();
+    const staleFavorite = createView('stale-initial-favorite-id', { is_favorite: true });
+    const initialLoad = createDeferred<View[]>();
+    const permissionRefresh = createDeferred<View[]>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [createView('space-id')],
+      folderRid: '1-1',
+    });
+    (ViewService.getFavorites as jest.Mock)
+      .mockReturnValueOnce(initialLoad.promise)
+      .mockReturnValueOnce(permissionRefresh.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    let initialLoadPromise: Promise<View[] | undefined> | undefined;
+
+    act(() => {
+      initialLoadPromise = result.current.loadFavoriteViews?.();
+    });
+    await waitFor(() => expect(ViewService.getFavorites).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(ViewService.getFavorites).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      permissionRefresh.resolve([]);
+      await permissionRefresh.promise;
+    });
+    await waitFor(() => expect(result.current.favoriteViews).toEqual([]));
+
+    await act(async () => {
+      initialLoad.resolve([staleFavorite]);
+      await initialLoadPromise;
+    });
+    expect(result.current.favoriteViews).toEqual([]);
+  });
+
+  it('rejects a pre-permission root response when the fresh permission refresh fails', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('initial-space-id')];
+    const staleOutline = [createView('stale-revoked-space-id')];
+    const prePermissionResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: initialOutline, folderRid: '1-1' })
+      .mockReturnValueOnce(prePermissionResponse.promise)
+      .mockRejectedValueOnce(new Error('permission refresh failed'));
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+
+    let prePermissionLoad: Promise<void> | undefined;
+
+    act(() => {
+      prePermissionLoad = result.current.loadOutline?.(workspaceId, false);
+    });
+    await waitFor(() => expect(ViewService.getOutline).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+    await waitFor(() => expect(ViewService.getOutline).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+
+    await act(async () => {
+      prePermissionResponse.resolve({ outline: staleOutline, folderRid: '2-1' });
+      await prePermissionLoad;
+    });
+
+    expect(result.current.outline).toEqual(initialOutline);
+    expect(findView(result.current.outline ?? [], staleOutline[0].view_id)).toBeNull();
+    consoleErrorSpy.mockRestore();
   });
 
   it('evicts a disk-only canonical database collab when the current user loses access', async () => {

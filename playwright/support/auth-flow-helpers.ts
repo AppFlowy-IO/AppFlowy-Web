@@ -74,7 +74,14 @@ async function waitForAppReady(page: Page, waitMs: number): Promise<void> {
     const expanded = firstSpace.locator('[data-testid="space-expanded"]');
     const isExpanded = await expanded.getAttribute('data-expanded').catch(() => null);
     if (isExpanded !== 'true') {
-      await firstSpace.getByTestId('space-name').first().click({ force: true });
+      // The sidebar can still be finishing its entrance transition after the
+      // app header appears. Dispatching the same DOM click avoids an
+      // actionability failure when that visible row is briefly translated just
+      // outside the viewport.
+      await firstSpace
+        .getByTestId('space-name')
+        .first()
+        .evaluate((element: HTMLElement) => element.click());
       await page.waitForTimeout(1000);
     }
   }

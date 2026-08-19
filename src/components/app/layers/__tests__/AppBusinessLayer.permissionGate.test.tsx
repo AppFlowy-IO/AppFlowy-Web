@@ -238,6 +238,100 @@ describe('AppBusinessLayer permission gates', () => {
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
+  it('re-probes and purges the active route after a broad permission change', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce({ can_read: true })
+      .mockResolvedValueOnce({ can_read: false });
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('no-access').textContent).toBe('false');
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => {
+      expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('no-access').textContent).toBe('true');
+    });
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, routeViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+  });
+
+  it('ignores an older allowed probe after a broad permission change denies the route', async () => {
+    const eventEmitter = new EventEmitter();
+    let resolveInitialProbe!: (permission: { can_read: boolean }) => void;
+    const initialProbe = new Promise<{ can_read: boolean }>((resolve) => {
+      resolveInitialProbe = resolve;
+    });
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockReturnValueOnce(initialProbe)
+      .mockResolvedValueOnce({ can_read: false });
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => {
+      expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('no-access').textContent).toBe('true');
+    });
+
+    await act(async () => {
+      resolveInitialProbe({ can_read: true });
+      await initialProbe;
+    });
+
+    expect(screen.getByTestId('no-access').textContent).toBe('true');
+    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+  });
+
+  it('re-probes and closes an active modal after a broad permission change', async () => {
+    const eventEmitter = new EventEmitter();
+    let modalCanRead = true;
+
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation((_workspaceId: string, objectId: string) =>
+      Promise.resolve({ can_read: objectId !== modalViewId || modalCanRead })
+    );
+    renderBusinessLayer(eventEmitter, [createView(routeViewId), createView(modalViewId)]);
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'open modal' }));
+    await waitFor(() => {
+      expect(
+        (AccessService.getObjectPermission as jest.Mock).mock.calls.filter(([, objectId]) => objectId === modalViewId)
+      ).toHaveLength(1);
+      expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId);
+    });
+
+    modalCanRead = false;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => {
+      expect(
+        (AccessService.getObjectPermission as jest.Mock).mock.calls.filter(([, objectId]) => objectId === routeViewId)
+      ).toHaveLength(2);
+      expect(
+        (AccessService.getObjectPermission as jest.Mock).mock.calls.filter(([, objectId]) => objectId === modalViewId)
+      ).toHaveLength(2);
+      expect(screen.getByTestId('modal-view-id').textContent).toBe('');
+    });
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(modalViewId, { destroyDoc: true });
+    expect(screen.getByTestId('no-access').textContent).toBe('false');
+  });
+
   // A guest holds view-level access without workspace membership, so the
   // workspace-scoped view endpoint 403s while the object-permission API still
   // grants read. Resolving the probe target must not turn that into a denial.

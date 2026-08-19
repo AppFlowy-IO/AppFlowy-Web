@@ -22,11 +22,10 @@ import {
   limitSidebarOutlineExpandedViewIds,
   type SidebarOutlineRevalidationResult,
 } from '@/components/app/outline/sidebarRevalidation';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
-
-import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -59,6 +58,20 @@ function buildViewIndex(views: View[]): Map<string, View> {
 
   walk(views);
   return index;
+}
+
+function buildViewDepthIndex(views: View[]): Map<string, number> {
+  const depths = new Map<string, number>();
+
+  const walk = (list: View[], depth: number) => {
+    for (const view of list) {
+      depths.set(view.view_id, depth);
+      if (view.children?.length) walk(view.children, depth + 1);
+    }
+  };
+
+  walk(views, 0);
+  return depths;
 }
 
 function collectViewPath(root: View, targetViewId: string): View[] | null {
@@ -277,6 +290,8 @@ const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
   410,
 ]);
 
+const PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS = 2;
+
 function getRefreshErrorCode(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
 
@@ -423,12 +438,14 @@ export function useWorkspaceData() {
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
-  const favoriteViewsLoadedRef = useRef(false);
+  const favoriteViewsRequestedRef = useRef(false);
+  const favoriteViewsRequestSeqRef = useRef(0);
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
   const trashRequestSeqRef = useRef(0);
   const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
+  const permissionRefreshRevisionRef = useRef(0);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
@@ -502,24 +519,36 @@ export function useWorkspaceData() {
   }, []);
 
   const refreshFavoriteViewsForWorkspace = useCallback(async (workspaceId: string) => {
+    favoriteViewsRequestedRef.current = true;
+    const requestSeq = ++favoriteViewsRequestSeqRef.current;
+    const workspaceRevision = workspaceRevisionRef.current;
+    const permissionRevision = permissionRefreshRevisionRef.current;
+    const isStaleRequest = () =>
+      currentWorkspaceIdRef.current !== workspaceId ||
+      workspaceRevisionRef.current !== workspaceRevision ||
+      permissionRefreshRevisionRef.current !== permissionRevision ||
+      favoriteViewsRequestSeqRef.current !== requestSeq;
+
     try {
       const res = await ViewService.getFavorites(workspaceId);
+
+      if (isStaleRequest()) return;
 
       if (!res) {
         throw new Error('Favorite views not found');
       }
 
-      favoriteViewsLoadedRef.current = true;
       setFavoriteViews(res);
       return res;
     } catch (e) {
+      if (isStaleRequest()) return;
       console.error('Favorite views not found');
     }
   }, []);
 
-  const refreshLoadedFavoriteViewsInBackground = useCallback(
+  const refreshRequestedFavoriteViewsInBackground = useCallback(
     (workspaceId: string) => {
-      if (!favoriteViewsLoadedRef.current) {
+      if (!favoriteViewsRequestedRef.current) {
         return;
       }
 
@@ -595,6 +624,8 @@ export function useWorkspaceData() {
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
       const workspaceRevision = workspaceRevisionRef.current;
+      const permissionRevision = permissionRefreshRevisionRef.current;
+      const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
       const requestSeq = ++rootOutlineRequestSeqRef.current;
 
       if (force) {
@@ -606,12 +637,15 @@ export function useWorkspaceData() {
         const [res, shareWithMeResult] = await Promise.all([
           ViewService.getOutline(workspaceId),
           AccessService.getShareWithMe(workspaceId).catch((error) => {
-            Log.error('[Outline] Failed to load shareWithMe data', error);
+            if (!isStalePermissionRequest()) {
+              Log.error('[Outline] Failed to load shareWithMe data', error);
+            }
+
             return null;
           }),
         ]);
 
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision) || isStalePermissionRequest()) {
           return;
         }
 
@@ -659,7 +693,10 @@ export function useWorkspaceData() {
         if (!shouldNavigate) return;
 
         try {
-          if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+          if (
+            isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq) ||
+            isStalePermissionRequest()
+          ) {
             return;
           }
 
@@ -693,14 +730,20 @@ export function useWorkspaceData() {
               try {
                 await ViewService.get(workspaceId, lastViewId);
 
-                if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+                if (
+                  isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq) ||
+                  isStalePermissionRequest()
+                ) {
                   return;
                 }
 
                 navigate(`/app/${workspaceId}/${lastViewId}${search}`);
                 return;
               } catch {
-                if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+                if (
+                  isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq) ||
+                  isStalePermissionRequest()
+                ) {
                   return;
                 }
 
@@ -739,7 +782,10 @@ export function useWorkspaceData() {
                 1
               );
 
-              if (isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq)) {
+              if (
+                isStaleForcedOutlineNavigation(workspaceId, workspaceRevision, requestSeq) ||
+                isStalePermissionRequest()
+              ) {
                 return;
               }
 
@@ -771,7 +817,7 @@ export function useWorkspaceData() {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
-        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq) || isStalePermissionRequest()) {
           return;
         }
 
@@ -795,7 +841,7 @@ export function useWorkspaceData() {
         if (e.code === ERROR_CODE.INVALID_FOLDER_VIEW) {
           Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
           setTimeout(() => {
-            if (!isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+            if (!isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq) && !isStalePermissionRequest()) {
               void loadOutline(workspaceId, force);
             }
           }, 3000);
@@ -938,6 +984,8 @@ export function useWorkspaceData() {
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
+      const permissionRevision = permissionRefreshRevisionRef.current;
+      const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
       const cachedViewData = ViewService.getCached(workspaceId, viewId);
       const cachedChildren = cachedViewData
         ? mergeCachedViewChildren(workspaceId, workspaceRevision, cachedViewData)
@@ -948,6 +996,8 @@ export function useWorkspaceData() {
 
         try {
           const diskCachedViewData = await ViewService.getCachedFromDisk(workspaceId, viewId);
+
+          if (isStalePermissionRequest()) return undefined;
 
           return diskCachedViewData
             ? mergeCachedViewChildren(workspaceId, workspaceRevision, diskCachedViewData)
@@ -994,10 +1044,12 @@ export function useWorkspaceData() {
           throw refreshed.error;
         }
 
+        if (isStalePermissionRequest()) return [];
+
         return mergeLoadedViewChildren(workspaceId, workspaceRevision, refreshed.viewData);
       } catch (e) {
-        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
-          return fallbackChildren ?? [];
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision) || isStalePermissionRequest()) {
+          return [];
         }
 
         Log.error('[Outline] [loadViewChildren] Failed to load children for', viewId, e);
@@ -1008,7 +1060,7 @@ export function useWorkspaceData() {
 
         return canUseFallbackForViewRefreshError(e) ? fallbackChildren ?? [] : [];
       } finally {
-        if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision) && !isStalePermissionRequest()) {
           loadingViewIdsRef.current.delete(viewId);
         }
       }
@@ -1028,10 +1080,12 @@ export function useWorkspaceData() {
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
+      const permissionRevision = permissionRefreshRevisionRef.current;
       const isStaleBatchRequest = () =>
-        rootRequestSeq === undefined
+        permissionRefreshRevisionRef.current !== permissionRevision ||
+        (rootRequestSeq === undefined
           ? isStaleWorkspaceRequest(workspaceId, workspaceRevision)
-          : isStaleRootOutlineRequest(workspaceId, workspaceRevision, rootRequestSeq);
+          : isStaleRootOutlineRequest(workspaceId, workspaceRevision, rootRequestSeq));
       const uniqueIds = Array.from(new Set(viewIds)).filter((viewId) => !loadingViewIdsRef.current.has(viewId));
 
       if (uniqueIds.length === 0) return [];
@@ -1105,7 +1159,10 @@ export function useWorkspaceData() {
         Log.error('[Outline] [loadViewChildrenBatch] Failed to load children for', uniqueIds, e);
         throw e;
       } finally {
-        if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        if (
+          !isStaleWorkspaceRequest(workspaceId, workspaceRevision) &&
+          permissionRefreshRevisionRef.current === permissionRevision
+        ) {
           uniqueIds.forEach((viewId) => loadingViewIdsRef.current.delete(viewId));
         }
       }
@@ -1163,10 +1220,15 @@ export function useWorkspaceData() {
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
+      const permissionRevision = permissionRefreshRevisionRef.current;
       const navigationRoot = await ViewService.getNavigation(workspaceId, viewId, 0);
       const path = collectViewPath(navigationRoot, viewId);
 
-      if (!path || isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+      if (
+        !path ||
+        isStaleWorkspaceRequest(workspaceId, workspaceRevision) ||
+        permissionRefreshRevisionRef.current !== permissionRevision
+      ) {
         return [];
       }
 
@@ -1267,6 +1329,8 @@ export function useWorkspaceData() {
 
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
+      const permissionRevision = permissionRefreshRevisionRef.current;
+      const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
       const requestSeq = ++rootOutlineRequestSeqRef.current;
       const outlineRequest = ViewService.getOutline(workspaceId);
       let res: Awaited<typeof outlineRequest>;
@@ -1274,14 +1338,14 @@ export function useWorkspaceData() {
       try {
         res = await outlineRequest;
       } catch (error) {
-        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq)) {
+        if (isStaleRootOutlineFailure(workspaceId, workspaceRevision, requestSeq) || isStalePermissionRequest()) {
           return 'unchanged';
         }
 
         throw error;
       }
 
-      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq) || isStalePermissionRequest()) {
         Log.debug('[Outline] [periodic-revalidate] skipped stale root response', {
           workspaceId,
         });
@@ -1343,7 +1407,7 @@ export function useWorkspaceData() {
       try {
         await loadViewChildrenBatch(refreshViewIds, requestSeq);
       } catch (error) {
-        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+        if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq) || isStalePermissionRequest()) {
           Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh error', {
             workspaceId,
             refreshViewIds,
@@ -1359,7 +1423,7 @@ export function useWorkspaceData() {
         throw error;
       }
 
-      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq)) {
+      if (isStaleRootOutlineRequest(workspaceId, workspaceRevision, requestSeq) || isStalePermissionRequest()) {
         Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh response', {
           workspaceId,
           refreshViewIds,
@@ -1386,6 +1450,16 @@ export function useWorkspaceData() {
 
   useEffect(() => {
     let cancelled = false;
+
+    const refreshPermissionDerivedState = () => {
+      if (!currentWorkspaceId) return;
+
+      // Access details and the sidebar outline are both permission-derived.
+      // Keep this refresh in the always-mounted workspace layer so permission
+      // notifications are handled even while the share panel is closed.
+      AccessService.invalidateShareDetailCache(currentWorkspaceId);
+      void loadOutline(currentWorkspaceId, false);
+    };
 
     const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
@@ -1425,11 +1499,7 @@ export function useWorkspaceData() {
       // Capture it before loadOutline can remove a newly revoked view.
       const cachedDatabaseId = changedView?.extra?.database_id;
 
-      // The access-details service keeps a short-lived resolved-promise cache.
-      // Notifications can come from another tab or client, so invalidate it
-      // before any consumer reacts to the changed outline.
-      AccessService.invalidateShareDetailCache(currentWorkspaceId);
-      void loadOutline(currentWorkspaceId, false);
+      refreshPermissionDerivedState();
 
       if (!changedViewId || !affectsCurrentUser) return;
 
@@ -1474,17 +1544,112 @@ export function useWorkspaceData() {
         });
     };
 
+    const handlePermissionChanged = () => {
+      if (!currentWorkspaceId) return;
+
+      // AppBusinessLayer handles the same event separately because it owns the
+      // active route/modal IDs and can re-probe and purge either rendered view.
+      // `objectId` can identify a workspace group rather than a view, so a
+      // targeted branch refresh is not reliable. Invalidate every subtree
+      // that could otherwise be grafted onto the depth-limited root response,
+      // and supersede lazy-load responses that started before this event.
+      permissionRefreshRevisionRef.current += 1;
+      const permissionRevision = permissionRefreshRevisionRef.current;
+      const workspaceId = currentWorkspaceId;
+      const viewDepths = buildViewDepthIndex(stableOutlineRef.current);
+      const staleSubtreeIds = Array.from(
+        new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current])
+      );
+      const staleSubtreeWaves = new Map<number, string[]>();
+
+      for (const viewId of staleSubtreeIds) {
+        const depth = viewDepths.get(viewId) ?? Number.MAX_SAFE_INTEGER;
+        const wave = staleSubtreeWaves.get(depth) ?? [];
+
+        wave.push(viewId);
+        staleSubtreeWaves.set(depth, wave);
+      }
+
+      let evictedOutline = stableOutlineRef.current;
+
+      for (const viewId of staleSubtreeIds) {
+        const subtreeRoot = findView(evictedOutline, viewId);
+
+        evictedOutline = mergeChildrenIntoOutline(
+          evictedOutline,
+          viewId,
+          [],
+          subtreeRoot?.has_children ?? Boolean(subtreeRoot?.children?.length)
+        );
+      }
+
+      if (evictedOutline !== stableOutlineRef.current) {
+        stableOutlineRef.current = evictedOutline;
+        setOutline(evictedOutline);
+        eventEmitter?.emit(APP_EVENTS.OUTLINE_LOADED, evictedOutline);
+      }
+
+      markCachedFolderSubtreesStale(currentWorkspaceId, staleSubtreeIds);
+      refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
+      refreshPermissionDerivedState();
+
+      // Restore still-authorized expanded branches from the server. Fetch each
+      // root independently so one revoked branch cannot suppress its siblings,
+      // and process parents before descendants so nested expansions can merge.
+      void (async () => {
+        const isCurrentPermissionRefresh = () =>
+          currentWorkspaceIdRef.current === workspaceId &&
+          permissionRefreshRevisionRef.current === permissionRevision;
+        const rehydrateView = async (viewId: string) => {
+          for (let attempt = 0; attempt < PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS; attempt += 1) {
+            if (!isCurrentPermissionRefresh()) return;
+
+            try {
+              await loadViewChildrenBatch([viewId]);
+              return;
+            } catch (error) {
+              // A definitive denial is the expected revoke path. Retry only
+              // transient/unknown failures so expanded authorized roots do not
+              // remain blank after a temporary transport error.
+              if (isAuthoritativeViewRefreshError(error)) return;
+            }
+          }
+        };
+
+        const waves = Array.from(staleSubtreeWaves.entries()).sort(
+          ([leftDepth], [rightDepth]) => leftDepth - rightDepth
+        );
+
+        for (const [, viewIds] of waves) {
+          if (!isCurrentPermissionRefresh()) return;
+
+          await Promise.all(viewIds.map(rehydrateView));
+        }
+      })();
+    };
+
     if (eventEmitter) {
       eventEmitter.on(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
+      eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     }
 
     return () => {
       cancelled = true;
       if (eventEmitter) {
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
+        eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
       }
     };
-  }, [currentWorkspaceId, currentUserEmail, eventEmitter, loadOutline, stableOutlineRef]);
+  }, [
+    currentWorkspaceId,
+    currentUserEmail,
+    eventEmitter,
+    loadViewChildrenBatch,
+    loadOutline,
+    markCachedFolderSubtreesStale,
+    refreshRequestedFavoriteViewsInBackground,
+    stableOutlineRef,
+  ]);
 
   useEffect(() => {
     const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {
@@ -1494,7 +1659,7 @@ export function useWorkspaceData() {
       if (!payload?.outlineDiffJson) {
         Log.debug('[Outline] [FolderOutlineChanged] No diff JSON, reloading outline');
         refreshTrashListInBackground();
-        refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+        refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
         void loadOutline(currentWorkspaceId, false);
         return;
       }
@@ -1535,7 +1700,7 @@ export function useWorkspaceData() {
 
       refreshTrashListInBackground();
       if (folderOutlinePatchMayAffectFavorites(patch)) {
-        refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+        refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
       }
 
       Log.debug('[Outline] [FolderOutlineChanged] parsed patch', patch);
@@ -1628,7 +1793,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
-    refreshLoadedFavoriteViewsInBackground,
+    refreshRequestedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     reconcilePendingFolderViewUpdates,
     replaceOutlinePreservingChildren,
@@ -1686,7 +1851,7 @@ export function useWorkspaceData() {
             eventEmitter?.emit(APP_EVENTS.VIEW_META_CHANGED, updatedView);
             nextOutline = updateViewInOutline(nextOutline, updatedView);
             if (previousView?.is_favorite !== updatedView.is_favorite) {
-              refreshLoadedFavoriteViewsInBackground(currentWorkspaceId);
+              refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
             }
           } catch (error) {
             Log.warn('[Outline] [FolderViewChanged] Failed to parse view_json for fields changed', error);
@@ -1798,7 +1963,7 @@ export function useWorkspaceData() {
     currentWorkspaceId,
     eventEmitter,
     loadOutline,
-    refreshLoadedFavoriteViewsInBackground,
+    refreshRequestedFavoriteViewsInBackground,
     refreshTrashListInBackground,
     stableOutlineRef,
     updateLastFolderRid,
@@ -1986,7 +2151,7 @@ export function useWorkspaceData() {
     // `undefined` (the unloaded state) also lets lazy consumers — e.g. the
     // header FavoriteButton — detect the stale state and refetch for the new
     // workspace instead of rendering the previous workspace's favorites.
-    favoriteViewsLoadedRef.current = false;
+    favoriteViewsRequestedRef.current = false;
     setFavoriteViews(undefined);
     setRecentViews(undefined);
     // Deleted-page routing derives from `trashList` — without this reset the

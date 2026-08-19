@@ -1426,6 +1426,158 @@ export enum SpacePermission {
   Private = 1,
 }
 
+export enum SpaceVisibility {
+  Default = 'default',
+  Open = 'open',
+  Closed = 'closed',
+  Private = 'private',
+}
+
+export enum SpaceMemberRole {
+  Owner = 'owner',
+  Member = 'member',
+}
+
+export enum SpaceInvitePolicy {
+  OwnersOnly = 'owners_only',
+  MembersAndOwners = 'members_and_owners',
+}
+
+export enum SpaceSidebarEditPolicy {
+  OwnersOnly = 'owners_only',
+  MembersAndOwners = 'members_and_owners',
+}
+
+export interface SpaceSecuritySettings {
+  disable_guests: boolean;
+  disable_public_links: boolean;
+  disable_export: boolean;
+}
+
+export interface SpacePermissionSettings {
+  visibility: SpaceVisibility;
+  owner_access_level: AccessLevel;
+  member_default_access_level: AccessLevel;
+  everyone_else_access_level?: AccessLevel | null;
+  invite_policy: SpaceInvitePolicy;
+  sidebar_edit_policy: SpaceSidebarEditPolicy;
+  invite_link_enabled: boolean;
+  security: SpaceSecuritySettings;
+}
+
+export interface StructuredSpace {
+  view_id: string;
+}
+
+export interface UpdateStructuredSpacePayload {
+  name?: string;
+  space_icon?: string;
+  space_icon_color?: string;
+  permission?: SpacePermissionSettings;
+}
+
+export interface SpacePermissionResponse {
+  space_id: string;
+  permission: SpacePermissionSettings;
+  current_user_access_level?: AccessLevel | null;
+  can_manage_space: boolean;
+  can_manage_members: boolean;
+  can_invite_members: boolean;
+  can_edit_sidebar: boolean;
+  explicit_member_count: number;
+}
+
+export interface SpaceListItem {
+  space_id: string;
+  name: string;
+  permission: SpacePermissionSettings;
+  current_user_access_level?: AccessLevel | null;
+  explicit_member_count: number;
+  is_explicit_member: boolean;
+  can_join: boolean;
+  can_leave: boolean;
+}
+
+export interface Spaces {
+  spaces: SpaceListItem[];
+}
+
+export interface SpaceMember {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+  source: string;
+}
+
+export interface WorkspaceGroupSpacePermission {
+  group_id: string;
+  name: string;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+  member_count: number;
+  source: string;
+}
+
+export interface WorkspaceGroupViewPermission {
+  group_id: string;
+  name: string;
+  access_level: AccessLevel;
+  member_count: number;
+  source: string;
+}
+
+export interface SpaceMembers {
+  members: SpaceMember[];
+  groups: WorkspaceGroupSpacePermission[];
+}
+
+export interface AddSpaceMemberPayload {
+  uid: string;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+}
+
+export interface UpdateSpaceMemberPayload {
+  role?: SpaceMemberRole;
+  access_level?: AccessLevel;
+}
+
+export interface WorkspaceGroup {
+  group_id: string;
+  name: string;
+  member_count: number;
+  /** `scim` groups are owned by the external directory and are read-only. */
+  source?: string;
+}
+
+export interface WorkspaceGroups {
+  groups: WorkspaceGroup[];
+}
+
+export interface CreateWorkspaceGroupPayload {
+  name: string;
+}
+
+export interface UpdateWorkspaceGroupPayload {
+  name: string;
+}
+
+export interface WorkspaceGroupMember {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+}
+
+export interface WorkspaceGroupMembers {
+  members: WorkspaceGroupMember[];
+}
+
+export interface AddWorkspaceGroupMemberPayload {
+  uid: string;
+}
+
 /**
  * Represents the space info of a view.
  * Aligned with Desktop/Flutter `SpaceInfo` struct.
@@ -1636,6 +1788,7 @@ export enum Role {
 }
 
 export interface WorkspaceMember {
+  uid?: string;
   name: string;
   email: string;
   avatar_url: string;
@@ -1802,8 +1955,11 @@ export interface ViewComponentProps {
 export interface CreatePagePayload {
   layout: ViewLayout;
   name?: string;
+  page_data?: unknown;
+  /** Use a caller-generated view ID. The backend generates one when omitted. */
+  view_id?: string;
   /** Insert the new page after this sibling. When omitted the backend prepends. */
-  prev_view_id?: string;
+  prev_view_id?: string | null;
 }
 
 export interface CreatePageResponse {
@@ -1905,14 +2061,12 @@ export interface CreateSpacePayload {
   name?: string;
   space_icon?: string;
   space_icon_color?: string;
+  view_id?: string;
+  permission?: SpacePermissionSettings;
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
 }
 
-export interface CreateSpaceInitialPagePayload extends Omit<CreatePagePayload, 'prev_view_id'> {
-  page_data?: unknown;
-  view_id?: string;
-  prev_view_id?: string | null;
-}
+export type CreateSpaceInitialPagePayload = CreatePagePayload;
 
 export interface CreateSpaceWithInitialPagePayload extends CreateSpacePayload {
   initial_page: CreateSpaceInitialPagePayload;
@@ -2074,6 +2228,7 @@ export interface ShareAccessDetails {
   };
   current_user_permission?: ObjectPermission | null;
   shared_with: IPeopleWithAccessType[];
+  groups?: WorkspaceGroupViewPermission[];
 }
 
 export enum AccessLevel {
