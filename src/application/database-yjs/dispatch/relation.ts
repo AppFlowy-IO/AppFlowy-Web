@@ -624,39 +624,42 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         ? parseRelationTypeOption(reciprocalField).source_limit
         : RelationLimit.NoLimit;
 
-      await Promise.all(effectiveChanges.removedRowIds.map(async (targetRowId) => {
-        const targetRowDoc = await loadRowDoc({
-          databaseDoc: relatedDoc,
-          rowId: targetRowId,
+      // `applyRelationCellChangeset` returns disjoint inserted/removed sets, so the two sides
+      // touch different target rows and can load their row docs concurrently.
+      await Promise.all([
+        ...effectiveChanges.removedRowIds.map(async (targetRowId) => {
+          const targetRowDoc = await loadRowDoc({
+            databaseDoc: relatedDoc,
+            rowId: targetRowId,
+            createRow,
+            rowMap: relatedDoc === context.databaseDoc ? rowMap : undefined,
+          });
+
+          if (!targetRowDoc) return;
+
+          applyRelationCellChanges(
+            targetRowDoc,
+            typeOption.reciprocal_field_id as FieldId,
+            { removedRowIds: [rowId] },
+            reciprocalLimit,
+            actorUid
+          );
+        }),
+        applyRelationReciprocalInserts({
+          sourceRowId: rowId,
+          sourceFieldId: fieldId,
+          insertedRowIds: effectiveChanges.insertedRowIds,
+          database,
+          databaseDoc: context.databaseDoc,
+          rowMap,
           createRow,
-          rowMap: relatedDoc === context.databaseDoc ? rowMap : undefined,
-        });
-
-        if (!targetRowDoc) return;
-
-        applyRelationCellChanges(
-          targetRowDoc,
-          typeOption.reciprocal_field_id as FieldId,
-          { removedRowIds: [rowId] },
-          reciprocalLimit,
-          actorUid
-        );
-      }));
-
-      await applyRelationReciprocalInserts({
-        sourceRowId: rowId,
-        sourceFieldId: fieldId,
-        insertedRowIds: effectiveChanges.insertedRowIds,
-        database,
-        databaseDoc: context.databaseDoc,
-        rowMap,
-        createRow,
-        loadView,
-        getViewIdFromDatabaseId,
-        bindViewSync,
-        actorUid,
-        relatedDoc,
-      });
+          loadView,
+          getViewIdFromDatabaseId,
+          bindViewSync,
+          actorUid,
+          relatedDoc,
+        }),
+      ]);
     },
     [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowId, rowMap]
   );

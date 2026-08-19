@@ -139,7 +139,7 @@ function RelationCellMenuContent({
   // picker would announce "no result" on the strength of it. Nothing may be concluded from an
   // empty list until this flips.
   const [rowIdsLoaded, setRowIdsLoaded] = useState(false);
-  const [rowContents, setRowContents] = useState<Map<string, string>>(new Map());
+  const [rowContents, setRowContents] = useState<Map<string, string>>(() => new Map());
   const rowDocsRef = useRef<Map<string, YDoc>>(new Map());
   const targetDocRef = useRef<YDoc | null>(null);
   const [isCreatingAndLinking, setIsCreatingAndLinking] = useState(false);

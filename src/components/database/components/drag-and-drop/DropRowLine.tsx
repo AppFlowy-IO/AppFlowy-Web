@@ -5,12 +5,15 @@ interface DropIndicatorProps {
   style?: React.CSSProperties;
 }
 
+/** Stable default, so omitting `style` does not spread a fresh object on every render. */
+const NO_STYLE: React.CSSProperties = {};
+
 /**
  * Plain horizontal drop line (no knob, no rounding) for vertical lists such as
  * the sidebar. The knobbed {@link DropRowIndicator} is kept for the grid/
  * property reordering where that affordance is wanted.
  */
-function DropRowLine({ edge, style = {} }: DropIndicatorProps) {
+function DropRowLine({ edge, style = NO_STYLE }: DropIndicatorProps) {
   if (!edge) return null;
 
   return (
