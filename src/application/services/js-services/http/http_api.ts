@@ -72,6 +72,8 @@ export {
   getAppOutline,
   getView,
   getViews,
+  getWorkspaceDatabaseListPage,
+  listWorkspaceDatabases,
   getAppFavorites,
   getAppRecent,
   getAppTrash,

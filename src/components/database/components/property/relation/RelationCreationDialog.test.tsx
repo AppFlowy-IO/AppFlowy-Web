@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import en from '@/@types/translations/en.json';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
-import { getMultiple as getViews } from '@/application/services/domains/view';
+import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { View, ViewLayout } from '@/application/types';
 import { RelationCreationDialog } from '@/components/database/components/property/relation/RelationCreationDialog';
 
@@ -14,7 +15,32 @@ jest.mock('@/application/database-yjs', () => ({
 }));
 
 jest.mock('@/application/services/domains/view', () => ({
-  getMultiple: jest.fn(),
+  databaseCatalogViewToView: (databaseId: string, view: WorkspaceDatabaseWithViews['views'][number]) => ({
+    view_id: view.view_id,
+    name: view.name,
+    icon: view.icon,
+    layout: view.layout,
+    extra: {
+      database_id: databaseId,
+      embedded: view.embedded,
+      is_database_container: view.is_container,
+      is_space: false,
+    },
+    children: [],
+    is_published: false,
+    is_private: false,
+    parent_view_id: view.parent_view_id ?? undefined,
+  }),
+  getDatabaseContainerEntries: (databases: WorkspaceDatabaseWithViews[]) =>
+    databases.flatMap((database) => {
+      const container = database.views.find((view) => view.is_container);
+      const primaryView =
+        database.views.find((view) => !view.is_container && !view.embedded) ??
+        database.views.find((view) => !view.is_container);
+
+      return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
+    }),
+  refreshWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
 // Resolve against the real bundle so the assertions below read as the copy the
@@ -124,29 +150,51 @@ const defaultViewsById: Record<string, View> = {
 };
 
 function mockViews(viewsById: Record<string, View>) {
-  (getViews as jest.MockedFunction<typeof getViews>).mockImplementation(async (_workspaceId, viewIds) => {
-    return viewIds.map((viewId) => viewsById[viewId]).filter((view): view is View => Boolean(view));
-  });
+  const viewsByDatabaseId = new Map<string, View[]>();
+
+  for (const view of Object.values(viewsById)) {
+    const databaseId = view.extra?.database_id;
+
+    if (!databaseId) continue;
+    const views = viewsByDatabaseId.get(databaseId) ?? [];
+
+    views.push(view);
+    viewsByDatabaseId.set(databaseId, views);
+  }
+
+  jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue(
+    Array.from(viewsByDatabaseId.entries()).map(([databaseId, views]) => ({
+      database_id: databaseId,
+      views: views.map((view) => ({
+        view_id: view.view_id,
+        layout: view.layout,
+        is_container: Boolean(view.extra?.is_database_container),
+        embedded: Boolean(view.extra?.embedded),
+        name: view.name,
+        icon: view.icon,
+        parent_view_id: view.parent_view_id ?? null,
+      })),
+    }))
+  );
 }
 
 function mockContext({
   viewsById = defaultViewsById,
   databasePageId = currentGrid.view_id,
   loadViewMeta = jest.fn(async (viewId: string) => viewsById[viewId] ?? null),
+  loadViews = jest.fn(async () => Object.values(viewsById)),
 }: {
   viewsById?: Record<string, View>;
   databasePageId?: string;
   loadViewMeta?: jest.Mock;
+  loadViews?: jest.Mock;
 } = {}) {
   (useDatabaseContext as jest.Mock).mockReturnValue({
     workspaceId: 'workspace-1',
     databaseDoc: { guid: 'current-database' },
     databasePageId,
-    loadDatabaseRelations: jest.fn().mockResolvedValue({
-      'current-database': currentGrid.view_id,
-      'related-database': relatedGrid.view_id,
-    }),
     loadViewMeta,
+    loadViews,
   });
 
   return loadViewMeta;
@@ -201,13 +249,7 @@ describe('RelationCreationDialog', () => {
     expect(currentCandidate.textContent).not.toContain('Grid');
     expect(relatedCandidate.textContent).not.toContain('Grid');
 
-    expect(getViews).toHaveBeenNthCalledWith(1, 'workspace-1', [currentGrid.view_id, relatedGrid.view_id], 0);
-    expect(getViews).toHaveBeenNthCalledWith(
-      2,
-      'workspace-1',
-      [currentContainer.view_id, relatedContainer.view_id],
-      0
-    );
+    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
     expect(loadViewMeta).not.toHaveBeenCalled();
   });
 
@@ -303,15 +345,29 @@ describe('RelationCreationDialog', () => {
     expect(screen.getByTestId('relation-limit-trigger').textContent).toContain('1 page only');
   });
 
-  it('falls back to individual view metadata when batch loading is unavailable', async () => {
-    (getViews as jest.MockedFunction<typeof getViews>).mockRejectedValue(new Error('Batch endpoint unavailable'));
-    const loadViewMeta = mockContext();
+  it('does not list a database view when the server has no container for it', async () => {
+    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([
+      {
+        database_id: 'related-database',
+        views: [
+          {
+            view_id: 'related-grid',
+            layout: ViewLayout.Grid,
+            is_container: false,
+            embedded: false,
+            name: 'Grid',
+            icon: null,
+            parent_view_id: null,
+          },
+        ],
+      },
+    ]);
+    mockContext({ loadViews: jest.fn().mockResolvedValue([]) });
 
     renderDialog();
     await openDatabaseDropdown();
 
-    expect((await screen.findByTestId('relation-candidate-current-database')).textContent).toContain('To-dos');
-    expect(screen.getByTestId('relation-candidate-related-database').textContent).toContain('Product roadmap');
-    expect(loadViewMeta).toHaveBeenCalledTimes(4);
+    expect(await screen.findByText(translate('grid.relation.emptySearchResult'))).not.toBeNull();
+    expect(screen.queryByTestId('relation-candidate-related-database')).toBeNull();
   });
 });

@@ -11,11 +11,14 @@ import {
   createLinkedDatabaseGalleryView,
 } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
+import {
+  databaseCatalogViewToView,
+  getDatabaseContainerEntries,
+  refreshWorkspaceDatabaseCatalog,
+} from '@/application/services/domains/view';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
-import { applyYDoc } from '@/application/ydoc/apply';
-import { getFirstChildView } from '@/application/view-utils';
 import {
   findSlateEntryByBlockId,
   getBlockEntry,
@@ -44,6 +47,7 @@ import {
   ViewLayout,
   YjsEditorKey,
 } from '@/application/types';
+import { applyYDoc } from '@/application/ydoc/apply';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
@@ -62,7 +66,6 @@ import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
-import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
 import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
@@ -75,6 +78,7 @@ import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { ReactComponent as QuoteIcon } from '@/assets/icons/quote.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
+import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
 import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
 import { ReactComponent as ToggleHeading1Icon } from '@/assets/icons/toggle_h1.svg';
@@ -101,7 +105,7 @@ import { Separator } from '@/components/ui/separator';
 import { Log } from '@/utils/log';
 import { getCharacters } from '@/utils/word';
 
-import { getDatabaseBlockTypeForLayout, isSlashMenuDatabaseLayout } from './database-layout';
+import { getDatabaseBlockTypeForLayout } from './database-layout';
 import {
   filterSlashMenuOptions,
   groupSlashMenuOptions,
@@ -111,6 +115,7 @@ import {
 
 type DatabaseOption = {
   databaseId: string;
+  sourceViewId: string;
   view: View;
 };
 
@@ -248,6 +253,7 @@ export function SlashPanel({
   const {
     addPage,
     openPageModal,
+    workspaceId,
     viewId: documentId,
     loadViewMeta,
     loadView,
@@ -257,8 +263,6 @@ export function SlashPanel({
     updatePage,
     getMoreAIContext,
     createDatabaseView,
-    loadViews,
-    loadDatabaseRelations,
   } = useEditorContext();
   const [viewName, setViewName] = useState('');
   const [linkedPicker, setLinkedPicker] = useState<{
@@ -267,8 +271,8 @@ export function SlashPanel({
   } | null>(null);
   const [linkedTransformOrigin, setLinkedTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
   const [databaseSearch, setDatabaseSearch] = useState('');
-  const [databaseOutline, setDatabaseOutline] = useState<View[]>([]);
   const [databaseOptions, setDatabaseOptions] = useState<DatabaseOption[]>([]);
+  const databaseOutline = useMemo(() => databaseOptions.map((option) => option.view), [databaseOptions]);
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
 
@@ -570,58 +574,23 @@ export function SlashPanel({
   const aiEnabled = useAIEnabled();
 
   const loadDatabasesForPicker = useCallback(async () => {
-    if (!loadViews) return false;
+    if (!workspaceId) return false;
     setDatabaseLoading(true);
     setDatabaseError(null);
 
     try {
-      const views = (await loadViews()) || [];
-
-      setDatabaseOutline(views);
-
-      // Collect selectable database IDs by walking the tree structure.
-      // This preserves parent-child relationships so we can distinguish between:
-      // 1. Database containers (v0.10.7+) - always selectable
-      // 2. Legacy top-level databases (pre-v0.10.7) - selectable
-      // 3. Child views of containers/databases - NOT selectable (hidden)
-      const selectableDatabaseViews: View[] = [];
-
-      const collectSelectable = (items: View[], parentIsDatabase: boolean) => {
-        for (const view of items) {
-          if (isSlashMenuDatabaseLayout(view.layout)) {
-            if (view.extra?.is_database_container) {
-              // Case 1: Database container - always selectable
-              selectableDatabaseViews.push(view);
-              collectSelectable(view.children || [], true);
-            } else if (!parentIsDatabase && !view.extra?.embedded) {
-              // Case 2: Legacy top-level database (not a child of another database,
-              // not embedded in a document). These were created before the container
-              // system and should still be linkable via the slash menu.
-              selectableDatabaseViews.push(view);
-              collectSelectable(view.children || [], true);
-            } else {
-              // Case 3: Child view of a database or embedded view - not selectable
-              collectSelectable(view.children || [], parentIsDatabase);
-            }
-          } else {
-            // Non-database view (document, space, etc.) - recurse into children
-            collectSelectable(view.children || [], parentIsDatabase);
-          }
-        }
-      };
-
-      collectSelectable(views, false);
-
-      // Build options - databaseId will be fetched from viewMeta when user selects
-      // The outline API doesn't include database_relations, so we set empty string here
-      const options: DatabaseOption[] = selectableDatabaseViews.map((view) => ({
-        databaseId: '', // Will be fetched from loadViewMeta in handleSelectDatabase
-        view,
-      }));
+      const databases = await refreshWorkspaceDatabaseCatalog(workspaceId);
+      const options = getDatabaseContainerEntries(databases).map<DatabaseOption>(
+        ({ databaseId, container, primaryView }) => ({
+          databaseId,
+          sourceViewId: primaryView.view_id,
+          view: databaseCatalogViewToView(databaseId, container),
+        })
+      );
 
       Log.debug('[SlashPanel] loadDatabasesForPicker:', {
-        databaseViews: selectableDatabaseViews.length,
-        databaseViewNames: selectableDatabaseViews.map((v) => v.name),
+        databaseViews: options.length,
+        databaseViewNames: options.map(({ view }) => view.name),
       });
 
       setDatabaseOptions(options);
@@ -631,13 +600,12 @@ export function SlashPanel({
 
       notify.error(error.message);
       setDatabaseError(error.message);
-      setDatabaseOutline([]);
       setDatabaseOptions([]);
       return false;
     } finally {
       setDatabaseLoading(false);
     }
-  }, [loadViews]);
+  }, [workspaceId]);
 
   const handleOpenLinkedDatabasePicker = useCallback(
     async (layout: ViewLayout, optionKey: string) => {
@@ -695,73 +663,13 @@ export function SlashPanel({
       try {
         const databaseViewId = option.view.view_id;
         const baseName = option.view.name || t('document.view.placeholder', { defaultValue: 'Untitled' });
-
-        // Database ID is available on database containers and database views via `extra.database_id`.
-        // Prefer the outline value, then fallback to view meta / legacy database_relations mapping.
-        let databaseId = option.view.extra?.database_id;
-        let viewMeta: View | null = null;
-
-        if (!databaseId) {
-          if (!loadViewMeta) {
-            notify.error(
-              t('document.slashMenu.linkedDatabase.actionUnavailable', {
-                defaultValue: 'Unable to fetch database information',
-              })
-            );
-            return;
-          }
-
-          viewMeta = await loadViewMeta(databaseViewId);
-          databaseId = viewMeta?.extra?.database_id;
-        }
-
-        if (!databaseId && viewMeta?.database_relations) {
-          // database_relations is Record<DatabaseId, ViewId>
-          // Find the entry where the value (base view id) matches this view
-          let relationEntry = Object.entries(viewMeta.database_relations).find(
-            ([_, baseViewId]) => baseViewId === databaseViewId
-          );
-
-          // If not found, try refreshing database relations (for newly created databases)
-          if (!relationEntry && loadDatabaseRelations) {
-            Log.debug('[SlashPanel] database_id not found in cache, refreshing relations...', {
-              viewId: databaseViewId,
-            });
-
-            // Refresh and get fresh relations directly (don't rely on React state update)
-            const freshRelations = await loadDatabaseRelations();
-
-            Log.debug('[SlashPanel] Fresh relations after refresh:', {
-              viewId: databaseViewId,
-              freshRelations,
-            });
-
-            if (freshRelations) {
-              relationEntry = Object.entries(freshRelations).find(([_, baseViewId]) => baseViewId === databaseViewId);
-            }
-          }
-
-          if (relationEntry) {
-            databaseId = relationEntry[0];
-          }
-        }
+        const databaseId = option.databaseId;
 
         Log.debug('[SlashPanel] resolved database_id:', {
           targetViewId: databaseViewId,
           databaseId,
-          fromOutlineExtra: Boolean(option.view.extra?.database_id),
-          fromViewMetaExtra: Boolean(viewMeta?.extra?.database_id),
-          hasDatabaseRelations: Boolean(viewMeta?.database_relations),
+          source: 'workspace database catalog',
         });
-
-        if (!databaseId) {
-          notify.error(
-            t('document.slashMenu.linkedDatabase.actionUnavailable', {
-              defaultValue: 'Could not find database ID',
-            })
-          );
-          return;
-        }
 
         Log.debug('[SlashPanel] Found database_id:', {
           viewId: databaseViewId,
@@ -799,7 +707,7 @@ export function SlashPanel({
           }
         })();
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
-        const sourceViewId = getFirstChildView(option.view)?.view_id ?? databaseViewId;
+        const sourceViewId = option.sourceViewId;
 
         const response =
           linkedPicker.layout === ViewLayout.List
@@ -896,8 +804,6 @@ export function SlashPanel({
       bindViewSync,
       deletePage,
       loadView,
-      loadViewMeta,
-      loadDatabaseRelations,
       scheduleDeferredCleanup,
     ]
   );

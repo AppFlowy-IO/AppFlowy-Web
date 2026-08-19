@@ -18,3 +18,13 @@ export {
   refreshAppTrashCache as refreshTrash,
   getAppDatabaseViewRelationsFromCollab as getDatabaseRelations,
 } from '../js-services/cached-api';
+export {
+  databaseCatalogViewToView,
+  type DatabaseContainerCatalogEntry,
+  getDatabaseContainerEntries,
+  getDatabaseContainerView,
+  getDatabaseIdFromWorkspaceCatalog,
+  getDatabasePrimaryView,
+  getViewIdFromWorkspaceCatalog,
+  refreshWorkspaceDatabaseCatalog,
+} from '../js-services/workspace-database-catalog';

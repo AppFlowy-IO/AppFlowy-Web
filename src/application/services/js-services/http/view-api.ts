@@ -1,10 +1,15 @@
-import { AppOutlineResponse } from '@/application/services/services.type';
+import {
+  AppOutlineResponse,
+  WorkspaceDatabaseListPage,
+  WorkspaceDatabaseWithViews,
+} from '@/application/services/services.type';
 import { CreateOrphanedViewPayload, View } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
 const MAX_WORKSPACE_VIEW_SUBTREES_GET_URL_BYTES = 4096;
 const WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE = 50;
+const WORKSPACE_DATABASE_LIST_PAGE_SIZE = 200;
 
 export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
   const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=6`;
@@ -25,6 +30,45 @@ export async function getViewNavigation(workspaceId: string, viewId: string, dep
   const url = `/api/workspace/${workspaceId}/view/${viewId}/navigation?depth=${depth}`;
 
   return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
+}
+
+export async function getWorkspaceDatabaseListPage(
+  workspaceId: string,
+  offset: number,
+  limit: number = WORKSPACE_DATABASE_LIST_PAGE_SIZE
+): Promise<WorkspaceDatabaseListPage> {
+  const url = `/api/workspace/${workspaceId}/database`;
+
+  return executeAPIRequest<WorkspaceDatabaseListPage>(() =>
+    getAxios()?.get<APIResponse<WorkspaceDatabaseListPage>>(url, {
+      params: { offset, limit },
+    })
+  );
+}
+
+/**
+ * Load every database visible to the current user.
+ *
+ * Supplying pagination parameters opts into the metadata-rich database-list
+ * response; an unparameterized request is the legacy compatibility endpoint.
+ */
+export async function listWorkspaceDatabases(workspaceId: string): Promise<WorkspaceDatabaseWithViews[]> {
+  const databases: WorkspaceDatabaseWithViews[] = [];
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const page = await getWorkspaceDatabaseListPage(workspaceId, offset);
+
+    databases.push(...page.databases);
+    // Advance by what the server actually returned — it may cap pages below the
+    // requested limit. An empty page ends the loop even if has_more is set.
+    if (page.databases.length === 0) break;
+    hasMore = page.has_more;
+    offset += page.databases.length;
+  }
+
+  return databases;
 }
 
 export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2) {
