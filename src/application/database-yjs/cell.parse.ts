@@ -20,6 +20,7 @@ import {
   parseNumberTypeOptions,
   stringifyDesktopNumberValue,
 } from '@/application/database-yjs/fields/number/parse';
+import { isFileMediaItem } from '@/application/database-yjs/fields/media/parse';
 import {
   parseCheckboxValue,
   parseDesktopCheckboxValue,
@@ -358,7 +359,7 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
     try {
       const parsed = JSON.parse(item);
 
-      if (parsed && typeof parsed === 'object') {
+      if (isFileMediaItem(parsed)) {
         dataJson.push(parsed);
       }
     } catch (e) {

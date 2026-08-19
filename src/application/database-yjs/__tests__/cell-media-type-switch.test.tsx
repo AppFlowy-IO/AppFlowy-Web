@@ -11,7 +11,7 @@ import {
 } from '@/application/database-yjs';
 import { parseYDatabaseFileMediaCellToCell } from '@/application/database-yjs/cell.parse';
 import { FileMediaCellDataItem, FileMediaType, FileMediaUploadType } from '@/application/database-yjs/cell.type';
-import { countFileMediaItems, toFileMediaCellData } from '@/application/database-yjs/fields/media/parse';
+import { countFileMediaItems, toFileMediaCellData, updateFileName } from '@/application/database-yjs/fields/media/parse';
 import {
   YDatabase,
   YDatabaseCell,
@@ -81,7 +81,7 @@ function createTextFieldFixture() {
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 
-  return { field, wrapper };
+  return { field, wrapper, rowDoc };
 }
 
 function createMediaCell(entries: string[]): YDatabaseCell {
@@ -154,6 +154,23 @@ describe('switching a Text property to Files & media', () => {
     });
     expect(result.current?.data).toBe(TEXT_CELL_VALUE);
   });
+
+  it('keeps the parsed value stable when another cell in the row changes', () => {
+    const { wrapper, rowDoc } = createTextFieldFixture();
+    const { result } = renderHook(() => useCellSelector({ rowId, fieldId }), { wrapper });
+    const before = result.current;
+
+    act(() => {
+      const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      const otherCell = new Y.Map() as YDatabaseCell;
+
+      row.get(YjsDatabaseKey.cells).set('other-field', otherCell);
+      otherCell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+      otherCell.set(YjsDatabaseKey.data, 'unrelated');
+    });
+
+    expect(result.current).toBe(before);
+  });
 });
 
 describe('toFileMediaCellData', () => {
@@ -166,6 +183,23 @@ describe('toFileMediaCellData', () => {
 
   it('drops entries that are not media items', () => {
     expect(toFileMediaCellData([mediaItem, null, undefined, 'row-id'])).toEqual([mediaItem]);
+  });
+
+  it('drops objects that do not carry a media item id', () => {
+    expect(toFileMediaCellData([mediaItem, {}, { id: 42 }, ['nested']])).toEqual([mediaItem]);
+  });
+});
+
+describe('updateFileName', () => {
+  it('renames without mutating the item it was given', () => {
+    const original = { ...mediaItem };
+    const result = updateFileName({ data: [original], fileId: original.id, newName: 'renamed.pdf' });
+
+    // Integrate the array into a doc so its contents can be read back.
+    new Y.Doc().getMap('root').set('data', result);
+
+    expect(original.name).toBe(mediaItem.name);
+    expect(JSON.parse(result.get(0)).name).toBe('renamed.pdf');
   });
 });
 
@@ -195,7 +229,7 @@ describe('parseYDatabaseFileMediaCellToCell', () => {
   });
 
   it('skips entries a different field type wrote instead of throwing', () => {
-    const cell = createMediaCell(['a4d0b3f2-not-json', JSON.stringify(mediaItem), '"just a string"']);
+    const cell = createMediaCell(['a4d0b3f2-not-json', JSON.stringify(mediaItem), '"just a string"', '{}']);
 
     expect(parseYDatabaseFileMediaCellToCell(cell).data).toEqual([mediaItem]);
   });

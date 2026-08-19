@@ -9,6 +9,8 @@ import {
   FileMediaType,
   FileMediaUploadType,
 } from '@/application/database-yjs/cell.type';
+import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
 import FileMediaCell from '../file-media/FileMediaCell';
@@ -26,10 +28,8 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { useFieldSelector } = require('@/application/database-yjs/selector');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { useUpdateCellDispatch } = require('@/application/database-yjs/dispatch');
+const mockUseFieldSelector = jest.mocked(useFieldSelector);
+const mockUseUpdateCellDispatch = jest.mocked(useUpdateCellDispatch);
 
 const fieldId = 'field-id';
 const rowId = 'row-id';
@@ -102,8 +102,8 @@ describe('row-detail FileMediaCell', () => {
   });
 
   beforeEach(() => {
-    (useFieldSelector as jest.Mock).mockReturnValue({ field: createMediaField(), clock: 0 });
-    (useUpdateCellDispatch as jest.Mock).mockReturnValue(jest.fn());
+    mockUseFieldSelector.mockReturnValue({ field: createMediaField(), clock: 0 });
+    mockUseUpdateCellDispatch.mockReturnValue(jest.fn());
   });
 
   it('renders a file grid for the files it was given', () => {

@@ -1,11 +1,17 @@
 import * as Y from 'yjs';
 
-import { getTypeOptions } from '@/application/database-yjs';
+// Import from the defining module, not the package barrel: cell.parse.ts uses
+// isFileMediaItem below, and going through the barrel would be circular.
 import { FileMediaCellData, FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
+import { getTypeOptions } from '@/application/database-yjs/fields/type_option';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
-function isFileMediaItem (item: unknown): item is FileMediaCellDataItem {
-  return Boolean(item) && typeof item === 'object';
+export function isFileMediaItem (item: unknown): item is FileMediaCellDataItem {
+  return (
+    Boolean(item) &&
+    typeof item === 'object' &&
+    typeof (item as { id?: unknown }).id === 'string'
+  );
 }
 
 /**
@@ -67,12 +73,11 @@ export function updateFileName ({ data, fileId, newName }: {
   const newData = new Y.Array<string>();
 
   toFileMediaCellData(data).forEach((item) => {
+    // Copy instead of assigning: `item` is the object held in the parsed cell
+    // state the UI is currently rendering.
+    const next = item.id === fileId ? { ...item, name: newName } : item;
 
-    if (item.id === fileId) {
-      item.name = newName;
-    }
-
-    newData.push([JSON.stringify(item)]);
+    newData.push([JSON.stringify(next)]);
   });
 
   return newData;

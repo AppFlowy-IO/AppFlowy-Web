@@ -2922,31 +2922,43 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cell, field, fieldType, fieldClock, clock]);
 
-  useEffect(() => {
-    const observerEvent = () => {
-      setClock((prev) => prev + 1);
-    };
+  // Lets the effect below compare a fresh parse against the value the UI
+  // rendered without re-running on every clock bump.
+  const cellValueRef = useRef(cellValue);
 
-    cell?.observeDeep(observerEvent);
-
-    return () => {
-      cell?.unobserveDeep(observerEvent);
-    };
-  }, [cell]);
+  cellValueRef.current = cellValue;
 
   useEffect(() => {
     if (!cells) return;
 
-    const observerEvent = () => {
+    const bump = () => {
       setClock((prev) => prev + 1);
     };
 
-    cells.observe(observerEvent);
+    const onCellsChange = (event: unknown) => {
+      // Scoped to this column: replacing another cell in the row must not
+      // re-parse every cell hook on the row.
+      if (yjsEventChangesKey(event, fieldId)) bump();
+    };
+
+    cells.observe(onCellsChange);
+    cell?.observeDeep(bump);
+
+    // A mutation can land between render (which parsed the cell) and this
+    // effect (which attaches the observers), and nothing reports it. Re-render
+    // once when the value the UI rendered is already stale.
+    const current = cells.get(fieldId);
+    const fresh = current ? parseYDatabaseCellToCell(current, field) : undefined;
+
+    if (JSON.stringify(fresh) !== JSON.stringify(cellValueRef.current)) {
+      bump();
+    }
 
     return () => {
-      cells.unobserve(observerEvent);
+      cells.unobserve(onCellsChange);
+      cell?.unobserveDeep(bump);
     };
-  }, [cells]);
+  }, [cells, cell, field, fieldId]);
 
   if (fieldType === FieldType.Rollup) {
     return rollupCell;
