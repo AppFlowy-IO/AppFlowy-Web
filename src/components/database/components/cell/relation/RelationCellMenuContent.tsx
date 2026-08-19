@@ -355,17 +355,21 @@ function RelationCellMenuContent({
   const relatedRowIdSet = useMemo(() => new Set(relationRowIds ?? []), [relationRowIds]);
   const liveRowIdSet = useMemo(() => new Set(rowIds), [rowIds]);
 
-  const filteredRowIds = useMemo(() => {
-    const liveRowIds = sortByRecentRows(rowIds, selectedViewId);
+  // The recent-first ordering depends only on the row list, not the query, so keep it out of the
+  // search memo — otherwise every keystroke re-sorts the whole target database. Recents recorded
+  // while the picker is open take effect on the next open, same as before this split: picking a
+  // row never changed this memo's inputs either.
+  const sortedRowIds = useMemo(() => sortByRecentRows(rowIds, selectedViewId), [rowIds, selectedViewId]);
 
+  const filteredRowIds = useMemo(() => {
     if (!searchInput) {
-      return liveRowIds;
+      return sortedRowIds;
     }
 
     const query = searchInput.toLowerCase();
 
-    return liveRowIds.filter((id) => (rowContents.get(id) || '').toLowerCase().includes(query));
-  }, [rowContents, rowIds, searchInput, selectedViewId]);
+    return sortedRowIds.filter((id) => (rowContents.get(id) || '').toLowerCase().includes(query));
+  }, [rowContents, searchInput, sortedRowIds]);
 
   const unRelatedRowIds = useMemo(() => {
     return filteredRowIds.filter((id) => !relatedRowIdSet.has(id));

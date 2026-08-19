@@ -1235,19 +1235,15 @@ export async function getRelationTypeOption(page: Page, fieldId: string): Promis
   }, fieldId);
 }
 
+/**
+ * PR #482 turned the "Two-way relation" row into a sub-menu trigger, so clicking the row no
+ * longer toggles anything — this helper's old body opened the sub-menu, waited a fixed beat,
+ * and escaped without ever enabling. Kept as a thin alias for existing specs; the real work
+ * (clicking the enable switch and polling the type option) lives in
+ * {@link setTwoWayRelationFromPropertyMenu}.
+ */
 export async function enableTwoWayRelationFromPropertyMenu(page: Page, fieldId: string): Promise<void> {
-  await GridFieldSelectors.fieldHeader(page, fieldId).last().click({ force: true });
-  await expect(PropertyMenuSelectors.editPropertyMenuItem(page).first()).toBeVisible({ timeout: 10000 });
-  await PropertyMenuSelectors.editPropertyMenuItem(page).first().click({ force: true });
-
-  const propertyMenu = page.locator('[role="menu"]').last();
-  const twoWayItem = propertyMenu.getByText('Two-way relation').first();
-
-  await expect(twoWayItem).toBeVisible({ timeout: 15000 });
-  await twoWayItem.click({ force: true });
-  await page.waitForTimeout(2500);
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await setTwoWayRelationFromPropertyMenu(page, fieldId, true);
 }
 
 async function addRelationFieldToCurrentDatabase(

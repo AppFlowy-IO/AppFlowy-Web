@@ -739,6 +739,11 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
       const shouldCreateReciprocal =
         nextOption.is_two_way && nextOption.database_id && !nextOption.reciprocal_field_id;
 
+      // The back-pointer sync after `executeOperations` needs the same related doc the create
+      // path resolves; keep it so that block does not pay a second loadView round-trip (and a
+      // second hydration wait) within one call.
+      let createdRelatedDoc: YDoc | null = null;
+
       if (shouldCreateReciprocal) {
         const relatedDoc = await loadRelatedDatabaseDoc({
           sourceDatabase: database,
@@ -748,6 +753,8 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           getViewIdFromDatabaseId,
           bindViewSync,
         });
+
+        createdRelatedDoc = relatedDoc;
         const relatedDatabase = relatedDoc ? getDatabaseFromDoc(relatedDoc) : null;
 
         if (relatedDoc && relatedDatabase) {
@@ -822,14 +829,19 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
       );
 
       if (nextOption.is_two_way && nextOption.reciprocal_field_id && nextOption.database_id) {
-        const relatedDoc = await loadRelatedDatabaseDoc({
-          sourceDatabase: database,
-          sourceDatabaseDoc: context.databaseDoc,
-          relatedDatabaseId: nextOption.database_id,
-          loadView,
-          getViewIdFromDatabaseId,
-          bindViewSync,
-        });
+        // `createdRelatedDoc` was loaded for this same `database_id`; it is only null when the
+        // reciprocal field already existed (e.g. a limit tweak on an established two-way
+        // relation), where the load still has to happen here.
+        const relatedDoc =
+          createdRelatedDoc ??
+          (await loadRelatedDatabaseDoc({
+            sourceDatabase: database,
+            sourceDatabaseDoc: context.databaseDoc,
+            relatedDatabaseId: nextOption.database_id,
+            loadView,
+            getViewIdFromDatabaseId,
+            bindViewSync,
+          }));
         const relatedDatabase = relatedDoc ? getDatabaseFromDoc(relatedDoc) : null;
         const reciprocalField = relatedDatabase?.get(YjsDatabaseKey.fields)?.get(nextOption.reciprocal_field_id);
 
