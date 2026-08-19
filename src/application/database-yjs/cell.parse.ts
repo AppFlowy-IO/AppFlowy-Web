@@ -20,6 +20,7 @@ import {
   parseNumberTypeOptions,
   stringifyDesktopNumberValue,
 } from '@/application/database-yjs/fields/number/parse';
+import { isFileMediaItem } from '@/application/database-yjs/fields/media/parse';
 import {
   parseCheckboxValue,
   parseDesktopCheckboxValue,
@@ -348,8 +349,23 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
     } as FileMediaCell;
   }
 
-  // Convert YArray<string> to FileMediaCellData
-  const dataJson = data.toJSON().map((item: string) => JSON.parse(item)) as FileMediaCellData;
+  // Convert YArray<string> to FileMediaCellData. A cell that was lazily
+  // converted from another list-shaped type still holds that type's entries,
+  // so drop anything that is not a media item rather than throwing.
+  const entries = data.toJSON() as string[];
+  const dataJson: FileMediaCellData = [];
+
+  entries.forEach((item) => {
+    try {
+      const parsed = JSON.parse(item);
+
+      if (isFileMediaItem(parsed)) {
+        dataJson.push(parsed);
+      }
+    } catch (e) {
+      // Not a media entry; skip it.
+    }
+  });
 
   return {
     ...parseYDatabaseCommonCellToCell(cell),
