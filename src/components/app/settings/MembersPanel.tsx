@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { ERROR_CODE } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import { Role, WorkspaceGroup, WorkspaceGroupMember, WorkspaceMember } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
@@ -188,7 +189,7 @@ function MembersPanelForWorkspace({
   const isOwner = useMemo(() => {
     const workspace = userWorkspaceInfo?.workspaces.find((w) => w.id === currentWorkspaceId);
 
-    return workspace?.role === Role.Owner || workspace?.owner?.uid.toString() === currentUser?.uid.toString();
+    return workspace?.role === Role.Owner || isSameUserUid(workspace?.owner?.uid, currentUser?.uid);
   }, [userWorkspaceInfo?.workspaces, currentWorkspaceId, currentUser?.uid]);
 
   useEffect(() => {

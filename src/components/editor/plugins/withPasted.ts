@@ -21,6 +21,7 @@ import { ParsedBlock } from '@/components/editor/parsers/types';
 import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
 import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
+import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
 
@@ -657,6 +658,15 @@ function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
  */
 const TABLE_BLOCK_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
 
+/**
+ * A first pasted paragraph merges inline at the caret. Headings, lists,
+ * quotes, etc. keep their block identity and insert as new blocks, so
+ * pasting "# Title" markdown or an HTML heading never degrades to plain text.
+ */
+function shouldMergeFirstParsedBlockInline(block: ParsedBlock): boolean {
+  return block.type === BlockType.Paragraph && block.children.length === 0 && block.text.length > 0;
+}
+
 function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
   if (blocks.length === 0) return false;
 
@@ -674,27 +684,20 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
 
     if (!blockId) return false;
 
-    const sharedRoot = getSharedRoot(editor as YjsEditor);
-    const block = getBlock(blockId, sharedRoot);
-
     // Check if we're pasting inside a table cell
     const insideTable = isInsideSimpleTableCell(editor as YjsEditor, blockId);
 
     if (insideTable) {
+      const sharedRoot = getSharedRoot(editor as YjsEditor);
+
       // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
       const cellBlocks = blocks.filter((b) => !TABLE_BLOCK_TYPES.includes(b.type));
       const tableBlocks = blocks.filter((b) => TABLE_BLOCK_TYPES.includes(b.type));
 
       // Insert text blocks inside the cell
       if (cellBlocks.length > 0) {
-        const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-        const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-        const index = parentChildren.toArray().findIndex((id) => id === blockId);
-        const doc = assertDocExists(sharedRoot);
-        const slateNodes = cellBlocks.map(parsedBlockToSlateElement);
-
-        doc.transact(() => {
-          slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+        insertBlocksAtCaret(editor as YjsEditor, cellBlocks.map(parsedBlockToSlateElement), {
+          mergeFirstBlockInline: shouldMergeFirstParsedBlockInline(cellBlocks[0]),
         });
       }
 
@@ -734,21 +737,12 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
       return true;
     }
 
-    // Normal paste (not inside table cell)
-    const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-    const index = parentChildren.toArray().findIndex((id) => id === blockId);
-    const doc = assertDocExists(sharedRoot);
-
-    // Convert parsed blocks to Slate elements with proper text wrapper
-    const slateNodes = blocks.map(parsedBlockToSlateElement);
-
-    // Insert into YJS document
-    doc.transact(() => {
-      slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+    // Normal paste (not inside table cell): insert relative to the caret —
+    // a leading paragraph merges inline at the cursor, everything else lands
+    // as sibling blocks below.
+    return insertBlocksAtCaret(editor as YjsEditor, blocks.map(parsedBlockToSlateElement), {
+      mergeFirstBlockInline: shouldMergeFirstParsedBlockInline(blocks[0]),
     });
-
-    return true;
   } catch (error) {
     console.error('Error inserting parsed blocks:', error);
     return false;

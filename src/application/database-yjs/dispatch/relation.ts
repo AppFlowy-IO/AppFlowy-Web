@@ -16,6 +16,7 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
+import { waitForDatabaseHydration } from '@/application/database-yjs/database.hydration';
 import { FieldType, FieldVisibility } from '@/application/database-yjs/database.type';
 import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit, RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
@@ -41,6 +42,7 @@ import {
   YMapFieldTypeOption,
 } from '@/application/types';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 type RelationTypeOptionUpdates = Partial<RelationTypeOption>;
 
@@ -232,7 +234,10 @@ function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
     const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-    if (!fieldOrders || !fieldSettings) continue;
+    // `field_orders` is what the grid renders from; `field_settings` only carries visibility and
+    // is optional-chained everywhere it is read. Bailing out on a view that has no settings map
+    // used to drop the reciprocal column from that view entirely.
+    if (!fieldOrders) continue;
 
     const alreadyOrdered = fieldOrders.toArray().some((item) => item.id === fieldId);
 
@@ -240,7 +245,7 @@ function addFieldToAllViews(database: YDatabase, fieldId: FieldId) {
       fieldOrders.push([{ id: fieldId }]);
     }
 
-    if (!fieldSettings.get(fieldId)) {
+    if (fieldSettings && !fieldSettings.get(fieldId)) {
       const setting = new Y.Map() as YDatabaseFieldSetting;
 
       setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
@@ -349,6 +354,15 @@ async function loadRelatedDatabaseDoc(args: {
     boundRelatedDocs.add(doc);
     args.bindViewSync(doc);
   }
+
+  // `loadView` resolves as soon as a doc exists locally, which for a database that has never been
+  // opened can be an empty shell with the first sync still in flight. Every caller reads the
+  // `database` map straight away and silently degrades when it is missing — dropping the relation
+  // back to one-way, or skipping the reciprocal cell write — so wait for it to land. The wait must
+  // come AFTER binding sync: for a cache-only shell with no HTTP fetch in flight, the sync binding
+  // is the only channel that can deliver the missing `database` map, and waiting first would let
+  // the timeout expire before that channel even opens.
+  if (doc) await waitForDatabaseHydration(doc);
 
   return doc;
 }
@@ -470,6 +484,12 @@ export async function applyRelationReciprocalInserts(args: {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   bindViewSync?: (doc: YDoc) => unknown;
   actorUid?: AttributionUid;
+  /**
+   * The related database doc, when the caller already resolved it. Resolving it again means a
+   * second `loadView` round-trip — and a second wait on {@link waitForDatabaseHydration} for a
+   * database that is still syncing.
+   */
+  relatedDoc?: YDoc | null;
 }) {
   if (args.insertedRowIds.length === 0) return;
 
@@ -483,14 +503,16 @@ export async function applyRelationReciprocalInserts(args: {
     return;
   }
 
-  const relatedDoc = await loadRelatedDatabaseDoc({
-    sourceDatabase: args.database,
-    sourceDatabaseDoc: args.databaseDoc,
-    relatedDatabaseId: typeOption.database_id,
-    loadView: args.loadView,
-    getViewIdFromDatabaseId: args.getViewIdFromDatabaseId,
-    bindViewSync: args.bindViewSync,
-  });
+  const relatedDoc =
+    args.relatedDoc ??
+    (await loadRelatedDatabaseDoc({
+      sourceDatabase: args.database,
+      sourceDatabaseDoc: args.databaseDoc,
+      relatedDatabaseId: typeOption.database_id,
+      loadView: args.loadView,
+      getViewIdFromDatabaseId: args.getViewIdFromDatabaseId,
+      bindViewSync: args.bindViewSync,
+    }));
 
   if (!relatedDoc) return;
 
@@ -605,38 +627,50 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         ? parseRelationTypeOption(reciprocalField).source_limit
         : RelationLimit.NoLimit;
 
-      await Promise.all(effectiveChanges.removedRowIds.map(async (targetRowId) => {
-        const targetRowDoc = await loadRowDoc({
-          databaseDoc: relatedDoc,
-          rowId: targetRowId,
+      // The two sides run concurrently, so they must touch different target rows. The effective
+      // sets are NOT inherently disjoint: a changeset carrying the same id in both insertedRowIds
+      // and removedRowIds (a reinsert) puts that id in both. No current caller sends one, but if it
+      // happened the two branches would race remove-against-insert on the same reciprocal cell,
+      // with an order-dependent result. The source cell ends with the id present (removal applies
+      // first, insertion re-appends), so the reciprocal must too — drop such ids from the removal
+      // side and let the insert branch ensure presence.
+      const insertedSet = new Set(effectiveChanges.insertedRowIds);
+      const removedOnlyRowIds = effectiveChanges.removedRowIds.filter((targetRowId) => !insertedSet.has(targetRowId));
+
+      await Promise.all([
+        ...removedOnlyRowIds.map(async (targetRowId) => {
+          const targetRowDoc = await loadRowDoc({
+            databaseDoc: relatedDoc,
+            rowId: targetRowId,
+            createRow,
+            rowMap: relatedDoc === context.databaseDoc ? rowMap : undefined,
+          });
+
+          if (!targetRowDoc) return;
+
+          applyRelationCellChanges(
+            targetRowDoc,
+            typeOption.reciprocal_field_id as FieldId,
+            { removedRowIds: [rowId] },
+            reciprocalLimit,
+            actorUid
+          );
+        }),
+        applyRelationReciprocalInserts({
+          sourceRowId: rowId,
+          sourceFieldId: fieldId,
+          insertedRowIds: effectiveChanges.insertedRowIds,
+          database,
+          databaseDoc: context.databaseDoc,
+          rowMap,
           createRow,
-          rowMap: relatedDoc === context.databaseDoc ? rowMap : undefined,
-        });
-
-        if (!targetRowDoc) return;
-
-        applyRelationCellChanges(
-          targetRowDoc,
-          typeOption.reciprocal_field_id as FieldId,
-          { removedRowIds: [rowId] },
-          reciprocalLimit,
-          actorUid
-        );
-      }));
-
-      await applyRelationReciprocalInserts({
-        sourceRowId: rowId,
-        sourceFieldId: fieldId,
-        insertedRowIds: effectiveChanges.insertedRowIds,
-        database,
-        databaseDoc: context.databaseDoc,
-        rowMap,
-        createRow,
-        loadView,
-        getViewIdFromDatabaseId,
-        bindViewSync,
-        actorUid,
-      });
+          loadView,
+          getViewIdFromDatabaseId,
+          bindViewSync,
+          actorUid,
+          relatedDoc,
+        }),
+      ]);
     },
     [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowId, rowMap]
   );
@@ -705,6 +739,11 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
       const shouldCreateReciprocal =
         nextOption.is_two_way && nextOption.database_id && !nextOption.reciprocal_field_id;
 
+      // The back-pointer sync after `executeOperations` needs the same related doc the create
+      // path resolves; keep it so that block does not pay a second loadView round-trip (and a
+      // second hydration wait) within one call.
+      let createdRelatedDoc: YDoc | null = null;
+
       if (shouldCreateReciprocal) {
         const relatedDoc = await loadRelatedDatabaseDoc({
           sourceDatabase: database,
@@ -714,6 +753,8 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           getViewIdFromDatabaseId,
           bindViewSync,
         });
+
+        createdRelatedDoc = relatedDoc;
         const relatedDatabase = relatedDoc ? getDatabaseFromDoc(relatedDoc) : null;
 
         if (relatedDoc && relatedDatabase) {
@@ -752,6 +793,13 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
           // Couldn't load the related database to create a reciprocal field.
           // Fall back to a one-way relation so we don't persist `is_two_way: true`
           // without a reciprocal_field_id, which would silently break cell mirroring.
+          // The toggle flipping itself back off is the only signal the user gets, so leave a
+          // trace: this is the path where "two-way is on but the related database has no
+          // matching property" comes from.
+          Log.warn('[relation] two-way relation disabled: related database could not be loaded', {
+            fieldId,
+            relatedDatabaseId: nextOption.database_id,
+          });
           nextOption = {
             ...nextOption,
             is_two_way: false,
@@ -781,14 +829,19 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
       );
 
       if (nextOption.is_two_way && nextOption.reciprocal_field_id && nextOption.database_id) {
-        const relatedDoc = await loadRelatedDatabaseDoc({
-          sourceDatabase: database,
-          sourceDatabaseDoc: context.databaseDoc,
-          relatedDatabaseId: nextOption.database_id,
-          loadView,
-          getViewIdFromDatabaseId,
-          bindViewSync,
-        });
+        // `createdRelatedDoc` was loaded for this same `database_id`; it is only null when the
+        // reciprocal field already existed (e.g. a limit tweak on an established two-way
+        // relation), where the load still has to happen here.
+        const relatedDoc =
+          createdRelatedDoc ??
+          (await loadRelatedDatabaseDoc({
+            sourceDatabase: database,
+            sourceDatabaseDoc: context.databaseDoc,
+            relatedDatabaseId: nextOption.database_id,
+            loadView,
+            getViewIdFromDatabaseId,
+            bindViewSync,
+          }));
         const relatedDatabase = relatedDoc ? getDatabaseFromDoc(relatedDoc) : null;
         const reciprocalField = relatedDatabase?.get(YjsDatabaseKey.fields)?.get(nextOption.reciprocal_field_id);
 

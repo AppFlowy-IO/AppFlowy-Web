@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { ERROR_CODE } from '@/application/constants';
 import { Workspace, WorkspaceMember } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { WorkspaceService } from '@/application/services/domains';
 import { NormalModal } from '@/components/_shared/modal';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
@@ -56,7 +57,7 @@ function InviteMember({
   const currentUser = useCurrentUser();
   const memberListRef = useRef<WorkspaceMember[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isOwner = workspace.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(workspace.owner?.uid, currentUser?.uid);
 
   const loadMembers = useCallback(async () => {
     try {

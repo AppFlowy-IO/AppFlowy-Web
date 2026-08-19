@@ -48,3 +48,29 @@ export function resolveCurrentUserUid(uid: string | number, uidString?: string) 
     attributionUid,
   };
 }
+
+/**
+ * Whether two user IDs refer to the same user, tolerating the precision a
+ * large uid loses when it travels as a JSON number.
+ *
+ * The current user's uid is an exact decimal string (from `uid_string`), but
+ * ids like `workspace.owner_uid` still arrive as JSON numbers above
+ * `Number.MAX_SAFE_INTEGER`. Plain `toString()` comparison then fails even
+ * when the double holds the value exactly, because `Number.prototype.toString`
+ * prints the SHORTEST decimal that round-trips — `626259007224418304` prints
+ * as `"626259007224418300"`. When either side has been through a float64,
+ * compare both sides AS floats so they collapse onto the same rounded value.
+ */
+export function isSameUserUid(left: UserUid, right: UserUid): boolean {
+  if (left === null || left === undefined || right === null || right === undefined) return false;
+
+  const leftExact = canonicalizeUserUid(left);
+  const rightExact = canonicalizeUserUid(right);
+
+  if (leftExact !== null && rightExact !== null) return leftExact === rightExact;
+
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+
+  return Number.isFinite(leftNumber) && leftNumber === rightNumber;
+}
