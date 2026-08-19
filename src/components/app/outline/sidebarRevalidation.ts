@@ -43,6 +43,25 @@ export function nextSidebarOutlineRevalidationStateAfterFailure(
   };
 }
 
+/**
+ * While the workspace WebSocket is open, folder notifications are the primary
+ * freshness channel and the poll is only a safety net for dropped
+ * notifications, so it can run at the slow cadence right away. Failure backoff
+ * keeps its own schedule so transport-level retries stay bounded.
+ */
+export function floorSidebarOutlineRevalidationStateForOpenWebSocket(
+  state: SidebarOutlineRevalidationScheduleState
+): SidebarOutlineRevalidationScheduleState {
+  if (state.failureCount > 0 || state.unchangedCount >= SIDEBAR_OUTLINE_REVALIDATION_SLOW_AFTER) {
+    return state;
+  }
+
+  return {
+    ...state,
+    unchangedCount: SIDEBAR_OUTLINE_REVALIDATION_SLOW_AFTER,
+  };
+}
+
 export function getSidebarOutlineRevalidationDelayMs(
   state: SidebarOutlineRevalidationScheduleState = createSidebarOutlineRevalidationScheduleState(),
   random = Math.random

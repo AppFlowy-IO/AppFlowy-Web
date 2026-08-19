@@ -1,5 +1,6 @@
 import {
   createSidebarOutlineRevalidationScheduleState,
+  floorSidebarOutlineRevalidationStateForOpenWebSocket,
   getSidebarOutlineRevalidationDelayMs,
   nextSidebarOutlineRevalidationStateAfterFailure,
   nextSidebarOutlineRevalidationStateAfterResult,
@@ -52,5 +53,25 @@ describe('sidebar outline revalidation schedule', () => {
 
     state = nextSidebarOutlineRevalidationStateAfterResult(state, 'changed');
     expect(getSidebarOutlineRevalidationDelayMs(state, () => 0)).toBe(SIDEBAR_OUTLINE_REVALIDATION_INTERVAL_MS);
+  });
+
+  it('floors the schedule to the slow cadence while the WebSocket is open', () => {
+    const fresh = createSidebarOutlineRevalidationScheduleState();
+    const floored = floorSidebarOutlineRevalidationStateForOpenWebSocket(fresh);
+
+    expect(getSidebarOutlineRevalidationDelayMs(floored, () => 0)).toBe(SIDEBAR_OUTLINE_REVALIDATION_SLOW_INTERVAL_MS);
+
+    let slow = fresh;
+
+    for (let index = 0; index < 7; index += 1) {
+      slow = nextSidebarOutlineRevalidationStateAfterResult(slow, 'unchanged');
+    }
+
+    expect(floorSidebarOutlineRevalidationStateForOpenWebSocket(slow)).toBe(slow);
+
+    const failing = nextSidebarOutlineRevalidationStateAfterFailure(fresh);
+
+    expect(floorSidebarOutlineRevalidationStateForOpenWebSocket(failing)).toBe(failing);
+    expect(getSidebarOutlineRevalidationDelayMs(failing, () => 0)).toBe(SIDEBAR_OUTLINE_REVALIDATION_FAILURE_BASE_MS);
   });
 });

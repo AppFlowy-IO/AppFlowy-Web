@@ -13,6 +13,8 @@ declare global {
   var __outlineNavigationTestEnsureViewVisible: jest.Mock<Promise<string[]>, [viewId: string]> | undefined;
   // eslint-disable-next-line no-var
   var __outlineNavigationTestToView: jest.Mock<Promise<void>, [viewId: string]> | undefined;
+  // eslint-disable-next-line no-var
+  var __outlineNavigationTestEventEmitter: { on: jest.Mock; off: jest.Mock } | undefined;
 }
 
 jest.mock('react-i18next', () => ({
@@ -29,6 +31,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-id',
   useCurrentWorkspaceIdOptional: () => 'workspace-id',
   useEnsureViewVisibleInOutline: () => global.__outlineNavigationTestEnsureViewVisible,
+  useEventEmitter: () => global.__outlineNavigationTestEventEmitter,
   useLoadedViewIds: () => new Set<string>(),
   useLoadViewChildren: () => jest.fn().mockResolvedValue([]),
   useLoadViewChildrenBatch: () => jest.fn().mockResolvedValue([]),
@@ -217,6 +220,7 @@ describe('Outline navigation context hydration', () => {
     global.__outlineNavigationTestEnsureViewVisible = undefined;
     global.__outlineNavigationTestSelectedViewId = undefined;
     global.__outlineNavigationTestToView = undefined;
+    global.__outlineNavigationTestEventEmitter = { on: jest.fn(), off: jest.fn() };
   });
 
   it('hydrates and expands a notification target path when the selected view is missing locally', async () => {

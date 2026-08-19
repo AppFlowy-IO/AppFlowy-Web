@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
+import { APP_EVENTS } from '@/application/constants';
 import { Role, View, ViewLayout } from '@/application/types';
 import { isSpaceView } from '@/application/view-utils';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
@@ -17,6 +18,7 @@ import {
   useLoadViewChildren,
   useMarkViewChildrenStale,
   useEnsureViewVisibleInOutline,
+  useEventEmitter,
   useRevalidateSidebarOutline,
   useSidebarSelectedViewId,
   useUserWorkspaceInfo,
@@ -25,6 +27,7 @@ import { Favorite } from '@/components/app/favorite';
 import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import {
   createSidebarOutlineRevalidationScheduleState,
+  floorSidebarOutlineRevalidationStateForOpenWebSocket,
   getSidebarOutlineRevalidationDelayMs,
   limitSidebarOutlineExpandedViewIds,
   nextSidebarOutlineRevalidationStateAfterFailure,
@@ -42,6 +45,9 @@ const ImportDialog = lazy(() => import('@/components/app/import/ImportDialog'));
 
 const AUTO_LOAD_RETRY_DELAY_MS = 15000;
 const NAVIGATION_HYDRATION_RETRY_DELAY_MS = 15000;
+
+const WS_READY_STATE_OPEN = 1;
+const WS_READY_STATE_CLOSED = 3;
 
 function collectSubtreeViewIds(rootView: View): string[] {
   const ids: string[] = [];
@@ -70,6 +76,7 @@ export function Outline({ width }: { width: number }) {
   const markViewChildrenStale = useMarkViewChildrenStale();
   const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
   const revalidateSidebarOutline = useRevalidateSidebarOutline();
+  const eventEmitter = useEventEmitter();
   const selectedViewId = useSidebarSelectedViewId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
@@ -216,11 +223,23 @@ export function Outline({ width }: { width: number }) {
       }
     };
 
+    const getWebSocketReadyState = () =>
+      typeof eventEmitter.webSocketReadyState === 'number' ? eventEmitter.webSocketReadyState : undefined;
+
     const scheduleNextTick = () => {
       clearPendingTimer();
+
+      // While the socket is open, folder notifications keep the outline fresh
+      // and this poll is only a dropped-notification safety net — floor it to
+      // the slow cadence. Disconnected tabs keep the full fast→slow schedule.
+      const scheduleState =
+        getWebSocketReadyState() === WS_READY_STATE_OPEN
+          ? floorSidebarOutlineRevalidationStateForOpenWebSocket(sidebarRevalidationStateRef.current)
+          : sidebarRevalidationStateRef.current;
+
       timer = window.setTimeout(() => {
         void tick();
-      }, getSidebarOutlineRevalidationDelayMs(sidebarRevalidationStateRef.current));
+      }, getSidebarOutlineRevalidationDelayMs(scheduleState));
     };
 
     const tick = async () => {
@@ -277,9 +296,37 @@ export function Outline({ width }: { width: number }) {
       }
     };
 
+    let lastReadyState = getWebSocketReadyState();
+    let disconnectedSinceLastOpen = lastReadyState === WS_READY_STATE_CLOSED;
+
+    const handleWebSocketStatus = () => {
+      const readyState = getWebSocketReadyState();
+
+      if (readyState === undefined || readyState === lastReadyState) return;
+      lastReadyState = readyState;
+
+      if (readyState === WS_READY_STATE_CLOSED) {
+        if (!disconnectedSinceLastOpen) {
+          disconnectedSinceLastOpen = true;
+          // The notification channel is gone; reschedule so the poll takes
+          // over at the fast cadence instead of waiting out a slow-tier delay.
+          scheduleNextTick();
+        }
+
+        return;
+      }
+
+      if (readyState === WS_READY_STATE_OPEN && disconnectedSinceLastOpen) {
+        disconnectedSinceLastOpen = false;
+        // Notifications sent while disconnected are not replayed; catch up.
+        runNow();
+      }
+    };
+
     rescheduleSidebarRevalidationRef.current = rescheduleFromFastInterval;
     document.addEventListener('visibilitychange', runNowWhenVisible);
     window.addEventListener('online', runNow);
+    eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
 
     scheduleNextTick();
 
@@ -288,11 +335,12 @@ export function Outline({ width }: { width: number }) {
       clearPendingTimer();
       document.removeEventListener('visibilitychange', runNowWhenVisible);
       window.removeEventListener('online', runNow);
+      eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
       if (rescheduleSidebarRevalidationRef.current === rescheduleFromFastInterval) {
         rescheduleSidebarRevalidationRef.current = () => undefined;
       }
     };
-  }, [currentWorkspaceId, revalidateSidebarOutline]);
+  }, [currentWorkspaceId, eventEmitter, revalidateSidebarOutline]);
 
   // Validate restored expanded IDs that are not in the current tree and prune only truly stale IDs.
   // This avoids keeping deleted/moved IDs forever, while preserving valid deep IDs.

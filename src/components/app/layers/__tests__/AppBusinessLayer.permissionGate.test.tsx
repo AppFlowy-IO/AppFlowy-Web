@@ -373,4 +373,82 @@ describe('AppBusinessLayer permission gates', () => {
     });
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
+
+  it('walks breadcrumb fallback ancestors once while the route view stays unresolved across outline updates', async () => {
+    const eventEmitter = new EventEmitter();
+    const routeView = { ...createView(routeViewId), parent_view_id: parentViewId };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, id: string) =>
+      id === routeViewId ? Promise.resolve(routeView) : Promise.reject({ code: 403 })
+    );
+    (useSyncInternal as jest.Mock).mockReturnValue({
+      eventEmitter,
+      awarenessMap: {},
+      flushAllSync: jest.fn(),
+      revertCollabVersion: jest.fn(),
+      scheduleDeferredCleanup: jest.fn(),
+      syncAllToServer: jest.fn(),
+    });
+
+    // Production keeps one stable ref object; only the outline array identity
+    // changes across refreshes.
+    const stableOutlineRef = { current: [] as View[] } as MutableRefObject<View[]>;
+    const makeWorkspaceData = () => {
+      const outline = [createView(modalViewId)];
+
+      stableOutlineRef.current = outline;
+      return {
+        outline,
+        favoriteViews: [],
+        recentViews: [],
+        trashList: [],
+        workspaceDatabases: {},
+        stableOutlineRef,
+        loadedViewIds: new Set<string>(),
+      };
+    };
+
+    (useWorkspaceData as jest.Mock).mockReturnValue(makeWorkspaceData());
+
+    // Fresh elements per render — identical element references would let React
+    // bail out of re-rendering the layer, hiding the outline identity change.
+    const makeTree = () => (
+      <MemoryRouter
+        initialEntries={[`/${routeViewId}`]}
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      >
+        <Routes>
+          <Route
+            path={'/:viewId'}
+            element={
+              <AppBusinessLayer>
+                <NavigationProbe modalTargetId={modalViewId} />
+              </AppBusinessLayer>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    const { rerender } = render(makeTree());
+
+    const parentFetchCount = () =>
+      (ViewService.get as jest.Mock).mock.calls.filter(([, id]) => id === parentViewId).length;
+
+    await waitFor(() => {
+      expect(parentFetchCount()).toBe(1);
+    });
+
+    // A new outline identity that still cannot resolve the route view must not
+    // re-walk the ancestor chain — that would refire one request per ancestor
+    // (including permanently denied ones) on every sidebar refresh.
+    (useWorkspaceData as jest.Mock).mockReturnValue(makeWorkspaceData());
+    rerender(makeTree());
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(parentFetchCount()).toBe(1);
+  });
 });

@@ -49,6 +49,12 @@ const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 const PERMISSION_PROBE_TTL_MS = 10000;
 const PERMISSION_PROBE_CACHE_MAX = 200;
 
+// Stable "not resolvable" result for breadcrumb ancestors. Identity matters:
+// the fallback-crumb effect depends on `originalCrumbs`, and a fresh [] per
+// outline change would re-walk the ancestor chain (one server fetch per
+// ancestor, including permanently-403 ones) on every sidebar update.
+const NO_BREADCRUMB_ANCESTORS: View[] = [];
+
 type PermissionProbeVerdict = 'allowed' | 'denied' | 'unknown';
 type PermissionProbeResult = PermissionProbeTarget & { verdict: PermissionProbeVerdict };
 const permissionProbeCache = new Map<string, { probedAt: number; promise: Promise<PermissionProbeResult> }>();
@@ -596,8 +602,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {
-    if (!outline || !breadcrumbViewId) return [];
-    return findAncestors(outline, breadcrumbViewId) || [];
+    if (!outline || !breadcrumbViewId) return NO_BREADCRUMB_ANCESTORS;
+    return findAncestors(outline, breadcrumbViewId) || NO_BREADCRUMB_ANCESTORS;
   }, [outline, breadcrumbViewId]);
   const [fallbackCrumbs, setFallbackCrumbs] = useState<View[]>([]);
 
