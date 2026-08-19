@@ -369,7 +369,13 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
           return 'retryable';
         }
 
-        const doc = await loadRowDocument(documentId, options);
+        const loadOptions = rowDocumentSource
+          ? {
+              ...options,
+              rowDocumentSource,
+            }
+          : options;
+        const doc = await loadRowDocument(documentId, loadOptions);
 
         if (!isCurrent()) return 'retryable';
 
@@ -445,7 +451,7 @@ export const DatabaseRowSubDocument = memo(function DatabaseRowSubDocument({
         }
       }
     },
-    [loadRowDocument, markPermissionDenied, rowId]
+    [loadRowDocument, markPermissionDenied, rowDocumentSource, rowId]
   );
   // Open document with server-provided doc_state (Y.js update)
   const openDocumentWithState = useCallback(

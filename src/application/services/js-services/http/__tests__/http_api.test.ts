@@ -7,6 +7,7 @@ import {
   SpaceMemberRole,
   SpaceSidebarEditPolicy,
   SpaceVisibility,
+  Types,
 } from '@/application/types';
 
 const mockAxiosInstance = {
@@ -91,6 +92,37 @@ describe('http_api client (unit)', () => {
     // Subsequent init calls should no-op
     module.initAPIService({ ...baseConfig, baseURL: 'https://ignored.example.com' });
     expect(mockAxiosCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches row documents with their parent database context', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: {
+        code: 0,
+        data: {
+          doc_state: [1, 2, 3],
+          object_id: 'document-1',
+        },
+      },
+    });
+
+    await expect(
+      module.getCollab('workspace-1', 'document-1', Types.Document, {
+        database_id: 'database-1',
+        database_view_id: 'database-view-1',
+        row_id: 'row-1',
+      })
+    ).resolves.toEqual({ data: new Uint8Array([1, 2, 3]) });
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/api/workspace/v1/workspace-1/collab/document-1', {
+      params: {
+        collab_type: Types.Document,
+        database_id: 'database-1',
+        row_id: 'row-1',
+        row_document_id: 'document-1',
+      },
+    });
   });
 
   it('re-exports space-group ACL update and revoke clients', async () => {

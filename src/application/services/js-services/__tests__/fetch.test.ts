@@ -1,10 +1,12 @@
 import { expect } from '@jest/globals';
-import { fetchPublishView, fetchPublishViewMeta, fetchViewInfo } from '../fetch';
+import { fetchPublishView, fetchPublishViewMeta, fetchRowDocumentCollab, fetchViewInfo } from '../fetch';
 import {
+  getCollab,
   getPublishView,
   getPublishInfoWithViewId,
   getPublishViewMeta,
 } from '@/application/services/js-services/http';
+import { Types } from '@/application/types';
 
 jest.mock('@/application/services/js-services/http', () => {
   return {
@@ -12,6 +14,7 @@ jest.mock('@/application/services/js-services/http', () => {
     getPublishViewMeta: jest.fn(),
     getPublishInfoWithViewId: jest.fn(),
     getPageCollab: jest.fn(),
+    getCollab: jest.fn(),
   };
 });
 
@@ -81,6 +84,27 @@ describe('Collab fetch functions with deduplication', () => {
       await expect(result1).resolves.toEqual(mockResponse);
       await expect(result2).resolves.toEqual(mockResponse);
       expect(getPublishInfoWithViewId).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('fetchRowDocumentCollab', () => {
+    it('deduplicates contextual row-document requests', async () => {
+      const source = {
+        database_id: 'database-1',
+        database_view_id: 'database-view-1',
+        row_id: 'row-1',
+      };
+      const mockResponse = { data: new Uint8Array([1, 2, 3]) };
+
+      (getCollab as jest.Mock).mockResolvedValue(mockResponse);
+
+      const result1 = fetchRowDocumentCollab('workspace-1', 'document-1', source);
+      const result2 = fetchRowDocumentCollab('workspace-1', 'document-1', { ...source });
+
+      expect(result1).toBe(result2);
+      await expect(result1).resolves.toEqual(mockResponse);
+      expect(getCollab).toHaveBeenCalledTimes(1);
+      expect(getCollab).toHaveBeenCalledWith('workspace-1', 'document-1', Types.Document, source);
     });
   });
 
