@@ -2909,49 +2909,44 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
   const cells = row?.get(YjsDatabaseKey.cells);
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
   const cell = cells?.get(fieldId);
-  const [, setClock] = useState<number>(0);
-  const [cellValue, setCellValue] = useState(() => {
-    return cell ? parseYDatabaseCellToCell(cell, field) : undefined;
-  });
+  const [clock, setClock] = useState<number>(0);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const rollupCell = useRollupCellValue({ row, field, rowId, fieldId, fieldClock });
+
+  // Parse during render rather than from an effect, and key on the field type
+  // read from the doc rather than on a clock. Callers pick their cell component
+  // from that same live type, so a value that lags even one render describes the
+  // previous type and reaches a renderer that cannot read it.
+  const cellValue = useMemo(() => {
+    return cell ? parseYDatabaseCellToCell(cell, field) : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cell, field, fieldType, fieldClock, clock]);
 
   useEffect(() => {
     const observerEvent = () => {
       setClock((prev) => prev + 1);
-      setCellValue(cell ? parseYDatabaseCellToCell(cell, field) : undefined);
     };
 
-    observerEvent();
     cell?.observeDeep(observerEvent);
 
     return () => {
       cell?.unobserveDeep(observerEvent);
     };
-  }, [cell, field, fieldClock, rowId, fieldId]);
+  }, [cell]);
 
   useEffect(() => {
     if (!cells) return;
 
     const observerEvent = () => {
-      const cell = cells.get(fieldId);
-
-      if (!cell) {
-        setCellValue(undefined);
-        return;
-      } else {
-        setCellValue(parseYDatabaseCellToCell(cell, field));
-      }
+      setClock((prev) => prev + 1);
     };
-
-    observerEvent();
 
     cells.observe(observerEvent);
 
     return () => {
       cells.unobserve(observerEvent);
     };
-  }, [cells, fieldId, field, fieldClock, rowId]);
+  }, [cells]);
 
   if (fieldType === FieldType.Rollup) {
     return rollupCell;

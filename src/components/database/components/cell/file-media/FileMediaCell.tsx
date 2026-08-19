@@ -7,6 +7,7 @@ import {
   FileMediaCellDataItem,
   FileMediaType,
 } from '@/application/database-yjs/cell.type';
+import { toFileMediaCellData } from '@/application/database-yjs/fields/media/parse';
 import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import FileMediaCellMenu from '@/components/database/components/cell/file-media/FileMediaCellMenu';
 import PreviewImage from '@/components/database/components/cell/file-media/PreviewImage';
@@ -24,10 +25,7 @@ export function FileMediaCell({
   rowId,
   readOnly,
 }: CellProps<FileMediaCellType>) {
-  const rawValue = cell?.data;
-  const value = useMemo(() => {
-    return Array.isArray(rawValue) ? rawValue.filter(Boolean) : [];
-  }, [rawValue]);
+  const value = useMemo(() => toFileMediaCellData(cell?.data), [cell?.data]);
   const { workspaceId, databasePageId } = useDatabaseContext();
   const [openPreview, setOpenPreview] = React.useState(false);
   const previewIndexRef = React.useRef(0);

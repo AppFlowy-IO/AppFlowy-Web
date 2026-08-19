@@ -12,6 +12,7 @@ import {
   deleteFile,
   parseFileMediaTypeOptions,
   parseToFilesMediaCellData,
+  toFileMediaCellData,
   updateFileName,
 } from '@/application/database-yjs/fields/media/parse';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
@@ -28,7 +29,7 @@ export function FileMediaCell ({
   rowId,
   readOnly,
 }: CellProps<FileMediaCellType>) {
-  const value = cell?.data;
+  const value = useMemo(() => toFileMediaCellData(cell?.data), [cell?.data]);
   const { t } = useTranslation();
   const { field, clock } = useFieldSelector(fieldId);
   const { workspaceId, databasePageId } = useDatabaseContext();
@@ -42,17 +43,17 @@ export function FileMediaCell ({
   const [openPreview, setOpenPreview] = React.useState(false);
   const previewIndexRef = React.useRef(0);
   const photos = useMemo(() => {
-    return value?.filter(item => {
+    return value.filter(item => {
       return item.file_type === FileMediaType.Image && item.url;
     }).map(image => {
       return {
         src: image.url,
       };
-    }) || [];
+    });
   }, [value]);
 
   const images = useMemo(() => {
-    return value?.filter(item => item.file_type === FileMediaType.Image && item.url) || [];
+    return value.filter(item => item.file_type === FileMediaType.Image && item.url);
   }, [value]);
 
   const handlePreview = useCallback((index: number) => {
@@ -74,27 +75,25 @@ export function FileMediaCell ({
 
   const onUpdateName = useCallback((file: FileMediaCellDataItem, name: string) => {
     const newData = updateFileName({
-      data: cell?.data,
+      data: value,
       fileId: file.id,
       newName: name,
     });
 
     updateCell(newData);
-  }, [cell?.data, updateCell]);
+  }, [value, updateCell]);
 
   const onDelete = useCallback((fileId: string) => {
     const newData = deleteFile({
-      data: cell?.data,
+      data: value,
       fileId,
     });
 
     updateCell(newData);
-  }, [cell?.data, updateCell]);
+  }, [value, updateCell]);
 
   const renderChildren = useMemo(() => {
-    const length = value?.length || 0;
-
-    if (!value || length === 0) {
+    if (value.length === 0) {
       return null;
     }
 
@@ -146,7 +145,7 @@ export function FileMediaCell ({
       }}
       className={'h-full w-full'}
     >
-      {value && value.length > 0 && <div
+      {value.length > 0 && <div
         style={style}
         className={cn('flex pb-2 w-full items-center gap-1.5 flex-wrap', 'cursor-pointer')}
       >
