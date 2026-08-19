@@ -125,11 +125,12 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
   useEffect(() => {
     if (!enabled || !eventEmitter) return;
 
-    // Rebuild candidate paths from the event payload instead of refetching the
-    // catalog — outline events fire on every page create/rename/move. Skip when
-    // nothing is cached yet or another hook instance already processed this
-    // exact payload. New databases still surface via the fetch effect, which
-    // re-runs whenever a picker becomes enabled.
+    // Rebuild live candidate metadata and paths from the event payload instead
+    // of refetching the catalog — outline events fire on every page
+    // create/rename/move. Skip when nothing is cached yet or another hook
+    // instance already processed this exact payload. New databases still
+    // surface via the fetch effect, which re-runs whenever a picker becomes
+    // enabled.
     const handleOutlineLoaded = (outline?: View[]) => {
       if (!Array.isArray(outline)) return;
 

@@ -2,7 +2,7 @@ import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { View, ViewLayout } from '@/application/types';
 
-import { loadRelationDatabaseCandidates } from './relationDatabaseCandidates';
+import { buildRelationDatabaseCandidates, loadRelationDatabaseCandidates } from './relationDatabaseCandidates';
 
 jest.mock('@/application/services/domains/view', () => ({
   databaseCatalogViewToView: (databaseId: string, view: WorkspaceDatabaseWithViews['views'][number]) => ({
@@ -137,6 +137,41 @@ describe('loadRelationDatabaseCandidates', () => {
       }),
     ]);
     expect(result.relations).toEqual({ 'database-1': 'database-1-grid' });
+  });
+
+  it('uses fresh outline metadata when the catalog still has the previous database name', () => {
+    const database = remoteDatabase('database-1', 'Projects');
+    const grid = makeView({
+      viewId: 'database-1-grid',
+      name: 'Grid',
+      databaseId: 'database-1',
+      parentViewId: 'database-1-container',
+    });
+    const container = makeView({
+      viewId: 'database-1-container',
+      name: 'Renamed Projects',
+      databaseId: 'database-1',
+      parentViewId: 'space-1',
+      isContainer: true,
+      children: [grid],
+    });
+    const space = makeView({ viewId: 'space-1', name: 'General', children: [container] });
+
+    const result = buildRelationDatabaseCandidates([database], [space]);
+
+    expect(result.candidates[0]).toEqual(
+      expect.objectContaining({
+        displayView: expect.objectContaining({
+          view_id: 'database-1-container',
+          name: 'Renamed Projects',
+          extra: expect.objectContaining({
+            database_id: 'database-1',
+            is_database_container: true,
+          }),
+        }),
+        path: ['General', 'Renamed Projects'],
+      })
+    );
   });
 
   it('does not expose databases without a container', async () => {

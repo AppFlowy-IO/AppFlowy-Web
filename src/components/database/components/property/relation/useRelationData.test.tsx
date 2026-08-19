@@ -104,7 +104,7 @@ describe('useRelationData', () => {
     expect(result.current.selectedView?.name).toBe('Projects');
   });
 
-  it('rebuilds candidate paths from the outline event payload without refetching the catalog', async () => {
+  it('rebuilds candidate metadata from the outline event payload without refetching the catalog', async () => {
     const eventEmitter = new EventEmitter();
 
     jest.mocked(useDatabaseContext).mockReturnValue({
@@ -126,7 +126,7 @@ describe('useRelationData', () => {
         children: [
           {
             view_id: 'container-1',
-            name: 'Projects',
+            name: 'Renamed Projects',
             children: [{ view_id: 'grid-1', name: 'Grid', children: [] }],
           },
         ],
@@ -137,7 +137,11 @@ describe('useRelationData', () => {
       eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, outline);
     });
 
-    await waitFor(() => expect(result.current.databaseCandidates[0]?.path).toEqual(['Space', 'Projects']));
+    await waitFor(() => {
+      expect(result.current.databaseCandidates[0]?.path).toEqual(['Space', 'Renamed Projects']);
+      expect(result.current.databaseCandidates[0]?.displayView.name).toBe('Renamed Projects');
+      expect(result.current.selectedView?.name).toBe('Renamed Projects');
+    });
     expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
   });
 });

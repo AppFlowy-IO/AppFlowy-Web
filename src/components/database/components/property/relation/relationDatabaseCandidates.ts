@@ -67,7 +67,22 @@ function candidateFromDatabase(
   database: DatabaseContainerCatalogEntry,
   viewIndex: Map<string, IndexedView>
 ): RelationDatabaseCandidate {
-  const displayView = databaseCatalogViewToView(database.databaseId, database.container);
+  const catalogDisplayView = databaseCatalogViewToView(database.databaseId, database.container);
+  const outlineContainer = viewIndex.get(database.container.view_id)?.view;
+  // The catalog determines which databases are selectable, but folder events
+  // are the live source of page metadata. In particular, the database-list
+  // response can still contain the previous container name immediately after
+  // a rename.
+  const displayView = outlineContainer
+    ? {
+        ...outlineContainer,
+        extra: {
+          ...(outlineContainer.extra ?? {}),
+          ...(catalogDisplayView.extra ?? {}),
+          is_space: catalogDisplayView.extra?.is_space ?? outlineContainer.extra?.is_space ?? false,
+        },
+      }
+    : catalogDisplayView;
   const pathEntry = viewIndex.get(database.primaryView.view_id) ?? viewIndex.get(database.container.view_id);
 
   return {
