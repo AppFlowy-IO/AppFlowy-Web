@@ -234,7 +234,14 @@ describe('DatabaseRowSubDocument', () => {
     expect(editor.getAttribute('data-content-padding')).toBe('template');
     expect(screen.queryByTestId('editor-skeleton')).toBeNull();
     expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(1);
-    expect(loadRowDocument).toHaveBeenCalledWith(documentId, { maxAttempts: 1 });
+    expect(loadRowDocument).toHaveBeenCalledWith(documentId, {
+      maxAttempts: 1,
+      rowDocumentSource: {
+        database_id: 'database-id',
+        database_view_id: 'database-view-id',
+        row_id: rowId,
+      },
+    });
     expect(loadRowDocument).toHaveBeenCalledTimes(1);
     expect(createRowDocument).toHaveBeenCalledWith(documentId, {
       database_id: 'database-id',
@@ -266,7 +273,14 @@ describe('DatabaseRowSubDocument', () => {
 
     await act(flushAsyncWork);
 
-    expect(loadRowDocument).toHaveBeenNthCalledWith(1, documentId, { maxAttempts: 1 });
+    expect(loadRowDocument).toHaveBeenNthCalledWith(1, documentId, {
+      maxAttempts: 1,
+      rowDocumentSource: {
+        database_id: 'database-id',
+        database_view_id: 'database-view-id',
+        row_id: rowId,
+      },
+    });
     expect(createRowDocument).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(1);
 
@@ -275,7 +289,14 @@ describe('DatabaseRowSubDocument', () => {
       await flushAsyncWork();
     });
 
-    expect(loadRowDocument).toHaveBeenNthCalledWith(2, documentId, { maxAttempts: 1 });
+    expect(loadRowDocument).toHaveBeenNthCalledWith(2, documentId, {
+      maxAttempts: 1,
+      rowDocumentSource: {
+        database_id: 'database-id',
+        database_view_id: 'database-view-id',
+        row_id: rowId,
+      },
+    });
   });
 
   it('shows no access without repairing or retrying when an existing row document is forbidden', async () => {
@@ -305,7 +326,14 @@ describe('DatabaseRowSubDocument', () => {
     expect(screen.getByTestId('row-document-no-access')).not.toBeNull();
     expect(checkIfRowDocumentExists).toHaveBeenCalledTimes(1);
     expect(loadRowDocument).toHaveBeenCalledTimes(1);
-    expect(loadRowDocument).toHaveBeenCalledWith(documentId, { maxAttempts: 1 });
+    expect(loadRowDocument).toHaveBeenCalledWith(documentId, {
+      maxAttempts: 1,
+      rowDocumentSource: {
+        database_id: 'database-id',
+        database_view_id: 'database-view-id',
+        row_id: rowId,
+      },
+    });
     expect(createRowDocument).not.toHaveBeenCalled();
     expect(jest.getTimerCount()).toBe(0);
 

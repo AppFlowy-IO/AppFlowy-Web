@@ -1259,6 +1259,7 @@ export type LoadView = (
 
 export interface LoadRowDocumentOptions {
   maxAttempts?: number;
+  rowDocumentSource?: RowDocumentSourcePayload;
 }
 
 export type LoadRowDocument = (documentId: string, options?: LoadRowDocumentOptions) => Promise<YDoc | null>;

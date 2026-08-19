@@ -1,7 +1,7 @@
 import { toBase64 } from 'lib0/buffer';
 
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
-import { RowId, Types, User, View } from '@/application/types';
+import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -323,7 +323,12 @@ export async function collabFullSyncBatch(
   return results;
 }
 
-export async function getCollab(workspaceId: string, objectId: string, collabType: Types) {
+export async function getCollab(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types,
+  rowDocumentSource?: RowDocumentSourcePayload
+) {
   const url = `/api/workspace/v1/${workspaceId}/collab/${objectId}`;
 
   const data = await executeAPIRequest<{
@@ -338,6 +343,13 @@ export async function getCollab(workspaceId: string, objectId: string, collabTyp
     >(url, {
       params: {
         collab_type: collabType,
+        ...(rowDocumentSource
+          ? {
+              database_id: rowDocumentSource.database_id,
+              row_id: rowDocumentSource.row_id,
+              row_document_id: objectId,
+            }
+          : {}),
       },
     })
   );

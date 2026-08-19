@@ -1,9 +1,11 @@
 import {
+  getCollab,
   getPublishView as getPublishViewAPI,
   getPageCollab,
   getPublishInfoWithViewId,
   getPublishViewMeta as getPublishViewMetaAPI,
 } from '@/application/services/js-services/http';
+import { RowDocumentSourcePayload, Types } from '@/application/types';
 
 const pendingRequests = new Map();
 
@@ -45,6 +47,12 @@ export function fetchPageCollab (workspaceId: string, viewId: string) {
   const fetchFunction = () => getPageCollab(workspaceId, viewId);
 
   return fetchWithDeduplication(`fetchPageCollab_${workspaceId}`, { viewId }, fetchFunction);
+}
+
+export function fetchRowDocumentCollab (workspaceId: string, documentId: string, source?: RowDocumentSourcePayload) {
+  const fetchFunction = () => getCollab(workspaceId, documentId, Types.Document, source);
+
+  return fetchWithDeduplication(`fetchRowDocumentCollab_${workspaceId}`, { documentId, source }, fetchFunction);
 }
 
 export function fetchViewInfo (viewId: string) {

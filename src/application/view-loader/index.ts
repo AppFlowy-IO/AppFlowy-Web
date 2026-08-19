@@ -13,7 +13,7 @@
 import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
-import { fetchPageCollab } from '@/application/services/js-services/fetch';
+import { fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import {
   LoadRowDocumentOptions,
@@ -227,6 +227,28 @@ async function fetchAndApply(workspaceId: string, viewId: string, doc: YDoc): Pr
     viewId,
     dataBytes: data.length,
     rowCount: rows ? Object.keys(rows).length : 0,
+    fetchDurationMs: Date.now() - fetchStartedAt,
+  });
+
+  applyYDoc(doc, data);
+}
+
+async function fetchRowDocumentAndApply(
+  workspaceId: string,
+  documentId: string,
+  doc: YDoc,
+  options: LoadRowDocumentOptions
+): Promise<void> {
+  Log.debug('[ViewLoader] fetching row document from server', { documentId });
+
+  const fetchStartedAt = Date.now();
+  // Row documents inherit access from their parent database. Pass that
+  // context so authorization does not depend on a direct document ACL.
+  const { data } = await fetchRowDocumentCollab(workspaceId, documentId, options.rowDocumentSource);
+
+  Log.debug('[ViewLoader] row document fetch complete', {
+    documentId,
+    dataBytes: data.length,
     fetchDurationMs: Date.now() - fetchStartedAt,
   });
 
@@ -465,7 +487,7 @@ export async function openRowSubDocument(
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        await fetchAndApply(workspaceId, documentId, doc);
+        await fetchRowDocumentAndApply(workspaceId, documentId, doc, options);
         fetched = true;
         break;
       } catch (e) {

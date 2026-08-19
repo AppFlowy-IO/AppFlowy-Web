@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
-import { fetchPageCollab } from '@/application/services/js-services/fetch';
+import { fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromDoc, openRowSubDocument, openView } from '@/application/view-loader';
@@ -30,6 +30,7 @@ jest.mock('@/application/services/js-services/cache', () => ({
 
 jest.mock('@/application/services/js-services/fetch', () => ({
   fetchPageCollab: jest.fn(),
+  fetchRowDocumentCollab: jest.fn(),
 }));
 
 jest.mock('@/application/sync-outbox', () => ({
@@ -42,6 +43,7 @@ const mockDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCo
 const mockInvalidateViewCache = invalidateViewCache as jest.MockedFunction<typeof invalidateViewCache>;
 const mockGetOrCreateRowSubDoc = getOrCreateRowSubDoc as jest.MockedFunction<typeof getOrCreateRowSubDoc>;
 const mockFetchPageCollab = fetchPageCollab as jest.MockedFunction<typeof fetchPageCollab>;
+const mockFetchRowDocumentCollab = fetchRowDocumentCollab as jest.MockedFunction<typeof fetchRowDocumentCollab>;
 const mockEnqueueOutboxUpdate = enqueueOutboxUpdate as jest.MockedFunction<typeof enqueueOutboxUpdate>;
 
 function createEmptyDoc(guid: string): YDoc {
@@ -55,6 +57,14 @@ function createDatabaseDoc(guid: string, databaseId = guid): YDoc {
 
   database.set(YjsDatabaseKey.id, databaseId);
   root.set(YjsEditorKey.database, database);
+  return doc;
+}
+
+function createDocumentDoc(guid: string): YDoc {
+  const doc = createEmptyDoc(guid);
+  const root = doc.getMap(YjsEditorKey.data_section);
+
+  root.set(YjsEditorKey.document, new Y.Map());
   return doc;
 }
 
@@ -231,12 +241,35 @@ describe('view-loader row document retry policy', () => {
     jest.useRealTimers();
   });
 
+  it('fetches row documents through the contextual collab endpoint', async () => {
+    const documentId = '00000000-0000-4000-8000-000000000006';
+    const doc = createEmptyDoc(documentId);
+    const serverDoc = createDocumentDoc(documentId);
+    const rowDocumentSource = {
+      database_id: '00000000-0000-4000-8000-000000000003',
+      database_view_id: '00000000-0000-4000-8000-000000000004',
+      row_id: '00000000-0000-4000-8000-000000000005',
+    };
+
+    mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
+    mockFetchRowDocumentCollab.mockResolvedValue({ data: Y.encodeStateAsUpdate(serverDoc) });
+
+    const result = await openRowSubDocument('workspace-id', documentId, {
+      maxAttempts: 1,
+      rowDocumentSource,
+    });
+
+    expect(result.doc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.document)).toBe(true);
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledWith('workspace-id', documentId, rowDocumentSource);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
+  });
+
   it('keeps the default retry budget for a row document that may still be created', async () => {
     const documentId = '00000000-0000-4000-8000-000000000007';
     const doc = createEmptyDoc(documentId);
 
     mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchPageCollab.mockRejectedValue(new Error('row document is not ready'));
+    mockFetchRowDocumentCollab.mockRejectedValue(new Error('row document is not ready'));
 
     const resultPromise = openRowSubDocument('workspace-id', documentId);
 
@@ -245,7 +278,7 @@ describe('view-loader row document retry policy', () => {
     const result = await resultPromise;
 
     expect(result.doc).toBe(doc);
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(6);
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(6);
   });
 
   it('honors a one-attempt limit when existence was already confirmed', async () => {
@@ -253,12 +286,12 @@ describe('view-loader row document retry policy', () => {
     const doc = createEmptyDoc(documentId);
 
     mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchPageCollab.mockRejectedValue(new Error('page view is not registered yet'));
+    mockFetchRowDocumentCollab.mockRejectedValue(new Error('row document is not registered yet'));
 
     const result = await openRowSubDocument('workspace-id', documentId, { maxAttempts: 1 });
 
     expect(result.doc).toBe(doc);
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
     expect(jest.getTimerCount()).toBe(0);
   });
 
@@ -267,14 +300,14 @@ describe('view-loader row document retry policy', () => {
     const doc = createEmptyDoc(documentId);
 
     mockGetOrCreateRowSubDoc.mockResolvedValue(doc);
-    mockFetchPageCollab.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
+    mockFetchRowDocumentCollab.mockRejectedValue({ code: 1012, message: 'user is not allowed to access this view' });
 
     const rejection = expect(openRowSubDocument('workspace-id', documentId)).rejects.toMatchObject({ code: 1012 });
 
     await jest.runAllTimersAsync();
     await rejection;
 
-    expect(mockFetchPageCollab).toHaveBeenCalledTimes(1);
+    expect(mockFetchRowDocumentCollab).toHaveBeenCalledTimes(1);
     expect(mockDeleteCollabDB).toHaveBeenCalledWith(documentId, { destroyDoc: true });
     expect(jest.getTimerCount()).toBe(0);
   });
