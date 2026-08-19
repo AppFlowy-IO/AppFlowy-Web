@@ -347,6 +347,11 @@ function RelationCellMenuContent({
     };
   }, [createRow, guid, recordContent, rowIds]);
 
+  // Membership sets, not `Array.includes`: both lists are scanned once per candidate row here and
+  // again per rendered row, which is quadratic on a target database of any size.
+  const relatedRowIdSet = useMemo(() => new Set(relationRowIds ?? []), [relationRowIds]);
+  const liveRowIdSet = useMemo(() => new Set(rowIds), [rowIds]);
+
   const filteredRowIds = useMemo(() => {
     const liveRowIds = sortByRecentRows(rowIds, selectedViewId);
 
@@ -354,26 +359,26 @@ function RelationCellMenuContent({
       return liveRowIds;
     }
 
-    return liveRowIds.filter((id) => {
-      const content = rowContents.get(id) || '';
+    const query = searchInput.toLowerCase();
 
-      return content.toLowerCase().includes(searchInput.toLowerCase());
-    });
+    return liveRowIds.filter((id) => (rowContents.get(id) || '').toLowerCase().includes(query));
   }, [rowContents, rowIds, searchInput, selectedViewId]);
 
   const unRelatedRowIds = useMemo(() => {
-    return filteredRowIds.filter((id) => !relationRowIds?.includes(id));
-  }, [filteredRowIds, relationRowIds]);
+    return filteredRowIds.filter((id) => !relatedRowIdSet.has(id));
+  }, [filteredRowIds, relatedRowIdSet]);
 
   const filteredRelatedRowIds = useMemo(() => {
-    return (
-      relationRowIds?.filter((id) => {
-        const content = rowContents.get(id) || (rowIds.includes(id) ? '' : t('document.mention.deletedPage'));
+    if (!relationRowIds) return [];
 
-        return content.toLowerCase().includes(searchInput.toLowerCase());
-      }) || []
-    );
-  }, [relationRowIds, rowContents, rowIds, searchInput, t]);
+    const query = searchInput.toLowerCase();
+
+    return relationRowIds.filter((id) => {
+      const content = rowContents.get(id) || (liveRowIdSet.has(id) ? '' : t('document.mention.deletedPage'));
+
+      return content.toLowerCase().includes(query);
+    });
+  }, [liveRowIdSet, relationRowIds, rowContents, searchInput, t]);
 
   // filteredRowIds covers live target rows (for adding); filteredRelatedRowIds
   // covers the cell's already-related ids (including stale/deleted ones).
@@ -385,8 +390,8 @@ function RelationCellMenuContent({
 
   const renderItem = useCallback(
     (id: string) => {
-      const isRelated = relationRowIds?.includes(id);
-      const isDeleted = isRelated && !rowIds.includes(id);
+      const isRelated = relatedRowIdSet.has(id);
+      const isDeleted = isRelated && !liveRowIdSet.has(id);
       // A row we know exists but whose primary cell has not landed yet. Deleted rows are excluded:
       // their wording is final, and their doc is never going to arrive.
       const isResolving = !isDeleted && !rowContents.has(id);
@@ -448,9 +453,9 @@ function RelationCellMenuContent({
       );
     },
     [
-      relationRowIds,
+      relatedRowIdSet,
+      liveRowIdSet,
       rowContents,
-      rowIds,
       selectedId,
       openRelatedRow,
       onAddRelationRowId,

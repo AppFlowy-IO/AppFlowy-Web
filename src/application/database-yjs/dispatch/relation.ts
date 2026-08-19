@@ -481,6 +481,12 @@ export async function applyRelationReciprocalInserts(args: {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   bindViewSync?: (doc: YDoc) => unknown;
   actorUid?: AttributionUid;
+  /**
+   * The related database doc, when the caller already resolved it. Resolving it again means a
+   * second `loadView` round-trip — and a second wait on {@link waitForDatabaseHydration} for a
+   * database that is still syncing.
+   */
+  relatedDoc?: YDoc | null;
 }) {
   if (args.insertedRowIds.length === 0) return;
 
@@ -494,14 +500,16 @@ export async function applyRelationReciprocalInserts(args: {
     return;
   }
 
-  const relatedDoc = await loadRelatedDatabaseDoc({
-    sourceDatabase: args.database,
-    sourceDatabaseDoc: args.databaseDoc,
-    relatedDatabaseId: typeOption.database_id,
-    loadView: args.loadView,
-    getViewIdFromDatabaseId: args.getViewIdFromDatabaseId,
-    bindViewSync: args.bindViewSync,
-  });
+  const relatedDoc =
+    args.relatedDoc ??
+    (await loadRelatedDatabaseDoc({
+      sourceDatabase: args.database,
+      sourceDatabaseDoc: args.databaseDoc,
+      relatedDatabaseId: typeOption.database_id,
+      loadView: args.loadView,
+      getViewIdFromDatabaseId: args.getViewIdFromDatabaseId,
+      bindViewSync: args.bindViewSync,
+    }));
 
   if (!relatedDoc) return;
 
@@ -647,6 +655,7 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         getViewIdFromDatabaseId,
         bindViewSync,
         actorUid,
+        relatedDoc,
       });
     },
     [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowId, rowMap]
