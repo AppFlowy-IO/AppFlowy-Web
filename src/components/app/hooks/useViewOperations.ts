@@ -5,16 +5,7 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
-import {
-  AccessLevel,
-  DatabaseRelations,
-  LoadViewOptions,
-  Types,
-  View,
-  ViewLayout,
-  YDoc,
-  YDocWithMeta,
-} from '@/application/types';
+import { AccessLevel, LoadViewOptions, Types, View, ViewLayout, YDoc, YDocWithMeta } from '@/application/types';
 import { openView } from '@/application/view-loader';
 import {
   getDatabaseIdFromExtra,
@@ -122,15 +113,10 @@ export function getViewCanWriteStatus(viewId: string, outline?: View[], fallback
 }
 
 // Hook for managing view-related operations
-export function useViewOperations({
-  loadDatabaseRelations,
-}: {
-  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
-} = {}) {
-  const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
+export function useViewOperations() {
+  const { currentWorkspaceId } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
-  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace?.databaseStorageId;
 
   const [awarenessMap, setAwarenessMap] = useState<Record<string, Awareness>>({});
   // Ref for stable access to awarenessMap in callbacks (prevents bindViewSync recreation)
@@ -164,9 +150,6 @@ export function useViewOperations({
 
   const { resolveCollabObjectId, getDatabaseIdForViewId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
-    databaseStorageId,
-    registerSyncContext,
-    loadDatabaseRelations,
   });
 
   // Check if view should be readonly based on access permissions

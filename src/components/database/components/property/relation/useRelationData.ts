@@ -32,8 +32,7 @@ export interface UseRelationDataOptions {
 
 export function useRelationData(fieldId: string, options: UseRelationDataOptions = {}) {
   const { enabled = true } = options;
-  const { eventEmitter, getViewIdFromDatabaseId, loadDatabaseRelations, loadViewMeta, loadViews, workspaceId } =
-    useDatabaseContext();
+  const { eventEmitter, getViewIdFromDatabaseId, loadViewMeta, loadViews, workspaceId } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
   const relationOption: RelationTypeOption | null = field ? parseRelationTypeOption(field) : null;
   const relatedDatabaseId = relationOption?.database_id || null;
@@ -48,15 +47,10 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [fallbackRelatedViewId, setFallbackRelatedViewId] = useState<string | null>(null);
   const [selectedView, setSelectedView] = useState<View | undefined>(undefined);
-  const loadDatabaseRelationsRef = useRef(loadDatabaseRelations);
   const loadViewMetaRef = useRef(loadViewMeta);
   const loadViewsRef = useRef(loadViews);
   const onUpdateTypeOption = useUpdateRelationTypeOption(fieldId);
   const onUpdateDatabaseId = (databaseId: string) => onUpdateTypeOption({ database_id: databaseId });
-
-  useEffect(() => {
-    loadDatabaseRelationsRef.current = loadDatabaseRelations;
-  }, [loadDatabaseRelations]);
 
   useEffect(() => {
     loadViewMetaRef.current = loadViewMeta;
@@ -79,8 +73,6 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
 
     void loadRelationDatabaseCandidates({
       workspaceId,
-      loadDatabaseRelations: loadDatabaseRelationsRef.current,
-      loadViewMeta: loadViewMetaRef.current,
       loadViews: loadViewsRef.current,
     })
       .then((nextResult) => {

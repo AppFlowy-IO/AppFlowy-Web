@@ -2,7 +2,6 @@ export {
   getAppOutline as getOutline,
   getViewNavigation as getNavigation,
   getViews as getMultiple,
-  listWorkspaceDatabases as listDatabases,
   getAppFavorites as getFavorites,
   getAppRecent as getRecent,
   getAppTrash as getTrash,
@@ -19,3 +18,13 @@ export {
   refreshAppTrashCache as refreshTrash,
   getAppDatabaseViewRelationsFromCollab as getDatabaseRelations,
 } from '../js-services/cached-api';
+export {
+  databaseCatalogViewToView,
+  type DatabaseContainerCatalogEntry,
+  getDatabaseContainerEntries,
+  getDatabaseContainerView,
+  getDatabaseIdFromWorkspaceCatalog,
+  getDatabasePrimaryView,
+  getViewIdFromWorkspaceCatalog,
+  refreshWorkspaceDatabaseCatalog,
+} from '../js-services/workspace-database-catalog';

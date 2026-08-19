@@ -180,8 +180,7 @@ export function RelationCreationDialog({
   onCreate: (result: RelationCreationResult) => void;
 }) {
   const { t } = useTranslation();
-  const { databaseDoc, databasePageId, loadDatabaseRelations, loadViewMeta, loadViews, workspaceId } =
-    useDatabaseContext();
+  const { databaseDoc, databasePageId, loadViews, workspaceId } = useDatabaseContext();
   const updateIcon = useUpdatePropertyIconDispatch(fieldId);
   const [fieldName, setFieldName] = useState(initialFieldName);
   const [reciprocalFieldName, setReciprocalFieldName] = useState('');
@@ -210,17 +209,7 @@ export function RelationCreationDialog({
   // Capture the latest load functions without restarting the request whenever
   // the parent context recreates them. Restarting detaches candidate rows while
   // a pointer is moving from the trigger into the list.
-  const loadDatabaseRelationsRef = useRef(loadDatabaseRelations);
-  const loadViewMetaRef = useRef(loadViewMeta);
   const loadViewsRef = useRef(loadViews);
-
-  useEffect(() => {
-    loadDatabaseRelationsRef.current = loadDatabaseRelations;
-  }, [loadDatabaseRelations]);
-
-  useEffect(() => {
-    loadViewMetaRef.current = loadViewMeta;
-  }, [loadViewMeta]);
 
   useEffect(() => {
     loadViewsRef.current = loadViews;
@@ -228,8 +217,6 @@ export function RelationCreationDialog({
 
   useEffect(() => {
     if (!open) return;
-    const loadDatabaseRelationsFn = loadDatabaseRelationsRef.current;
-    const loadViewMetaFn = loadViewMetaRef.current;
     const loadViewsFn = loadViewsRef.current;
 
     let cancelled = false;
@@ -239,8 +226,6 @@ export function RelationCreationDialog({
       try {
         const result = await loadRelationDatabaseCandidates({
           workspaceId,
-          loadDatabaseRelations: loadDatabaseRelationsFn,
-          loadViewMeta: loadViewMetaFn,
           loadViews: loadViewsFn,
         });
 

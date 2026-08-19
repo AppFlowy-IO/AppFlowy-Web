@@ -1,15 +1,16 @@
 import { renderHook } from '@testing-library/react';
 
-import type { SyncContextType } from '@/components/ws/useSync';
+import { getDatabaseIdFromWorkspaceCatalog, getViewIdFromWorkspaceCatalog } from '@/application/services/domains/view';
 
 import { useDatabaseIdentity } from '../useDatabaseIdentity';
 
-jest.mock('@/application/db', () => ({
-  openCollabDB: jest.fn(),
-}));
-
 jest.mock('@/application/view-loader', () => ({
   getDatabaseIdFromDoc: jest.fn(),
+}));
+
+jest.mock('@/application/services/domains/view', () => ({
+  getDatabaseIdFromWorkspaceCatalog: jest.fn(),
+  getViewIdFromWorkspaceCatalog: jest.fn(),
 }));
 
 const WORKSPACE_ID = 'workspace-1';
@@ -21,20 +22,12 @@ const DATABASE_MAPPINGS = {
   [DATABASE_ID]: [PRIMARY_VIEW_ID, SECONDARY_VIEW_ID],
 };
 
-const registerSyncContext = jest.fn() as unknown as SyncContextType['registerSyncContext'];
-
-type LoadDatabaseRelations = (options?: { refresh?: boolean }) => Promise<Record<string, string> | undefined>;
-
-function renderDatabaseIdentity(loadDatabaseRelations?: LoadDatabaseRelations) {
+function renderDatabaseIdentity() {
   const params: Parameters<typeof useDatabaseIdentity>[0] = {
     currentWorkspaceId: WORKSPACE_ID,
-    registerSyncContext,
-    loadDatabaseRelations,
   };
 
-  return renderHook(() =>
-    useDatabaseIdentity(params)
-  );
+  return renderHook(() => useDatabaseIdentity(params));
 }
 
 describe('useDatabaseIdentity', () => {
@@ -42,6 +35,8 @@ describe('useDatabaseIdentity', () => {
     jest.clearAllMocks();
     localStorage.clear();
     window.history.replaceState({}, '', `/app/${WORKSPACE_ID}/page`);
+    jest.mocked(getDatabaseIdFromWorkspaceCatalog).mockResolvedValue(null);
+    jest.mocked(getViewIdFromWorkspaceCatalog).mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -84,15 +79,19 @@ describe('useDatabaseIdentity', () => {
     await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
   });
 
-  it('refreshes workspace relation metadata when the synced mapping is unavailable', async () => {
-    const loadDatabaseRelations = jest
-      .fn<ReturnType<LoadDatabaseRelations>, Parameters<LoadDatabaseRelations>>()
-      .mockResolvedValueOnce({})
-      .mockResolvedValueOnce({ [DATABASE_ID]: PRIMARY_VIEW_ID });
-    const { result } = renderDatabaseIdentity(loadDatabaseRelations);
+  it('resolves a database view through the IndexedDB-backed workspace catalog', async () => {
+    jest.mocked(getViewIdFromWorkspaceCatalog).mockResolvedValue(PRIMARY_VIEW_ID);
+    const { result } = renderDatabaseIdentity();
 
     await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
-    expect(loadDatabaseRelations).toHaveBeenNthCalledWith(1);
-    expect(loadDatabaseRelations).toHaveBeenNthCalledWith(2, { refresh: true });
+    expect(getViewIdFromWorkspaceCatalog).toHaveBeenCalledWith(WORKSPACE_ID, DATABASE_ID);
+  });
+
+  it('resolves a database ID through the IndexedDB-backed workspace catalog', async () => {
+    jest.mocked(getDatabaseIdFromWorkspaceCatalog).mockResolvedValue(DATABASE_ID);
+    const { result } = renderDatabaseIdentity();
+
+    await expect(result.current.getDatabaseIdForViewId(SECONDARY_VIEW_ID)).resolves.toBe(DATABASE_ID);
+    expect(getDatabaseIdFromWorkspaceCatalog).toHaveBeenCalledWith(WORKSPACE_ID, SECONDARY_VIEW_ID);
   });
 });

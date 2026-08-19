@@ -92,6 +92,15 @@ describe('collab IndexedDB persistence internals', () => {
     expect(result).toEqual({ snapshot, updates: [updateRecord] });
   });
 
+  it('registers user-scoped workspace database catalog indexes', () => {
+    const schema = db.workspace_database_catalog.schema;
+
+    expect(schema.primKey.src).toBe('[user_id+workspace_id+view_id]');
+    expect(schema.indexes.map((index) => index.src)).toEqual(
+      expect.arrayContaining(['[user_id+workspace_id]', '[user_id+workspace_id+database_id]'])
+    );
+  });
+
   it('clears all blob RID checkpoints when the shared collab cache database is deleted', () => {
     localStorage.setItem('af_database_blob_rid:database-1', JSON.stringify({ timestamp: 1, seqNo: 2 }));
     localStorage.setItem('af_database_blob_rid:database-2', JSON.stringify({ timestamp: 3, seqNo: 4 }));
