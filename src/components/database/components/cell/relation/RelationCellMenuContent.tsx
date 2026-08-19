@@ -322,6 +322,9 @@ function RelationCellMenuContent({
             // what ends the row's loading placeholder, so bailing out here — or skipping the
             // write — would leave this row, and with a `continue` every row after it, pulsing
             // forever. An unreadable row falls back to the "Untitled" wording instead.
+            // Deliberate: a failed row is retried only when `rowIds` or `guid` change (it stays
+            // absent from `rowDocsRef`, so the next run re-attempts createRow) — not on
+            // primary-field ticks, which no longer re-run this effect.
           }
         }
 

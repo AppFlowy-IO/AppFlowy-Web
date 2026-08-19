@@ -343,12 +343,6 @@ async function loadRelatedDatabaseDoc(args: {
 
   const doc = await args.loadView(relatedViewId);
 
-  // `loadView` resolves as soon as a doc exists locally, which for a database that has never been
-  // opened can be an empty shell with the first sync still in flight. Every caller reads the
-  // `database` map straight away and silently degrades when it is missing — dropping the relation
-  // back to one-way, or skipping the reciprocal cell write — so wait for it to land.
-  if (doc) await waitForDatabaseHydration(doc);
-
   // loadView may return a cache-only doc that is not bound to server sync.
   // Bind it so reciprocal field/cell mutations propagate to other clients;
   // without this, two-way relation edits to an unopened related database can
@@ -360,6 +354,15 @@ async function loadRelatedDatabaseDoc(args: {
     boundRelatedDocs.add(doc);
     args.bindViewSync(doc);
   }
+
+  // `loadView` resolves as soon as a doc exists locally, which for a database that has never been
+  // opened can be an empty shell with the first sync still in flight. Every caller reads the
+  // `database` map straight away and silently degrades when it is missing — dropping the relation
+  // back to one-way, or skipping the reciprocal cell write — so wait for it to land. The wait must
+  // come AFTER binding sync: for a cache-only shell with no HTTP fetch in flight, the sync binding
+  // is the only channel that can deliver the missing `database` map, and waiting first would let
+  // the timeout expire before that channel even opens.
+  if (doc) await waitForDatabaseHydration(doc);
 
   return doc;
 }
@@ -624,10 +627,18 @@ export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
         ? parseRelationTypeOption(reciprocalField).source_limit
         : RelationLimit.NoLimit;
 
-      // `applyRelationCellChangeset` returns disjoint inserted/removed sets, so the two sides
-      // touch different target rows and can load their row docs concurrently.
+      // The two sides run concurrently, so they must touch different target rows. The effective
+      // sets are NOT inherently disjoint: a changeset carrying the same id in both insertedRowIds
+      // and removedRowIds (a reinsert) puts that id in both. No current caller sends one, but if it
+      // happened the two branches would race remove-against-insert on the same reciprocal cell,
+      // with an order-dependent result. The source cell ends with the id present (removal applies
+      // first, insertion re-appends), so the reciprocal must too — drop such ids from the removal
+      // side and let the insert branch ensure presence.
+      const insertedSet = new Set(effectiveChanges.insertedRowIds);
+      const removedOnlyRowIds = effectiveChanges.removedRowIds.filter((targetRowId) => !insertedSet.has(targetRowId));
+
       await Promise.all([
-        ...effectiveChanges.removedRowIds.map(async (targetRowId) => {
+        ...removedOnlyRowIds.map(async (targetRowId) => {
           const targetRowDoc = await loadRowDoc({
             databaseDoc: relatedDoc,
             rowId: targetRowId,
