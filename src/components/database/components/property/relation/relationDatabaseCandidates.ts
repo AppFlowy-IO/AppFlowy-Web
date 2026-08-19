@@ -4,6 +4,7 @@ import {
   getDatabaseContainerEntries,
   refreshWorkspaceDatabaseCatalog,
 } from '@/application/services/domains/view';
+import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { DatabaseRelations, View } from '@/application/types';
 
 /** A database that a relation field can point at. */
@@ -28,6 +29,7 @@ export interface RelationDatabaseCandidatesResult {
   candidates: RelationDatabaseCandidate[];
   relations: DatabaseRelations;
   outline: View[];
+  databases: WorkspaceDatabaseWithViews[];
 }
 
 function indexViews(views: View[]): Map<string, IndexedView> {
@@ -76,6 +78,20 @@ function candidateFromDatabase(
   };
 }
 
+/** Pure recompute for when a fresh outline arrives without a catalog change. */
+export function buildRelationDatabaseCandidates(
+  databases: WorkspaceDatabaseWithViews[],
+  outline: View[]
+): RelationDatabaseCandidatesResult {
+  const viewIndex = indexViews(outline);
+  const candidates = getDatabaseContainerEntries(databases).map((database) =>
+    candidateFromDatabase(database, viewIndex)
+  );
+  const relations = Object.fromEntries(candidates.map((candidate) => [candidate.databaseId, candidate.viewId]));
+
+  return { candidates, relations, outline, databases };
+}
+
 /**
  * Load server-authoritative relation targets and use the outline only to
  * decorate them with a path. Unlike desktop, web has no offline-created
@@ -87,12 +103,6 @@ export async function loadRelationDatabaseCandidates({
 }: LoadRelationDatabaseCandidatesOptions): Promise<RelationDatabaseCandidatesResult> {
   const outlinePromise = (loadViews?.() ?? Promise.resolve(undefined)).catch(() => undefined);
   const [databases, loadedOutline] = await Promise.all([refreshWorkspaceDatabaseCatalog(workspaceId), outlinePromise]);
-  const outline = loadedOutline ?? [];
-  const viewIndex = indexViews(outline);
-  const candidates = getDatabaseContainerEntries(databases).map((database) =>
-    candidateFromDatabase(database, viewIndex)
-  );
-  const relations = Object.fromEntries(candidates.map((candidate) => [candidate.databaseId, candidate.viewId]));
 
-  return { candidates, relations, outline };
+  return buildRelationDatabaseCandidates(databases, loadedOutline ?? []);
 }

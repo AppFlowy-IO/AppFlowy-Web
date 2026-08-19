@@ -1,5 +1,8 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { EventEmitter } from 'events';
 
+import { act, renderHook, waitFor } from '@testing-library/react';
+
+import { APP_EVENTS } from '@/application/constants';
 import { parseRelationTypeOption, useDatabaseContext, useFieldSelector } from '@/application/database-yjs';
 import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
@@ -99,5 +102,42 @@ describe('useRelationData', () => {
       }),
     ]);
     expect(result.current.selectedView?.name).toBe('Projects');
+  });
+
+  it('rebuilds candidate paths from the outline event payload without refetching the catalog', async () => {
+    const eventEmitter = new EventEmitter();
+
+    jest.mocked(useDatabaseContext).mockReturnValue({
+      workspaceId: 'workspace-1',
+      loadViews: jest.fn().mockResolvedValue([]),
+      eventEmitter,
+    } as never);
+
+    const { result } = renderHook(() => useRelationData('field-1'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(result.current.databaseCandidates[0]?.path).toEqual(['Projects']);
+
+    const outline = [
+      {
+        view_id: 'space-1',
+        name: 'Space',
+        children: [
+          {
+            view_id: 'container-1',
+            name: 'Projects',
+            children: [{ view_id: 'grid-1', name: 'Grid', children: [] }],
+          },
+        ],
+      },
+    ];
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, outline);
+    });
+
+    await waitFor(() => expect(result.current.databaseCandidates[0]?.path).toEqual(['Space', 'Projects']));
+    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
   });
 });

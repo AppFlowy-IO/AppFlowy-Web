@@ -11,15 +11,14 @@ import {
   createLinkedDatabaseGalleryView,
 } from '@/application/database-yjs/gallery-layout';
 import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/application/database-yjs/list-layout';
-import { YjsEditor } from '@/application/slate-yjs';
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
-import { applyYDoc } from '@/application/ydoc/apply';
 import {
   databaseCatalogViewToView,
   getDatabaseContainerEntries,
   refreshWorkspaceDatabaseCatalog,
 } from '@/application/services/domains/view';
+import { YjsEditor } from '@/application/slate-yjs';
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import {
   findSlateEntryByBlockId,
   getBlockEntry,
@@ -48,6 +47,7 @@ import {
   ViewLayout,
   YjsEditorKey,
 } from '@/application/types';
+import { applyYDoc } from '@/application/ydoc/apply';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
@@ -66,7 +66,6 @@ import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
-import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
 import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
@@ -79,6 +78,7 @@ import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { ReactComponent as QuoteIcon } from '@/assets/icons/quote.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
+import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
 import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
 import { ReactComponent as ToggleHeading1Icon } from '@/assets/icons/toggle_h1.svg';
@@ -271,8 +271,8 @@ export function SlashPanel({
   } | null>(null);
   const [linkedTransformOrigin, setLinkedTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
   const [databaseSearch, setDatabaseSearch] = useState('');
-  const [databaseOutline, setDatabaseOutline] = useState<View[]>([]);
   const [databaseOptions, setDatabaseOptions] = useState<DatabaseOption[]>([]);
+  const databaseOutline = useMemo(() => databaseOptions.map((option) => option.view), [databaseOptions]);
   const [databaseLoading, setDatabaseLoading] = useState(false);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
 
@@ -593,7 +593,6 @@ export function SlashPanel({
         databaseViewNames: options.map(({ view }) => view.name),
       });
 
-      setDatabaseOutline(options.map(({ view }) => view));
       setDatabaseOptions(options);
       return options.length > 0;
     } catch (e) {
@@ -601,7 +600,6 @@ export function SlashPanel({
 
       notify.error(error.message);
       setDatabaseError(error.message);
-      setDatabaseOutline([]);
       setDatabaseOptions([]);
       return false;
     } finally {

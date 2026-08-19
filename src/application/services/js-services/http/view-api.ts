@@ -61,8 +61,11 @@ export async function listWorkspaceDatabases(workspaceId: string): Promise<Works
     const page = await getWorkspaceDatabaseListPage(workspaceId, offset);
 
     databases.push(...page.databases);
+    // Advance by what the server actually returned — it may cap pages below the
+    // requested limit. An empty page ends the loop even if has_more is set.
+    if (page.databases.length === 0) break;
     hasMore = page.has_more;
-    offset += WORKSPACE_DATABASE_LIST_PAGE_SIZE;
+    offset += page.databases.length;
   }
 
   return databases;

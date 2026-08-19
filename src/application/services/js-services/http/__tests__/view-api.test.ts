@@ -42,8 +42,25 @@ describe('workspace database list HTTP API', () => {
     expect(mockGet).toHaveBeenNthCalledWith(1, '/api/workspace/workspace-1/database', {
       params: { offset: 0, limit: 200 },
     });
+    // The next offset advances by the number of items actually returned, not by
+    // the requested limit, so a server that caps pages below the limit cannot
+    // cause records to be skipped.
     expect(mockGet).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-1/database', {
-      params: { offset: 200, limit: 200 },
+      params: { offset: 1, limit: 200 },
     });
+  });
+
+  it('stops when the server returns an empty page even if has_more is set', async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        data: {
+          databases: [],
+          has_more: true,
+        },
+      },
+    });
+
+    await expect(listWorkspaceDatabases('workspace-1')).resolves.toEqual([]);
+    expect(mockGet).toHaveBeenCalledTimes(1);
   });
 });
