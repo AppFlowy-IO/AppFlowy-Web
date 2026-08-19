@@ -98,27 +98,52 @@ async function pasteContent(page: Page, html: string, plainText: string) {
 /**
  * Move cursor to end of document and create a new empty paragraph.
  * Call this between sequential pastes so each paste starts in its own block.
+ *
+ * This must not rely on clicking a computed coordinate: once the document
+ * grows taller than the viewport the old click landed outside it and silently
+ * did nothing — harmless before paste-at-caret (#486), but now a table paste
+ * leaves the caret inside the pasted table's last cell, and the next TSV
+ * paste would fill that table's cells instead of creating a new one. Place
+ * the DOM selection in the last text node outside any table and let Slate
+ * sync it.
  */
 async function moveCursorToEnd(page: Page) {
-  const editor = EditorSelectors.slateEditor(page).nth(await getDocumentEditorIndex(page));
-  const box = await editor.boundingBox();
+  const targetIndex = await getDocumentEditorIndex(page);
 
-  if (!box) {
+  const placedTextLength = await page.evaluate((idx) => {
+    const allEditors = document.querySelectorAll('[data-slate-editor="true"]');
+    const targetEditor = allEditors[idx] as HTMLElement;
+
+    if (!targetEditor) return null;
+    const walker = document.createTreeWalker(targetEditor, NodeFilter.SHOW_TEXT);
+    let last: globalThis.Text | null = null;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode as globalThis.Text;
+
+      if (node.parentElement?.closest('.simple-table')) continue;
+      last = node;
+    }
+
+    if (!last) return null;
+    targetEditor.focus();
+    document.getSelection()?.collapse(last, last.length);
+    // Zero-width placeholder chars mean the block is empty.
+    return (last.textContent ?? '').replace(/[﻿​]/g, '').length;
+  }, targetIndex);
+
+  await page.waitForTimeout(200);
+
+  if (placedTextLength === null) {
+    // No text block outside a table (document ends inside a table).
     const isMac = process.platform === 'darwin';
 
     await page.keyboard.press(isMac ? 'Meta+ArrowDown' : 'Control+End');
-    await page.waitForTimeout(200);
+  } else if (placedTextLength > 0) {
+    // The last block has content; open a fresh paragraph below it.
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
-    return;
   }
 
-  const x = box.x + Math.min(320, box.width / 2);
-  const y = box.y + box.height - 196;
-
-  await page.mouse.click(x, y);
-  await page.waitForTimeout(300);
-  await page.mouse.click(x, y);
   await page.waitForTimeout(300);
 }
 

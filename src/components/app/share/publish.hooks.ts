@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 
 import { UpdatePublishConfigPayload, View } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { notify } from '@/components/_shared/notify';
 import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { ViewService, PublishService } from '@/application/services/domains';
@@ -54,7 +55,7 @@ export function useLoadPublishInfo(viewId: string) {
   const [loading, setLoading] = React.useState<boolean>(false);
 
   const currentUser = useCurrentUser();
-  const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
   const currentViewPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
   const isPublisher = currentViewPublishInfo?.publisherEmail === currentUser?.email;
 

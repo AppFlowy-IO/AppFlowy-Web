@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Workspace } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as LeaveSvg } from '@/assets/icons/logout.svg';
@@ -27,7 +28,7 @@ function MoreActions({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const currentUser = useCurrentUser();
-  const isOwner = workspace.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(workspace.owner?.uid, currentUser?.uid);
 
   return (
     <>

@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
 import { createRowDoc } from '@/application/database-yjs/__tests__/test-helpers';
-import { View, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { View, YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -83,6 +83,26 @@ function createTargetDoc(rowIds: string[]): YDoc {
   doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
 
   return doc;
+}
+
+/** A doc handed back by `loadView` before its first server sync has landed. */
+function createEmptyDoc(): YDoc {
+  const doc = new Y.Doc() as YDoc;
+
+  doc.guid = VIEW_ID;
+  doc.getMap(YjsEditorKey.data_section);
+
+  return doc;
+}
+
+/** Fills an empty doc in the way a late sync would: database map, primary field, row orders. */
+function syncDatabaseInto(doc: YDoc, rowIds: string[]) {
+  const target = createTargetDoc(rowIds);
+  const source = target.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
+
+  doc.transact(() => {
+    doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, source.clone() as YDatabase);
+  });
 }
 
 function createTitledRowDoc(rowId: string, title: string): YDoc {
@@ -188,6 +208,70 @@ describe('RelationCellMenuContent loading states', () => {
 
     await waitFor(() => expect(screen.getByText(DELETED)).toBeTruthy());
     expect(skeletons()).toHaveLength(0);
+  });
+
+  it('picks up the row list when the target database syncs in after loadView resolves', async () => {
+    // `loadView` hands back the doc as soon as it exists locally — reading it once left the
+    // picker stuck on "no result" until it was closed and reopened.
+    const doc = createEmptyDoc();
+
+    mockDatabaseContext.loadView.mockResolvedValue(doc);
+    mockDatabaseContext.createRow.mockImplementation((rowKey: string) =>
+      Promise.resolve(createTitledRowDoc(rowIdFromKey(rowKey), 'TSK-001'))
+    );
+
+    renderPicker();
+
+    await waitFor(() => expect(mockDatabaseContext.loadView).toHaveBeenCalled());
+    // Nothing has synced yet, so the picker may not conclude the database is empty.
+    expect(screen.queryByText(NO_RESULT)).toBeNull();
+
+    syncDatabaseInto(doc, ['row-1']);
+
+    await waitFor(() => expect(screen.getByText('TSK-001')).toBeTruthy());
+    expect(screen.queryByText(NO_RESULT)).toBeNull();
+  });
+
+  it('refreshes a row title that syncs in after its row doc resolves', async () => {
+    mockDatabaseContext.loadView.mockResolvedValue(createTargetDoc(['row-1']));
+
+    const rowDoc = createTitledRowDoc('row-1', '');
+
+    mockDatabaseContext.createRow.mockResolvedValue(rowDoc);
+
+    renderPicker();
+
+    await waitFor(() => expect(screen.getByText(UNTITLED)).toBeTruthy());
+
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    rowDoc.transact(() => {
+      row.get(YjsDatabaseKey.cells)?.get(PRIMARY_FIELD_ID)?.set(YjsDatabaseKey.data, 'TSK-001');
+    });
+
+    await waitFor(() => expect(screen.getByText('TSK-001')).toBeTruthy());
+  });
+
+  it('lists the database rows when the relation points at a view the database does not register', async () => {
+    // A relation can name the database's container page rather than one of its inner views. Rows
+    // belong to the database, so keying strictly off the named view rendered an empty panel with
+    // no explanation.
+    mockDatabaseContext.loadView.mockResolvedValue(createTargetDoc(['row-1']));
+    mockDatabaseContext.createRow.mockImplementation((rowKey: string) =>
+      Promise.resolve(createTitledRowDoc(rowIdFromKey(rowKey), 'TSK-001'))
+    );
+
+    render(
+      <RelationCellMenuContent
+        relationRowIds={[]}
+        selectedView={{ view_id: 'container-view', name: 'Tasks' } as View}
+        relatedDatabaseId={DATABASE_ID}
+        onAddRelationRowId={jest.fn()}
+        onRemoveRelationRowId={jest.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('TSK-001')).toBeTruthy());
   });
 
   it('does not claim "no result" while the row list is still in flight', async () => {
