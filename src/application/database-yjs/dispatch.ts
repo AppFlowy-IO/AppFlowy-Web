@@ -24,7 +24,6 @@ import {
   FieldType,
   FieldVisibility,
   FilterType,
-  RowMetaKey,
   RollupDisplayMode,
   SortCondition,
 } from '@/application/database-yjs/database.type';
@@ -38,9 +37,14 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
-import { createDatabaseHistoryGroup, executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
+import {
+  createDatabaseHistoryGroup,
+  executeDatabaseOperations as executeOperations,
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
+import type { DatabaseHistoryAction } from '@/application/database-yjs/history';
 import { getOptionsFromRow } from '@/application/database-yjs/row';
-import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldType } from '@/application/database-yjs/selector';
 import { deleteCollabDB } from '@/application/db';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
@@ -340,7 +344,7 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
   const deleteRows = useBulkDeleteRowDispatch();
   const deleteSelectOption = useDeleteSelectOption(fieldId);
   const fieldType = useFieldType(fieldId);
-  const deleteGroupColumn = useCallback(() => {
+  const deleteGroupColumn = useCallback((historyGroup: object) => {
     executeOperations(
       sharedRoot,
       [
@@ -372,9 +376,10 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
           columns.delete(index);
         },
       ],
-      'deleteGroupColumn'
+      'deleteGroupColumn',
+      { type: 'database.delete-group-column', fieldId, historyGroup }
     );
-  }, [groupId, columnId, sharedRoot, view]);
+  }, [columnId, fieldId, groupId, sharedRoot, view]);
 
   const isSelectField = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
@@ -382,17 +387,19 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
 
   return useCallback(
     (rowIds?: string[]) => {
+      const historyGroup = createDatabaseHistoryGroup();
+
       if (isSelectField) {
         // Delete the group column
-        deleteGroupColumn();
+        deleteGroupColumn(historyGroup);
 
         // Delete the select option if it exists
-        deleteSelectOption(columnId);
+        deleteSelectOption(columnId, historyGroup);
       }
 
       // If rowIds are provided, delete the rows
       if (rowIds && rowIds.length > 0) {
-        deleteRows(rowIds);
+        deleteRows(rowIds, historyGroup);
       }
     },
     [isSelectField, deleteGroupColumn, deleteSelectOption, columnId, deleteRows]
@@ -588,6 +595,7 @@ export function useMoveCardDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const database = useDatabase();
+  const { databaseDoc } = useDatabaseContext();
 
   return useCallback(
     ({
@@ -603,70 +611,76 @@ export function useMoveCardDispatch() {
       startColumnId: string;
       finishColumnId: string;
     }) => {
+      if (!view) {
+        throw new Error(`Unable to reorder card`);
+      }
+
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+      const rowDoc = rowMap?.[rowId];
+
+      if (!rowDoc) {
+        throw new Error(`Unable to reorder card`);
+      }
+
+      const historyGroup = createDatabaseHistoryGroup();
+
+      getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
       executeOperations(
         sharedRoot,
         [
           () => {
-            if (!view) {
-              throw new Error(`Unable to reorder card`);
-            }
+            runDatabaseRowAction(
+              rowDoc,
+              { type: 'row.move-card-cell', rowId, fieldId, fieldType, historyGroup },
+              () => {
+                const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+                const cells = row.get(YjsDatabaseKey.cells);
+                const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+                let cell = cells.get(fieldId);
 
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+                if (!cell) {
+                  // if the cell is empty, create a new cell and set data to finishColumnId
+                  if (isSelectOptionField) {
+                    cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
+                  } else if (fieldType === FieldType.Checkbox) {
+                    cell = createCheckboxCell(fieldId, finishColumnId);
+                  }
 
-            const fieldType = Number(field.get(YjsDatabaseKey.type));
-
-            const rowDoc = rowMap?.[rowId];
-
-            if (!rowDoc) {
-              throw new Error(`Unable to reorder card`);
-            }
-
-            const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
-
-            const cells = row.get(YjsDatabaseKey.cells);
-            const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
-
-            let cell = cells.get(fieldId);
-
-            if (!cell) {
-              // if the cell is empty, create a new cell and set data to finishColumnId
-              if (isSelectOptionField) {
-                cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
-              } else if (fieldType === FieldType.Checkbox) {
-                cell = createCheckboxCell(fieldId, finishColumnId);
-              }
-
-              cells.set(fieldId, cell);
-            } else {
-              const cellData = cell.get(YjsDatabaseKey.data);
-              let newCellData = cellData;
-
-              if (isSelectOptionField) {
-                const selectedIds = (cellData as string)?.split(',') ?? [];
-                const index = selectedIds.findIndex((id) => id === startColumnId);
-
-                if (selectedIds.includes(finishColumnId)) {
-                  // if the finishColumnId is already in the selectedIds
-                  selectedIds.splice(index, 1); // remove the startColumnId from the selectedIds
+                  cells.set(fieldId, cell);
                 } else {
-                  selectedIds.splice(index, 1, finishColumnId); // replace the startColumnId with finishColumnId
+                  const cellData = cell.get(YjsDatabaseKey.data);
+                  let newCellData = cellData;
+
+                  if (isSelectOptionField) {
+                    const selectedIds = (cellData as string)?.split(',') ?? [];
+                    const index = selectedIds.findIndex((id) => id === startColumnId);
+
+                    if (selectedIds.includes(finishColumnId)) {
+                      // if the finishColumnId is already in the selectedIds
+                      selectedIds.splice(index, 1); // remove the startColumnId from the selectedIds
+                    } else {
+                      selectedIds.splice(index, 1, finishColumnId); // replace the startColumnId with finishColumnId
+                    }
+
+                    newCellData = selectedIds.join(',');
+                  } else if (fieldType === FieldType.Checkbox) {
+                    newCellData = finishColumnId;
+                  }
+
+                  cell.set(YjsDatabaseKey.data, newCellData);
                 }
-
-                newCellData = selectedIds.join(',');
-              } else if (fieldType === FieldType.Checkbox) {
-                newCellData = finishColumnId;
               }
-
-              cell.set(YjsDatabaseKey.data, newCellData);
-            }
+            );
 
             reorderRow(rowId, beforeRowId, view);
           },
         ],
-        'reorderCard'
+        'reorderCard',
+        { type: 'database.reorder-card', rowId, fieldId, fieldType, historyGroup }
       );
     },
-    [database, rowMap, sharedRoot, view]
+    [database, databaseDoc, rowMap, sharedRoot, view]
   );
 }
 
@@ -708,7 +722,7 @@ export function useBulkDeleteRowDispatch() {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (rowIds: string[]) => {
+    (rowIds: string[], historyGroup?: object) => {
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -732,7 +746,8 @@ export function useBulkDeleteRowDispatch() {
             }
           });
         },
-        'bulkDeleteRowDispatch'
+        'bulkDeleteRowDispatch',
+        historyGroup
       );
       rowIds.forEach((rowId) => {
         void deleteOutboxByObjectId(rowId);
@@ -1022,7 +1037,14 @@ export function useNewPropertyDispatch() {
             },
           ]);
         },
-        'newPropertyDispatch'
+        'newPropertyDispatch',
+        undefined,
+        {
+          type: fieldType === FieldType.Relation ? 'relation.create-field' : 'field.create',
+          fieldId,
+          fieldType,
+          policy: fieldType === FieldType.Relation ? 'skip' : 'capture',
+        }
       );
 
       return fieldId;
@@ -1130,7 +1152,8 @@ function executeOperationWithAllViews(
   database: YDatabase,
   operation: (view: YDatabaseView, viewId: string) => void,
   operationName: string,
-  historyGroup?: object
+  historyGroup?: object,
+  action?: DatabaseHistoryAction
 ) {
   const views = database.get(YjsDatabaseKey.views);
   const viewIds = Object.keys(views.toJSON());
@@ -1155,7 +1178,7 @@ function executeOperationWithAllViews(
       },
     ],
     operationName,
-    { type: `database.${operationName}`, historyGroup }
+    action ? { ...action, historyGroup: action.historyGroup ?? historyGroup } : { type: `database.${operationName}`, historyGroup }
   );
 }
 
@@ -1207,7 +1230,14 @@ export function useDeletePropertyDispatch() {
             fieldOrders.delete(index);
           }
         },
-        'deletePropertyDispatch'
+        'deletePropertyDispatch',
+        undefined,
+        {
+          type: fieldType === FieldType.Relation ? 'relation.delete-field' : 'field.delete',
+          fieldId,
+          fieldType,
+          policy: fieldType === FieldType.Relation ? 'skip' : 'capture',
+        }
       );
 
       void deleteReciprocalRelationField({
@@ -1226,6 +1256,7 @@ export function useDeletePropertyDispatch() {
 export function useCreateCalendarEvent() {
   const newRowDispatch = useNewRowDispatch();
   const currentView = useDatabaseView();
+  const sharedRoot = useSharedRoot();
   const defaultTimeSetting = useDefaultTimeSetting();
   const enhanceCalendarLayoutByFieldExists = useEnhanceCalendarLayoutByFieldExists();
   const calendarSetting = useCalendarLayoutSetting();
@@ -1244,6 +1275,8 @@ export function useCreateCalendarEvent() {
         throw new Error('Current view not found');
       }
 
+      const historyGroup = createDatabaseHistoryGroup();
+
       // Create or ensure correct date field before creating the event
       const fieldOrders = currentView.get(YjsDatabaseKey.field_orders);
       const validFieldId = () => {
@@ -1257,7 +1290,7 @@ export function useCreateCalendarEvent() {
       let finalFieldId = calendarSetting?.fieldId;
 
       if (!validFieldId()) {
-        const dateField: YDatabaseField | undefined = enhanceCalendarLayoutByFieldExists(fieldOrders);
+        const dateField: YDatabaseField | undefined = enhanceCalendarLayoutByFieldExists(fieldOrders, historyGroup);
         const createdFieldId = dateField?.get(YjsDatabaseKey.id);
 
         if (!createdFieldId) {
@@ -1266,7 +1299,12 @@ export function useCreateCalendarEvent() {
 
         const newCalendarSetting = generateCalendarLayoutSettings(createdFieldId, defaultTimeSetting);
 
-        currentView.set(YjsDatabaseKey.layout_settings, newCalendarSetting);
+        executeOperations(
+          sharedRoot,
+          [() => currentView.set(YjsDatabaseKey.layout_settings, newCalendarSetting)],
+          'updateCalendarLayoutSetting',
+          { type: 'database.update-calendar-layout-setting', historyGroup }
+        );
 
         // Use the created field ID for the event
         finalFieldId = createdFieldId;
@@ -1286,11 +1324,12 @@ export function useCreateCalendarEvent() {
             includeTime,
           },
         },
+        historyGroup,
       });
 
       return rowId;
     },
-    [newRowDispatch, currentView, defaultTimeSetting, enhanceCalendarLayoutByFieldExists, calendarSetting]
+    [newRowDispatch, currentView, defaultTimeSetting, enhanceCalendarLayoutByFieldExists, calendarSetting, sharedRoot]
   );
 }
 
@@ -1321,7 +1360,7 @@ function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
 // resolver picks this file (dispatch.ts) over dispatch/index.ts when both
 // exist as siblings, while TS picks the folder. Without this re-export the
 // two paths resolve to different implementations and silently drift.
-export { useDuplicateRowDispatch, useNewRowDispatch } from './dispatch/row';
+export { useDuplicateRowDispatch, useNewRowDispatch, useUpdateRowMetaDispatch } from './dispatch/row';
 
 export function useClearSortingDispatch() {
   const sharedRoot = useSharedRoot();
@@ -1476,11 +1515,14 @@ export function useShowPropertyDispatch() {
 }
 
 export function useClearCellsWithFieldDispatch() {
+  const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
 
   return useCallback(
     (fieldId: string) => {
+      const fieldType = Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type));
+
       executeOperations(
         sharedRoot,
         [
@@ -1502,7 +1544,7 @@ export function useClearCellsWithFieldDispatch() {
                 return;
               }
 
-              runDatabaseRowAction(rowDoc, { type: 'row.clear-field-cell', rowId, fieldId }, () => {
+              runDatabaseRowAction(rowDoc, { type: 'row.clear-field-cell', rowId, fieldId, fieldType }, () => {
                 const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                 const row = rowSharedRoot.get(YjsEditorKey.database_row);
                 const cells = row.get(YjsDatabaseKey.cells);
@@ -1516,7 +1558,7 @@ export function useClearCellsWithFieldDispatch() {
         'clearCellsWithFieldDispatch'
       );
     },
-    [rowMap, sharedRoot]
+    [database, rowMap, sharedRoot]
   );
 }
 
@@ -1695,44 +1737,6 @@ export function useDuplicatePropertyDispatch() {
   );
 }
 
-export function useUpdateRowMetaDispatch(rowId: string) {
-  const rowMap = useRowMap();
-
-  const rowDoc = rowMap?.[rowId];
-
-  return useCallback(
-    (key: RowMetaKey, value?: string | boolean) => {
-      if (!rowDoc) {
-        throw new Error(`Row not found`);
-      }
-
-      const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-      const meta = rowSharedRoot.get(YjsEditorKey.meta);
-
-      const keyId = getMetaIdMap(rowId).get(key);
-
-      if (!keyId) {
-        throw new Error(`Meta key not found: ${key}`);
-      }
-
-      const isDifferent = meta.get(keyId) !== value;
-
-      if (!isDifferent) {
-        return;
-      }
-
-      runDatabaseRowAction(rowDoc, { type: 'row.update-meta', rowId }, () => {
-        if (value === undefined) {
-          meta.delete(keyId);
-        } else {
-          meta.set(keyId, value);
-        }
-      });
-    },
-    [rowDoc, rowId]
-  );
-}
-
 export { useUpdateCellDispatch, useUpdateStartEndTimeCell } from './dispatch/cell';
 
 function generateBoardSetting(database: YDatabase): YDatabaseFieldSettings {
@@ -1823,7 +1827,7 @@ function useEnhanceCalendarLayoutByFieldExists() {
 
   const sharedRoot = useSharedRoot();
 
-  return useCallback((fieldOrders: YDatabaseFieldOrders) => {
+  return useCallback((fieldOrders: YDatabaseFieldOrders, historyGroup?: object) => {
     // find date field in all views
     let dateField: YDatabaseField | undefined;
 
@@ -1849,32 +1853,34 @@ function useEnhanceCalendarLayoutByFieldExists() {
       const typeOptionMap = generateDateTimeFieldTypeOptions();
 
       dateField.set(YjsDatabaseKey.type_option, typeOptionMap);
-      fields.set(fieldId, dateField);
+      const views = database.get(YjsDatabaseKey.views);
 
-      executeOperationWithAllViews(
+      executeOperations(
         sharedRoot,
-        database,
-        (view) => {
-          const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
-          const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+        [
+          () => {
+            fields.set(fieldId, dateField as YDatabaseField);
+            Object.keys(views.toJSON()).forEach((viewId) => {
+              const view = views.get(viewId);
+              const viewFieldOrders = view?.get(YjsDatabaseKey.field_orders);
+              const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-          if (!fieldSettings) {
-            throw new Error(`Field settings not found`);
-          }
+              if (!viewFieldOrders || !fieldSettings) {
+                throw new Error(`Field settings not found`);
+              }
 
-          fieldOrders.push([
-            {
-              id: fieldId,
-            },
-          ]);
+              viewFieldOrders.push([{ id: fieldId }]);
 
-          const setting = new Y.Map() as YDatabaseFieldSetting;
+              const setting = new Y.Map() as YDatabaseFieldSetting;
 
-          setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
-          setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
-          fieldSettings.set(fieldId, setting);
-        },
-        'newDateTimeField'
+              setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+              setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
+              fieldSettings.set(fieldId, setting);
+            });
+          },
+        ],
+        'newDateTimeField',
+        { type: 'database.new-date-time-field', fieldId, fieldType: FieldType.DateTime, historyGroup }
       );
     }
 
@@ -2106,7 +2112,8 @@ export function useUpdateDatabaseView() {
             view.set(YjsDatabaseKey.name, name);
           },
         ],
-        'renameDatabaseView'
+        'renameDatabaseView',
+        { type: 'view.rename', policy: 'skip' }
       );
     },
     [database, updatePage, sharedRoot]
@@ -2145,7 +2152,8 @@ export function useDeleteView() {
             database.get(YjsDatabaseKey.views)?.delete(viewId);
           },
         ],
-        'deleteView'
+        'deleteView',
+        { type: 'view.delete', policy: 'skip' }
       );
     },
     [database, deletePage, sharedRoot]
@@ -2189,6 +2197,8 @@ export function useSwitchPropertyType() {
         fieldBefore && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
           ? parseRelationTypeOption(fieldBefore)
           : null;
+      const skipsRelationHistory =
+        oldFieldTypeBefore === FieldType.Relation || fieldType === FieldType.Relation;
 
       executeOperations(
         sharedRoot,
@@ -2367,7 +2377,13 @@ export function useSwitchPropertyType() {
                 return;
               }
 
-              runDatabaseRowAction(rowDoc, { type: 'row.switch-field-type-cell', rowId: row, fieldId }, () => {
+              runDatabaseRowAction(rowDoc, {
+                type: skipsRelationHistory ? 'relation.switch-field-type-cell' : 'row.switch-field-type-cell',
+                rowId: row,
+                fieldId,
+                fieldType: skipsRelationHistory ? FieldType.Relation : undefined,
+                policy: skipsRelationHistory ? 'skip' : 'capture',
+              }, () => {
                 const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                 const row = rowSharedRoot.get(YjsEditorKey.database_row);
                 const cells = row.get(YjsDatabaseKey.cells);
@@ -2434,7 +2450,10 @@ export function useSwitchPropertyType() {
             });
           },
         ],
-        'switchPropertyType'
+        'switchPropertyType',
+        skipsRelationHistory
+          ? { type: 'relation.switch-field-type', fieldId, fieldType: FieldType.Relation, policy: 'skip' }
+          : { type: 'database.switch-field-type', fieldId }
       );
 
       if (relationOptionToCleanUp) {
@@ -2549,12 +2568,14 @@ export function useAddSelectOption(fieldId: string) {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (option: SelectOption) => {
+    (option: SelectOption, explicitHistoryGroup?: object) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
       if (!field) {
         throw new Error(`Field not found`);
       }
+
+      const historyGroup = explicitHistoryGroup ?? createDatabaseHistoryGroup();
 
       executeOperations(
         sharedRoot,
@@ -2610,7 +2631,8 @@ export function useAddSelectOption(fieldId: string) {
             );
           },
         ],
-        'addSelectOption'
+        'addSelectOption',
+        { type: 'database.add-select-option', fieldId, historyGroup }
       );
 
       executeOperationWithAllViews(
@@ -2639,7 +2661,8 @@ export function useAddSelectOption(fieldId: string) {
             }
           }
         },
-        'insertSelectOptionToGroup'
+        'insertSelectOptionToGroup',
+        historyGroup
       );
     },
     [database, fieldId, sharedRoot]
@@ -2745,12 +2768,14 @@ export function useDeleteSelectOption(fieldId: string) {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (optionId: string) => {
+    (optionId: string, explicitHistoryGroup?: object) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
       if (!field) {
         throw new Error(`Field not found`);
       }
+
+      const historyGroup = explicitHistoryGroup ?? createDatabaseHistoryGroup();
 
       executeOperations(
         sharedRoot,
@@ -2804,7 +2829,8 @@ export function useDeleteSelectOption(fieldId: string) {
             );
           },
         ],
-        'deleteSelectOption'
+        'deleteSelectOption',
+        { type: 'database.delete-select-option', fieldId, historyGroup }
       );
 
       executeOperationWithAllViews(
@@ -2840,7 +2866,8 @@ export function useDeleteSelectOption(fieldId: string) {
             }
           }
         },
-        'deleteSelectOptionFromGroup'
+        'deleteSelectOptionFromGroup',
+        historyGroup
       );
     },
     [database, fieldId, sharedRoot]
@@ -3029,7 +3056,8 @@ export function useUpdateRelationDatabaseId(fieldId: string) {
             field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
           },
         ],
-        'updateRelationDatabaseId'
+        'updateRelationDatabaseId',
+        { type: 'relation.update-database-id', fieldId, fieldType: FieldType.Relation, policy: 'skip' }
       );
 
       // Clear cells when the relation database id is changed

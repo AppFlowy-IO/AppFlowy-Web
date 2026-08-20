@@ -12,6 +12,7 @@ import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import {
@@ -396,45 +397,47 @@ function DatabaseViews({
   return (
     <>
       <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
-        <DatabaseTabs
-          viewName={viewName}
-          databasePageId={databasePageId}
-          selectedViewId={activeViewId}
-          setSelectedViewId={handleViewChange}
-          viewIds={displayedViewIds}
-          onViewAddedToDatabase={handleViewAddedToDatabase}
-          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-          onViewIdsChanged={onViewIdsChanged}
-          onReorderTabs={handleReorderTabs}
-        />
+        <DatabaseHistoryScope className='contents'>
+          <DatabaseTabs
+            viewName={viewName}
+            databasePageId={databasePageId}
+            selectedViewId={activeViewId}
+            setSelectedViewId={handleViewChange}
+            viewIds={displayedViewIds}
+            onViewAddedToDatabase={handleViewAddedToDatabase}
+            onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+            onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+            onViewIdsChanged={onViewIdsChanged}
+            onReorderTabs={handleReorderTabs}
+          />
 
-        <DatabaseConditions />
+          <DatabaseConditions />
 
-        <div
-          className={cn(
-            'relative flex w-full flex-col',
-            shouldUseFixedViewport
-              ? shouldAutoShrinkViewport
-                ? 'min-h-0 overflow-hidden'
-                : 'h-full min-h-0 flex-1 overflow-hidden'
-              : 'overflow-visible'
-          )}
-          style={viewportStyle}
-        >
           <div
             className={cn(
-              'w-full',
-              shouldUseFixedViewport &&
-                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+              'relative flex w-full flex-col',
+              shouldUseFixedViewport
+                ? shouldAutoShrinkViewport
+                  ? 'min-h-0 overflow-hidden'
+                  : 'h-full min-h-0 flex-1 overflow-hidden'
+                : 'overflow-visible'
             )}
             style={viewportStyle}
           >
-            <Suspense fallback={null}>
-              <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-            </Suspense>
+            <div
+              className={cn(
+                'w-full',
+                shouldUseFixedViewport &&
+                  (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+              )}
+              style={viewportStyle}
+            >
+              <Suspense fallback={null}>
+                <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+              </Suspense>
+            </div>
           </div>
-        </div>
+        </DatabaseHistoryScope>
       </DatabaseConditionsContext.Provider>
     </>
   );

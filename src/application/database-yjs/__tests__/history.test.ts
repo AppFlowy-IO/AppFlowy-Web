@@ -96,6 +96,61 @@ function createWrapper(contextValue: DatabaseContextState) {
 }
 
 describe('database row history', () => {
+  it('captures creation of the row root before database_row exists', () => {
+    const rowDoc = new Y.Doc({ guid: rowId }) as YDoc;
+    const sharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const row = new Y.Map() as YDatabaseRow;
+
+    row.set(YjsDatabaseKey.cells, new Y.Map());
+    runDatabaseRowAction(rowDoc, { type: 'row.initialize', rowId }, () => {
+      sharedRoot.set(YjsEditorKey.database_row, row);
+    });
+
+    const history = getOrCreateDatabaseRowHistoryController(rowDoc, rowId);
+
+    expect(history?.canUndo()).toBe(true);
+    expect(sharedRoot.has(YjsEditorKey.database_row)).toBe(true);
+    history?.undo();
+    expect(sharedRoot.has(YjsEditorKey.database_row)).toBe(false);
+    history?.redo();
+    expect(sharedRoot.get(YjsEditorKey.database_row)?.toJSON()).toEqual({ cells: {} });
+  });
+
+  it('captures creation of the database root after history is initialized', () => {
+    const databaseDoc = new Y.Doc({ guid: databaseId }) as YDoc;
+    const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const database = new Y.Map() as YDatabase;
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    runDatabaseAction(databaseDoc, { type: 'database.initialize' }, () => {
+      sharedRoot.set(YjsEditorKey.database, database);
+    });
+
+    expect(manager.canUndo()).toBe(true);
+    expect(sharedRoot.get(YjsEditorKey.database)).toBe(database);
+    manager.undo();
+    expect(sharedRoot.has(YjsEditorKey.database)).toBe(false);
+    manager.redo();
+    expect(sharedRoot.get(YjsEditorKey.database)?.toJSON()).toEqual({});
+  });
+
+  it('captures replacement of an existing database root', () => {
+    const { databaseDoc, sharedRoot } = createDatabaseDoc();
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+    const replacement = new Y.Map() as YDatabase;
+
+    replacement.set(YjsDatabaseKey.id, 'replacement-database-id');
+    runDatabaseAction(databaseDoc, { type: 'database.replace-root' }, () => {
+      sharedRoot.set(YjsEditorKey.database, replacement);
+    });
+
+    expect(sharedRoot.get(YjsEditorKey.database)?.get(YjsDatabaseKey.id)).toBe('replacement-database-id');
+    manager.undo();
+    expect(sharedRoot.get(YjsEditorKey.database)?.get(YjsDatabaseKey.id)).toBe(databaseId);
+    manager.redo();
+    expect(sharedRoot.get(YjsEditorKey.database)?.get(YjsDatabaseKey.id)).toBe('replacement-database-id');
+  });
+
   it('captures normal row cell actions and supports undo/redo', () => {
     const rowDoc = createRowDoc(rowId, databaseId, {
       [textFieldId]: {

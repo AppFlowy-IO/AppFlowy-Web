@@ -455,17 +455,11 @@ function attachRowControllerToManagers(rowDoc: YDoc, controller: DatabaseHistory
 }
 
 function getDatabaseHistoryScope(databaseDoc: YDoc): Y.AbstractType<Y.YMapEvent<unknown>> | null {
-  const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-  const database = sharedRoot.get(YjsEditorKey.database);
-
-  return database ?? sharedRoot;
+  return databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 }
 
-function getDatabaseRowHistoryScope(rowDoc: YDoc): YSharedRoot | null {
-  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-  const row = rowSharedRoot.get(YjsEditorKey.database_row);
-
-  return row ? rowSharedRoot : null;
+function getDatabaseRowHistoryScope(rowDoc: YDoc): YSharedRoot {
+  return rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 }
 
 export function getDatabaseHistoryPolicy(action: DatabaseHistoryAction): DatabaseHistoryPolicy {

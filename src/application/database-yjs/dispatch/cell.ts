@@ -13,6 +13,7 @@ import * as Y from 'yjs';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { getOrCreateDatabaseHistoryManager, runDatabaseRowAction } from '@/application/database-yjs/history';
+import type { DatabaseHistoryPolicy } from '@/application/database-yjs/history';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseCell, YDatabaseCells, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -26,6 +27,11 @@ type DateCellOptions = {
   includeTime?: boolean;
   isRange?: boolean;
   reminderId?: string;
+};
+
+type CellHistoryOptions = {
+  historyGroup?: object;
+  policy?: DatabaseHistoryPolicy;
 };
 
 type WritableRowTarget = {
@@ -149,6 +155,7 @@ function writeCellToRow({
   rowId,
   data,
   dateOpts,
+  historyOptions,
 }: {
   rowDoc: YDoc;
   row: YDatabaseRow;
@@ -158,10 +165,11 @@ function writeCellToRow({
   rowId: string;
   data: CellUpdateData;
   dateOpts?: DateCellOptions;
+  historyOptions?: CellHistoryOptions;
 }) {
   const cell = cells.get(fieldId);
 
-  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType }, () => {
+  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType, ...historyOptions }, () => {
     if (!cell) {
       const newCell = new Y.Map() as YDatabaseCell;
 
@@ -208,7 +216,8 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
   return useCallback(
     (
       data: CellUpdateData,
-      dateOpts?: DateCellOptions
+      dateOpts?: DateCellOptions,
+      historyOptions?: CellHistoryOptions
     ) => {
       void (async () => {
         if (!field) {
@@ -243,6 +252,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           rowId,
           data,
           dateOpts,
+          historyOptions,
         });
       })().catch((error: unknown) => {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });

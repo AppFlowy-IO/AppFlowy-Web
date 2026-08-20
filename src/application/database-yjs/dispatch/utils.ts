@@ -12,7 +12,8 @@ export function executeOperationWithAllViews(
   sharedRoot: YSharedRoot,
   database: YDatabase,
   operation: (view: YDatabaseView, viewId: string) => void,
-  operationName: string
+  operationName: string,
+  historyGroup?: object
 ) {
   const views = database.get(YjsDatabaseKey.views);
   const viewIds = Object.keys(views.toJSON());
@@ -36,6 +37,7 @@ export function executeOperationWithAllViews(
         });
       },
     ],
-    operationName
+    operationName,
+    { type: `database.${operationName}`, historyGroup }
   );
 }

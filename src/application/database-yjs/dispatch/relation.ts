@@ -802,7 +802,13 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
             setRelationTypeOption(currentField, nextOption);
           },
         ],
-        'updateRelationTypeOption'
+        'updateRelationTypeOption',
+        {
+          type: 'relation.update-type-option',
+          fieldId,
+          fieldType: FieldType.Relation,
+          policy: 'skip',
+        }
       );
 
       if (nextOption.is_two_way && nextOption.reciprocal_field_id && nextOption.database_id) {

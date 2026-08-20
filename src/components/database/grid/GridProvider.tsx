@@ -8,12 +8,11 @@ import {
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
 import { GridContext } from '@/components/database/grid/useGridContext';
-import { useDatabaseRowHistoryHotkeys } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
 
 export const GridProvider = ({ children, rowOrders }: { children: React.ReactNode; rowOrders?: Row[] }) => {
   const [hoverRowId, setHoverRowId] = useState<string | undefined>();
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
-  const { isDocumentBlock, activeViewId, readOnly } = useDatabaseContext();
+  const { isDocumentBlock, activeViewId } = useDatabaseContext();
   const [visibleRowLimit, setVisibleRowLimit] = useState(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
   const embeddedVisibleRowLimit = isDocumentBlock ? visibleRowLimit : undefined;
   const {
@@ -27,7 +26,6 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
   const [resizeRows, setResizeRows] = useState<Map<string, number>>(new Map());
 
   const isWheelingRef = useRef(false);
-  const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
@@ -63,40 +61,14 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
     setHoverRowId(rowId);
   }, []);
   const [activeCell, setActiveCell] = useState<{ rowId: string; fieldId: string } | undefined>(undefined);
-  const [hasGridFocus, setHasGridFocus] = useState(false);
 
   const handleSetActiveCell = useCallback((nextActiveCell?: { rowId: string; fieldId: string }) => {
     setActiveCell(nextActiveCell);
-
-    if (nextActiveCell) {
-      setHasGridFocus(true);
-    }
   }, []);
 
   useEffect(() => {
     setActiveCell(undefined);
-    setHasGridFocus(false);
   }, [activeViewId]);
-
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-
-      setHasGridFocus(Boolean(ref.current && target instanceof Node && ref.current.contains(target)));
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown, true);
-
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-    };
-  }, []);
-
-  useDatabaseRowHistoryHotkeys(undefined, {
-    enabled: hasGridFocus && !readOnly,
-    ignoreInput: true,
-    useLatest: true,
-  });
 
   const onResizeRow = useCallback(({ rowId, maxCellHeight }: { rowId: string; maxCellHeight: number }) => {
     setResizeRows((prev) => {
@@ -168,7 +140,7 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
 
   return (
     <GridContext.Provider value={contextValue}>
-      <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
+      <div className={'flex min-h-0 flex-1 flex-col'}>
         {children}
       </div>
     </GridContext.Provider>

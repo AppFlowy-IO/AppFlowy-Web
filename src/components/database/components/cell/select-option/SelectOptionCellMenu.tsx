@@ -10,6 +10,7 @@ import {
 } from '@/application/database-yjs';
 import { SelectOptionCell as SelectOptionCellType } from '@/application/database-yjs/cell.type';
 import { useAddSelectOption, useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import { createDatabaseHistoryGroup } from '@/application/database-yjs/history';
 import { getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
 import { YjsDatabaseKey } from '@/application/types';
 import { Tag } from '@/components/_shared/tag';
@@ -97,17 +98,17 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
     onUpdateCell(newData);
   }, [onUpdateCell]);
 
-  const handleSelectOption = useCallback((optionId: string) => {
+  const handleSelectOption = useCallback((optionId: string, historyGroup?: object) => {
     const isSelected = selectOptionIds.includes(optionId);
 
     if (isSelected) {
       const newSelectOptionIds = selectOptionIds.filter((id) => id !== optionId);
 
-      onUpdateCell(newSelectOptionIds.join(','));
+      onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
     } else {
       const newSelectOptionIds = isMultiple ? [...selectOptionIds, optionId] : [optionId];
 
-      onUpdateCell(newSelectOptionIds.join(','));
+      onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
     }
 
     setSearchValue('');
@@ -124,9 +125,11 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
       color: getColorByOption(typeOption?.options || []),
     };
 
-    onCreateOption(newOption);
+    const historyGroup = createDatabaseHistoryGroup();
+
+    onCreateOption(newOption, historyGroup);
     setSearchValue('');
-    handleSelectOption(newOption.id);
+    handleSelectOption(newOption.id, historyGroup);
   }, [handleSelectOption, onCreateOption, typeOption]);
 
   const handleEnter = useCallback(() => {

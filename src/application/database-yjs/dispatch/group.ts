@@ -17,7 +17,7 @@ import * as Y from 'yjs';
 import { useDatabase, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields';
-import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
+import { createDatabaseHistoryGroup, executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { useBoardLayoutSettings, useFieldType } from '@/application/database-yjs/selector';
 import {
   YDatabaseBoardLayoutSetting,
@@ -210,7 +210,7 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
   const deleteRows = useBulkDeleteRowDispatch();
   const deleteSelectOption = useDeleteSelectOption(fieldId);
   const fieldType = useFieldType(fieldId);
-  const deleteGroupColumn = useCallback(() => {
+  const deleteGroupColumn = useCallback((historyGroup: object) => {
     executeOperations(
       sharedRoot,
       [
@@ -242,9 +242,10 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
           columns.delete(index);
         },
       ],
-      'deleteGroupColumn'
+      'deleteGroupColumn',
+      { type: 'database.delete-group-column', fieldId, historyGroup }
     );
-  }, [groupId, columnId, sharedRoot, view]);
+  }, [columnId, fieldId, groupId, sharedRoot, view]);
 
   const isSelectField = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
@@ -252,17 +253,19 @@ export function useDeleteGroupColumnDispatch(groupId: string, columnId: string, 
 
   return useCallback(
     (rowIds?: string[]) => {
+      const historyGroup = createDatabaseHistoryGroup();
+
       if (isSelectField) {
         // Delete the group column
-        deleteGroupColumn();
+        deleteGroupColumn(historyGroup);
 
         // Delete the select option if it exists
-        deleteSelectOption(columnId);
+        deleteSelectOption(columnId, historyGroup);
       }
 
       // If rowIds are provided, delete the rows
       if (rowIds && rowIds.length > 0) {
-        deleteRows(rowIds);
+        deleteRows(rowIds, historyGroup);
       }
     },
     [isSelectField, deleteGroupColumn, deleteSelectOption, columnId, deleteRows]

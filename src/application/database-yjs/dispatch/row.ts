@@ -32,7 +32,12 @@ import { parseRelationTypeOption } from '@/application/database-yjs/fields/relat
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
-import { executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
+import {
+  createDatabaseHistoryGroup,
+  executeDatabaseOperations as executeOperations,
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/database-yjs/selector';
@@ -140,6 +145,7 @@ export function useMoveCardDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const database = useDatabase();
+  const { databaseDoc } = useDatabaseContext();
 
   return useCallback(
     ({
@@ -155,70 +161,76 @@ export function useMoveCardDispatch() {
       startColumnId: string;
       finishColumnId: string;
     }) => {
+      if (!view) {
+        throw new Error(`Unable to reorder card`);
+      }
+
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+      const rowDoc = rowMap?.[rowId];
+
+      if (!rowDoc) {
+        throw new Error(`Unable to reorder card`);
+      }
+
+      const historyGroup = createDatabaseHistoryGroup();
+
+      getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
       executeOperations(
         sharedRoot,
         [
           () => {
-            if (!view) {
-              throw new Error(`Unable to reorder card`);
-            }
+            runDatabaseRowAction(
+              rowDoc,
+              { type: 'row.move-card-cell', rowId, fieldId, fieldType, historyGroup },
+              () => {
+                const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+                const cells = row.get(YjsDatabaseKey.cells);
+                const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+                let cell = cells.get(fieldId);
 
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+                if (!cell) {
+                  // if the cell is empty, create a new cell and set data to finishColumnId
+                  if (isSelectOptionField) {
+                    cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
+                  } else if (fieldType === FieldType.Checkbox) {
+                    cell = createCheckboxCell(fieldId, finishColumnId);
+                  }
 
-            const fieldType = Number(field.get(YjsDatabaseKey.type));
-
-            const rowDoc = rowMap?.[rowId];
-
-            if (!rowDoc) {
-              throw new Error(`Unable to reorder card`);
-            }
-
-            const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
-
-            const cells = row.get(YjsDatabaseKey.cells);
-            const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
-
-            let cell = cells.get(fieldId);
-
-            if (!cell) {
-              // if the cell is empty, create a new cell and set data to finishColumnId
-              if (isSelectOptionField) {
-                cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
-              } else if (fieldType === FieldType.Checkbox) {
-                cell = createCheckboxCell(fieldId, finishColumnId);
-              }
-
-              cells.set(fieldId, cell);
-            } else {
-              const cellData = cell.get(YjsDatabaseKey.data);
-              let newCellData = cellData;
-
-              if (isSelectOptionField) {
-                const selectedIds = (cellData as string)?.split(',') ?? [];
-                const index = selectedIds.findIndex((id) => id === startColumnId);
-
-                if (selectedIds.includes(finishColumnId)) {
-                  // if the finishColumnId is already in the selectedIds
-                  selectedIds.splice(index, 1); // remove the startColumnId from the selectedIds
+                  cells.set(fieldId, cell);
                 } else {
-                  selectedIds.splice(index, 1, finishColumnId); // replace the startColumnId with finishColumnId
+                  const cellData = cell.get(YjsDatabaseKey.data);
+                  let newCellData = cellData;
+
+                  if (isSelectOptionField) {
+                    const selectedIds = (cellData as string)?.split(',') ?? [];
+                    const index = selectedIds.findIndex((id) => id === startColumnId);
+
+                    if (selectedIds.includes(finishColumnId)) {
+                      // if the finishColumnId is already in the selectedIds
+                      selectedIds.splice(index, 1); // remove the startColumnId from the selectedIds
+                    } else {
+                      selectedIds.splice(index, 1, finishColumnId); // replace the startColumnId with finishColumnId
+                    }
+
+                    newCellData = selectedIds.join(',');
+                  } else if (fieldType === FieldType.Checkbox) {
+                    newCellData = finishColumnId;
+                  }
+
+                  cell.set(YjsDatabaseKey.data, newCellData);
                 }
-
-                newCellData = selectedIds.join(',');
-              } else if (fieldType === FieldType.Checkbox) {
-                newCellData = finishColumnId;
               }
-
-              cell.set(YjsDatabaseKey.data, newCellData);
-            }
+            );
 
             reorderRow(rowId, beforeRowId, view);
           },
         ],
-        'reorderCard'
+        'reorderCard',
+        { type: 'database.reorder-card', rowId, fieldId, fieldType, historyGroup }
       );
     },
-    [database, rowMap, sharedRoot, view]
+    [database, databaseDoc, rowMap, sharedRoot, view]
   );
 }
 
@@ -260,7 +272,7 @@ export function useBulkDeleteRowDispatch() {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (rowIds: string[]) => {
+    (rowIds: string[], historyGroup?: object) => {
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -284,7 +296,8 @@ export function useBulkDeleteRowDispatch() {
             }
           });
         },
-        'bulkDeleteRowDispatch'
+        'bulkDeleteRowDispatch',
+        historyGroup
       );
       rowIds.forEach((rowId) => {
         void deleteOutboxByObjectId(rowId);
@@ -314,6 +327,7 @@ export function useNewRowDispatch() {
       beforeRowId,
       cellsData,
       tailing = false,
+      historyGroup,
     }: {
       beforeRowId?: string;
       cellsData?: Record<
@@ -328,6 +342,7 @@ export function useNewRowDispatch() {
           }
       >;
       tailing?: boolean;
+      historyGroup?: object;
     }) => {
       if (!currentView) {
         throw new Error('Current view not found');
@@ -506,7 +521,8 @@ export function useNewRowDispatch() {
             rowOrders.insert(index, [row]);
           }
         },
-        'newRowDispatch'
+        'newRowDispatch',
+        historyGroup
       );
 
       if (shouldOpenRowModal) {
@@ -826,7 +842,9 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         return;
       }
 
-      runDatabaseRowAction(rowDoc, { type: 'row.update-meta', rowId }, () => {
+      const policy = key === RowMetaKey.IconId || key === RowMetaKey.CoverId ? 'capture' : 'skip';
+
+      runDatabaseRowAction(rowDoc, { type: 'row.update-meta', rowId, policy }, () => {
         if (value === undefined) {
           meta.delete(keyId);
         } else {
