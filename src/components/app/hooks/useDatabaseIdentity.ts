@@ -1,12 +1,13 @@
 import { useCallback } from 'react';
 
 import { getDatabaseIdFromWorkspaceCatalog, getViewIdFromWorkspaceCatalog } from '@/application/services/domains/view';
-import { DatabaseId, Types, ViewId, YDoc } from '@/application/types';
+import { DatabaseId, DatabaseRelations, Types, ViewId, YDoc } from '@/application/types';
 import { getDatabaseIdFromDoc } from '@/application/view-loader';
 import { Log } from '@/utils/log';
 
 type UseDatabaseIdentityParams = {
   currentWorkspaceId?: string;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
 };
 
 type DatabaseMappings = Record<DatabaseId, ViewId[]>;
@@ -81,7 +82,7 @@ function getTemplateDatabaseMappings(workspaceId: string): DatabaseMappings {
  * - `viewId` = database-view id (grid/board/calendar layout)
  * - `objectId` = shared database id
  */
-export function useDatabaseIdentity({ currentWorkspaceId }: UseDatabaseIdentityParams) {
+export function useDatabaseIdentity({ currentWorkspaceId, loadDatabaseRelations }: UseDatabaseIdentityParams) {
   const getDatabaseIdForViewId = useCallback(
     async (viewId: string) => {
       if (!currentWorkspaceId) return;
@@ -125,17 +126,48 @@ export function useDatabaseIdentity({ currentWorkspaceId }: UseDatabaseIdentityP
       }
 
       try {
-        return await getViewIdFromWorkspaceCatalog(currentWorkspaceId, databaseId);
+        const catalogViewId = await getViewIdFromWorkspaceCatalog(currentWorkspaceId, databaseId);
+
+        if (catalogViewId) {
+          return catalogViewId;
+        }
       } catch (error) {
         Log.warn('[useDatabaseIdentity] failed to resolve a database view from the workspace catalog', {
           workspaceId: currentWorkspaceId,
           databaseId,
           error,
         });
-        return null;
       }
+
+      // Legacy and recently duplicated workspaces can have a complete
+      // WorkspaceDatabase collab before the server's folder projection has
+      // been backfilled. Keep that metadata as a compatibility fallback so a
+      // catalog miss does not get presented to the user as an access failure.
+      if (loadDatabaseRelations) {
+        try {
+          let databaseRelations = await loadDatabaseRelations();
+          let relatedViewId = databaseRelations?.[databaseId];
+
+          if (!relatedViewId && databaseRelations) {
+            databaseRelations = await loadDatabaseRelations({ refresh: true });
+            relatedViewId = databaseRelations?.[databaseId];
+          }
+
+          if (relatedViewId) {
+            Log.debug('[useDatabaseIdentity] found viewId from workspace relation metadata', {
+              databaseId,
+              viewId: relatedViewId,
+            });
+            return relatedViewId;
+          }
+        } catch (error) {
+          Log.warn('[useDatabaseIdentity] failed to load workspace relation metadata', error);
+        }
+      }
+
+      return null;
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, loadDatabaseRelations]
   );
 
   const resolveCollabObjectId = useCallback(

@@ -198,7 +198,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     bindViewSync,
     getCollabHistory,
     previewCollabVersion,
-  } = useViewOperations();
+  } = useViewOperations({ loadDatabaseRelations });
 
   // Initialize row operations
   const { createRow } = useRowOperations();
