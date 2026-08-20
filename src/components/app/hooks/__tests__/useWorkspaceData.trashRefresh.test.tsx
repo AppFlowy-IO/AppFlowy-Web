@@ -6,6 +6,12 @@ import { MemoryRouter } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
 import { AccessService, ViewService } from '@/application/services/domains';
+import {
+  invalidateWorkspaceViewMetadata,
+  markWorkspaceViewMetadataOutlineUntrusted,
+  primeWorkspaceViewMetadata,
+  primeWorkspaceViewMetadataFields,
+} from '@/application/services/js-services/workspace-view-metadata';
 import { Role, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
@@ -46,10 +52,20 @@ jest.mock('@/application/services/domains', () => ({
     refreshTrash: jest.fn(),
     invalidateDatabaseCatalog: jest.fn(),
     invalidateCache: jest.fn(),
+    invalidateWorkspaceMemoryCache: jest.fn(),
   },
   WorkspaceService: {
     getMentionableUsers: jest.fn(),
   },
+}));
+
+jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
+  captureWorkspaceViewMetadataAccessToken: jest.fn(() => ({})),
+  invalidateWorkspaceViewMetadata: jest.fn(),
+  markWorkspaceViewMetadataOutlineUntrusted: jest.fn(),
+  primeWorkspaceViewMetadata: jest.fn(),
+  primeWorkspaceViewMetadataFields: jest.fn(),
+  primeWorkspaceViewMetadataFromServer: jest.fn(() => true),
 }));
 
 const workspaceId = 'workspace-id';
@@ -148,6 +164,43 @@ describe('useWorkspaceData trash refresh', () => {
 
     rerender();
     expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('primes the global metadata index from the committed materialized outline', async () => {
+    const eventEmitter = new EventEmitter();
+    const child = createView('child-view');
+    const space = createView('space-view', { children: [child] });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [space], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline).toEqual([space]);
+      expect(primeWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, [space]);
+    });
+  });
+
+  it('clears workspace metadata when the workspace data layer stops owning the workspace', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    const { unmount } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(primeWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, []);
+    });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
+
+    unmount();
+
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledTimes(1);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
   });
 
   it('refreshes stale trash state when a remote restore adds the view back to the folder', async () => {
@@ -263,6 +316,9 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
     });
+    (primeWorkspaceViewMetadata as jest.Mock).mockClear();
+    (primeWorkspaceViewMetadataFields as jest.Mock).mockClear();
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
 
     const orphanDatabaseView = createView('orphan-database-view', {
       layout: ViewLayout.Grid,
@@ -280,6 +336,155 @@ describe('useWorkspaceData trash refresh', () => {
 
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(invalidateWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(primeWorkspaceViewMetadataFields).toHaveBeenCalledWith(workspaceId, orphanDatabaseView);
+  });
+
+  it('invalidates lower cache before refreshing an off-outline field after a broad access change', async () => {
+    const eventEmitter = new EventEmitter();
+    const updatedView = createView('off-outline-view', { name: 'Renamed off outline' });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalled();
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    (primeWorkspaceViewMetadata as jest.Mock).mockClear();
+    (primeWorkspaceViewMetadataFields as jest.Mock).mockClear();
+    (ViewService.invalidateCache as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(updatedView),
+      });
+    });
+
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, updatedView.view_id);
+    expect(primeWorkspaceViewMetadataFields).toHaveBeenCalledWith(workspaceId, updatedView);
+    expect(primeWorkspaceViewMetadata).not.toHaveBeenCalled();
+  });
+
+  it('ignores metadata and catalog work for self-parent row-document field updates', async () => {
+    const eventEmitter = new EventEmitter();
+    const rowDocumentView = createView('row-document-view', {
+      parent_view_id: 'row-document-view',
+      extra: {
+        row_document: {
+          source: { database_id: 'database-id', database_view_id: 'database-view-id', row_id: 'row-id' },
+        },
+      },
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(primeWorkspaceViewMetadata).toHaveBeenCalled();
+    });
+    (primeWorkspaceViewMetadata as jest.Mock).mockClear();
+    (primeWorkspaceViewMetadataFields as jest.Mock).mockClear();
+    (ViewService.invalidateDatabaseCatalog as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(rowDocumentView),
+      });
+    });
+
+    expect(primeWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(primeWorkspaceViewMetadataFields).not.toHaveBeenCalled();
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+  });
+
+  it('retains metadata and catalog handling for a self-parent database field update', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      parent_view_id: 'database-view-id',
+      extra: { database_id: 'database-id', is_space: false },
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(primeWorkspaceViewMetadata).toHaveBeenCalled();
+    });
+    (primeWorkspaceViewMetadataFields as jest.Mock).mockClear();
+    (ViewService.invalidateDatabaseCatalog as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify(databaseView),
+      });
+    });
+
+    expect(primeWorkspaceViewMetadataFields).toHaveBeenCalledWith(workspaceId, databaseView);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('clears workspace metadata after a broad permission change', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalled();
+    });
+    (markWorkspaceViewMetadataOutlineUntrusted as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    expect(markWorkspaceViewMetadataOutlineUntrusted).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('clears descendant metadata when sharing changes on a named parent', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalled();
+    });
+    (markWorkspaceViewMetadataOutlineUntrusted as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: 'shared-parent-id',
+        emails: ['another-user@example.com'],
+      });
+    });
+
+    expect(markWorkspaceViewMetadataOutlineUntrusted).toHaveBeenCalledTimes(1);
+    expect(markWorkspaceViewMetadataOutlineUntrusted).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
   });
 
   it('does not invalidate the catalog for a self-parent document VIEW_ADDED notification', async () => {
@@ -292,7 +497,10 @@ describe('useWorkspaceData trash refresh', () => {
 
     await waitFor(() => {
       expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
+      expect(primeWorkspaceViewMetadata).toHaveBeenCalled();
     });
+    (primeWorkspaceViewMetadata as jest.Mock).mockClear();
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
 
     const rowDocumentView = createView('row-document-view', {
       layout: ViewLayout.Document,
@@ -309,6 +517,8 @@ describe('useWorkspaceData trash refresh', () => {
     });
 
     expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+    expect(primeWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(invalidateWorkspaceViewMetadata).not.toHaveBeenCalled();
   });
 
   it('invalidates the catalog when database display metadata changes', async () => {
@@ -401,7 +611,91 @@ describe('useWorkspaceData trash refresh', () => {
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
   });
 
-  it('invalidates the catalog when VIEW_REMOVED targets an unloaded parent', async () => {
+  it('ignores fields and removal for an observed self-parent row document, then forgets it', async () => {
+    const eventEmitter = new EventEmitter();
+    const rowDocumentView = createView('row-document-view', {
+      parent_view_id: 'row-document-view',
+      extra: {
+        row_document: {
+          source: { database_id: 'database-id', database_view_id: 'database-view-id', row_id: 'row-id' },
+        },
+      },
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(primeWorkspaceViewMetadata).toHaveBeenCalled();
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 1,
+        folderRid: '2-1',
+        parentViewId: rowDocumentView.view_id,
+        viewJson: JSON.stringify(rowDocumentView),
+      });
+    });
+    (primeWorkspaceViewMetadata as jest.Mock).mockClear();
+    (primeWorkspaceViewMetadataFields as jest.Mock).mockClear();
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
+    (ViewService.invalidateDatabaseCatalog as jest.Mock).mockClear();
+
+    // Some field notifications omit the parent relationship. The explicit
+    // self-parent VIEW_ADDED above is still authoritative row-document
+    // evidence, so this must not leak the row into either global index.
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '3-1',
+        viewJson: JSON.stringify({
+          ...rowDocumentView,
+          name: 'Updated row document',
+          parent_view_id: undefined,
+        }),
+      });
+    });
+
+    expect(primeWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(primeWorkspaceViewMetadataFields).not.toHaveBeenCalled();
+    expect(invalidateWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 2,
+        folderRid: '4-1',
+        viewId: rowDocumentView.view_id,
+        childViewIds: [],
+      });
+    });
+
+    expect(invalidateWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+
+    // The removal consumes the bounded classification entry. A later removal
+    // for the same now-unknown ID must return to the conservative path because
+    // it could identify an unloaded database parent.
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 2,
+        folderRid: '5-1',
+        viewId: rowDocumentView.view_id,
+        childViewIds: [],
+      });
+    });
+
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledTimes(1);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('conservatively invalidates metadata and catalog for an unknown unloaded parent removal', async () => {
     const eventEmitter = new EventEmitter();
 
     (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
@@ -412,6 +706,7 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
     });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
 
     act(() => {
       eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
@@ -424,6 +719,9 @@ describe('useWorkspaceData trash refresh', () => {
 
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledTimes(1);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
   });
 
   it('keeps the catalog snapshot when a visible removed subtree contains only documents', async () => {
@@ -443,6 +741,7 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([documentView.view_id]);
     });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
 
     act(() => {
       eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
@@ -454,6 +753,48 @@ describe('useWorkspaceData trash refresh', () => {
     });
 
     expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledTimes(1);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, documentView.view_id);
+    expect(invalidateWorkspaceViewMetadata).not.toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, documentView.view_id);
+  });
+
+  it('broadly invalidates metadata and catalog when a visible removed child is a database', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      extra: { database_id: 'database-id', is_space: false },
+    });
+    const parent = createView('parent-id', {
+      children: [databaseView],
+      has_children: true,
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [parent], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([databaseView.view_id]);
+    });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
+    (ViewService.invalidateDatabaseCatalog as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 2,
+        folderRid: '2-1',
+        viewId: parent.view_id,
+        childViewIds: [],
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledTimes(1);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
   });
 
   it('invalidates the catalog when a removed visible document still has unloaded descendants', async () => {
@@ -473,6 +814,7 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([lazyDocumentView.view_id]);
     });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
 
     act(() => {
       eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
@@ -485,6 +827,33 @@ describe('useWorkspaceData trash refresh', () => {
 
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
     expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledTimes(1);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('does not invalidate flat metadata when children are reordered outside the outline', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getOutline).toHaveBeenCalled();
+    });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 3,
+        folderRid: '2-1',
+        viewId: 'unloaded-parent-id',
+        childViewIds: ['second-child-id', 'first-child-id'],
+      });
+    });
+
+    expect(invalidateWorkspaceViewMetadata).not.toHaveBeenCalled();
   });
 
   it('bounds VIEW_ADDED retries after the initial trash request fails', async () => {
@@ -855,6 +1224,7 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([removedView.view_id]);
     });
+    (invalidateWorkspaceViewMetadata as jest.Mock).mockClear();
 
     const initialTrashRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
     const nextSpace = createView('space-id', {
@@ -872,6 +1242,8 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
     });
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, removedView.view_id);
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, removedView.view_id);
   });
 
   it('refreshes stale trash state when polling applies a changed outline', async () => {

@@ -43,6 +43,7 @@ describe('useDatabaseIdentity', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
 
@@ -102,6 +103,34 @@ describe('useDatabaseIdentity', () => {
     expect(getViewIdFromWorkspaceCatalog).toHaveBeenCalledWith(WORKSPACE_ID, DATABASE_ID);
     expect(loadDatabaseRelations).toHaveBeenNthCalledWith(1);
     expect(loadDatabaseRelations).toHaveBeenNthCalledWith(2, { refresh: true });
+  });
+
+  it('shares and briefly caches a missing legacy relation lookup across remount callers', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-20T00:00:00Z'));
+    const loadDatabaseRelations = jest
+      .fn<ReturnType<LoadDatabaseRelations>, Parameters<LoadDatabaseRelations>>()
+      .mockResolvedValue({});
+    const first = renderDatabaseIdentity(loadDatabaseRelations);
+    const second = renderDatabaseIdentity(loadDatabaseRelations);
+
+    await expect(
+      Promise.all([
+        first.result.current.getViewIdFromDatabaseId(DATABASE_ID),
+        second.result.current.getViewIdFromDatabaseId(DATABASE_ID),
+      ])
+    ).resolves.toEqual([null, null]);
+    expect(loadDatabaseRelations).toHaveBeenCalledTimes(2);
+
+    first.unmount();
+    const remounted = renderDatabaseIdentity(loadDatabaseRelations);
+
+    await expect(remounted.result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBeNull();
+    expect(loadDatabaseRelations).toHaveBeenCalledTimes(2);
+
+    jest.advanceTimersByTime(30_001);
+    await expect(remounted.result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBeNull();
+    expect(loadDatabaseRelations).toHaveBeenCalledTimes(4);
   });
 
   it('resolves a database ID through the IndexedDB-backed workspace catalog', async () => {

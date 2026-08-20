@@ -12,6 +12,75 @@ type UseDatabaseIdentityParams = {
 
 type DatabaseMappings = Record<DatabaseId, ViewId[]>;
 
+const LEGACY_RELATION_LOOKUP_MISS_TTL_MS = 30 * 1000;
+
+type LegacyRelationLookupState = {
+  misses: Map<DatabaseId, number>;
+  pending: Map<DatabaseId, Promise<ViewId | null>>;
+};
+
+// `loadDatabaseRelations` is owned by the mounted workspace layer. Keying the
+// compatibility cache by that function shares work across every database
+// consumer while allowing the entire scope to be garbage-collected when the
+// workspace/session owner is replaced.
+const legacyRelationLookupStates = new WeakMap<
+  NonNullable<UseDatabaseIdentityParams['loadDatabaseRelations']>,
+  LegacyRelationLookupState
+>();
+
+function resolveLegacyRelationViewId(
+  loadDatabaseRelations: NonNullable<UseDatabaseIdentityParams['loadDatabaseRelations']>,
+  databaseId: DatabaseId
+): Promise<ViewId | null> {
+  const existingState = legacyRelationLookupStates.get(loadDatabaseRelations);
+  const state: LegacyRelationLookupState = existingState ?? { misses: new Map(), pending: new Map() };
+
+  if (!existingState) {
+    legacyRelationLookupStates.set(loadDatabaseRelations, state);
+  }
+
+  const retryAt = state.misses.get(databaseId);
+
+  if (retryAt !== undefined) {
+    if (retryAt > Date.now()) return Promise.resolve(null);
+    state.misses.delete(databaseId);
+  }
+
+  const pending = state.pending.get(databaseId);
+
+  if (pending) return pending;
+
+  const request = (async () => {
+    let databaseRelations = await loadDatabaseRelations();
+    let relatedViewId = databaseRelations?.[databaseId];
+
+    if (!relatedViewId && databaseRelations) {
+      databaseRelations = await loadDatabaseRelations({ refresh: true });
+      relatedViewId = databaseRelations?.[databaseId];
+    }
+
+    if (relatedViewId) {
+      state.misses.delete(databaseId);
+      return relatedViewId;
+    }
+
+    state.misses.set(databaseId, Date.now() + LEGACY_RELATION_LOOKUP_MISS_TTL_MS);
+    return null;
+  })()
+    .catch((error: unknown) => {
+      state.misses.set(databaseId, Date.now() + LEGACY_RELATION_LOOKUP_MISS_TTL_MS);
+      throw error;
+    })
+    .finally(() => {
+      if (state.pending.get(databaseId) === request) {
+        state.pending.delete(databaseId);
+      }
+    });
+
+  state.pending.set(databaseId, request);
+  return request;
+}
+
 function parseDatabaseMappings(value: string): DatabaseMappings {
   const parsed = JSON.parse(value) as unknown;
 
@@ -145,13 +214,7 @@ export function useDatabaseIdentity({ currentWorkspaceId, loadDatabaseRelations 
       // catalog miss does not get presented to the user as an access failure.
       if (loadDatabaseRelations) {
         try {
-          let databaseRelations = await loadDatabaseRelations();
-          let relatedViewId = databaseRelations?.[databaseId];
-
-          if (!relatedViewId && databaseRelations) {
-            databaseRelations = await loadDatabaseRelations({ refresh: true });
-            relatedViewId = databaseRelations?.[databaseId];
-          }
+          const relatedViewId = await resolveLegacyRelationViewId(loadDatabaseRelations, databaseId);
 
           if (relatedViewId) {
             Log.debug('[useDatabaseIdentity] found viewId from workspace relation metadata', {

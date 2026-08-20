@@ -8,6 +8,14 @@ import { validate as uuidValidate } from 'uuid';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
+import {
+  captureWorkspaceViewMetadataAccessToken,
+  invalidateWorkspaceViewMetadata,
+  markWorkspaceViewMetadataOutlineUntrusted,
+  primeWorkspaceViewMetadata,
+  primeWorkspaceViewMetadataFields,
+  primeWorkspaceViewMetadataFromServer,
+} from '@/application/services/js-services/workspace-view-metadata';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import { isDatabaseLayout } from '@/application/view-utils';
@@ -318,6 +326,25 @@ const FOLDER_VIEW_CHANGE_TYPE = {
   CHILDREN_REORDERED: 3,
 } as const;
 
+const MAX_TRACKED_NON_SIDEBAR_SELF_PARENT_VIEW_IDS = 2_000;
+
+function isSelfParentFolderView(view: View, parentViewId = view.parent_view_id): boolean {
+  return parentViewId === view.view_id || view.parent_view_id === view.view_id;
+}
+
+function rememberNonSidebarSelfParentViewId(viewIds: Set<string>, viewId: string): void {
+  // Refresh insertion order so recently active row documents survive a burst
+  // of registrations without letting the event-only classifier grow forever.
+  viewIds.delete(viewId);
+  viewIds.add(viewId);
+
+  if (viewIds.size <= MAX_TRACKED_NON_SIDEBAR_SELF_PARENT_VIEW_IDS) return;
+
+  const oldestViewId = viewIds.values().next().value as string | undefined;
+
+  if (oldestViewId) viewIds.delete(oldestViewId);
+}
+
 export interface RequestAccessError {
   code: number;
   message: string;
@@ -524,6 +551,7 @@ export function useWorkspaceData() {
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
   const pendingFolderViewUpdatesRef = useRef<Map<string, PendingFolderViewUpdate>>(new Map());
+  const nonSidebarSelfParentViewIdsRef = useRef<Set<string>>(new Set());
   const currentWorkspaceIdRef = useRef(currentWorkspaceId);
   const workspaceRevisionRef = useRef(0);
   // Root loads and periodic revalidation share request IDs, but successful
@@ -559,8 +587,23 @@ export function useWorkspaceData() {
 
   if (currentWorkspaceIdRef.current !== currentWorkspaceId) {
     currentWorkspaceIdRef.current = currentWorkspaceId;
+    nonSidebarSelfParentViewIdsRef.current.clear();
     workspaceRevisionRef.current += 1;
   }
+
+  // The flat metadata index is session-long while this layer owns a workspace,
+  // so sidebar rerenders and virtualized relation headers can reuse it. Once
+  // ownership ends, folder notifications for that workspace are no longer
+  // observed; clear the scope so returning cannot expose session-stale entries.
+  useEffect(() => {
+    if (!currentWorkspaceId) return;
+    const ownedWorkspaceId = currentWorkspaceId;
+
+    return () => {
+      invalidateWorkspaceViewMetadata(ownedWorkspaceId);
+      ViewService.invalidateWorkspaceMemoryCache?.(ownedWorkspaceId);
+    };
+  }, [currentWorkspaceId]);
 
   // Lazy-loading state: tracks which views have had their children fetched.
   // Uses a stable ref + revision counter to avoid creating new Set references
@@ -741,6 +784,7 @@ export function useWorkspaceData() {
     async (workspaceId: string, force = true) => {
       const workspaceRevision = workspaceRevisionRef.current;
       const permissionRevision = permissionRefreshRevisionRef.current;
+      const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
       const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
       const requestSeq = ++rootOutlineRequestSeqRef.current;
 
@@ -797,6 +841,8 @@ export function useWorkspaceData() {
         if (shouldApplyOutline) {
           latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
           const reconciledOutline = reconcilePendingFolderViewUpdates(outlineWithShareWithMe, nextFolderRid);
+
+          primeWorkspaceViewMetadataFromServer(workspaceId, reconciledOutline, metadataAccessToken);
           const mergedOutline = replaceOutlinePreservingChildren(reconciledOutline);
 
           updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
@@ -1069,6 +1115,7 @@ export function useWorkspaceData() {
 
       staleViewIds.forEach((staleViewId) => {
         ViewService.invalidateCache(workspaceId, staleViewId);
+        invalidateWorkspaceViewMetadata(workspaceId, staleViewId);
         loadingViewIdsRef.current.delete(staleViewId);
 
         if (loadedViewIdsRef.current.delete(staleViewId)) {
@@ -1101,6 +1148,7 @@ export function useWorkspaceData() {
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
       const permissionRevision = permissionRefreshRevisionRef.current;
+      const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
       const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
       const cachedViewData = ViewService.getCached(workspaceId, viewId);
       const cachedChildren = cachedViewData
@@ -1162,6 +1210,8 @@ export function useWorkspaceData() {
 
         if (isStalePermissionRequest()) return [];
 
+        primeWorkspaceViewMetadataFromServer(workspaceId, refreshed.viewData, metadataAccessToken);
+
         return mergeLoadedViewChildren(workspaceId, workspaceRevision, refreshed.viewData);
       } catch (e) {
         if (isStaleWorkspaceRequest(workspaceId, workspaceRevision) || isStalePermissionRequest()) {
@@ -1197,6 +1247,7 @@ export function useWorkspaceData() {
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
       const permissionRevision = permissionRefreshRevisionRef.current;
+      const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
       const isStaleBatchRequest = () =>
         permissionRefreshRevisionRef.current !== permissionRevision ||
         (rootRequestSeq === undefined
@@ -1229,6 +1280,10 @@ export function useWorkspaceData() {
         if (isStaleBatchRequest()) {
           return views;
         }
+
+        views.forEach((view) => {
+          if (view) primeWorkspaceViewMetadataFromServer(workspaceId, view, metadataAccessToken);
+        });
 
         views.forEach((view) => {
           updateLastFolderRid(parseFolderRid(view?.folder_rid));
@@ -1337,6 +1392,7 @@ export function useWorkspaceData() {
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
       const permissionRevision = permissionRefreshRevisionRef.current;
+      const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
       const navigationRoot = await ViewService.getNavigation(workspaceId, viewId, 0);
       const path = collectViewPath(navigationRoot, viewId);
 
@@ -1347,6 +1403,8 @@ export function useWorkspaceData() {
       ) {
         return [];
       }
+
+      primeWorkspaceViewMetadataFromServer(workspaceId, navigationRoot, metadataAccessToken);
 
       updateLastFolderRid(parseFolderRid(navigationRoot.folder_rid));
 
@@ -1669,6 +1727,7 @@ export function useWorkspaceData() {
       const workspaceId = currentWorkspaceId;
       const workspaceRevision = workspaceRevisionRef.current;
       const permissionRevision = permissionRefreshRevisionRef.current;
+      const metadataAccessToken = captureWorkspaceViewMetadataAccessToken(workspaceId);
       const isStalePermissionRequest = () => permissionRefreshRevisionRef.current !== permissionRevision;
       const requestSeq = ++rootOutlineRequestSeqRef.current;
       const outlineRequest = ViewService.getOutline(workspaceId);
@@ -1694,6 +1753,8 @@ export function useWorkspaceData() {
       if (!res) {
         throw new Error('App outline not found');
       }
+
+      primeWorkspaceViewMetadataFromServer(workspaceId, res.outline, metadataAccessToken);
 
       latestAcceptedRootOutlineRequestSeqRef.current = requestSeq;
 
@@ -1800,16 +1861,65 @@ export function useWorkspaceData() {
       void loadOutline(currentWorkspaceId, false);
     };
 
+    const evictAccessDerivedSubtrees = () => {
+      if (!currentWorkspaceId) return { staleSubtreeIds: [], viewDepths: new Map<string, number>() };
+
+      const viewDepths = buildViewDepthIndex(stableOutlineRef.current);
+      const staleSubtreeIds = Array.from(
+        new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current])
+      );
+      let evictedOutline = stableOutlineRef.current;
+
+      for (const viewId of staleSubtreeIds) {
+        const subtreeRoot = findView(evictedOutline, viewId);
+
+        evictedOutline = mergeChildrenIntoOutline(
+          evictedOutline,
+          viewId,
+          [],
+          subtreeRoot?.has_children ?? Boolean(subtreeRoot?.children?.length)
+        );
+      }
+
+      if (evictedOutline !== stableOutlineRef.current) {
+        stableOutlineRef.current = evictedOutline;
+        setOutline(evictedOutline);
+        eventEmitter?.emit(APP_EVENTS.OUTLINE_LOADED, evictedOutline);
+      }
+
+      // Clear both loaded and in-flight markers before any replacement root or
+      // subtree request starts. A stale request's finally handler deliberately
+      // cannot clear the marker of a newer request.
+      markCachedFolderSubtreesStale(currentWorkspaceId, staleSubtreeIds);
+
+      return { staleSubtreeIds, viewDepths };
+    };
+
     const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
 
-      ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
-
       const changedViewId = payload?.viewId;
       const normalizedCurrentEmail = currentUserEmail?.toLowerCase();
+      const payloadEmails = payload?.emails;
+      const hasOnlyValidEmails =
+        Array.isArray(payloadEmails) &&
+        payloadEmails.length > 0 &&
+        payloadEmails.every((email) => typeof email === 'string' && email.trim().length > 0);
       const affectsCurrentUser =
         normalizedCurrentEmail !== undefined &&
-        payload?.emails?.some((email) => email?.toLowerCase() === normalizedCurrentEmail);
+        payloadEmails?.some((email) => email?.toLowerCase() === normalizedCurrentEmail);
+      const accessMayAffectCurrentUser =
+        !normalizedCurrentEmail || !hasOnlyValidEmails || Boolean(affectsCurrentUser);
+
+      if (accessMayAffectCurrentUser) {
+        // Fence root/lazy responses that started before this share event.
+        // Sharing an ancestor can alter inherited descendant access.
+        permissionRefreshRevisionRef.current += 1;
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
+        ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
+        markWorkspaceViewMetadataOutlineUntrusted(currentWorkspaceId);
+      }
+
       const shouldProbeAccess = Boolean(changedViewId && affectsCurrentUser);
       const cachedNavigation =
         shouldProbeAccess && changedViewId ? ViewService.getCached(currentWorkspaceId, changedViewId) : undefined;
@@ -1840,6 +1950,7 @@ export function useWorkspaceData() {
       // Capture it before loadOutline can remove a newly revoked view.
       const cachedDatabaseId = changedView?.extra?.database_id;
 
+      if (accessMayAffectCurrentUser) evictAccessDerivedSubtrees();
       refreshPermissionDerivedState();
 
       if (!changedViewId || !affectsCurrentUser) return;
@@ -1876,6 +1987,7 @@ export function useWorkspaceData() {
           const databaseId = cachedDatabaseId ?? diskChangedView?.extra?.database_id;
 
           ViewService.invalidateCache(workspaceId, changedViewId);
+          invalidateWorkspaceViewMetadata(workspaceId, changedViewId);
           const collabIds = new Set([changedViewId, databaseId].filter((id): id is string => Boolean(id)));
 
           collabIds.forEach((collabId) => {
@@ -1889,6 +2001,8 @@ export function useWorkspaceData() {
       if (!currentWorkspaceId) return;
 
       ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
+      ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
+      markWorkspaceViewMetadataOutlineUntrusted(currentWorkspaceId);
 
       // AppBusinessLayer handles the same event separately because it owns the
       // active route/modal IDs and can re-probe and purge either rendered view.
@@ -1899,10 +2013,7 @@ export function useWorkspaceData() {
       permissionRefreshRevisionRef.current += 1;
       const permissionRevision = permissionRefreshRevisionRef.current;
       const workspaceId = currentWorkspaceId;
-      const viewDepths = buildViewDepthIndex(stableOutlineRef.current);
-      const staleSubtreeIds = Array.from(
-        new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current])
-      );
+      const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees();
       const staleSubtreeWaves = new Map<number, string[]>();
 
       for (const viewId of staleSubtreeIds) {
@@ -1913,26 +2024,6 @@ export function useWorkspaceData() {
         staleSubtreeWaves.set(depth, wave);
       }
 
-      let evictedOutline = stableOutlineRef.current;
-
-      for (const viewId of staleSubtreeIds) {
-        const subtreeRoot = findView(evictedOutline, viewId);
-
-        evictedOutline = mergeChildrenIntoOutline(
-          evictedOutline,
-          viewId,
-          [],
-          subtreeRoot?.has_children ?? Boolean(subtreeRoot?.children?.length)
-        );
-      }
-
-      if (evictedOutline !== stableOutlineRef.current) {
-        stableOutlineRef.current = evictedOutline;
-        setOutline(evictedOutline);
-        eventEmitter?.emit(APP_EVENTS.OUTLINE_LOADED, evictedOutline);
-      }
-
-      markCachedFolderSubtreesStale(currentWorkspaceId, staleSubtreeIds);
       refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
       refreshPermissionDerivedState();
 
@@ -2117,6 +2208,15 @@ export function useWorkspaceData() {
       const mergedOutline = replaceOutlinePreservingChildren(reconcilePendingFolderViewUpdates(nextOutline, patchRid));
       const { addedIds, removedIds } = getOutlineMembershipChange(previousOutline, mergedOutline);
 
+      // This is an accepted folder mutation diff, not an ordinary shallow root
+      // snapshot. IDs that were materialized before the patch and are absent
+      // afterward are explicit removal evidence, so their flat metadata must
+      // not survive when an older server omits the granular VIEW_REMOVED frame.
+      removedIds.forEach((removedViewId) => {
+        invalidateWorkspaceViewMetadata(currentWorkspaceId, removedViewId);
+        ViewService.invalidateCache(currentWorkspaceId, removedViewId);
+      });
+
       if (databaseCatalogChanged(previousOutline, mergedOutline)) {
         ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
       }
@@ -2221,14 +2321,28 @@ export function useWorkspaceData() {
           try {
             const updatedView = JSON.parse(payload.viewJson) as View;
             const previousView = findView(nextOutline, updatedView.view_id);
+            const isNonSidebarSelfParentView =
+              (nonSidebarSelfParentViewIdsRef.current.has(updatedView.view_id) ||
+                isSelfParentFolderView(updatedView)) &&
+              !isDatabaseCatalogView(updatedView) &&
+              !isDatabaseCatalogView(previousView);
 
-            // Compare only fields represented by WorkspaceDatabaseViewItem.
-            // Favorite, publish, lock, and timestamp notifications must not
-            // evict the global catalog and trigger a later offset request.
-            shouldInvalidateDatabaseCatalog = !isEqual(
-              getDatabaseCatalogViewMetadata(previousView),
-              getDatabaseCatalogViewMetadata(updatedView)
-            );
+            if (!isNonSidebarSelfParentView) {
+              nonSidebarSelfParentViewIdsRef.current.delete(updatedView.view_id);
+
+              // A field-change payload does not carry authoritative children.
+              // Merge only the supplied fields into the flat metadata entry.
+              ViewService.invalidateCache(currentWorkspaceId, updatedView.view_id);
+              primeWorkspaceViewMetadataFields(currentWorkspaceId, updatedView);
+
+              // Compare only fields represented by WorkspaceDatabaseViewItem.
+              // Favorite, publish, lock, and timestamp notifications must not
+              // evict the global catalog and trigger a later offset request.
+              shouldInvalidateDatabaseCatalog = !isEqual(
+                getDatabaseCatalogViewMetadata(previousView),
+                getDatabaseCatalogViewMetadata(updatedView)
+              );
+            }
 
             if (previousView) {
               pendingFolderViewUpdatesRef.current.set(updatedView.view_id, {
@@ -2259,6 +2373,19 @@ export function useWorkspaceData() {
 
           try {
             const newView = JSON.parse(payload.viewJson) as View;
+            const isNonSidebarSelfParentRegistration =
+              isSelfParentFolderView(newView, payload.parentViewId) && !isDatabaseCatalogView(newView);
+
+            // Row-document registrations use the document itself as the
+            // parent. They are not sidebar metadata and can arrive in large
+            // bursts, so do not retain every row in the process-global index.
+            if (isNonSidebarSelfParentRegistration) {
+              rememberNonSidebarSelfParentViewId(nonSidebarSelfParentViewIdsRef.current, newView.view_id);
+            } else {
+              nonSidebarSelfParentViewIdsRef.current.delete(newView.view_id);
+              ViewService.invalidateCache(currentWorkspaceId, newView.view_id);
+              primeWorkspaceViewMetadataFields(currentWorkspaceId, newView);
+            }
 
             // VIEW_ADDED is used for both new pages/row-document registrations
             // and restores. A known trash ID is definite restore evidence and
@@ -2293,6 +2420,14 @@ export function useWorkspaceData() {
             ? new Set(trashListRef.current.map((view) => view.view_id))
             : undefined;
 
+          // Self-parent row documents never participate in the sidebar or
+          // workspace database catalog. Consume only IDs learned from an
+          // explicit self-parent add; an unknown lazy parent remains
+          // conservative because its omitted child could be a real database.
+          if (parentId && nonSidebarSelfParentViewIdsRef.current.delete(parentId)) {
+            break;
+          }
+
           // The payload contains the remaining children, not the removed ID.
           // Invalidate even when the parent itself is absent from a lazy local
           // outline. This is memory-only; the next catalog consumer performs
@@ -2319,6 +2454,24 @@ export function useWorkspaceData() {
               );
 
               shouldInvalidateDatabaseCatalog = containsDatabase || !removedSubtreesAreComplete;
+
+              if (shouldInvalidateDatabaseCatalog) {
+                // Database or lazy descendants may exist in the flat index but
+                // not in the materialized sidebar subtree, so their IDs cannot
+                // be invalidated individually.
+                invalidateWorkspaceViewMetadata(currentWorkspaceId);
+                ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
+              } else {
+                collectOutlineViewIds(visiblyRemovedChildren).forEach((removedViewId) => {
+                  invalidateWorkspaceViewMetadata(currentWorkspaceId, removedViewId);
+                  ViewService.invalidateCache(currentWorkspaceId, removedViewId);
+                });
+              }
+            } else {
+              // The protocol names only the parent plus its remaining children.
+              // Without a visible removed child, the removed ID is unknowable.
+              invalidateWorkspaceViewMetadata(currentWorkspaceId);
+              ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
             }
 
             const hasSemanticTrashEvidence =
@@ -2712,6 +2865,11 @@ export function useWorkspaceData() {
     stableOutlineWorkspaceRevisionRef.current === workspaceRevisionRef.current
       ? outline
       : undefined;
+
+  useEffect(() => {
+    if (!currentWorkspaceId || !currentWorkspaceOutline) return;
+    primeWorkspaceViewMetadata(currentWorkspaceId, currentWorkspaceOutline);
+  }, [currentWorkspaceId, currentWorkspaceOutline]);
 
   return {
     outline: currentWorkspaceOutline,

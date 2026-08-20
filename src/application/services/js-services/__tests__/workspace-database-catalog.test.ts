@@ -6,10 +6,12 @@ import { ViewLayout } from '@/application/types';
 import {
   getDatabaseContainerEntries,
   getDatabaseIdFromWorkspaceCatalog,
+  getCachedWorkspaceDatabaseCatalog,
   getWorkspaceDatabaseCatalog,
   getViewIdFromWorkspaceCatalog,
   invalidateWorkspaceDatabaseCatalog,
   refreshWorkspaceDatabaseCatalog,
+  subscribeWorkspaceDatabaseCatalog,
 } from '../workspace-database-catalog';
 import { listWorkspaceDatabases } from '../http/view-api';
 
@@ -198,17 +200,45 @@ describe('workspace database catalog', () => {
   it('keeps one shared snapshot until an explicit refresh replaces it', async () => {
     jest.mocked(listWorkspaceDatabases).mockResolvedValueOnce([]).mockResolvedValueOnce([database]);
 
+    expect(getCachedWorkspaceDatabaseCatalog('workspace-1')).toBeUndefined();
+
     const initial = await getWorkspaceDatabaseCatalog('workspace-1');
     const shared = await getWorkspaceDatabaseCatalog('workspace-1');
 
     expect(shared).toBe(initial);
+    expect(getCachedWorkspaceDatabaseCatalog('workspace-1')).toBe(initial);
     expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+
+    invalidateWorkspaceDatabaseCatalog('workspace-1');
+    expect(getCachedWorkspaceDatabaseCatalog('workspace-1')).toBeUndefined();
 
     const refreshed = await refreshWorkspaceDatabaseCatalog('workspace-1');
 
     expect(refreshed).toEqual([database]);
+    expect(getCachedWorkspaceDatabaseCatalog('workspace-1')).toBe(refreshed);
     await expect(getWorkspaceDatabaseCatalog('workspace-1')).resolves.toBe(refreshed);
     expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
+  });
+
+  it('notifies snapshot subscribers after publish, invalidation, and session invalidation', async () => {
+    const listener = jest.fn();
+    const unsubscribe = subscribeWorkspaceDatabaseCatalog(listener);
+
+    await refreshWorkspaceDatabaseCatalog('workspace-1');
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    invalidateWorkspaceDatabaseCatalog('workspace-1');
+    expect(listener).toHaveBeenCalledTimes(2);
+
+    await refreshWorkspaceDatabaseCatalog('workspace-1');
+    expect(listener).toHaveBeenCalledTimes(3);
+
+    emit(EventType.SESSION_INVALID);
+    expect(listener).toHaveBeenCalledTimes(4);
+
+    unsubscribe();
+    emit(EventType.SESSION_INVALID);
+    expect(listener).toHaveBeenCalledTimes(4);
   });
 
   it('supersedes a request invalidated while IndexedDB persistence is pending', async () => {

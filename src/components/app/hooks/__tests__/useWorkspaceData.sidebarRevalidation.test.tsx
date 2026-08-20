@@ -7,6 +7,10 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
+import {
+  invalidateWorkspaceViewMetadata,
+  markWorkspaceViewMetadataOutlineUntrusted,
+} from '@/application/services/js-services/workspace-view-metadata';
 import { Role, User, View, ViewLayout } from '@/application/types';
 import { findView } from '@/components/_shared/outline/utils';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
@@ -59,6 +63,15 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/db', () => ({
   deleteCollabDB: jest.fn(),
+}));
+
+jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
+  captureWorkspaceViewMetadataAccessToken: jest.fn(() => ({})),
+  invalidateWorkspaceViewMetadata: jest.fn(),
+  markWorkspaceViewMetadataOutlineUntrusted: jest.fn(),
+  primeWorkspaceViewMetadata: jest.fn(),
+  primeWorkspaceViewMetadataFields: jest.fn(),
+  primeWorkspaceViewMetadataFromServer: jest.fn(() => true),
 }));
 
 const workspaceId = 'workspace-id';
@@ -193,6 +206,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
     (AccessService.invalidateShareDetailCache as jest.Mock).mockClear();
+    (markWorkspaceViewMetadataOutlineUntrusted as jest.Mock).mockClear();
 
     act(() => {
       eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
@@ -202,6 +216,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
 
     expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
+    expect(markWorkspaceViewMetadataOutlineUntrusted).not.toHaveBeenCalled();
     unmount();
   });
 
@@ -220,12 +235,14 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
     (AccessService.invalidateShareDetailCache as jest.Mock).mockClear();
+    (markWorkspaceViewMetadataOutlineUntrusted as jest.Mock).mockClear();
 
     act(() => {
       eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
     });
 
     expect(AccessService.invalidateShareDetailCache).toHaveBeenCalledWith(workspaceId);
+    expect(markWorkspaceViewMetadataOutlineUntrusted).toHaveBeenCalledWith(workspaceId);
     await waitFor(() => expect(result.current.outline).toEqual(refreshedOutline));
     expect(ViewService.getOutline).toHaveBeenCalledTimes(2);
 
@@ -563,6 +580,110 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.outline).toEqual(initialOutline);
     expect(findView(result.current.outline ?? [], staleOutline[0].view_id)).toBeNull();
     consoleErrorSpy.mockRestore();
+  });
+
+  it('rejects a pre-share root response when the fresh share refresh fails', async () => {
+    const eventEmitter = new EventEmitter();
+    const initialOutline = [createView('initial-space-id')];
+    const staleOutline = [createView('stale-revoked-space-id')];
+    const preShareResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: initialOutline, folderRid: '1-1' })
+      .mockReturnValueOnce(preShareResponse.promise)
+      .mockRejectedValueOnce(new Error('share refresh failed'));
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(initialOutline));
+
+    let preShareLoad: Promise<void> | undefined;
+
+    act(() => {
+      preShareLoad = result.current.loadOutline?.(workspaceId, false);
+    });
+    await waitFor(() => expect(ViewService.getOutline).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: 'ancestor-space-id',
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+    await waitFor(() => expect(ViewService.getOutline).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(consoleErrorSpy).toHaveBeenCalled());
+
+    await act(async () => {
+      preShareResponse.resolve({ outline: staleOutline, folderRid: '2-1' });
+      await preShareLoad;
+    });
+
+    expect(result.current.outline).toEqual(initialOutline);
+    expect(findView(result.current.outline ?? [], staleOutline[0].view_id)).toBeNull();
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('clears a pre-share lazy marker so the next expansion refetches and ignores the old response', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', { has_children: true });
+    const oldChild = createView('old-revoked-child-id');
+    const freshChild = createView('fresh-child-id');
+    const staleRefresh = createDeferred<View>();
+    const currentRefresh = createDeferred<View>();
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [root], folderRid: '1-1' });
+    (ViewService.refresh as jest.Mock)
+      .mockReturnValueOnce(staleRefresh.promise)
+      .mockReturnValueOnce(currentRefresh.promise);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual([root]));
+
+    let staleLoad: Promise<View[]> | undefined;
+
+    act(() => {
+      staleLoad = result.current.loadViewChildren?.(root.view_id);
+    });
+    await waitFor(() => expect(ViewService.refresh).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: 'ancestor-space-id',
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+    await waitFor(() => expect(ViewService.getOutline).toHaveBeenCalledTimes(2));
+
+    let currentLoad: Promise<View[]> | undefined;
+
+    act(() => {
+      currentLoad = result.current.loadViewChildren?.(root.view_id);
+    });
+    await waitFor(() => expect(ViewService.refresh).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      staleRefresh.resolve({ ...root, children: [oldChild] });
+      await staleLoad;
+    });
+    expect(findView(result.current.outline ?? [], oldChild.view_id)).toBeNull();
+
+    // The old finally handler must not clear the replacement request's marker.
+    await act(async () => {
+      await result.current.loadViewChildren?.(root.view_id);
+    });
+    expect(ViewService.refresh).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      currentRefresh.resolve({ ...root, children: [freshChild] });
+      await currentLoad;
+    });
+    expect(findView(result.current.outline ?? [], freshChild.view_id)).not.toBeNull();
   });
 
   it('evicts a disk-only canonical database collab when the current user loses access', async () => {
@@ -1151,6 +1272,8 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.loadedViewIds?.has('space-id')).toBe(false);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, 'space-id');
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, 'cached-child-id');
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, 'space-id');
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, 'cached-child-id');
   });
 
   it('does not let lazy child folder rid hide unapplied root outline changes', async () => {

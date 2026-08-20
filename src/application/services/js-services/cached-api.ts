@@ -99,8 +99,24 @@ const publishViewInfo = new Map<
   }
 >();
 
-const _getAppViewInFlight = new Map<string, Promise<View>>();
-const _getAppViewCache = new Map<string, { data: View; expiresAt: number }>();
+type AppViewCacheScope = {
+  userId: string | undefined;
+  workspaceId: string;
+  viewId: string;
+};
+
+type AppViewInFlight = AppViewCacheScope & {
+  identity: object;
+  promise: Promise<View>;
+};
+
+type AppViewCacheEntry = AppViewCacheScope & {
+  data: View;
+  expiresAt: number;
+};
+
+const _getAppViewInFlight = new Map<string, AppViewInFlight>();
+const _getAppViewCache = new Map<string, AppViewCacheEntry>();
 const VIEW_CACHE_TTL_MS = 5000;
 // Disk records are a fast-paint/offline fallback that is normally replaced by a
 // network refresh; the age cap only bounds how stale that fallback can get when
@@ -156,6 +172,9 @@ function getAppViewCacheKey(userId: string | undefined, workspaceId: string, vie
 
 function writeAppViewCaches(workspaceId: string, viewId: string, data: View, userId = getCurrentAppViewCacheUserId()) {
   _getAppViewCache.set(getAppViewCacheKey(userId, workspaceId, viewId), {
+    userId,
+    workspaceId,
+    viewId,
     data,
     expiresAt: Date.now() + VIEW_CACHE_TTL_MS,
   });
@@ -185,19 +204,28 @@ function requestAppView(workspaceId: string, viewId: string, userId = getCurrent
   const existing = _getAppViewInFlight.get(key);
 
   if (existing) {
-    return existing;
+    return existing.promise;
   }
 
+  const identity = {};
   const request = getView(workspaceId, viewId)
     .then((result) => {
-      writeAppViewCaches(workspaceId, viewId, result, userId);
+      // A permission/catalog mutation may invalidate this request and start a
+      // replacement before the old response settles. Only the request that is
+      // still registered for this key may repopulate memory or durable cache.
+      if (_getAppViewInFlight.get(key)?.identity === identity) {
+        writeAppViewCaches(workspaceId, viewId, result, userId);
+      }
+
       return result;
     })
     .finally(() => {
-      _getAppViewInFlight.delete(key);
+      if (_getAppViewInFlight.get(key)?.identity === identity) {
+        _getAppViewInFlight.delete(key);
+      }
     });
 
-  _getAppViewInFlight.set(key, request);
+  _getAppViewInFlight.set(key, { userId, workspaceId, viewId, identity, promise: request });
   return request;
 }
 
@@ -268,6 +296,30 @@ export function invalidateViewCache(workspaceId: string, viewId: string) {
       error,
     });
   });
+}
+
+/**
+ * Drop only the current user's in-memory view metadata for one workspace.
+ *
+ * Permission changes can affect descendants whose IDs are not present in the
+ * lazy outline, so targeted invalidation is insufficient. Durable entries are
+ * retained for permission-revocation cleanup and are never promoted by the
+ * normal metadata resolver.
+ */
+export function invalidateWorkspaceViewMemoryCache(workspaceId: string) {
+  const userId = getCurrentAppViewCacheUserId();
+
+  for (const [key, entry] of _getAppViewCache) {
+    if (entry.userId === userId && entry.workspaceId === workspaceId) {
+      _getAppViewCache.delete(key);
+    }
+  }
+
+  for (const [key, entry] of _getAppViewInFlight) {
+    if (entry.userId === userId && entry.workspaceId === workspaceId) {
+      _getAppViewInFlight.delete(key);
+    }
+  }
 }
 
 /**

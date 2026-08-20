@@ -1,15 +1,21 @@
 import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useContext, type MutableRefObject, type ReactNode } from 'react';
+import { useContext, useState, type MutableRefObject, type ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
+import {
+  getCachedWorkspaceViewMetadata,
+  invalidateWorkspaceViewMetadata,
+  resolveWorkspaceViewMetadata,
+} from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
 import { Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
+import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
 import { useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { useDatabaseOperations } from '@/components/app/hooks/useDatabaseOperations';
@@ -30,6 +36,7 @@ jest.mock('@/application/services/domains', () => ({
   },
   ViewService: {
     get: jest.fn(),
+    refresh: jest.fn(),
     getCached: jest.fn(),
     getCachedFromDisk: jest.fn(),
     invalidateCache: jest.fn(),
@@ -38,6 +45,12 @@ jest.mock('@/application/services/domains', () => ({
 
 jest.mock('@/application/session/token', () => ({
   getTokenParsed: jest.fn(),
+}));
+
+jest.mock('@/application/services/js-services/workspace-view-metadata', () => ({
+  getCachedWorkspaceViewMetadata: jest.fn(),
+  invalidateWorkspaceViewMetadata: jest.fn(),
+  resolveWorkspaceViewMetadata: jest.fn(),
 }));
 
 jest.mock('@/components/app/components/AppContextConsumer', () => ({
@@ -106,7 +119,57 @@ function NavigationProbe({ modalTargetId }: { modalTargetId: string }) {
   );
 }
 
-function renderBusinessLayer(eventEmitter: EventEmitter, outline: View[], modalTargetId = modalViewId) {
+function OperationsProbe({
+  targetViewId,
+  authoritative = false,
+  metadataOnly = false,
+}: {
+  targetViewId: string;
+  authoritative?: boolean;
+  metadataOnly?: boolean;
+}) {
+  const operations = useContext(AppOperationsContext);
+  const [loadedName, setLoadedName] = useState('');
+  const [callbackName, setCallbackName] = useState('');
+  const [relations, setRelations] = useState('');
+  const [childIds, setChildIds] = useState('');
+
+  if (!operations) throw new Error('Missing operations context');
+
+  return (
+    <>
+      <button
+        type={'button'}
+        onClick={() => {
+          void operations
+            .loadViewMeta(
+              targetViewId,
+              (view) => setCallbackName(view?.name ?? ''),
+              metadataOnly ? { authoritative, metadataOnly: true } : undefined
+            )
+            .then((view) => {
+              setLoadedName(view?.name ?? '');
+              setRelations(JSON.stringify(view?.database_relations));
+              setChildIds(JSON.stringify(view?.children.map((child) => child.view_id) ?? []));
+            });
+        }}
+      >
+        load metadata
+      </button>
+      <span data-testid={'loaded-metadata-name'}>{loadedName}</span>
+      <span data-testid={'callback-metadata-name'}>{callbackName}</span>
+      <span data-testid={'loaded-metadata-relations'}>{relations}</span>
+      <span data-testid={'loaded-metadata-child-ids'}>{childIds}</span>
+    </>
+  );
+}
+
+function renderBusinessLayer(
+  eventEmitter: EventEmitter,
+  outline: View[],
+  modalTargetId = modalViewId,
+  child: ReactNode = <NavigationProbe modalTargetId={modalTargetId} />
+) {
   const stableOutlineRef = { current: outline } as MutableRefObject<View[]>;
 
   (useWorkspaceData as jest.Mock).mockReturnValue({
@@ -134,7 +197,7 @@ function renderBusinessLayer(eventEmitter: EventEmitter, outline: View[], modalT
           path={'/:viewId'}
           element={
             <AppBusinessLayer>
-              <NavigationProbe modalTargetId={modalTargetId} />
+              {child}
             </AppBusinessLayer>
           }
         />
@@ -160,7 +223,180 @@ describe('AppBusinessLayer permission gates', () => {
     (useViewOperations as jest.Mock).mockReturnValue({ awarenessMap: {} });
     (ViewService.getCached as jest.Mock).mockReturnValue(undefined);
     (ViewService.getCachedFromDisk as jest.Mock).mockResolvedValue(undefined);
+    (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue(undefined);
+    (resolveWorkspaceViewMetadata as jest.Mock).mockImplementation(
+      (_workspaceId: string, _viewId: string, loader: () => Promise<View | null | undefined>) => loader()
+    );
     (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('loads materialized metadata through the recursively primed flat index', async () => {
+    const eventEmitter = new EventEmitter();
+    const outlineView = { ...createView(modalViewId), name: 'Materialized database view' };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue(outlineView);
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), outlineView],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} metadataOnly />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(outlineView.name);
+      expect(screen.getByTestId('callback-metadata-name').textContent).toBe(outlineView.name);
+    });
+    expect(getCachedWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(resolveWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect((ViewService.get as jest.Mock).mock.calls.some(([, viewId]) => viewId === modalViewId)).toBe(false);
+  });
+
+  it('does not promote a stale stable-outline value after the flat permission cache was cleared', async () => {
+    const eventEmitter = new EventEmitter();
+    const staleOutlineView = { ...createView(modalViewId), name: 'Stale outline name' };
+    const freshRemoteView = { ...createView(modalViewId), name: 'Fresh server name' };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue(undefined);
+    (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      Promise.resolve(viewId === modalViewId ? freshRemoteView : undefined)
+    );
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), staleOutlineView],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} metadataOnly />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(freshRemoteView.name);
+    });
+    expect(getCachedWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(resolveWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId, expect.any(Function));
+    expect(ViewService.get).toHaveBeenCalledWith(workspaceId, modalViewId);
+  });
+
+  it('preserves immediate children for a default off-outline load and bypasses the flat resolver', async () => {
+    const eventEmitter = new EventEmitter();
+    const child = createView(parentViewId);
+    const remoteView = { ...createView(modalViewId, [child]), name: 'Remote database container' };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      Promise.resolve(viewId === modalViewId ? remoteView : undefined)
+    );
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(remoteView.name);
+      expect(screen.getByTestId('loaded-metadata-child-ids').textContent).toBe(JSON.stringify([child.view_id]));
+    });
+    expect(getCachedWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(resolveWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(ViewService.get).toHaveBeenCalledWith(workspaceId, modalViewId);
+  });
+
+  it('loads metadata-only off-outline values from the global index before using the network resolver', async () => {
+    const eventEmitter = new EventEmitter();
+    const cachedView = { ...createView(modalViewId), name: 'Cached database view' };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (getCachedWorkspaceViewMetadata as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      viewId === modalViewId ? cachedView : undefined
+    );
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} metadataOnly />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(cachedView.name);
+      expect(screen.getByTestId('callback-metadata-name').textContent).toBe(cachedView.name);
+      expect(screen.getByTestId('loaded-metadata-relations').textContent).toBe('{}');
+    });
+    expect(getCachedWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(resolveWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect((ViewService.get as jest.Mock).mock.calls.some(([, viewId]) => viewId === modalViewId)).toBe(false);
+    expect(cachedView).not.toHaveProperty('database_relations');
+  });
+
+  it('uses the shared resolver for a metadata-only cache miss', async () => {
+    const eventEmitter = new EventEmitter();
+    const remoteView = { ...createView(modalViewId), name: 'Resolved database view' };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      Promise.resolve(viewId === modalViewId ? remoteView : undefined)
+    );
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} metadataOnly />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(remoteView.name);
+    });
+    expect(getCachedWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(resolveWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId, expect.any(Function));
+    expect(ViewService.get).toHaveBeenCalledWith(workspaceId, modalViewId);
+  });
+
+  it('bypasses stale outline and flat metadata for an authoritative metadata-only load', async () => {
+    const eventEmitter = new EventEmitter();
+    const staleOutlineView = { ...createView(modalViewId), name: 'Stale outline name' };
+    const freshRemoteView = { ...createView(modalViewId), name: 'Fresh server name' };
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
+    (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue({
+      ...staleOutlineView,
+      name: 'Stale flat-cache name',
+    });
+    (ViewService.refresh as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      Promise.resolve(viewId === modalViewId ? freshRemoteView : undefined)
+    );
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), staleOutlineView],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} metadataOnly authoritative />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(freshRemoteView.name);
+    });
+    expect(getCachedWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(resolveWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId, expect.any(Function), {
+      refresh: true,
+    });
+    expect(ViewService.get).not.toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
   });
 
   it('probes and closes a denied modal whose view differs from the route', async () => {
@@ -184,6 +420,7 @@ describe('AppBusinessLayer permission gates', () => {
       expect(screen.getByTestId('modal-view-id').textContent).toBe('');
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(deleteCollabDB).toHaveBeenCalledWith(modalViewId, { destroyDoc: true });
     expect(screen.getByTestId('no-access').textContent).toBe('false');
   });

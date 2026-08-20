@@ -30,6 +30,9 @@ jest.mock('@/application/services/domains/view', () => ({
 
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
+  getDatabasePrimaryView: (database: WorkspaceDatabaseWithViews) =>
+    database.views.find((view) => !view.is_container && !view.embedded) ??
+    database.views.find((view) => !view.is_container),
   getWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
@@ -186,7 +189,7 @@ describe('loadRelationDatabaseCandidates', () => {
     expect(getWorkspaceDatabaseCatalog).toHaveBeenNthCalledWith(2, 'workspace-1');
   });
 
-  it('does not expose databases without a container', async () => {
+  it('keeps the primary-view relation mapping without exposing a database that has no container', async () => {
     const database = remoteDatabase('database-1', 'Projects');
 
     database.views = database.views.filter((view) => !view.is_container);
@@ -195,7 +198,7 @@ describe('loadRelationDatabaseCandidates', () => {
     const result = await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1' });
 
     expect(result.candidates).toEqual([]);
-    expect(result.relations).toEqual({});
+    expect(result.relations).toEqual({ 'database-1': 'database-1-grid' });
   });
 
   it('does not merge outline-only databases into the web catalog', async () => {

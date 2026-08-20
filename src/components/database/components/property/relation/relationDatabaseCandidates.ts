@@ -2,6 +2,7 @@ import {
   databaseCatalogViewToView,
   DatabaseContainerCatalogEntry,
   getDatabaseContainerEntries,
+  getDatabasePrimaryView,
   getWorkspaceDatabaseCatalog,
 } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
@@ -102,7 +103,13 @@ export function buildRelationDatabaseCandidates(
   const candidates = getDatabaseContainerEntries(databases).map((database) =>
     candidateFromDatabase(database, viewIndex)
   );
-  const relations = Object.fromEntries(candidates.map((candidate) => [candidate.databaseId, candidate.viewId]));
+  const relations = Object.fromEntries(
+    databases.flatMap((database) => {
+      const primaryView = getDatabasePrimaryView(database);
+
+      return primaryView ? [[database.database_id, primaryView.view_id]] : [];
+    })
+  );
 
   return { candidates, relations, outline, databases };
 }
