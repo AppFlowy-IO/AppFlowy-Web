@@ -22,9 +22,12 @@ const DATABASE_MAPPINGS = {
   [DATABASE_ID]: [PRIMARY_VIEW_ID, SECONDARY_VIEW_ID],
 };
 
-function renderDatabaseIdentity() {
+type LoadDatabaseRelations = (options?: { refresh?: boolean }) => Promise<Record<string, string> | undefined>;
+
+function renderDatabaseIdentity(loadDatabaseRelations?: LoadDatabaseRelations) {
   const params: Parameters<typeof useDatabaseIdentity>[0] = {
     currentWorkspaceId: WORKSPACE_ID,
+    loadDatabaseRelations,
   };
 
   return renderHook(() => useDatabaseIdentity(params));
@@ -85,6 +88,20 @@ describe('useDatabaseIdentity', () => {
 
     await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
     expect(getViewIdFromWorkspaceCatalog).toHaveBeenCalledWith(WORKSPACE_ID, DATABASE_ID);
+  });
+
+  it('falls back to refreshed workspace relation metadata when the catalog misses a legacy database', async () => {
+    const loadDatabaseRelations = jest
+      .fn<ReturnType<LoadDatabaseRelations>, Parameters<LoadDatabaseRelations>>()
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ [DATABASE_ID]: PRIMARY_VIEW_ID });
+    const { result } = renderDatabaseIdentity(loadDatabaseRelations);
+
+    await expect(result.current.getViewIdFromDatabaseId(DATABASE_ID)).resolves.toBe(PRIMARY_VIEW_ID);
+
+    expect(getViewIdFromWorkspaceCatalog).toHaveBeenCalledWith(WORKSPACE_ID, DATABASE_ID);
+    expect(loadDatabaseRelations).toHaveBeenNthCalledWith(1);
+    expect(loadDatabaseRelations).toHaveBeenNthCalledWith(2, { refresh: true });
   });
 
   it('resolves a database ID through the IndexedDB-backed workspace catalog', async () => {

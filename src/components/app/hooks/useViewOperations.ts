@@ -5,7 +5,16 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
-import { AccessLevel, LoadViewOptions, Types, View, ViewLayout, YDoc, YDocWithMeta } from '@/application/types';
+import {
+  AccessLevel,
+  DatabaseRelations,
+  LoadViewOptions,
+  Types,
+  View,
+  ViewLayout,
+  YDoc,
+  YDocWithMeta,
+} from '@/application/types';
 import { openView } from '@/application/view-loader';
 import {
   getDatabaseIdFromExtra,
@@ -120,7 +129,11 @@ export function getViewCanWriteStatus(viewId: string, outline?: View[], fallback
 }
 
 // Hook for managing view-related operations
-export function useViewOperations() {
+export function useViewOperations({
+  loadDatabaseRelations,
+}: {
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+} = {}) {
   const { currentWorkspaceId } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
@@ -157,6 +170,7 @@ export function useViewOperations() {
 
   const { resolveCollabObjectId, getDatabaseIdForViewId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
+    loadDatabaseRelations,
   });
 
   // Check if view should be readonly based on access permissions

@@ -38,6 +38,7 @@ const PRIMARY_FIELD_ID = 'primary-field';
 const UNTITLED = 'menuAppHeader.defaultNewPageName';
 const DELETED = 'document.mention.deletedPage';
 const NO_RESULT = 'findAndReplace.noResult';
+const ROWS_LOADING = 'grid.row.loading';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -289,5 +290,22 @@ describe('RelationCellMenuContent loading states', () => {
     view.resolve(createTargetDoc([]));
 
     await waitFor(() => expect(screen.getByText(NO_RESULT)).toBeTruthy());
+  });
+
+  it('shows a centered loading indicator while the relation row list is in flight', async () => {
+    const view = deferred<YDoc>();
+
+    mockDatabaseContext.loadView.mockReturnValue(view.promise);
+
+    renderPicker();
+
+    await waitFor(() => expect(mockDatabaseContext.loadView).toHaveBeenCalled());
+
+    expect(screen.getByRole('status', { name: ROWS_LOADING })).toBeTruthy();
+
+    view.resolve(createTargetDoc([]));
+
+    await waitFor(() => expect(screen.queryByRole('status', { name: ROWS_LOADING })).toBeNull());
+    expect(screen.getByText(NO_RESULT)).toBeTruthy();
   });
 });
