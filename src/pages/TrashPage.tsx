@@ -1,11 +1,14 @@
-import { Button, IconButton, TableContainer, Tooltip } from '@mui/material';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Tooltip from '@mui/material/Tooltip';
 import dayjs from 'dayjs';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -20,13 +23,14 @@ import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
 import { useAppOperations, useAppTrash, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { Log } from '@/utils/log';
 
 function TrashPage() {
   const { t } = useTranslation();
 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const { trashList, loadTrash } = useAppTrash();
-  const [deleteViewId, setDeleteViewId] = React.useState<string | undefined>(undefined);
+  const [deleteViewId, setDeleteViewId] = useState<string | undefined>(undefined);
   const deleteView = useMemo(() => {
     return trashList?.find((view) => view.view_id === deleteViewId);
   }, [deleteViewId, trashList]);
@@ -80,7 +84,9 @@ function TrashPage() {
         }
 
         await restorePage?.(viewId);
-        void loadTrash?.(currentWorkspaceId);
+        void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
+          Log.warn('[Trash] Failed to refresh after restoring a page', error);
+        });
         // eslint-disable-next-line
       } catch (e: any) {
         notify.error(`Failed to restore page: ${e.message}`);
@@ -106,7 +112,9 @@ function TrashPage() {
 
         await deleteTrash?.(viewId);
         setDeleteViewId(undefined);
-        void loadTrash?.(currentWorkspaceId);
+        void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
+          Log.warn('[Trash] Failed to refresh after permanently deleting a page', error);
+        });
         // eslint-disable-next-line
       } catch (e: any) {
         notify.error(`Failed to delete page: ${e.message}`);

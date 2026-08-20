@@ -61,6 +61,7 @@ export const ERROR_CODE = {
 export const APP_EVENTS = {
   // App lifecycle events
   OUTLINE_LOADED: 'outline-loaded',
+  TRASH_UPDATED: 'trash-updated',                     // Fresh workspace trash payload accepted by app state
   RECONNECT_WEBSOCKET: 'reconnect-websocket',
   WEBSOCKET_STATUS: 'websocket-status',
   

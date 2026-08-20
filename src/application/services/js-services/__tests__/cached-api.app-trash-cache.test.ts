@@ -98,6 +98,17 @@ jest.mock('@/utils/upload-tracker', () => ({
 const getTokenParsedMock = getTokenParsed as jest.Mock;
 const getAppTrashMock = getAppTrash as jest.Mock;
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+}
+
 function setCurrentUser(userId: string | undefined) {
   getTokenParsedMock.mockReturnValue(
     userId
@@ -181,6 +192,68 @@ describe('cached app trash', () => {
 
     // The refreshed payload replaces the TTL cache entry
     await expect(getAppTrashCached(workspaceId)).resolves.toBe(refreshed);
+    expect(getAppTrashMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('queues one fresh request when an app mutation arrives during a DatabaseBlock cache read', async () => {
+    const workspaceId = 'workspace-trash-cache-then-mutation';
+    const beforeMutation = [createTrashView('before-mutation')];
+    const afterMutation = [createTrashView('after-mutation')];
+    const initialRequest = createDeferred<View[]>();
+
+    getAppTrashMock.mockReturnValueOnce(initialRequest.promise).mockResolvedValueOnce(afterMutation);
+
+    const databaseBlockRead = getAppTrashCached(workspaceId);
+    const appRefresh = refreshAppTrashCache(workspaceId, 'folder:2-1');
+    const duplicateObserver = refreshAppTrashCache(workspaceId, 'folder:2-1');
+
+    expect(getAppTrashMock).toHaveBeenCalledTimes(1);
+
+    initialRequest.resolve(beforeMutation);
+
+    await expect(databaseBlockRead).resolves.toBe(beforeMutation);
+    await expect(Promise.all([appRefresh, duplicateObserver])).resolves.toEqual([
+      afterMutation,
+      afterMutation,
+    ]);
+    expect(getAppTrashMock).toHaveBeenCalledTimes(2);
+
+    await expect(getAppTrashCached(workspaceId)).resolves.toBe(afterMutation);
+    expect(getAppTrashMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('coalesces multiple newer mutation keys into one trailing refresh', async () => {
+    const workspaceId = 'workspace-trash-one-trailing-refresh';
+    const initialRequest = createDeferred<View[]>();
+    const latest = [createTrashView('latest-trash')];
+
+    getAppTrashMock.mockReturnValueOnce(initialRequest.promise).mockResolvedValueOnce(latest);
+
+    const initialRead = getAppTrashCached(workspaceId);
+    const firstMutation = refreshAppTrashCache(workspaceId, 'folder:3-1');
+    const secondMutation = refreshAppTrashCache(workspaceId, 'folder:4-1');
+
+    initialRequest.resolve([]);
+
+    await expect(initialRead).resolves.toEqual([]);
+    await expect(Promise.all([firstMutation, secondMutation])).resolves.toEqual([latest, latest]);
+    expect(getAppTrashMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('runs a queued mutation refresh after the leading request fails', async () => {
+    const workspaceId = 'workspace-trash-leading-failure';
+    const initialRequest = createDeferred<View[]>();
+    const recovered = [createTrashView('recovered-trash')];
+
+    getAppTrashMock.mockReturnValueOnce(initialRequest.promise).mockResolvedValueOnce(recovered);
+
+    const initialRead = getAppTrashCached(workspaceId);
+    const mutationRefresh = refreshAppTrashCache(workspaceId, 'folder:6-1');
+
+    initialRequest.reject(new Error('initial request failed'));
+
+    await expect(initialRead).rejects.toThrow('initial request failed');
+    await expect(mutationRefresh).resolves.toBe(recovered);
     expect(getAppTrashMock).toHaveBeenCalledTimes(2);
   });
 

@@ -243,6 +243,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     syncAllToServer: syncContext.syncAllToServer,
     loadViewChildren,
     getDatabaseIdForViewId,
+    loadTrash,
   });
 
   // Check if current view has been deleted
@@ -756,13 +757,10 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     [loadView, stableOutlineRef]
   );
 
-  // Enhanced deletePage with loadTrash
-  const enhancedDeletePage = useCallback(
-    async (viewId: string) => {
-      return rawDeletePage(viewId, loadTrash);
-    },
-    [rawDeletePage, loadTrash]
-  );
+  // usePageOperations owns the post-mutation trash refresh, so no wrapper is
+  // needed here. Keeping the original callback also avoids an extra promise
+  // and callback layer for every consumer.
+  const enhancedDeletePage = rawDeletePage;
 
   // Initialize database operations
   const {

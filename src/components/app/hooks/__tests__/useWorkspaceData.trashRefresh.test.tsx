@@ -27,6 +27,7 @@ jest.mock('lodash-es', () => ({
     });
   },
 }));
+jest.mock('lodash-es/isEqual', () => jest.requireActual('lodash/isEqual'));
 
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
@@ -38,7 +39,8 @@ jest.mock('@/application/services/domains', () => ({
     getDatabaseRelations: jest.fn(),
     getMultiple: jest.fn(),
     getOutline: jest.fn(),
-    getTrash: jest.fn(),
+    getTrashCached: jest.fn(),
+    refreshTrash: jest.fn(),
     invalidateCache: jest.fn(),
   },
   WorkspaceService: {
@@ -131,7 +133,7 @@ describe('useWorkspaceData trash refresh', () => {
     const restoredView = createView(restoredViewId);
     let trashResponse: View[] = [restoredView];
 
-    (ViewService.getTrash as jest.Mock).mockImplementation(async () => trashResponse);
+    (ViewService.refreshTrash as jest.Mock).mockImplementation(async () => trashResponse);
 
     const { result } = renderHook(() => useWorkspaceData(), {
       wrapper: createWrapper(eventEmitter),
@@ -141,7 +143,7 @@ describe('useWorkspaceData trash refresh', () => {
       expect(result.current.trashList?.map((view) => view.view_id)).toEqual([restoredViewId]);
     });
 
-    const initialTrashRequestCount = (ViewService.getTrash as jest.Mock).mock.calls.length;
+    const initialTrashRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
 
     trashResponse = [];
 
@@ -155,7 +157,7 @@ describe('useWorkspaceData trash refresh', () => {
     });
 
     await waitFor(() => {
-      expect(ViewService.getTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
       expect(result.current.trashList).toEqual([]);
     });
   });
@@ -175,7 +177,7 @@ describe('useWorkspaceData trash refresh', () => {
         folderRid: '2-1',
       });
 
-    (ViewService.getTrash as jest.Mock).mockImplementation(async () => trashResponse);
+    (ViewService.refreshTrash as jest.Mock).mockImplementation(async () => trashResponse);
 
     const { result } = renderHook(() => useWorkspaceData(), {
       wrapper: createWrapper(eventEmitter),
@@ -185,7 +187,7 @@ describe('useWorkspaceData trash refresh', () => {
       expect(result.current.trashList?.map((view) => view.view_id)).toEqual([restoredViewId]);
     });
 
-    const initialTrashRequestCount = (ViewService.getTrash as jest.Mock).mock.calls.length;
+    const initialTrashRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
 
     trashResponse = [];
 
@@ -198,17 +200,50 @@ describe('useWorkspaceData trash refresh', () => {
     expect(revalidationResult).toBe('changed');
 
     await waitFor(() => {
-      expect(ViewService.getTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
       expect(result.current.trashList).toEqual([]);
     });
   });
 
-  it('ignores stale trash refresh responses from overlapping folder notifications', async () => {
+  it('preserves the trash state reference when a refresh returns equivalent data', async () => {
+    const eventEmitter = new EventEmitter();
+    let trashResponse: View[] = [createView(restoredViewId)];
+    const acceptedPayloads: Array<{ workspaceId: string; trashItems: View[] }> = [];
+
+    eventEmitter.on(APP_EVENTS.TRASH_UPDATED, (payload) => acceptedPayloads.push(payload));
+    (ViewService.refreshTrash as jest.Mock).mockImplementation(async () => trashResponse);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.trashList?.map((view) => view.view_id)).toEqual([restoredViewId]);
+    });
+
+    const initialTrashList = result.current.trashList;
+    const initialRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
+
+    trashResponse = [createView(restoredViewId)];
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, { folderRid: '2-1' });
+    });
+
+    await waitFor(() => {
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialRequestCount + 1);
+      expect(acceptedPayloads).toHaveLength(2);
+    });
+
+    expect(result.current.trashList).toBe(initialTrashList);
+    expect(acceptedPayloads[1].trashItems).toBe(initialTrashList);
+  });
+
+  it('coalesces paired folder notifications for the same revision across separate frames', async () => {
     const eventEmitter = new EventEmitter();
     const restoredView = createView(restoredViewId);
     const trashRequests: Array<ReturnType<typeof createDeferred<View[]>>> = [];
 
-    (ViewService.getTrash as jest.Mock).mockImplementation(() => {
+    (ViewService.refreshTrash as jest.Mock).mockImplementation(() => {
       const deferred = createDeferred<View[]>();
 
       trashRequests.push(deferred);
@@ -232,15 +267,76 @@ describe('useWorkspaceData trash refresh', () => {
     });
 
     await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([{ op: 'replace', path: '/outline', value: [] }]),
+      });
+    });
+
+    await waitFor(() => {
+      expect(trashRequests).toHaveLength(2);
+    });
+
+    await act(async () => {
       eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
         changeType: 1,
         folderRid: '2-1',
         parentViewId: 'space-id',
         viewJson: JSON.stringify(restoredView),
       });
+    });
+
+    expect(trashRequests).toHaveLength(2);
+
+    await act(async () => {
+      trashRequests[1].resolve([]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.trashList).toEqual([]);
+    });
+  });
+
+  it('allows the same folder revision to retry after a terminal trash failure', async () => {
+    const eventEmitter = new EventEmitter();
+    const trashRequests: Array<ReturnType<typeof createDeferred<View[]>>> = [];
+
+    (ViewService.refreshTrash as jest.Mock).mockImplementation(() => {
+      const deferred = createDeferred<View[]>();
+
+      trashRequests.push(deferred);
+      return deferred.promise;
+    });
+
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(trashRequests).toHaveLength(1);
+    });
+
+    await act(async () => {
+      trashRequests[0].resolve([]);
+    });
+
+    const payload = { folderRid: '5-1' };
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, payload);
+    });
+
+    await waitFor(() => {
+      expect(trashRequests).toHaveLength(2);
+    });
+
+    await act(async () => {
+      trashRequests[1].reject(new Error('network unavailable'));
+    });
+
+    await act(async () => {
       eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
-        folderRid: '3-1',
-        outlineDiffJson: JSON.stringify([{ op: 'replace', path: '/outline', value: [] }]),
+        ...payload,
       });
     });
 
@@ -250,18 +346,6 @@ describe('useWorkspaceData trash refresh', () => {
 
     await act(async () => {
       trashRequests[2].resolve([]);
-    });
-
-    await waitFor(() => {
-      expect(result.current.trashList).toEqual([]);
-    });
-
-    await act(async () => {
-      trashRequests[1].resolve([restoredView]);
-    });
-
-    await waitFor(() => {
-      expect(result.current.trashList).toEqual([]);
     });
   });
 });

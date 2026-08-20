@@ -1,6 +1,7 @@
 import { applyPatch, type Operation, type ReplaceOperation } from 'fast-json-patch';
 import { sortBy, uniqBy } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import isEqual from 'lodash-es/isEqual';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
@@ -444,6 +445,12 @@ export function useWorkspaceData() {
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
   const trashRequestSeqRef = useRef(0);
+  const trashLoaderInstanceId = useId();
+  const trashListRef = useRef<View[] | undefined>(undefined);
+  const lastTrashRefreshRidRef = useRef<FolderRid | null>(null);
+  const lastAcceptedTrashRefreshRidRef = useRef<FolderRid | null>(null);
+  const scheduledTrashRefreshWorkspaceIdRef = useRef<string | null>(null);
+  const scheduledTrashRefreshKeyRef = useRef<string | undefined>(undefined);
   const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
   const permissionRefreshRevisionRef = useRef(0);
 
@@ -1292,36 +1299,139 @@ export function useWorkspaceData() {
     []
   );
 
-  // Load trash list
-  const loadTrash = useCallback(async (currentWorkspaceId: string) => {
-    const requestSeq = ++trashRequestSeqRef.current;
+  const requestTrash = useCallback(
+    async (workspaceId: string, refresh: boolean, freshnessKey?: string | null) => {
+      const requestSeq = ++trashRequestSeqRef.current;
 
-    try {
-      const res = await ViewService.getTrash(currentWorkspaceId);
+      try {
+        const res = refresh
+          ? await ViewService.refreshTrash(
+              workspaceId,
+              freshnessKey === null
+                ? undefined
+                : freshnessKey ??
+                    `manual:${trashLoaderInstanceId}:${workspaceRevisionRef.current}:${requestSeq}`
+            )
+          : await ViewService.getTrashCached(workspaceId);
 
-      if (!res) {
-        throw new Error('App trash not found');
+        if (!res) {
+          throw new Error('App trash not found');
+        }
+
+        // A response from the previous workspace or an older request must not
+        // update app state or wake embedded database blocks.
+        if (requestSeq !== trashRequestSeqRef.current || currentWorkspaceIdRef.current !== workspaceId) {
+          return false;
+        }
+
+        const nextTrashList = sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse();
+        const acceptedTrashList = isEqual(trashListRef.current, nextTrashList)
+          ? (trashListRef.current as View[])
+          : nextTrashList;
+
+        if (acceptedTrashList !== trashListRef.current) {
+          trashListRef.current = acceptedTrashList;
+          setTrashList(acceptedTrashList);
+        }
+
+        eventEmitter?.emit(APP_EVENTS.TRASH_UPDATED, {
+          workspaceId,
+          trashItems: acceptedTrashList,
+        });
+        return true;
+      } catch (e) {
+        return Promise.reject('App trash not found');
       }
+    },
+    [eventEmitter, trashLoaderInstanceId]
+  );
 
-      if (requestSeq !== trashRequestSeqRef.current) {
-        return;
-      }
-
-      setTrashList(sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse());
-    } catch (e) {
-      return Promise.reject('App trash not found');
-    }
-  }, []);
+  // Public loads always bypass the TTL. Read-only mounts share an active
+  // request; mutation callers opt into one trailing request when an older read
+  // was already active, preserving freshness while bounding concurrency.
+  const loadTrash = useCallback(
+    async (workspaceId: string, options: { ensureFreshAfterInFlight?: boolean } = {}) => {
+      await requestTrash(workspaceId, true, options.ensureFreshAfterInFlight ? undefined : null);
+    },
+    [requestTrash]
+  );
 
   // Remote delete/restore arrives as folder changes. Keep the app-level trash
   // state fresh because deleted-page routing is derived from `trashList`.
-  const refreshTrashListInBackground = useCallback(() => {
-    if (!currentWorkspaceId) return;
+  const refreshTrashListInBackground = useCallback(
+    (folderRidValue?: string | null) => {
+      if (!currentWorkspaceId) return;
 
-    void loadTrash(currentWorkspaceId).catch((error) => {
-      Log.warn('[Trash] Failed to refresh trash list after folder change', error);
-    });
-  }, [currentWorkspaceId, loadTrash]);
+      const folderRid = parseFolderRid(folderRidValue);
+      const lastTrashRefreshRid = lastTrashRefreshRidRef.current;
+
+      // FolderViewChanged and FolderChanged can arrive in separate websocket
+      // frames for the same folder revision. Refresh once for that revision.
+      if (folderRid && lastTrashRefreshRid && compareFolderRid(folderRid, lastTrashRefreshRid) <= 0) {
+        return;
+      }
+
+      if (folderRid) {
+        lastTrashRefreshRidRef.current = folderRid;
+      }
+
+      const workspaceId = currentWorkspaceId;
+      const freshnessKey = folderRidValue
+        ? `folder:${folderRidValue}`
+        : `legacy:${trashLoaderInstanceId}:${workspaceId}:${trashRequestSeqRef.current + 1}`;
+
+      // Same-tick callers without a RID are a fallback path for legacy server
+      // notifications. Newer frames arriving after the request starts are
+      // handled by the coordinator's single trailing refresh.
+      if (scheduledTrashRefreshWorkspaceIdRef.current === workspaceId) {
+        scheduledTrashRefreshKeyRef.current = freshnessKey;
+        return;
+      }
+
+      scheduledTrashRefreshWorkspaceIdRef.current = workspaceId;
+      scheduledTrashRefreshKeyRef.current = freshnessKey;
+      queueMicrotask(() => {
+        if (scheduledTrashRefreshWorkspaceIdRef.current !== workspaceId) return;
+
+        const scheduledFreshnessKey = scheduledTrashRefreshKeyRef.current;
+
+        scheduledTrashRefreshWorkspaceIdRef.current = null;
+        scheduledTrashRefreshKeyRef.current = undefined;
+        if (currentWorkspaceIdRef.current !== workspaceId) return;
+
+        const scheduledFolderRid = scheduledFreshnessKey?.startsWith('folder:')
+          ? parseFolderRid(scheduledFreshnessKey.slice('folder:'.length))
+          : null;
+
+        void requestTrash(workspaceId, true, scheduledFreshnessKey)
+          .then((accepted) => {
+            if (!accepted || !scheduledFolderRid) return;
+
+            const lastAcceptedRid = lastAcceptedTrashRefreshRidRef.current;
+
+            if (!lastAcceptedRid || compareFolderRid(scheduledFolderRid, lastAcceptedRid) > 0) {
+              lastAcceptedTrashRefreshRidRef.current = scheduledFolderRid;
+            }
+          })
+          .catch((error) => {
+            const lastTrashRefreshRid = lastTrashRefreshRidRef.current;
+
+            // Allow a redelivered revision to retry after terminal failure,
+            // but never roll the watermark back past a newer scheduled RID.
+            if (
+              scheduledFolderRid &&
+              lastTrashRefreshRid &&
+              compareFolderRid(scheduledFolderRid, lastTrashRefreshRid) === 0
+            ) {
+              lastTrashRefreshRidRef.current = lastAcceptedTrashRefreshRidRef.current;
+            }
+
+            Log.warn('[Trash] Failed to refresh trash list after folder change', error);
+          });
+      });
+    },
+    [currentWorkspaceId, requestTrash, trashLoaderInstanceId]
+  );
 
   const revalidateSidebarOutline = useCallback(
     async (expandedViewIds: string[] = []): Promise<SidebarOutlineRevalidationResult> => {
@@ -1658,7 +1768,7 @@ export function useWorkspaceData() {
       // If no diff JSON provided, fall back to full outline reload
       if (!payload?.outlineDiffJson) {
         Log.debug('[Outline] [FolderOutlineChanged] No diff JSON, reloading outline');
-        refreshTrashListInBackground();
+        refreshTrashListInBackground(payload.folderRid);
         refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
         void loadOutline(currentWorkspaceId, false);
         return;
@@ -1671,13 +1781,13 @@ export function useWorkspaceData() {
         patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
       } catch (error) {
         Log.warn('[Outline] [FolderOutlineChanged] Failed to parse outline diff, reloading outline', error);
-        refreshTrashListInBackground();
+        refreshTrashListInBackground(payload.folderRid);
         void loadOutline(currentWorkspaceId, false);
         return;
       }
 
       if (!patch || !Array.isArray(patch)) {
-        refreshTrashListInBackground();
+        refreshTrashListInBackground(payload.folderRid);
         void loadOutline(currentWorkspaceId, false);
         return;
       }
@@ -1698,7 +1808,7 @@ export function useWorkspaceData() {
         return;
       }
 
-      refreshTrashListInBackground();
+      refreshTrashListInBackground(payload.folderRid);
       if (folderOutlinePatchMayAffectFavorites(patch)) {
         refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
       }
@@ -1923,14 +2033,14 @@ export function useWorkspaceData() {
         default: {
           // Unknown change type — fall back to full reload
           Log.debug('[Outline] [FolderViewChanged] Unknown change_type, reloading outline', changeType);
-          refreshTrashListInBackground();
+          refreshTrashListInBackground(payload.folderRid);
           void loadOutline(currentWorkspaceId, false);
           return;
         }
       }
 
       if (shouldRefreshTrash) {
-        refreshTrashListInBackground();
+        refreshTrashListInBackground(payload.folderRid);
       }
 
       if (folderRid) {
@@ -2134,6 +2244,11 @@ export function useWorkspaceData() {
   // Load data when workspace changes
   useEffect(() => {
     if (!currentWorkspaceId) return;
+    trashRequestSeqRef.current += 1;
+    lastTrashRefreshRidRef.current = null;
+    lastAcceptedTrashRefreshRidRef.current = null;
+    scheduledTrashRefreshWorkspaceIdRef.current = null;
+    scheduledTrashRefreshKeyRef.current = undefined;
     lastFolderRidRef.current = null;
     lastFolderViewRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
@@ -2156,6 +2271,7 @@ export function useWorkspaceData() {
     setRecentViews(undefined);
     // Deleted-page routing derives from `trashList` — without this reset the
     // previous workspace's trash stays live until the new loadTrash resolves.
+    trashListRef.current = undefined;
     setTrashList(undefined);
     // Clear database relations cache when switching workspaces to prevent
     // cross-workspace data contamination
@@ -2164,7 +2280,10 @@ export function useWorkspaceData() {
     void loadOutline(currentWorkspaceId, true);
     void (async () => {
       try {
-        await loadTrash(currentWorkspaceId);
+        // Always revalidate on workspace mount. The unkeyed refresh shares a
+        // simultaneous DatabaseBlock cache miss instead of adding a trailing
+        // request; mutation-driven loads use keyed freshness below.
+        await requestTrash(currentWorkspaceId, true, null);
       } catch (e) {
         console.error(e);
       }

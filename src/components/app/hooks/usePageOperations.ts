@@ -69,6 +69,7 @@ export function usePageOperations({
   syncAllToServer,
   loadViewChildren,
   getDatabaseIdForViewId,
+  loadTrash,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
@@ -76,6 +77,7 @@ export function usePageOperations({
   syncAllToServer?: (workspaceId: string) => Promise<void>;
   loadViewChildren?: (viewId: string) => Promise<View[]>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
+  loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -111,7 +113,7 @@ export function usePageOperations({
 
   // Delete a page (move to trash)
   const deletePage = useCallback(
-    async (id: string, loadTrash?: (workspaceId: string) => Promise<void>) => {
+    async (id: string) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
@@ -131,14 +133,16 @@ export function usePageOperations({
           ViewService.invalidateCache(currentWorkspaceId, parentView.view_id);
         }
 
-        void loadTrash?.(currentWorkspaceId);
+        void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
+          Log.warn('[Trash] Failed to refresh after moving a page to trash', error);
+        });
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outlineRef, role, loadOutline]
+    [currentWorkspaceId, outlineRef, role, loadOutline, loadTrash]
   );
 
   // Update page (rename) - uses WebSocket notification for sidebar refresh
@@ -286,7 +290,7 @@ export function usePageOperations({
         } else {
           // Delete all — fetch trash list first to know which caches to clear
           try {
-            const trashItems = await ViewService.getTrash(currentWorkspaceId);
+            const trashItems = await ViewService.refreshTrash(currentWorkspaceId, 'delete-all-snapshot');
 
             viewIdsToClear = trashItems?.map((item) => item.view_id) || [];
           } catch {
