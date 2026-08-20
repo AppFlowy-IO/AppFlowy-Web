@@ -12,7 +12,7 @@ import * as Y from 'yjs';
 
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { runDatabaseRowAction } from '@/application/database-yjs/history';
+import { getOrCreateDatabaseHistoryManager, runDatabaseRowAction } from '@/application/database-yjs/history';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseCell, YDatabaseCells, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -202,7 +202,7 @@ function writeCellToRow({
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
-  const { rowMap, ensureRow } = useDatabaseContext();
+  const { databaseDoc, rowMap, ensureRow } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
 
   return useCallback(
@@ -229,6 +229,11 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           return;
         }
 
+        // A lazily loaded row can be edited before the rowMap registration
+        // effect runs. Attach it synchronously so its first edit reaches the
+        // database-wide history stack.
+        getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
+
         writeCellToRow({
           rowDoc,
           row: target.row,
@@ -243,12 +248,12 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [ensureRow, field, fieldId, rowMap, rowId]
+    [databaseDoc, ensureRow, field, fieldId, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
-  const { rowMap, ensureRow } = useDatabaseContext();
+  const { databaseDoc, rowMap, ensureRow } = useDatabaseContext();
 
   return useCallback(
     (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
@@ -267,6 +272,8 @@ export function useUpdateStartEndTimeCell() {
         }
 
         const writableTarget = target;
+
+        getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
         runDatabaseRowAction(rowDoc, { type: 'cell.update-date-range', rowId, fieldId, fieldType: FieldType.DateTime }, () => {
           let cell = writableTarget.cells.get(fieldId);
@@ -294,6 +301,6 @@ export function useUpdateStartEndTimeCell() {
         Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [ensureRow, rowMap]
+    [databaseDoc, ensureRow, rowMap]
   );
 }

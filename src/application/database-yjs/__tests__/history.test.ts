@@ -38,6 +38,7 @@ jest.mock('@/utils/runtime-config', () => ({
 const databaseId = 'database-id';
 const rowId = 'row-id';
 const textFieldId = 'text-field-id';
+const secondTextFieldId = 'second-text-field-id';
 const relationFieldId = 'relation-field-id';
 const viewId = 'view-id';
 
@@ -583,6 +584,53 @@ describe('database row history', () => {
     expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('second');
   });
 
+  it('releases Yjs keep references when a new action invalidates redo', () => {
+    const { databaseDoc } = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [textFieldId]: {
+        fieldType: FieldType.RichText,
+        data: 'before',
+      },
+      [secondTextFieldId]: {
+        fieldType: FieldType.RichText,
+        data: 'other-before',
+      },
+    });
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+    const rowHistory = manager.registerRowDoc(rowId, rowDoc);
+
+    runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId: textFieldId }, () => {
+      setCellData(rowDoc, textFieldId, 'first');
+    });
+    manager.undo();
+
+    const redoItem = rowHistory?.undoManager.redoStack[0];
+    const keptItems: Y.Item[] = [];
+
+    expect(redoItem).toBeDefined();
+    rowDoc.transact((transaction) => {
+      Y.iterateDeletedStructs(transaction, redoItem!.deletions, (item) => {
+        if (item instanceof Y.Item) keptItems.push(item);
+      });
+    });
+    expect(keptItems.length).toBeGreaterThan(0);
+    expect(keptItems.every((item) => item.keep)).toBe(true);
+
+    const clearSpy = jest.spyOn(rowHistory!.undoManager, 'clear');
+
+    runDatabaseRowAction(rowDoc, { type: 'cell.noop', rowId }, () => undefined);
+    expect(manager.canRedo()).toBe(true);
+    expect(clearSpy).not.toHaveBeenCalled();
+
+    runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId: secondTextFieldId }, () => {
+      setCellData(rowDoc, secondTextFieldId, 'other-after');
+    });
+
+    expect(manager.canRedo()).toBe(false);
+    expect(clearSpy).toHaveBeenCalled();
+    expect(keptItems.every((item) => !item.keep)).toBe(true);
+  });
+
   it('keeps repeated edits on the same row undoable through the database manager', () => {
     const { databaseDoc } = createDatabaseDoc();
     const rowDoc = createRowDoc(rowId, databaseId, {
@@ -617,6 +665,48 @@ describe('database row history', () => {
 
     manager.redo();
     expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('two');
+  });
+
+  it('bounds logical history while preserving the retained baseline', () => {
+    const { databaseDoc, rowOrders } = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [textFieldId]: {
+        fieldType: FieldType.RichText,
+        data: '0',
+      },
+    });
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+    const rowHistory = manager.registerRowDoc(rowId, rowDoc);
+
+    for (let value = 1; value <= 101; value += 1) {
+      runDatabaseHistoryGroup(() => {
+        runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId: textFieldId }, () => {
+          setCellData(rowDoc, textFieldId, String(value));
+        });
+        runDatabaseAction(databaseDoc, { type: 'database.add-row-order' }, () => {
+          rowOrders.push([{ id: String(value), height: 36 }]);
+        });
+      });
+    }
+
+    expect(rowHistory?.undoManager.undoStack).toHaveLength(100);
+
+    for (let count = 0; count < 100; count += 1) {
+      expect(manager.undo()).not.toBeNull();
+    }
+
+    expect(manager.canUndo()).toBe(false);
+    expect(rowHistory?.canUndo()).toBe(false);
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('1');
+    expect(rowOrders).toHaveLength(1);
+
+    for (let count = 0; count < 100; count += 1) {
+      expect(manager.redo()).not.toBeNull();
+    }
+
+    expect(manager.canRedo()).toBe(false);
+    expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('101');
+    expect(rowOrders).toHaveLength(101);
   });
 
   it('allows database document actions to opt out explicitly', () => {

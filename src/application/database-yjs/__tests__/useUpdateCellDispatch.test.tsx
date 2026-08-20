@@ -1,9 +1,9 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch';
+import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import {
   RowId,
   YDatabase,
@@ -17,6 +17,8 @@ import {
 } from '@/application/types';
 
 import { createRowDoc } from './test-helpers';
+
+import type { ReactNode } from 'react';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
@@ -70,7 +72,7 @@ function getCell(rowDoc: YDoc) {
 }
 
 function createWrapper(contextValue: DatabaseContextState) {
-  return ({ children }: { children: React.ReactNode }) => (
+  return ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 }
@@ -99,6 +101,12 @@ describe('useUpdateCellDispatch', () => {
       expect(getCellData(rowDoc)).toBe('Recovered value');
     });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
+
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    expect(history.canUndo()).toBe(true);
+    history.undo();
+    expect(getCellData(rowDoc)).toBeUndefined();
   });
 });
 
@@ -130,6 +138,12 @@ describe('useUpdateStartEndTimeCell', () => {
       expect(cell?.get(YjsDatabaseKey.include_time)).toBe(true);
     });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
+
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    expect(history.canUndo()).toBe(true);
+    history.undo();
+    expect(getCell(rowDoc)).toBeUndefined();
   });
 
   it('does not commit calendar time updates when the row doc cannot be loaded', async () => {

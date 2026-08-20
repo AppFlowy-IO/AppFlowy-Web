@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 
 import { useDatabaseContext, useRow } from '@/application/database-yjs/context';
@@ -36,6 +36,8 @@ type HistorySubscriber = () => void;
 
 type StackItem = Y.UndoManager['undoStack'][number];
 
+const MAX_HISTORY_ENTRIES = 100;
+
 type StackItemAddedEvent = {
   stackItem: StackItem;
   origin?: unknown;
@@ -43,11 +45,6 @@ type StackItemAddedEvent = {
 };
 
 type HistorySourceKind = 'database' | 'row';
-
-type DatabaseHistorySourceSnapshot = {
-  canRedo: boolean;
-  canUndo: boolean;
-};
 
 class DatabaseHistorySourceController {
   readonly undoManager: Y.UndoManager;
@@ -60,10 +57,13 @@ class DatabaseHistorySourceController {
   constructor(
     readonly kind: HistorySourceKind,
     readonly doc: YDoc,
-    scope: Y.AbstractType<Y.YMapEvent<unknown>>,
+    private readonly scope: Y.AbstractType<Y.YMapEvent<unknown>>,
     readonly rowId?: RowId
   ) {
-    this.undoManager = new Y.UndoManager(scope, {
+    // Register first so redo keep references are released before this pinned
+    // Yjs UndoManager replaces redoStack in its own afterTransaction handler.
+    this.doc.on('afterTransaction', this.handleTrackedTransactionBeforeUndoManager);
+    this.undoManager = new Y.UndoManager(this.scope, {
       trackedOrigins: new Set([DatabaseHistoryOrigin, DatabaseRowHistoryOrigin]),
       captureTimeout: 0,
     });
@@ -98,6 +98,35 @@ class DatabaseHistorySourceController {
       this.undoManager.clear();
     } finally {
       this.undoManager.undoStack = undoStack;
+    }
+
+    this.notify();
+  }
+
+  discardStackItem(type: 'undo' | 'redo', stackItem: StackItem) {
+    const stackKey = type === 'undo' ? 'undoStack' : 'redoStack';
+    const otherStackKey = type === 'undo' ? 'redoStack' : 'undoStack';
+    const sourceStack = this.undoManager[stackKey];
+    const stackItemIndex = sourceStack.lastIndexOf(stackItem);
+
+    if (stackItemIndex < 0) return;
+
+    const otherStack = this.undoManager[otherStackKey];
+
+    sourceStack.splice(stackItemIndex, 1);
+    this.undoManager[stackKey] = [stackItem];
+    this.undoManager[otherStackKey] = [];
+
+    try {
+      // Clearing the isolated item lets Yjs release keep references that are
+      // no longer shared. Hiding both live stacks preserves retained actions.
+      this.undoManager.clear();
+    } catch (error) {
+      sourceStack.splice(stackItemIndex, 0, stackItem);
+      throw error;
+    } finally {
+      this.undoManager[stackKey] = sourceStack;
+      this.undoManager[otherStackKey] = otherStack;
     }
 
     this.notify();
@@ -144,11 +173,8 @@ class DatabaseHistorySourceController {
     }
   }
 
-  snapshot(): DatabaseHistorySourceSnapshot {
-    return {
-      canRedo: this.canRedo(),
-      canUndo: this.canUndo(),
-    };
+  getSnapshot() {
+    return (this.canUndo() ? 1 : 0) | (this.canRedo() ? 2 : 0);
   }
 
   subscribe(subscriber: HistorySubscriber) {
@@ -170,6 +196,16 @@ class DatabaseHistorySourceController {
   private handleStackItemAdded = (event: StackItemAddedEvent) => {
     this.stackItemAddedSubscribers.forEach((subscriber) => subscriber(event, this));
     this.notify();
+  };
+
+  private handleTrackedTransactionBeforeUndoManager = (transaction: Y.Transaction) => {
+    if (!(transaction.origin instanceof DatabaseHistoryOrigin)) return;
+
+    const scope = this.scope as unknown as Y.AbstractType<Y.YEvent>;
+
+    if (!transaction.changedParentTypes.has(scope)) return;
+
+    this.clearRedo();
   };
 
   private notify = () => {
@@ -226,6 +262,10 @@ export class DatabaseHistoryManager {
 
   redo() {
     return this.replay('redo');
+  }
+
+  getSnapshot() {
+    return (this.canUndo() ? 1 : 0) | (this.canRedo() ? 2 : 0);
   }
 
   registerRowDoc(rowId: RowId, rowDoc: YDoc) {
@@ -300,11 +340,22 @@ export class DatabaseHistoryManager {
       latestGroup.entries.push(entry);
     } else {
       this.undoStack.push({ group, entries: [entry] });
+      this.trimUndoHistory();
     }
 
     this.clearRedoHistory(source);
     this.notify();
   };
+
+  private trimUndoHistory() {
+    while (this.undoStack.length > MAX_HISTORY_ENTRIES) {
+      const discardedGroup = this.undoStack.shift();
+
+      discardedGroup?.entries.forEach((entry) => {
+        entry.source.discardStackItem('undo', entry.stackItem);
+      });
+    }
+  }
 
   private pruneStacks() {
     while (this.undoStack.length > 0 && !this.hasAvailableEntry(this.undoStack[this.undoStack.length - 1], 'undo')) {
@@ -527,13 +578,9 @@ export function useDatabaseHistory(rowId?: RowId) {
   const manager = useMemo(() => getOrCreateDatabaseHistoryManager(databaseDoc), [databaseDoc]);
   const rowSharedRoot = useRow(rowId ?? '');
   const rowDoc = rowId ? (rowSharedRoot?.doc as YDoc | undefined) ?? rowMap?.[rowId] : undefined;
-  const [, forceUpdate] = useState(0);
-
-  useEffect(() => {
-    return manager.subscribe(() => {
-      forceUpdate((value) => value + 1);
-    });
-  }, [manager]);
+  const subscribe = useCallback((subscriber: HistorySubscriber) => manager.subscribe(subscriber), [manager]);
+  const getSnapshot = useCallback(() => manager.getSnapshot(), [manager]);
+  const historyState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useEffect(() => {
     Object.entries(rowMap ?? {}).forEach(([id, doc]) => {
@@ -560,8 +607,8 @@ export function useDatabaseHistory(rowId?: RowId) {
   }, [manager]);
 
   return {
-    canRedo: manager.canRedo(),
-    canUndo: manager.canUndo(),
+    canRedo: (historyState & 2) !== 0,
+    canUndo: (historyState & 1) !== 0,
     clear,
     redo,
     undo,
@@ -580,15 +627,12 @@ export function useDatabaseRowHistory(rowId?: RowId) {
 
     return getOrCreateDatabaseRowHistoryController(rowDoc, rowId);
   }, [cells, rowDoc, rowId]);
-  const [, forceUpdate] = useState(0);
-
-  useEffect(() => {
-    if (!controller) return;
-
-    return controller.subscribe(() => {
-      forceUpdate((value) => value + 1);
-    });
-  }, [controller]);
+  const subscribe = useCallback(
+    (subscriber: HistorySubscriber) => controller?.subscribe(subscriber) ?? (() => undefined),
+    [controller]
+  );
+  const getSnapshot = useCallback(() => controller?.getSnapshot() ?? 0, [controller]);
+  const historyState = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const undo = useCallback(() => {
     controller?.undo();
@@ -613,8 +657,8 @@ export function useDatabaseRowHistory(rowId?: RowId) {
   );
 
   return {
-    canRedo: controller?.canRedo() ?? false,
-    canUndo: controller?.canUndo() ?? false,
+    canRedo: (historyState & 2) !== 0,
+    canUndo: (historyState & 1) !== 0,
     clear,
     redo,
     runAction,
