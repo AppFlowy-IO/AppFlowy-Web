@@ -393,7 +393,8 @@ function RelationCellMenuContent({
   // may want to remove.
   // `rowIdsLoaded` keeps an empty list from reading as "nothing matched" while it is really
   // "nothing has arrived yet".
-  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !loading && rowIdsLoaded;
+  const isLoadingRows = loading || !rowIdsLoaded;
+  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !isLoadingRows;
 
   const renderItem = useCallback(
     (id: string) => {
@@ -478,7 +479,7 @@ function RelationCellMenuContent({
   // any non-empty query exposes the create affordance, even when the live
   // results already match. The user shouldn't have to clear partial matches
   // to create a new row that happens to share a substring.
-  const showCreateAndLink = trimmedSearch.length > 0 && !loading && !noAccess && primaryFieldId !== null;
+  const showCreateAndLink = trimmedSearch.length > 0 && !isLoadingRows && !noAccess && primaryFieldId !== null;
 
   const handleCreateAndLink = useCallback(async () => {
     const targetDoc = targetDocRef.current;
@@ -622,7 +623,15 @@ function RelationCellMenuContent({
           <Separator className={'mt-2'} />
         </div>
         <div className={'relative flex-1 p-2 pt-0'}>
-          {noResult ? (
+          {isLoadingRows ? (
+            <div
+              aria-label={t('grid.row.loading', 'Loading rows')}
+              className={'flex min-h-[160px] items-center justify-center'}
+              role={'status'}
+            >
+              <Progress aria-hidden variant={'primary'} />
+            </div>
+          ) : noResult ? (
             <div className={'flex items-center py-2 text-sm text-text-secondary'}>{t('findAndReplace.noResult')}</div>
           ) : (
             !noAccess &&
