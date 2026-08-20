@@ -5,8 +5,13 @@ import { validate as uuidValidate } from 'uuid';
 import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
+import {
+  getCachedWorkspaceViewMetadata,
+  invalidateWorkspaceViewMetadata,
+  resolveWorkspaceViewMetadata,
+} from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
-import { LoadViewOptions, TextCount, View } from '@/application/types';
+import { LoadViewMetaOptions, LoadViewOptions, TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
@@ -112,6 +117,7 @@ async function resolvePermissionProbeTargetFromMetadata(
 
 function purgePermissionProbeTarget(workspaceId: string, routeViewId: string, target: PermissionProbeTarget) {
   ViewService.invalidateCache(workspaceId, routeViewId);
+  invalidateWorkspaceViewMetadata(workspaceId, routeViewId);
 
   // Current database caches use the canonical database id, while older web
   // releases may also have persisted a database under the folder view id.
@@ -680,19 +686,45 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Load view metadata — with server fallback for lazy-loaded outline
   const loadViewMeta = useCallback(
-    async (viewId: string, callback?: (meta: View) => void) => {
+    async (viewId: string, callback?: (meta: View | null) => void, options?: LoadViewMetaOptions) => {
       const deletedView = trashList?.find((v) => v.view_id === viewId);
 
       if (deletedView) {
         return Promise.reject(deletedView);
       }
 
-      let view = findView(stableOutlineRef.current || [], viewId);
+      let view: View | null | undefined = options?.metadataOnly || options?.authoritative
+        ? undefined
+        : findView(stableOutlineRef.current || [], viewId);
 
-      // Server fallback: view not in shallow outline tree
+      // Metadata-only callers use the recursively primed flat index rather
+      // than stableOutlineRef directly. Permission changes clear that index,
+      // so a virtualized header remount cannot promote a stale outline value.
+      // Default navigation callers still retain the original outline-first,
+      // depth-preserving contract.
       if (!view && currentWorkspaceId) {
         try {
-          view = await ViewService.get(currentWorkspaceId, viewId);
+          if (options?.metadataOnly) {
+            view = options.authoritative
+              ? undefined
+              : getCachedWorkspaceViewMetadata(currentWorkspaceId, viewId);
+
+            if (!view) {
+              const loader = () =>
+                options.authoritative
+                  ? ViewService.refresh(currentWorkspaceId, viewId)
+                  : ViewService.get(currentWorkspaceId, viewId);
+
+              view = options.authoritative
+                ? await resolveWorkspaceViewMetadata(currentWorkspaceId, viewId, loader, { refresh: true })
+                : await resolveWorkspaceViewMetadata(currentWorkspaceId, viewId, loader);
+            }
+          } else {
+            // Preserve the original contract for navigation, database tabs,
+            // and editor callers: a direct folder lookup retains its
+            // immediate children instead of returning flattened metadata.
+            view = await ViewService.get(currentWorkspaceId, viewId);
+          }
         } catch {
           // fall through to rejection
         }
@@ -702,17 +734,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         return Promise.reject('View not found');
       }
 
-      if (callback) {
-        callback({
-          ...view,
-          database_relations: workspaceDatabases,
-        });
-      }
-
-      return {
+      const viewWithDatabaseRelations = {
         ...view,
         database_relations: workspaceDatabases,
       };
+
+      callback?.(viewWithDatabaseRelations);
+
+      return viewWithDatabaseRelations;
     },
     [stableOutlineRef, trashList, workspaceDatabases, currentWorkspaceId]
   );

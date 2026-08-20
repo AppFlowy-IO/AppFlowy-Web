@@ -40,6 +40,9 @@ jest.mock('@/application/services/domains/view', () => ({
 
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
+  getDatabasePrimaryView: (database: WorkspaceDatabaseWithViews) =>
+    database.views.find((view) => !view.is_container && !view.embedded) ??
+    database.views.find((view) => !view.is_container),
   getWorkspaceDatabaseCatalog: jest.fn(),
 }));
 

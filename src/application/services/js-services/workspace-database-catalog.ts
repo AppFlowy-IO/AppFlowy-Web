@@ -12,7 +12,9 @@ const ANONYMOUS_CATALOG_SCOPE = 'anonymous';
 const refreshRequests = new Map<string, Promise<WorkspaceDatabaseWithViews[]>>();
 const successfulRefreshes = new Map<string, WorkspaceDatabaseWithViews[]>();
 const catalogGenerations = new Map<string, number>();
+const catalogSnapshotRevisions = new Map<string, number>();
 const invalidatedCatalogs = new Set<string>();
+const catalogListeners = new Set<() => void>();
 let sessionGeneration = 0;
 
 on(EventType.SESSION_INVALID, () => {
@@ -20,7 +22,9 @@ on(EventType.SESSION_INVALID, () => {
   refreshRequests.clear();
   successfulRefreshes.clear();
   catalogGenerations.clear();
+  catalogSnapshotRevisions.clear();
   invalidatedCatalogs.clear();
+  catalogListeners.forEach((listener) => listener());
 });
 
 function currentUserId(): string | undefined {
@@ -33,6 +37,27 @@ function requestKey(userId: string | undefined, workspaceId: string): string {
 
 function getSuccessfulRefresh(userId: string | undefined, workspaceId: string) {
   return successfulRefreshes.get(requestKey(userId, workspaceId));
+}
+
+/** Return the current in-memory catalog object without reading disk or network. */
+export function getCachedWorkspaceDatabaseCatalog(
+  workspaceId: string
+): WorkspaceDatabaseWithViews[] | undefined {
+  return getSuccessfulRefresh(currentUserId(), workspaceId);
+}
+
+/** Stable primitive used by external-store consumers, including empty snapshots. */
+export function getWorkspaceDatabaseCatalogRevision(workspaceId: string): string {
+  const key = requestKey(currentUserId(), workspaceId);
+
+  return `${sessionGeneration}:${catalogSnapshotRevisions.get(key) ?? 0}`;
+}
+
+export function subscribeWorkspaceDatabaseCatalog(listener: () => void): () => void {
+  catalogListeners.add(listener);
+  return () => {
+    catalogListeners.delete(listener);
+  };
 }
 
 function sessionChangedError(): DOMException {
@@ -54,6 +79,8 @@ export function invalidateWorkspaceDatabaseCatalog(workspaceId: string): void {
   // reader. Its captured generation also prevents it from repopulating the
   // memory or IndexedDB snapshots when it eventually settles.
   refreshRequests.delete(key);
+  catalogSnapshotRevisions.set(key, (catalogSnapshotRevisions.get(key) ?? 0) + 1);
+  catalogListeners.forEach((listener) => listener());
 }
 
 function catalogRecords(
@@ -248,6 +275,8 @@ export async function refreshWorkspaceDatabaseCatalog(workspaceId: string): Prom
     // catalog snapshot. Explicit refreshes replace this object atomically.
     successfulRefreshes.set(key, databases);
     invalidatedCatalogs.delete(key);
+    catalogSnapshotRevisions.set(key, (catalogSnapshotRevisions.get(key) ?? 0) + 1);
+    catalogListeners.forEach((listener) => listener());
 
     return databases;
   })();

@@ -1266,7 +1266,22 @@ export interface LoadRowDocumentOptions {
 
 export type LoadRowDocument = (documentId: string, options?: LoadRowDocumentOptions) => Promise<YDoc | null>;
 
-export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
+export interface LoadViewMetaOptions {
+  /** Resolve display fields from the flat workspace metadata index when possible. */
+  metadataOnly?: boolean;
+  /**
+   * Bypass the materialized outline and flat positive cache after an access
+   * change, forcing a server refresh through the shared metadata resolver so
+   * in-flight and negative caching are still retained.
+   */
+  authoritative?: boolean;
+}
+
+export type LoadViewMeta = (
+  viewId: string,
+  onChange?: (meta: View | null) => void,
+  options?: LoadViewMetaOptions
+) => Promise<View | null>;
 
 export type DatabaseRelations = Record<DatabaseId, ViewId>;
 
