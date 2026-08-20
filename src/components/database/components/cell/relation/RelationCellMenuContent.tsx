@@ -14,6 +14,7 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import RelationRowItem from '@/components/database/components/cell/relation/RelationRowItem';
 import { getLiveRelationRowIds } from '@/components/database/components/cell/relation/relationRowOrders';
 import { useNavigationKey } from '@/components/database/components/cell/relation/useNavigationKey';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -21,7 +22,6 @@ import { SearchInput } from '@/components/ui/search-input';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 const recentRelationRowsByView = new Map<string, string[]>();
 
@@ -103,9 +103,7 @@ function RelationCellMenuContent({
   const actorUid = resolveUserAttributionUid(currentUser);
   const { navigateToView, loadView, navigateToRow, createRow, bindViewSync } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
-  const selectedViewId = useMemo(() => {
-    return selectedView?.view_id;
-  }, [selectedView]);
+  const selectedViewId = selectedView?.view_id;
   const openRelatedRow = useCallback(
     (rowId: string) => {
       onClose?.();

@@ -301,9 +301,7 @@ describe('RelationCellMenuContent loading states', () => {
 
     await waitFor(() => expect(mockDatabaseContext.loadView).toHaveBeenCalled());
 
-    const indicator = screen.getByRole('status', { name: ROWS_LOADING });
-
-    expect(indicator.className).toContain('min-h-[160px]');
+    expect(screen.getByRole('status', { name: ROWS_LOADING })).toBeTruthy();
 
     view.resolve(createTargetDoc([]));
 

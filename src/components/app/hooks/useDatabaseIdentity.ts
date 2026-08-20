@@ -161,7 +161,11 @@ export function useDatabaseIdentity({ currentWorkspaceId, loadDatabaseRelations 
             return relatedViewId;
           }
         } catch (error) {
-          Log.warn('[useDatabaseIdentity] failed to load workspace relation metadata', error);
+          Log.warn('[useDatabaseIdentity] failed to load workspace relation metadata', {
+            workspaceId: currentWorkspaceId,
+            databaseId,
+            error,
+          });
         }
       }
 
