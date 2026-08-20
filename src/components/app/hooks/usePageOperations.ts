@@ -34,6 +34,23 @@ function waitForDocumentPublishRetry(delayMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
+function refreshDatabaseCatalogAfterMutation(workspaceId: string): void {
+  // Supersede any warm/read request that began before the mutation. The new
+  // authoritative request runs in the background so page creation is not held
+  // behind a workspace-wide catalog response.
+  ViewService.invalidateDatabaseCatalog?.(workspaceId);
+  void ViewService.refreshWorkspaceDatabaseCatalog?.(workspaceId).catch((error) => {
+    Log.warn('[WorkspaceDatabaseCatalog] failed to refresh after a database mutation', error);
+  });
+}
+
+function isDatabaseCatalogView(view: View | null | undefined): boolean {
+  return Boolean(
+    view &&
+      (isDatabaseLayout(view.layout) || view.extra?.is_database_container || typeof view.extra?.database_id === 'string')
+  );
+}
+
 function isPendingDocumentPublishData(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -100,6 +117,10 @@ export function usePageOperations({
         const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
 
         ViewService.invalidateCache(currentWorkspaceId, parentViewId);
+        if (isDatabaseLayout(payload.layout)) {
+          refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        }
+
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
         void loadOutline?.(currentWorkspaceId, false);
@@ -126,8 +147,13 @@ export function usePageOperations({
 
       try {
         const parentView = findParentView(outlineRef.current || [], id);
+        const deletedView = findView(outlineRef.current || [], id);
 
         await PageService.moveToTrash(currentWorkspaceId, id);
+        if (isDatabaseCatalogView(deletedView)) {
+          refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        }
+
         ViewService.invalidateCache(currentWorkspaceId, id);
         if (parentView) {
           ViewService.invalidateCache(currentWorkspaceId, parentView.view_id);
@@ -229,6 +255,7 @@ export function usePageOperations({
         await afterPreSync?.();
 
         await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
 
         if (duplicateOptions.parentViewId) {
@@ -299,6 +326,7 @@ export function usePageOperations({
         }
 
         await PageService.deleteTrash(currentWorkspaceId, viewId);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
 
         // Clear IndexedDB cache for permanently deleted views (parallel)
         await Promise.allSettled(viewIdsToClear.map((id) => clearViewCache(id)));
@@ -321,6 +349,7 @@ export function usePageOperations({
 
       try {
         await PageService.restore(currentWorkspaceId, viewId);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
@@ -396,6 +425,7 @@ export function usePageOperations({
       try {
         const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
 
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
         return res;
       } catch (e) {

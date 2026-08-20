@@ -57,7 +57,7 @@ function RelationPropertyMenuContent({ fieldId }: { fieldId: string }) {
     databaseCandidates,
     relationOption,
     relatedDatabaseId,
-  } = useRelationData(fieldId);
+  } = useRelationData(fieldId, { refreshCatalog: true });
   const [databaseQuery, setDatabaseQuery] = useState('');
   const filteredCandidates = useMemo(() => {
     const query = databaseQuery.trim().toLowerCase();

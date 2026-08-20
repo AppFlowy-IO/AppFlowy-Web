@@ -9,6 +9,7 @@ import { AccessService, ViewService } from '@/application/services/domains';
 import { Role, View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
+import { Log } from '@/utils/log';
 
 import { useWorkspaceData } from '../useWorkspaceData';
 
@@ -36,11 +37,14 @@ jest.mock('@/application/services/domains', () => ({
   },
   ViewService: {
     get: jest.fn(),
+    getDatabaseCatalog: jest.fn(),
     getDatabaseRelations: jest.fn(),
+    getFavorites: jest.fn(),
     getMultiple: jest.fn(),
     getOutline: jest.fn(),
     getTrashCached: jest.fn(),
     refreshTrash: jest.fn(),
+    invalidateDatabaseCatalog: jest.fn(),
     invalidateCache: jest.fn(),
   },
   WorkspaceService: {
@@ -120,12 +124,30 @@ describe('useWorkspaceData trash refresh', () => {
     jest.clearAllMocks();
 
     (AccessService.getShareWithMe as jest.Mock).mockResolvedValue(null);
+    (ViewService.getDatabaseCatalog as jest.Mock).mockResolvedValue([]);
     (ViewService.getDatabaseRelations as jest.Mock).mockResolvedValue({});
+    (ViewService.getFavorites as jest.Mock).mockResolvedValue([]);
     (ViewService.getMultiple as jest.Mock).mockResolvedValue([]);
     (ViewService.getOutline as jest.Mock).mockResolvedValue({
       outline: [],
       folderRid: '1-1',
     });
+  });
+
+  it('warms the shared database catalog once on workspace mount', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    const { rerender } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    });
+
+    rerender();
+    expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes stale trash state when a remote restore adds the view back to the folder', async () => {
@@ -159,6 +181,433 @@ describe('useWorkspaceData trash refresh', () => {
     await waitFor(() => {
       expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
       expect(result.current.trashList).toEqual([]);
+    });
+  });
+
+  it('does not refresh trash when VIEW_ADDED creates a view that is not in known trash', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const initialTrashRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
+    const newView = createView('new-row-document', {
+      parent_view_id: 'new-row-document',
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 1,
+        parentViewId: newView.view_id,
+        viewJson: JSON.stringify(newView),
+      });
+      await Promise.resolve();
+    });
+
+    expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount);
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+  });
+
+  it('invalidates the shared catalog when a database view is added', async () => {
+    const eventEmitter = new EventEmitter();
+    const space = createView('space-id');
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [space], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      parent_view_id: 'space-id',
+      extra: { database_id: 'database-id', is_space: false },
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 1,
+        folderRid: '2-1',
+        parentViewId: 'space-id',
+        viewJson: JSON.stringify(databaseView),
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('invalidates the catalog for a database VIEW_ADDED below an unloaded parent', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
+    });
+
+    const orphanDatabaseView = createView('orphan-database-view', {
+      layout: ViewLayout.Grid,
+      parent_view_id: 'unloaded-parent-view',
+      extra: { database_id: 'orphan-database-id', is_space: false },
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 1,
+        parentViewId: 'unloaded-parent-view',
+        viewJson: JSON.stringify(orphanDatabaseView),
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('does not invalidate the catalog for a self-parent document VIEW_ADDED notification', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
+    });
+
+    const rowDocumentView = createView('row-document-view', {
+      layout: ViewLayout.Document,
+      parent_view_id: 'row-document-view',
+      extra: { is_space: false },
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 1,
+        parentViewId: rowDocumentView.view_id,
+        viewJson: JSON.stringify(rowDocumentView),
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+  });
+
+  it('bounds VIEW_ADDED retries after the initial trash request fails', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const eventEmitter = new EventEmitter();
+
+      (ViewService.refreshTrash as jest.Mock)
+        .mockRejectedValueOnce(new Error('trash unavailable'))
+        .mockResolvedValueOnce([]);
+
+      const { result, unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.trashList).toBeUndefined();
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      act(() => {
+        for (let index = 0; index < 20; index += 1) {
+          const newView = createView(`new-row-document-${index}`, {
+            parent_view_id: `new-row-document-${index}`,
+          });
+
+          eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+            changeType: 1,
+            parentViewId: newView.view_id,
+            viewJson: JSON.stringify(newView),
+          });
+        }
+      });
+
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(29_999);
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(2);
+      expect(result.current.trashList).toEqual([]);
+      unmount();
+    } finally {
+      consoleError.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('bounds no-RID no-op outline fallback refreshes to one per 30-second cooldown', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
+
+    try {
+      const eventEmitter = new EventEmitter();
+      const debug = jest.spyOn(Log, 'debug').mockImplementation(() => undefined);
+      const existingOutline = [createView('space-id', { has_children: false })];
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({
+        outline: existingOutline,
+        folderRid: '1-1',
+      });
+      (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+
+      const { result, unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.trashList).toEqual([]);
+      expect(result.current.outline).toEqual(existingOutline);
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await result.current.loadFavoriteViews?.();
+      });
+      expect(ViewService.getFavorites).toHaveBeenCalledTimes(1);
+
+      const outlineReference = result.current.outline;
+      const outlineLoaded = jest.fn();
+
+      eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, outlineLoaded);
+
+      const noOpReplacement = JSON.stringify([{ op: 'replace', path: '/outline', value: existingOutline }]);
+
+      act(() => {
+        for (let index = 0; index < 20; index += 1) {
+          eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+            outlineDiffJson: noOpReplacement,
+          });
+        }
+      });
+
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+      expect(ViewService.getFavorites).toHaveBeenCalledTimes(1);
+      expect(result.current.outline).toBe(outlineReference);
+      expect(outlineLoaded).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(29_999);
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(2);
+      expect(ViewService.getFavorites).toHaveBeenCalledTimes(1);
+      expect(result.current.outline).toBe(outlineReference);
+      expect(outlineLoaded).not.toHaveBeenCalled();
+
+      const parsedPatchLog = debug.mock.calls.find(
+        ([message]) => message === '[Outline] [FolderOutlineChanged] parsed patch'
+      );
+
+      expect(parsedPatchLog?.[1]).toEqual({
+        folderRid: null,
+        byteLength: noOpReplacement.length,
+        operationCount: 1,
+        operations: [{ op: 'replace', path: '/outline' }],
+        operationsTruncated: false,
+      });
+
+      unmount();
+      eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, outlineLoaded);
+      debug.mockRestore();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('refreshes a revisioned no-op VIEW_REMOVED once for a possible remote permanent delete', async () => {
+    const eventEmitter = new EventEmitter();
+    const child = createView('child-id', { has_children: false });
+    const parent = createView('parent-id', {
+      children: [child],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [parent],
+      folderRid: '1-1',
+    });
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline).toEqual([parent]);
+      expect(result.current.trashList).toEqual([]);
+    });
+
+    const initialTrashRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
+    const outlineReference = result.current.outline;
+    const payload = {
+      changeType: 2,
+      folderRid: '2-1',
+      viewId: parent.view_id,
+      childViewIds: [child.view_id],
+    };
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, payload);
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, payload);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
+    });
+    expect(result.current.outline).toBe(outlineReference);
+  });
+
+  it('bounds unrevisioned no-op VIEW_REMOVED permanent-delete fallbacks to the 30-second cooldown', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
+
+    try {
+      const eventEmitter = new EventEmitter();
+      const child = createView('child-id', { has_children: false });
+      const parent = createView('parent-id', {
+        children: [child],
+        has_children: true,
+      });
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({
+        outline: [parent],
+        folderRid: '1-1',
+      });
+      (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+
+      const { result, unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.outline).toEqual([parent]);
+      expect(result.current.trashList).toEqual([]);
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      const outlineReference = result.current.outline;
+
+      act(() => {
+        for (let index = 0; index < 20; index += 1) {
+          eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+            changeType: 2,
+            viewId: parent.view_id,
+            childViewIds: [child.view_id],
+          });
+        }
+      });
+
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+      expect(result.current.outline).toBe(outlineReference);
+
+      await act(async () => {
+        jest.advanceTimersByTime(30_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(2);
+      expect(result.current.outline).toBe(outlineReference);
+      unmount();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('refreshes trash immediately when an outline replacement removes a view', async () => {
+    const eventEmitter = new EventEmitter();
+    const removedView = createView('removed-view');
+    const space = createView('space-id', {
+      children: [removedView],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [space],
+      folderRid: '1-1',
+    });
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([removedView.view_id]);
+    });
+
+    const initialTrashRequestCount = (ViewService.refreshTrash as jest.Mock).mock.calls.length;
+    const nextSpace = createView('space-id', {
+      children: [],
+      has_children: false,
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([{ op: 'replace', path: '/outline', value: [nextSpace] }]),
+      });
+    });
+
+    await waitFor(() => {
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
     });
   });
 
@@ -273,9 +722,9 @@ describe('useWorkspaceData trash refresh', () => {
       });
     });
 
-    await waitFor(() => {
-      expect(trashRequests).toHaveLength(2);
-    });
+    // The full replacement is a no-op for membership, so wait for the
+    // granular VIEW_ADDED payload to identify this revision as a restore.
+    expect(trashRequests).toHaveLength(1);
 
     await act(async () => {
       eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
@@ -286,7 +735,9 @@ describe('useWorkspaceData trash refresh', () => {
       });
     });
 
-    expect(trashRequests).toHaveLength(2);
+    await waitFor(() => {
+      expect(trashRequests).toHaveLength(2);
+    });
 
     await act(async () => {
       trashRequests[1].resolve([]);

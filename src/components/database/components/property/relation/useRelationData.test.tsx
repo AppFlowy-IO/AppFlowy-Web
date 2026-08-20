@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { parseRelationTypeOption, useDatabaseContext, useFieldSelector } from '@/application/database-yjs';
-import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { getWorkspaceDatabaseCatalog, refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { ViewLayout } from '@/application/types';
 
@@ -48,6 +48,7 @@ jest.mock('@/application/services/domains/view', () => ({
 
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
+  getWorkspaceDatabaseCatalog: jest.fn(),
   refreshWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
@@ -61,7 +62,7 @@ describe('useRelationData', () => {
       workspaceId: 'workspace-1',
       loadViews: jest.fn().mockResolvedValue([]),
     } as never);
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([
       {
         database_id: 'database-1',
         views: [
@@ -93,7 +94,7 @@ describe('useRelationData', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
     expect(result.current.databaseCandidates).toEqual([
       expect.objectContaining({
         databaseId: 'database-1',
@@ -102,6 +103,17 @@ describe('useRelationData', () => {
       }),
     ]);
     expect(result.current.selectedView?.name).toBe('Projects');
+  });
+
+  it('uses an explicit refresh when mounted for a user-opened picker', async () => {
+    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
+
+    const { result } = renderHook(() => useRelationData('field-1', { refreshCatalog: true }));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
+    expect(getWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
   });
 
   it('rebuilds candidate metadata from the outline event payload without refetching the catalog', async () => {
@@ -116,7 +128,7 @@ describe('useRelationData', () => {
     const { result } = renderHook(() => useRelationData('field-1'));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
     expect(result.current.databaseCandidates[0]?.path).toEqual(['Projects']);
 
     const outline = [
@@ -142,6 +154,6 @@ describe('useRelationData', () => {
       expect(result.current.databaseCandidates[0]?.displayView.name).toBe('Renamed Projects');
       expect(result.current.selectedView?.name).toBe('Renamed Projects');
     });
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
   });
 });

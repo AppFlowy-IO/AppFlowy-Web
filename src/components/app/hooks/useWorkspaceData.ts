@@ -10,6 +10,7 @@ import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
+import { isDatabaseLayout } from '@/application/view-utils';
 import {
   addViewToOutline,
   deduplicateOutlineChildren,
@@ -73,6 +74,34 @@ function buildViewDepthIndex(views: View[]): Map<string, number> {
 
   walk(views, 0);
   return depths;
+}
+
+function isDatabaseCatalogView(view: View | null | undefined): boolean {
+  return Boolean(
+    view &&
+      (isDatabaseLayout(view.layout) || view.extra?.is_database_container || typeof view.extra?.database_id === 'string')
+  );
+}
+
+function collectDatabaseCatalogViewIds(views: View[]): Set<string> {
+  const ids = new Set<string>();
+
+  const walk = (items: View[]) => {
+    for (const view of items) {
+      if (isDatabaseCatalogView(view)) ids.add(view.view_id);
+      if (view.children?.length) walk(view.children);
+    }
+  };
+
+  walk(views);
+  return ids;
+}
+
+function databaseCatalogMembershipChanged(previous: View[], next: View[]): boolean {
+  const previousIds = collectDatabaseCatalogViewIds(previous);
+  const nextIds = collectDatabaseCatalogViewIds(next);
+
+  return previousIds.size !== nextIds.size || Array.from(previousIds).some((viewId) => !nextIds.has(viewId));
 }
 
 function collectViewPath(root: View, targetViewId: string): View[] | null {
@@ -292,6 +321,7 @@ const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
 ]);
 
 const PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS = 2;
+const NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS = 30_000;
 
 function getRefreshErrorCode(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
@@ -377,6 +407,25 @@ function createRootOutlineFingerprint(views: View[]): string {
   return JSON.stringify(normalizeRootOutlineForComparison(views));
 }
 
+function collectOutlineViewIds(views: View[], ids = new Set<string>()): Set<string> {
+  for (const view of views) {
+    ids.add(view.view_id);
+    collectOutlineViewIds(view.children ?? [], ids);
+  }
+
+  return ids;
+}
+
+function getOutlineMembershipChange(previousOutline: View[], nextOutline: View[]) {
+  const previousIds = collectOutlineViewIds(previousOutline);
+  const nextIds = collectOutlineViewIds(nextOutline);
+
+  return {
+    addedIds: Array.from(nextIds).filter((viewId) => !previousIds.has(viewId)),
+    removedIds: Array.from(previousIds).filter((viewId) => !nextIds.has(viewId)),
+  };
+}
+
 function createFolderViewFieldsFingerprint(view: View): string {
   return JSON.stringify(
     normalizeRootOutlineForComparison({
@@ -451,6 +500,9 @@ export function useWorkspaceData() {
   const lastAcceptedTrashRefreshRidRef = useRef<FolderRid | null>(null);
   const scheduledTrashRefreshWorkspaceIdRef = useRef<string | null>(null);
   const scheduledTrashRefreshKeyRef = useRef<string | undefined>(undefined);
+  const lastTrashRequestAtRef = useRef(0);
+  const noopFolderTrashRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noopFolderTrashRefreshWorkspaceIdRef = useRef<string | null>(null);
   const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
   const permissionRefreshRevisionRef = useRef(0);
 
@@ -485,6 +537,14 @@ export function useWorkspaceData() {
       prevOutline,
       prevLoadedIds
     );
+
+    // Full-replacement notifications can carry the complete outline even when
+    // nothing changed. Preserve both React and lazy-loading state identities so
+    // those payloads do not rerender the entire sidebar or invalidate expanded
+    // subtree bookkeeping.
+    if (isEqual(prevOutline, mergedOutline)) {
+      return prevOutline;
+    }
 
     stableOutlineRef.current = mergedOutline;
     loadedViewIdsRef.current = nextLoadedIds;
@@ -1303,6 +1363,8 @@ export function useWorkspaceData() {
     async (workspaceId: string, refresh: boolean, freshnessKey?: string | null) => {
       const requestSeq = ++trashRequestSeqRef.current;
 
+      lastTrashRequestAtRef.current = Date.now();
+
       try {
         const res = refresh
           ? await ViewService.refreshTrash(
@@ -1323,6 +1385,8 @@ export function useWorkspaceData() {
         if (requestSeq !== trashRequestSeqRef.current || currentWorkspaceIdRef.current !== workspaceId) {
           return false;
         }
+
+        lastTrashRequestAtRef.current = Date.now();
 
         const nextTrashList = sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse();
         const acceptedTrashList = isEqual(trashListRef.current, nextTrashList)
@@ -1432,6 +1496,54 @@ export function useWorkspaceData() {
     },
     [currentWorkspaceId, requestTrash, trashLoaderInstanceId]
   );
+
+  const scheduleNoopFolderTrashRefresh = useCallback(() => {
+    if (!currentWorkspaceId) return;
+
+    const workspaceId = currentWorkspaceId;
+
+    if (
+      noopFolderTrashRefreshTimerRef.current !== null &&
+      noopFolderTrashRefreshWorkspaceIdRef.current === workspaceId
+    ) {
+      return;
+    }
+
+    if (noopFolderTrashRefreshTimerRef.current !== null) {
+      clearTimeout(noopFolderTrashRefreshTimerRef.current);
+    }
+
+    noopFolderTrashRefreshWorkspaceIdRef.current = workspaceId;
+
+    const runWhenCooldownExpires = () => {
+      if (currentWorkspaceIdRef.current !== workspaceId) {
+        noopFolderTrashRefreshTimerRef.current = null;
+        noopFolderTrashRefreshWorkspaceIdRef.current = null;
+        return;
+      }
+
+      const remainingCooldown = Math.max(
+        0,
+        NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (Date.now() - lastTrashRequestAtRef.current)
+      );
+
+      if (remainingCooldown > 0) {
+        noopFolderTrashRefreshTimerRef.current = setTimeout(runWhenCooldownExpires, remainingCooldown);
+        return;
+      }
+
+      noopFolderTrashRefreshTimerRef.current = null;
+      noopFolderTrashRefreshWorkspaceIdRef.current = null;
+      refreshTrashListInBackground();
+    };
+
+    const remainingCooldown = Math.max(
+      0,
+      NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (Date.now() - lastTrashRequestAtRef.current)
+    );
+
+    noopFolderTrashRefreshTimerRef.current = setTimeout(runWhenCooldownExpires, remainingCooldown);
+  }, [currentWorkspaceId, refreshTrashListInBackground]);
 
   const revalidateSidebarOutline = useCallback(
     async (expandedViewIds: string[] = []): Promise<SidebarOutlineRevalidationResult> => {
@@ -1574,6 +1686,8 @@ export function useWorkspaceData() {
     const handleShareViewsChanged = (payload?: { emails?: string[] | null; viewId?: string | null }) => {
       if (!currentWorkspaceId) return;
 
+      ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
+
       const changedViewId = payload?.viewId;
       const normalizedCurrentEmail = currentUserEmail?.toLowerCase();
       const affectsCurrentUser =
@@ -1656,6 +1770,8 @@ export function useWorkspaceData() {
 
     const handlePermissionChanged = () => {
       if (!currentWorkspaceId) return;
+
+      ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
 
       // AppBusinessLayer handles the same event separately because it owns the
       // active route/modal IDs and can re-probe and purge either rendered view.
@@ -1767,6 +1883,7 @@ export function useWorkspaceData() {
 
       // If no diff JSON provided, fall back to full outline reload
       if (!payload?.outlineDiffJson) {
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
         Log.debug('[Outline] [FolderOutlineChanged] No diff JSON, reloading outline');
         refreshTrashListInBackground(payload.folderRid);
         refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
@@ -1777,9 +1894,9 @@ export function useWorkspaceData() {
       let patch: JsonPatchOperation[] | null = null;
 
       try {
-        Log.debug('[Outline] [FolderOutlineChanged] raw diff json', payload.outlineDiffJson);
         patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
       } catch (error) {
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
         Log.warn('[Outline] [FolderOutlineChanged] Failed to parse outline diff, reloading outline', error);
         refreshTrashListInBackground(payload.folderRid);
         void loadOutline(currentWorkspaceId, false);
@@ -1787,10 +1904,19 @@ export function useWorkspaceData() {
       }
 
       if (!patch || !Array.isArray(patch)) {
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
         refreshTrashListInBackground(payload.folderRid);
         void loadOutline(currentWorkspaceId, false);
         return;
       }
+
+      Log.debug('[Outline] [FolderOutlineChanged] parsed patch', {
+        folderRid: payload.folderRid ?? null,
+        byteLength: payload.outlineDiffJson.length,
+        operationCount: patch.length,
+        operations: patch.slice(0, 10).map(({ op, path }) => ({ op, path })),
+        operationsTruncated: patch.length > 10,
+      });
 
       const patchRid = parseFolderRid(payload.folderRid);
       const currentRid = lastFolderRidRef.current;
@@ -1807,13 +1933,6 @@ export function useWorkspaceData() {
         updateLastFolderRid(patchRid);
         return;
       }
-
-      refreshTrashListInBackground(payload.folderRid);
-      if (folderOutlinePatchMayAffectFavorites(patch)) {
-        refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
-      }
-
-      Log.debug('[Outline] [FolderOutlineChanged] parsed patch', patch);
 
       const baseOutline = stableOutlineRef.current.filter((view) => !view.extra?.is_hidden_space);
       const baseDocument = { outline: baseOutline };
@@ -1876,8 +1995,41 @@ export function useWorkspaceData() {
 
       const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
       const nextOutline = existingShareWithMe ? [...patchedOutline, existingShareWithMe] : patchedOutline;
+      const previousOutline = stableOutlineRef.current;
 
       const mergedOutline = replaceOutlinePreservingChildren(reconcilePendingFolderViewUpdates(nextOutline, patchRid));
+      const { addedIds, removedIds } = getOutlineMembershipChange(previousOutline, mergedOutline);
+
+      if (databaseCatalogMembershipChanged(previousOutline, mergedOutline)) {
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
+      }
+
+      if (mergedOutline !== previousOutline && folderOutlinePatchMayAffectFavorites(patch)) {
+        refreshRequestedFavoriteViewsInBackground(currentWorkspaceId);
+      }
+
+      const knownTrashIds = trashListRef.current
+        ? new Set(trashListRef.current.map((view) => view.view_id))
+        : undefined;
+      const mayRestoreKnownTrash =
+        knownTrashIds !== undefined && addedIds.some((viewId) => knownTrashIds.has(viewId));
+      const hasUnknownRestoreEvidence = addedIds.length > 0 && knownTrashIds === undefined;
+
+      if (removedIds.length > 0 || mayRestoreKnownTrash) {
+        // A view leaving the outline may have moved to trash. An added view is
+        // a restore only when it was previously known to be in trash; while the
+        // initial trash read is pending, refresh conservatively.
+        refreshTrashListInBackground(payload.folderRid);
+      } else if (hasUnknownRestoreEvidence || (!payload.folderRid && mergedOutline === previousOutline)) {
+        // Direct permanent-delete operations and unrelated PG-first writes both
+        // arrive as an indistinguishable no-RID, no-op full-outline replacement.
+        // An added view is similarly ambiguous while the initial trash read is
+        // unavailable. Keep these cases eventually correct, but cap the fallback
+        // at one request per 30 seconds. The workspace mount request starts the
+        // cooldown, preventing row registration bursts from producing one
+        // /trash request per notification.
+        scheduleNoopFolderTrashRefresh();
+      }
 
       if (usedRelaxedPatch) {
         updateLastFolderRid(patchRid);
@@ -1885,7 +2037,7 @@ export function useWorkspaceData() {
         updateAppliedRootOutlineSnapshot(patchRid, nextOutline);
       }
 
-      if (eventEmitter) {
+      if (eventEmitter && mergedOutline !== previousOutline) {
         eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
       }
     };
@@ -1907,6 +2059,7 @@ export function useWorkspaceData() {
     refreshTrashListInBackground,
     reconcilePendingFolderViewUpdates,
     replaceOutlinePreservingChildren,
+    scheduleNoopFolderTrashRefresh,
     stableOutlineRef,
     updateAppliedRootOutlineSnapshot,
     updateLastFolderRid,
@@ -1943,6 +2096,8 @@ export function useWorkspaceData() {
       const changeType = payload.changeType ?? 0;
       let nextOutline = stableOutlineRef.current;
       let shouldRefreshTrash = false;
+      let shouldScheduleNoopTrashRefresh = false;
+      let shouldInvalidateDatabaseCatalog = false;
 
       switch (changeType) {
         case FOLDER_VIEW_CHANGE_TYPE.VIEW_FIELDS_CHANGED: {
@@ -1950,6 +2105,11 @@ export function useWorkspaceData() {
           try {
             const updatedView = JSON.parse(payload.viewJson) as View;
             const previousView = findView(nextOutline, updatedView.view_id);
+
+            shouldInvalidateDatabaseCatalog =
+              isDatabaseCatalogView(previousView) !== isDatabaseCatalogView(updatedView) ||
+              previousView?.extra?.database_id !== updatedView.extra?.database_id ||
+              previousView?.extra?.is_database_container !== updatedView.extra?.is_database_container;
 
             if (previousView) {
               pendingFolderViewUpdatesRef.current.set(updatedView.view_id, {
@@ -1973,16 +2133,33 @@ export function useWorkspaceData() {
         }
 
         case FOLDER_VIEW_CHANGE_TYPE.VIEW_ADDED: {
-          shouldRefreshTrash = true;
+          if (!payload.viewJson || !payload.parentViewId) {
+            shouldScheduleNoopTrashRefresh = true;
+            break;
+          }
 
-          if (!payload.viewJson || !payload.parentViewId) break;
           try {
             const newView = JSON.parse(payload.viewJson) as View;
 
+            // VIEW_ADDED is used for both new pages/row-document registrations
+            // and restores. A known trash ID is definite restore evidence and
+            // refreshes immediately. If the initial trash request failed, the
+            // evidence is unknown; use the bounded retry lane so a burst of row
+            // registrations cannot retry /trash once per notification.
+            shouldRefreshTrash = Boolean(
+              trashListRef.current?.some((trashView) => trashView.view_id === newView.view_id)
+            );
+            shouldScheduleNoopTrashRefresh = trashListRef.current === undefined;
+
             // addViewToOutline already sets has_children: true on the parent
             nextOutline = addViewToOutline(nextOutline, payload.parentViewId, newView);
+            // A real database may be added below a parent whose children have
+            // not been loaded yet. Its parsed metadata is still authoritative
+            // catalog evidence even when the outline insertion is a no-op.
+            shouldInvalidateDatabaseCatalog = isDatabaseCatalogView(newView);
           } catch (error) {
             Log.warn('[Outline] [FolderViewChanged] Failed to parse view_json for view added', error);
+            scheduleNoopFolderTrashRefresh();
             void loadOutline(currentWorkspaceId, false);
             return;
           }
@@ -1991,20 +2168,40 @@ export function useWorkspaceData() {
         }
 
         case FOLDER_VIEW_CHANGE_TYPE.VIEW_REMOVED: {
-          shouldRefreshTrash = true;
-
           const parentId = payload.viewId;
           const childIds = payload.childViewIds ?? [];
+          const knownTrashIds = trashListRef.current
+            ? new Set(trashListRef.current.map((view) => view.view_id))
+            : undefined;
 
           if (parentId) {
+            const previousParent = findView(nextOutline, parentId);
+            const remainingChildIds = new Set(childIds);
+            const visiblyRemovedChildren =
+              previousParent?.children.filter((child) => !remainingChildIds.has(child.view_id)) ?? [];
+
+            shouldInvalidateDatabaseCatalog = Boolean(
+              visiblyRemovedChildren.some((child) => collectDatabaseCatalogViewIds([child]).size > 0)
+            );
+            const hasSemanticTrashEvidence =
+              visiblyRemovedChildren.length > 0 ||
+              Boolean(
+                knownTrashIds?.has(parentId) || childIds.some((childId) => knownTrashIds?.has(childId))
+              );
+
+            // A revisioned no-op can still be a remote permanent delete: the
+            // protocol sends remaining children and omits the deleted ID. The
+            // RID gives the request coordinator a safe deduplication key.
+            shouldRefreshTrash = hasSemanticTrashEvidence || Boolean(payload.folderRid);
+            shouldScheduleNoopTrashRefresh = !hasSemanticTrashEvidence && !payload.folderRid;
             nextOutline = removeViewFromOutline(nextOutline, parentId, childIds);
 
             // Clean removed children (and their subtrees) from loadedViewIdsRef
             // so that preserveLoadedChildren won't re-graft them on the next
             // FOLDER_OUTLINE_CHANGED shallow refresh.
-            for (const childId of childIds) {
-              loadedViewIdsRef.current.delete(childId);
-              pendingFolderViewUpdatesRef.current.delete(childId);
+            for (const removedChild of visiblyRemovedChildren) {
+              loadedViewIdsRef.current.delete(removedChild.view_id);
+              pendingFolderViewUpdatesRef.current.delete(removedChild.view_id);
             }
 
             // If the parent has no remaining children, remove it from loaded IDs
@@ -2014,6 +2211,8 @@ export function useWorkspaceData() {
             if (parentView && (!parentView.children || parentView.children.length === 0)) {
               loadedViewIdsRef.current.delete(parentId);
             }
+          } else {
+            shouldScheduleNoopTrashRefresh = !payload.folderRid;
           }
 
           break;
@@ -2041,6 +2240,17 @@ export function useWorkspaceData() {
 
       if (shouldRefreshTrash) {
         refreshTrashListInBackground(payload.folderRid);
+      } else if (shouldScheduleNoopTrashRefresh) {
+        // The granular payload carries the parent's remaining children, not the
+        // removed ID. Once the visible outline already reflects the removal, a
+        // duplicate no-RID frame is indistinguishable from legacy trash/purge
+        // notification traffic. Share the same bounded fallback as no-op full
+        // replacements instead of issuing one request per duplicate frame.
+        scheduleNoopFolderTrashRefresh();
+      }
+
+      if (shouldInvalidateDatabaseCatalog) {
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
       }
 
       if (folderRid) {
@@ -2075,6 +2285,7 @@ export function useWorkspaceData() {
     loadOutline,
     refreshRequestedFavoriteViewsInBackground,
     refreshTrashListInBackground,
+    scheduleNoopFolderTrashRefresh,
     stableOutlineRef,
     updateLastFolderRid,
   ]);
@@ -2244,6 +2455,13 @@ export function useWorkspaceData() {
   // Load data when workspace changes
   useEffect(() => {
     if (!currentWorkspaceId) return;
+    if (noopFolderTrashRefreshTimerRef.current !== null) {
+      clearTimeout(noopFolderTrashRefreshTimerRef.current);
+      noopFolderTrashRefreshTimerRef.current = null;
+    }
+
+    noopFolderTrashRefreshWorkspaceIdRef.current = null;
+    lastTrashRequestAtRef.current = 0;
     trashRequestSeqRef.current += 1;
     lastTrashRefreshRidRef.current = null;
     lastAcceptedTrashRefreshRidRef.current = null;
@@ -2278,6 +2496,12 @@ export function useWorkspaceData() {
     workspaceDatabasesRef.current = undefined;
     setWorkspaceDatabases(undefined);
     void loadOutline(currentWorkspaceId, true);
+    // Warm the shared user/workspace database catalog once. Relation cells,
+    // property menus, and linked-database pickers all reuse this same snapshot
+    // instead of independently requesting the workspace-wide list.
+    void ViewService.getDatabaseCatalog?.(currentWorkspaceId).catch((error) => {
+      Log.warn('[WorkspaceDatabaseCatalog] failed to warm the workspace catalog', error);
+    });
     void (async () => {
       try {
         // Always revalidate on workspace mount. The unkeyed refresh shares a
@@ -2288,6 +2512,15 @@ export function useWorkspaceData() {
         console.error(e);
       }
     })();
+
+    return () => {
+      if (noopFolderTrashRefreshTimerRef.current !== null) {
+        clearTimeout(noopFolderTrashRefreshTimerRef.current);
+        noopFolderTrashRefreshTimerRef.current = null;
+      }
+
+      noopFolderTrashRefreshWorkspaceIdRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentWorkspaceId]);
 

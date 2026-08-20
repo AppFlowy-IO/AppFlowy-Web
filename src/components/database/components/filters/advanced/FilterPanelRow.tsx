@@ -504,7 +504,10 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
     ].includes(filter.condition);
   }, [filter.condition]);
   const selectedRowIds = useMemo(() => parseRelationFilterRowIds(filter.content), [filter.content]);
-  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, { enabled: showInput && open });
+  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, {
+    enabled: showInput && open,
+    refreshCatalog: showInput && open,
+  });
 
   const updateSelectedRowIds = useCallback(
     (rowIds: string[]) => {

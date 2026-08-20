@@ -31,7 +31,10 @@ function RelationFilterMenu({ filter }: { filter: Filter }) {
     RelationFilterCondition.RelationDoesNotContain,
   ].includes(filter.condition);
   const selectedRowIds = useMemo(() => parseRelationFilterRowIds(filter.content), [filter.content]);
-  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, { enabled: showPicker });
+  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, {
+    enabled: showPicker,
+    refreshCatalog: showPicker,
+  });
 
   const updateSelectedRowIds = useCallback(
     (rowIds: string[]) => {

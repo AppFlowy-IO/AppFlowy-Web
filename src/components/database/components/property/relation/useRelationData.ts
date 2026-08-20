@@ -58,10 +58,11 @@ function withLoading(workspaceId: string, loading: boolean) {
 
 export interface UseRelationDataOptions {
   enabled?: boolean;
+  refreshCatalog?: boolean;
 }
 
 export function useRelationData(fieldId: string, options: UseRelationDataOptions = {}) {
-  const { enabled = true } = options;
+  const { enabled = true, refreshCatalog = false } = options;
   const { eventEmitter, getViewIdFromDatabaseId, loadViewMeta, loadViews, workspaceId } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
   const relationOption: RelationTypeOption | null = field ? parseRelationTypeOption(field) : null;
@@ -108,6 +109,7 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     void loadRelationDatabaseCandidates({
       workspaceId,
       loadViews: loadViewsRef.current,
+      refreshCatalog,
     })
       .then((nextResult) => {
         if (!cancelled) setCachedResult(workspaceId, nextResult);
@@ -120,7 +122,7 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     return () => {
       cancelled = true;
     };
-  }, [enabled, fieldId, workspaceId]);
+  }, [enabled, fieldId, refreshCatalog, workspaceId]);
 
   useEffect(() => {
     if (!enabled || !eventEmitter) return;

@@ -1,4 +1,4 @@
-import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { getWorkspaceDatabaseCatalog, refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { View, ViewLayout } from '@/application/types';
 
@@ -30,6 +30,7 @@ jest.mock('@/application/services/domains/view', () => ({
 
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
+  getWorkspaceDatabaseCatalog: jest.fn(),
   refreshWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
@@ -116,14 +117,14 @@ describe('loadRelationDatabaseCandidates', () => {
     });
     const space = makeView({ viewId: 'space-1', name: 'General', children: [container] });
 
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([database]);
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([database]);
 
     const result = await loadRelationDatabaseCandidates({
       workspaceId: 'workspace-1',
       loadViews: jest.fn().mockResolvedValue([space]),
     });
 
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
     expect(result.candidates).toEqual([
       expect.objectContaining({
         databaseId: 'database-1',
@@ -174,11 +175,22 @@ describe('loadRelationDatabaseCandidates', () => {
     );
   });
 
+  it('uses an explicit authoritative refresh for a user-opened picker', async () => {
+    const database = remoteDatabase('database-1', 'Projects');
+
+    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([database]);
+
+    await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1', refreshCatalog: true });
+
+    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
+    expect(getWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
+  });
+
   it('does not expose databases without a container', async () => {
     const database = remoteDatabase('database-1', 'Projects');
 
     database.views = database.views.filter((view) => !view.is_container);
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([database]);
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([database]);
 
     const result = await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1' });
 
@@ -194,7 +206,7 @@ describe('loadRelationDatabaseCandidates', () => {
       isContainer: true,
     });
 
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([]);
 
     const result = await loadRelationDatabaseCandidates({
       workspaceId: 'workspace-1',
@@ -205,7 +217,7 @@ describe('loadRelationDatabaseCandidates', () => {
   });
 
   it('does not substitute folder data when the server catalog request fails', async () => {
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockRejectedValue(new Error('Unavailable'));
+    jest.mocked(getWorkspaceDatabaseCatalog).mockRejectedValue(new Error('Unavailable'));
 
     await expect(
       loadRelationDatabaseCandidates({

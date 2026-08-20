@@ -25,6 +25,10 @@ export {
   getDatabaseContainerView,
   getDatabaseIdFromWorkspaceCatalog,
   getDatabasePrimaryView,
+  getWorkspaceDatabaseCatalog as getDatabaseCatalog,
+  getWorkspaceDatabaseCatalog,
   getViewIdFromWorkspaceCatalog,
+  invalidateWorkspaceDatabaseCatalog as invalidateDatabaseCatalog,
+  invalidateWorkspaceDatabaseCatalog,
   refreshWorkspaceDatabaseCatalog,
 } from '../js-services/workspace-database-catalog';

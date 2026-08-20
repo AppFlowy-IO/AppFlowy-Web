@@ -1,11 +1,14 @@
 import { db } from '@/application/db';
+import { emit, EventType } from '@/application/session/event';
 import { getTokenParsed } from '@/application/session/token';
 import { ViewLayout } from '@/application/types';
 
 import {
   getDatabaseContainerEntries,
   getDatabaseIdFromWorkspaceCatalog,
+  getWorkspaceDatabaseCatalog,
   getViewIdFromWorkspaceCatalog,
+  invalidateWorkspaceDatabaseCatalog,
   refreshWorkspaceDatabaseCatalog,
 } from '../workspace-database-catalog';
 import { listWorkspaceDatabases } from '../http/view-api';
@@ -37,6 +40,19 @@ const catalogTable = db.workspace_database_catalog as unknown as {
 const transaction = db.transaction as jest.Mock;
 const deleteWorkspaceRecords = jest.fn();
 const readDatabaseRecords = jest.fn();
+let testUserSequence = 0;
+let currentTestUserId = '';
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, reject, resolve };
+}
 
 const database = {
   database_id: 'database-1',
@@ -62,6 +78,18 @@ const database = {
   ],
 };
 
+function databaseWithId(databaseId: string) {
+  return {
+    ...database,
+    database_id: databaseId,
+    views: database.views.map((view) => ({
+      ...view,
+      view_id: `${databaseId}-${view.is_container ? 'container' : 'grid'}`,
+      parent_view_id: view.is_container ? 'space-1' : `${databaseId}-container`,
+    })),
+  };
+}
+
 function setCurrentUser(userId = 'user-1') {
   jest.mocked(getTokenParsed).mockReturnValue({
     access_token: 'access-token',
@@ -75,7 +103,8 @@ describe('workspace database catalog', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
-    setCurrentUser();
+    currentTestUserId = `test-user-${++testUserSequence}`;
+    setCurrentUser(currentTestUserId);
     catalogTable.bulkPut.mockResolvedValue(undefined);
     catalogTable.get.mockResolvedValue(undefined);
     deleteWorkspaceRecords.mockResolvedValue(undefined);
@@ -97,7 +126,7 @@ describe('workspace database catalog', () => {
 
     await expect(getDatabaseIdFromWorkspaceCatalog('workspace-1', 'grid-1')).resolves.toBe('database-1');
 
-    expect(catalogTable.get).toHaveBeenCalledWith(['user-1', 'workspace-1', 'grid-1']);
+    expect(catalogTable.get).toHaveBeenCalledWith([currentTestUserId, 'workspace-1', 'grid-1']);
     expect(listWorkspaceDatabases).not.toHaveBeenCalled();
   });
 
@@ -124,13 +153,13 @@ describe('workspace database catalog', () => {
     expect(deleteWorkspaceRecords).toHaveBeenCalledTimes(1);
     expect(catalogTable.bulkPut).toHaveBeenCalledWith([
       expect.objectContaining({
-        user_id: 'user-1',
+        user_id: currentTestUserId,
         workspace_id: 'workspace-1',
         database_id: 'database-1',
         view_id: 'container-1',
       }),
       expect.objectContaining({
-        user_id: 'user-1',
+        user_id: currentTestUserId,
         workspace_id: 'workspace-1',
         database_id: 'database-1',
         view_id: 'grid-1',
@@ -155,6 +184,122 @@ describe('workspace database catalog', () => {
 
     resolveRequest?.([database]);
     await expect(Promise.all([first, second])).resolves.toEqual(['database-1', 'database-1']);
+  });
+
+  it('reuses a successful catalog response for sequential lookup misses', async () => {
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
+
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).resolves.toBeNull();
+    await expect(getDatabaseIdFromWorkspaceCatalog('workspace-1', 'missing-view')).resolves.toBeNull();
+
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one shared snapshot until an explicit refresh replaces it', async () => {
+    jest.mocked(listWorkspaceDatabases).mockResolvedValueOnce([]).mockResolvedValueOnce([database]);
+
+    const initial = await getWorkspaceDatabaseCatalog('workspace-1');
+    const shared = await getWorkspaceDatabaseCatalog('workspace-1');
+
+    expect(shared).toBe(initial);
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+
+    const refreshed = await refreshWorkspaceDatabaseCatalog('workspace-1');
+
+    expect(refreshed).toEqual([database]);
+    await expect(getWorkspaceDatabaseCatalog('workspace-1')).resolves.toBe(refreshed);
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
+  });
+
+  it('supersedes a request invalidated while IndexedDB persistence is pending', async () => {
+    const staleDatabase = databaseWithId('stale-database');
+    const currentDatabase = databaseWithId('current-database');
+    const staleDelete = createDeferred<void>();
+
+    jest
+      .mocked(listWorkspaceDatabases)
+      .mockResolvedValueOnce([staleDatabase])
+      .mockResolvedValueOnce([currentDatabase]);
+    deleteWorkspaceRecords.mockReturnValueOnce(staleDelete.promise).mockResolvedValueOnce(undefined);
+
+    let staleCallerSettled = false;
+    const staleCaller = getWorkspaceDatabaseCatalog('workspace-1').then((value) => {
+      staleCallerSettled = true;
+      return value;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(deleteWorkspaceRecords).toHaveBeenCalledTimes(1);
+
+    invalidateWorkspaceDatabaseCatalog('workspace-1');
+    const currentRequest = refreshWorkspaceDatabaseCatalog('workspace-1');
+
+    await expect(currentRequest).resolves.toEqual([currentDatabase]);
+    expect(staleCallerSettled).toBe(false);
+
+    staleDelete.resolve();
+    await expect(staleCaller).resolves.toEqual([currentDatabase]);
+    await expect(getWorkspaceDatabaseCatalog('workspace-1')).resolves.toBe(await currentRequest);
+
+    expect(catalogTable.bulkPut).toHaveBeenCalledTimes(1);
+    expect(catalogTable.bulkPut).toHaveBeenCalledWith([
+      expect.objectContaining({ database_id: 'current-database' }),
+      expect.objectContaining({ database_id: 'current-database' }),
+    ]);
+  });
+
+  it('bypasses stale positive IndexedDB mappings after invalidation', async () => {
+    await refreshWorkspaceDatabaseCatalog('workspace-1');
+    invalidateWorkspaceDatabaseCatalog('workspace-1');
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
+    catalogTable.get.mockClear();
+    readDatabaseRecords.mockClear();
+    catalogTable.get.mockResolvedValue({ database_id: 'database-1' });
+    readDatabaseRecords.mockResolvedValue([
+      { view_order: 0, view: database.views[0] },
+      { view_order: 1, view: database.views[1] },
+    ]);
+
+    await expect(getDatabaseIdFromWorkspaceCatalog('workspace-1', 'grid-1')).resolves.toBeNull();
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'database-1')).resolves.toBeNull();
+
+    expect(catalogTable.get).not.toHaveBeenCalled();
+    expect(readDatabaseRecords).not.toHaveBeenCalled();
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
+  });
+
+  it('isolates successful lookup responses by user and workspace', async () => {
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
+
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).resolves.toBeNull();
+    await expect(getViewIdFromWorkspaceCatalog('workspace-2', 'missing-database')).resolves.toBeNull();
+    setCurrentUser(`${currentTestUserId}-other`);
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).resolves.toBeNull();
+
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(3);
+  });
+
+  it('drops shared snapshots when the session becomes invalid', async () => {
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
+
+    await expect(getWorkspaceDatabaseCatalog('workspace-1')).resolves.toEqual([]);
+    emit(EventType.SESSION_INVALID);
+    await expect(getWorkspaceDatabaseCatalog('workspace-1')).resolves.toEqual([]);
+
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a failed catalog refresh', async () => {
+    jest
+      .mocked(listWorkspaceDatabases)
+      .mockRejectedValueOnce(new Error('Unavailable'))
+      .mockResolvedValueOnce([]);
+
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).rejects.toThrow('Unavailable');
+    await expect(getViewIdFromWorkspaceCatalog('workspace-1', 'missing-database')).resolves.toBeNull();
+
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
   });
 
   it('uses the cached primary non-container view for a database ID', async () => {
