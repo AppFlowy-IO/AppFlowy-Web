@@ -5,6 +5,7 @@ import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/c
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   RowId,
+  LoadViewOptions,
   YDatabase,
   YDatabaseField,
   YDatabaseFields,
@@ -21,6 +22,13 @@ type RelationCellValue = {
   value: string;
 };
 
+type RelatedViewLoader = (
+  viewId: string,
+  isSubDocument?: boolean,
+  loadAwareness?: boolean,
+  options?: LoadViewOptions
+) => Promise<YDoc | null>;
+
 type RelationCacheEntry = RelationCellValue & {
   generation: number;
   updatedAt: number;
@@ -33,7 +41,7 @@ export type RelationComputeContext = {
   row: YDatabaseRow;
   rowId: RowId;
   fieldId: string;
-  loadView?: (viewId: string) => Promise<YDoc | null>;
+  loadView?: RelatedViewLoader;
   createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
@@ -46,7 +54,7 @@ export type RelationGroupLabelKey = {
 
 /** Adds the loaders only a resolution needs, so reads cannot trigger one. */
 export type RelationGroupLabelContext = RelationGroupLabelKey & {
-  loadView?: (viewId: string) => Promise<YDoc | null>;
+  loadView?: RelatedViewLoader;
   createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
@@ -239,21 +247,22 @@ function getDatabaseFromDoc(doc: YDoc): YDatabase | undefined {
   return doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined;
 }
 
-async function loadRelatedDoc(viewId: string, loadView?: (viewId: string) => Promise<YDoc | null>) {
+async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader) {
   if (!loadView) return null;
-  const cached = relatedDocCache.get(viewId);
+  const cacheKey = `${databaseId}:${viewId}`;
+  const cached = relatedDocCache.get(cacheKey);
 
   if (cached) {
-    touchRelatedDocCache(viewId, cached);
+    touchRelatedDocCache(cacheKey, cached);
     return cached;
   }
 
-  const promise = loadView(viewId).catch(() => {
-    relatedDocCache.delete(viewId);
+  const promise = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).catch(() => {
+    relatedDocCache.delete(cacheKey);
     return null;
   });
 
-  touchRelatedDocCache(viewId, promise);
+  touchRelatedDocCache(cacheKey, promise);
   return promise;
 }
 
@@ -280,7 +289,7 @@ async function computeRelationCellValue(context: RelationComputeContext): Promis
 
     if (!viewId) return { value: '' };
 
-    const relatedDoc = await loadRelatedDoc(viewId, context.loadView);
+    const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView);
 
     if (!relatedDoc) return { value: '' };
 
@@ -344,7 +353,7 @@ async function computeRelationGroupLabel(
 
     if (!viewId) return { value: '' };
 
-    const relatedDoc = await loadRelatedDoc(viewId, context.loadView);
+    const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView);
 
     if (!relatedDoc) return { value: '' };
 

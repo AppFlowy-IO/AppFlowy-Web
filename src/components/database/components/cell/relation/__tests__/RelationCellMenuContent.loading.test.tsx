@@ -150,6 +150,13 @@ describe('RelationCellMenuContent loading states', () => {
 
     renderPicker();
 
+    await waitFor(() => {
+      expect(mockDatabaseContext.loadView).toHaveBeenCalledWith(VIEW_ID, false, false, {
+        databaseId: DATABASE_ID,
+        databaseMetadataOnly: true,
+      });
+    });
+
     // Both rows are known the moment the row list lands; neither title has been fetched.
     await waitFor(() => expect(skeletons()).toHaveLength(2));
     expect(screen.queryByText(UNTITLED)).toBeNull();

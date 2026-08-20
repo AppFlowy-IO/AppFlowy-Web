@@ -26,45 +26,30 @@ export function RelationPrimaryValue({
   onTextChange?: (text: string) => void;
 }) {
   const [text, setText] = useState<string | null>(null);
-  const [row, setRow] = useState<YDatabaseRow | null>(null);
 
   useEffect(() => {
     const data = rowDoc.getMap(YjsEditorKey.data_section);
 
-    const onRowChange = () => {
-      setRow(data?.get(YjsEditorKey.database_row) as YDatabaseRow);
-    };
-
-    onRowChange();
-    return subscribeSharedYjsDeep(data, onRowChange);
-  }, [rowDoc]);
-
-  useEffect(() => {
-    if (!row) {
-      setText('');
-      return;
-    }
-
-    const cells = row.get(YjsDatabaseKey.cells);
-
-    let primaryCell: YDatabaseCell | undefined;
-
-    if (fieldId) {
-      primaryCell = cells?.get(fieldId);
-    } else {
-      const fieldId = Array.from(cells?.keys() ?? []).find((key) => {
-        const fieldType = cells.get(key)?.get(YjsDatabaseKey.field_type);
-
-        if (fieldType === undefined || fieldType === null) return false;
-        return Number(fieldType) === FieldType.RichText;
-      });
+    const observeHandler = () => {
+      const row = data.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+      const cells = row?.get(YjsDatabaseKey.cells);
+      let primaryCell: YDatabaseCell | undefined;
 
       if (fieldId) {
         primaryCell = cells?.get(fieldId);
-      }
-    }
+      } else {
+        const richTextFieldId = Array.from(cells?.keys() ?? []).find((key) => {
+          const fieldType = cells?.get(key)?.get(YjsDatabaseKey.field_type);
 
-    const observeHandler = () => {
+          if (fieldType === undefined || fieldType === null) return false;
+          return Number(fieldType) === FieldType.RichText;
+        });
+
+        if (richTextFieldId) {
+          primaryCell = cells?.get(richTextFieldId);
+        }
+      }
+
       if (!primaryCell) {
         setText('');
         return;
@@ -75,15 +60,14 @@ export function RelationPrimaryValue({
 
     observeHandler();
 
-    const observerCleanups: Array<() => void> = [];
+    const observerCleanups: Array<() => void> = [subscribeSharedYjsDeep(data, observeHandler)];
 
-    if (primaryCell) observerCleanups.push(subscribeSharedYjsDeep(primaryCell, observeHandler));
     if (field) observerCleanups.push(subscribeSharedYjsDeep(field, observeHandler));
 
     return () => {
       observerCleanups.forEach((cleanup) => cleanup());
     };
-  }, [row, fieldId, field]);
+  }, [field, fieldId, rowDoc]);
 
   useEffect(() => {
     onTextChange?.(text ?? '');

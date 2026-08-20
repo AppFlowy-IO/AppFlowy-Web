@@ -85,6 +85,7 @@ function getRelationRowOrders(database: YDatabase, viewId: string) {
 function RelationCellMenuContent({
   relationRowIds,
   selectedView,
+  relatedDatabaseId,
   onAddRelationRowId,
   onRemoveRelationRowId,
   loading,
@@ -171,7 +172,10 @@ function RelationCellMenuContent({
       }
 
       try {
-        const doc = await loadView(selectedViewId);
+        const doc = await loadView(selectedViewId, false, false, {
+          databaseId: relatedDatabaseId,
+          databaseMetadataOnly: true,
+        });
 
         if (cancelled) return;
 
@@ -189,7 +193,7 @@ function RelationCellMenuContent({
     return () => {
       cancelled = true;
     };
-  }, [loadView, selectedViewId]);
+  }, [loadView, relatedDatabaseId, selectedViewId]);
 
   // `loadView` hands back the target database doc as soon as it exists locally — its fields and
   // row_orders may still be empty while the first server sync lands. Reading it once left the

@@ -5,12 +5,14 @@ import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
 import { peekDatabaseRowDocSeed, prefetchDatabaseBlobDiff } from '@/application/database-blob';
+import type { DatabaseContextState } from '@/application/database-yjs';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
 import { DatabaseViewLayout, UIVariant, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import Database, { Database2Props } from '@/components/database/Database';
 
 const mockSeedLoadPromises: Array<Promise<YDoc | undefined>> = [];
 const mockEnsureRowPromises: Array<Promise<YDoc | undefined> | void> = [];
+let mockDatabaseContext: DatabaseContextState | undefined;
 let mockLoadSeedOnLifecycleChange = false;
 
 jest.mock('@/application/database-blob', () => ({
@@ -59,7 +61,10 @@ jest.mock('@/components/database/DatabaseViews', () => {
   );
 
   return function MockDatabaseViews() {
-    const { bindRowSync, ensureRow, loadRowFromSeed, navigateToRow, rowMap } = useDatabaseContext();
+    const databaseContext = useDatabaseContext();
+    const { bindRowSync, ensureRow, loadRowFromSeed, navigateToRow, rowMap } = databaseContext;
+
+    mockDatabaseContext = databaseContext;
     const initialLoadRowFromSeed = React.useRef(loadRowFromSeed).current;
     const previousLoadRowFromSeed = React.useRef(loadRowFromSeed);
 
@@ -316,6 +321,7 @@ describe('Database blob prefetch lifecycle', () => {
     jest.clearAllMocks();
     mockSeedLoadPromises.length = 0;
     mockEnsureRowPromises.length = 0;
+    mockDatabaseContext = undefined;
     mockLoadSeedOnLifecycleChange = false;
     mockedPeekSeed.mockReset();
     mockedGetCachedRowDoc.mockReset();
@@ -348,6 +354,51 @@ describe('Database blob prefetch lifecycle', () => {
 
     unmount();
     doc.destroy();
+  });
+
+  it('keeps related-database rows out of the current row map and local mutation store', async () => {
+    const doc = createDatabaseDoc('database-id');
+    const relatedRowDoc = createHydratedRowDoc('related-row-doc');
+    const currentRowDoc = createHydratedRowDoc('current-row-doc');
+    const createRow = jest.fn(async (rowKey: string) =>
+      rowKey === 'database-b_rows_row-id' ? relatedRowDoc : currentRowDoc
+    );
+    const scheduleDeferredCleanup = jest.fn();
+    const { unmount } = render(
+      <Database
+        {...databaseProps(doc)}
+        createRow={createRow}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+      />
+    );
+
+    try {
+      if (!mockDatabaseContext?.createRow) throw new Error('Database context did not expose createRow');
+
+      await act(async () => {
+        await mockDatabaseContext?.createRow?.('database-b_rows_row-id');
+      });
+
+      expect(createRow).toHaveBeenCalledWith('database-b_rows_row-id');
+      expect(mockDatabaseContext.rowMap?.['row-id']).toBeUndefined();
+      expect(mockDatabaseContext.hasCellLocalMutation?.('row-id', 'field-id')).toBe(false);
+
+      await act(async () => {
+        await mockDatabaseContext?.createRow?.('database-id_rows_row-id');
+      });
+
+      expect(createRow).toHaveBeenCalledWith('database-id_rows_row-id');
+      expect(mockDatabaseContext.rowMap?.['row-id']).toBe(currentRowDoc);
+      expect(mockDatabaseContext.hasCellLocalMutation?.('row-id', 'field-id')).toBe(true);
+    } finally {
+      unmount();
+      expect(scheduleDeferredCleanup).toHaveBeenCalledTimes(2);
+      expect(scheduleDeferredCleanup).toHaveBeenNthCalledWith(1, 'row-id');
+      expect(scheduleDeferredCleanup).toHaveBeenNthCalledWith(2, 'row-id');
+      doc.destroy();
+      relatedRowDoc.destroy();
+      currentRowDoc.destroy();
+    }
   });
 
   it('sequentially rebinds a visible remote row after its initial registration settles', async () => {

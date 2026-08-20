@@ -1,16 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import CircularProgress from '@mui/material/CircularProgress';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
 import {
-  DatabaseContextState,
+  type DatabaseContextState,
   getPrimaryFieldId,
   useDatabaseContextOptional,
   useDatabaseIdFromField,
 } from '@/application/database-yjs';
-import { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
+import type { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
-import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { type YDatabaseField, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
 import { cn } from '@/lib/utils';
@@ -43,9 +45,10 @@ function RelationItems({
   cell: RelationCell;
   fieldId: string;
   onTextChange?: (text: string) => void;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
   wrap: boolean;
 }) {
+  const { t } = useTranslation();
   const context = useDatabaseContextOptional();
   // databasePageId: The main database page ID in the folder structure
   const viewId = context?.databasePageId;
@@ -61,12 +64,18 @@ function RelationItems({
   const [relatedFieldId, setRelatedFieldId] = useState<string | undefined>();
   const [relatedViewId, setRelatedViewId] = useState<string | null>(null);
 
-  const [docGuid, setDocGuid] = useState<string | null>(null);
   const [databaseDoc, setDatabaseDoc] = useState<YDoc | null>(null);
   const [relatedField, setRelatedField] = useState<YDatabaseField | undefined>();
+  const docGuid = databaseDoc?.guid ?? null;
 
-  const [rowIds, setRowIds] = useState([] as string[]);
+  const [rowIds, setRowIds] = useState<string[]>(() => {
+    const data = cell.data;
+
+    return data instanceof Y.Array ? (data.toJSON() as RelationCellData) ?? [] : [];
+  });
+  const [loading, setLoading] = useState(() => rowIds.length > 0);
   const [rowTexts, setRowTexts] = useState<Record<string, string>>({});
+  const hasRelatedRows = rowIds.length > 0;
 
   const navigateToView = context?.navigateToView;
 
@@ -93,12 +102,30 @@ function RelationItems({
 
     const ids = (data.toJSON() as RelationCellData) ?? [];
 
-    setRowIds(ids);
+    setRowIds((current) =>
+      current.length === ids.length && current.every((rowId, index) => rowId === ids[index]) ? current : ids
+    );
   }, [cell.data]);
 
   useEffect(() => {
-    if (!relatedDatabaseId) {
+    setRelatedViewId(null);
+    setDatabaseDoc(null);
+    setRelatedFieldId(undefined);
+    setRelatedField(undefined);
+    setRows(undefined);
+    setNoAccess(false);
+
+    if (!relatedDatabaseId || !hasRelatedRows) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    if (!getViewIdFromDatabaseId || !loadView) {
       setRelatedViewId(null);
+      setNoAccess(true);
+      setLoading(false);
       return;
     }
 
@@ -106,77 +133,128 @@ function RelationItems({
 
     void (async () => {
       try {
-        const viewId = await getViewIdFromDatabaseId?.(relatedDatabaseId);
+        const viewId = await getViewIdFromDatabaseId(relatedDatabaseId);
 
         if (cancelled) return;
 
         if (!viewId) {
           setRelatedViewId(null);
           setNoAccess(true);
+          setLoading(false);
           return;
         }
 
         setNoAccess(false);
         setRelatedViewId(viewId);
+
+        const viewDoc = await loadView(viewId, false, false, {
+          databaseId: relatedDatabaseId,
+          databaseMetadataOnly: true,
+        });
+
+        if (cancelled) return;
+
+        if (!viewDoc) {
+          throw new Error('No access');
+        }
+
+        setDatabaseDoc(viewDoc);
       } catch (e) {
         if (cancelled) return;
         console.error(e);
         setRelatedViewId(null);
         setNoAccess(true);
+        setLoading(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [getViewIdFromDatabaseId, relatedDatabaseId]);
+  }, [getViewIdFromDatabaseId, hasRelatedRows, loadView, relatedDatabaseId]);
 
   useEffect(() => {
-    if (!relatedViewId || !createRow || !docGuid) return;
+    if (!hasRelatedRows) {
+      setRows({});
+      setLoading(false);
+      return;
+    }
+
+    if (!relatedViewId || !docGuid || !relatedFieldId) return;
+
+    if (!createRow) {
+      setNoAccess(true);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const rowObserverCleanups: Array<() => void> = [];
+
+    setLoading(true);
+
     void (async () => {
-      try {
-        // Load all rows in parallel instead of sequentially (async-parallel optimization)
-        const rowEntries = await Promise.all(
-          rowIds.map(async (rowId) => {
-            const rowDoc = await createRow(getRowKey(docGuid, rowId));
+      // Load all rows in parallel instead of sequentially (async-parallel optimization)
+      const rowResults = await Promise.allSettled(
+        rowIds.map(async (rowId) => {
+          const rowDoc = await createRow(getRowKey(docGuid, rowId));
 
-            return [rowId, rowDoc] as const;
-          })
-        );
+          return [rowId, rowDoc] as const;
+        })
+      );
 
-        const rows: Record<string, YDoc> = Object.fromEntries(rowEntries);
+      if (cancelled) return;
 
-        setRows(rows);
-      } catch (e) {
-        console.error(e);
-      }
+      const rowEntries: Array<readonly [string, YDoc]> = [];
+
+      rowResults.forEach((result) => {
+        if (result.status === 'fulfilled') {
+          rowEntries.push(result.value);
+        } else {
+          console.error(result.reason);
+        }
+      });
+
+      const rows: Record<string, YDoc> = Object.fromEntries(rowEntries);
+      const updateLoadingState = () => {
+        if (cancelled) return;
+
+        const hasUnhydratedRow = rowEntries.some(([, rowDoc]) => {
+          const data = rowDoc.getMap(YjsEditorKey.data_section);
+          const row = data.get(YjsEditorKey.database_row);
+
+          return !(row instanceof Y.Map) || !(row.get(YjsDatabaseKey.cells) instanceof Y.Map);
+        });
+
+        setLoading(hasUnhydratedRow);
+      };
+
+      setRows(rows);
+      rowEntries.forEach(([, rowDoc]) => {
+        rowObserverCleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), updateLoadingState));
+      });
+      // Subscribe before reading so hydration cannot land between the final
+      // readiness check and observer installation.
+      updateLoadingState();
     })();
-  }, [createRow, relatedViewId, relatedFieldId, rowIds, docGuid]);
+
+    return () => {
+      cancelled = true;
+      rowObserverCleanups.forEach((cleanup) => cleanup());
+    };
+  }, [createRow, docGuid, hasRelatedRows, relatedFieldId, relatedViewId, rowIds]);
 
   useEffect(() => {
     handleUpdateRowIds();
-  }, [handleUpdateRowIds]);
+    const data = cell.data;
 
-  useEffect(() => {
-    if (!relatedViewId) return;
+    if (!(data instanceof Y.Array)) return;
 
-    void (async () => {
-      try {
-        const viewDoc = await loadView?.(relatedViewId);
-
-        if (!viewDoc) {
-          throw new Error('No access');
-        }
-
-        setDocGuid(viewDoc.guid);
-
-        setDatabaseDoc(viewDoc);
-      } catch (e) {
-        console.error(e);
-        setNoAccess(true);
-      }
-    })();
-  }, [loadView, relatedViewId]);
+    data.observe(handleUpdateRowIds);
+    return () => {
+      data.unobserve(handleUpdateRowIds);
+    };
+  }, [cell.data, handleUpdateRowIds]);
 
   useEffect(() => {
     if (!databaseDoc) return;
@@ -185,11 +263,19 @@ function RelationItems({
     const observerEvent = () => {
       const database = sharedRoot.get(YjsEditorKey.database);
 
+      if (!database) {
+        setRelatedFieldId(undefined);
+        setRelatedField(undefined);
+        setLoading(hasRelatedRows);
+        return;
+      }
+
       const fieldId = getPrimaryFieldId(database);
 
       setRelatedFieldId(fieldId);
       setRelatedField(fieldId ? database?.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined);
       setNoAccess(!fieldId);
+      if (!fieldId) setLoading(false);
     };
 
     observerEvent();
@@ -197,7 +283,7 @@ function RelationItems({
     // The primary field can change type without replacing the database map.
     // Share the deep observer across rendered relation cells for this database.
     return subscribeSharedYjsDeep(sharedRoot, observerEvent);
-  }, [databaseDoc]);
+  }, [databaseDoc, hasRelatedRows]);
 
   return (
     <div
@@ -210,43 +296,55 @@ function RelationItems({
       {noAccess ? (
         <div className={'text-text-secondary'}>No access</div>
       ) : (
-        rowIds.map((rowId) => {
-          const rowDoc = rows?.[rowId];
+        <>
+          {rowIds.map((rowId) => {
+            const rowDoc = rows?.[rowId];
 
-          if (!rowDoc) return null;
-          return (
-            <div
-              key={rowId}
-              onClick={async (e) => {
-                if (!relatedViewId) return;
-                e.stopPropagation();
+            if (!rowDoc) return null;
+            return (
+              <div
+                key={rowId}
+                onClick={async (e) => {
+                  if (!relatedViewId) return;
+                  e.stopPropagation();
 
-                try {
-                  if (navigateToRow) {
-                    navigateToRow(rowId, relatedViewId !== viewId ? relatedViewId : undefined);
-                    return;
+                  try {
+                    if (navigateToRow) {
+                      navigateToRow(rowId, relatedViewId !== viewId ? relatedViewId : undefined);
+                      return;
+                    }
+
+                    await navigateToView?.(relatedViewId);
+                    // eslint-disable-next-line
+                  } catch (e: any) {
+                    notify.error(e.message);
                   }
-
-                  await navigateToView?.(relatedViewId);
-                  // eslint-disable-next-line
-                } catch (e: any) {
-                  notify.error(e.message);
-                }
-              }}
-              className={`min-w-fit overflow-hidden text-text-primary underline ${
-                relatedViewId ? 'cursor-pointer hover:text-text-action' : ''
-              }`}
-            >
-              <RelationItemValue
-                field={relatedField}
-                fieldId={relatedFieldId}
-                onTextChange={handleRowTextChange}
-                rowDoc={rowDoc}
-                rowId={rowId}
+                }}
+                className={`min-w-fit overflow-hidden text-text-primary underline ${
+                  relatedViewId ? 'cursor-pointer hover:text-text-action' : ''
+                }`}
+              >
+                <RelationItemValue
+                  field={relatedField}
+                  fieldId={relatedFieldId}
+                  onTextChange={handleRowTextChange}
+                  rowDoc={rowDoc}
+                  rowId={rowId}
+                />
+              </div>
+            );
+          })}
+          {loading ? (
+            <div aria-label={t('loading')} className='flex min-h-5 items-center' role='status'>
+              <CircularProgress
+                aria-hidden
+                className='text-icon-secondary'
+                data-testid='relation-cell-loading'
+                size={14}
               />
             </div>
-          );
-        })
+          ) : null}
+        </>
       )}
     </div>
   );

@@ -49,6 +49,12 @@ export function fetchPageCollab (workspaceId: string, viewId: string) {
   return fetchWithDeduplication(`fetchPageCollab_${workspaceId}`, { viewId }, fetchFunction);
 }
 
+export function fetchDatabaseCollab (workspaceId: string, databaseId: string) {
+  const fetchFunction = () => getCollab(workspaceId, databaseId, Types.Database);
+
+  return fetchWithDeduplication(`fetchDatabaseCollab_${workspaceId}`, { databaseId }, fetchFunction);
+}
+
 export function fetchRowDocumentCollab (workspaceId: string, documentId: string, source?: RowDocumentSourcePayload) {
   const fetchFunction = () => getCollab(workspaceId, documentId, Types.Document, source);
 

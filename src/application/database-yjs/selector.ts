@@ -532,25 +532,22 @@ export function useFieldSelector(fieldId: string) {
 export function useDatabaseIdFromField(fieldId: string) {
   const database = useDatabase();
   const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
-  const [databaseId, setDatabaseId] = useState<string | null>(null);
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (!field) return () => undefined;
 
-  useEffect(() => {
-    if (!field) return;
+      field.observe(onStoreChange);
+      return () => {
+        field.unobserve(onStoreChange);
+      };
+    },
+    [field]
+  );
+  const getSnapshot = useCallback(() => parseRelationTypeOption(field)?.database_id ?? null, [field]);
 
-    const observerEvent = () => {
-      setDatabaseId(parseRelationTypeOption(field)?.database_id);
-    };
-
-    observerEvent();
-
-    field.observe(observerEvent);
-
-    return () => {
-      field.unobserve(observerEvent);
-    };
-  }, [database, field, fieldId]);
-
-  return databaseId;
+  // Relation cells need this value during their first render so an existing
+  // relation never paints an empty frame before its loading indicator.
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 export function useFiltersSelector() {
