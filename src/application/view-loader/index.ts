@@ -10,10 +10,16 @@
  * before the component finishes rendering.
  */
 
+import * as Y from 'yjs';
+
 import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
-import { fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
+import {
+  fetchDatabaseCollab,
+  fetchPageCollab,
+  fetchRowDocumentCollab,
+} from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import {
   LoadRowDocumentOptions,
@@ -28,7 +34,6 @@ import { determineErrorType, ErrorType, isPermissionDeniedError } from '@/applic
 import { isDatabaseLayout } from '@/application/view-utils';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
-import * as Y from 'yjs';
 
 // ============================================================================
 // Types
@@ -42,6 +47,7 @@ export interface ViewLoaderResult {
 
 export interface OpenViewOptions {
   databaseId?: string | null;
+  databaseMetadataOnly?: boolean;
   forceFetch?: boolean;
 }
 
@@ -118,6 +124,22 @@ function databaseDocContainsView(doc: YDoc, viewId: string): boolean | null {
   } catch {
     return null;
   }
+}
+
+function databaseDocHasCompleteMetadata(doc: YDoc, viewId: string): boolean {
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+  const database = sharedRoot?.get(YjsEditorKey.database);
+
+  if (!(database instanceof Y.Map)) return false;
+
+  const fields = database.get(YjsDatabaseKey.fields);
+  const views = database.get(YjsDatabaseKey.views);
+
+  if (!(fields instanceof Y.Map) || !(views instanceof Y.Map) || !views.has(viewId)) return false;
+
+  return Array.from(fields.values()).some(
+    (field) => field instanceof Y.Map && Boolean(field.get(YjsDatabaseKey.is_primary))
+  );
 }
 
 async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, targetDoc: YDoc): Promise<boolean> {
@@ -217,16 +239,32 @@ export async function hasCache(viewId: string): Promise<boolean> {
 /**
  * Fetch and apply document data from server
  */
-async function fetchAndApply(workspaceId: string, viewId: string, doc: YDoc): Promise<void> {
+async function fetchAndApply(
+  workspaceId: string,
+  viewId: string,
+  doc: YDoc,
+  options: OpenViewOptions = {}
+): Promise<void> {
   Log.debug('[ViewLoader] fetching from server', { viewId });
 
   const fetchStartedAt = Date.now();
-  const { data, rows } = await fetchPageCollab(workspaceId, viewId);
+  let data: Uint8Array;
+  let rowCount = 0;
+
+  if (options.databaseMetadataOnly && options.databaseId) {
+    ({ data } = await fetchDatabaseCollab(workspaceId, options.databaseId));
+  } else {
+    const pageCollab = await fetchPageCollab(workspaceId, viewId);
+
+    data = pageCollab.data;
+    rowCount = pageCollab.rows ? Object.keys(pageCollab.rows).length : 0;
+  }
 
   Log.debug('[ViewLoader] fetch complete', {
     viewId,
     dataBytes: data.length,
-    rowCount: rows ? Object.keys(rows).length : 0,
+    rowCount,
+    databaseMetadataOnly: options.databaseMetadataOnly ?? false,
     fetchDurationMs: Date.now() - fetchStartedAt,
   });
 
@@ -316,6 +354,18 @@ export async function openView(
     }
   }
 
+  // A database root alone is enough for the generic cache detector, but not
+  // enough to render relation labels or populate the relation picker. These
+  // metadata-only consumers do not bind database realtime, so force the raw
+  // canonical fetch when fields/views have only been partially cached.
+  if (fromCache && options.databaseMetadataOnly && !databaseDocHasCompleteMetadata(doc, viewId)) {
+    Log.debug('[ViewLoader] cached database metadata is incomplete, re-fetching', {
+      viewId,
+      databaseId: options.databaseId,
+    });
+    fromCache = false;
+  }
+
   if (fromCache && options.databaseId && viewId !== options.databaseId) {
     const containsLinkedView = databaseDocContainsView(doc, viewId);
 
@@ -343,7 +393,7 @@ export async function openView(
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        await fetchAndApply(workspaceId, viewId, doc);
+        await fetchAndApply(workspaceId, viewId, doc, options);
         break;
       } catch (e) {
         // Permission denials are permanent for this attempt — retrying cannot

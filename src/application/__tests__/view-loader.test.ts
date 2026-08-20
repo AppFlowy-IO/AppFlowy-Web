@@ -4,7 +4,11 @@ import * as Y from 'yjs';
 import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
-import { fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
+import {
+  fetchDatabaseCollab,
+  fetchPageCollab,
+  fetchRowDocumentCollab,
+} from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromDoc, openRowSubDocument, openView } from '@/application/view-loader';
@@ -29,6 +33,7 @@ jest.mock('@/application/services/js-services/cache', () => ({
 }));
 
 jest.mock('@/application/services/js-services/fetch', () => ({
+  fetchDatabaseCollab: jest.fn(),
   fetchPageCollab: jest.fn(),
   fetchRowDocumentCollab: jest.fn(),
 }));
@@ -42,6 +47,7 @@ const mockOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunc
 const mockDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 const mockInvalidateViewCache = invalidateViewCache as jest.MockedFunction<typeof invalidateViewCache>;
 const mockGetOrCreateRowSubDoc = getOrCreateRowSubDoc as jest.MockedFunction<typeof getOrCreateRowSubDoc>;
+const mockFetchDatabaseCollab = fetchDatabaseCollab as jest.MockedFunction<typeof fetchDatabaseCollab>;
 const mockFetchPageCollab = fetchPageCollab as jest.MockedFunction<typeof fetchPageCollab>;
 const mockFetchRowDocumentCollab = fetchRowDocumentCollab as jest.MockedFunction<typeof fetchRowDocumentCollab>;
 const mockEnqueueOutboxUpdate = enqueueOutboxUpdate as jest.MockedFunction<typeof enqueueOutboxUpdate>;
@@ -57,6 +63,21 @@ function createDatabaseDoc(guid: string, databaseId = guid): YDoc {
 
   database.set(YjsDatabaseKey.id, databaseId);
   root.set(YjsEditorKey.database, database);
+  return doc;
+}
+
+function createCompleteDatabaseDoc(guid: string, databaseId: string, viewId: string): YDoc {
+  const doc = createDatabaseDoc(guid, databaseId);
+  const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+  const fields = new Y.Map<Y.Map<unknown>>();
+  const primaryField = new Y.Map<unknown>();
+  const views = new Y.Map<Y.Map<unknown>>();
+
+  primaryField.set(YjsDatabaseKey.is_primary, true);
+  fields.set('primary-field', primaryField);
+  views.set(viewId, new Y.Map());
+  database.set(YjsDatabaseKey.fields, fields);
+  database.set(YjsDatabaseKey.views, views);
   return doc;
 }
 
@@ -121,7 +142,7 @@ describe('view-loader database cache identity', () => {
     const databaseId = '00000000-0000-4000-8000-000000000004';
     const canonicalDoc = createEmptyDoc(databaseId);
     const legacyDoc = createEmptyDoc(viewId);
-    const serverDoc = createDatabaseDoc(databaseId);
+    const serverDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
     const docs = new Map([
       [databaseId, canonicalDoc],
       [viewId, legacyDoc],
@@ -150,6 +171,71 @@ describe('view-loader database cache identity', () => {
     expect(result.fromCache).toBe(false);
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
     expect(mockFetchPageCollab).toHaveBeenCalledWith('workspace-id', viewId);
+  });
+
+  it('fetches only the canonical database collab for metadata-only relation loads', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000013';
+    const databaseId = '00000000-0000-4000-8000-000000000014';
+    const canonicalDoc = createEmptyDoc(databaseId);
+    const legacyDoc = createEmptyDoc(viewId);
+    const serverDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const docs = new Map([
+      [databaseId, canonicalDoc],
+      [viewId, legacyDoc],
+    ]);
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) => {
+      const doc = docs.get(name);
+
+      if (!doc) throw new Error(`Unexpected open ${name}`);
+      return createProvider(doc) as never;
+    });
+    mockFetchDatabaseCollab.mockResolvedValue({
+      data: Y.encodeStateAsUpdate(serverDoc),
+    });
+
+    const result = await openView('workspace-id', viewId, undefined, {
+      databaseId,
+      databaseMetadataOnly: true,
+    });
+
+    expect(result.doc).toBe(canonicalDoc);
+    expect(result.fromCache).toBe(false);
+    expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
+  });
+
+  it('refetches a partial canonical cache for metadata-only relation loads', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000015';
+    const databaseId = '00000000-0000-4000-8000-000000000016';
+    const canonicalDoc = createDatabaseDoc(databaseId);
+    const legacyDoc = createEmptyDoc(viewId);
+    const serverDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const docs = new Map([
+      [databaseId, canonicalDoc],
+      [viewId, legacyDoc],
+    ]);
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) => {
+      const doc = docs.get(name);
+
+      if (!doc) throw new Error(`Unexpected open ${name}`);
+      return createProvider(doc) as never;
+    });
+    mockFetchDatabaseCollab.mockResolvedValue({
+      data: Y.encodeStateAsUpdate(serverDoc),
+    });
+
+    const result = await openView('workspace-id', viewId, undefined, {
+      databaseId,
+      databaseMetadataOnly: true,
+    });
+
+    expect(result.doc).toBe(canonicalDoc);
+    expect(result.fromCache).toBe(false);
+    expect(mockFetchDatabaseCollab).toHaveBeenCalledWith('workspace-id', databaseId);
+    expect(mockFetchPageCollab).not.toHaveBeenCalled();
   });
 
   it('uses the canonical databaseId cache when the database layout was discovered after the first load', async () => {

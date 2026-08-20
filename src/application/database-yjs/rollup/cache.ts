@@ -7,10 +7,11 @@ import { EnhancedBigStats } from '@/application/database-yjs/fields/number/Enhan
 import { parseNumberTypeOptions } from '@/application/database-yjs/fields/number/parse';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
-import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
+  LoadViewOptions,
   RowId,
   YDatabase,
   YDatabaseCell,
@@ -28,6 +29,13 @@ export type RollupCellValue = {
   list?: string[];
 };
 
+type RelatedViewLoader = (
+  viewId: string,
+  isSubDocument?: boolean,
+  loadAwareness?: boolean,
+  options?: LoadViewOptions
+) => Promise<YDoc | null>;
+
 type RollupCacheEntry = RollupCellValue & {
   generation: number;
   updatedAt: number;
@@ -40,7 +48,7 @@ type RollupComputeContext = {
   row: YDatabaseRow;
   rowId: RowId;
   fieldId: string;
-  loadView?: (viewId: string) => Promise<YDoc | null>;
+  loadView?: RelatedViewLoader;
   createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
@@ -167,21 +175,22 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-async function loadRelatedDoc(viewId: string, loadView?: (viewId: string) => Promise<YDoc | null>) {
+async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader) {
   if (!loadView) return null;
-  const cached = relatedDocCache.get(viewId);
+  const cacheKey = `${databaseId}:${viewId}`;
+  const cached = relatedDocCache.get(cacheKey);
 
   if (cached) {
-    touchRelatedDocCache(viewId, cached);
+    touchRelatedDocCache(cacheKey, cached);
     return cached;
   }
 
-  const promise = loadView(viewId).catch(() => {
-    relatedDocCache.delete(viewId);
+  const promise = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).catch(() => {
+    relatedDocCache.delete(cacheKey);
     return null;
   });
 
-  touchRelatedDocCache(viewId, promise);
+  touchRelatedDocCache(cacheKey, promise);
   return promise;
 }
 
@@ -218,7 +227,7 @@ async function createRelationTargetResolver(
 
   if (!viewId) return null;
 
-  const doc = await loadRelatedDoc(viewId, context.loadView);
+  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView);
 
   if (!doc) return null;
 
@@ -432,7 +441,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   if (!viewId) return { value: '' };
 
-  const relatedDoc = await loadRelatedDoc(viewId, context.loadView);
+  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView);
 
   if (!relatedDoc) return { value: '' };
 

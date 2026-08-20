@@ -34,6 +34,23 @@ function waitForDocumentPublishRetry(delayMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
+function refreshDatabaseCatalogAfterMutation(workspaceId: string): void {
+  // Supersede any warm/read request that began before the mutation. The new
+  // authoritative request runs in the background so page creation is not held
+  // behind a workspace-wide catalog response.
+  ViewService.invalidateDatabaseCatalog?.(workspaceId);
+  void ViewService.refreshWorkspaceDatabaseCatalog?.(workspaceId).catch((error) => {
+    Log.warn('[WorkspaceDatabaseCatalog] failed to refresh after a database mutation', error);
+  });
+}
+
+function isDatabaseCatalogView(view: View | null | undefined): boolean {
+  return Boolean(
+    view &&
+      (isDatabaseLayout(view.layout) || view.extra?.is_database_container || typeof view.extra?.database_id === 'string')
+  );
+}
+
 function isPendingDocumentPublishData(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
 
@@ -69,6 +86,7 @@ export function usePageOperations({
   syncAllToServer,
   loadViewChildren,
   getDatabaseIdForViewId,
+  loadTrash,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
@@ -76,6 +94,7 @@ export function usePageOperations({
   syncAllToServer?: (workspaceId: string) => Promise<void>;
   loadViewChildren?: (viewId: string) => Promise<View[]>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
+  loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -98,6 +117,10 @@ export function usePageOperations({
         const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
 
         ViewService.invalidateCache(currentWorkspaceId, parentViewId);
+        if (isDatabaseLayout(payload.layout)) {
+          refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        }
+
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
         void loadOutline?.(currentWorkspaceId, false);
@@ -111,7 +134,7 @@ export function usePageOperations({
 
   // Delete a page (move to trash)
   const deletePage = useCallback(
-    async (id: string, loadTrash?: (workspaceId: string) => Promise<void>) => {
+    async (id: string) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
@@ -124,21 +147,28 @@ export function usePageOperations({
 
       try {
         const parentView = findParentView(outlineRef.current || [], id);
+        const deletedView = findView(outlineRef.current || [], id);
 
         await PageService.moveToTrash(currentWorkspaceId, id);
+        if (isDatabaseCatalogView(deletedView)) {
+          refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        }
+
         ViewService.invalidateCache(currentWorkspaceId, id);
         if (parentView) {
           ViewService.invalidateCache(currentWorkspaceId, parentView.view_id);
         }
 
-        void loadTrash?.(currentWorkspaceId);
+        void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
+          Log.warn('[Trash] Failed to refresh after moving a page to trash', error);
+        });
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outlineRef, role, loadOutline]
+    [currentWorkspaceId, outlineRef, role, loadOutline, loadTrash]
   );
 
   // Update page (rename) - uses WebSocket notification for sidebar refresh
@@ -225,6 +255,7 @@ export function usePageOperations({
         await afterPreSync?.();
 
         await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
 
         if (duplicateOptions.parentViewId) {
@@ -286,7 +317,7 @@ export function usePageOperations({
         } else {
           // Delete all — fetch trash list first to know which caches to clear
           try {
-            const trashItems = await ViewService.getTrash(currentWorkspaceId);
+            const trashItems = await ViewService.refreshTrash(currentWorkspaceId, 'delete-all-snapshot');
 
             viewIdsToClear = trashItems?.map((item) => item.view_id) || [];
           } catch {
@@ -295,6 +326,7 @@ export function usePageOperations({
         }
 
         await PageService.deleteTrash(currentWorkspaceId, viewId);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
 
         // Clear IndexedDB cache for permanently deleted views (parallel)
         await Promise.allSettled(viewIdsToClear.map((id) => clearViewCache(id)));
@@ -317,6 +349,7 @@ export function usePageOperations({
 
       try {
         await PageService.restore(currentWorkspaceId, viewId);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
@@ -392,6 +425,7 @@ export function usePageOperations({
       try {
         const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
 
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
         return res;
       } catch (e) {

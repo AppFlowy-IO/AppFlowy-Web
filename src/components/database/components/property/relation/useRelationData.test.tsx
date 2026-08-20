@@ -1,10 +1,11 @@
 import { EventEmitter } from 'events';
 
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { useLayoutEffect } from 'react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { parseRelationTypeOption, useDatabaseContext, useFieldSelector } from '@/application/database-yjs';
-import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { getWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { ViewLayout } from '@/application/types';
 
@@ -48,7 +49,7 @@ jest.mock('@/application/services/domains/view', () => ({
 
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
-  refreshWorkspaceDatabaseCatalog: jest.fn(),
+  getWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
 describe('useRelationData', () => {
@@ -61,7 +62,7 @@ describe('useRelationData', () => {
       workspaceId: 'workspace-1',
       loadViews: jest.fn().mockResolvedValue([]),
     } as never);
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([
       {
         database_id: 'database-1',
         views: [
@@ -93,7 +94,7 @@ describe('useRelationData', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
     expect(result.current.databaseCandidates).toEqual([
       expect.objectContaining({
         databaseId: 'database-1',
@@ -102,6 +103,22 @@ describe('useRelationData', () => {
       }),
     ]);
     expect(result.current.selectedView?.name).toBe('Projects');
+  });
+
+  it('uses the shared catalog getter when a user-opened picker becomes enabled', async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useRelationData('field-1', { enabled }),
+      { initialProps: { enabled: false } }
+    );
+
+    expect(getWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
   });
 
   it('rebuilds candidate metadata from the outline event payload without refetching the catalog', async () => {
@@ -116,7 +133,7 @@ describe('useRelationData', () => {
     const { result } = renderHook(() => useRelationData('field-1'));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
     expect(result.current.databaseCandidates[0]?.path).toEqual(['Projects']);
 
     const outline = [
@@ -142,6 +159,81 @@ describe('useRelationData', () => {
       expect(result.current.databaseCandidates[0]?.displayView.name).toBe('Renamed Projects');
       expect(result.current.selectedView?.name).toBe('Renamed Projects');
     });
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+  });
+
+  it('never commits a selected view from the previous related database', async () => {
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([
+      {
+        database_id: 'database-1',
+        views: [
+          {
+            view_id: 'container-1',
+            layout: ViewLayout.Grid,
+            is_container: true,
+            embedded: false,
+            name: 'Projects',
+            icon: null,
+            parent_view_id: null,
+          },
+          {
+            view_id: 'grid-1',
+            layout: ViewLayout.Grid,
+            is_container: false,
+            embedded: false,
+            name: 'Grid',
+            icon: null,
+            parent_view_id: 'container-1',
+          },
+        ],
+      },
+      {
+        database_id: 'database-2',
+        views: [
+          {
+            view_id: 'container-2',
+            layout: ViewLayout.Grid,
+            is_container: true,
+            embedded: false,
+            name: 'Customers',
+            icon: null,
+            parent_view_id: null,
+          },
+          {
+            view_id: 'grid-2',
+            layout: ViewLayout.Grid,
+            is_container: false,
+            embedded: false,
+            name: 'Grid',
+            icon: null,
+            parent_view_id: 'container-2',
+          },
+        ],
+      },
+    ]);
+
+    const committedSelections: Array<{ databaseId: string | null; viewName?: string }> = [];
+    const { result, rerender } = renderHook(() => {
+      const relationData = useRelationData('field-1');
+
+      useLayoutEffect(() => {
+        committedSelections.push({
+          databaseId: relationData.relatedDatabaseId,
+          viewName: relationData.selectedView?.name,
+        });
+      }, [relationData.relatedDatabaseId, relationData.selectedView]);
+
+      return relationData;
+    });
+
+    await waitFor(() => expect(result.current.selectedView?.name).toBe('Projects'));
+    committedSelections.length = 0;
+    jest.mocked(parseRelationTypeOption).mockReturnValue({ database_id: 'database-2' } as never);
+
+    rerender();
+
+    expect(result.current.relatedDatabaseId).toBe('database-2');
+    expect(result.current.selectedView?.name).toBe('Customers');
+    expect(committedSelections).not.toContainEqual({ databaseId: 'database-2', viewName: 'Projects' });
   });
 });

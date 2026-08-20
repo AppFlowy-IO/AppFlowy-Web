@@ -1247,6 +1247,8 @@ export type AppendBreadcrumb = (view?: View) => void;
 export type CreateRow = (rowKey: string, options?: { forceSync?: boolean }) => Promise<YDoc>;
 export interface LoadViewOptions {
   databaseId?: string | null;
+  /** Load only the canonical database collab, without page-view row_data. */
+  databaseMetadataOnly?: boolean;
   forceFetch?: boolean;
 }
 

@@ -31,6 +31,7 @@ jest.mock('lodash-es', () => ({
     });
   },
 }));
+jest.mock('lodash-es/isEqual', () => jest.requireActual('lodash/isEqual'));
 
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
@@ -46,9 +47,10 @@ jest.mock('@/application/services/domains', () => ({
     getMultiple: jest.fn(),
     getNavigation: jest.fn(),
     getOutline: jest.fn(),
-    getTrash: jest.fn(),
+    getTrashCached: jest.fn(),
     invalidateCache: jest.fn(),
     refresh: jest.fn(),
+    refreshTrash: jest.fn(),
   },
   WorkspaceService: {
     getMentionableUsers: jest.fn(),
@@ -175,7 +177,8 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     (ViewService.refresh as jest.Mock).mockImplementation((activeWorkspaceId: string, viewId: string) =>
       ViewService.get(activeWorkspaceId, viewId)
     );
-    (ViewService.getTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
     (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
   });
 

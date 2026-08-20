@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
@@ -52,10 +52,10 @@ function deferred<T>() {
 }
 
 /** A target database doc shaped the way the picker reads it: primary field + view row orders. */
-function createTargetDoc(rowIds: string[]): YDoc {
+function createTargetDoc(rowIds: string[], viewId = VIEW_ID, databaseId = DATABASE_ID): YDoc {
   const doc = new Y.Doc() as YDoc;
 
-  doc.guid = VIEW_ID;
+  doc.guid = viewId;
 
   const database = new Y.Map() as YDatabase;
   const fields = new Y.Map();
@@ -76,9 +76,9 @@ function createTargetDoc(rowIds: string[]): YDoc {
 
   const views = new Y.Map();
 
-  views.set(VIEW_ID, view);
+  views.set(viewId, view);
 
-  database.set(YjsDatabaseKey.id, DATABASE_ID);
+  database.set(YjsDatabaseKey.id, databaseId);
   database.set(YjsDatabaseKey.fields, fields);
   database.set(YjsDatabaseKey.views, views);
   doc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
@@ -106,8 +106,8 @@ function syncDatabaseInto(doc: YDoc, rowIds: string[]) {
   });
 }
 
-function createTitledRowDoc(rowId: string, title: string): YDoc {
-  return createRowDoc(rowId, DATABASE_ID, {
+function createTitledRowDoc(rowId: string, title: string, databaseId = DATABASE_ID): YDoc {
+  return createRowDoc(rowId, databaseId, {
     [PRIMARY_FIELD_ID]: { fieldType: FieldType.RichText, data: title },
   });
 }
@@ -150,6 +150,13 @@ describe('RelationCellMenuContent loading states', () => {
 
     renderPicker();
 
+    await waitFor(() => {
+      expect(mockDatabaseContext.loadView).toHaveBeenCalledWith(VIEW_ID, false, false, {
+        databaseId: DATABASE_ID,
+        databaseMetadataOnly: true,
+      });
+    });
+
     // Both rows are known the moment the row list lands; neither title has been fetched.
     await waitFor(() => expect(skeletons()).toHaveLength(2));
     expect(screen.queryByText(UNTITLED)).toBeNull();
@@ -163,6 +170,77 @@ describe('RelationCellMenuContent loading states', () => {
 
     await waitFor(() => expect(screen.getByText('TSK-002')).toBeTruthy());
     expect(skeletons()).toHaveLength(0);
+  });
+
+  it('loads row documents in bounded parallel batches', async () => {
+    const rowIds = Array.from({ length: 10 }, (_, index) => `row-${index + 1}`);
+    const rowLoads = new Map(rowIds.map((rowId) => [rowId, deferred<YDoc>()]));
+
+    mockDatabaseContext.loadView.mockResolvedValue(createTargetDoc(rowIds));
+    mockDatabaseContext.createRow.mockImplementation((rowKey: string) => {
+      const rowId = rowIdFromKey(rowKey);
+
+      return rowLoads.get(rowId)!.promise;
+    });
+
+    const rendered = renderPicker();
+
+    await waitFor(() => expect(mockDatabaseContext.createRow).toHaveBeenCalledTimes(8));
+
+    await act(async () => {
+      rowLoads.get('row-1')?.resolve(createTitledRowDoc('row-1', 'TSK-001'));
+      await rowLoads.get('row-1')?.promise;
+    });
+
+    await waitFor(() => expect(mockDatabaseContext.createRow).toHaveBeenCalledTimes(9));
+    rendered.unmount();
+  });
+
+  it('never renders delayed rows from the previous keyed target', async () => {
+    const delayedARow = deferred<YDoc>();
+    const databaseADoc = createTargetDoc(['row-1'], 'view-a', 'database-a');
+    const databaseBDoc = createTargetDoc(['row-1'], 'view-b', 'database-b');
+    const rowADoc = createTitledRowDoc('row-1', 'Database A row', 'database-a');
+    const rowBDoc = createTitledRowDoc('row-1', 'Database B row', 'database-b');
+
+    mockDatabaseContext.loadView.mockImplementation((viewId: string) =>
+      Promise.resolve(viewId === 'view-a' ? databaseADoc : databaseBDoc)
+    );
+    mockDatabaseContext.createRow.mockImplementation((rowKey: string) =>
+      rowKey.startsWith('view-a_rows_') ? delayedARow.promise : Promise.resolve(rowBDoc)
+    );
+
+    const callbacks = {
+      onAddRelationRowId: jest.fn(),
+      onRemoveRelationRowId: jest.fn(),
+    };
+    const rendered = render(
+      <RelationCellMenuContent
+        {...callbacks}
+        relatedDatabaseId='database-a'
+        selectedView={{ view_id: 'view-a', name: 'Database A' } as View}
+      />
+    );
+
+    await waitFor(() => expect(mockDatabaseContext.createRow).toHaveBeenCalledWith('view-a_rows_row-1'));
+
+    rendered.rerender(
+      <RelationCellMenuContent
+        {...callbacks}
+        relatedDatabaseId='database-b'
+        selectedView={{ view_id: 'view-b', name: 'Database B' } as View}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Database B row')).toBeTruthy());
+
+    await act(async () => {
+      delayedARow.resolve(rowADoc);
+      await delayedARow.promise;
+    });
+
+    expect(screen.queryByText('Database A row')).toBeNull();
+    expect(screen.getByText('Database B row')).toBeTruthy();
   });
 
   it('settles an unreadable row on the empty-name wording instead of pulsing forever', async () => {
@@ -227,7 +305,9 @@ describe('RelationCellMenuContent loading states', () => {
     // Nothing has synced yet, so the picker may not conclude the database is empty.
     expect(screen.queryByText(NO_RESULT)).toBeNull();
 
-    syncDatabaseInto(doc, ['row-1']);
+    act(() => {
+      syncDatabaseInto(doc, ['row-1']);
+    });
 
     await waitFor(() => expect(screen.getByText('TSK-001')).toBeTruthy());
     expect(screen.queryByText(NO_RESULT)).toBeNull();
@@ -246,8 +326,10 @@ describe('RelationCellMenuContent loading states', () => {
 
     const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
-    rowDoc.transact(() => {
-      row.get(YjsDatabaseKey.cells)?.get(PRIMARY_FIELD_ID)?.set(YjsDatabaseKey.data, 'TSK-001');
+    act(() => {
+      rowDoc.transact(() => {
+        row.get(YjsDatabaseKey.cells)?.get(PRIMARY_FIELD_ID)?.set(YjsDatabaseKey.data, 'TSK-001');
+      });
     });
 
     await waitFor(() => expect(screen.getByText('TSK-001')).toBeTruthy());

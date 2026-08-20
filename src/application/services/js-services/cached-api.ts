@@ -7,7 +7,6 @@ import * as random from 'lib0/random';
 import * as Y from 'yjs';
 
 import { db, openCollabDB } from '@/application/db';
-import { Log } from '@/utils/log';
 import {
   createRow,
   deleteRow,
@@ -75,6 +74,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { Log } from '@/utils/log';
 import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 // ============================================================================
@@ -108,7 +108,20 @@ const VIEW_CACHE_TTL_MS = 5000;
 const VIEW_DISK_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const ANONYMOUS_VIEW_CACHE_SCOPE = 'anonymous';
 
-const _getAppTrashInFlight = new Map<string, Promise<View[]>>();
+type AppTrashPendingRefresh = {
+  promise: Promise<View[]>;
+  resolve: (views: View[]) => void;
+  reject: (error: unknown) => void;
+};
+
+type AppTrashRequestState = {
+  active: Promise<View[]> | null;
+  activeFreshnessKey: string | undefined;
+  pendingRefresh: AppTrashPendingRefresh | null;
+  pendingFreshnessKey: string | undefined;
+};
+
+const _getAppTrashRequests = new Map<string, AppTrashRequestState>();
 const _getAppTrashCache = new Map<string, { data: View[]; expiresAt: number }>();
 const TRASH_CACHE_TTL_MS = 5000;
 
@@ -267,33 +280,109 @@ function getAppTrashCacheKey(userId: string | undefined, workspaceId: string) {
   return `${userId ?? ANONYMOUS_VIEW_CACHE_SCOPE}:${workspaceId}`;
 }
 
-function requestAppTrash(workspaceId: string, userId = getCurrentAppViewCacheUserId()) {
-  const key = getAppTrashCacheKey(userId, workspaceId);
-  const existing = _getAppTrashInFlight.get(key);
+function getAppTrashRequestState(key: string) {
+  let state = _getAppTrashRequests.get(key);
 
-  if (existing) {
-    return existing;
+  if (!state) {
+    state = {
+      active: null,
+      activeFreshnessKey: undefined,
+      pendingRefresh: null,
+      pendingFreshnessKey: undefined,
+    };
+    _getAppTrashRequests.set(key, state);
   }
 
-  const request = getAppTrash(workspaceId)
-    .then((views) => {
-      _getAppTrashCache.set(key, {
-        data: views,
-        expiresAt: Date.now() + TRASH_CACHE_TTL_MS,
-      });
-      return views;
-    })
-    .finally(() => {
-      _getAppTrashInFlight.delete(key);
-    });
+  return state;
+}
 
-  _getAppTrashInFlight.set(key, request);
+function startAppTrashRequest(
+  workspaceId: string,
+  userId: string | undefined,
+  key: string,
+  state: AppTrashRequestState,
+  freshnessKey?: string
+) {
+  const request = getAppTrash(workspaceId).then((views) => {
+    _getAppTrashCache.set(key, {
+      data: views,
+      expiresAt: Date.now() + TRASH_CACHE_TTL_MS,
+    });
+    return views;
+  });
+
+  state.active = request;
+  state.activeFreshnessKey = freshnessKey;
+
+  // A refresh requested while this call is active represents a notification
+  // that may have been committed after the request started. Run exactly one
+  // trailing request and let every waiter share it. This avoids returning a
+  // pre-mutation response without allowing request storms.
+  void request.then(
+    () => finishAppTrashRequest(workspaceId, userId, key, state, request),
+    () => finishAppTrashRequest(workspaceId, userId, key, state, request)
+  );
+
   return request;
+}
+
+function finishAppTrashRequest(
+  workspaceId: string,
+  userId: string | undefined,
+  key: string,
+  state: AppTrashRequestState,
+  request: Promise<View[]>
+) {
+  if (state.active !== request) return;
+
+  state.active = null;
+  state.activeFreshnessKey = undefined;
+  const pendingRefresh = state.pendingRefresh;
+  const pendingFreshnessKey = state.pendingFreshnessKey;
+
+  if (!pendingRefresh) {
+    if (_getAppTrashRequests.get(key) === state) {
+      _getAppTrashRequests.delete(key);
+    }
+
+    return;
+  }
+
+  state.pendingRefresh = null;
+  state.pendingFreshnessKey = undefined;
+  const trailingRequest = startAppTrashRequest(workspaceId, userId, key, state, pendingFreshnessKey);
+
+  void trailingRequest.then(pendingRefresh.resolve, pendingRefresh.reject);
+}
+
+function requestAppTrash(workspaceId: string, userId = getCurrentAppViewCacheUserId()) {
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const state = getAppTrashRequestState(key);
+
+  if (state.active) {
+    return state.active;
+  }
+
+  return startAppTrashRequest(workspaceId, userId, key, state);
 }
 
 export async function getAppTrashCached(workspaceId: string) {
   const userId = getCurrentAppViewCacheUserId();
-  const cached = _getAppTrashCache.get(getAppTrashCacheKey(userId, workspaceId));
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const activeState = _getAppTrashRequests.get(key);
+
+  // Prefer an authoritative refresh already underway over a still-valid cache.
+  // If that refresh itself has a newer mutation queued, wait for the trailing
+  // payload so a mounting DatabaseBlock cannot briefly apply stale trash.
+  if (activeState?.pendingRefresh) {
+    return activeState.pendingRefresh.promise;
+  }
+
+  if (activeState?.active) {
+    return activeState.active;
+  }
+
+  const cached = _getAppTrashCache.get(key);
 
   if (cached && Date.now() < cached.expiresAt) {
     return cached.data;
@@ -303,12 +392,41 @@ export async function getAppTrashCached(workspaceId: string) {
 }
 
 /**
- * Bypasses the TTL cache but still shares any in-flight request, so
- * concurrent refreshers (e.g. every embedded database re-checking on
- * OUTLINE_LOADED) collapse into a single network call.
+ * Bypasses the TTL cache. Callers may pass a mutation/revision key. Repeated
+ * observers of the same key share the active request; a newer keyed refresh
+ * queues at most one trailing request rather than trusting a response that may
+ * have started before that mutation. Unkeyed concurrent callers simply share.
  */
-export async function refreshAppTrashCache(workspaceId: string) {
-  return requestAppTrash(workspaceId);
+export async function refreshAppTrashCache(workspaceId: string, freshnessKey?: string) {
+  const userId = getCurrentAppViewCacheUserId();
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const state = getAppTrashRequestState(key);
+
+  if (!state.active) {
+    return startAppTrashRequest(workspaceId, userId, key, state, freshnessKey);
+  }
+
+  if (state.pendingRefresh) {
+    return state.pendingRefresh.promise;
+  }
+
+  // Unkeyed refreshes are ordinary concurrent callers and share the active
+  // request. A keyed refresh denotes a concrete mutation/revision; repeated
+  // observers of that same revision share as well.
+  if (!freshnessKey || state.activeFreshnessKey === freshnessKey) {
+    return state.active;
+  }
+
+  let resolve!: (views: View[]) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<View[]>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  state.pendingRefresh = { promise, resolve, reject };
+  state.pendingFreshnessKey = freshnessKey;
+  return promise;
 }
 
 export async function getPageDocCached(

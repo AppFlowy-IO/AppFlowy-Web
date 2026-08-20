@@ -242,6 +242,7 @@ export function useViewOperations({
         // Use view-loader to open document (handles cache vs fetch)
         let { doc, collabType: detectedCollabType } = await openView(currentWorkspaceId, viewId, layout, {
           databaseId: databaseIdHint,
+          databaseMetadataOnly: options?.databaseMetadataOnly,
           forceFetch: options?.forceFetch,
         });
 
@@ -264,6 +265,7 @@ export function useViewOperations({
         if (collabType === Types.Database && !databaseIdHint && collabObjectId !== viewId) {
           const canonical = await openView(currentWorkspaceId, viewId, layout, {
             databaseId: collabObjectId,
+            databaseMetadataOnly: options?.databaseMetadataOnly,
             forceFetch: options?.forceFetch,
           });
 

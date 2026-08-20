@@ -952,15 +952,25 @@ function Database(props: Database2Props) {
 
       const [rowKeyDatabaseId, rowId] = rowKey.split('_rows_');
       const currentDatabaseId = getDatabaseId();
+      const belongsToCurrentDatabase = rowKeyDatabaseId === currentDatabaseId;
 
-      const rowDoc = await createRow(rowKey);
+      // Database owns one sync registration per row key for its whole
+      // lifecycle. Relation, rollup, picker, and modal callers all share it,
+      // and the lifecycle cleanup releases it even if registration settles
+      // after unmount.
+      const rowDoc = await registerRowSync(rowKey);
+
+      if (!rowDoc) {
+        throw new Error('Failed to create row doc');
+      }
 
       // The row exists on the server either way, so still hand it back to the
-      // caller — only the local state writes belong to the old lifecycle.
+      // caller. Local state writes require both the active lifecycle and this
+      // database's ownership below.
       if (!isCurrentCreate()) return rowDoc;
 
       // Add the new row doc to rowMap so grouping logic can see it immediately
-      if (rowId && rowDoc) {
+      if (belongsToCurrentDatabase && rowId && rowDoc) {
         markLocallyCreatedRow(rowId);
         setRowMap((prev) => {
           if (prev[rowId]) return prev;
@@ -968,14 +978,14 @@ function Database(props: Database2Props) {
         });
       }
 
-      if (rowKeyDatabaseId && rowKeyDatabaseId === currentDatabaseId && !localCachePrimedRef.current) {
+      if (belongsToCurrentDatabase && !localCachePrimedRef.current) {
         localCachePrimedRef.current = true;
         void ensureBlobPrefetch();
       }
 
       return rowDoc;
     },
-    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, markLocallyCreatedRow]
+    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, markLocallyCreatedRow, registerRowSync]
   );
 
   // Self-healing for a lying delta watermark: the RID cursor lives in

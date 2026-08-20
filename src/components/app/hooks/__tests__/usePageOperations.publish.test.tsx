@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { PageService, PublishService } from '@/application/services/domains';
+import { PageService, PublishService, ViewService } from '@/application/services/domains';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { publishCollabs } from '@/application/services/js-services/http/publish-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
@@ -16,12 +16,18 @@ jest.mock('@/application/services/domains', () => ({
   FileService: {},
   PageService: {
     add: jest.fn(),
+    createDatabaseView: jest.fn(),
+    moveToTrash: jest.fn(),
   },
   PublishService: {
     publish: jest.fn(),
     unpublish: jest.fn(),
   },
-  ViewService: {},
+  ViewService: {
+    invalidateDatabaseCatalog: jest.fn(),
+    invalidateCache: jest.fn(),
+    refreshWorkspaceDatabaseCatalog: jest.fn(),
+  },
 }));
 
 jest.mock('@/application/services/js-services/cached-api', () => ({
@@ -413,5 +419,56 @@ describe('usePageOperations addPage', () => {
     });
 
     expect(loadOutline).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the shared catalog after creating a database view', async () => {
+    jest.mocked(PageService.createDatabaseView).mockResolvedValue({
+      view_id: 'linked-view-id',
+      database_id: 'database-id',
+    });
+    jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
+    const { result, workspaceId } = renderUsePageOperations();
+    const payload = {
+      parent_view_id: 'parent-view-id',
+      database_id: 'database-id',
+      layout: ViewLayout.Grid,
+    };
+
+    await act(async () => {
+      await result.current.createDatabaseView('request-view-id', payload);
+    });
+
+    expect(PageService.createDatabaseView).toHaveBeenCalledWith(workspaceId, 'request-view-id', payload);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(jest.mocked(ViewService.invalidateDatabaseCatalog).mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mock.invocationCallOrder[0]
+    );
+  });
+
+  it('refreshes the shared catalog after moving a database view to trash', async () => {
+    jest.mocked(PageService.moveToTrash).mockResolvedValue(undefined);
+    jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mockResolvedValue([]);
+    const databaseView = createView({
+      view_id: 'database-view-id',
+      layout: ViewLayout.Grid,
+      extra: { database_id: 'database-id', is_space: false },
+    });
+    const parentView = createView({
+      view_id: 'parent-view-id',
+      children: [databaseView],
+    });
+    const { result, workspaceId } = renderUsePageOperations({ outlineRef: { current: [parentView] } });
+
+    await act(async () => {
+      await result.current.deletePage(databaseView.view_id);
+    });
+
+    expect(PageService.moveToTrash).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+    expect(jest.mocked(ViewService.invalidateDatabaseCatalog).mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(ViewService.refreshWorkspaceDatabaseCatalog).mock.invocationCallOrder[0]
+    );
   });
 });

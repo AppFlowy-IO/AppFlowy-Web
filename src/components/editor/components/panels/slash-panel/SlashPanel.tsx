@@ -14,7 +14,7 @@ import { createDatabaseListPageViaGrid, createLinkedDatabaseListView } from '@/a
 import {
   databaseCatalogViewToView,
   getDatabaseContainerEntries,
-  refreshWorkspaceDatabaseCatalog,
+  getWorkspaceDatabaseCatalog,
 } from '@/application/services/domains/view';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -579,7 +579,7 @@ export function SlashPanel({
     setDatabaseError(null);
 
     try {
-      const databases = await refreshWorkspaceDatabaseCatalog(workspaceId);
+      const databases = await getWorkspaceDatabaseCatalog(workspaceId);
       const options = getDatabaseContainerEntries(databases).map<DatabaseOption>(
         ({ databaseId, container, primaryView }) => ({
           databaseId,

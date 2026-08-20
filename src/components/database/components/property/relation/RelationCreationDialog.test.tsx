@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import en from '@/@types/translations/en.json';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
-import { refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { getWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { View, ViewLayout } from '@/application/types';
 import { RelationCreationDialog } from '@/components/database/components/property/relation/RelationCreationDialog';
@@ -40,7 +40,7 @@ jest.mock('@/application/services/domains/view', () => ({
 
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
-  refreshWorkspaceDatabaseCatalog: jest.fn(),
+  getWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
 // Resolve against the real bundle so the assertions below read as the copy the
@@ -162,7 +162,7 @@ function mockViews(viewsById: Record<string, View>) {
     viewsByDatabaseId.set(databaseId, views);
   }
 
-  jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue(
+  jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue(
     Array.from(viewsByDatabaseId.entries()).map(([databaseId, views]) => ({
       database_id: databaseId,
       views: views.map((view) => ({
@@ -249,7 +249,7 @@ describe('RelationCreationDialog', () => {
     expect(currentCandidate.textContent).not.toContain('Grid');
     expect(relatedCandidate.textContent).not.toContain('Grid');
 
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
     expect(loadViewMeta).not.toHaveBeenCalled();
   });
 
@@ -346,7 +346,7 @@ describe('RelationCreationDialog', () => {
   });
 
   it('does not list a database view when the server has no container for it', async () => {
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([
       {
         database_id: 'related-database',
         views: [
