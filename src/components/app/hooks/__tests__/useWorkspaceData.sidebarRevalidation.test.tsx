@@ -53,6 +53,7 @@ jest.mock('@/application/services/domains', () => ({
     getOutline: jest.fn(),
     getTrashCached: jest.fn(),
     invalidateCache: jest.fn(),
+    invalidateWorkspaceMemoryCache: jest.fn(),
     refresh: jest.fn(),
     refreshTrash: jest.fn(),
   },
@@ -187,6 +188,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     (ViewService.getFavorites as jest.Mock).mockResolvedValue([]);
     (ViewService.getMultiple as jest.Mock).mockResolvedValue([]);
     (ViewService.getNavigation as jest.Mock).mockResolvedValue(createView('navigation-root'));
+    (ViewService.invalidateWorkspaceMemoryCache as jest.Mock).mockImplementation(() => undefined);
     (ViewService.refresh as jest.Mock).mockImplementation((activeWorkspaceId: string, viewId: string) =>
       ViewService.get(activeWorkspaceId, viewId)
     );
@@ -727,6 +729,53 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(ViewService.getCachedFromDisk).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, databaseView.view_id);
     expect(revokedListener).toHaveBeenCalledWith({ viewId: databaseView.view_id });
+  });
+
+  it('captures an off-outline database identity before share invalidation clears memory', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('memory-only-database-view-id', {
+      layout: ViewLayout.Grid,
+      extra: {
+        database_id: 'memory-only-database-collab-id',
+        is_database_container: true,
+        is_space: false,
+      },
+    });
+    const shallowOutline = [createView('space-id', { extra: { is_space: true } })];
+    let memoryNavigation: View | undefined = databaseView;
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowOutline, folderRid: '1-1' });
+    (ViewService.getCached as jest.Mock).mockImplementation(
+      (_activeWorkspaceId: string, viewId: string) =>
+        (viewId === databaseView.view_id ? memoryNavigation : undefined)
+    );
+    (ViewService.invalidateWorkspaceMemoryCache as jest.Mock).mockImplementation(() => {
+      memoryNavigation = undefined;
+    });
+    (ViewService.getNavigation as jest.Mock).mockRejectedValueOnce({
+      code: ERROR_CODE.NOT_HAS_PERMISSION,
+      message: 'no permission',
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowOutline));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, {
+        viewId: databaseView.view_id,
+        emails: ['current-user@appflowy.io'],
+      });
+    });
+
+    await waitFor(() => {
+      expect(deleteCollabDB).toHaveBeenCalledWith(databaseView.view_id, { destroyDoc: true });
+      expect(deleteCollabDB).toHaveBeenCalledWith('memory-only-database-collab-id', { destroyDoc: true });
+    });
+    expect(ViewService.invalidateWorkspaceMemoryCache).toHaveBeenCalledWith(workspaceId);
+    expect(ViewService.getCachedFromDisk).not.toHaveBeenCalled();
   });
 
   it('announces restored access after a successful share-change probe', async () => {

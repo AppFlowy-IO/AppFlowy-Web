@@ -1911,15 +1911,6 @@ export function useWorkspaceData() {
       const accessMayAffectCurrentUser =
         !normalizedCurrentEmail || !hasOnlyValidEmails || Boolean(affectsCurrentUser);
 
-      if (accessMayAffectCurrentUser) {
-        // Fence root/lazy responses that started before this share event.
-        // Sharing an ancestor can alter inherited descendant access.
-        permissionRefreshRevisionRef.current += 1;
-        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
-        ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
-        markWorkspaceViewMetadataOutlineUntrusted(currentWorkspaceId);
-      }
-
       const shouldProbeAccess = Boolean(changedViewId && affectsCurrentUser);
       const cachedNavigation =
         shouldProbeAccess && changedViewId ? ViewService.getCached(currentWorkspaceId, changedViewId) : undefined;
@@ -1931,7 +1922,7 @@ export function useWorkspaceData() {
 
       // A lazy/depth-truncated outline may not contain the route metadata, and
       // its memory cache may already have expired. Start the disk lookup before
-      // loadOutline can replace or invalidate anything; only await it if a
+      // any permission-derived cache invalidation; only await it if a
       // definitive denial requires local collab eviction.
       const diskCachedNavigationPromise =
         shouldProbeAccess && changedViewId && !changedView
@@ -1947,8 +1938,18 @@ export function useWorkspaceData() {
 
       // Database folder/view UUIDs are metadata identifiers. Their Y.Doc and
       // IndexedDB collab are stored under the backing database UUID instead.
-      // Capture it before loadOutline can remove a newly revoked view.
+      // Capture it before the workspace-wide memory invalidation can discard
+      // the only available identity for an off-outline view.
       const cachedDatabaseId = changedView?.extra?.database_id;
+
+      if (accessMayAffectCurrentUser) {
+        // Fence root/lazy responses that started before this share event.
+        // Sharing an ancestor can alter inherited descendant access.
+        permissionRefreshRevisionRef.current += 1;
+        ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
+        ViewService.invalidateWorkspaceMemoryCache?.(currentWorkspaceId);
+        markWorkspaceViewMetadataOutlineUntrusted(currentWorkspaceId);
+      }
 
       if (accessMayAffectCurrentUser) evictAccessDerivedSubtrees();
       refreshPermissionDerivedState();
