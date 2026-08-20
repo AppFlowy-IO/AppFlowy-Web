@@ -83,25 +83,64 @@ function isDatabaseCatalogView(view: View | null | undefined): boolean {
   );
 }
 
-function collectDatabaseCatalogViewIds(views: View[]): Set<string> {
-  const ids = new Set<string>();
+interface DatabaseCatalogViewMetadata {
+  databaseId?: string;
+  embedded?: boolean;
+  icon: View['icon'];
+  isContainer?: boolean;
+  layout: ViewLayout;
+  name: string;
+  parentViewId?: string;
+}
+
+function getDatabaseCatalogViewMetadata(view: View | null | undefined): DatabaseCatalogViewMetadata | null {
+  if (!isDatabaseCatalogView(view)) return null;
+
+  return {
+    databaseId: view?.extra?.database_id,
+    embedded: view?.extra?.embedded,
+    icon: view?.icon ?? null,
+    isContainer: view?.extra?.is_database_container,
+    layout: view?.layout ?? ViewLayout.Document,
+    name: view?.name ?? '',
+    parentViewId: view?.parent_view_id,
+  };
+}
+
+function collectDatabaseCatalogViews(views: View[]): Map<string, DatabaseCatalogViewMetadata> {
+  const entries = new Map<string, DatabaseCatalogViewMetadata>();
 
   const walk = (items: View[]) => {
     for (const view of items) {
-      if (isDatabaseCatalogView(view)) ids.add(view.view_id);
+      const metadata = getDatabaseCatalogViewMetadata(view);
+
+      if (metadata) entries.set(view.view_id, metadata);
+
       if (view.children?.length) walk(view.children);
     }
   };
 
   walk(views);
-  return ids;
+  return entries;
 }
 
-function databaseCatalogMembershipChanged(previous: View[], next: View[]): boolean {
-  const previousIds = collectDatabaseCatalogViewIds(previous);
-  const nextIds = collectDatabaseCatalogViewIds(next);
+function databaseCatalogChanged(previous: View[], next: View[]): boolean {
+  const previousViews = collectDatabaseCatalogViews(previous);
+  const nextViews = collectDatabaseCatalogViews(next);
 
-  return previousIds.size !== nextIds.size || Array.from(previousIds).some((viewId) => !nextIds.has(viewId));
+  if (previousViews.size !== nextViews.size) return true;
+
+  for (const [viewId, previousMetadata] of previousViews) {
+    if (!isEqual(previousMetadata, nextViews.get(viewId))) return true;
+  }
+
+  return false;
+}
+
+function isOutlineSubtreeComplete(view: View, loadedViewIds: Set<string>): boolean {
+  if (view.has_children === true && !loadedViewIds.has(view.view_id)) return false;
+
+  return (view.children ?? []).every((child) => isOutlineSubtreeComplete(child, loadedViewIds));
 }
 
 function collectViewPath(root: View, targetViewId: string): View[] | null {
@@ -323,6 +362,15 @@ const ACCESS_REVOKED_PROBE_ERROR_CODES = new Set<number>([
 const PERMISSION_SUBTREE_REHYDRATE_MAX_ATTEMPTS = 2;
 const NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS = 30_000;
 
+interface NoopFolderTrashRefreshBurst {
+  firstNotificationAt: number;
+  lastNotificationAt: number;
+  maxLatencyProbeCompleted: boolean;
+  maxLatencyProbeCoveredSeq: number;
+  notificationSeq: number;
+  workspaceId: string;
+}
+
 function getRefreshErrorCode(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
 
@@ -503,6 +551,7 @@ export function useWorkspaceData() {
   const lastTrashRequestAtRef = useRef(0);
   const noopFolderTrashRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noopFolderTrashRefreshWorkspaceIdRef = useRef<string | null>(null);
+  const noopFolderTrashRefreshBurstRef = useRef<NoopFolderTrashRefreshBurst | null>(null);
   const shareAccessProbeGenerationsRef = useRef(new Map<string, number>());
   const permissionRefreshRevisionRef = useRef(0);
 
@@ -1501,13 +1550,23 @@ export function useWorkspaceData() {
     if (!currentWorkspaceId) return;
 
     const workspaceId = currentWorkspaceId;
+    const now = Date.now();
+    const existingBurst = noopFolderTrashRefreshBurstRef.current;
+    const burst =
+      existingBurst?.workspaceId === workspaceId
+        ? existingBurst
+        : {
+            firstNotificationAt: now,
+            lastNotificationAt: now,
+            maxLatencyProbeCompleted: false,
+            maxLatencyProbeCoveredSeq: 0,
+            notificationSeq: 0,
+            workspaceId,
+          };
 
-    if (
-      noopFolderTrashRefreshTimerRef.current !== null &&
-      noopFolderTrashRefreshWorkspaceIdRef.current === workspaceId
-    ) {
-      return;
-    }
+    burst.lastNotificationAt = now;
+    burst.notificationSeq += 1;
+    noopFolderTrashRefreshBurstRef.current = burst;
 
     if (noopFolderTrashRefreshTimerRef.current !== null) {
       clearTimeout(noopFolderTrashRefreshTimerRef.current);
@@ -1515,34 +1574,92 @@ export function useWorkspaceData() {
 
     noopFolderTrashRefreshWorkspaceIdRef.current = workspaceId;
 
-    const runWhenCooldownExpires = () => {
-      if (currentWorkspaceIdRef.current !== workspaceId) {
+    const clearBurst = () => {
+      if (noopFolderTrashRefreshBurstRef.current?.workspaceId === workspaceId) {
+        noopFolderTrashRefreshBurstRef.current = null;
+      }
+
+      if (noopFolderTrashRefreshWorkspaceIdRef.current === workspaceId) {
         noopFolderTrashRefreshTimerRef.current = null;
         noopFolderTrashRefreshWorkspaceIdRef.current = null;
-        return;
       }
-
-      const remainingCooldown = Math.max(
-        0,
-        NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (Date.now() - lastTrashRequestAtRef.current)
-      );
-
-      if (remainingCooldown > 0) {
-        noopFolderTrashRefreshTimerRef.current = setTimeout(runWhenCooldownExpires, remainingCooldown);
-        return;
-      }
-
-      noopFolderTrashRefreshTimerRef.current = null;
-      noopFolderTrashRefreshWorkspaceIdRef.current = null;
-      refreshTrashListInBackground();
     };
 
-    const remainingCooldown = Math.max(
-      0,
-      NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (Date.now() - lastTrashRequestAtRef.current)
-    );
+    const runWhenReady = () => {
+      const activeBurst = noopFolderTrashRefreshBurstRef.current;
 
-    noopFolderTrashRefreshTimerRef.current = setTimeout(runWhenCooldownExpires, remainingCooldown);
+      if (currentWorkspaceIdRef.current !== workspaceId || activeBurst?.workspaceId !== workspaceId) {
+        clearBurst();
+        return;
+      }
+
+      const now = Date.now();
+
+      const remainingRequestCooldown = Math.max(
+        0,
+        NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (now - lastTrashRequestAtRef.current)
+      );
+      const remainingQuietPeriod = Math.max(
+        0,
+        NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (now - activeBurst.lastNotificationAt)
+      );
+      const remainingMaxLatency = activeBurst.maxLatencyProbeCompleted
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (now - activeBurst.firstNotificationAt));
+      const remainingPhaseDelay = activeBurst.maxLatencyProbeCompleted
+        ? remainingQuietPeriod
+        : Math.min(remainingQuietPeriod, remainingMaxLatency);
+      const remainingDelay = Math.max(remainingRequestCooldown, remainingPhaseDelay);
+
+      if (remainingDelay > 0) {
+        noopFolderTrashRefreshTimerRef.current = setTimeout(runWhenReady, remainingDelay);
+        return;
+      }
+
+      if (!activeBurst.maxLatencyProbeCompleted) {
+        // One bounded probe prevents a real permanent delete at the start of a
+        // long noisy burst from remaining stale forever. Further notifications
+        // only move the trailing quiet-period check; they never create polling.
+        activeBurst.maxLatencyProbeCompleted = true;
+        activeBurst.maxLatencyProbeCoveredSeq = activeBurst.notificationSeq;
+        refreshTrashListInBackground();
+
+        const postProbeQuietPeriod = Math.max(
+          0,
+          NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (Date.now() - activeBurst.lastNotificationAt)
+        );
+
+        if (postProbeQuietPeriod > 0) {
+          noopFolderTrashRefreshTimerRef.current = setTimeout(runWhenReady, postProbeQuietPeriod);
+        } else {
+          clearBurst();
+        }
+
+        return;
+      }
+
+      const shouldRunTrailingProbe = activeBurst.notificationSeq > activeBurst.maxLatencyProbeCoveredSeq;
+
+      clearBurst();
+      if (shouldRunTrailingProbe) refreshTrashListInBackground();
+    };
+
+    const remainingRequestCooldown = Math.max(
+      0,
+      NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (now - lastTrashRequestAtRef.current)
+    );
+    const remainingQuietPeriod = NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS;
+    const remainingMaxLatency = burst.maxLatencyProbeCompleted
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, NOOP_FOLDER_TRASH_REFRESH_COOLDOWN_MS - (now - burst.firstNotificationAt));
+    const remainingPhaseDelay = burst.maxLatencyProbeCompleted
+      ? remainingQuietPeriod
+      : Math.min(remainingQuietPeriod, remainingMaxLatency);
+
+    noopFolderTrashRefreshTimerRef.current = setTimeout(
+      runWhenReady,
+      Math.max(remainingRequestCooldown, remainingPhaseDelay)
+    );
   }, [currentWorkspaceId, refreshTrashListInBackground]);
 
   const revalidateSidebarOutline = useCallback(
@@ -2000,7 +2117,7 @@ export function useWorkspaceData() {
       const mergedOutline = replaceOutlinePreservingChildren(reconcilePendingFolderViewUpdates(nextOutline, patchRid));
       const { addedIds, removedIds } = getOutlineMembershipChange(previousOutline, mergedOutline);
 
-      if (databaseCatalogMembershipChanged(previousOutline, mergedOutline)) {
+      if (databaseCatalogChanged(previousOutline, mergedOutline)) {
         ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
       }
 
@@ -2024,10 +2141,9 @@ export function useWorkspaceData() {
         // Direct permanent-delete operations and unrelated PG-first writes both
         // arrive as an indistinguishable no-RID, no-op full-outline replacement.
         // An added view is similarly ambiguous while the initial trash read is
-        // unavailable. Keep these cases eventually correct, but cap the fallback
-        // at one request per 30 seconds. The workspace mount request starts the
-        // cooldown, preventing row registration bursts from producing one
-        // /trash request per notification.
+        // unavailable. Keep these cases eventually correct with one bounded
+        // max-latency probe and, when needed, one trailing quiet-period probe.
+        // Continuous row registration noise therefore never becomes polling.
         scheduleNoopFolderTrashRefresh();
       }
 
@@ -2106,10 +2222,13 @@ export function useWorkspaceData() {
             const updatedView = JSON.parse(payload.viewJson) as View;
             const previousView = findView(nextOutline, updatedView.view_id);
 
-            shouldInvalidateDatabaseCatalog =
-              isDatabaseCatalogView(previousView) !== isDatabaseCatalogView(updatedView) ||
-              previousView?.extra?.database_id !== updatedView.extra?.database_id ||
-              previousView?.extra?.is_database_container !== updatedView.extra?.is_database_container;
+            // Compare only fields represented by WorkspaceDatabaseViewItem.
+            // Favorite, publish, lock, and timestamp notifications must not
+            // evict the global catalog and trigger a later offset request.
+            shouldInvalidateDatabaseCatalog = !isEqual(
+              getDatabaseCatalogViewMetadata(previousView),
+              getDatabaseCatalogViewMetadata(updatedView)
+            );
 
             if (previousView) {
               pendingFolderViewUpdatesRef.current.set(updatedView.view_id, {
@@ -2174,15 +2293,34 @@ export function useWorkspaceData() {
             ? new Set(trashListRef.current.map((view) => view.view_id))
             : undefined;
 
+          // The payload contains the remaining children, not the removed ID.
+          // Invalidate even when the parent itself is absent from a lazy local
+          // outline. This is memory-only; the next catalog consumer performs
+          // the single shared refresh.
+          shouldInvalidateDatabaseCatalog = true;
+
           if (parentId) {
             const previousParent = findView(nextOutline, parentId);
             const remainingChildIds = new Set(childIds);
             const visiblyRemovedChildren =
               previousParent?.children.filter((child) => !remainingChildIds.has(child.view_id)) ?? [];
 
-            shouldInvalidateDatabaseCatalog = Boolean(
-              visiblyRemovedChildren.some((child) => collectDatabaseCatalogViewIds([child]).size > 0)
-            );
+            if (visiblyRemovedChildren.length > 0) {
+              // A visible removed subtree gives us enough metadata to avoid
+              // evicting the database catalog for complete document-only
+              // subtrees. A visible document may still hide lazy descendants,
+              // so preserve the conservative default until every removed
+              // branch is known complete.
+              const containsDatabase = visiblyRemovedChildren.some(
+                (child) => collectDatabaseCatalogViews([child]).size > 0
+              );
+              const removedSubtreesAreComplete = visiblyRemovedChildren.every((child) =>
+                isOutlineSubtreeComplete(child, loadedViewIdsRef.current)
+              );
+
+              shouldInvalidateDatabaseCatalog = containsDatabase || !removedSubtreesAreComplete;
+            }
+
             const hasSemanticTrashEvidence =
               visiblyRemovedChildren.length > 0 ||
               Boolean(
@@ -2244,8 +2382,8 @@ export function useWorkspaceData() {
         // The granular payload carries the parent's remaining children, not the
         // removed ID. Once the visible outline already reflects the removal, a
         // duplicate no-RID frame is indistinguishable from legacy trash/purge
-        // notification traffic. Share the same bounded fallback as no-op full
-        // replacements instead of issuing one request per duplicate frame.
+        // notification traffic. Share the same bounded burst fallback as no-op
+        // full replacements instead of issuing periodic requests.
         scheduleNoopFolderTrashRefresh();
       }
 
@@ -2461,6 +2599,7 @@ export function useWorkspaceData() {
     }
 
     noopFolderTrashRefreshWorkspaceIdRef.current = null;
+    noopFolderTrashRefreshBurstRef.current = null;
     lastTrashRequestAtRef.current = 0;
     trashRequestSeqRef.current += 1;
     lastTrashRefreshRidRef.current = null;
@@ -2520,6 +2659,7 @@ export function useWorkspaceData() {
       }
 
       noopFolderTrashRefreshWorkspaceIdRef.current = null;
+      noopFolderTrashRefreshBurstRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentWorkspaceId]);

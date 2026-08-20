@@ -3,7 +3,6 @@ import {
   DatabaseContainerCatalogEntry,
   getDatabaseContainerEntries,
   getWorkspaceDatabaseCatalog,
-  refreshWorkspaceDatabaseCatalog,
 } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { DatabaseRelations, View } from '@/application/types';
@@ -24,7 +23,6 @@ interface IndexedView {
 interface LoadRelationDatabaseCandidatesOptions {
   workspaceId: string;
   loadViews?: () => Promise<View[] | undefined>;
-  refreshCatalog?: boolean;
 }
 
 export interface RelationDatabaseCandidatesResult {
@@ -117,12 +115,9 @@ export function buildRelationDatabaseCandidates(
 export async function loadRelationDatabaseCandidates({
   workspaceId,
   loadViews,
-  refreshCatalog = false,
 }: LoadRelationDatabaseCandidatesOptions): Promise<RelationDatabaseCandidatesResult> {
   const outlinePromise = (loadViews?.() ?? Promise.resolve(undefined)).catch(() => undefined);
-  const catalogPromise = refreshCatalog
-    ? refreshWorkspaceDatabaseCatalog(workspaceId)
-    : getWorkspaceDatabaseCatalog(workspaceId);
+  const catalogPromise = getWorkspaceDatabaseCatalog(workspaceId);
   const [databases, loadedOutline] = await Promise.all([catalogPromise, outlinePromise]);
 
   return buildRelationDatabaseCandidates(databases, loadedOutline ?? []);

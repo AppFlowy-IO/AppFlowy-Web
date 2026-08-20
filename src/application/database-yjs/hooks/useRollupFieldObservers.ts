@@ -92,7 +92,10 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
         return null;
       }
 
-      const doc = await loadView(viewId);
+      const doc = await loadView(viewId, false, false, {
+        databaseId,
+        databaseMetadataOnly: true,
+      });
 
       if (cancelled) return null;
       relatedDocCache.set(databaseId, doc);

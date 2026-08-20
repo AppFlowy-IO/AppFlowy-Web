@@ -12,7 +12,10 @@ import { ReactComponent as AddIcon } from '@/assets/icons/add_new_page.svg';
 import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import RelationRowItem from '@/components/database/components/cell/relation/RelationRowItem';
-import { getLiveRelationRowIds } from '@/components/database/components/cell/relation/relationRowOrders';
+import {
+  getLiveRelationRowIds,
+  getRelationRowOrders,
+} from '@/components/database/components/cell/relation/relationRowOrders';
 import { useNavigationKey } from '@/components/database/components/cell/relation/useNavigationKey';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
@@ -24,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 
 const recentRelationRowsByView = new Map<string, string[]>();
+const ROW_LOAD_CONCURRENCY = 8;
 
 function rememberRecentRelationRow(viewId: string | undefined, rowId: string) {
   if (!viewId) return;
@@ -54,43 +58,7 @@ function sortByRecentRows(rowIds: string[], viewId: string | undefined) {
   });
 }
 
-/**
- * The row list for the picker.
- *
- * Rows belong to the database, not to one of its views, so any view's `row_orders` names the same
- * set. The selected view is not always one of the registered inner views either — a relation can
- * point at the database's container page — and keying strictly off it left the picker rendering an
- * empty panel with no explanation.
- */
-function getRelationRowOrders(database: YDatabase, viewId: string) {
-  const views = database.get(YjsDatabaseKey.views);
-
-  if (!views) return null;
-
-  const named = views.get(viewId)?.get(YjsDatabaseKey.row_orders);
-
-  if (named) return named;
-
-  // `keys()`, not `Object.keys(views.toJSON())`: this runs on every change to the target database
-  // doc, and `toJSON` would deep-clone every view's row and field orders just to read the ids.
-  for (const id of views.keys()) {
-    const rowOrders = views.get(id)?.get(YjsDatabaseKey.row_orders);
-
-    if (rowOrders) return rowOrders;
-  }
-
-  return null;
-}
-
-function RelationCellMenuContent({
-  relationRowIds,
-  selectedView,
-  relatedDatabaseId,
-  onAddRelationRowId,
-  onRemoveRelationRowId,
-  loading,
-  onClose,
-}: {
+interface RelationCellMenuContentProps {
   loading?: boolean;
   relationRowIds?: string[];
   selectedView?: View;
@@ -98,7 +66,17 @@ function RelationCellMenuContent({
   onRemoveRelationRowId: (rowId: string) => void;
   relatedDatabaseId: string;
   onClose?: () => void;
-}) {
+}
+
+function RelationCellMenuContentForTarget({
+  relationRowIds,
+  selectedView,
+  relatedDatabaseId,
+  onAddRelationRowId,
+  onRemoveRelationRowId,
+  loading,
+  onClose,
+}: RelationCellMenuContentProps) {
   const { t } = useTranslation();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
@@ -154,11 +132,20 @@ function RelationCellMenuContent({
   });
 
   useEffect(() => {
+    const rowDocs = rowDocsRef.current;
+
     // Switching target database starts the wait over — the previous database's rows say nothing
     // about this one.
     setRowIdsLoaded(false);
     setTargetDoc(null);
+    setGuid(null);
+    setPrimaryFieldId(null);
+    setPrimaryField(null);
+    setNoAccess(false);
+    setRowIds([]);
+    setRowContents(new Map());
     targetDocRef.current = null;
+    rowDocs.clear();
 
     let cancelled = false;
 
@@ -192,6 +179,7 @@ function RelationCellMenuContent({
 
     return () => {
       cancelled = true;
+      rowDocs.clear();
     };
   }, [loadView, relatedDatabaseId, selectedViewId]);
 
@@ -312,38 +300,56 @@ function RelationCellMenuContent({
     const cleanups: Array<() => void> = [];
 
     void (async () => {
-      for (const rowId of rowIds) {
-        // If the row document already exists, skip creating it
-        if (!rowDocsRef.current.has(rowId)) {
-          try {
-            const rowDoc = await createRow(getRowKey(guid, rowId));
+      let nextRowIndex = 0;
+      const loadNextRows = async () => {
+        while (!cancelled) {
+          const rowIndex = nextRowIndex;
 
-            rowDocsRef.current.set(rowId, rowDoc);
-          } catch (e) {
-            // Leave the doc missing, but still record the row below. Presence in `rowContents` is
-            // what ends the row's loading placeholder, so bailing out here — or skipping the
-            // write — would leave this row, and with a `continue` every row after it, pulsing
-            // forever. An unreadable row falls back to the "Untitled" wording instead.
-            // Deliberate: a failed row is retried only when `rowIds` or `guid` change (it stays
-            // absent from `rowDocsRef`, so the next run re-attempts createRow) — not on
-            // primary-field ticks, which no longer re-run this effect.
+          nextRowIndex += 1;
+          if (rowIndex >= rowIds.length) return;
+
+          const rowId = rowIds[rowIndex];
+
+          // If the row document already exists, skip creating it
+          if (!rowDocsRef.current.has(rowId)) {
+            try {
+              const rowDoc = await createRow(getRowKey(guid, rowId));
+
+              if (cancelled) return;
+
+              rowDocsRef.current.set(rowId, rowDoc);
+            } catch (e) {
+              // Leave the doc missing, but still record the row below. Presence in `rowContents` is
+              // what ends the row's loading placeholder, so bailing out here — or skipping the
+              // write — would leave this row, and with a `continue` every row after it, pulsing
+              // forever. An unreadable row falls back to the "Untitled" wording instead.
+              // Deliberate: a failed row is retried only when `rowIds` or `guid` change (it stays
+              // absent from `rowDocsRef`, so the next run re-attempts createRow) — not on
+              // primary-field ticks, which no longer re-run this effect.
+            }
+          }
+
+          if (cancelled) return;
+
+          // Store the content in the ref
+          recordContent(rowId);
+
+          // A row doc can resolve before its primary cell has synced; without an observer the row
+          // would stay on the "Untitled" fallback (and stay unmatchable by the search box) until
+          // the picker is closed and reopened.
+          const rowDoc = rowDocsRef.current.get(rowId);
+
+          if (rowDoc) {
+            cleanups.push(
+              subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), () => recordContent(rowId))
+            );
           }
         }
+      };
 
-        if (cancelled) return;
+      const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowIds.length);
 
-        // Store the content in the ref
-        recordContent(rowId);
-
-        // A row doc can resolve before its primary cell has synced; without an observer the row
-        // would stay on the "Untitled" fallback (and stay unmatchable by the search box) until
-        // the picker is closed and reopened.
-        const rowDoc = rowDocsRef.current.get(rowId);
-
-        if (rowDoc) {
-          cleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), () => recordContent(rowId)));
-        }
-      }
+      await Promise.all(Array.from({ length: workerCount }, loadNextRows));
     })();
 
     return () => {
@@ -649,6 +655,15 @@ function RelationCellMenuContent({
       </TooltipProvider>
     </div>
   );
+}
+
+function RelationCellMenuContent(props: RelationCellMenuContentProps) {
+  // All local docs, observers, and row state belong to one immutable target.
+  // Remounting the implementation prevents a passive-effect frame from
+  // combining database A's state with database B's identity.
+  const targetKey = `${props.relatedDatabaseId}:${props.selectedView?.view_id ?? ''}`;
+
+  return <RelationCellMenuContentForTarget key={targetKey} {...props} />;
 }
 
 export default RelationCellMenuContent;

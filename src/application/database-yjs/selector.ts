@@ -2843,7 +2843,10 @@ function useRollupCellValue({
       const viewId = await getViewIdFromDatabaseId?.(relationOption.database_id);
 
       if (cancelled || !viewId) return;
-      const relatedDoc = await loadView(viewId);
+      const relatedDoc = await loadView(viewId, false, false, {
+        databaseId: relationOption.database_id,
+        databaseMetadataOnly: true,
+      });
 
       if (cancelled || !relatedDoc) return;
       const docGuid = relatedDoc.guid;

@@ -1,4 +1,4 @@
-import { getWorkspaceDatabaseCatalog, refreshWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
+import { getWorkspaceDatabaseCatalog } from '@/application/services/domains/view';
 import { WorkspaceDatabaseWithViews } from '@/application/services/services.type';
 import { View, ViewLayout } from '@/application/types';
 
@@ -31,7 +31,6 @@ jest.mock('@/application/services/domains/view', () => ({
       return container && primaryView ? [{ databaseId: database.database_id, container, primaryView }] : [];
     }),
   getWorkspaceDatabaseCatalog: jest.fn(),
-  refreshWorkspaceDatabaseCatalog: jest.fn(),
 }));
 
 function makeView({
@@ -175,15 +174,16 @@ describe('loadRelationDatabaseCandidates', () => {
     );
   });
 
-  it('uses an explicit authoritative refresh for a user-opened picker', async () => {
+  it('routes sequential picker loads through the shared workspace catalog', async () => {
     const database = remoteDatabase('database-1', 'Projects');
 
-    jest.mocked(refreshWorkspaceDatabaseCatalog).mockResolvedValue([database]);
+    jest.mocked(getWorkspaceDatabaseCatalog).mockResolvedValue([database]);
 
-    await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1', refreshCatalog: true });
+    await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1' });
+    await loadRelationDatabaseCandidates({ workspaceId: 'workspace-1' });
 
-    expect(refreshWorkspaceDatabaseCatalog).toHaveBeenCalledWith('workspace-1');
-    expect(getWorkspaceDatabaseCatalog).not.toHaveBeenCalled();
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenNthCalledWith(1, 'workspace-1');
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenNthCalledWith(2, 'workspace-1');
   });
 
   it('does not expose databases without a container', async () => {

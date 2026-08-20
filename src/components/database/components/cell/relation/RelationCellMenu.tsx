@@ -52,7 +52,7 @@ function RelationCellMenu ({
     onUpdateDatabaseId,
     views,
     relatedDatabaseId,
-  } = useRelationData(fieldId, { enabled: hookEnabled, refreshCatalog: hookEnabled });
+  } = useRelationData(fieldId, { enabled: hookEnabled });
 
   const updateRelationCell = useUpdateRelationCell(rowId, fieldId);
 

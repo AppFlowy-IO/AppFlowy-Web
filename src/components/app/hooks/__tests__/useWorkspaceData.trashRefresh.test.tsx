@@ -311,6 +311,182 @@ describe('useWorkspaceData trash refresh', () => {
     expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
   });
 
+  it('invalidates the catalog when database display metadata changes', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      name: 'Before',
+      extra: { database_id: 'database-id', is_database_container: true, is_space: false },
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [databaseView], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('Before');
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify({ ...databaseView, name: 'After' }),
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('keeps the catalog snapshot for database fields that are not part of the catalog response', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      extra: { database_id: 'database-id', is_database_container: true, is_space: false },
+      is_favorite: false,
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [databaseView], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.view_id).toBe(databaseView.view_id);
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 0,
+        folderRid: '2-1',
+        viewJson: JSON.stringify({ ...databaseView, is_favorite: true }),
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+  });
+
+  it('invalidates the catalog when a full outline replacement changes database metadata', async () => {
+    const eventEmitter = new EventEmitter();
+    const databaseView = createView('database-view-id', {
+      layout: ViewLayout.Grid,
+      name: 'Before',
+      extra: { database_id: 'database-id', is_database_container: true, is_space: false },
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [databaseView], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('Before');
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([
+          { op: 'replace', path: '/outline', value: [{ ...databaseView, name: 'After' }] },
+        ]),
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('invalidates the catalog when VIEW_REMOVED targets an unloaded parent', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getDatabaseCatalog).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 2,
+        folderRid: '2-1',
+        viewId: 'unloaded-parent-id',
+        childViewIds: [],
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
+  it('keeps the catalog snapshot when a visible removed subtree contains only documents', async () => {
+    const eventEmitter = new EventEmitter();
+    const documentView = createView('document-view-id');
+    const parent = createView('parent-id', {
+      children: [documentView],
+      has_children: true,
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [parent], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([documentView.view_id]);
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 2,
+        folderRid: '2-1',
+        viewId: parent.view_id,
+        childViewIds: [],
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).not.toHaveBeenCalled();
+  });
+
+  it('invalidates the catalog when a removed visible document still has unloaded descendants', async () => {
+    const eventEmitter = new EventEmitter();
+    const lazyDocumentView = createView('lazy-document-view-id', { has_children: true });
+    const parent = createView('parent-id', {
+      children: [lazyDocumentView],
+      has_children: true,
+    });
+
+    (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: [parent], folderRid: '1-1' });
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual([lazyDocumentView.view_id]);
+    });
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 2,
+        folderRid: '2-1',
+        viewId: parent.view_id,
+        childViewIds: [],
+      });
+    });
+
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledTimes(1);
+    expect(ViewService.invalidateDatabaseCatalog).toHaveBeenCalledWith(workspaceId);
+  });
+
   it('bounds VIEW_ADDED retries after the initial trash request fails', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
@@ -374,7 +550,7 @@ describe('useWorkspaceData trash refresh', () => {
     }
   });
 
-  it('bounds no-RID no-op outline fallback refreshes to one per 30-second cooldown', async () => {
+  it('runs one trailing no-RID no-op outline refresh after the notification stream becomes quiet', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
 
@@ -460,6 +636,93 @@ describe('useWorkspaceData trash refresh', () => {
       unmount();
       eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, outlineLoaded);
       debug.mockRestore();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not turn a continuous no-RID no-op outline stream into periodic trash polling', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-20T00:00:00.000Z'));
+
+    try {
+      const eventEmitter = new EventEmitter();
+      const existingOutline = [createView('space-id', { has_children: false })];
+
+      (ViewService.getOutline as jest.Mock).mockResolvedValue({
+        outline: existingOutline,
+        folderRid: '1-1',
+      });
+      (ViewService.refreshTrash as jest.Mock).mockResolvedValue([]);
+
+      const { unmount } = renderHook(() => useWorkspaceData(), {
+        wrapper: createWrapper(eventEmitter),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+      const noOpReplacement = JSON.stringify([{ op: 'replace', path: '/outline', value: existingOutline }]);
+      const emitNoop = () => {
+        eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+          outlineDiffJson: noOpReplacement,
+        });
+      };
+
+      act(emitNoop);
+
+      await act(async () => {
+        jest.advanceTimersByTime(29_000);
+        emitNoop();
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(1);
+
+      // The burst gets one maximum-latency probe even though it has not gone
+      // quiet, so a real permanent delete near the start is not stale forever.
+      await act(async () => {
+        jest.advanceTimersByTime(1_000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(2);
+
+      for (let index = 0; index < 3; index += 1) {
+        await act(async () => {
+          jest.advanceTimersByTime(20_000);
+          emitNoop();
+          await Promise.resolve();
+        });
+      }
+
+      // More than two cooldown windows have elapsed. The stream receives one
+      // max-latency probe, not periodic probes for as long as noise continues.
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(29_999);
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(3);
+
+      await act(async () => {
+        jest.advanceTimersByTime(90_000);
+        await Promise.resolve();
+      });
+      expect(ViewService.refreshTrash).toHaveBeenCalledTimes(3);
+      unmount();
     } finally {
       jest.useRealTimers();
     }

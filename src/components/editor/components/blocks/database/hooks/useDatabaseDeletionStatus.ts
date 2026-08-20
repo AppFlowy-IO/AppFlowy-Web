@@ -97,6 +97,11 @@ export function useDatabaseDeletionStatus({
       setDeletionStatus(status);
     };
 
+    const settleAsActiveIfUnconfirmed = () => {
+      if (deletionStatusRef.current !== null) return;
+      confirmDeletionStatus('none');
+    };
+
     const checkView = async (refreshView: boolean, freshTrashItems?: View[]) => {
       const requestSeq = ++checkRequestSeq;
 
@@ -119,8 +124,8 @@ export function useDatabaseDeletionStatus({
         }
 
         // Transient failure is not proof that the database was deleted.
-        if (viewResult.status === 'rejected' && trashResult.status === 'rejected') {
-          confirmDeletionStatus('none');
+        if (viewResult.status === 'rejected' && !viewGone && trashResult.status === 'rejected') {
+          settleAsActiveIfUnconfirmed();
           return;
         }
 
@@ -161,6 +166,11 @@ export function useDatabaseDeletionStatus({
           if (notFoundRef.current) {
             setNotFound(false);
           }
+        } else if (viewResult.status === 'rejected' && !viewGone && trashResult.status === 'fulfilled') {
+          // An empty authoritative trash result plus a transient metadata
+          // failure is enough to render an otherwise valid embedded database.
+          // Never overwrite a previously confirmed trash/deletion state.
+          settleAsActiveIfUnconfirmed();
         }
       } catch {
         // Network error — preserve the last confirmed state.

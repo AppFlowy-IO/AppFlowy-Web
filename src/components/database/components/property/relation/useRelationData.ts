@@ -58,11 +58,10 @@ function withLoading(workspaceId: string, loading: boolean) {
 
 export interface UseRelationDataOptions {
   enabled?: boolean;
-  refreshCatalog?: boolean;
 }
 
 export function useRelationData(fieldId: string, options: UseRelationDataOptions = {}) {
-  const { enabled = true, refreshCatalog = false } = options;
+  const { enabled = true } = options;
   const { eventEmitter, getViewIdFromDatabaseId, loadViewMeta, loadViews, workspaceId } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
   const relationOption: RelationTypeOption | null = field ? parseRelationTypeOption(field) : null;
@@ -79,7 +78,10 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     setLoadingState({ workspaceId, loading: enabled && !getCachedResult(workspaceId) });
   }
 
-  const [fallbackRelatedViewId, setFallbackRelatedViewId] = useState<string | null>(null);
+  const [fallbackRelatedView, setFallbackRelatedView] = useState<{
+    databaseId: string;
+    viewId: string | null;
+  } | null>(null);
   const loadViewMetaRef = useRef(loadViewMeta);
   const loadViewsRef = useRef(loadViews);
   const onUpdateTypeOption = useUpdateRelationTypeOption(fieldId);
@@ -109,7 +111,6 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     void loadRelationDatabaseCandidates({
       workspaceId,
       loadViews: loadViewsRef.current,
-      refreshCatalog,
     })
       .then((nextResult) => {
         if (!cancelled) setCachedResult(workspaceId, nextResult);
@@ -122,7 +123,7 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     return () => {
       cancelled = true;
     };
-  }, [enabled, fieldId, refreshCatalog, workspaceId]);
+  }, [enabled, fieldId, workspaceId]);
 
   useEffect(() => {
     if (!enabled || !eventEmitter) return;
@@ -148,22 +149,25 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     };
   }, [enabled, eventEmitter, workspaceId]);
 
+  const fallbackRelatedViewId =
+    fallbackRelatedView?.databaseId === relatedDatabaseId ? fallbackRelatedView.viewId : null;
   const relatedViewId = relatedDatabaseId ? result.relations[relatedDatabaseId] || fallbackRelatedViewId : null;
 
   useEffect(() => {
     if (!enabled || !relatedDatabaseId || result.relations[relatedDatabaseId] || !getViewIdFromDatabaseId) {
-      setFallbackRelatedViewId(null);
+      setFallbackRelatedView(null);
       return;
     }
 
     let cancelled = false;
+    const requestedDatabaseId = relatedDatabaseId;
 
     void getViewIdFromDatabaseId(relatedDatabaseId)
       .then((viewId) => {
-        if (!cancelled) setFallbackRelatedViewId(viewId);
+        if (!cancelled) setFallbackRelatedView({ databaseId: requestedDatabaseId, viewId });
       })
       .catch(() => {
-        if (!cancelled) setFallbackRelatedViewId(null);
+        if (!cancelled) setFallbackRelatedView({ databaseId: requestedDatabaseId, viewId: null });
       });
 
     return () => {
@@ -176,24 +180,32 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
     [relatedDatabaseId, result.candidates]
   );
 
-  // selectedView is writable state, not pure derived state — consumers set it
-  // optimistically when picking a candidate — so it is synced from the
-  // candidate list in an effect rather than derived during render. The lazy
-  // initializer still makes cache-hit mounts render the name immediately.
-  const [selectedView, setSelectedView] = useState<View | undefined>(() => selectedCandidate?.displayView);
+  type DatabaseViewState = { databaseId: string | null; view: View | undefined };
+  const [optimisticSelectedView, setOptimisticSelectedView] = useState<DatabaseViewState>({
+    databaseId: null,
+    view: undefined,
+  });
+  const [loadedSelectedView, setLoadedSelectedView] = useState<DatabaseViewState>({
+    databaseId: null,
+    view: undefined,
+  });
+
+  const setSelectedView = useCallback(
+    (view: View | undefined) => {
+      const candidateDatabaseId = view
+        ? result.candidates.find((candidate) => candidate.displayView.view_id === view.view_id)?.databaseId
+        : undefined;
+
+      setOptimisticSelectedView({ databaseId: candidateDatabaseId ?? relatedDatabaseId, view });
+    },
+    [relatedDatabaseId, result.candidates]
+  );
 
   useEffect(() => {
-    if (selectedCandidate) {
-      setSelectedView(selectedCandidate.displayView);
-      return;
-    }
-
-    if (!relatedViewId || !loadViewMetaRef.current) {
-      setSelectedView(undefined);
-      return;
-    }
+    if (selectedCandidate || !relatedDatabaseId || !relatedViewId || !loadViewMetaRef.current) return;
 
     let cancelled = false;
+    const requestedDatabaseId = relatedDatabaseId;
 
     void (async () => {
       try {
@@ -202,24 +214,38 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
         if (!view || cancelled) return;
 
         if (!view.parent_view_id) {
-          setSelectedView(view);
+          setLoadedSelectedView({ databaseId: requestedDatabaseId, view });
           return;
         }
 
         const parent = await loadViewMetaRef.current?.(view.parent_view_id);
 
         if (!cancelled) {
-          setSelectedView(parent?.name ? { ...view, icon: parent.icon ?? view.icon, name: parent.name } : view);
+          setLoadedSelectedView({
+            databaseId: requestedDatabaseId,
+            view: parent?.name ? { ...view, icon: parent.icon ?? view.icon, name: parent.name } : view,
+          });
         }
       } catch {
-        if (!cancelled) setSelectedView(undefined);
+        if (!cancelled) setLoadedSelectedView({ databaseId: requestedDatabaseId, view: undefined });
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [relatedViewId, selectedCandidate]);
+  }, [relatedDatabaseId, relatedViewId, selectedCandidate]);
+
+  // Keep the view and database identity as one render-time value. Effect-
+  // syncing a bare View allowed one commit where database B was paired with
+  // the selected view left over from database A.
+  const selectedView = selectedCandidate
+    ? selectedCandidate.displayView
+    : optimisticSelectedView.databaseId === relatedDatabaseId
+      ? optimisticSelectedView.view
+      : loadedSelectedView.databaseId === relatedDatabaseId
+        ? loadedSelectedView.view
+        : undefined;
 
   const views = useMemo(() => result.candidates.map((candidate) => candidate.displayView), [result.candidates]);
 

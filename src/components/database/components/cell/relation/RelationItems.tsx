@@ -12,10 +12,25 @@ import {
 import type { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
-import { type YDatabaseField, type YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import {
+  type YDatabase,
+  type YDatabaseField,
+  type YDatabaseView,
+  type YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
+import { getLiveDatabaseRowIds } from '@/components/database/components/cell/relation/relationRowOrders';
 import { cn } from '@/lib/utils';
+
+function isRowStructurallyHydrated(rowDoc: YDoc): boolean {
+  const data = rowDoc.getMap(YjsEditorKey.data_section);
+  const row = data.get(YjsEditorKey.database_row);
+
+  return row instanceof Y.Map && row.get(YjsDatabaseKey.cells) instanceof Y.Map;
+}
 
 function RelationItemValue({
   field,
@@ -35,24 +50,25 @@ function RelationItemValue({
   return <RelationPrimaryValue field={field} fieldId={fieldId} onTextChange={handleTextChange} rowDoc={rowDoc} />;
 }
 
-function RelationItems({
-  style,
-  cell,
-  fieldId,
-  onTextChange,
-  wrap,
-}: {
+interface RelationItemsProps {
   cell: RelationCell;
   fieldId: string;
   onTextChange?: (text: string) => void;
   style?: CSSProperties;
   wrap: boolean;
-}) {
+}
+
+function RelationItemsForDatabase({
+  style,
+  cell,
+  onTextChange,
+  wrap,
+  relatedDatabaseId,
+}: RelationItemsProps & { relatedDatabaseId: string | undefined }) {
   const { t } = useTranslation();
   const context = useDatabaseContextOptional();
   // databasePageId: The main database page ID in the folder structure
   const viewId = context?.databasePageId;
-  const relatedDatabaseId = useDatabaseIdFromField(fieldId);
 
   const createRow = context?.createRow;
   const loadView = context?.loadView;
@@ -66,6 +82,10 @@ function RelationItems({
 
   const [databaseDoc, setDatabaseDoc] = useState<YDoc | null>(null);
   const [relatedField, setRelatedField] = useState<YDatabaseField | undefined>();
+  // null means the target database has not exposed authoritative row_orders
+  // yet. Once present, linked ids absent from this list are stale/deleted and
+  // their empty row docs must not keep the cell in a loading state forever.
+  const [liveRelatedRowIds, setLiveRelatedRowIds] = useState<string[] | null>(null);
   const docGuid = databaseDoc?.guid ?? null;
 
   const [rowIds, setRowIds] = useState<string[]>(() => {
@@ -112,6 +132,7 @@ function RelationItems({
     setDatabaseDoc(null);
     setRelatedFieldId(undefined);
     setRelatedField(undefined);
+    setLiveRelatedRowIds(null);
     setRows(undefined);
     setNoAccess(false);
 
@@ -189,14 +210,23 @@ function RelationItems({
     }
 
     let cancelled = false;
-    const rowObserverCleanups: Array<() => void> = [];
+    const rowObserverCleanups = new Map<string, () => void>();
+    const liveRelatedRowIdSet = liveRelatedRowIds === null ? null : new Set(liveRelatedRowIds);
+    const targetRowIds =
+      liveRelatedRowIdSet === null ? rowIds : rowIds.filter((rowId) => liveRelatedRowIdSet.has(rowId));
+
+    if (targetRowIds.length === 0) {
+      setRows({});
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
     void (async () => {
       // Load all rows in parallel instead of sequentially (async-parallel optimization)
       const rowResults = await Promise.allSettled(
-        rowIds.map(async (rowId) => {
+        targetRowIds.map(async (rowId) => {
           const rowDoc = await createRow(getRowKey(docGuid, rowId));
 
           return [rowId, rowDoc] as const;
@@ -216,33 +246,36 @@ function RelationItems({
       });
 
       const rows: Record<string, YDoc> = Object.fromEntries(rowEntries);
-      const updateLoadingState = () => {
-        if (cancelled) return;
-
-        const hasUnhydratedRow = rowEntries.some(([, rowDoc]) => {
-          const data = rowDoc.getMap(YjsEditorKey.data_section);
-          const row = data.get(YjsEditorKey.database_row);
-
-          return !(row instanceof Y.Map) || !(row.get(YjsDatabaseKey.cells) instanceof Y.Map);
-        });
-
-        setLoading(hasUnhydratedRow);
-      };
+      const pendingRowIds = new Set<string>();
 
       setRows(rows);
-      rowEntries.forEach(([, rowDoc]) => {
-        rowObserverCleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), updateLoadingState));
+      rowEntries.forEach(([rowId, rowDoc]) => {
+        if (isRowStructurallyHydrated(rowDoc)) return;
+
+        pendingRowIds.add(rowId);
+        const markReady = () => {
+          if (cancelled || !isRowStructurallyHydrated(rowDoc)) return;
+
+          pendingRowIds.delete(rowId);
+          rowObserverCleanups.get(rowId)?.();
+          rowObserverCleanups.delete(rowId);
+          if (pendingRowIds.size === 0) setLoading(false);
+        };
+
+        rowObserverCleanups.set(rowId, subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), markReady));
+        // Subscribe before reading so hydration cannot land between the final
+        // readiness check and observer installation.
+        markReady();
       });
-      // Subscribe before reading so hydration cannot land between the final
-      // readiness check and observer installation.
-      updateLoadingState();
+      setLoading(pendingRowIds.size > 0);
     })();
 
     return () => {
       cancelled = true;
       rowObserverCleanups.forEach((cleanup) => cleanup());
+      rowObserverCleanups.clear();
     };
-  }, [createRow, docGuid, hasRelatedRows, relatedFieldId, relatedViewId, rowIds]);
+  }, [createRow, docGuid, hasRelatedRows, liveRelatedRowIds, relatedFieldId, relatedViewId, rowIds]);
 
   useEffect(() => {
     handleUpdateRowIds();
@@ -259,31 +292,143 @@ function RelationItems({
   useEffect(() => {
     if (!databaseDoc) return;
     const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
+    let observedDatabase: YDatabase | undefined;
+    let cleanupFields: (() => void) | undefined;
+    let membershipCleanups: Array<() => void> = [];
 
-    const observerEvent = () => {
-      const database = sharedRoot.get(YjsEditorKey.database);
-
-      if (!database) {
+    const updatePrimaryField = () => {
+      if (!observedDatabase) {
         setRelatedFieldId(undefined);
         setRelatedField(undefined);
+        return;
+      }
+
+      const primaryFieldId = getPrimaryFieldId(observedDatabase);
+
+      setRelatedFieldId(primaryFieldId);
+      setRelatedField(primaryFieldId ? observedDatabase.get(YjsDatabaseKey.fields)?.get(primaryFieldId) : undefined);
+      setNoAccess(!primaryFieldId);
+      if (!primaryFieldId) setLoading(false);
+    };
+
+    const updateMembership = () => {
+      const databaseRowIds = observedDatabase ? getLiveDatabaseRowIds(observedDatabase) : null;
+      const databaseRowIdSet = databaseRowIds === null ? null : new Set(databaseRowIds);
+      const nextLiveRowIds =
+        databaseRowIdSet === null ? null : rowIds.filter((rowId) => databaseRowIdSet.has(rowId)).sort();
+
+      setLiveRelatedRowIds((current) => {
+        if (current === nextLiveRowIds) return current;
+        if (current === null || nextLiveRowIds === null) return nextLiveRowIds;
+        return current.length === nextLiveRowIds.length && current.every((id, index) => id === nextLiveRowIds[index])
+          ? current
+          : nextLiveRowIds;
+      });
+    };
+
+    const detachMembership = () => {
+      membershipCleanups.forEach((cleanup) => cleanup());
+      membershipCleanups = [];
+    };
+
+    const attachMembership = () => {
+      detachMembership();
+
+      const database = observedDatabase;
+      const views = database?.get(YjsDatabaseKey.views);
+      const metas = database?.get(YjsDatabaseKey.metas);
+
+      if (metas) {
+        const handleMetasChange = (event: Y.YMapEvent<unknown>) => {
+          if (event.keysChanged.has(YjsDatabaseKey.iid)) updateMembership();
+        };
+
+        metas.observe(handleMetasChange);
+        membershipCleanups.push(() => metas.unobserve(handleMetasChange));
+      }
+
+      if (views) {
+        const handleViewsChange = () => attachMembership();
+
+        views.observe(handleViewsChange);
+        membershipCleanups.push(() => views.unobserve(handleViewsChange));
+
+        views.forEach((view: YDatabaseView) => {
+          const handleViewChange = (event: Y.YMapEvent<unknown>) => {
+            if (event.keysChanged.has(YjsDatabaseKey.row_orders) || event.keysChanged.has(YjsDatabaseKey.is_inline)) {
+              attachMembership();
+            }
+          };
+
+          const rowOrders = view.get(YjsDatabaseKey.row_orders);
+
+          view.observe(handleViewChange);
+          membershipCleanups.push(() => view.unobserve(handleViewChange));
+
+          if (rowOrders) {
+            const handleRowOrdersChange = () => updateMembership();
+
+            rowOrders.observe(handleRowOrdersChange);
+            membershipCleanups.push(() => rowOrders.unobserve(handleRowOrdersChange));
+          }
+        });
+      }
+
+      updateMembership();
+    };
+
+    const attachFields = () => {
+      cleanupFields?.();
+      cleanupFields = undefined;
+
+      const fields = observedDatabase?.get(YjsDatabaseKey.fields);
+
+      if (fields) cleanupFields = subscribeSharedYjsDeep(fields, updatePrimaryField);
+      updatePrimaryField();
+    };
+
+    const handleDatabaseChange = (event: Y.YMapEvent<unknown>) => {
+      if (event.keysChanged.has(YjsDatabaseKey.fields)) attachFields();
+      if (event.keysChanged.has(YjsDatabaseKey.views) || event.keysChanged.has(YjsDatabaseKey.metas)) {
+        attachMembership();
+      }
+    };
+
+    const attachDatabase = () => {
+      observedDatabase?.unobserve(handleDatabaseChange);
+      cleanupFields?.();
+      cleanupFields = undefined;
+      detachMembership();
+
+      observedDatabase = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+
+      if (!observedDatabase) {
+        setRelatedFieldId(undefined);
+        setRelatedField(undefined);
+        setLiveRelatedRowIds(null);
         setLoading(hasRelatedRows);
         return;
       }
 
-      const fieldId = getPrimaryFieldId(database);
-
-      setRelatedFieldId(fieldId);
-      setRelatedField(fieldId ? database?.get(YjsDatabaseKey.fields)?.get(fieldId) : undefined);
-      setNoAccess(!fieldId);
-      if (!fieldId) setLoading(false);
+      observedDatabase.observe(handleDatabaseChange);
+      attachFields();
+      attachMembership();
     };
 
-    observerEvent();
+    const handleSharedRootChange = (event: Y.YMapEvent<unknown>) => {
+      if (event.keysChanged.has(YjsEditorKey.database)) attachDatabase();
+    };
 
-    // The primary field can change type without replacing the database map.
-    // Share the deep observer across rendered relation cells for this database.
-    return subscribeSharedYjsDeep(sharedRoot, observerEvent);
-  }, [databaseDoc, hasRelatedRows]);
+    sharedRoot.observe(handleSharedRootChange);
+    attachDatabase();
+
+    return () => {
+      sharedRoot.unobserve(handleSharedRootChange);
+      observedDatabase?.unobserve(handleDatabaseChange);
+      cleanupFields?.();
+      detachMembership();
+    };
+  }, [databaseDoc, hasRelatedRows, rowIds]);
 
   return (
     <div
@@ -348,6 +493,15 @@ function RelationItems({
       )}
     </div>
   );
+}
+
+function RelationItems(props: RelationItemsProps) {
+  const relatedDatabaseId = useDatabaseIdFromField(props.fieldId);
+
+  // Every local doc and async row result belongs to one immutable relation
+  // target. A keyed implementation prevents a pending database-A load from
+  // committing rows after the field has switched to database B.
+  return <RelationItemsForDatabase key={relatedDatabaseId ?? ''} {...props} relatedDatabaseId={relatedDatabaseId} />;
 }
 
 export default RelationItems;

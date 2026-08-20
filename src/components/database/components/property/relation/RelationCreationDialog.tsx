@@ -227,7 +227,6 @@ export function RelationCreationDialog({
         const result = await loadRelationDatabaseCandidates({
           workspaceId,
           loadViews: loadViewsFn,
-          refreshCatalog: true,
         });
 
         if (cancelled) return;

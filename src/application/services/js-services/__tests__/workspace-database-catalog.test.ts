@@ -269,6 +269,63 @@ describe('workspace database catalog', () => {
     expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
   });
 
+  it('does not return a view mapping invalidated while its IndexedDB read is pending', async () => {
+    const cachedRead = createDeferred<{ database_id: string } | undefined>();
+
+    catalogTable.get.mockReturnValue(cachedRead.promise);
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
+
+    const lookup = getDatabaseIdFromWorkspaceCatalog('workspace-1', 'grid-1');
+
+    await Promise.resolve();
+    expect(catalogTable.get).toHaveBeenCalledTimes(1);
+
+    invalidateWorkspaceDatabaseCatalog('workspace-1');
+    cachedRead.resolve({ database_id: 'stale-database' });
+
+    await expect(lookup).resolves.toBeNull();
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not return a database mapping invalidated while its IndexedDB read is pending', async () => {
+    const cachedRead = createDeferred<Array<{ view_order: number; view: (typeof database.views)[number] }>>();
+
+    readDatabaseRecords.mockReturnValue(cachedRead.promise);
+    jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
+
+    const lookup = getViewIdFromWorkspaceCatalog('workspace-1', 'database-1');
+
+    await Promise.resolve();
+    expect(readDatabaseRecords).toHaveBeenCalledTimes(1);
+
+    invalidateWorkspaceDatabaseCatalog('workspace-1');
+    cachedRead.resolve([
+      { view_order: 0, view: database.views[0] },
+      { view_order: 1, view: database.views[1] },
+    ]);
+
+    await expect(lookup).resolves.toBeNull();
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+  });
+
+  it('terminates an IndexedDB lookup when the session changes during the read', async () => {
+    const cachedRead = createDeferred<{ database_id: string } | undefined>();
+
+    catalogTable.get.mockReturnValue(cachedRead.promise);
+
+    const lookup = getDatabaseIdFromWorkspaceCatalog('workspace-1', 'grid-1');
+
+    await Promise.resolve();
+    expect(catalogTable.get).toHaveBeenCalledTimes(1);
+
+    emit(EventType.SESSION_INVALID);
+    setCurrentUser(`${currentTestUserId}-other`);
+    cachedRead.resolve({ database_id: 'stale-database' });
+
+    await expect(lookup).rejects.toMatchObject({ name: 'AbortError' });
+    expect(listWorkspaceDatabases).not.toHaveBeenCalled();
+  });
+
   it('isolates successful lookup responses by user and workspace', async () => {
     jest.mocked(listWorkspaceDatabases).mockResolvedValue([]);
 
@@ -288,6 +345,25 @@ describe('workspace database catalog', () => {
     await expect(getWorkspaceDatabaseCatalog('workspace-1')).resolves.toEqual([]);
 
     expect(listWorkspaceDatabases).toHaveBeenCalledTimes(2);
+  });
+
+  it('terminates an in-flight caller on account switch without requesting under the new session', async () => {
+    const staleRequest = createDeferred<(typeof database)[]>();
+
+    jest.mocked(listWorkspaceDatabases).mockReturnValue(staleRequest.promise);
+
+    const oldCaller = getWorkspaceDatabaseCatalog('workspace-1');
+
+    await Promise.resolve();
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+
+    emit(EventType.SESSION_INVALID);
+    setCurrentUser(`${currentTestUserId}-other`);
+    staleRequest.resolve([database]);
+
+    await expect(oldCaller).rejects.toMatchObject({ name: 'AbortError' });
+    expect(listWorkspaceDatabases).toHaveBeenCalledTimes(1);
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it('does not cache a failed catalog refresh', async () => {

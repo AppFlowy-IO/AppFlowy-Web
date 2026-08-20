@@ -46,6 +46,130 @@ describe('useDatabaseDeletionStatus', () => {
     jest.clearAllMocks();
   });
 
+  it('settles an unconfirmed database as active when the initial view probe fails transiently', async () => {
+    const eventEmitter = new EventEmitter();
+    const setNotFound = jest.fn();
+
+    (ViewService.get as jest.Mock).mockRejectedValue({
+      code: 500,
+      httpStatus: 500,
+      message: 'Internal server error',
+    });
+    (ViewService.getTrashCached as jest.Mock).mockResolvedValue([]);
+
+    const { result } = renderHook(() =>
+      useDatabaseDeletionStatus({
+        workspaceId: 'workspace-id',
+        viewId: 'database-view',
+        databaseId: 'database-id',
+        hasDatabase: true,
+        eventEmitter,
+        notFound: false,
+        setNotFound,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current).toBe('none');
+    });
+
+    expect(setNotFound).not.toHaveBeenCalled();
+  });
+
+  it('confirms deletion when the view is gone even if the trash lookup also fails', async () => {
+    const eventEmitter = new EventEmitter();
+    const setNotFound = jest.fn();
+
+    (ViewService.get as jest.Mock).mockRejectedValue({
+      code: -2,
+      httpStatus: 404,
+      message: 'Record not found',
+    });
+    (ViewService.getTrashCached as jest.Mock).mockRejectedValue(new Error('trash unavailable'));
+
+    const { result } = renderHook(() =>
+      useDatabaseDeletionStatus({
+        workspaceId: 'workspace-id',
+        viewId: 'database-view',
+        databaseId: 'database-id',
+        hasDatabase: true,
+        eventEmitter,
+        notFound: false,
+        setNotFound,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current).toBe('deleted');
+    });
+    expect(setNotFound).toHaveBeenCalledWith(true);
+  });
+
+  it.each([
+    {
+      confirmedStatus: 'inTrash' as const,
+      initialViewResult: createView('database-view', { parent_view_id: 'database-container' }),
+      initialTrashItems: [
+        createView('database-container', {
+          extra: {
+            is_database_container: true,
+            database_id: 'database-id',
+          },
+        }),
+      ],
+    },
+    {
+      confirmedStatus: 'deleted' as const,
+      initialViewResult: { code: -2, httpStatus: 404, message: 'Record not found' },
+      initialTrashItems: [],
+    },
+  ])('preserves a confirmed $confirmedStatus state after a transient refresh failure', async (scenario) => {
+    const eventEmitter = new EventEmitter();
+    const setNotFound = jest.fn();
+
+    if (scenario.confirmedStatus === 'deleted') {
+      (ViewService.get as jest.Mock).mockRejectedValue(scenario.initialViewResult);
+    } else {
+      (ViewService.get as jest.Mock).mockResolvedValue(scenario.initialViewResult);
+    }
+
+    (ViewService.getTrashCached as jest.Mock).mockResolvedValue(scenario.initialTrashItems);
+    (ViewService.refresh as jest.Mock).mockRejectedValue({
+      code: 500,
+      httpStatus: 500,
+      message: 'Internal server error',
+    });
+
+    const { result } = renderHook(() =>
+      useDatabaseDeletionStatus({
+        workspaceId: 'workspace-id',
+        viewId: 'database-view',
+        databaseId: 'database-id',
+        hasDatabase: true,
+        eventEmitter,
+        notFound: false,
+        setNotFound,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current).toBe(scenario.confirmedStatus);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.TRASH_UPDATED, {
+        workspaceId: 'workspace-id',
+        trashItems: [],
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(ViewService.refresh).toHaveBeenCalledTimes(1);
+    });
+    expect(result.current).toBe(scenario.confirmedStatus);
+  });
+
   it('ignores generic outline loads, consumes TRASH_UPDATED without fetching trash, and rejects a stale mount result', async () => {
     const eventEmitter = new EventEmitter();
     const setNotFound = jest.fn();

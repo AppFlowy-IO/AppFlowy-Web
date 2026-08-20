@@ -35,6 +35,14 @@ function getSuccessfulRefresh(userId: string | undefined, workspaceId: string) {
   return successfulRefreshes.get(requestKey(userId, workspaceId));
 }
 
+function sessionChangedError(): DOMException {
+  return new DOMException('The workspace database catalog request was superseded by a session change', 'AbortError');
+}
+
+function isSameSession(requestSessionGeneration: number, userId: string | undefined): boolean {
+  return sessionGeneration === requestSessionGeneration && currentUserId() === userId;
+}
+
 /** Mark the shared snapshot stale after a remote or local catalog mutation. */
 export function invalidateWorkspaceDatabaseCatalog(workspaceId: string): void {
   const key = requestKey(currentUserId(), workspaceId);
@@ -192,25 +200,34 @@ export async function refreshWorkspaceDatabaseCatalog(workspaceId: string): Prom
   if (pending) return pending;
 
   const request = (async () => {
+    const isSessionCurrent = () => isSameSession(requestSessionGeneration, userId);
     const isCurrent = () =>
-      sessionGeneration === requestSessionGeneration &&
-      (catalogGenerations.get(key) ?? 0) === requestCatalogGeneration;
+      isSessionCurrent() && (catalogGenerations.get(key) ?? 0) === requestCatalogGeneration;
+    const useReplacementCatalog = () => {
+      // Catalog invalidations within the same signed-in session may join the
+      // replacement request. A session transition belongs to a different
+      // principal, so the old caller must terminate instead of starting or
+      // receiving a request under the new session.
+      if (!isSessionCurrent()) throw sessionChangedError();
+      return getWorkspaceDatabaseCatalog(workspaceId);
+    };
+
     let databases: WorkspaceDatabaseWithViews[];
 
     try {
       databases = await listWorkspaceDatabases(workspaceId);
     } catch (error) {
-      if (!isCurrent()) return getWorkspaceDatabaseCatalog(workspaceId);
+      if (!isCurrent()) return useReplacementCatalog();
       throw error;
     }
 
-    if (!isCurrent()) return getWorkspaceDatabaseCatalog(workspaceId);
+    if (!isCurrent()) return useReplacementCatalog();
 
     if (userId) {
       try {
         await replaceCachedCatalog(userId, workspaceId, databases, isCurrent);
       } catch (error) {
-        if (!isCurrent()) return getWorkspaceDatabaseCatalog(workspaceId);
+        if (!isCurrent()) return useReplacementCatalog();
         // IndexedDB is an optimization. Browser storage failures must not hide
         // a successful authoritative response from the caller.
         Log.warn('[WorkspaceDatabaseCatalog] failed to persist the server catalog', {
@@ -223,7 +240,7 @@ export async function refreshWorkspaceDatabaseCatalog(workspaceId: string): Prom
 
     // Persistence is asynchronous; re-check after it settles so an
     // invalidation that arrived mid-transaction cannot publish the old list.
-    if (!isCurrent()) return getWorkspaceDatabaseCatalog(workspaceId);
+    if (!isCurrent()) return useReplacementCatalog();
 
     // Keep the complete successful response so every workspace consumer shares
     // positive and negative lookup results. IndexedDB stores positive view
@@ -261,6 +278,8 @@ export async function getWorkspaceDatabaseCatalog(workspaceId: string): Promise<
 export async function getDatabaseIdFromWorkspaceCatalog(workspaceId: string, viewId: string): Promise<string | null> {
   const userId = currentUserId();
   const key = requestKey(userId, workspaceId);
+  const requestSessionGeneration = sessionGeneration;
+  const requestCatalogGeneration = catalogGenerations.get(key) ?? 0;
   const catalogSnapshot = getSuccessfulRefresh(userId, workspaceId);
 
   if (catalogSnapshot) {
@@ -271,9 +290,16 @@ export async function getDatabaseIdFromWorkspaceCatalog(workspaceId: string, vie
 
   const cached = invalidatedCatalogs.has(key) ? undefined : await cachedViewRecord(userId, workspaceId, viewId);
 
-  if (cached) return cached.database_id;
+  if (!isSameSession(requestSessionGeneration, userId)) throw sessionChangedError();
+
+  const cachedMappingIsCurrent =
+    !invalidatedCatalogs.has(key) && (catalogGenerations.get(key) ?? 0) === requestCatalogGeneration;
+
+  if (cached && cachedMappingIsCurrent) return cached.database_id;
 
   const databases = await getWorkspaceDatabaseCatalog(workspaceId);
+
+  if (!isSameSession(requestSessionGeneration, userId)) throw sessionChangedError();
 
   return databases.find((database) => database.views.some((view) => view.view_id === viewId))?.database_id ?? null;
 }
@@ -282,6 +308,8 @@ export async function getDatabaseIdFromWorkspaceCatalog(workspaceId: string, vie
 export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databaseId: string): Promise<string | null> {
   const userId = currentUserId();
   const key = requestKey(userId, workspaceId);
+  const requestSessionGeneration = sessionGeneration;
+  const requestCatalogGeneration = catalogGenerations.get(key) ?? 0;
   const catalogSnapshot = getSuccessfulRefresh(userId, workspaceId);
 
   if (catalogSnapshot) {
@@ -292,7 +320,12 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
 
   const cached = invalidatedCatalogs.has(key) ? [] : await cachedDatabaseRecords(userId, workspaceId, databaseId);
 
-  if (cached.length > 0) {
+  if (!isSameSession(requestSessionGeneration, userId)) throw sessionChangedError();
+
+  const cachedMappingIsCurrent =
+    !invalidatedCatalogs.has(key) && (catalogGenerations.get(key) ?? 0) === requestCatalogGeneration;
+
+  if (cached.length > 0 && cachedMappingIsCurrent) {
     const cachedDatabase: WorkspaceDatabaseWithViews = {
       database_id: databaseId,
       views: cached.sort((left, right) => left.view_order - right.view_order).map((record) => record.view),
@@ -303,6 +336,8 @@ export async function getViewIdFromWorkspaceCatalog(workspaceId: string, databas
   }
 
   const databases = await getWorkspaceDatabaseCatalog(workspaceId);
+
+  if (!isSameSession(requestSessionGeneration, userId)) throw sessionChangedError();
   const database = databases.find((entry) => entry.database_id === databaseId);
 
   return database ? getDatabasePrimaryView(database)?.view_id ?? null : null;
