@@ -96,11 +96,35 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
     await fileHandler.cleanup(retryLocalUrl).catch(() => undefined);
   }, []);
 
+  const getMatchingPendingData = useCallback(
+    (targetBlockId: string, pendingUploadId?: string) => {
+      if (!pendingUploadId) return;
+
+      try {
+        const entry = findSlateEntryByBlockId(editor, targetBlockId);
+        const currentData = entry ? (entry[0] as { data?: ImageBlockData }).data ?? undefined : undefined;
+
+        if (!currentData || currentData.url || currentData.pending_upload_id !== pendingUploadId) return;
+
+        return currentData;
+      } catch {
+        return;
+      }
+    },
+    [editor]
+  );
+
   const uploadIntoImageBlock = useCallback(
     async (targetBlockId: string, file: File, pendingData: ImageBlockData) => {
       const url = await uploadFileRemote(file);
 
       if (!url) {
+        if (getMatchingPendingData(targetBlockId, pendingData.pending_upload_id)) {
+          CustomEditor.setBlockData(editor, targetBlockId, {
+            pending_upload_id: '',
+          } as ImageBlockData);
+        }
+
         return;
       }
 
@@ -109,19 +133,7 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
       // Popover closes before the upload settles, so the user may have
       // deleted/edited/replaced the block. Skip the write if the placeholder
       // we created is no longer there.
-      let currentData: ImageBlockData | undefined;
-
-      try {
-        const entry = findSlateEntryByBlockId(editor, targetBlockId);
-
-        currentData = entry ? (entry[0] as { data?: ImageBlockData }).data ?? undefined : undefined;
-      } catch {
-        return;
-      }
-
-      if (!currentData) return;
-      if (currentData.url) return;
-      if (!pendingData.pending_upload_id || currentData.pending_upload_id !== pendingData.pending_upload_id) return;
+      if (!getMatchingPendingData(targetBlockId, pendingData.pending_upload_id)) return;
 
       CustomEditor.setBlockData(editor, targetBlockId, {
         url,
@@ -130,7 +142,7 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
         pending_upload_id: '',
       } as ImageBlockData);
     },
-    [cleanupLocalFile, editor, uploadFileRemote]
+    [cleanupLocalFile, editor, getMatchingPendingData, uploadFileRemote]
   );
 
   const handleChangeUploadFiles = useCallback(
