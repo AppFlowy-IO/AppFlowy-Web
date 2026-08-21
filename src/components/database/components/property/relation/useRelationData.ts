@@ -573,6 +573,43 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
   }, [fallbackSelectedView]);
 
   useEffect(() => {
+    if (enabled) return;
+
+    // RelationCellMenu disables this hook while it is closed, which also
+    // removes its access-event subscriber. Retire the last fallback so an
+    // unobserved revoke cannot expose that metadata when the menu reopens and
+    // its fresh lookup fails.
+    fallbackAccessGenerationRef.current += 1;
+    authoritativeFallbackRef.current = null;
+    fallbackAccessRef.current = {
+      databaseId: relatedDatabaseId,
+      allowOutlineRestore: false,
+      suspension: null,
+    };
+    setFallbackAccess((access) =>
+      access.databaseId === relatedDatabaseId && access.suspension === null
+        ? access
+        : { databaseId: relatedDatabaseId, suspension: null }
+    );
+    const retiredFallback: DatabaseViewState = {
+      databaseId: null,
+      parentViewId: null,
+      viewId: null,
+      view: undefined,
+    };
+
+    fallbackSelectedViewRef.current = retiredFallback;
+    setFallbackSelectedView((fallback) =>
+      fallback.databaseId === null &&
+      fallback.parentViewId === null &&
+      fallback.viewId === null &&
+      fallback.view === undefined
+        ? fallback
+        : retiredFallback
+    );
+  }, [enabled, relatedDatabaseId, workspaceId]);
+
+  useEffect(() => {
     const access = fallbackAccessRef.current;
 
     if (access.databaseId === relatedDatabaseId) return;
@@ -629,7 +666,6 @@ export function useRelationData(fieldId: string, options: UseRelationDataOptions
         // The accepted catalog snapshot changed while this request was in
         // flight. Retry against that snapshot; concurrent headers join the
         // same replacement request through getCandidateRequest.
-        if (!getCachedWorkspaceDatabaseCatalog(workspaceId)) return;
         request = getCandidateRequest(workspaceId);
       }
     })()

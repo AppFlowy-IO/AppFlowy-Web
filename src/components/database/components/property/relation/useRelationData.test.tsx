@@ -567,6 +567,65 @@ describe('useRelationData', () => {
     expect(getDatabaseContainerEntries).toHaveBeenCalledTimes(2);
   });
 
+  it('starts a replacement request when invalidation leaves no catalog snapshot while the outline is pending', async () => {
+    const initialCatalog = deferred<WorkspaceDatabaseWithViews[]>();
+    const initialOutline = deferred<View[]>();
+    const replacementCatalog = deferred<WorkspaceDatabaseWithViews[]>();
+    const replacement = workspaceCatalog.map((database) => ({
+      ...database,
+      views: database.views.map((view) =>
+        view.is_container ? { ...view, name: 'Replacement Projects' } : view
+      ),
+    }));
+    const loadViews = jest.fn<Promise<View[]>, []>().mockReturnValueOnce(initialOutline.promise).mockResolvedValue([]);
+
+    jest.mocked(getCachedWorkspaceDatabaseCatalog).mockReturnValue(undefined);
+    jest
+      .mocked(getWorkspaceDatabaseCatalog)
+      .mockReturnValueOnce(initialCatalog.promise)
+      .mockReturnValueOnce(replacementCatalog.promise);
+    jest.mocked(useDatabaseContext).mockReturnValue({
+      workspaceId: 'workspace-1',
+      loadViews,
+    } as never);
+
+    const { result } = renderHook(() => useRelationData('field-1'));
+
+    await waitFor(() => {
+      expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+      expect(loadViews).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      publishMockWorkspaceCatalog(workspaceCatalog);
+      initialCatalog.resolve(workspaceCatalog);
+      await initialCatalog.promise;
+    });
+
+    act(() => {
+      publishMockWorkspaceCatalog(undefined);
+    });
+
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      initialOutline.resolve([]);
+      await initialOutline.promise;
+    });
+
+    await waitFor(() => expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(2));
+    expect(result.current.loading).toBe(true);
+
+    await act(async () => {
+      publishMockWorkspaceCatalog(replacement);
+      replacementCatalog.resolve(replacement);
+      await replacementCatalog.promise;
+    });
+
+    await waitFor(() => expect(result.current.selectedView?.name).toBe('Replacement Projects'));
+    expect(getWorkspaceDatabaseCatalog).toHaveBeenCalledTimes(2);
+  });
+
   it('checks the current outline once when cached headers remount after a listener gap', async () => {
     const eventEmitter = new EventEmitter();
     const initialOutline: View[] = [
@@ -1159,6 +1218,120 @@ describe('useRelationData', () => {
     unmount();
     expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(0);
     expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(0);
+  });
+
+  it('retires fallback metadata while disabled before reopening after an unobserved revoke', async () => {
+    const eventEmitter = new EventEmitter();
+    const primaryView: View = {
+      view_id: 'grid-1',
+      name: 'Tasks',
+      icon: null,
+      layout: ViewLayout.Grid,
+      children: [],
+      extra: {
+        database_id: 'database-1',
+        is_database_container: false,
+        is_space: false,
+      },
+      is_published: false,
+      is_private: false,
+    };
+    let revoked = false;
+    const loadViewMeta = jest.fn(async () => {
+      if (revoked) throw new Error('Access revoked while the relation menu was closed');
+      return primaryView;
+    });
+
+    mockWorkspaceCatalog([]);
+    jest.mocked(useDatabaseContext).mockReturnValue({
+      workspaceId: 'workspace-1',
+      loadViews: jest.fn().mockResolvedValue([]),
+      getViewIdFromDatabaseId: jest.fn().mockResolvedValue(primaryView.view_id),
+      loadViewMeta,
+      eventEmitter,
+    } as never);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useRelationData('field-1', { enabled }),
+      { initialProps: { enabled: true } }
+    );
+
+    await waitFor(() => expect(result.current.selectedView?.name).toBe('Tasks'));
+
+    rerender({ enabled: false });
+
+    await waitFor(() => {
+      expect(result.current.selectedView).toBeUndefined();
+      expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_REVOKED)).toBe(0);
+    });
+
+    revoked = true;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: primaryView.view_id });
+    });
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(loadViewMeta).toHaveBeenCalledTimes(2));
+    expect(result.current.selectedView).toBeUndefined();
+  });
+
+  it('revalidates after a suspended fallback misses its restore event while disabled', async () => {
+    const eventEmitter = new EventEmitter();
+    const primaryView: View = {
+      view_id: 'grid-1',
+      name: 'Tasks',
+      icon: null,
+      layout: ViewLayout.Grid,
+      children: [],
+      extra: {
+        database_id: 'database-1',
+        is_database_container: false,
+        is_space: false,
+      },
+      is_published: false,
+      is_private: false,
+    };
+    let revoked = false;
+    const loadViewMeta = jest.fn(async () => {
+      if (revoked) throw new Error('Access revoked');
+      return primaryView;
+    });
+
+    mockWorkspaceCatalog([]);
+    jest.mocked(useDatabaseContext).mockReturnValue({
+      workspaceId: 'workspace-1',
+      loadViews: jest.fn().mockResolvedValue([]),
+      getViewIdFromDatabaseId: jest.fn().mockResolvedValue(primaryView.view_id),
+      loadViewMeta,
+      eventEmitter,
+    } as never);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useRelationData('field-1', { enabled }),
+      { initialProps: { enabled: true } }
+    );
+
+    await waitFor(() => expect(result.current.selectedView?.name).toBe('Tasks'));
+
+    revoked = true;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_REVOKED, { viewId: primaryView.view_id });
+    });
+    expect(result.current.selectedView).toBeUndefined();
+
+    rerender({ enabled: false });
+    expect(eventEmitter.listenerCount(APP_EVENTS.VIEW_ACCESS_RESTORED)).toBe(0);
+
+    revoked = false;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: primaryView.view_id });
+    });
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.selectedView?.name).toBe('Tasks'));
+    expect(loadViewMeta).toHaveBeenCalledTimes(2);
   });
 
   it('never commits a selected view from the previous related database', async () => {
