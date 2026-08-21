@@ -150,6 +150,11 @@ export const Document = (props: DocumentProps) => {
     [handleSyncCursor, onEditorConnected]
   );
 
+  const mentionContext = useMemo(() => ({
+    ...props.mentionContext,
+    view_id: props.mentionContext?.view_id ?? viewMeta.viewId,
+  }), [props.mentionContext, viewMeta.viewId]);
+
   if (!document || !viewMeta.viewId) return null;
 
   return (
@@ -178,6 +183,7 @@ export const Document = (props: DocumentProps) => {
             awareness={awareness}
             databaseRelations={viewMeta.database_relations}
             {...props}
+            mentionContext={mentionContext}
           />
         </div>
       </Suspense>

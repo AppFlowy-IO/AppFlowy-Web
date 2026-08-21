@@ -1,11 +1,7 @@
-import { Page, expect } from '@playwright/test';
-import {
-  AuthSelectors,
-  SpaceSelectors,
-  SidebarSelectors,
-} from './selectors';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
+
+import { AuthSelectors, SpaceSelectors, SidebarSelectors } from './selectors';
 import { createConfirmedPasswordUser, signInTestUser } from './auth-utils';
-import type { APIRequestContext } from '@playwright/test';
 
 /**
  * Authentication flow helpers for Playwright E2E tests
@@ -78,10 +74,24 @@ async function waitForAppReady(page: Page, waitMs: number): Promise<void> {
     const expanded = firstSpace.locator('[data-testid="space-expanded"]');
     const isExpanded = await expanded.getAttribute('data-expanded').catch(() => null);
     if (isExpanded !== 'true') {
-      await firstSpace.getByTestId('space-name').first().click({ force: true });
+      // The sidebar can still be finishing its entrance transition after the
+      // app header appears. Dispatching the same DOM click avoids an
+      // actionability failure when that visible row is briefly translated just
+      // outside the viewport.
+      await firstSpace
+        .getByTestId('space-name')
+        .first()
+        .evaluate((element: HTMLElement) => element.click());
       await page.waitForTimeout(1000);
     }
   }
+}
+
+async function enableTestMode(page: Page): Promise<void> {
+  // Context-level init scripts also run in popups and newly opened tabs.
+  await page.context().addInitScript(() => {
+    (window as Window & { Cypress?: boolean }).Cypress = true;
+  });
 }
 
 export async function signUpAndLoginWithPasswordViaUi(
@@ -91,10 +101,6 @@ export async function signUpAndLoginWithPasswordViaUi(
   password: string = DEFAULT_TEST_PASSWORD,
   waitMs: number = 3000
 ): Promise<void> {
-  await page.addInitScript(() => {
-    (window as any).Cypress = true;
-  });
-
   await createConfirmedPasswordUser(request, email, password);
   await signInWithPasswordViaUi(page, email, password, waitMs);
 }
@@ -105,9 +111,7 @@ export async function signInWithPasswordViaUi(
   password: string,
   waitMs: number = 3000
 ): Promise<void> {
-  await page.addInitScript(() => {
-    (window as any).Cypress = true;
-  });
+  await enableTestMode(page);
 
   await visitLoginPage(page, 1000);
   await expect(AuthSelectors.emailInput(page)).toBeVisible({ timeout: 30000 });
@@ -134,9 +138,7 @@ export async function signInAndWaitForApp(
 ): Promise<void> {
   // Enable test-mode behaviors in the app (e.g. always-visible inline-add-page buttons)
   // The app checks 'Cypress' in window to toggle test-specific UI
-  await page.addInitScript(() => {
-    (window as any).Cypress = true;
-  });
+  await enableTestMode(page);
 
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1000);

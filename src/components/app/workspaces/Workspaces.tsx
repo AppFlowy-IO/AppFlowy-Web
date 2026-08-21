@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
 import { Workspace } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
@@ -12,7 +13,13 @@ import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { notify } from '@/components/_shared/notify';
-import { useAIEnabled, useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useCurrentWorkspaceId,
+  useRefreshUserWorkspaceInfo,
+  useUserWorkspaceInfo,
+} from '@/components/app/app.hooks';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
@@ -44,6 +51,7 @@ import { SettingsDialog } from '@/components/app/settings';
 export function Workspaces() {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
+  const refreshUserWorkspaceInfo = useRefreshUserWorkspaceInfo();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const aiEnabled = useAIEnabled();
@@ -63,7 +71,7 @@ export function Workspaces() {
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openSettings, setOpenSettings] = useState(false);
 
-  const isOwner = currentWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
 
   useEffect(() => {
     setCurrentWorkspace(userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId));
@@ -120,9 +128,14 @@ export function Workspaces() {
         });
       }
 
+      // The optimistic patch above only covers the current workspace's local
+      // state — refresh the shared workspace list so every consumer (header,
+      // mobile switcher, members panel) drops the old name.
+      void refreshUserWorkspaceInfo?.();
+
       setOpenRenameWorkspace(null);
     },
-    [openRenameWorkspace, currentWorkspaceId]
+    [openRenameWorkspace, currentWorkspaceId, refreshUserWorkspaceInfo]
   );
 
   return (

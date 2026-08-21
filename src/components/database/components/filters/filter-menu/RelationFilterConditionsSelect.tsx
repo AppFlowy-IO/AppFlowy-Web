@@ -7,6 +7,19 @@ import FilterConditionsSelect from '@/components/database/components/filters/fil
 function RelationFilterConditionsSelect({ filter }: { filter: Filter }) {
   const { t } = useTranslation();
 
+  // Desktop parity: legacy conditions (6/7) display as — and are re-written to —
+  // their normalized equivalents.
+  const displayFilter = useMemo(() => {
+    const condition =
+      filter.condition === RelationFilterCondition.RelationLegacyTextIsEmpty
+        ? RelationFilterCondition.RelationIsEmpty
+        : filter.condition === RelationFilterCondition.RelationLegacyTextIsNotEmpty
+        ? RelationFilterCondition.RelationIsNotEmpty
+        : filter.condition;
+
+    return condition === filter.condition ? filter : { ...filter, condition };
+  }, [filter]);
+
   const conditions = useMemo(
     () => [
       {
@@ -29,7 +42,7 @@ function RelationFilterConditionsSelect({ filter }: { filter: Filter }) {
     [t]
   );
 
-  return <FilterConditionsSelect filter={filter} conditions={conditions} />;
+  return <FilterConditionsSelect filter={displayFilter} conditions={conditions} />;
 }
 
 export default RelationFilterConditionsSelect;

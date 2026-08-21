@@ -13,8 +13,9 @@ const Columns = forwardRef<
     columns: GroupColumn[];
     addCardBefore: (id: string) => void;
     groupId: string;
+    groupRowsReady: boolean;
   }
->(({ columns, groupResult, fieldId, ...props }, ref) => {
+>(({ columns, groupResult, fieldId, groupRowsReady, ...props }, ref) => {
   const fieldType = useFieldType(fieldId);
   const isSelectField = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
@@ -43,12 +44,21 @@ const Columns = forwardRef<
       })
       .filter(Boolean) as (GroupColumn & { rows: Row[] })[];
   }, [columns, groupResult]);
+  const shownColumnIds = useMemo(() => new Set(columnsWithRows.map((column) => column.id)), [columnsWithRows]);
 
   const readOnly = useReadOnly();
 
   return (
     <div ref={ref} className={'columns flex h-full min-h-0 w-fit min-w-full flex-1 gap-2'}>
-      {!readOnly && <HiddenGroupColumn fieldId={fieldId} groupId={props.groupId} getRows={getRows} />}
+      {!readOnly && (
+        <HiddenGroupColumn
+          fieldId={fieldId}
+          groupId={props.groupId}
+          getRows={getRows}
+          groupRowsReady={groupRowsReady}
+          shownColumnIds={shownColumnIds}
+        />
+      )}
 
       {columnsWithRows.map((data) => (
         <Column key={data.id} id={data.id} fieldId={fieldId} rows={data.rows} {...props} />

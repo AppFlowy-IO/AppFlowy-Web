@@ -3,8 +3,11 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
+// The indeterminate animation spins this element, so it has to hug the circle.
+// As a full-width block it would instead swing the circle around the centre of
+// whatever container it sits in, throwing it clear across the layout.
 const progressVariants = cva(
-  'relative block',
+  'relative inline-block',
   {
     variants: {
       variant: {

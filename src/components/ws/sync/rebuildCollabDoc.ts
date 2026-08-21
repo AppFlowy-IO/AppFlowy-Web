@@ -22,6 +22,8 @@ export type RebuildCollabDocParams = {
   openDoc: () => Promise<YDoc & SyncDocMeta>;
   /** If true, the COLLAB_DOC_RESET event includes `isExternalRevert: true`. */
   isExternalRevert?: boolean;
+  /** Number of active owners that must survive replacing the Y.Doc instance. */
+  ownerCount?: number;
   /**
    * Whether the previous doc had a pending deferred cleanup timer.
    * Must be captured by the caller BEFORE destroying the previous doc,
@@ -46,6 +48,7 @@ export async function rebuildCollabDoc(params: RebuildCollabDocParams): Promise<
     openDoc,
     isExternalRevert,
     hadPendingDeferredCleanup,
+    ownerCount = 1,
   } = params;
 
   const nextDoc = await openDoc();
@@ -63,6 +66,17 @@ export async function rebuildCollabDoc(params: RebuildCollabDocParams): Promise<
     awareness: nextAwareness,
     collabType: context.collabType,
   });
+
+  // Destroying the previous doc unregisters the whole context and its owner
+  // count. Re-register the additional owners so one mounted consumer cannot
+  // tear down sync while another still renders the replacement document.
+  for (let ownerIndex = 1; ownerIndex < ownerCount; ownerIndex += 1) {
+    registerSyncContext({
+      doc: newContext.doc,
+      awareness: nextAwareness,
+      collabType: context.collabType,
+    });
+  }
 
   if (hadPendingDeferredCleanup) {
     scheduleDeferredCleanup(previousDoc.guid);

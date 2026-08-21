@@ -9,6 +9,7 @@ import {
   LIST_BLOCK_TYPES,
   TOGGLE_BLOCK_TYPES,
 } from '@/application/slate-yjs/command/const';
+import { INLINE_COMMENT_IDS_KEY } from '@/application/slate-yjs/types';
 import {
   BlockData,
   BlockType,
@@ -24,6 +25,8 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
+const RUST_NANOID_SAFE_ALPHABET = '_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const DEFAULT_ID_LEN = 10;
 // UUID namespace OID (same as Rust's Uuid::NAMESPACE_OID)
 // Note: 6ba7b812 (not 6ba7b810 which is NAMESPACE_DNS)
 const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
@@ -58,6 +61,25 @@ export function pageIdFromDocumentId(documentId: string): string {
   });
 
   return pageId;
+}
+
+function idFromDocumentId(documentId: string, role: string): string {
+  const docUuid = uuidValidate(documentId) ? documentId : uuidv5(documentId, UUID_NAMESPACE_OID);
+
+  return uuidv5(role, docUuid);
+}
+
+function nanoidFromDocumentId(documentId: string, role: string): string {
+  const uuid = idFromDocumentId(documentId, role).replace(/-/g, '');
+  let id = '';
+
+  for (let i = 0; i < DEFAULT_ID_LEN; i += 1) {
+    const byte = parseInt(uuid.slice(i * 2, i * 2 + 2), 16);
+
+    id += RUST_NANOID_SAFE_ALPHABET[byte & 0x3f];
+  }
+
+  return id;
 }
 
 export function getTextMap(sharedRoot: YSharedRoot) {
@@ -355,21 +377,23 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
   if (includeInitialParagraph) {
     // Create an empty paragraph block as child of page
     // The Slate editor requires at least one text block to render properly
-    const paragraphId = nanoid(8);
+    const paragraphId = documentId ? nanoidFromDocumentId(documentId, 'block') : nanoid(8);
+    const paragraphChildrenId = documentId ? nanoidFromDocumentId(documentId, 'children') : paragraphId;
+    const paragraphTextId = documentId ? nanoidFromDocumentId(documentId, 'text') : paragraphId;
     const paragraphBlock = new Y.Map();
 
     paragraphBlock.set(YjsEditorKey.block_id, paragraphId);
     paragraphBlock.set(YjsEditorKey.block_type, BlockType.Paragraph);
-    paragraphBlock.set(YjsEditorKey.block_children, paragraphId);
-    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphId);
+    paragraphBlock.set(YjsEditorKey.block_children, paragraphChildrenId);
+    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphTextId);
     paragraphBlock.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
     paragraphBlock.set(YjsEditorKey.block_data, '{}');
     paragraphBlock.set(YjsEditorKey.block_parent, pageId);
     blocks.set(paragraphId, paragraphBlock);
 
     pageChildren.push([paragraphId]);
-    childrenMap.set(paragraphId, new Y.Array());
-    textMap.set(paragraphId, new Y.Text());
+    childrenMap.set(paragraphChildrenId, new Y.Array());
+    textMap.set(paragraphTextId, new Y.Text());
   }
 
   childrenMap.set(pageId, pageChildren);
@@ -448,6 +472,8 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   const meta = document.get(YjsEditorKey.meta) as YMeta;
   const childrenMap = meta.get(YjsEditorKey.children_map) as YChildrenMap;
   const textMap = meta.get(YjsEditorKey.text_map) as YTextMap;
+  const blockChildrenId = block.get(YjsEditorKey.block_children);
+  const blockExternalId = block.get(YjsEditorKey.block_external_id);
 
   const parent = getBlock(parentId, sharedRoot);
 
@@ -465,8 +491,8 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   }
 
   blocks.delete(blockId);
-  childrenMap.delete(blockId);
-  textMap.delete(blockId);
+  childrenMap.delete(blockChildrenId);
+  textMap.delete(blockExternalId);
 
   // delete parent if it's empty column block
   if (parentType === BlockType.ColumnBlock && afterDeletedLength === 0) {
@@ -510,7 +536,32 @@ export function liftChildren(sharedRoot: YSharedRoot, sourceBlock: YBlock, targe
   }
 }
 
-export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetBlock: YBlock) {
+export function stripInlineCommentIdsFromDelta(delta: readonly Op[]): Op[] {
+  return delta.map((operation) => {
+    if (!operation.attributes || !(INLINE_COMMENT_IDS_KEY in operation.attributes)) return operation;
+
+    const attributes = { ...operation.attributes };
+
+    delete attributes[INLINE_COMMENT_IDS_KEY];
+
+    const nextOperation = { ...operation };
+
+    if (Object.keys(attributes).length > 0) {
+      nextOperation.attributes = attributes;
+    } else {
+      delete nextOperation.attributes;
+    }
+
+    return nextOperation;
+  });
+}
+
+export function copyBlockText(
+  sharedRoot: YSharedRoot,
+  sourceBlock: YBlock,
+  targetBlock: YBlock,
+  stripInlineCommentIds = false
+) {
   const sourceTextId = sourceBlock.get(YjsEditorKey.block_external_id);
   const targetTextId = targetBlock.get(YjsEditorKey.block_external_id);
 
@@ -525,7 +576,9 @@ export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targ
     return;
   }
 
-  targetText.applyDelta(sourceText.toDelta());
+  const delta = sourceText.toDelta() as Op[];
+
+  targetText.applyDelta(stripInlineCommentIds ? stripInlineCommentIdsFromDelta(delta) : delta);
 }
 
 function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
@@ -766,20 +819,32 @@ export function moveNode(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetPar
   return copiedBlockId;
 }
 
-export function deepCopyBlock(sharedRoot: YSharedRoot, sourceBlock: YBlock): string | null {
+export function deepCopyBlock(
+  sharedRoot: YSharedRoot,
+  sourceBlock: YBlock,
+  dataOverride?: BlockData,
+  stripInlineCommentIds = false
+): string | null {
   try {
     const newBlock = createBlock(sharedRoot, {
       ty: sourceBlock.get(YjsEditorKey.block_type),
-      data: dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
+      data: dataOverride ?? dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data)),
     });
 
-    copyBlockText(sharedRoot, sourceBlock, newBlock);
+    copyBlockText(sharedRoot, sourceBlock, newBlock, stripInlineCommentIds);
 
     const sourceChildrenArray = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
     const targetChildrenArray = getChildrenArray(newBlock.get(YjsEditorKey.block_children), sharedRoot);
 
     if (sourceChildrenArray && targetChildrenArray) {
-      deepCopyChildren(sharedRoot, sourceChildrenArray, targetChildrenArray, newBlock.get(YjsEditorKey.block_id));
+      deepCopyChildren(
+        sharedRoot,
+        sourceChildrenArray,
+        targetChildrenArray,
+        newBlock.get(YjsEditorKey.block_id),
+        undefined,
+        stripInlineCommentIds
+      );
     }
 
     return newBlock.get(YjsEditorKey.block_id);
@@ -938,7 +1003,8 @@ export function deepCopyChildren(
   sourceArray: Y.Array<string>,
   targetArray: Y.Array<string>,
   targetBlockId: string,
-  index?: number
+  index?: number,
+  stripInlineCommentIds = false
 ) {
   const sourceArraySorted = index === undefined ? sourceArray.toArray() : sourceArray.toArray().reverse();
 
@@ -956,7 +1022,9 @@ export function deepCopyChildren(
       const targetText = getText(newChild.get(YjsEditorKey.block_external_id), sharedRoot);
 
       if (sourceText && targetText) {
-        targetText.applyDelta(sourceText.toDelta());
+        const delta = sourceText.toDelta() as Op[];
+
+        targetText.applyDelta(stripInlineCommentIds ? stripInlineCommentIdsFromDelta(delta) : delta);
       }
 
       const sourceChildrenArray = getChildrenArray(childId, sharedRoot);
@@ -965,7 +1033,14 @@ export function deepCopyChildren(
         const newChildrenArray = getChildrenArray(newChild.get(YjsEditorKey.block_children), sharedRoot);
 
         if (newChildrenArray) {
-          deepCopyChildren(sharedRoot, sourceChildrenArray, newChildrenArray, newChild.get(YjsEditorKey.block_id));
+          deepCopyChildren(
+            sharedRoot,
+            sourceChildrenArray,
+            newChildrenArray,
+            newChild.get(YjsEditorKey.block_id),
+            undefined,
+            stripInlineCommentIds
+          );
         }
       }
 

@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
+import { useTranslation } from 'react-i18next';
 
+import { ErrorType } from '@/application/utils/error-utils';
 import { useOutlineDrawer } from '@/components/_shared/outline/outline.hooks';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useAIChatContextOptional } from '@/components/ai-chat/AIChatProvider';
-import { useOpenModalViewId, useAppViewId, useViewErrorStatus } from '@/components/app/app.hooks';
+import { useAppViewId, useOpenModalViewId, useViewErrorStatus } from '@/components/app/app.hooks';
 import { ConnectBanner } from '@/components/app/ConnectBanner';
 import { AppHeader } from '@/components/app/header';
 import Main from '@/components/app/Main';
@@ -12,24 +14,39 @@ import SideBar from '@/components/app/SideBar';
 import DeletedPageComponent from '@/components/error/PageHasBeenDeleted';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import SomethingError from '@/components/error/SomethingError';
+import { INLINE_COMMENT_DRAWER_WIDTH, useInlineCommentPanel } from '@/components/inline-comment/InlineCommentContext';
+import { InlineCommentSidebar } from '@/components/inline-comment/InlineCommentSidebar';
 
-function MainLayout() {
+function MainLayoutContent() {
   const { drawerOpened, drawerWidth, setDrawerWidth, toggleOpenDrawer } = useOutlineDrawer();
   const aiChatContext = useAIChatContextOptional();
   const chatViewDrawerOpen = aiChatContext?.drawerOpen ?? false;
   const openViewDrawerWidth = aiChatContext?.drawerWidth ?? 0;
+  // Panel-only subscription: comment/anchor/mutation updates must not re-render
+  // the header and outline sidebar.
+  const { isPanelOpen } = useInlineCommentPanel();
 
   const openPageModalViewId = useOpenModalViewId();
   const viewId = useAppViewId();
-  const { notFound, deleted } = useViewErrorStatus();
+  const { notFound, deleted, noAccess } = useViewErrorStatus();
+  const { t } = useTranslation();
 
   const main = useMemo(() => {
     if (deleted) {
       return <DeletedPageComponent />;
     }
 
+    if (noAccess) {
+      return (
+        <RecordNotFound
+          viewId={viewId}
+          error={{ type: ErrorType.Forbidden, message: t('requestAccess.title') }}
+        />
+      );
+    }
+
     return notFound ? <RecordNotFound isViewNotFound viewId={viewId} /> : <Main />;
-  }, [deleted, notFound, viewId]);
+  }, [deleted, noAccess, notFound, t, viewId]);
 
   const width = useMemo(() => {
     let diff = 0;
@@ -42,8 +59,12 @@ function MainLayout() {
       diff += openViewDrawerWidth;
     }
 
+    if (isPanelOpen) {
+      diff += INLINE_COMMENT_DRAWER_WIDTH;
+    }
+
     return `calc(100% - ${diff}px)`;
-  }, [drawerOpened, drawerWidth, openViewDrawerWidth, chatViewDrawerOpen]);
+  }, [chatViewDrawerOpen, drawerOpened, drawerWidth, isPanelOpen, openViewDrawerWidth]);
 
   return (
     <div className={'h-screen w-screen'}>
@@ -91,8 +112,14 @@ function MainLayout() {
         drawerOpened={drawerOpened}
         toggleOpenDrawer={toggleOpenDrawer}
       />
+      <InlineCommentSidebar
+        // The page modal is a MUI dialog: the panel has to sit above it to stay
+        // usable while commenting on a page opened in the modal.
+        elevated={!!openPageModalViewId}
+        rightOffset={chatViewDrawerOpen ? openViewDrawerWidth : 0}
+      />
     </div>
   );
 }
 
-export default MainLayout;
+export default MainLayoutContent;

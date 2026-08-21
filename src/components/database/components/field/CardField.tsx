@@ -2,9 +2,10 @@ import { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
-import { FileMediaCellData, TextCell } from '@/application/database-yjs/cell.type';
+import { TextCell } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { countFileMediaItems } from '@/application/database-yjs/fields/media/parse';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
 import { Cell } from '@/components/database/components/cell/Cell';
@@ -93,7 +94,9 @@ export function CardField({
     );
   }
 
-  if ([FieldType.LastEditedTime, FieldType.CreatedTime].includes(Number(type))) {
+  if (
+    [FieldType.LastEditedTime, FieldType.CreatedTime, FieldType.CreatedBy, FieldType.LastEditedBy].includes(Number(type))
+  ) {
     return <Cell style={style} readOnly rowId={rowId} fieldId={fieldId} wrap />;
   }
 
@@ -102,7 +105,7 @@ export function CardField({
   }
 
   if (Number(type) === FieldType.Media) {
-    const count = (cell?.data as FileMediaCellData)?.length || 0;
+    const count = countFileMediaItems(cell?.data);
 
     if (count === 0) return null;
     return (

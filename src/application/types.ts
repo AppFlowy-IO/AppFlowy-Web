@@ -38,7 +38,9 @@ export enum BlockType {
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  ListBlock = 'list',
   ChartBlock = 'chart',
+  DatabaseGalleryBlock = 'gallery',
   OutlineBlock = 'outline',
   TableBlock = 'table',
   TableCell = 'table/cell',
@@ -290,6 +292,7 @@ export interface DatabaseNodeData extends BlockData {
   view_ids?: ViewId[];
   parent_id?: ViewId;
   database_id?: string;
+  is_database_duplicate_placeholder?: boolean;
 }
 
 export interface SubpageNodeData extends BlockData {
@@ -312,8 +315,10 @@ export interface Mention {
   // inline page ref id
   page_id?: string;
   block_id?: string;
+  row_id?: string;
   // reminder date ref id
   date?: string;
+  end?: string;
   reminder_id?: string;
   reminder_option?: string;
   include_time?: boolean;
@@ -325,7 +330,143 @@ export interface Mention {
   // mention person
   person_id?: string;
   person_name?: string;
+
+  // database and database row references
+  database_id?: string;
+  database_view_id?: string;
+  database_row_id?: string;
+  row_document_id?: string;
+
+  // Optional denormalized display data for mention types that cannot be
+  // resolved from the outline alone, such as database rows.
+  data?: Record<string, unknown>;
 }
+
+export enum MentionTargetKind {
+  Person = 'person',
+  Page = 'page',
+  Database = 'database',
+  DatabaseRow = 'database_row',
+  Date = 'date',
+  Reminder = 'reminder',
+  ExternalLink = 'external_link',
+}
+
+export enum MentionSearchSectionKind {
+  Suggested = 'suggested',
+  People = 'people',
+  Pages = 'pages',
+  Databases = 'databases',
+  DatabaseRows = 'database_rows',
+  Dates = 'dates',
+  Links = 'links',
+}
+
+export interface MentionSearchContext {
+  view_id?: string;
+  database_id?: string;
+  database_view_id?: string;
+  row_id?: string;
+}
+
+export interface MentionSearchFilter {
+  database_ids?: string[];
+  database_view_ids?: string[];
+  database_row_ids?: string[];
+}
+
+export interface MentionSearchRequest {
+  query?: string;
+  limit?: number;
+  cursor?: string;
+  include?: MentionTargetKind[];
+  context?: MentionSearchContext;
+  filter?: MentionSearchFilter;
+}
+
+export interface MentionPayloadPerson {
+  type: MentionTargetKind.Person;
+  person_id: string;
+  person_name: string;
+  page_id: string;
+  block_id?: string;
+  row_id?: string;
+}
+
+export interface MentionPayloadPage {
+  type: MentionTargetKind.Page;
+  page_id: string;
+  block_id?: string;
+  row_id?: string;
+}
+
+export interface MentionPayloadDatabase {
+  type: MentionTargetKind.Database;
+  database_id: string;
+  database_view_id?: string;
+}
+
+export interface MentionPayloadDatabaseRow {
+  type: MentionTargetKind.DatabaseRow | 'databaseRow';
+  database_id: string;
+  database_view_id?: string;
+  row_id: string;
+  row_document_id?: string;
+}
+
+export interface MentionPayloadDate {
+  type: MentionTargetKind.Date;
+  start?: string;
+  date?: string;
+  end?: string;
+  reminder_id?: string;
+  reminder_option?: string;
+  include_time?: boolean;
+}
+
+export interface MentionPayloadExternalLink {
+  type: MentionTargetKind.ExternalLink | MentionType.externalLink;
+  url: string;
+}
+
+export type MentionSearchPayload =
+  | MentionPayloadPerson
+  | MentionPayloadPage
+  | MentionPayloadDatabase
+  | MentionPayloadDatabaseRow
+  | MentionPayloadDate
+  | MentionPayloadExternalLink;
+
+export interface MentionSearchResultItem {
+  kind: MentionTargetKind;
+  object_id?: string;
+  title: string;
+  subtitle?: string;
+  icon?: string;
+  database_id?: string;
+  database_view_id?: string;
+  database_row_id?: string;
+  row_document_id?: string;
+  can_access_context?: boolean;
+  mention: MentionSearchPayload;
+}
+
+export interface MentionSearchSection {
+  kind: MentionSearchSectionKind;
+  title: string;
+  items: MentionSearchResultItem[];
+  next_cursor?: string;
+  has_more: boolean;
+  status: string;
+  message?: string;
+}
+
+export interface MentionSearchResponse {
+  sections: MentionSearchSection[];
+  partial?: boolean;
+}
+
+export type SearchMentions = (request: MentionSearchRequest) => Promise<MentionSearchResponse>;
 
 export interface FolderMeta {
   current_view: ViewId;
@@ -419,6 +560,8 @@ export enum YjsDatabaseKey {
   is_primary = 'is_primary',
   last_modified = 'last_modified',
   created_at = 'created_at',
+  created_by = 'created_by',
+  last_edited_by = 'last_edited_by',
   name = 'name',
   type = 'ty',
   type_option = 'type_option',
@@ -464,12 +607,29 @@ export enum YjsDatabaseKey {
   cv = 'cv',
   source_field_type = 'source_field_type', // Added this
   condition = 'condition',
+  rollup_target_type = 'rollup_target_ty',
   schema_version = 'schema_version',
+  row_templates = 'row_templates',
+  default_row_template = 'default_row_template',
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
+  group_color = 'group_color',
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
+  hide_empty_groups = 'hide_empty_groups',
+  display_mode = 'display_mode',
+  visible_field_ids = 'visible_field_ids',
+  show_cover = 'show_cover',
+  show_icon = 'show_icon',
+  card_width = 'card_width',
+  fit_image = 'fit_image',
+  card_size = 'card_size',
+  card_preview = 'card_preview',
+  cover_field_id = 'cover_field_id',
+  group_field_id = 'group_field_id',
+  show_field_names = 'show_field_names',
+  shown_empty_group_ids = 'shown_empty_group_ids',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
   show_week_numbers = 'show_week_numbers',
@@ -551,6 +711,8 @@ export interface YDatabaseRow extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.created_at): CreatedAt;
 
   get(key: YjsDatabaseKey.last_modified): LastModified;
+
+  get(key: YjsDatabaseKey.created_by | YjsDatabaseKey.last_edited_by): string | number | bigint | undefined;
 }
 
 export interface YDatabaseCells extends Y.Map<unknown> {
@@ -738,7 +900,11 @@ export interface YDatabaseView extends Y.Map<unknown> {
 
 export type YDatabaseFieldOrders = Y.Array<{ id: FieldId }>; // [ { id: FieldId } ]
 
-export type YDatabaseRowOrders = Y.Array<{ id: RowId; height: number }>; // [ { id: RowId, height: number } ]
+export type YDatabaseRowOrders = Y.Array<{
+  id: RowId;
+  height: number;
+  is_deleted?: boolean;
+}>; // [ { id: RowId, height: number, is_deleted?: boolean } ]
 
 export type YDatabaseGroups = Y.Array<YDatabaseGroup>;
 
@@ -753,6 +919,9 @@ export type SortId = string;
 export type GroupId = string;
 
 export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
+  // DatabaseViewLayout.Grid
+  get(key: '0'): YDatabaseGridLayoutSetting;
+
   // DatabaseViewLayout.Board
   get(key: '1'): YDatabaseBoardLayoutSetting;
 
@@ -761,10 +930,23 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Chart
   get(key: '3'): YDatabaseChartLayoutSetting;
+
+  // DatabaseViewLayout.List
+  get(key: '4'): YDatabaseListLayoutSetting;
+
+  // DatabaseViewLayout.Gallery
+  get(key: '5'): YDatabaseGalleryLayoutSetting;
+}
+
+export interface YDatabaseGridLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.hide_empty_groups): boolean;
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
-  get(key: YjsDatabaseKey.hide_ungrouped_column | YjsDatabaseKey.collapse_hidden_groups): boolean;
+  get(
+    key: YjsDatabaseKey.hide_ungrouped_column | YjsDatabaseKey.hide_empty_groups | YjsDatabaseKey.collapse_hidden_groups
+  ): boolean;
+  get(key: YjsDatabaseKey.shown_empty_group_ids): string[];
 }
 
 export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
@@ -778,6 +960,46 @@ export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
   get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
   get(key: 'xFieldId' | 'yFieldId'): string | undefined;
   get(key: 'showEmptyValues' | 'cumulative'): boolean;
+}
+
+export interface YDatabaseListLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.display_mode | YjsDatabaseKey.card_width): number;
+  get(key: YjsDatabaseKey.visible_field_ids): string[];
+  get(key: YjsDatabaseKey.group_field_id): string | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.show_cover
+      | YjsDatabaseKey.show_icon
+      | YjsDatabaseKey.show_field_names
+      | YjsDatabaseKey.hide_empty_groups
+  ): boolean;
+}
+
+export enum GalleryCardSize {
+  Small = 0,
+  Medium = 1,
+  Large = 2,
+}
+
+export enum GalleryCardPreview {
+  PageCover = 0,
+  PageContent = 1,
+  FilesAndMedia = 2,
+}
+
+export interface GalleryLayoutSettings {
+  showCover: boolean;
+  fitImage: boolean;
+  cardSize: GalleryCardSize;
+  cardWidth: number;
+  cardPreview: GalleryCardPreview;
+  coverFieldId?: string;
+}
+
+export interface YDatabaseGalleryLayoutSetting extends Y.Map<unknown> {
+  get(key: YjsDatabaseKey.card_size | YjsDatabaseKey.card_width | YjsDatabaseKey.card_preview): number;
+  get(key: YjsDatabaseKey.show_cover | YjsDatabaseKey.fit_image): boolean;
+  get(key: YjsDatabaseKey.cover_field_id): string | undefined;
 }
 
 export interface YDatabaseGroup extends Y.Map<unknown> {
@@ -795,12 +1017,14 @@ export interface YDatabaseGroup extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.collapsed_group_ids): Y.Array<string> | string[] | undefined;
 }
 
-export type YDatabaseGroupColumns = Y.Array<{ id: string; visible: boolean }>;
+export type YDatabaseGroupColumns = Y.Array<YDatabaseGroupColumn>;
 
 export interface YDatabaseGroupColumn extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.id): string;
 
   get(key: YjsDatabaseKey.visible): boolean;
+
+  get(key: YjsDatabaseKey.group_color): string | undefined;
 }
 
 export interface YDatabaseSort extends Y.Map<unknown> {
@@ -819,6 +1043,8 @@ export interface YDatabaseFilter extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.field_id): FieldId;
 
   get(key: YjsDatabaseKey.type | YjsDatabaseKey.condition | YjsDatabaseKey.content | YjsDatabaseKey.filter_type): string;
+
+  get(key: YjsDatabaseKey.rollup_target_type): number | string | undefined;
 
   get(key: YjsDatabaseKey.children): YDatabaseFilters | YDatabaseFilter[] | undefined;
 }
@@ -849,6 +1075,7 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
 export interface YDatabaseMetas extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.iid): string;
   get(key: YjsDatabaseKey.schema_version): string | number;
+  get(key: YjsDatabaseKey.row_templates | YjsDatabaseKey.default_row_template): string | undefined;
 }
 
 export interface YDatabaseFields extends Y.Map<YDatabaseField> {
@@ -920,6 +1147,8 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // Person
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.is_single_select | YjsDatabaseKey.disable_notification): boolean;
+
+  get(key: YjsDatabaseKey.persons): string | unknown[] | undefined;
 }
 
 export enum Types {
@@ -939,6 +1168,13 @@ export enum CollabOrigin {
   Remote = 'remote',
   // from local changes manually applied to Yjs
   LocalManual = 'local_manual',
+  // Inline-comment metadata is intentionally excluded from text undo history.
+  // Writable editors still send this origin through normal collaboration.
+  InlineComment = 'inline_comment',
+  // Read-and-comment users cannot publish ordinary document updates. Their
+  // anchor-only update is persisted by the inline-comment HTTP endpoint, so
+  // the collaboration outbox must not enqueue the same update.
+  InlineCommentAuthorized = 'inline_comment_authorized',
 }
 
 export interface PublishViewPayload {
@@ -957,6 +1193,8 @@ export const layoutMap = {
   [ViewLayout.Board]: 'board',
   [ViewLayout.Calendar]: 'calendar',
   [ViewLayout.Chart]: 'chart',
+  [ViewLayout.List]: 'list',
+  [ViewLayout.Gallery]: 'gallery',
 };
 
 export const databaseLayoutMap = {
@@ -964,6 +1202,8 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Board]: 'board',
   [DatabaseViewLayout.Calendar]: 'calendar',
   [DatabaseViewLayout.Chart]: 'chart',
+  [DatabaseViewLayout.List]: 'list',
+  [DatabaseViewLayout.Gallery]: 'gallery',
 };
 
 export enum FontLayout {
@@ -1004,9 +1244,11 @@ export interface PublishViewMetaData {
 
 export type AppendBreadcrumb = (view?: View) => void;
 
-export type CreateRow = (rowKey: string) => Promise<YDoc>;
+export type CreateRow = (rowKey: string, options?: { forceSync?: boolean }) => Promise<YDoc>;
 export interface LoadViewOptions {
   databaseId?: string | null;
+  /** Load only the canonical database collab, without page-view row_data. */
+  databaseMetadataOnly?: boolean;
   forceFetch?: boolean;
 }
 
@@ -1017,7 +1259,29 @@ export type LoadView = (
   options?: LoadViewOptions
 ) => Promise<YDoc>;
 
-export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
+export interface LoadRowDocumentOptions {
+  maxAttempts?: number;
+  rowDocumentSource?: RowDocumentSourcePayload;
+}
+
+export type LoadRowDocument = (documentId: string, options?: LoadRowDocumentOptions) => Promise<YDoc | null>;
+
+export interface LoadViewMetaOptions {
+  /** Resolve display fields from the flat workspace metadata index when possible. */
+  metadataOnly?: boolean;
+  /**
+   * Bypass the materialized outline and flat positive cache after an access
+   * change, forcing a server refresh through the shared metadata resolver so
+   * in-flight and negative caching are still retained.
+   */
+  authoritative?: boolean;
+}
+
+export type LoadViewMeta = (
+  viewId: string,
+  onChange?: (meta: View | null) => void,
+  options?: LoadViewMetaOptions
+) => Promise<View | null>;
 
 export type DatabaseRelations = Record<DatabaseId, ViewId>;
 
@@ -1072,16 +1336,79 @@ export enum AuthProvider {
   SAML = 'saml',
   PHONE = 'phone',
   EMAIL = 'email',
+  LDAP = 'ldap',
 }
 
-export interface AuthProvidersResponse {
-  providers: AuthProvider[];
+/**
+ * Marks an identifier as belonging to an admin-registered provider rather than
+ * one of the built-in `AuthProvider` members. The single runtime source of
+ * truth — `CustomAuthProviderId` below has to repeat the literal because a
+ * template literal type cannot reference a value.
+ */
+export const CUSTOM_PROVIDER_PREFIX = 'custom:';
+
+/**
+ * A custom OAuth/OIDC provider registered in the admin console. The identifier
+ * is chosen per deployment, so unlike the providers above it cannot be an enum
+ * member — the server names it and the client passes it straight back to
+ * `/authorize?provider=`.
+ */
+export type CustomAuthProviderId = `custom:${string}`;
+
+export type LoginProviderId = AuthProvider | CustomAuthProviderId;
+
+/**
+ * Display name an admin gave a custom provider. Sent alongside the identifier
+ * so the login button can show "Okta Production" rather than a prettified
+ * "Okta Prod" guessed from the identifier.
+ *
+ * `name` is empty when the server sent none; callers derive a label from the
+ * identifier in that case rather than showing the raw identifier.
+ */
+export interface CustomAuthProvider {
+  identifier: CustomAuthProviderId;
+  name: string;
+}
+
+/**
+ * An enabled LDAP connection advertised by AppFlowy Cloud.
+ *
+ * The id is sent back with the credential request so deployments with multiple
+ * directories do not have to guess which connection should authenticate the
+ * user. The name is chosen by the administrator and is safe to show at login.
+ */
+export interface LdapAuthProvider {
+  id: string;
+  name: string;
+}
+
+export function isCustomAuthProviderId(provider: LoginProviderId): provider is CustomAuthProviderId {
+  return provider.startsWith(CUSTOM_PROVIDER_PREFIX);
+}
+
+/**
+ * What the server says this deployment offers.
+ *
+ * `customProviders` carries the display names for the `custom:` entries in
+ * `providers`. Older servers omit it, so callers must tolerate it being empty
+ * and fall back to labelling a provider from its identifier.
+ *
+ * `ldapProviders` carries connection-specific choices. Older servers only
+ * advertise the flat `ldap` provider, so an empty list means the client should
+ * keep the legacy generic LDAP choice.
+ */
+export interface LoginProviders {
+  providers: LoginProviderId[];
+  customProviders: CustomAuthProvider[];
+  ldapProviders: LdapAuthProvider[];
 }
 
 export interface User {
   email: string | null;
   name: string | null;
   uid: string;
+  /** Exact lossless UID for automatic attribution, or null for a lossy legacy response. */
+  attributionUid?: string | null;
   avatar: string | null;
   uuid: string;
   latestWorkspaceId: string;
@@ -1115,6 +1442,158 @@ export interface ViewIcon {
 export enum SpacePermission {
   Public = 0,
   Private = 1,
+}
+
+export enum SpaceVisibility {
+  Default = 'default',
+  Open = 'open',
+  Closed = 'closed',
+  Private = 'private',
+}
+
+export enum SpaceMemberRole {
+  Owner = 'owner',
+  Member = 'member',
+}
+
+export enum SpaceInvitePolicy {
+  OwnersOnly = 'owners_only',
+  MembersAndOwners = 'members_and_owners',
+}
+
+export enum SpaceSidebarEditPolicy {
+  OwnersOnly = 'owners_only',
+  MembersAndOwners = 'members_and_owners',
+}
+
+export interface SpaceSecuritySettings {
+  disable_guests: boolean;
+  disable_public_links: boolean;
+  disable_export: boolean;
+}
+
+export interface SpacePermissionSettings {
+  visibility: SpaceVisibility;
+  owner_access_level: AccessLevel;
+  member_default_access_level: AccessLevel;
+  everyone_else_access_level?: AccessLevel | null;
+  invite_policy: SpaceInvitePolicy;
+  sidebar_edit_policy: SpaceSidebarEditPolicy;
+  invite_link_enabled: boolean;
+  security: SpaceSecuritySettings;
+}
+
+export interface StructuredSpace {
+  view_id: string;
+}
+
+export interface UpdateStructuredSpacePayload {
+  name?: string;
+  space_icon?: string;
+  space_icon_color?: string;
+  permission?: SpacePermissionSettings;
+}
+
+export interface SpacePermissionResponse {
+  space_id: string;
+  permission: SpacePermissionSettings;
+  current_user_access_level?: AccessLevel | null;
+  can_manage_space: boolean;
+  can_manage_members: boolean;
+  can_invite_members: boolean;
+  can_edit_sidebar: boolean;
+  explicit_member_count: number;
+}
+
+export interface SpaceListItem {
+  space_id: string;
+  name: string;
+  permission: SpacePermissionSettings;
+  current_user_access_level?: AccessLevel | null;
+  explicit_member_count: number;
+  is_explicit_member: boolean;
+  can_join: boolean;
+  can_leave: boolean;
+}
+
+export interface Spaces {
+  spaces: SpaceListItem[];
+}
+
+export interface SpaceMember {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+  source: string;
+}
+
+export interface WorkspaceGroupSpacePermission {
+  group_id: string;
+  name: string;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+  member_count: number;
+  source: string;
+}
+
+export interface WorkspaceGroupViewPermission {
+  group_id: string;
+  name: string;
+  access_level: AccessLevel;
+  member_count: number;
+  source: string;
+}
+
+export interface SpaceMembers {
+  members: SpaceMember[];
+  groups: WorkspaceGroupSpacePermission[];
+}
+
+export interface AddSpaceMemberPayload {
+  uid: string;
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
+}
+
+export interface UpdateSpaceMemberPayload {
+  role?: SpaceMemberRole;
+  access_level?: AccessLevel;
+}
+
+export interface WorkspaceGroup {
+  group_id: string;
+  name: string;
+  member_count: number;
+  /** `scim` groups are owned by the external directory and are read-only. */
+  source?: string;
+}
+
+export interface WorkspaceGroups {
+  groups: WorkspaceGroup[];
+}
+
+export interface CreateWorkspaceGroupPayload {
+  name: string;
+}
+
+export interface UpdateWorkspaceGroupPayload {
+  name: string;
+}
+
+export interface WorkspaceGroupMember {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+}
+
+export interface WorkspaceGroupMembers {
+  members: WorkspaceGroupMember[];
+}
+
+export interface AddWorkspaceGroupMemberPayload {
+  uid: string;
 }
 
 /**
@@ -1183,12 +1662,35 @@ export interface ViewCover {
  * This is the union of all extra types that can be stored in a view's extra field.
  * The extra field is a JSON blob that may contain any combination of these properties.
  */
+/**
+ * Source ids of the database row a row-document view was materialized from.
+ * Mirrors the server's `{"row_document":{"source":{...}}}` extra JSON written
+ * by POST /orphaned-view with `row_document_source`.
+ */
+export interface RowDocumentSourceExtra {
+  database_id?: string;
+  database_view_id?: string;
+  row_id?: string;
+}
+
 export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
   /** Whether this view is pinned. */
   is_pinned?: boolean;
 
   /** The view's cover image/color configuration. */
   cover?: ViewCover;
+
+  /** Present on materialized row-document (row page) views. */
+  row_document?: {
+    source?: RowDocumentSourceExtra;
+  };
+
+  /** Desktop's marker for an orphan document that backs a database row template. */
+  database_row_template?: boolean;
+  /** Owning database view for a template document (paired with `database_row_template`). */
+  database_view_id?: string;
+  /** Owning row-template id for a template document (paired with `database_row_template`). */
+  template_id?: string;
 }
 
 export interface View {
@@ -1200,8 +1702,14 @@ export interface View {
   extra: ViewExtra | null;
   children: View[];
   has_children?: boolean;
+  /** Authoritative space marker returned by newer folder-view APIs. */
+  is_space?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether this view is currently in the user's favorites. Synced via the folder. */
+  is_favorite?: boolean;
+  /** Favorite-section pin state returned by the favorites endpoint. */
+  is_pinned?: boolean;
   /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
   is_locked?: boolean;
   last_edited_time?: string;
@@ -1298,6 +1806,7 @@ export enum Role {
 }
 
 export interface WorkspaceMember {
+  uid?: string;
   name: string;
   email: string;
   avatar_url: string;
@@ -1347,6 +1856,29 @@ export interface UpdatePagePayload {
   is_locked?: boolean;
 }
 
+export interface RowDocumentSourcePayload {
+  database_id: string;
+  database_view_id: string;
+  row_id: string;
+}
+
+export type CreateRowDocument = (documentId: string, source?: RowDocumentSourcePayload) => Promise<Uint8Array | null>;
+
+export type PrepareDuplicateRowDocumentSource = () => Promise<void>;
+
+export type DuplicateRowDocument = (
+  databaseId: string,
+  sourceRowId: string,
+  newRowId: string,
+  clientDocStateB64?: string,
+  prepareSource?: PrepareDuplicateRowDocumentSource
+) => Promise<void>;
+
+export interface CreateOrphanedViewPayload {
+  document_id: string;
+  row_document_source?: RowDocumentSourcePayload;
+}
+
 export type ViewMetaCover = ViewCover;
 
 export interface ViewMetaProps {
@@ -1379,6 +1911,9 @@ export interface ViewComponentProps {
   doc: YDoc;
   workspaceId: string;
   readOnly: boolean;
+  canComment?: boolean;
+  /** Canonical server write permission, independent from locks/mobile UI. */
+  canWrite?: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;
@@ -1390,18 +1925,13 @@ export interface ViewComponentProps {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
-  duplicateRowDocument?: (
-    databaseId: string,
-    sourceRowId: string,
-    newRowId: string,
-    clientDocStateB64?: string
-  ) => Promise<void>;
+  createRowDocument?: CreateRowDocument;
+  duplicateRowDocument?: DuplicateRowDocument;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;
@@ -1435,14 +1965,19 @@ export interface ViewComponentProps {
   getSubscriptions?: () => Promise<Subscription[]>;
   eventEmitter?: EventEmitter;
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 
 export interface CreatePagePayload {
   layout: ViewLayout;
   name?: string;
+  page_data?: unknown;
+  /** Use a caller-generated view ID. The backend generates one when omitted. */
+  view_id?: string;
   /** Insert the new page after this sibling. When omitted the backend prepends. */
-  prev_view_id?: string;
+  prev_view_id?: string | null;
 }
 
 export interface CreatePageResponse {
@@ -1468,7 +2003,10 @@ export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
 
 export interface CreateDatabaseViewPayload {
   parent_view_id: string;
-  /** Insert the new database view after this sibling. When omitted the backend prepends. */
+  /**
+   * Insert the new database view after this sibling. When omitted, the
+   * backend appends the view to the end of the parent's children.
+   */
   prev_view_id?: string;
   database_id: string;
   layout: ViewLayout;
@@ -1541,7 +2079,22 @@ export interface CreateSpacePayload {
   name?: string;
   space_icon?: string;
   space_icon_color?: string;
+  view_id?: string;
+  permission?: SpacePermissionSettings;
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
+}
+
+export type CreateSpaceInitialPagePayload = CreatePagePayload;
+
+export interface CreateSpaceWithInitialPagePayload extends CreateSpacePayload {
+  initial_page: CreateSpaceInitialPagePayload;
+}
+
+export interface CreateSpaceWithInitialPageResponse {
+  space: {
+    view_id: string;
+  };
+  page: CreatePageResponse;
 }
 
 export interface UpdateSpacePayload extends CreateSpacePayload {
@@ -1637,6 +2190,8 @@ export enum MentionPersonRole {
   Contact = 3,
 }
 export interface MentionablePerson {
+  /** Numeric workspace user ID used by automatic database attribution fields. */
+  uid: string | number;
   avatar_url: string | null;
   cover_image_url: string | null;
   custom_image_url: string | null;
@@ -1670,6 +2225,28 @@ export interface IPeopleWithAccessType {
   role: Role;
   avatar_url: string;
   pending_invitation: boolean;
+}
+
+export interface ObjectPermission {
+  object_id?: string;
+  object_type?: string;
+  access_level?: AccessLevel;
+  visible?: boolean;
+  object_creator?: boolean;
+  ancestor_creator?: boolean;
+  parent_private_view_id?: string | null;
+  governing_view_id?: string | null;
+}
+
+export interface ShareAccessDetails {
+  view_id?: string;
+  target?: {
+    type: string;
+    page_id?: string;
+  };
+  current_user_permission?: ObjectPermission | null;
+  shared_with: IPeopleWithAccessType[];
+  groups?: WorkspaceGroupViewPermission[];
 }
 
 export enum AccessLevel {

@@ -1,6 +1,5 @@
 import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
-import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -22,8 +21,9 @@ import { ParsedBlock } from '@/components/editor/parsers/types';
 import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
 import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
+import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
-import { isSingleURLText, processUrl } from '@/utils/url';
+import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -389,41 +389,39 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
 /**
  * Handles URL paste.
  *
- * Internal AppFlowy links that point at a specific block are inserted as a
- * page-reference mention directly. Every other URL is pasted as an inline link
- * and the "Paste as" menu (Mention / URL / Bookmark / Embed) is shown so the
- * user can choose how to render it — matching the desktop app's behavior.
+ * Page links into the current workspace are inserted as page-reference
+ * mentions so they retain the exact view identity and follow live metadata
+ * updates. Every other URL — external sites, other workspaces (whose views a
+ * mention could not resolve here), or links carrying row/tab targets — is
+ * pasted as an inline link and the "Paste as" menu (Mention / URL / Bookmark /
+ * Embed) is shown so the user can choose how to render it.
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
-  // Check for AppFlowy internal links
-  const isAppFlowyLinkUrl = isURL(url, {
-    host_whitelist: [window.location.hostname],
-  });
+  const appFlowyPageLink = parseAppFlowyPageLink(url, window.location.hostname);
+  const currentWorkspaceId = workspaceIdFromAppPathname(window.location.pathname);
 
-  if (isAppFlowyLinkUrl) {
-    const urlObj = new URL(url);
-    const blockId = urlObj.searchParams.get('blockId');
+  if (
+    appFlowyPageLink &&
+    currentWorkspaceId &&
+    appFlowyPageLink.workspaceId.toLowerCase() === currentWorkspaceId.toLowerCase()
+  ) {
+    const point = editor.selection?.anchor as BasePoint;
 
-    if (blockId) {
-      const pageId = urlObj.pathname.split('/').pop();
-      const point = editor.selection?.anchor as BasePoint;
-
-      if (point) {
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention: {
-              type: MentionType.PageRef,
-              page_id: pageId,
-              block_id: blockId,
-            },
+    if (point) {
+      Transforms.insertNodes(
+        editor,
+        {
+          text: '@',
+          mention: {
+            type: MentionType.PageRef,
+            page_id: appFlowyPageLink.viewId,
+            ...(appFlowyPageLink.blockId ? { block_id: appFlowyPageLink.blockId } : {}),
           },
-          { at: point, select: true, voids: false }
-        );
+        },
+        { at: point, select: true, voids: false }
+      );
 
-        return true;
-      }
+      return true;
     }
   }
 
@@ -660,6 +658,15 @@ function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
  */
 const TABLE_BLOCK_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
 
+/**
+ * A first pasted paragraph merges inline at the caret. Headings, lists,
+ * quotes, etc. keep their block identity and insert as new blocks, so
+ * pasting "# Title" markdown or an HTML heading never degrades to plain text.
+ */
+function shouldMergeFirstParsedBlockInline(block: ParsedBlock): boolean {
+  return block.type === BlockType.Paragraph && block.children.length === 0 && block.text.length > 0;
+}
+
 function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
   if (blocks.length === 0) return false;
 
@@ -677,27 +684,20 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
 
     if (!blockId) return false;
 
-    const sharedRoot = getSharedRoot(editor as YjsEditor);
-    const block = getBlock(blockId, sharedRoot);
-
     // Check if we're pasting inside a table cell
     const insideTable = isInsideSimpleTableCell(editor as YjsEditor, blockId);
 
     if (insideTable) {
+      const sharedRoot = getSharedRoot(editor as YjsEditor);
+
       // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
       const cellBlocks = blocks.filter((b) => !TABLE_BLOCK_TYPES.includes(b.type));
       const tableBlocks = blocks.filter((b) => TABLE_BLOCK_TYPES.includes(b.type));
 
       // Insert text blocks inside the cell
       if (cellBlocks.length > 0) {
-        const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-        const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-        const index = parentChildren.toArray().findIndex((id) => id === blockId);
-        const doc = assertDocExists(sharedRoot);
-        const slateNodes = cellBlocks.map(parsedBlockToSlateElement);
-
-        doc.transact(() => {
-          slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+        insertBlocksAtCaret(editor as YjsEditor, cellBlocks.map(parsedBlockToSlateElement), {
+          mergeFirstBlockInline: shouldMergeFirstParsedBlockInline(cellBlocks[0]),
         });
       }
 
@@ -737,21 +737,12 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
       return true;
     }
 
-    // Normal paste (not inside table cell)
-    const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-    const index = parentChildren.toArray().findIndex((id) => id === blockId);
-    const doc = assertDocExists(sharedRoot);
-
-    // Convert parsed blocks to Slate elements with proper text wrapper
-    const slateNodes = blocks.map(parsedBlockToSlateElement);
-
-    // Insert into YJS document
-    doc.transact(() => {
-      slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+    // Normal paste (not inside table cell): insert relative to the caret —
+    // a leading paragraph merges inline at the cursor, everything else lands
+    // as sibling blocks below.
+    return insertBlocksAtCaret(editor as YjsEditor, blocks.map(parsedBlockToSlateElement), {
+      mergeFirstBlockInline: shouldMergeFirstParsedBlockInline(blocks[0]),
     });
-
-    return true;
   } catch (error) {
     console.error('Error inserting parsed blocks:', error);
     return false;

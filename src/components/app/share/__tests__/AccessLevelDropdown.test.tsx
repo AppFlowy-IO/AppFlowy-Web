@@ -78,6 +78,7 @@ function renderAccessLevelDropdown(overrides: Partial<ComponentProps<typeof Acce
   const props: ComponentProps<typeof AccessLevelDropdown> = {
     canModify: true,
     currentUserHasFullAccess: true,
+    currentUserCanGrantFullAccess: false,
     isYou: false,
     onAccessLevelChange: async () => undefined,
     onRemoveAccess: async () => undefined,
@@ -89,8 +90,10 @@ function renderAccessLevelDropdown(overrides: Partial<ComponentProps<typeof Acce
 }
 
 describe('AccessLevelDropdown', () => {
-  it('keeps full-access collaborators editable for users who can modify access', () => {
-    renderAccessLevelDropdown();
+  it('lets full-access users change, remove, or grant full access when allowed', () => {
+    renderAccessLevelDropdown({
+      currentUserCanGrantFullAccess: true,
+    });
 
     const trigger = screen.getByRole('button', { name: 'Full access' });
 
@@ -98,7 +101,19 @@ describe('AccessLevelDropdown', () => {
     expect(screen.getByText('Can view')).toBeTruthy();
     expect(screen.getByText('Can edit')).toBeTruthy();
     expect(screen.getAllByText('Full access')).toHaveLength(2);
+    expect(screen.getByText('Can edit and share with others')).toBeTruthy();
     expect(screen.getByText('Remove access')).toBeTruthy();
+  });
+
+  it('shows full-access grants for workspace owners', () => {
+    renderAccessLevelDropdown({
+      currentUserCanGrantFullAccess: true,
+      person: createPerson({ access_level: AccessLevel.ReadAndWrite }),
+    });
+
+    expect(screen.getByRole('button', { name: 'Can edit' }).disabled).toBe(false);
+    expect(screen.getByText('Full access')).toBeTruthy();
+    expect(screen.getByText('Can edit and share with others')).toBeTruthy();
   });
 
   it('keeps non-modifiable full-access rows as static labels', () => {
@@ -109,6 +124,30 @@ describe('AccessLevelDropdown', () => {
 
     expect(screen.queryByRole('button', { name: 'Full access' })).toBeNull();
     expect(screen.getByText('Full access')).toBeTruthy();
+    expect(screen.queryByText('Remove access')).toBeNull();
+  });
+
+  it('keeps non-modifiable edit rows as static labels', () => {
+    renderAccessLevelDropdown({
+      canModify: false,
+      currentUserHasFullAccess: false,
+      person: createPerson({ access_level: AccessLevel.ReadAndWrite }),
+    });
+
+    expect(screen.queryByRole('button', { name: 'Can edit' })).toBeNull();
+    expect(screen.getByText('Can edit')).toBeTruthy();
+    expect(screen.queryByText('Remove access')).toBeNull();
+  });
+
+  it('keeps non-modifiable read-only rows as static labels', () => {
+    renderAccessLevelDropdown({
+      canModify: false,
+      currentUserHasFullAccess: false,
+      person: createPerson({ access_level: AccessLevel.ReadOnly }),
+    });
+
+    expect(screen.queryByRole('button', { name: 'Can view' })).toBeNull();
+    expect(screen.getByText('Can view')).toBeTruthy();
     expect(screen.queryByText('Remove access')).toBeNull();
   });
 });

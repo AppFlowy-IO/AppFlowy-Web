@@ -1,4 +1,4 @@
-import { YjsEditorKey, YSharedRoot } from '@/application/types';
+import { BlockType, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { generateId, getTestingDocData, insertBlock, withTestingYDoc } from './withTestingYjsEditor';
 import { yDocToSlateContent, deltaInsertToSlateNode, yDataToSlateContent } from '@/application/slate-yjs/utils/convert';
 import { expect } from '@jest/globals';
@@ -214,6 +214,43 @@ describe('convert yjs data to slate content', () => {
       },
     ]);
   });
+
+  it.each([
+    ['List', BlockType.ListBlock],
+    ['Gallery', BlockType.DatabaseGalleryBlock],
+  ])('preserves a native embedded %s database block and its cross-client payload', (_name, blockType) => {
+    const doc = withTestingYDoc('1');
+    const id = generateId();
+    const data = {
+      parent_id: 'document-id',
+      view_ids: ['list-view-id'],
+      view_id: 'list-view-id',
+      database_id: 'database-id',
+    };
+
+    insertBlock({
+      doc,
+      blockObject: {
+        id,
+        ty: blockType,
+        relation_id: id,
+        text_id: id,
+        data: JSON.stringify(data),
+      },
+    });
+
+    const slateContent = yDocToSlateContent(doc)!;
+
+    expect(slateContent.children).toEqual([
+      {
+        blockId: id,
+        relationId: id,
+        type: blockType,
+        data,
+        children: [{ text: '' }],
+      },
+    ]);
+  });
 });
 
 describe('test deltaInsertToSlateNode', () => {
@@ -236,7 +273,6 @@ describe('test deltaInsertToSlateNode', () => {
   });
 
   it('should ensure undo/redo works', () => {
-
     const doc = new Y.Doc();
     const sharedRoot = doc.getMap('data_section');
     const document = new Y.Map();
@@ -252,6 +288,5 @@ describe('test deltaInsertToSlateNode', () => {
     expect(ytext.toString()).toBe('');
     undoManager.redo();
     expect(ytext.toString()).toBe('Hello');
-
   });
 });

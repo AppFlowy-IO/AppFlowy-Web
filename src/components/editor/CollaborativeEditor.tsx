@@ -1,17 +1,21 @@
 import { debounce } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createEditor, Descendant, Editor, Element as SlateElement, Node } from 'slate';
+import { createEditor, Descendant, Editor, Element as SlateElement, Node, Operation } from 'slate';
 import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
-import { BlockType, CollabOrigin, YDoc } from '@/application/types';
+import { CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { resolveDatabaseBlockDeletionTarget } from '@/components/editor/database-block-lifecycle';
+import { useInlineCommentEditorBridgeOptional } from '@/components/inline-comment/InlineCommentContext';
+import { useInlineCommentEditorRegistration } from '@/components/inline-comment/editor/useInlineCommentEditorRegistration';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { Log } from '@/utils/log';
@@ -39,12 +43,6 @@ import { getTextCount } from '@/utils/word';
 }
 
 const defaultInitialValue: Descendant[] = [];
-const DATABASE_BLOCK_TYPES = new Set([
-  BlockType.GridBlock,
-  BlockType.BoardBlock,
-  BlockType.CalendarBlock,
-  BlockType.ChartBlock,
-]);
 const DATABASE_VIEW_DELETION_GRACE_MS = 1500;
 
 type DatabaseBlockInfo = {
@@ -52,6 +50,27 @@ type DatabaseBlockInfo = {
   parentId: string;
   viewIds: string[];
 };
+
+function isDatabaseBlockNode(node: Node): boolean {
+  return SlateElement.isElement(node) && isDatabaseBlockType((node as unknown as { type?: unknown }).type);
+}
+
+function isDatabaseBlockLifecycleOperation(editor: YjsEditor, op: Operation): boolean {
+  if (op.type === 'insert_node' || op.type === 'remove_node') {
+    return isDatabaseBlockNode(op.node);
+  }
+
+  if (op.type !== 'set_node') return false;
+  if (!('data' in op.properties) && !('data' in op.newProperties)) return false;
+
+  try {
+    const node = Node.get(editor, op.path);
+
+    return isDatabaseBlockNode(node);
+  } catch {
+    return false;
+  }
+}
 
 function CollaborativeEditor({
   doc,
@@ -63,15 +82,18 @@ function CollaborativeEditor({
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
   const context = useEditorContext();
+  const inlineComments = useInlineCommentEditorBridgeOptional();
   const readSummary = context.readSummary;
   const onRendered = context.onRendered;
   const uploadFile = context.uploadFile;
   const readOnly = context.readOnly;
+  const canComment = context.canComment ?? false;
+  const canWrite = context.canWrite ?? !readOnly;
   const viewId = context.viewId;
   const onWordCountChange = context.onWordCountChange;
   const deletePage = context.deletePage;
   const loadViewMeta = context.loadViewMeta;
-  const [, setClock] = useState(0);
+  const [contentClock, setClock] = useState(0);
   const databaseBlocksRef = useRef<Map<string, DatabaseBlockInfo>>(new Map());
   const pendingDatabaseViewDeletionRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const onContentChange = useCallback(
@@ -98,8 +120,7 @@ function CollaborativeEditor({
 
     for (const [node] of Editor.nodes(editor, {
       at: [],
-      match: (value: Node) =>
-        SlateElement.isElement(value) && DATABASE_BLOCK_TYPES.has((value as { type: BlockType }).type),
+      match: isDatabaseBlockNode,
     })) {
       const element = node as unknown as {
         blockId?: string;
@@ -116,8 +137,8 @@ function CollaborativeEditor({
       const viewIds = Array.isArray(data.view_ids)
         ? data.view_ids.filter((id): id is string => typeof id === 'string')
         : typeof data.view_id === 'string'
-          ? [data.view_id]
-          : [];
+        ? [data.view_id]
+        : [];
 
       if (viewIds.length === 0) continue;
 
@@ -142,17 +163,9 @@ function CollaborativeEditor({
       if (editor.interceptLocalChange) return;
 
       // Avoid scanning the whole document on every keystroke. Only react to operations that can
-      // affect database block presence (insert/remove).
+      // affect database block presence or database view references.
       const hasDatabaseBlockOps = editor.operations.some((op) => {
-        if (op.type !== 'insert_node' && op.type !== 'remove_node') return false;
-        if (!('node' in op)) return false;
-
-        const node = (op as { node: Node }).node;
-
-        return (
-          SlateElement.isElement(node) &&
-          DATABASE_BLOCK_TYPES.has((node as unknown as { type: BlockType }).type)
-        );
+        return isDatabaseBlockLifecycleOperation(editor, op);
       });
 
       if (!hasDatabaseBlockOps) return;
@@ -203,22 +216,27 @@ function CollaborativeEditor({
 
           if (stillReferenced) return;
 
-          // Find the container by looking up the parent of the child view
+          // Inline database children own a container. Linked database views
+          // are direct document children and must be deleted individually.
           if (!loadViewMeta || !deletePage) return;
 
           try {
-            const childMeta = await loadViewMeta(firstViewId);
-            const containerId = childMeta?.parent_view_id;
+            const deletionTargetId = await resolveDatabaseBlockDeletionTarget(firstViewId, loadViewMeta);
 
-            if (!containerId) {
-              Log.warn('[CollaborativeEditor] Could not find container for orphaned database view', { firstViewId });
+            if (!deletionTargetId) {
+              Log.warn('[CollaborativeEditor] Could not resolve the orphaned database deletion target', {
+                firstViewId,
+              });
               return;
             }
 
-            Log.debug('[CollaborativeEditor] Deleting orphaned database container', { containerId, firstViewId });
-            await deletePage(containerId);
+            Log.debug('[CollaborativeEditor] Deleting orphaned database target', {
+              deletionTargetId,
+              firstViewId,
+            });
+            await deletePage(deletionTargetId);
           } catch (err) {
-            Log.error('[CollaborativeEditor] Failed to delete database container', { firstViewId, err });
+            Log.error('[CollaborativeEditor] Failed to delete orphaned database target', { firstViewId, err });
           }
         }, DATABASE_VIEW_DELETION_GRACE_MS);
 
@@ -254,14 +272,41 @@ function CollaborativeEditor({
   const handleSlateChange = useCallback(() => {
     ensureValidSelection(editor);
     handleDatabaseBlockLifecycle(editor);
-  }, [editor, handleDatabaseBlockLifecycle]);
+    inlineComments?.handleEditorChange(editor);
+  }, [editor, handleDatabaseBlockLifecycle, inlineComments]);
 
   const [, setIsConnected] = useState(false);
+
+  useEffect(() => {
+    inlineComments?.updateEditorAccess(editor, {
+      canComment,
+      canWrite,
+      readOnly,
+      viewId,
+    });
+  }, [canComment, canWrite, editor, inlineComments, readOnly, viewId]);
+
+  // A wholesale content swap (the doc arriving after connect, a version reset)
+  // bumps the content clock without emitting Slate operations, so the comment
+  // anchors have to be rescanned from the new children.
+  useEffect(() => {
+    if (!editor) return;
+
+    inlineComments?.refreshAnchors(editor);
+  }, [contentClock, editor, inlineComments]);
+
+  useInlineCommentEditorRegistration(editor, inlineComments, {
+    canComment,
+    canWrite,
+    readOnly,
+    viewId,
+  });
 
   useEffect(() => {
     if (!editor) return;
 
     editor.connect();
+
     setIsConnected(true);
     onEditorConnected?.(editor);
     databaseBlocksRef.current = collectDatabaseBlocks(editor);

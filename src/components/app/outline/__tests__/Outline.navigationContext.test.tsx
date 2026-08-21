@@ -13,6 +13,8 @@ declare global {
   var __outlineNavigationTestEnsureViewVisible: jest.Mock<Promise<string[]>, [viewId: string]> | undefined;
   // eslint-disable-next-line no-var
   var __outlineNavigationTestToView: jest.Mock<Promise<void>, [viewId: string]> | undefined;
+  // eslint-disable-next-line no-var
+  var __outlineNavigationTestEventEmitter: { on: jest.Mock; off: jest.Mock } | undefined;
 }
 
 jest.mock('react-i18next', () => ({
@@ -29,6 +31,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-id',
   useCurrentWorkspaceIdOptional: () => 'workspace-id',
   useEnsureViewVisibleInOutline: () => global.__outlineNavigationTestEnsureViewVisible,
+  useEventEmitter: () => global.__outlineNavigationTestEventEmitter,
   useLoadedViewIds: () => new Set<string>(),
   useLoadViewChildren: () => jest.fn().mockResolvedValue([]),
   useLoadViewChildrenBatch: () => jest.fn().mockResolvedValue([]),
@@ -217,6 +220,7 @@ describe('Outline navigation context hydration', () => {
     global.__outlineNavigationTestEnsureViewVisible = undefined;
     global.__outlineNavigationTestSelectedViewId = undefined;
     global.__outlineNavigationTestToView = undefined;
+    global.__outlineNavigationTestEventEmitter = { on: jest.fn(), off: jest.fn() };
   });
 
   it('hydrates and expands a notification target path when the selected view is missing locally', async () => {
@@ -254,5 +258,42 @@ describe('Outline navigation context hydration', () => {
     expect(JSON.parse(localStorage.getItem('outline_expanded') || '{}')).toEqual({});
 
     warnSpy.mockRestore();
+  });
+
+  it('renders only visible spaces from mixed workspace-root views', () => {
+    global.__outlineNavigationTestOutline = [
+      createView('typed-space', {
+        name: 'Typed space',
+        is_space: true,
+      }),
+      createView('legacy-space', {
+        name: 'Legacy space',
+        extra: { is_space: true },
+      }),
+      createView('root-page', {
+        name: 'Untitled root page',
+        is_space: false,
+      }),
+      createView('authoritative-non-space', {
+        name: 'Stale legacy marker',
+        is_space: false,
+        extra: { is_space: true },
+      }),
+      createView('hidden-space', {
+        name: 'Hidden space',
+        is_space: true,
+        extra: { is_space: true, is_hidden_space: true },
+      }),
+    ];
+    global.__outlineNavigationTestEnsureViewVisible = jest.fn().mockResolvedValue([]);
+    global.__outlineNavigationTestToView = jest.fn().mockResolvedValue(undefined);
+
+    render(<Outline width={280} />);
+
+    expect(screen.getByTestId('space-typed-space')).toBeTruthy();
+    expect(screen.getByTestId('space-legacy-space')).toBeTruthy();
+    expect(screen.queryByTestId('space-root-page')).toBeNull();
+    expect(screen.queryByTestId('space-authoritative-non-space')).toBeNull();
+    expect(screen.queryByTestId('space-hidden-space')).toBeNull();
   });
 });

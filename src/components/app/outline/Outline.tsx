@@ -2,7 +2,9 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
+import { APP_EVENTS } from '@/application/constants';
 import { Role, View, ViewLayout } from '@/application/types';
+import { isSpaceView } from '@/application/view-utils';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
@@ -16,6 +18,7 @@ import {
   useLoadViewChildren,
   useMarkViewChildrenStale,
   useEnsureViewVisibleInOutline,
+  useEventEmitter,
   useRevalidateSidebarOutline,
   useSidebarSelectedViewId,
   useUserWorkspaceInfo,
@@ -24,6 +27,7 @@ import { Favorite } from '@/components/app/favorite';
 import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import {
   createSidebarOutlineRevalidationScheduleState,
+  floorSidebarOutlineRevalidationStateForOpenWebSocket,
   getSidebarOutlineRevalidationDelayMs,
   limitSidebarOutlineExpandedViewIds,
   nextSidebarOutlineRevalidationStateAfterFailure,
@@ -40,6 +44,10 @@ import { Log } from '@/utils/log';
 const ImportDialog = lazy(() => import('@/components/app/import/ImportDialog'));
 
 const AUTO_LOAD_RETRY_DELAY_MS = 15000;
+const NAVIGATION_HYDRATION_RETRY_DELAY_MS = 15000;
+
+const WS_READY_STATE_OPEN = 1;
+const WS_READY_STATE_CLOSED = 3;
 
 function collectSubtreeViewIds(rootView: View): string[] {
   const ids: string[] = [];
@@ -68,12 +76,13 @@ export function Outline({ width }: { width: number }) {
   const markViewChildrenStale = useMarkViewChildrenStale();
   const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
   const revalidateSidebarOutline = useRevalidateSidebarOutline();
+  const eventEmitter = useEventEmitter();
   const selectedViewId = useSidebarSelectedViewId();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
   const spaceListRef = useRef<HTMLDivElement>(null);
   const visibleSpacesFromOutline = useMemo(
-    () => outline?.filter((view) => !view.extra?.is_hidden_space) ?? [],
+    () => outline?.filter((view) => isSpaceView(view) && !view.extra?.is_hidden_space) ?? [],
     [outline]
   );
   const { orderedItems: visibleSpaces, instanceId: spaceDragInstanceId } = useReorderableSidebarList({
@@ -114,9 +123,12 @@ export function Outline({ width }: { width: number }) {
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
   const navigationHydrationInFlightRef = useRef<Set<string>>(new Set());
   // Selected views that navigation hydration could not place in the outline
-  // (not found server-side, or access denied). Tracked so we don't re-fetch
-  // navigation on every subsequent `outline` change for an unresolvable id.
-  const navigationHydrationUnresolvedRef = useRef<Set<string>>(new Set());
+  // (not found server-side, or access denied), mapped to a retry-after
+  // timestamp. Throttles re-fetching navigation on every `outline` change for
+  // an unresolvable id, while still retrying later — a freshly duplicated view
+  // can race the folder projection and become resolvable seconds after the
+  // first attempt fails.
+  const navigationHydrationRetryAfterRef = useRef<Map<string, number>>(new Map());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
   const validatedExistingRestoreIdsRef = useRef<Set<string>>(new Set());
@@ -137,7 +149,7 @@ export function Outline({ width }: { width: number }) {
     if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
     if (findView(outline, selectedViewId)) return;
     if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
-    if (navigationHydrationUnresolvedRef.current.has(selectedViewId)) return;
+    if ((navigationHydrationRetryAfterRef.current.get(selectedViewId) ?? 0) > Date.now()) return;
 
     navigationHydrationInFlightRef.current.add(selectedViewId);
 
@@ -146,12 +158,13 @@ export function Outline({ width }: { width: number }) {
         if (ancestorIds.length === 0) {
           // Either the view resolved at the sidebar root (it's now in the
           // outline, so findView short-circuits on the next run) or it could
-          // not be resolved. Mark it so we don't re-fetch on every outline
+          // not be resolved. Throttle so we don't re-fetch on every outline
           // change while it stays selected.
-          navigationHydrationUnresolvedRef.current.add(selectedViewId);
+          navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
           return;
         }
 
+        navigationHydrationRetryAfterRef.current.delete(selectedViewId);
         ancestorIds.forEach((id) => setOutlineExpands(id, true));
         setExpandViewIds((prev) => {
           const next = new Set(prev);
@@ -166,7 +179,7 @@ export function Outline({ width }: { width: number }) {
         });
       })
       .catch((error) => {
-        navigationHydrationUnresolvedRef.current.add(selectedViewId);
+        navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
         Log.warn('[Outline] [navigation-context] failed to hydrate selected view', {
           viewId: selectedViewId,
           error,
@@ -189,7 +202,7 @@ export function Outline({ width }: { width: number }) {
     setPendingAutoLoadIds(restoredExpandedIds);
     loadingViewIdsRef.current = new Set();
     navigationHydrationInFlightRef.current = new Set();
-    navigationHydrationUnresolvedRef.current = new Set();
+    navigationHydrationRetryAfterRef.current = new Map();
     autoLoadRetryAfterRef.current = new Map();
     validatingRestoreIdsRef.current = new Set();
     validatedExistingRestoreIdsRef.current = new Set();
@@ -210,11 +223,23 @@ export function Outline({ width }: { width: number }) {
       }
     };
 
+    const getWebSocketReadyState = () =>
+      typeof eventEmitter.webSocketReadyState === 'number' ? eventEmitter.webSocketReadyState : undefined;
+
     const scheduleNextTick = () => {
       clearPendingTimer();
+
+      // While the socket is open, folder notifications keep the outline fresh
+      // and this poll is only a dropped-notification safety net — floor it to
+      // the slow cadence. Disconnected tabs keep the full fast→slow schedule.
+      const scheduleState =
+        getWebSocketReadyState() === WS_READY_STATE_OPEN
+          ? floorSidebarOutlineRevalidationStateForOpenWebSocket(sidebarRevalidationStateRef.current)
+          : sidebarRevalidationStateRef.current;
+
       timer = window.setTimeout(() => {
         void tick();
-      }, getSidebarOutlineRevalidationDelayMs(sidebarRevalidationStateRef.current));
+      }, getSidebarOutlineRevalidationDelayMs(scheduleState));
     };
 
     const tick = async () => {
@@ -271,9 +296,37 @@ export function Outline({ width }: { width: number }) {
       }
     };
 
+    let lastReadyState = getWebSocketReadyState();
+    let disconnectedSinceLastOpen = lastReadyState === WS_READY_STATE_CLOSED;
+
+    const handleWebSocketStatus = () => {
+      const readyState = getWebSocketReadyState();
+
+      if (readyState === undefined || readyState === lastReadyState) return;
+      lastReadyState = readyState;
+
+      if (readyState === WS_READY_STATE_CLOSED) {
+        if (!disconnectedSinceLastOpen) {
+          disconnectedSinceLastOpen = true;
+          // The notification channel is gone; reschedule so the poll takes
+          // over at the fast cadence instead of waiting out a slow-tier delay.
+          scheduleNextTick();
+        }
+
+        return;
+      }
+
+      if (readyState === WS_READY_STATE_OPEN && disconnectedSinceLastOpen) {
+        disconnectedSinceLastOpen = false;
+        // Notifications sent while disconnected are not replayed; catch up.
+        runNow();
+      }
+    };
+
     rescheduleSidebarRevalidationRef.current = rescheduleFromFastInterval;
     document.addEventListener('visibilitychange', runNowWhenVisible);
     window.addEventListener('online', runNow);
+    eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
 
     scheduleNextTick();
 
@@ -282,11 +335,12 @@ export function Outline({ width }: { width: number }) {
       clearPendingTimer();
       document.removeEventListener('visibilitychange', runNowWhenVisible);
       window.removeEventListener('online', runNow);
+      eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
       if (rescheduleSidebarRevalidationRef.current === rescheduleFromFastInterval) {
         rescheduleSidebarRevalidationRef.current = () => undefined;
       }
     };
-  }, [currentWorkspaceId, revalidateSidebarOutline]);
+  }, [currentWorkspaceId, eventEmitter, revalidateSidebarOutline]);
 
   // Validate restored expanded IDs that are not in the current tree and prune only truly stale IDs.
   // This avoids keeping deleted/moved IDs forever, while preserving valid deep IDs.
@@ -509,7 +563,7 @@ export function Outline({ width }: { width: number }) {
 
   const renderActions = useCallback(
     ({ hovered, view }: { hovered: boolean; view: View }) => {
-      const isSpace = view?.extra?.is_space;
+      const isSpace = isSpaceView(view);
       const layout = view?.layout;
 
       const onClick = (e: React.MouseEvent<HTMLButtonElement>, type: 'more' | 'add') => {

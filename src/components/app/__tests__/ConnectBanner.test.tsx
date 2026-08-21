@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import { APP_EVENTS } from '@/application/constants';
 import { ConnectBanner } from '@/components/app/ConnectBanner';
@@ -48,5 +48,23 @@ describe('ConnectBanner', () => {
     });
 
     expect(screen.queryByTestId('connect-banner')).toBeNull();
+  });
+
+  it('leaves automatic recovery to the websocket hook', () => {
+    const eventEmitter = createEventEmitter();
+    const reconnectSpy = jest.fn();
+
+    eventEmitter.webSocketReadyState = 3;
+    eventEmitter.on(APP_EVENTS.RECONNECT_WEBSOCKET, reconnectSpy);
+    renderConnectBanner(eventEmitter);
+
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    expect(reconnectSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('connect-banner-reconnect'));
+    expect(reconnectSpy).toHaveBeenCalledTimes(1);
   });
 });

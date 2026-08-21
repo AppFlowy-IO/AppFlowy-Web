@@ -12,10 +12,12 @@ export interface SpaceListProps {
   onChange?: (value: string) => void;
   spaceList: SpaceView[];
   loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
   title?: React.ReactNode;
 }
 
-function SpaceList({ loading, spaceList, value, onChange, title }: SpaceListProps) {
+function SpaceList({ loading, error, spaceList, value, onChange, onRetry, title }: SpaceListProps) {
   const { t } = useTranslation();
 
   const getExtraObj = useCallback((extra: string) => {
@@ -61,6 +63,17 @@ function SpaceList({ loading, spaceList, value, onChange, title }: SpaceListProp
         <div className={'flex w-full items-center justify-center'}>
           <CircularProgress size={24} />
         </div>
+      ) : error ? (
+        <div className={'flex min-h-12 w-full items-center justify-between gap-3 text-sm'} role={'alert'}>
+          <span className={'text-text-secondary'}>{t('publish.loadSpacesFailed')}</span>
+          <Button color={'primary'} size={'small'} variant={'text'} onClick={onRetry}>
+            {t('button.retry')}
+          </Button>
+        </div>
+      ) : spaceList.length === 0 ? (
+        <div className={'flex min-h-12 w-full items-center text-sm text-text-secondary'}>
+          {t('publish.noSpacesAvailable')}
+        </div>
       ) : (
         <div className={'appflowy-scroller flex w-full flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden'}>
           {spaceList.map((space) => {
@@ -69,7 +82,7 @@ function SpaceList({ loading, spaceList, value, onChange, title }: SpaceListProp
             return (
               <Tooltip title={space.name} key={space.id} placement={'bottom'} enterDelay={1000} enterNextDelay={1000}>
                 <Button
-                  data-testid="space-item"
+                  data-testid='space-item'
                   variant={'text'}
                   color={'inherit'}
                   className={'flex items-center p-1 font-normal'}

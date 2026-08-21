@@ -141,7 +141,7 @@ function ViewItem({
   // Dot icon for referenced database views (like desktop)
   const getDotIcon = useCallback(() => {
     return (
-      <span className={'flex h-full w-5 items-center justify-end'}>
+      <span className={'flex h-full w-5 items-center justify-end'} data-testid='database-view-dot'>
         <span className={'p-1.5'}>
           <span className={'block h-1 w-1 rounded-full bg-text-secondary'} />
         </span>
@@ -157,22 +157,22 @@ function ViewItem({
     [uploadFile, viewId]
   );
 
+  // Determine which left icon to show
+  // Use the utility function which properly handles database containers
+  const isRefDatabaseView = isRefDbView(view, parentView);
+  const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
+  const hasConfirmedChildren = Boolean(visibleChildren?.length);
+  // Use server-provided has_children when available; fall back to heuristic for old servers
+  const hasChildren = hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
+
+  // Calculate left padding based on icon presence
+  const showLeftIcon = isRefDatabaseView || hasChildren;
+  const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
+
   const renderItem = useMemo(() => {
     if (!view) return null;
     if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 
-    // Determine which left icon to show
-    // Use the utility function which properly handles database containers
-    const isRefDatabaseView = isRefDbView(view, parentView);
-    const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
-    const hasConfirmedChildren = Boolean(visibleChildren?.length);
-    // Use server-provided has_children when available; fall back to heuristic for old servers
-    const hasChildren =
-      hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
-
-    // Calculate left padding based on icon presence
-    const showLeftIcon = isRefDatabaseView || hasChildren;
-    const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
     const showPageIcon = !isRefDatabaseView;
 
     // Render left icon: dot for referenced database views, expand icon for views with children
@@ -258,20 +258,17 @@ function ViewItem({
           </div>
         </div>
         {renderExtra && renderExtra({ hovered, view })}
-        {dragState.type === 'over' ? (
-          <DropRowLine edge={dragState.closestEdge} style={{ left: `${leftPadding}px` }} />
-        ) : null}
       </div>
     );
   }, [
     aiEnabled,
     view,
-    visibleChildren,
     selected,
-    level,
+    leftPadding,
+    hasChildren,
+    isRefDatabaseView,
     getIcon,
     getDotIcon,
-    parentView,
     onUploadFile,
     handleRemoveIcon,
     t,
@@ -280,8 +277,7 @@ function ViewItem({
     onClickView,
     viewId,
     handleChangeIcon,
-    loadedViewIds,
-    dragState,
+    dragState.type,
     shouldSuppressClick,
   ]);
 
@@ -351,11 +347,18 @@ function ViewItem({
       style={{
         width,
       }}
-      className={'flex h-fit flex-col overflow-hidden'}
+      className={'relative flex h-fit flex-col overflow-hidden'}
       data-testid='page-item'
     >
       {renderItem}
       {renderChildren}
+      {/* Outside the row so a `bottom` edge sits under this view's expanded children — dropping
+          "after this view" lands after its whole subtree, and the line has to say so. The style is
+          built here rather than memoized: it is only needed mid-drag, and `DropRowLine` is not
+          memoized, so a stable identity would buy nothing on the renders that do not draw it. */}
+      {dragState.type === 'over' ? (
+        <DropRowLine edge={dragState.closestEdge} style={{ left: `${leftPadding}px` }} />
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,15 @@ import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, u
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import {
+  MentionSearchRequest,
+  UIVariant,
+  View,
+  ViewLayout,
+  ViewMetaProps,
+  YDoc,
+  YDocWithMeta,
+} from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
@@ -26,12 +34,16 @@ import {
   useScheduleDeferredCleanup,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
-import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
+import {
+  getViewCanCommentStatus,
+  getViewCanWriteStatus,
+  getViewReadOnlyStatus,
+} from '@/components/app/hooks/useViewOperations';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ViewService } from '@/application/services/domains';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 import { Log } from '@/utils/log';
 
@@ -64,6 +76,16 @@ function AppPage() {
   const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
+  const searchMentions = useCallback(
+    (request: MentionSearchRequest) => {
+      if (!workspaceId) {
+        return Promise.reject(new Error('workspaceId is required'));
+      }
+
+      return WorkspaceService.searchMentions(workspaceId, request);
+    },
+    [workspaceId]
+  );
 
   const currentUser = useCurrentUser();
 
@@ -360,7 +382,17 @@ function AppPage() {
   useEffect(() => {
     if (!eventEmitter) return;
 
-    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc, isExternalRevert }: { objectId: string; viewId?: string; doc: YDoc; isExternalRevert?: boolean }) => {
+    const handleCollabDocReset = ({
+      objectId,
+      viewId: resetViewId,
+      doc: nextDoc,
+      isExternalRevert,
+    }: {
+      objectId: string;
+      viewId?: string;
+      doc: YDoc;
+      isExternalRevert?: boolean;
+    }) => {
       Log.debug('[Version] AppPage handleCollabDocReset received:', {
         objectId,
         resetViewId,
@@ -462,12 +494,22 @@ function AppPage() {
     return getViewReadOnlyStatus(viewId, outline, view);
   }, [viewId, outline, view]);
 
+  const canComment = useMemo(() => {
+    if (!viewId) return false;
+    return getViewCanCommentStatus(viewId, outline, view);
+  }, [outline, view, viewId]);
+
+  const canWrite = useMemo(() => {
+    if (!viewId) return false;
+    return getViewCanWriteStatus(viewId, outline, view);
+  }, [outline, view, viewId]);
+
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
     const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
 
     if (layout === ViewLayout.AIChat && !aiEnabled) {
-      return <div data-testid="ai-chat-disabled-view" className="h-full w-full" />;
+      return <div data-testid='ai-chat-disabled-view' className='h-full w-full' />;
     }
 
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
@@ -483,7 +525,6 @@ function AppPage() {
     }
 
     if (layout === ViewLayout.Document) {
-
       const key = `${viewId}:${docForCurrentView.version}`;
 
       return (
@@ -493,6 +534,8 @@ function AppPage() {
           workspaceId={workspaceId}
           doc={docForCurrentView}
           readOnly={isReadOnly}
+          canComment={canComment}
+          canWrite={canWrite}
           viewMeta={viewMeta}
           navigateToView={toView}
           loadViewMeta={loadViewMeta}
@@ -510,8 +553,10 @@ function AppPage() {
           onWordCountChange={setWordCount}
           uploadFile={handleUploadFile}
           variant={UIVariant.App}
+          scheduleDeferredCleanup={scheduleDeferredCleanup}
           getSubscriptions={operations.getSubscriptions}
           getMentionUser={getMentionUser}
+          searchMentions={searchMentions}
           eventEmitter={eventEmitter}
           getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
           loadDatabaseRelations={loadDatabaseRelations}
@@ -537,6 +582,8 @@ function AppPage() {
         workspaceId={workspaceId}
         doc={docForCurrentView}
         readOnly={isReadOnly}
+        canComment={canComment}
+        canWrite={canWrite}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -548,6 +595,7 @@ function AppPage() {
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}
         onWordCountChange={setWordCount}
@@ -556,6 +604,7 @@ function AppPage() {
         scheduleDeferredCleanup={scheduleDeferredCleanup}
         getSubscriptions={operations.getSubscriptions}
         getMentionUser={getMentionUser}
+        searchMentions={searchMentions}
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
@@ -580,6 +629,8 @@ function AppPage() {
     workspaceId,
     requestInstance,
     isReadOnly,
+    canComment,
+    canWrite,
     toView,
     loadViewMeta,
     createRow,
@@ -599,6 +650,7 @@ function AppPage() {
     aiEnabled,
     operations,
     getMentionUser,
+    searchMentions,
     eventEmitter,
     loadDatabaseRelations,
   ]);
@@ -701,7 +753,9 @@ function AppPage() {
     <div ref={ref} className={'relative h-full w-full'}>
       {helmet}
 
-      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : (
+      {error ? (
+        <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} />
+      ) : (
         <div className={`h-full w-full ${isTransitioning ? 'pointer-events-none opacity-80' : ''}`}>
           {displayDom}
           {(isTransitioning || !displayDom) && (

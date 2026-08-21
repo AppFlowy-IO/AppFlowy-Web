@@ -1,5 +1,10 @@
 import { AccessLevel, IPeopleWithAccessType, Role, View, ViewLayout } from '@/application/types';
-import { resolveShareSectionType, ShareSectionType } from '@/components/app/share/shareSectionType';
+import { resolveCurrentUserAccessLevel } from '@/components/app/share/shareAccessLevel';
+import {
+  isInheritedWorkspaceAccess,
+  resolveShareSectionType,
+  ShareSectionType,
+} from '@/components/app/share/shareSectionType';
 
 const createView = (overrides: Partial<View> = {}): View => ({
   view_id: 'view-1',
@@ -84,5 +89,55 @@ describe('resolveShareSectionType', () => {
         sharedPeople: [createPerson('owner@appflowy.io')],
       })
     ).toBe(ShareSectionType.Shared);
+  });
+});
+
+describe('isInheritedWorkspaceAccess', () => {
+  it('marks non-guest public-section members as inherited workspace access', () => {
+    expect(isInheritedWorkspaceAccess(ShareSectionType.Public, createPerson('member@appflowy.io'))).toBe(true);
+  });
+
+  it('keeps guests, pending invites, and shared-section rows mutable as direct access rows', () => {
+    expect(
+      isInheritedWorkspaceAccess(ShareSectionType.Public, createPerson('guest@appflowy.io', { role: Role.Guest }))
+    ).toBe(false);
+    expect(
+      isInheritedWorkspaceAccess(
+        ShareSectionType.Public,
+        createPerson('pending@appflowy.io', { pending_invitation: true })
+      )
+    ).toBe(false);
+    expect(isInheritedWorkspaceAccess(ShareSectionType.Shared, createPerson('member@appflowy.io'))).toBe(false);
+  });
+});
+
+describe('resolveCurrentUserAccessLevel', () => {
+  it('prefers the v2 current user permission over shared rows and outline access', () => {
+    expect(
+      resolveCurrentUserAccessLevel({
+        currentUserEmail: 'member@appflowy.io',
+        currentUserPermission: { access_level: AccessLevel.ReadOnly },
+        outlineAccessLevel: AccessLevel.ReadAndWrite,
+        sharedPeople: [createPerson('member@appflowy.io', { access_level: AccessLevel.FullAccess })],
+      })
+    ).toBe(AccessLevel.ReadOnly);
+  });
+
+  it('falls back to shared rows and then outline access for legacy responses', () => {
+    expect(
+      resolveCurrentUserAccessLevel({
+        currentUserEmail: 'member@appflowy.io',
+        outlineAccessLevel: AccessLevel.ReadOnly,
+        sharedPeople: [createPerson('member@appflowy.io', { access_level: AccessLevel.ReadAndWrite })],
+      })
+    ).toBe(AccessLevel.ReadAndWrite);
+
+    expect(
+      resolveCurrentUserAccessLevel({
+        currentUserEmail: 'missing@appflowy.io',
+        outlineAccessLevel: AccessLevel.ReadOnly,
+        sharedPeople: [createPerson('member@appflowy.io', { access_level: AccessLevel.ReadAndWrite })],
+      })
+    ).toBe(AccessLevel.ReadOnly);
   });
 });

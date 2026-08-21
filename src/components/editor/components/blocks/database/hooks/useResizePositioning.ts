@@ -16,7 +16,10 @@ export const useResizePositioning = ({ editor, node }: UseResizePositioningProps
 
   useEffect(() => {
     const dom = ReactEditor.toDOMNode(editor, node);
-    const scrollContainer = dom.closest('.appflowy-scroll-container') || (getScrollParent(dom) as HTMLElement);
+    // History previews use `.appflowy-scroller` and may not overflow before the
+    // database finishes rendering, so prefer the stable container classes.
+    const scrollContainer =
+      dom.closest('.appflowy-scroll-container, .appflowy-scroller') || (getScrollParent(dom) as HTMLElement);
 
     if (!dom || !scrollContainer) return;
 
@@ -37,7 +40,7 @@ export const useResizePositioning = ({ editor, node }: UseResizePositioningProps
     const resizeObserver = new ResizeObserver(onResize);
 
     resizeObserver.observe(scrollContainer);
-    
+
     return () => {
       resizeObserver.disconnect();
     };

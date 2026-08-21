@@ -219,8 +219,19 @@ export async function openGridDatabaseByName(page: Page, pageName: string): Prom
 export async function openGridDatabaseByPageId(page: Page, pageId: string): Promise<DatabaseFixtureInfo> {
   const pageItem = PageSelectors.itemByViewId(page, pageId);
 
-  await expect(pageItem).toBeVisible({ timeout: 20000 });
-  await pageItem.click({ force: true });
+  await expect(pageItem).toBeAttached({ timeout: 20000 });
+
+  // Database routes use the nested grid view ID. With deeper outline prefetching,
+  // that grid row can be present inside a collapsed database container. Click the
+  // nearest visible page row; database containers route to their first child grid.
+  const navigationItem = pageItem
+    .locator('xpath=ancestor-or-self::div[@data-testid="page-item"]')
+    .filter({ visible: true })
+    .last();
+  const navigationRow = navigationItem.locator(':scope > [data-testid^="page-"]');
+
+  await expect(navigationRow).toBeVisible({ timeout: 20000 });
+  await navigationRow.click();
   await waitForActiveDatabasePage(page, pageId);
   await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30000 });
   await waitForDatabaseTestContext(page);
@@ -725,6 +736,13 @@ export async function createRelationViaCreationDialog(
 
   await expect(dialog).toBeVisible({ timeout: 15000 });
 
+  // The target list lives behind a dropdown trigger (desktop parity with
+  // `AFDropDownMenu`), so open it before the candidates exist in the DOM.
+  const databaseTrigger = page.getByTestId('relation-database-trigger');
+
+  await expect(databaseTrigger).toBeVisible({ timeout: 15000 });
+  await databaseTrigger.click({ force: true });
+
   const candidate = page.getByTestId(`relation-candidate-${args.relatedDatabaseId}`);
 
   await expect(candidate).toBeVisible({ timeout: 15000 });
@@ -1217,19 +1235,15 @@ export async function getRelationTypeOption(page: Page, fieldId: string): Promis
   }, fieldId);
 }
 
+/**
+ * PR #482 turned the "Two-way relation" row into a sub-menu trigger, so clicking the row no
+ * longer toggles anything — this helper's old body opened the sub-menu, waited a fixed beat,
+ * and escaped without ever enabling. Kept as a thin alias for existing specs; the real work
+ * (clicking the enable switch and polling the type option) lives in
+ * {@link setTwoWayRelationFromPropertyMenu}.
+ */
 export async function enableTwoWayRelationFromPropertyMenu(page: Page, fieldId: string): Promise<void> {
-  await GridFieldSelectors.fieldHeader(page, fieldId).last().click({ force: true });
-  await expect(PropertyMenuSelectors.editPropertyMenuItem(page).first()).toBeVisible({ timeout: 10000 });
-  await PropertyMenuSelectors.editPropertyMenuItem(page).first().click({ force: true });
-
-  const propertyMenu = page.locator('[role="menu"]').last();
-  const twoWayItem = propertyMenu.getByText('Two-way relation').first();
-
-  await expect(twoWayItem).toBeVisible({ timeout: 15000 });
-  await twoWayItem.click({ force: true });
-  await page.waitForTimeout(2500);
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await setTwoWayRelationFromPropertyMenu(page, fieldId, true);
 }
 
 async function addRelationFieldToCurrentDatabase(
@@ -1291,5 +1305,302 @@ async function addRelationFieldToCurrentDatabase(
       });
     },
     { fieldId, options }
+  );
+}
+
+/**
+ * Injects a Count rollup field over the given relation field into the current
+ * database. Count is the one calculation that needs no target field, which
+ * keeps the rendered value deterministic for assertions.
+ */
+export async function createRollupCountFieldDirect(
+  page: Page,
+  options: { fieldName: string; relationFieldId: string }
+): Promise<string> {
+  const fieldId = makeTestId('rollup');
+
+  await waitForDatabaseTestContext(page);
+  await page.evaluate(
+    ({ fieldId, options }) => {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const win = window as any;
+      const ctx = win.__TEST_DATABASE_CONTEXT__;
+      const Y = win.Y;
+      const doc = ctx.databaseDoc;
+      const database = doc.getMap('data').get('database');
+      const now = String(Math.floor(Date.now() / 1000));
+      const field = new Y.Map();
+      const typeOptionMap = new Y.Map();
+      const typeOption = new Y.Map();
+
+      field.set('name', options.fieldName);
+      field.set('id', fieldId);
+      field.set('ty', 16);
+      field.set('created_at', now);
+      field.set('last_modified', now);
+      field.set('is_primary', false);
+      field.set('icon', '');
+
+      typeOption.set('relation_field_id', options.relationFieldId);
+      typeOption.set('target_field_id', '');
+      typeOption.set('calculation_type', 5);
+      typeOption.set('show_as', 0);
+      typeOption.set('condition_value', '');
+      typeOptionMap.set('16', typeOption);
+      field.set('type_option', typeOptionMap);
+
+      doc.transact(() => {
+        database.get('fields').set(fieldId, field);
+        database.get('views').forEach((view: any) => {
+          const fieldOrders = view.get('field_orders');
+
+          if (!fieldOrders.toArray().some((order: { id: string }) => order.id === fieldId)) {
+            fieldOrders.push([{ id: fieldId }]);
+          }
+
+          const fieldSettings = view.get('field_settings');
+
+          if (!fieldSettings.get(fieldId)) {
+            const setting = new Y.Map();
+
+            setting.set('visibility', 0);
+            fieldSettings.set(fieldId, setting);
+          }
+        });
+      });
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    },
+    { fieldId, options }
+  );
+  await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toBeVisible({ timeout: 20000 });
+  return fieldId;
+}
+
+/**
+ * Toggles the "Two-way relation" switch in the property menu.
+ *
+ * Mirrors desktop's `_TwoWayRelationPopoverContent`: the row in the field
+ * editor opens a 320-wide sub-menu whose first item is an Enable toggle.
+ * Clicking the sub-trigger only opens the sub-menu, so the switch itself has
+ * to be clicked.
+ */
+export async function setTwoWayRelationFromPropertyMenu(
+  page: Page,
+  fieldId: string,
+  enable: boolean
+): Promise<void> {
+  await GridFieldSelectors.fieldHeader(page, fieldId).last().click({ force: true });
+  await expect(PropertyMenuSelectors.editPropertyMenuItem(page).first()).toBeVisible({ timeout: 15000 });
+  await PropertyMenuSelectors.editPropertyMenuItem(page).first().click({ force: true });
+
+  const twoWayTrigger = page.locator('[role="menu"]').last().getByText('Two-way relation').first();
+
+  await expect(twoWayTrigger).toBeVisible({ timeout: 15000 });
+  await twoWayTrigger.click({ force: true });
+
+  const toggle = page.getByTestId('relation-two-way-enable');
+
+  await expect(toggle).toBeVisible({ timeout: 15000 });
+
+  if ((await toggle.getAttribute('data-state')) !== (enable ? 'checked' : 'unchecked')) {
+    await toggle.click({ force: true });
+  }
+
+  // Creating (or deleting) the reciprocal field round-trips through the related
+  // database doc, so wait for the type option itself rather than a fixed beat.
+  await expect
+    .poll(async () => (await getRelationTypeOption(page, fieldId)).is_two_way, {
+      timeout: 30000,
+      message: `Waiting for two-way relation to be ${enable ? 'enabled' : 'disabled'}`,
+    })
+    .toBe(enable);
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[role="menu"]')).toHaveCount(0, { timeout: 10000 });
+}
+
+/** Reads the reciprocal field's type option out of the *related* database doc. */
+export async function getRelationTypeOptionFromRelatedDatabase(
+  page: Page,
+  relatedViewId: string,
+  fieldId: string
+): Promise<{
+  name: string;
+  database_id: string;
+  is_two_way: boolean;
+  reciprocal_field_id?: string;
+  source_limit: RelationLimit;
+  target_limit: RelationLimit;
+} | null> {
+  return page.evaluate(
+    async ({ relatedViewId, fieldId }) => {
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      const doc = await ctx.loadView(relatedViewId);
+      const database = doc?.getMap('data')?.get('database');
+      const field = database?.get('fields')?.get(fieldId);
+
+      if (!field) return null;
+
+      const typeOption = field.get('type_option')?.get('10');
+
+      if (!typeOption) return null;
+
+      return {
+        name: field.get('name') || '',
+        database_id: typeOption.get('database_id') || '',
+        is_two_way: Boolean(typeOption.get('is_two_way')),
+        reciprocal_field_id: typeOption.get('reciprocal_field_id') || undefined,
+        source_limit: Number(typeOption.get('source_limit') || 0),
+        target_limit: Number(typeOption.get('target_limit') || 0),
+      };
+    },
+    { relatedViewId, fieldId }
+  );
+}
+
+/** Row ids listed by a view of a database other than the one currently open. */
+export async function getRelatedDatabaseRowIds(page: Page, relatedViewId: string): Promise<string[]> {
+  return page.evaluate(async (relatedViewId) => {
+    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+    const doc = await ctx.loadView(relatedViewId);
+    const database = doc?.getMap('data')?.get('database');
+    const views = database?.get('views');
+    const view = views?.get(relatedViewId) ?? views?.get(Object.keys(views?.toJSON() ?? {})[0]);
+
+    return (view?.get('row_orders')?.toArray() ?? [])
+      .filter((row: { is_deleted?: boolean }) => !row.is_deleted)
+      .map((row: { id: string }) => row.id);
+  }, relatedViewId);
+}
+
+/** Relation cell row ids on a row of a database other than the one currently open. */
+export async function getRelationCellRowIdsInRelatedDatabase(
+  page: Page,
+  relatedViewId: string,
+  rowId: string,
+  fieldId: string
+): Promise<string[]> {
+  return page.evaluate(
+    async ({ relatedViewId, rowId, fieldId }) => {
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      const doc = await ctx.loadView(relatedViewId);
+      const rowDoc = await ctx.createRow(`${doc.guid}_rows_${rowId}`);
+      const cell = rowDoc?.getMap('data')?.get('data')?.get('cells')?.get(fieldId);
+      const data = cell?.get('data');
+
+      if (!data) return [];
+      if (typeof data.toArray === 'function') return data.toArray().map(String);
+      return [];
+    },
+    { relatedViewId, rowId, fieldId }
+  );
+}
+
+/** Field ids listed by a view of a database other than the one currently open. */
+export async function getRelatedDatabaseFieldOrder(page: Page, relatedViewId: string): Promise<string[]> {
+  return page.evaluate(async (relatedViewId) => {
+    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+    const doc = await ctx.loadView(relatedViewId);
+    const database = doc?.getMap('data')?.get('database');
+    const views = database?.get('views');
+    const view = views?.get(relatedViewId) ?? views?.get(Object.keys(views?.toJSON() ?? {})[0]);
+
+    return (view?.get('field_orders')?.toArray() ?? []).map((order: { id: string }) => order.id);
+  }, relatedViewId);
+}
+
+/** Primary-cell labels currently rendered by the open relation picker, in order. */
+export async function getRelationPickerRowLabels(page: Page): Promise<string[]> {
+  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+
+  await expect(popover).toBeVisible({ timeout: 15000 });
+  return popover
+    .locator('[data-row-id]')
+    .evaluateAll((items) => items.map((item) => item.textContent?.trim() ?? '').filter(Boolean));
+}
+
+/**
+ * Appends a row to the currently open database and seeds its primary cell,
+ * without going through the grid UI — the relation picker covers the grid, and
+ * the point of these assertions is that the picker reacts to the database doc
+ * changing underneath it.
+ */
+export async function appendRowToCurrentDatabaseDirect(page: Page, title: string): Promise<string> {
+  return page.evaluate(async (title) => {
+    const win = window as any;
+    const ctx = win.__TEST_DATABASE_CONTEXT__;
+    const Y = win.Y;
+    const doc = ctx.databaseDoc;
+    const database = doc.getMap('data').get('database');
+    const databaseId = database.get('id') || doc.guid;
+    const view = database.get('views').get(ctx.activeViewId);
+    const fieldOrders = view.get('field_orders').toArray() as Array<{ id: string }>;
+    const fields = database.get('fields');
+    const primaryFieldId =
+      fieldOrders.find((order) => Boolean(fields.get(order.id)?.get('is_primary')))?.id || fieldOrders[0]?.id;
+    const rowId = crypto.randomUUID();
+    const rowDoc = await ctx.createRow(`${doc.guid}_rows_${rowId}`);
+    const now = String(Math.floor(Date.now() / 1000));
+
+    rowDoc.transact(() => {
+      const rowSharedRoot = rowDoc.getMap('data');
+      let row = rowSharedRoot.get('data');
+
+      if (!row) {
+        row = new Y.Map();
+        row.set('id', rowId);
+        row.set('database_id', databaseId);
+        row.set('height', 36);
+        row.set('visibility', true);
+        row.set('created_at', now);
+        row.set('last_modified', now);
+        row.set('cells', new Y.Map());
+        rowSharedRoot.set('data', row);
+      }
+
+      const cells = row.get('cells');
+      const cell = new Y.Map();
+
+      cell.set('created_at', now);
+      cell.set('last_modified', now);
+      cell.set('field_type', 0);
+      cell.set('data', title);
+      cells.set(primaryFieldId, cell);
+    });
+
+    doc.transact(() => {
+      database.get('views').forEach((each: any) => {
+        each.get('row_orders').push([{ id: rowId, height: 36 }]);
+      });
+    });
+
+    return rowId;
+  }, title);
+}
+
+/** Rewrites a row's primary cell straight in its row doc, bypassing the grid. */
+export async function setPrimaryCellTextDirect(page: Page, rowId: string, text: string): Promise<void> {
+  await page.evaluate(
+    async ({ rowId, text }) => {
+      const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+      const doc = ctx.databaseDoc;
+      const database = doc.getMap('data').get('database');
+      const view = database.get('views').get(ctx.activeViewId);
+      const fieldOrders = view.get('field_orders').toArray() as Array<{ id: string }>;
+      const fields = database.get('fields');
+      const primaryFieldId =
+        fieldOrders.find((order) => Boolean(fields.get(order.id)?.get('is_primary')))?.id || fieldOrders[0]?.id;
+      const rowDoc = ctx.rowMap?.[rowId] ?? (await ctx.createRow(`${doc.guid}_rows_${rowId}`));
+      const cell = rowDoc?.getMap('data')?.get('data')?.get('cells')?.get(primaryFieldId);
+
+      if (!cell) throw new Error(`No primary cell on row ${rowId}`);
+
+      rowDoc.transact(() => {
+        cell.set('data', text);
+        cell.set('last_modified', String(Math.floor(Date.now() / 1000)));
+      });
+    },
+    { rowId, text }
   );
 }

@@ -54,8 +54,21 @@ export function createDatabaseNodeData(params: {
   return {
     parent_id: params.parentId,
     view_ids: uniqueViewIds,
+    view_id: uniqueViewIds[0],
     database_id: params.databaseId,
   };
+}
+
+export function createDatabaseDuplicatePlaceholderData(parentId?: string): DatabaseNodeData {
+  return {
+    parent_id: parentId,
+    view_ids: [],
+    is_database_duplicate_placeholder: true,
+  };
+}
+
+export function isDatabaseDuplicatePlaceholder(data: DatabaseNodeData): boolean {
+  return data.is_database_duplicate_placeholder === true;
 }
 
 /**
@@ -71,6 +84,7 @@ export function addViewId(data: DatabaseNodeData, viewId: string): DatabaseNodeD
   return {
     ...data,
     view_ids: currentIds,
+    view_id: currentIds[0],
   };
 }
 
@@ -78,11 +92,23 @@ export function addViewId(data: DatabaseNodeData, viewId: string): DatabaseNodeD
  * Remove a view ID from existing database node data (returns new data object).
  */
 export function removeViewId(data: DatabaseNodeData, viewId: string): DatabaseNodeData {
-  const currentIds = getViewIds(data).filter(id => id !== viewId);
+  const currentIds = getViewIds(data).filter((id) => id !== viewId);
 
   return {
     ...data,
     view_ids: currentIds,
+    view_id: currentIds[0],
+  };
+}
+
+/** Replace embedded database view IDs while preserving the callback's exact order. */
+export function replaceViewIds(data: DatabaseNodeData, viewIds: string[]): DatabaseNodeData {
+  const uniqueViewIds = Array.from(new Set(viewIds.filter(Boolean)));
+
+  return {
+    ...data,
+    view_ids: uniqueViewIds,
+    view_id: uniqueViewIds[0],
   };
 }
 
@@ -104,4 +130,26 @@ export function parseDatabaseNodeData(jsonString: string): DatabaseNodeData {
  */
 export function serializeDatabaseNodeData(data: DatabaseNodeData): string {
   return JSON.stringify(data);
+}
+
+const VIEW_GONE_MESSAGE_PATTERN = /\b(not\s*found|not\s*exist)\b/i;
+
+/**
+ * True when a view fetch failed because the record no longer exists on the
+ * server (RecordNotFound = -2 / HTTP 404, RecordDeleted = -4 / HTTP 410),
+ * as opposed to a transient network/server error.
+ */
+export function isViewGoneError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, httpStatus, message } = error as {
+    code?: number;
+    httpStatus?: number;
+    message?: string;
+  };
+
+  if (httpStatus === 404 || httpStatus === 410) return true;
+  if (code === 404 || code === -2 || code === -4) return true;
+
+  return typeof message === 'string' && VIEW_GONE_MESSAGE_PATTERN.test(message);
 }

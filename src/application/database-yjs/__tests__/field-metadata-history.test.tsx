@@ -110,12 +110,7 @@ function createFixture(): Fixture {
   fields.set(numberFieldId, createField(numberFieldId, 'Amount', FieldType.Number, 'number-icon'));
   fields.set(relationFieldId, relationField);
 
-  fieldOrders.push([
-    { id: textFieldId },
-    { id: secondTextFieldId },
-    { id: numberFieldId },
-    { id: relationFieldId },
-  ]);
+  fieldOrders.push([{ id: textFieldId }, { id: secondTextFieldId }, { id: numberFieldId }, { id: relationFieldId }]);
   fieldSettings.set(textFieldId, createFieldSetting('240'));
   fieldSettings.set(secondTextFieldId, createFieldSetting('180'));
   fieldSettings.set(numberFieldId, createFieldSetting('160'));
@@ -232,7 +227,7 @@ function expectRelationDuplicate(fixture: Fixture, duplicatedFieldId: string) {
     source_limit: RelationLimit.OneOnly,
     target_limit: RelationLimit.NoLimit,
   });
-  expect(rawOption.has(YjsDatabaseKey.is_two_way)).toBe(false);
+  expect(rawOption.get(YjsDatabaseKey.is_two_way)).toBe(false);
   expect(rawOption.has(YjsDatabaseKey.reciprocal_field_id)).toBe(false);
   expect(rawOption.has(YjsDatabaseKey.reciprocal_field_name)).toBe(false);
   expect(getFieldOrderIds(fixture)).toEqual([
@@ -308,28 +303,13 @@ describe('field metadata production hooks use database history', () => {
     const { result } = renderHook(useFieldMetadataHistory, { wrapper: createWrapper(fixture) });
 
     act(() => result.current.reorderField(relationFieldId));
-    expect(getFieldOrderIds(fixture)).toEqual([
-      relationFieldId,
-      textFieldId,
-      secondTextFieldId,
-      numberFieldId,
-    ]);
+    expect(getFieldOrderIds(fixture)).toEqual([relationFieldId, textFieldId, secondTextFieldId, numberFieldId]);
 
     act(() => result.current.history.undo());
-    expect(getFieldOrderIds(fixture)).toEqual([
-      textFieldId,
-      secondTextFieldId,
-      numberFieldId,
-      relationFieldId,
-    ]);
+    expect(getFieldOrderIds(fixture)).toEqual([textFieldId, secondTextFieldId, numberFieldId, relationFieldId]);
 
     act(() => result.current.history.redo());
-    expect(getFieldOrderIds(fixture)).toEqual([
-      relationFieldId,
-      textFieldId,
-      secondTextFieldId,
-      numberFieldId,
-    ]);
+    expect(getFieldOrderIds(fixture)).toEqual([relationFieldId, textFieldId, secondTextFieldId, numberFieldId]);
   });
 
   it('duplicates a non-relation field atomically and undoes and redoes every local copy', () => {

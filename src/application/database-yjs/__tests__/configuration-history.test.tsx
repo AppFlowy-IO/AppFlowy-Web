@@ -45,6 +45,7 @@ import { CheckboxFilterCondition } from '@/application/database-yjs/fields/check
 import { NumberFilterCondition } from '@/application/database-yjs/fields/number/number.type';
 import { TextFilterCondition } from '@/application/database-yjs/fields/text/text.type';
 import { type FilterDraft, flattenFilterTree } from '@/application/database-yjs/filter';
+import { normalizeDatabaseGroupColumn } from '@/application/database-yjs/group-column';
 import { useDatabaseHistory } from '@/application/database-yjs/history';
 import {
   DatabaseViewLayout,
@@ -234,12 +235,7 @@ function createFixture(): Fixture {
   fields.set(numberFieldId, createField(numberFieldId, 'Amount', FieldType.Number));
   fields.set(checkboxFieldId, createField(checkboxFieldId, 'Done', FieldType.Checkbox));
   fields.set(selectFieldId, createSelectField());
-  fieldOrders.push([
-    { id: textFieldId },
-    { id: numberFieldId },
-    { id: checkboxFieldId },
-    { id: selectFieldId },
-  ]);
+  fieldOrders.push([{ id: textFieldId }, { id: numberFieldId }, { id: checkboxFieldId }, { id: selectFieldId }]);
   fieldSettings.set(textFieldId, createFieldSetting('200'));
   fieldSettings.set(numberFieldId, createFieldSetting('160'));
   fieldSettings.set(checkboxFieldId, createFieldSetting('120'));
@@ -362,7 +358,14 @@ function getAdvancedDrafts(fixture: Fixture) {
 }
 
 function getGroupColumnIds(columns: YDatabaseGroupColumns) {
-  return columns.toArray().map(({ id }) => id);
+  return columns.toArray().map((column) => normalizeDatabaseGroupColumn(column)?.id);
+}
+
+function getGroupColumnVisible(columns: YDatabaseGroupColumns, columnId: string) {
+  return columns
+    .toArray()
+    .map(normalizeDatabaseGroupColumn)
+    .find((column) => column?.id === columnId)?.visible;
 }
 
 describe('configuration production hooks use database history', () => {
@@ -476,30 +479,21 @@ describe('configuration production hooks use database history', () => {
 
     act(() => result.current.history.clear());
     act(() => result.current.rebuildFilterTree(rebuiltDrafts));
-    expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([
-      advancedFilterId,
-      'advanced-number-filter-id',
-    ]);
+    expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([advancedFilterId, 'advanced-number-filter-id']);
     expect(getAdvancedDrafts(fixture)[1].operator).toBe(FilterType.Or);
 
     act(() => result.current.history.undo());
     expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([advancedFilterId]);
 
     act(() => result.current.history.redo());
-    expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([
-      advancedFilterId,
-      'advanced-number-filter-id',
-    ]);
+    expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([advancedFilterId, 'advanced-number-filter-id']);
 
     act(() => result.current.history.clear());
     act(() => result.current.removeAdvancedFilter('advanced-number-filter-id'));
     expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([advancedFilterId]);
 
     act(() => result.current.history.undo());
-    expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([
-      advancedFilterId,
-      'advanced-number-filter-id',
-    ]);
+    expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([advancedFilterId, 'advanced-number-filter-id']);
 
     act(() => result.current.history.redo());
     expect(getAdvancedDrafts(fixture).map(({ id }) => id)).toEqual([advancedFilterId]);
@@ -510,9 +504,7 @@ describe('configuration production hooks use database history', () => {
     const { result } = renderHook(useConfigurationHistory, { wrapper: createWrapper(fixture) });
 
     act(() => result.current.addSort(checkboxFieldId));
-    const addedSort = fixture.sorts
-      .toArray()
-      .find((sort) => sort.get(YjsDatabaseKey.field_id) === checkboxFieldId);
+    const addedSort = fixture.sorts.toArray().find((sort) => sort.get(YjsDatabaseKey.field_id) === checkboxFieldId);
     const addedSortId = addedSort?.get(YjsDatabaseKey.id) ?? '';
 
     expect(addedSortId).not.toBe('');
@@ -622,7 +614,14 @@ describe('configuration production hooks use database history', () => {
     expect(setting.get(YjsDatabaseKey.width)).toBe('200');
     expect(result.current.history.canRedo).toBe(true);
 
-    act(() => result.current.calculateField(new Map([['first', '2'], ['second', '3']])));
+    act(() =>
+      result.current.calculateField(
+        new Map([
+          ['first', '2'],
+          ['second', '3'],
+        ])
+      )
+    );
     expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('5');
     expect(result.current.history.canUndo).toBe(false);
     expect(result.current.history.canRedo).toBe(true);
@@ -632,7 +631,7 @@ describe('configuration production hooks use database history', () => {
     expect(calculation.get(YjsDatabaseKey.calculation_value)).toBe('5');
   });
 
-  it('groups by a checkbox field and atomically restores the replaced group and removed filter', () => {
+  it('groups a Grid by a checkbox field and atomically restores the prior group state while preserving filters', () => {
     const fixture = createFixture();
 
     fixture.sorts.delete(0, fixture.sorts.length);
@@ -647,20 +646,17 @@ describe('configuration production hooks use database history', () => {
     const { result } = renderHook(useConfigurationHistory, { wrapper: createWrapper(fixture) });
 
     act(() => result.current.groupByField(checkboxFieldId));
-    expect(fixture.filters.length).toBe(0);
+    expect(fixture.filters.get(0)).toBe(groupedFilter);
     expect(fixture.groups.length).toBe(1);
     expect(fixture.groups.get(0).get(YjsDatabaseKey.field_id)).toBe(checkboxFieldId);
-    expect(fixture.groups.get(0).get(YjsDatabaseKey.groups).toArray()).toEqual([
-      { id: 'Yes', visible: true },
-      { id: 'No', visible: true },
-    ]);
+    expect(getGroupColumnIds(fixture.groups.get(0).get(YjsDatabaseKey.groups))).toEqual(['Yes', 'No']);
 
     act(() => result.current.history.undo());
     expect(fixture.groups.length).toBe(0);
     expect(fixture.filters.get(0).get(YjsDatabaseKey.id)).toBe('checkbox-filter-id');
 
     act(() => result.current.history.redo());
-    expect(fixture.filters.length).toBe(0);
+    expect(fixture.filters.get(0)).toBe(groupedFilter);
     expect(fixture.groups.get(0).get(YjsDatabaseKey.field_id)).toBe(checkboxFieldId);
   });
 
@@ -687,13 +683,13 @@ describe('configuration production hooks use database history', () => {
 
     act(() => result.current.history.clear());
     act(() => result.current.hideGroupColumn(firstOptionId, true));
-    expect(columns.toArray().find(({ id }) => id === firstOptionId)?.visible).toBe(false);
+    expect(getGroupColumnVisible(columns, firstOptionId)).toBe(false);
 
     act(() => result.current.history.undo());
-    expect(columns.toArray().find(({ id }) => id === firstOptionId)?.visible).toBe(true);
+    expect(getGroupColumnVisible(columns, firstOptionId)).toBe(true);
 
     act(() => result.current.history.redo());
-    expect(columns.toArray().find(({ id }) => id === firstOptionId)?.visible).toBe(false);
+    expect(getGroupColumnVisible(columns, firstOptionId)).toBe(false);
 
     act(() => result.current.history.clear());
     act(() => result.current.collapseHiddenGroups(true));
@@ -738,18 +734,12 @@ describe('configuration production hooks use database history', () => {
     act(() => result.current.updateLayout(DatabaseViewLayout.Board));
     expect(Number(fixture.view.get(YjsDatabaseKey.layout))).toBe(DatabaseViewLayout.Board);
     expect(fixture.view.get(YjsDatabaseKey.groups).get(0).get(YjsDatabaseKey.field_id)).toBe(checkboxFieldId);
-    expect(
-      fixture.view
-        .get(YjsDatabaseKey.field_settings)
-        .get(textFieldId)
-        .get(YjsDatabaseKey.visibility)
-    ).toBe(FieldVisibility.HideWhenEmpty);
-    expect(
-      fixture.view
-        .get(YjsDatabaseKey.layout_settings)
-        .get('1')
-        .get(YjsDatabaseKey.collapse_hidden_groups)
-    ).toBe(true);
+    expect(fixture.view.get(YjsDatabaseKey.field_settings).get(textFieldId).get(YjsDatabaseKey.visibility)).toBe(
+      FieldVisibility.AlwaysShown
+    );
+    expect(fixture.view.get(YjsDatabaseKey.layout_settings).get('1').get(YjsDatabaseKey.collapse_hidden_groups)).toBe(
+      true
+    );
 
     act(() => result.current.history.undo());
     expect(Number(fixture.view.get(YjsDatabaseKey.layout))).toBe(DatabaseViewLayout.Grid);
@@ -760,12 +750,9 @@ describe('configuration production hooks use database history', () => {
     act(() => result.current.history.redo());
     expect(Number(fixture.view.get(YjsDatabaseKey.layout))).toBe(DatabaseViewLayout.Board);
     expect(fixture.view.get(YjsDatabaseKey.groups).get(0).get(YjsDatabaseKey.field_id)).toBe(checkboxFieldId);
-    expect(
-      fixture.view
-        .get(YjsDatabaseKey.layout_settings)
-        .get('1')
-        .get(YjsDatabaseKey.collapse_hidden_groups)
-    ).toBe(true);
+    expect(fixture.view.get(YjsDatabaseKey.layout_settings).get('1').get(YjsDatabaseKey.collapse_hidden_groups)).toBe(
+      true
+    );
   });
 
   it('updates Calendar and Chart settings with an undo/redo round trip for each specialized layout', () => {

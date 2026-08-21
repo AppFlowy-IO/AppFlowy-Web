@@ -112,11 +112,10 @@ function SpaceItem({
           </div>
         </Tooltip>
         {renderExtra && renderExtra({ hovered, view })}
-        {dragState.type === 'over' ? <DropRowLine edge={dragState.closestEdge} style={DROP_LINE_STYLE} /> : null}
       </div>
     );
   }, [
-    dragState,
+    dragState.type,
     hovered,
     isExpanded,
     isPrivate,
@@ -175,10 +174,13 @@ function SpaceItem({
   ]);
 
   return (
-    <div className={'flex h-fit w-full flex-col'} data-testid='space-item'>
+    <div className={'relative flex h-fit w-full flex-col'} data-testid='space-item'>
       <div data-testid='space-expanded' data-expanded={isExpanded} style={{ display: 'none' }} />
       {renderItem}
       {renderChildren}
+      {/* Outside the row so a `bottom` edge sits under this space's expanded pages — dropping
+          "after this space" lands after its whole subtree, and the line has to say so. */}
+      {dragState.type === 'over' ? <DropRowLine edge={dragState.closestEdge} style={DROP_LINE_STYLE} /> : null}
     </div>
   );
 }

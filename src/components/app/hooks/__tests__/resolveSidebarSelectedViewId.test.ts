@@ -73,12 +73,39 @@ describe('resolveSidebarSelectedViewId', () => {
     expect(resolveSidebarSelectedViewId({ routeViewId: gridViewId, tabViewId: null, outline })).toBe(gridViewId);
   });
 
+  it('selects the first database view when the route is a container', () => {
+    expect(resolveSidebarSelectedViewId({ routeViewId: containerViewId, tabViewId: null, outline })).toBe(gridViewId);
+  });
+
   it('falls back to routeViewId when tabViewId is unknown', () => {
     expect(resolveSidebarSelectedViewId({ routeViewId: gridViewId, tabViewId: 'missing', outline })).toBe(gridViewId);
   });
 
   it('uses tabViewId when both views are in same database container', () => {
     expect(resolveSidebarSelectedViewId({ routeViewId: gridViewId, tabViewId: boardViewId, outline })).toBe(boardViewId);
+  });
+
+  it('uses the selected tab from the outline tree when published children omit parent ids', () => {
+    const gridWithoutParent = { ...gridView, parent_view_id: undefined };
+    const boardWithoutParent = { ...boardView, parent_view_id: undefined };
+    const containerWithoutChildParentIds = {
+      ...containerView,
+      children: [gridWithoutParent, boardWithoutParent],
+    };
+    const outlineWithoutChildParentIds: View[] = [
+      {
+        ...outline[0],
+        children: [containerWithoutChildParentIds, documentView],
+      },
+    ];
+
+    expect(
+      resolveSidebarSelectedViewId({
+        routeViewId: containerViewId,
+        tabViewId: boardViewId,
+        outline: outlineWithoutChildParentIds,
+      })
+    ).toBe(boardViewId);
   });
 
   it('ignores tabViewId when route view is not a database view', () => {
@@ -125,6 +152,12 @@ describe('resolveSidebarSelectedViewId', () => {
   });
 
   describe('resolveSidebarHighlightedViewIds', () => {
+    it('highlights the first database view and its container on a container route', () => {
+      expect(
+        resolveSidebarHighlightedViewIds({ routeViewId: containerViewId, tabViewId: null, outline })
+      ).toEqual([gridViewId, containerViewId]);
+    });
+
     it('highlights the active child and database container when the active route view is a loaded child', () => {
       expect(resolveSidebarHighlightedViewIds({ routeViewId: gridViewId, tabViewId: null, outline })).toEqual([
         gridViewId,
@@ -161,6 +194,24 @@ describe('resolveSidebarSelectedViewId', () => {
         boardViewId,
         containerViewId,
       ]);
+    });
+
+    it('finds the selected tab parent structurally when parent ids are absent', () => {
+      const boardWithoutParent = { ...boardView, parent_view_id: undefined };
+      const outlineWithoutChildParentIds: View[] = [
+        {
+          ...outline[0],
+          children: [{ ...containerView, children: [{ ...gridView, parent_view_id: undefined }, boardWithoutParent] }],
+        },
+      ];
+
+      expect(
+        resolveSidebarHighlightedViewIds({
+          routeViewId: containerViewId,
+          tabViewId: boardViewId,
+          outline: outlineWithoutChildParentIds,
+        })
+      ).toEqual([boardViewId, containerViewId]);
     });
 
     it('keeps non-database child views selected normally', () => {

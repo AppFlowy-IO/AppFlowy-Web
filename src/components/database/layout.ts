@@ -23,7 +23,23 @@ export function shouldAutoShrinkDatabaseViewport({
   isDocumentBlock,
   layout,
 }: DatabaseViewportStyleInput) {
-  return embeddedHeight !== undefined && isDocumentBlock === true && layout === DatabaseViewLayout.Grid;
+  return (
+    embeddedHeight !== undefined &&
+    isDocumentBlock === true &&
+    (layout === DatabaseViewLayout.Grid || layout === DatabaseViewLayout.List || layout === DatabaseViewLayout.Gallery)
+  );
+}
+
+export function shouldScrollEmbeddedDatabaseViewport({
+  embeddedHeight,
+  isDocumentBlock,
+  layout,
+}: DatabaseViewportStyleInput) {
+  return (
+    embeddedHeight !== undefined &&
+    isDocumentBlock === true &&
+    (layout === DatabaseViewLayout.List || layout === DatabaseViewLayout.Gallery)
+  );
 }
 
 export function getDatabaseViewportStyle(input: DatabaseViewportStyleInput) {

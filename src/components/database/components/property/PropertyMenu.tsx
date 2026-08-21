@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 function PropertyMenu({
   fieldId,
@@ -74,17 +75,22 @@ function PropertyMenu({
   }, [onOpenChange]);
 
   const handleCreateRelation = useCallback(
-    (result: RelationCreationResult) => {
+    async (result: RelationCreationResult) => {
       setRelationDialogOpen(false);
-      switchType(fieldId, FieldType.Relation);
-      updatePropertyName(result.fieldName);
-      void updateRelationTypeOption({
-        database_id: result.relatedDatabaseId,
-        is_two_way: result.isTwoWay,
-        reciprocal_field_name: result.reciprocalFieldName,
-        source_limit: result.sourceLimit,
-        target_limit: RelationLimit.NoLimit,
-      });
+
+      try {
+        await switchType(fieldId, FieldType.Relation);
+        updatePropertyName(result.fieldName);
+        await updateRelationTypeOption({
+          database_id: result.relatedDatabaseId,
+          is_two_way: result.isTwoWay,
+          reciprocal_field_name: result.reciprocalFieldName,
+          source_limit: result.sourceLimit,
+          target_limit: RelationLimit.NoLimit,
+        });
+      } catch (error) {
+        Log.warn('[PropertyMenu] Failed to create relation field', { fieldId, error });
+      }
     },
     [fieldId, switchType, updatePropertyName, updateRelationTypeOption]
   );
@@ -210,6 +216,7 @@ function PropertyMenu({
       />
       <RelationCreationDialog
         open={relationDialogOpen}
+        fieldId={fieldId}
         initialFieldName={initialRelationFieldName}
         onOpenChange={setRelationDialogOpen}
         onCreate={handleCreateRelation}

@@ -1,11 +1,20 @@
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import { TransitionProps } from '@mui/material/transitions';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import {
+  MentionSearchRequest,
+  UIVariant,
+  View,
+  ViewComponentProps,
+  ViewLayout,
+  ViewMetaProps,
+  YDoc,
+  YDocWithMeta,
+} from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
@@ -25,12 +34,21 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import {
+  getViewCanCommentStatus,
+  getViewCanWriteStatus,
+  useViewOperations,
+} from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import {
+  useInlineCommentComposeOptional,
+  useInlineCommentPanelOptional,
+} from '@/components/inline-comment/InlineCommentContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ViewService } from '@/application/services/domains';
+import { cn } from '@/lib/utils';
+import { ViewService, WorkspaceService } from '@/application/services/domains';
 import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
@@ -67,16 +85,29 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const eventEmitter = useEventEmitter();
   const getMentionUser = useGetMentionUser();
   const loadDatabaseRelations = useLoadDatabaseRelations();
+  const searchMentions = useCallback(
+    (request: MentionSearchRequest) => {
+      if (!workspaceId) {
+        return Promise.reject(new Error('workspaceId is required'));
+      }
+
+      return WorkspaceService.searchMentions(workspaceId, request);
+    },
+    [workspaceId]
+  );
   const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
   const outline = useAppOutline();
   const requestInstance = getAxiosInstance();
   const { getViewReadOnlyStatus } = useViewOperations();
+  const isCommentPanelOpen = useInlineCommentPanelOptional()?.isPanelOpen ?? false;
+  const hasPendingComment = Boolean(useInlineCommentComposeOptional()?.pendingComment);
 
   // Document state
   const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
   const [notFound, setNotFound] = useState(false);
   const [syncBound, setSyncBound] = useState(false);
+  const loadRequestRevisionRef = useRef(0);
 
   // Fallback view metadata fetched from server (used when view not in outline yet).
   // Stores the full View (including children/extra) so getFirstChildView can
@@ -143,14 +174,19 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // Load document
   const loadPageDoc = useCallback(
     async (targetViewId: string) => {
+      const requestRevision = loadRequestRevisionRef.current + 1;
+
+      loadRequestRevisionRef.current = requestRevision;
       setNotFound(false);
       setDoc(undefined);
       setSyncBound(false);
       try {
         const loadedDoc = await loadView(targetViewId, false, true);
 
+        if (loadRequestRevisionRef.current !== requestRevision) return;
         setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
+        if (loadRequestRevisionRef.current !== requestRevision) return;
         setNotFound(true);
         console.error('[ViewModal] Failed to load document:', e);
       }
@@ -209,11 +245,33 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [resolvedView, effectiveOutlineView, workspaceId]);
 
   const handleClose = useCallback(() => {
+    loadRequestRevisionRef.current += 1;
     setDoc(undefined);
     setSyncBound(false);
     setFallbackMeta(null);
     onClose();
   }, [onClose]);
+
+  // AppBusinessLayer can close this modal directly when permission is
+  // revoked, bypassing handleClose. Clear the retained Y.Doc before paint so
+  // revoked content cannot remain mounted during the exit transition or flash
+  // when the same target is reopened.
+  useLayoutEffect(() => {
+    if (open) return;
+
+    loadRequestRevisionRef.current += 1;
+    setDoc(undefined);
+    setSyncBound(false);
+    setFallbackMeta(null);
+    setNotFound(false);
+  }, [open]);
+
+  useEffect(
+    () => () => {
+      loadRequestRevisionRef.current += 1;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!doc || !bindViewSync || syncBound) return;
@@ -311,12 +369,11 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
               }}
               onDeleted={handleClose}
               viewId={effectiveViewId}
-              enableVersionHistory={false}
             />
           )}
 
           <Divider orientation={'vertical'} className={'h-4'} />
-          <IconButton size={'small'} onClick={handleClose}>
+          <IconButton data-testid={'view-modal-close'} size={'small'} onClick={handleClose}>
             <CloseIcon />
           </IconButton>
         </div>
@@ -332,6 +389,18 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
   }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
 
+  // Comment permission is independent from editability, so a locked or
+  // read-and-comment page opened in the modal still offers the comment action.
+  const canComment = useMemo(() => {
+    if (!effectiveViewId) return false;
+    return getViewCanCommentStatus(effectiveViewId, outline, resolvedView);
+  }, [effectiveViewId, outline, resolvedView]);
+
+  const canWrite = useMemo(() => {
+    if (!effectiveViewId) return false;
+    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView);
+  }, [effectiveViewId, outline, resolvedView]);
+
   const View = useMemo(() => {
     switch (layout) {
       case ViewLayout.Document:
@@ -340,6 +409,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Board:
       case ViewLayout.Calendar:
       case ViewLayout.Chart:
+      case ViewLayout.List:
+      case ViewLayout.Gallery:
         return DatabaseView;
       default:
         return null;
@@ -347,13 +418,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if (!open || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
         workspaceId={workspaceId || ''}
         doc={doc.doc}
         readOnly={isReadOnly}
+        canComment={canComment}
+        canWrite={canWrite}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -372,6 +445,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         scheduleDeferredCleanup={scheduleDeferredCleanup}
         getSubscriptions={operations.getSubscriptions}
         getMentionUser={getMentionUser}
+        searchMentions={searchMentions}
         eventEmitter={eventEmitter}
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
@@ -390,11 +464,14 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     );
   }, [
     doc,
+    open,
     viewMeta,
     View,
     requestInstance,
     workspaceId,
     isReadOnly,
+    canComment,
+    canWrite,
     toView,
     loadViewMeta,
     createRow,
@@ -410,6 +487,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     handleUploadFile,
     scheduleDeferredCleanup,
     getMentionUser,
+    searchMentions,
     eventEmitter,
     loadDatabaseRelations,
   ]);
@@ -441,14 +519,21 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       fullWidth={true}
       keepMounted={false}
       disableAutoFocus={true}
-      disableEnforceFocus={false}
+      // Comment controls use viewport coordinates and therefore portal to the
+      // body. Relax focus enforcement only while an external comment surface
+      // needs focus; otherwise the modal keeps its normal focus boundary.
+      disableEnforceFocus={isCommentPanelOpen || hasPendingComment}
       disableRestoreFocus={true}
       disableScrollLock={true}
       disablePortal={false}
       TransitionComponent={Transition}
       PaperProps={{
         ref,
-        className: `max-w-[70vw] appflowy-scroll-container transform relative w-[1188px] flex flex-col h-[80vh] appflowy-scroller`,
+        // Keep the dialog clear of the comments panel while it is open.
+        className: cn(
+          'max-w-[70vw] appflowy-scroll-container transform relative w-[1188px] flex flex-col h-[80vh] appflowy-scroller',
+          isCommentPanelOpen && 'mr-[352px]'
+        ),
       }}
     >
       {renderModalTitle()}

@@ -75,7 +75,12 @@ export const Column = memo(
 
     return (
       <ColumnDragContext.Provider value={contextValue}>
-        <div data-column-id={id} className={'relative flex h-full min-h-0 w-[256px]'} ref={columnInnerRef}>
+        <div
+          data-column-id={id}
+          data-testid={'board-column'}
+          className={'relative flex h-full min-h-0 w-[256px]'}
+          ref={columnInnerRef}
+        >
           <div
             style={{
               opacity: isDragging ? 0.4 : 1,

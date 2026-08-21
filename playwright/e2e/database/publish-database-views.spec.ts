@@ -144,7 +144,8 @@ test.describe('Publish Database with Multiple Views', () => {
 
     // When: publishing the database page
     testLog.info('Publishing database page');
-    const publishedUrl = withPublishedDatabaseView(await publishCurrentPage(page), activeDatabaseViewId);
+    const barePublishedUrl = await publishCurrentPage(page);
+    const publishedUrl = withPublishedDatabaseView(barePublishedUrl, activeDatabaseViewId);
 
     testLog.info(`Published URL: ${publishedUrl}`);
 
@@ -155,11 +156,24 @@ test.describe('Publish Database with Multiple Views', () => {
 
     suppressBenignErrors(freshPage);
     await freshPage.setViewportSize({ width: 1280, height: 720 });
-    await freshPage.goto(publishedUrl, { waitUntil: 'load' });
+
+    // Then: the BARE published URL (no ?v= tab param) renders the database.
+    // Publishing a database container records the container's own id inside
+    // visible_database_view_ids; the published page must fall back to a view
+    // that actually exists in the database collab instead of rendering blank.
+    testLog.info('Checking bare published URL renders without ?v= param');
+    await freshPage.goto(barePublishedUrl, { waitUntil: 'load' });
     await freshPage.waitForTimeout(8000);
 
-    // Then: the published page renders the database
     const dbContainer = freshPage.locator('.appflowy-database');
+
+    await expect(dbContainer).toBeVisible({ timeout: 15000 });
+    await expect(dbContainer).toContainText(testText, { timeout: 10000 });
+    testLog.info('Bare published URL renders the database');
+
+    // And: the deep-linked URL with an explicit ?v= view id also renders
+    await freshPage.goto(publishedUrl, { waitUntil: 'load' });
+    await freshPage.waitForTimeout(8000);
 
     await expect(dbContainer).toBeVisible({ timeout: 15000 });
     testLog.info('Database visible on published page');

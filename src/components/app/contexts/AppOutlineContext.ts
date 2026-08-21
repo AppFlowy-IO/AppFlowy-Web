@@ -58,7 +58,7 @@ export interface AppOutlineContextType {
   /** Fetch the user's recently visited views. */
   loadRecentViews?: () => Promise<View[] | undefined>;
   /** Fetch the trash list for a given workspace. */
-  loadTrash?: (workspaceId: string) => Promise<void>;
+  loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
   /** Load views with an optional UI variant filter (e.g. mobile vs desktop). */
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   /** Force-reload the entire outline tree from the server. */

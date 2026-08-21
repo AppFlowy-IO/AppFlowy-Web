@@ -7,18 +7,19 @@ import { FieldId, YjsDatabaseKey } from '@/application/types';
 import { Cell } from '@/components/database/components/cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
 import { useGridRowContext } from '@/components/database/components/grid/grid-row/GridRowContext';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { useGridInteractionActions, useIsGridCellActive } from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
 
 export interface GridCellProps {
   rowId: string;
+  rowKey: string;
   fieldId: FieldId;
   columnIndex: number;
   rowIndex: number;
 }
 
-export function GridRowCell({ rowId, fieldId }: GridCellProps) {
+export function GridRowCell({ rowId, rowKey, fieldId }: GridCellProps) {
   const ref = useRef<HTMLDivElement>(null);
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type));
@@ -33,7 +34,7 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
   });
 
   const { resizeRow } = useGridRowContext();
-  const { activeCell, setActiveCell } = useGridContext();
+  const { setActiveCell } = useGridInteractionActions();
 
   const [hovered, setHovered] = useState(false);
 
@@ -73,7 +74,7 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
 
   const wrap = useFieldWrap(fieldId);
 
-  const isActive = activeCell?.rowId === rowId && activeCell?.fieldId === fieldId;
+  const isActive = useIsGridCellActive(rowKey, fieldId);
 
   const setEditing = useCallback(
     (status: boolean) => {
@@ -81,13 +82,14 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
         if (disableRelationRollupEdit) return;
         setActiveCell({
           rowId,
+          rowKey,
           fieldId,
         });
       } else {
         setActiveCell(undefined);
       }
     },
-    [disableRelationRollupEdit, fieldId, rowId, setActiveCell]
+    [disableRelationRollupEdit, fieldId, rowId, rowKey, setActiveCell]
   );
 
   const paddingVertical = useMemo(() => {

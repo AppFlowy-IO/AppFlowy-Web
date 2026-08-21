@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { createDatabaseYjsRenderDocsFromSnapshot } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { createDocumentYjsRenderDocFromRawData } from '@/application/publish-snapshot/document-yjs-render-bridge';
@@ -6,10 +6,7 @@ import type { PublishedDatabaseSnapshot } from '@/application/publish-snapshot/t
 import { UIVariant, type ViewMetaProps, type YDoc } from '@/application/types';
 import DatabaseView from '@/components/publish/DatabaseView';
 import { usePublishContext } from '@/application/publish';
-import {
-  getPublishedViewCover,
-  parsePublishedViewExtra,
-} from '@/components/publish-render/shared/PublishedPageMeta';
+import { getPublishedViewCover, parsePublishedViewExtra } from '@/components/publish-render/shared/PublishedPageMeta';
 
 export function PublishedDatabaseRenderer({ snapshot }: { snapshot: PublishedDatabaseSnapshot }) {
   const publishContext = usePublishContext();
@@ -25,6 +22,17 @@ export function PublishedDatabaseRenderer({ snapshot }: { snapshot: PublishedDat
       ),
     [database.raw.row_documents]
   );
+
+  useEffect(() => {
+    return () => {
+      doc.destroy();
+
+      const ownedRowDocs = new Set([...Object.values(rowMap), ...Object.values(rowDocumentMap)]);
+
+      ownedRowDocs.forEach((rowDoc) => rowDoc.destroy());
+    };
+  }, [doc, rowDocumentMap, rowMap]);
+
   const extra = useMemo(() => parsePublishedViewExtra(view.extra), [view.extra]);
   const loadView = publishContext?.loadView;
   const contextLoadRowDocument = publishContext?.loadRowDocument;
@@ -45,20 +53,12 @@ export function PublishedDatabaseRenderer({ snapshot }: { snapshot: PublishedDat
       database_relations: view.databaseRelations,
       extra: extra as ViewMetaProps['extra'],
     }),
-    [
-      database.visibleViewIds,
-      extra,
-      view.databaseRelations,
-      view.icon,
-      view.layout,
-      view.name,
-      view.viewId,
-    ]
+    [database.visibleViewIds, extra, view.databaseRelations, view.icon, view.layout, view.name, view.viewId]
   );
 
   return (
     <DatabaseView
-      workspaceId="publish"
+      workspaceId='publish'
       doc={doc}
       initialRowMap={rowMap}
       viewMeta={viewMeta}

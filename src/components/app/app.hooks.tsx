@@ -146,6 +146,21 @@ export function useUserWorkspaceInfo() {
 }
 
 /**
+ * Returns a function that force-refreshes the workspace list. Call after
+ * mutations that change it (rename/delete/leave, membership changes).
+ * Throws if used outside AppProvider.
+ */
+export function useRefreshUserWorkspaceInfo() {
+  const context = useContext(AuthInternalContext);
+
+  if (!context) {
+    throw new Error('useRefreshUserWorkspaceInfo must be used within an AppProvider');
+  }
+
+  return context.refreshUserWorkspaceInfo;
+}
+
+/**
  * Returns whether page history is enabled for the current workspace plan.
  * Fails open (returns true) when outside AppProvider — e.g. on publish pages.
  */
@@ -224,7 +239,7 @@ export function useAppViewId() {
   return context.viewId;
 }
 
-/** Memoized `{ notFound, deleted }` error flags for the current view. */
+/** Memoized `{ notFound, deleted, noAccess }` error flags for the current view. */
 export function useViewErrorStatus() {
   const context = useContext(AppNavigationContext);
 
@@ -235,7 +250,8 @@ export function useViewErrorStatus() {
   return useMemo(() => ({
     notFound: context.notFound,
     deleted: context.viewHasBeenDeleted,
-  }), [context.notFound, context.viewHasBeenDeleted]);
+    noAccess: context.viewNoAccess,
+  }), [context.notFound, context.viewHasBeenDeleted, context.viewNoAccess]);
 }
 
 /** The breadcrumb trail, or undefined if outside AppProvider. Does not throw. */
@@ -567,6 +583,13 @@ export function useEventEmitter() {
   }
 
   return context;
+}
+
+/** The app-wide event bus, or undefined when rendered outside AppProvider. Safe for publish pages. */
+export function useEventEmitterOptional() {
+  const context = useContext(AppEventEmitterContext);
+
+  return context ?? undefined;
 }
 
 /** Schedule deferred cleanup of a sync object (e.g. Yjs doc) after a delay. */

@@ -1,19 +1,19 @@
-import React, { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { NormalModal } from '@/components/_shared/modal';
+import { MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 // Email validation regex - checks for valid email format
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const PAPER_PROPS = { sx: { width: 420 } } as const;
+
+const TITLE_ID = 'saml-login-title';
+const DESCRIPTION_ID = 'saml-login-description';
+const ERROR_ID = 'saml-login-error';
 
 interface SamlLoginDialogProps {
   open: boolean;
@@ -27,22 +27,20 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const resetState = useCallback(() => {
+  const reset = useCallback(() => {
     setEmail('');
     setError(null);
     setLoading(false);
   }, []);
 
-  const handleOpenChange = useCallback(
-    (newOpen: boolean) => {
-      onOpenChange(newOpen);
+  // Cleared once the close transition has finished rather than on open, so a
+  // dismissed dialog leaves nothing behind and the form is not visibly blanked
+  // while it is still fading out.
+  const transitionProps = useMemo(() => ({ onExited: reset }), [reset]);
 
-      if (!newOpen) {
-        resetState();
-      }
-    },
-    [onOpenChange, resetState]
-  );
+  const handleClose = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
 
   const validateEmail = useCallback(
     (emailValue: string): string | null => {
@@ -60,6 +58,10 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
   );
 
   const handleSubmit = useCallback(async () => {
+    // NormalModal fires `onOk` on Enter regardless of the button's disabled
+    // state, so the guard has to live here rather than on the button alone.
+    if (loading) return;
+
     const validationError = validateEmail(email);
 
     if (validationError) {
@@ -75,74 +77,89 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
 
     try {
       await onSubmit(domain);
+      // Success redirects to the identity provider. `loading` is deliberately
+      // left set so the form stays disabled for the unload window, otherwise a
+      // second Enter starts another authorize round-trip.
     } catch (e: unknown) {
       const err = e as { message?: string };
 
       setError(err?.message || t('web.signInError'));
-    } finally {
       setLoading(false);
     }
-  }, [email, validateEmail, onSubmit, t]);
+  }, [loading, email, validateEmail, onSubmit, t]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !loading) {
-        void handleSubmit();
-      }
-    },
-    [handleSubmit, loading]
-  );
+  const handleOk = useCallback(() => {
+    void handleSubmit();
+  }, [handleSubmit]);
 
-  const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEmailChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
     setError(null);
   }, []);
 
+  const title = useMemo(
+    () => (
+      <div id={TITLE_ID} className='text-left'>
+        {t('web.ssoLogin')}
+      </div>
+    ),
+    [t]
+  );
+
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t('web.ssoLogin')}</DialogTitle>
-          <DialogDescription id="saml-dialog-description">
-            {t('web.ssoLoginDescription')}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-2 py-4">
-          <Input
-            type="email"
-            placeholder={t('web.emailPlaceholder')}
-            value={email}
-            onChange={handleEmailChange}
-            onKeyDown={handleKeyDown}
-            disabled={loading}
-            aria-label={t('web.emailPlaceholder')}
-            aria-describedby="saml-dialog-description"
-            aria-invalid={!!error}
-            autoFocus
-          />
-          {error && (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          )}
+    <NormalModal
+      open={open}
+      aria-labelledby={TITLE_ID}
+      aria-describedby={DESCRIPTION_ID}
+      onClose={handleClose}
+      onOk={handleOk}
+      okText={t('web.continueWithSso')}
+      okLoading={loading}
+      okButtonProps={{ disabled: !email.trim() || loading }}
+      cancelButtonProps={{ disabled: loading }}
+      title={title}
+      classes={MODAL_CLASSES}
+      PaperProps={PAPER_PROPS}
+      TransitionProps={transitionProps}
+    >
+      <div
+        data-testid='saml-login-dialog'
+        className='flex w-full flex-col gap-4'
+      >
+        <div id={DESCRIPTION_ID} className='help-text text-xs text-text-caption'>
+          {t('web.ssoLoginDescription')}
         </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => handleOpenChange(false)}
+
+        <div className='flex flex-col gap-1'>
+          <Label htmlFor='saml-email'>{t('signIn.emailHint')}</Label>
+          <Input
+            id='saml-email'
+            type='email'
+            autoFocus
+            size='md'
+            className='w-full'
+            autoComplete='email'
+            value={email}
+            placeholder={t('web.emailPlaceholder')}
+            variant={error ? 'destructive' : 'default'}
+            aria-invalid={!!error}
+            aria-describedby={error ? ERROR_ID : undefined}
             disabled={loading}
+            onChange={handleEmailChange}
+          />
+        </div>
+
+        {error && (
+          <div
+            id={ERROR_ID}
+            className='help-text text-xs text-text-error'
+            role='alert'
           >
-            {t('button.cancel')}
-          </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={loading || !email.trim()}
-          >
-            {loading ? t('web.signingIn') : t('web.continueWithSso')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {error}
+          </div>
+        )}
+      </div>
+    </NormalModal>
   );
 }
 

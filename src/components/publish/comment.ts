@@ -1,19 +1,12 @@
+import { isDatabaseBlockType } from '@/application/database-block';
 import type { PublishedPageSnapshot } from '@/application/publish-snapshot/types';
-import { BlockType } from '@/application/types';
-
-const DATABASE_BLOCK_TYPES = new Set<string>([
-  BlockType.GridBlock,
-  BlockType.BoardBlock,
-  BlockType.CalendarBlock,
-  BlockType.ChartBlock,
-]);
 
 function nodeHasDatabaseBlock(node: unknown): boolean {
   if (!node || typeof node !== 'object') return false;
 
   const element = node as { type?: unknown; children?: unknown };
 
-  if (typeof element.type === 'string' && DATABASE_BLOCK_TYPES.has(element.type)) {
+  if (isDatabaseBlockType(element.type)) {
     return true;
   }
 
@@ -27,7 +20,7 @@ function documentRawHasDatabaseBlock(snapshot: PublishedPageSnapshot) {
 
   if (!blocks) return false;
 
-  return Object.values(blocks).some((block) => DATABASE_BLOCK_TYPES.has(block.ty));
+  return Object.values(blocks).some((block) => isDatabaseBlockType(block.ty));
 }
 
 function documentChildrenHaveDatabaseBlock(snapshot: PublishedPageSnapshot) {

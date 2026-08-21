@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { CellProps, PersonCell as PersonCellType } from '@/application/database-yjs/cell.type';
 import { MentionablePerson } from '@/application/types';
@@ -17,6 +17,7 @@ export function PersonCell({
   wrap,
   editing,
   setEditing,
+  onTextChange,
 }: CellProps<PersonCellType>) {
   const selectedUserIds = useMemo(() => {
     if (!cell?.data) return [];
@@ -38,6 +39,11 @@ export function PersonCell({
   }, [selectedUserIds, mentionableUsers]);
 
   const isEmpty = selectedUsers.length === 0;
+  const searchText = selectedUsers.map((user) => user.name || user.email || '?').join(' ');
+
+  useEffect(() => {
+    onTextChange?.(searchText);
+  }, [onTextChange, searchText]);
 
   const handleOpenChange = useCallback(
     (status: boolean) => {
@@ -51,13 +57,13 @@ export function PersonCell({
       const displayName = user.name || user.email || '?';
 
       return (
-        <div key={user.person_id} className="min-w-fit max-w-[120px]">
-          <div className="flex items-center gap-1">
-            <Avatar className="h-5 w-5">
+        <div key={user.person_id} className='min-w-fit max-w-[120px]'>
+          <div className='flex items-center gap-1'>
+            <Avatar className='h-5 w-5'>
               <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
-              <AvatarFallback className="text-xs">{displayName}</AvatarFallback>
+              <AvatarFallback className='text-xs'>{displayName}</AvatarFallback>
             </Avatar>
-            <span className="truncate text-sm">{displayName}</span>
+            <span className='truncate text-sm'>{displayName}</span>
           </div>
         </div>
       );

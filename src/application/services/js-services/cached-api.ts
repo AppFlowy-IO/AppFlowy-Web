@@ -7,7 +7,6 @@ import * as random from 'lib0/random';
 import * as Y from 'yjs';
 
 import { db, openCollabDB } from '@/application/db';
-import { Log } from '@/utils/log';
 import {
   createRow,
   deleteRow,
@@ -28,10 +27,12 @@ import {
   fetchViewInfo,
 } from '@/application/services/js-services/fetch';
 import {
+  getAppTrash,
   getView,
   signInWithUrl,
   uploadFileMultipart,
   cancelImportTask,
+  CreateImportTaskType,
   createImportTask,
   uploadImportFile,
   uploadImportFileMultipart,
@@ -51,6 +52,8 @@ import {
   signInGoogle,
   signInOTP,
   signInSaml,
+  signInCustomProvider,
+  signInWithLdap,
   signInWithMagicLink,
   signInWithPassword,
   signUpWithPassword,
@@ -71,6 +74,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { Log } from '@/utils/log';
 import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 // ============================================================================
@@ -95,10 +99,47 @@ const publishViewInfo = new Map<
   }
 >();
 
-const _getAppViewInFlight = new Map<string, Promise<View>>();
-const _getAppViewCache = new Map<string, { data: View; expiresAt: number }>();
+type AppViewCacheScope = {
+  userId: string | undefined;
+  workspaceId: string;
+  viewId: string;
+};
+
+type AppViewInFlight = AppViewCacheScope & {
+  identity: object;
+  promise: Promise<View>;
+};
+
+type AppViewCacheEntry = AppViewCacheScope & {
+  data: View;
+  expiresAt: number;
+};
+
+const _getAppViewInFlight = new Map<string, AppViewInFlight>();
+const _getAppViewCache = new Map<string, AppViewCacheEntry>();
 const VIEW_CACHE_TTL_MS = 5000;
+// Disk records are a fast-paint/offline fallback that is normally replaced by a
+// network refresh; the age cap only bounds how stale that fallback can get when
+// the refresh fails.
+const VIEW_DISK_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const ANONYMOUS_VIEW_CACHE_SCOPE = 'anonymous';
+
+type AppTrashPendingRefresh = {
+  promise: Promise<View[]>;
+  resolve: (views: View[]) => void;
+  reject: (error: unknown) => void;
+};
+
+type AppTrashRequestState = {
+  active: Promise<View[]> | null;
+  activeFreshnessKey: string | undefined;
+  pendingRefresh: AppTrashPendingRefresh | null;
+  pendingFreshnessKey: string | undefined;
+};
+
+const _getAppTrashRequests = new Map<string, AppTrashRequestState>();
+const _getAppTrashCache = new Map<string, { data: View[]; expiresAt: number }>();
+const TRASH_CACHE_TTL_MS = 5000;
 
 // ============================================================================
 // Simple getters
@@ -131,6 +172,9 @@ function getAppViewCacheKey(userId: string | undefined, workspaceId: string, vie
 
 function writeAppViewCaches(workspaceId: string, viewId: string, data: View, userId = getCurrentAppViewCacheUserId()) {
   _getAppViewCache.set(getAppViewCacheKey(userId, workspaceId, viewId), {
+    userId,
+    workspaceId,
+    viewId,
     data,
     expiresAt: Date.now() + VIEW_CACHE_TTL_MS,
   });
@@ -160,19 +204,28 @@ function requestAppView(workspaceId: string, viewId: string, userId = getCurrent
   const existing = _getAppViewInFlight.get(key);
 
   if (existing) {
-    return existing;
+    return existing.promise;
   }
 
+  const identity = {};
   const request = getView(workspaceId, viewId)
     .then((result) => {
-      writeAppViewCaches(workspaceId, viewId, result, userId);
+      // A permission/catalog mutation may invalidate this request and start a
+      // replacement before the old response settles. Only the request that is
+      // still registered for this key may repopulate memory or durable cache.
+      if (_getAppViewInFlight.get(key)?.identity === identity) {
+        writeAppViewCaches(workspaceId, viewId, result, userId);
+      }
+
       return result;
     })
     .finally(() => {
-      _getAppViewInFlight.delete(key);
+      if (_getAppViewInFlight.get(key)?.identity === identity) {
+        _getAppViewInFlight.delete(key);
+      }
     });
 
-  _getAppViewInFlight.set(key, request);
+  _getAppViewInFlight.set(key, { userId, workspaceId, viewId, identity, promise: request });
   return request;
 }
 
@@ -192,7 +245,17 @@ export async function getAppViewCached(workspaceId: string, viewId: string) {
 }
 
 export function getCachedAppView(workspaceId: string, viewId: string): View | undefined {
-  return _getAppViewCache.get(getAppViewCacheKey(getCurrentAppViewCacheUserId(), workspaceId, viewId))?.data;
+  const key = getAppViewCacheKey(getCurrentAppViewCacheUserId(), workspaceId, viewId);
+  const cached = _getAppViewCache.get(key);
+
+  if (!cached) return undefined;
+
+  if (Date.now() >= cached.expiresAt) {
+    _getAppViewCache.delete(key);
+    return undefined;
+  }
+
+  return cached.data;
 }
 
 export async function getCachedAppViewFromDisk(workspaceId: string, viewId: string): Promise<View | undefined> {
@@ -202,7 +265,14 @@ export async function getCachedAppViewFromDisk(workspaceId: string, viewId: stri
 
   const record = await db.app_view_cache.get([userId, workspaceId, viewId]);
 
-  return record?.data;
+  if (!record) return undefined;
+
+  if (Date.now() - record.updated_at > VIEW_DISK_CACHE_MAX_AGE_MS) {
+    void db.app_view_cache.delete([userId, workspaceId, viewId]).catch(() => undefined);
+    return undefined;
+  }
+
+  return record.data;
 }
 
 export async function refreshAppViewCache(workspaceId: string, viewId: string) {
@@ -226,6 +296,189 @@ export function invalidateViewCache(workspaceId: string, viewId: string) {
       error,
     });
   });
+}
+
+/**
+ * Drop only the current user's in-memory view metadata for one workspace.
+ *
+ * Permission changes can affect descendants whose IDs are not present in the
+ * lazy outline, so targeted invalidation is insufficient. Durable entries are
+ * retained for permission-revocation cleanup and are never promoted by the
+ * normal metadata resolver.
+ */
+export function invalidateWorkspaceViewMemoryCache(workspaceId: string) {
+  const userId = getCurrentAppViewCacheUserId();
+
+  for (const [key, entry] of _getAppViewCache) {
+    if (entry.userId === userId && entry.workspaceId === workspaceId) {
+      _getAppViewCache.delete(key);
+    }
+  }
+
+  for (const [key, entry] of _getAppViewInFlight) {
+    if (entry.userId === userId && entry.workspaceId === workspaceId) {
+      _getAppViewInFlight.delete(key);
+    }
+  }
+}
+
+/**
+ * In-flight dedup + short-lived result cache for getAppTrash.
+ * Every embedded DatabaseBlock probes the trash list to detect deleted
+ * containers, so a page with several embedded databases would otherwise fire
+ * one trash request per block.
+ */
+function getAppTrashCacheKey(userId: string | undefined, workspaceId: string) {
+  return `${userId ?? ANONYMOUS_VIEW_CACHE_SCOPE}:${workspaceId}`;
+}
+
+function getAppTrashRequestState(key: string) {
+  let state = _getAppTrashRequests.get(key);
+
+  if (!state) {
+    state = {
+      active: null,
+      activeFreshnessKey: undefined,
+      pendingRefresh: null,
+      pendingFreshnessKey: undefined,
+    };
+    _getAppTrashRequests.set(key, state);
+  }
+
+  return state;
+}
+
+function startAppTrashRequest(
+  workspaceId: string,
+  userId: string | undefined,
+  key: string,
+  state: AppTrashRequestState,
+  freshnessKey?: string
+) {
+  const request = getAppTrash(workspaceId).then((views) => {
+    _getAppTrashCache.set(key, {
+      data: views,
+      expiresAt: Date.now() + TRASH_CACHE_TTL_MS,
+    });
+    return views;
+  });
+
+  state.active = request;
+  state.activeFreshnessKey = freshnessKey;
+
+  // A refresh requested while this call is active represents a notification
+  // that may have been committed after the request started. Run exactly one
+  // trailing request and let every waiter share it. This avoids returning a
+  // pre-mutation response without allowing request storms.
+  void request.then(
+    () => finishAppTrashRequest(workspaceId, userId, key, state, request),
+    () => finishAppTrashRequest(workspaceId, userId, key, state, request)
+  );
+
+  return request;
+}
+
+function finishAppTrashRequest(
+  workspaceId: string,
+  userId: string | undefined,
+  key: string,
+  state: AppTrashRequestState,
+  request: Promise<View[]>
+) {
+  if (state.active !== request) return;
+
+  state.active = null;
+  state.activeFreshnessKey = undefined;
+  const pendingRefresh = state.pendingRefresh;
+  const pendingFreshnessKey = state.pendingFreshnessKey;
+
+  if (!pendingRefresh) {
+    if (_getAppTrashRequests.get(key) === state) {
+      _getAppTrashRequests.delete(key);
+    }
+
+    return;
+  }
+
+  state.pendingRefresh = null;
+  state.pendingFreshnessKey = undefined;
+  const trailingRequest = startAppTrashRequest(workspaceId, userId, key, state, pendingFreshnessKey);
+
+  void trailingRequest.then(pendingRefresh.resolve, pendingRefresh.reject);
+}
+
+function requestAppTrash(workspaceId: string, userId = getCurrentAppViewCacheUserId()) {
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const state = getAppTrashRequestState(key);
+
+  if (state.active) {
+    return state.active;
+  }
+
+  return startAppTrashRequest(workspaceId, userId, key, state);
+}
+
+export async function getAppTrashCached(workspaceId: string) {
+  const userId = getCurrentAppViewCacheUserId();
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const activeState = _getAppTrashRequests.get(key);
+
+  // Prefer an authoritative refresh already underway over a still-valid cache.
+  // If that refresh itself has a newer mutation queued, wait for the trailing
+  // payload so a mounting DatabaseBlock cannot briefly apply stale trash.
+  if (activeState?.pendingRefresh) {
+    return activeState.pendingRefresh.promise;
+  }
+
+  if (activeState?.active) {
+    return activeState.active;
+  }
+
+  const cached = _getAppTrashCache.get(key);
+
+  if (cached && Date.now() < cached.expiresAt) {
+    return cached.data;
+  }
+
+  return requestAppTrash(workspaceId, userId);
+}
+
+/**
+ * Bypasses the TTL cache. Callers may pass a mutation/revision key. Repeated
+ * observers of the same key share the active request; a newer keyed refresh
+ * queues at most one trailing request rather than trusting a response that may
+ * have started before that mutation. Unkeyed concurrent callers simply share.
+ */
+export async function refreshAppTrashCache(workspaceId: string, freshnessKey?: string) {
+  const userId = getCurrentAppViewCacheUserId();
+  const key = getAppTrashCacheKey(userId, workspaceId);
+  const state = getAppTrashRequestState(key);
+
+  if (!state.active) {
+    return startAppTrashRequest(workspaceId, userId, key, state, freshnessKey);
+  }
+
+  if (state.pendingRefresh) {
+    return state.pendingRefresh.promise;
+  }
+
+  // Unkeyed refreshes are ordinary concurrent callers and share the active
+  // request. A keyed refresh denotes a concrete mutation/revision; repeated
+  // observers of that same revision share as well.
+  if (!freshnessKey || state.activeFreshnessKey === freshnessKey) {
+    return state.active;
+  }
+
+  let resolve!: (views: View[]) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<View[]>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  state.pendingRefresh = { promise, resolve, reject };
+  state.pendingFreshnessKey = freshnessKey;
+  return promise;
 }
 
 export async function getPageDocCached(
@@ -465,8 +718,13 @@ export async function uploadFileWithTracking(
   }
 }
 
-export async function importFileWithUpload(file: File, onProgress: (progress: number) => void) {
-  const task = await createImportTask(file);
+export interface ImportFileWithUploadOptions {
+  taskType: CreateImportTaskType;
+  onProgress: (progress: number) => void;
+}
+
+export async function importFileWithUpload(file: File, { taskType, onProgress }: ImportFileWithUploadOptions) {
+  const task = await createImportTask(file, taskType);
 
   try {
     if (task.multipart) {
@@ -573,6 +831,29 @@ export async function signInDiscordWithRedirect(params: { redirectTo: string }) 
 export async function signInSamlWithRedirect(params: { redirectTo: string; domain: string }): Promise<void> {
   saveRedirectTo(params.redirectTo);
   return signInSaml(AUTH_CALLBACK_URL, params.domain);
+}
+
+export async function signInCustomProviderWithRedirect(params: {
+  redirectTo: string;
+  identifier: string;
+}): Promise<void> {
+  saveRedirectTo(params.redirectTo);
+  return signInCustomProvider(params.identifier, AUTH_CALLBACK_URL);
+}
+
+/**
+ * LDAP completes server-side, so unlike the redirect providers above there is
+ * no callback to come back through — the tokens are already in hand and the
+ * flow finishes here, exactly as a password sign-in does.
+ */
+export async function signInWithLdapWithRedirect(params: {
+  username: string;
+  password: string;
+  connectionId?: string;
+  redirectTo: string;
+}) {
+  saveRedirectTo(params.redirectTo);
+  return finishAuthFlow('signInWithLdap', () => signInWithLdap(params.username, params.password, params.connectionId));
 }
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {

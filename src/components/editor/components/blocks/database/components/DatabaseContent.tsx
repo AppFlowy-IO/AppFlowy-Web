@@ -21,6 +21,7 @@ interface DatabaseContentProps {
   selectedViewId: string | null;
   hasDatabase: boolean;
   notFound: boolean;
+  noAccess?: boolean;
   deletionStatus?: 'none' | 'inTrash' | 'deleted' | null;
   paddingStart: number;
   paddingEnd: number;
@@ -47,6 +48,7 @@ export const DatabaseContent = ({
   selectedViewId,
   hasDatabase,
   notFound,
+  noAccess,
   deletionStatus,
   paddingStart,
   paddingEnd,
@@ -117,11 +119,15 @@ export const DatabaseContent = ({
       case 'deleted':
         return t('document.inlineDatabase.viewDeleted', 'This referenced database was permanently deleted');
       default:
+        if (noAccess) {
+          return t('document.inlineDatabase.noAccess', "You don't have permission to view this database");
+        }
+
         return t('error.generalError');
     }
   };
 
-  const showError = notFound || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
+  const showError = notFound || noAccess || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
 
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4">

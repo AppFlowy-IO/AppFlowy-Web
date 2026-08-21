@@ -6,6 +6,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YjsDatabaseKey } from '@/application/types';
 import { AITextCell } from '@/components/database/components/cell/ai-text/AITextCell';
+import { AttributionCell } from '@/components/database/components/cell/attribution';
 import { CheckboxCell } from '@/components/database/components/cell/checkbox';
 import { ChecklistCell } from '@/components/database/components/cell/checklist';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
@@ -74,6 +75,10 @@ export function Cell(props: CellProps<CellType>) {
         isHovering={isHovering}
       />
     );
+  }
+
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+    return <AttributionCell {...props} readOnly editing={false} setEditing={undefined} />;
   }
 
   const cellProps = disableRelationRollupEdit

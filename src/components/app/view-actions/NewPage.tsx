@@ -13,6 +13,8 @@ import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
+const CREATE_SPACE_INITIAL_PAGE = { layout: ViewLayout.Document };
+
 function NewPage() {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState<boolean>(false);
@@ -70,12 +72,16 @@ function NewPage() {
 
   return (
     <>
-      <div data-testid="new-page-button" onClick={() => setOpen(true)} className={cn(dropdownMenuItemVariants(), 'w-full')}>
+      <div
+        data-testid='new-page-button'
+        onClick={() => setOpen(true)}
+        className={cn(dropdownMenuItemVariants(), 'w-full')}
+      >
         <Add />
         {t('newPageText')}
       </div>
       <NormalModal
-        data-testid="new-page-modal"
+        data-testid='new-page-modal'
         okText={t('button.add')}
         title={t('publish.duplicateTitle')}
         open={open}
@@ -99,6 +105,7 @@ function NewPage() {
               {t('publish.addTo')}
               {` ${t('web.or')} `}
               <Button
+                data-testid='new-page-create-space-button'
                 onClick={() => {
                   setCreateSpaceOpen(true);
                 }}
@@ -114,7 +121,14 @@ function NewPage() {
       <CreateSpaceModal
         open={createSpaceOpen}
         onClose={() => setCreateSpaceOpen(false)}
-        onCreated={(spaceId: string) => {
+        initialPage={CREATE_SPACE_INITIAL_PAGE}
+        onCreated={(spaceId: string, initialPageId?: string) => {
+          if (initialPageId) {
+            openPageModal?.(initialPageId);
+            onClose();
+            return;
+          }
+
           void handleAddPage(spaceId);
         }}
       />

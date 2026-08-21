@@ -11,57 +11,64 @@ import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppOperations, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import MoreActionsContent from '@/components/app/header/MoreActionsContent';
-import {
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
-
-
-function MorePageActions({ view, onClose }: {
+function MorePageActions({
+  view,
+  onClose,
+  canDuplicateActions,
+  canManageActions,
+  isLoadingActions,
+}: {
   view: View;
   onClose?: () => void;
+  canDuplicateActions: boolean;
+  canManageActions: boolean;
+  isLoadingActions: boolean;
 }) {
   const currentWorkspaceId = useCurrentWorkspaceId();
 
-  const {
-    openRenameModal,
-  } = useAppOverlayContext();
+  const { openRenameModal } = useAppOverlayContext();
 
-  const {
-    updatePage,
-    uploadFile,
-  } = useAppOperations();
+  const { updatePage, uploadFile } = useAppOperations();
   const { t } = useTranslation();
 
   const viewId = view.view_id;
 
-  const onUploadFile = useCallback(async (file: File) => {
-    if (!uploadFile) return Promise.reject();
-    return uploadFile(viewId, file);
-  }, [uploadFile, viewId]);
+  const onUploadFile = useCallback(
+    async (file: File) => {
+      if (!uploadFile) return Promise.reject();
+      return uploadFile(viewId, file);
+    },
+    [uploadFile, viewId]
+  );
 
-  const handleChangeIcon = useCallback(async (icon: { ty: ViewIconType, value: string, color?: string }) => {
-    try {
-      await updatePage?.(view.view_id, {
-        icon: icon.ty === ViewIconType.Icon ? {
-          ty: ViewIconType.Icon,
-          value: JSON.stringify({
-            color: icon.color,
-            groupName: icon.value.split('/')[0],
-            iconName: icon.value.split('/')[1],
-          }),
-        } : icon,
-        name: view.name,
-        extra: view.extra || {},
-      });
-      onClose?.();
-      // eslint-disable-next-line
-    } catch (e: any) {
-      toast.error(e.message);
-    }
-  }, [onClose, updatePage, view.extra, view.name, view.view_id]);
+  const handleChangeIcon = useCallback(
+    async (icon: { ty: ViewIconType; value: string; color?: string }) => {
+      try {
+        await updatePage?.(view.view_id, {
+          icon:
+            icon.ty === ViewIconType.Icon
+              ? {
+                  ty: ViewIconType.Icon,
+                  value: JSON.stringify({
+                    color: icon.color,
+                    groupName: icon.value.split('/')[0],
+                    iconName: icon.value.split('/')[1],
+                  }),
+                }
+              : icon,
+          name: view.name,
+          extra: view.extra || {},
+        });
+        onClose?.();
+        // eslint-disable-next-line
+      } catch (e: any) {
+        toast.error(e.message);
+      }
+    },
+    [onClose, updatePage, view.extra, view.name, view.view_id]
+  );
 
   const handleRemoveIcon = useCallback(() => {
     void handleChangeIcon({ ty: 0, value: '' });
@@ -69,40 +76,47 @@ function MorePageActions({ view, onClose }: {
 
   return (
     <>
-      <DropdownMenuGroup>
-        <DropdownMenuItem
-          data-testid={'more-page-rename'}
-          onSelect={() => {
-            onClose?.();
-            openRenameModal(viewId);
-          }}
-        >
-          <EditIcon />{t('button.rename')}
-        </DropdownMenuItem>
-        <CustomIconPopover
-          modal
-          onSelectIcon={handleChangeIcon}
-          removeIcon={handleRemoveIcon}
-          onUploadFile={onUploadFile}
-          popoverContentProps={{
-            side: 'right',
-            align: 'start',
-          }}
-        >
+      {canManageActions && (
+        <DropdownMenuGroup>
           <DropdownMenuItem
-            data-testid={'more-page-change-icon'}
-            onSelect={(e) => {
-              e.preventDefault();
+            data-testid={'more-page-rename'}
+            onSelect={() => {
+              onClose?.();
+              openRenameModal(viewId);
             }}
           >
-            <EmojiIcon />{t('disclosureAction.changeIcon')}
+            <EditIcon />
+            {t('button.rename')}
           </DropdownMenuItem>
-        </CustomIconPopover>
-      </DropdownMenuGroup>
+          <CustomIconPopover
+            modal
+            onSelectIcon={handleChangeIcon}
+            removeIcon={handleRemoveIcon}
+            onUploadFile={onUploadFile}
+            popoverContentProps={{
+              side: 'right',
+              align: 'start',
+            }}
+          >
+            <DropdownMenuItem
+              data-testid={'more-page-change-icon'}
+              onSelect={(e) => {
+                e.preventDefault();
+              }}
+            >
+              <EmojiIcon />
+              {t('disclosureAction.changeIcon')}
+            </DropdownMenuItem>
+          </CustomIconPopover>
+        </DropdownMenuGroup>
+      )}
 
       <MoreActionsContent
         itemClicked={onClose}
         viewId={view.view_id}
+        canDuplicateActions={canDuplicateActions}
+        canManageActions={canManageActions}
+        isLoadingActions={isLoadingActions}
       />
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
@@ -119,7 +133,6 @@ function MorePageActions({ view, onClose }: {
           {t('disclosureAction.openNewTab')}
         </DropdownMenuItem>
       </DropdownMenuGroup>
-
     </>
   );
 }

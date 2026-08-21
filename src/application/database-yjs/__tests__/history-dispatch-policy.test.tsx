@@ -148,10 +148,7 @@ function addSelectGroup(view: YDatabaseView, optionIds: string[] = []) {
 }
 
 function getSelectOptionIds(field: YDatabaseField): string[] {
-  const content = field
-    .get(YjsDatabaseKey.type_option)
-    .get(String(FieldType.SingleSelect))
-    .get(YjsDatabaseKey.content);
+  const content = field.get(YjsDatabaseKey.type_option).get(String(FieldType.SingleSelect)).get(YjsDatabaseKey.content);
 
   return (JSON.parse(content) as { options: { id: string }[] }).options.map(({ id }) => id);
 }
@@ -676,7 +673,7 @@ describe('database history production dispatch policies', () => {
   it.each([
     [FieldType.Relation, FieldType.RichText],
     [FieldType.RichText, FieldType.Relation],
-  ])('skips field conversion across the relation boundary (%s to %s)', (sourceType, targetType) => {
+  ])('skips field conversion across the relation boundary (%s to %s)', async (sourceType, targetType) => {
     const field = sourceType === FieldType.Relation ? createRelationField(fieldId) : createField(fieldId, sourceType);
     const fixture = createFixture([[fieldId, field]]);
     const rowDoc = createRowDoc(rowId, databaseId, {
@@ -692,13 +689,18 @@ describe('database history production dispatch policies', () => {
       wrapper: createWrapper(fixture.databaseDoc, { [rowId]: rowDoc }),
     });
 
-    void act(() => hook.result.current(fieldId, targetType));
+    await act(async () => {
+      await hook.result.current(fieldId, targetType);
+    });
 
     const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
     const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
 
     expect(field.get(YjsDatabaseKey.type)).toBe(targetType);
-    expect(cell.get(YjsDatabaseKey.field_type)).toBe(targetType);
+    // Main now keeps ordinary cells in their source encoding and changes only
+    // the field presentation type. Relation-boundary switches remain excluded
+    // from history regardless of that storage representation.
+    expect(cell.get(YjsDatabaseKey.field_type)).toBe(sourceType);
     expect(history.canUndo()).toBe(false);
     expect(history.canRedo()).toBe(true);
     void act(() => history.redo());
@@ -758,9 +760,7 @@ describe('database history production dispatch policies', () => {
     void act(() => history.undo());
     expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBeUndefined();
     void act(() => history.redo());
-    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe(
-      '{"data":"cover","cover_type":0}'
-    );
+    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe('{"data":"cover","cover_type":0}');
   });
 
   it('captures icon and cover updates when the row loads after the main hook renders', () => {
@@ -792,14 +792,10 @@ describe('database history production dispatch policies', () => {
     expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IconId) as string)).toBe('late-icon');
 
     void act(() => hook.result.current.updateMeta(RowMetaKey.CoverId, '{"data":"late-cover","cover_type":0}'));
-    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe(
-      '{"data":"late-cover","cover_type":0}'
-    );
+    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe('{"data":"late-cover","cover_type":0}');
     void act(() => hook.result.current.history.undo());
     expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBeUndefined();
     void act(() => hook.result.current.history.redo());
-    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe(
-      '{"data":"late-cover","cover_type":0}'
-    );
+    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.CoverId) as string)).toBe('{"data":"late-cover","cover_type":0}');
   });
 });

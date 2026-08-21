@@ -12,17 +12,71 @@ function normalizeChecklistOptions(options: SelectOption[] = []) {
 
 export function parseChecklistData(data: string): ChecklistCellData | null {
   try {
-    const { options, selected_option_ids } = JSON.parse(data);
-    const percentage = selected_option_ids.length / options.length;
+    const parsed = JSON.parse(data) as {
+      options?: unknown;
+      selected_option_ids?: unknown;
+    };
+
+    if (!Array.isArray(parsed.options)) return null;
+    if (parsed.selected_option_ids !== undefined && !Array.isArray(parsed.selected_option_ids)) return null;
+
+    const options = parsed.options as SelectOption[];
+    const selectedOptionIds = (parsed.selected_option_ids ?? []) as string[];
+    const percentage = options.length === 0 ? 0 : selectedOptionIds.length / options.length;
 
     return {
       percentage,
       options,
-      selectedOptionIds: selected_option_ids,
+      selectedOptionIds,
     };
   } catch (e) {
     return null;
   }
+}
+
+export function parseDesktopChecklistText(text: string): ChecklistCellData {
+  const options: SelectOption[] = [];
+  const selectedOptionIds: string[] = [];
+
+  text.split('\n').forEach((rawLine) => {
+    const line = rawLine.trim();
+
+    if (!line) return;
+
+    let checked = false;
+    let name = line;
+
+    if (line.startsWith('[x]') || line.startsWith('[X]')) {
+      checked = true;
+      name = line.slice(3).trim();
+    } else if (line.startsWith('[ ]')) {
+      name = line.slice(3).trim();
+    } else if (line.startsWith('- [x]') || line.startsWith('- [X]')) {
+      checked = true;
+      name = line.slice(5).trim();
+    } else if (line.startsWith('- [ ]')) {
+      name = line.slice(5).trim();
+    } else if (line.startsWith('- ')) {
+      name = line.slice(2).trim();
+    }
+
+    if (!name) return;
+
+    const option: SelectOption = {
+      id: generateOptionId(),
+      name,
+      color: SelectOptionColor.OptionColor1,
+    };
+
+    options.push(option);
+    if (checked) selectedOptionIds.push(option.id);
+  });
+
+  return {
+    options,
+    selectedOptionIds,
+    percentage: options.length === 0 ? 0 : selectedOptionIds.length / options.length,
+  };
 }
 
 function parseChecklistTextToStruct(text: string): { options: SelectOption[]; selectedOptionIds: string[] } | null {

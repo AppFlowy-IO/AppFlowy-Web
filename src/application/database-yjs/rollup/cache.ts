@@ -1,3 +1,4 @@
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
@@ -7,8 +8,10 @@ import { parseNumberTypeOptions } from '@/application/database-yjs/fields/number
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields/rollup/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
+  LoadViewOptions,
   RowId,
   YDatabase,
   YDatabaseCell,
@@ -26,6 +29,13 @@ export type RollupCellValue = {
   list?: string[];
 };
 
+type RelatedViewLoader = (
+  viewId: string,
+  isSubDocument?: boolean,
+  loadAwareness?: boolean,
+  options?: LoadViewOptions
+) => Promise<YDoc | null>;
+
 type RollupCacheEntry = RollupCellValue & {
   generation: number;
   updatedAt: number;
@@ -38,7 +48,7 @@ type RollupComputeContext = {
   row: YDatabaseRow;
   rowId: RowId;
   fieldId: string;
-  loadView?: (viewId: string) => Promise<YDoc | null>;
+  loadView?: RelatedViewLoader;
   createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
@@ -165,43 +175,111 @@ function touchRelatedDocCache(viewId: string, promise: Promise<YDoc | null>) {
   }
 }
 
-async function loadRelatedDoc(
-  viewId: string,
-  loadView?: (viewId: string) => Promise<YDoc | null>
-) {
+async function loadRelatedDoc(viewId: string, databaseId: string, loadView?: RelatedViewLoader) {
   if (!loadView) return null;
-  const cached = relatedDocCache.get(viewId);
+  const cacheKey = `${databaseId}:${viewId}`;
+  const cached = relatedDocCache.get(cacheKey);
 
   if (cached) {
-    touchRelatedDocCache(viewId, cached);
+    touchRelatedDocCache(cacheKey, cached);
     return cached;
   }
 
-  const promise = loadView(viewId).catch(() => {
-    relatedDocCache.delete(viewId);
+  const promise = loadView(viewId, false, false, { databaseId, databaseMetadataOnly: true }).catch(() => {
+    relatedDocCache.delete(cacheKey);
     return null;
   });
 
-  touchRelatedDocCache(viewId, promise);
+  touchRelatedDocCache(cacheKey, promise);
   return promise;
-}
-
-function getRelationRowIds(cell?: YDatabaseCell): RowId[] {
-  if (!cell) return [];
-  const data = cell.get(YjsDatabaseKey.data);
-
-  if (!data) return [];
-  if (typeof data === 'object' && 'toJSON' in data) {
-    const ids = (data as { toJSON: () => unknown }).toJSON();
-
-    return Array.isArray(ids) ? (ids as RowId[]) : [];
-  }
-
-  return Array.isArray(data) ? (data as RowId[]) : [];
 }
 
 function isEmptyValue(value: string) {
   return value.trim() === '';
+}
+
+function getPrimaryFieldId(database: YDatabase): string | undefined {
+  const fields = database?.get(YjsDatabaseKey.fields);
+
+  return Array.from(fields?.keys() || []).find((fieldId) => fields?.get(fieldId)?.get(YjsDatabaseKey.is_primary));
+}
+
+/**
+ * A Rollup whose target is itself a Relation yields row ids, not text. Resolving
+ * them needs a second hop into the database that Relation points at, mirroring
+ * how a Relation cell renders its own value.
+ */
+type RelationTargetResolver = {
+  doc: YDoc;
+  primaryFieldId: string;
+  primaryField: YDatabaseField;
+};
+
+async function createRelationTargetResolver(
+  targetField: YDatabaseField,
+  context: RollupComputeContext
+): Promise<RelationTargetResolver | null> {
+  const targetRelationOption = parseRelationTypeOption(targetField);
+
+  if (!targetRelationOption?.database_id) return null;
+
+  const viewId = await context.getViewIdFromDatabaseId?.(targetRelationOption.database_id);
+
+  if (!viewId) return null;
+
+  const doc = await loadRelatedDoc(viewId, targetRelationOption.database_id, context.loadView);
+
+  if (!doc) return null;
+
+  const database = doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined;
+
+  if (!database) return null;
+
+  const primaryFieldId = getPrimaryFieldId(database);
+
+  if (!primaryFieldId) return null;
+
+  const primaryField = (database.get(YjsDatabaseKey.fields) as YDatabaseFields | undefined)?.get(primaryFieldId);
+
+  if (!primaryField) return null;
+
+  return { doc, primaryFieldId, primaryField };
+}
+
+/**
+ * Row ids that no longer resolve are dropped rather than shown raw, matching how
+ * a Relation cell renders and keeping row ids out of the UI.
+ */
+async function resolveRelationTargetText(
+  cell: YDatabaseCell,
+  resolver: RelationTargetResolver,
+  context: RollupComputeContext
+): Promise<string> {
+  const nestedRowIds = getRelationRowIdsFromCell(cell);
+
+  if (nestedRowIds.length === 0) return '';
+
+  const names: string[] = [];
+
+  for (const nestedRowId of nestedRowIds) {
+    if (!context.createRow) continue;
+    const nestedRowDoc = await context.createRow(getRowKey(resolver.doc.guid, nestedRowId));
+    const nestedRow = nestedRowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as
+      | YDatabaseRow
+      | undefined;
+
+    if (!nestedRow) continue;
+    const primaryCell = nestedRow.get(YjsDatabaseKey.cells)?.get(resolver.primaryFieldId);
+
+    if (!primaryCell) continue;
+    const name = decodeCellToText(primaryCell, resolver.primaryField);
+
+    if (!isEmptyValue(name)) {
+      names.push(name);
+    }
+  }
+
+  return names.join(', ');
 }
 
 function parseNumber(value: unknown): number | null {
@@ -324,7 +402,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   }
 
   const relationCell = row?.get(YjsDatabaseKey.cells)?.get(rollupOption.relation_field_id);
-  const relatedRowIds = getRelationRowIds(relationCell);
+  const relatedRowIds = getRelationRowIdsFromCell(relationCell);
 
   const showAs = (rollupOption.show_as ?? RollupDisplayMode.Calculated) as RollupDisplayMode;
   const calculationType = (rollupOption.calculation_type ?? CalculationType.Count) as CalculationType;
@@ -363,7 +441,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
   if (!viewId) return { value: '' };
 
-  const relatedDoc = await loadRelatedDoc(viewId, context.loadView);
+  const relatedDoc = await loadRelatedDoc(viewId, relationOption.database_id, context.loadView);
 
   if (!relatedDoc) return { value: '' };
 
@@ -375,6 +453,8 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   if (!relatedDatabase || !targetField) return { value: '' };
 
   const targetFieldType = Number(targetField.get(YjsDatabaseKey.type)) as FieldType;
+  const relationTargetResolver =
+    targetFieldType === FieldType.Relation ? await createRelationTargetResolver(targetField, context) : null;
   const values: string[] = [];
   const numericValues: number[] = [];
   const timestampValues: number[] = [];
@@ -391,7 +471,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     if (!relatedRow) continue;
     const cell = relatedRow.get(YjsDatabaseKey.cells)?.get(rollupOption.target_field_id);
-    const rawData = cell?.get(YjsDatabaseKey.data);
+    const parsedData = cell ? parseYDatabaseCellToCell(cell, targetField).data : undefined;
 
     let text = '';
 
@@ -409,10 +489,12 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         text = formatDateValue(targetField, ts);
         timestampValues.push(ts);
       }
+    } else if (cell && targetFieldType === FieldType.Relation) {
+      text = relationTargetResolver ? await resolveRelationTargetText(cell, relationTargetResolver, context) : '';
     } else if (cell) {
       text = decodeCellToText(cell, targetField);
       if (targetFieldType === FieldType.DateTime) {
-        const ts = normalizeTimestamp(cell.get(YjsDatabaseKey.data));
+        const ts = normalizeTimestamp(parsedData);
 
         if (ts !== null) {
           timestampValues.push(ts);
@@ -424,7 +506,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
     nonEmptyFlags.push(!isEmptyValue(text));
 
     if (targetFieldType === FieldType.Number) {
-      const numeric = parseNumber(rawData ?? text);
+      const numeric = parseNumber(parsedData ?? text);
 
       if (numeric !== null) {
         numericValues.push(numeric);
@@ -433,15 +515,21 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     if (targetFieldType === FieldType.Checkbox) {
       const checkboxInput =
-        typeof rawData === 'string' || typeof rawData === 'number' || typeof rawData === 'boolean'
-          ? rawData
+        typeof parsedData === 'string' || typeof parsedData === 'number' || typeof parsedData === 'boolean'
+          ? parsedData
           : text;
 
       checkboxValues.push(parseCheckboxValue(checkboxInput));
     }
 
     if (targetFieldType === FieldType.SingleSelect || targetFieldType === FieldType.MultiSelect) {
-      const ids = typeof rawData === 'string' ? rawData.split(',').map((id) => id.trim()).filter(Boolean) : [];
+      const ids =
+        typeof parsedData === 'string'
+          ? parsedData
+              .split(',')
+              .map((id) => id.trim())
+              .filter(Boolean)
+          : [];
 
       selectValues.push(ids);
     }
@@ -628,10 +716,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
     }
 
     case CalculationType.CountValue: {
-      if (
-        ![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) ||
-        conditionValue.trim() === ''
-      ) {
+      if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) || conditionValue.trim() === '') {
         return { value: '' };
       }
 

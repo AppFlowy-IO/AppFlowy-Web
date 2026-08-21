@@ -3,6 +3,7 @@ import {
   getDatabaseViewportStyle,
   getEmbeddedGridViewportStyle,
   shouldAutoShrinkDatabaseViewport,
+  shouldScrollEmbeddedDatabaseViewport,
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 
@@ -43,11 +44,36 @@ describe('shouldUseFixedDatabaseViewport', () => {
     };
 
     expect(shouldAutoShrinkDatabaseViewport(input)).toBe(true);
+    expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(false);
     expect(getDatabaseViewportStyle(input)).toEqual({ maxHeight: '600px' });
     expect(getEmbeddedGridViewportStyle({ contentHeight: 180, embeddedHeight: 600, isDocumentBlock: true })).toEqual({
       height: 180,
       maxHeight: '600px',
     });
+  });
+
+  it('uses embedded height as a max cap for document list viewports', () => {
+    const input = {
+      embeddedHeight: 600,
+      isDocumentBlock: true,
+      layout: DatabaseViewLayout.List,
+    };
+
+    expect(shouldAutoShrinkDatabaseViewport(input)).toBe(true);
+    expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(true);
+    expect(getDatabaseViewportStyle(input)).toEqual({ maxHeight: '600px' });
+  });
+
+  it('uses embedded height as a scrollable max cap for document gallery viewports', () => {
+    const input = {
+      embeddedHeight: 600,
+      isDocumentBlock: true,
+      layout: DatabaseViewLayout.Gallery,
+    };
+
+    expect(shouldAutoShrinkDatabaseViewport(input)).toBe(true);
+    expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(true);
+    expect(getDatabaseViewportStyle(input)).toEqual({ maxHeight: '600px' });
   });
 
   it('keeps embedded grid height capped at the default viewport when content is taller', () => {
@@ -71,6 +97,7 @@ describe('shouldUseFixedDatabaseViewport', () => {
     };
 
     expect(shouldAutoShrinkDatabaseViewport(input)).toBe(false);
+    expect(shouldScrollEmbeddedDatabaseViewport(input)).toBe(false);
     expect(getDatabaseViewportStyle(input)).toEqual({ height: '600px', maxHeight: '600px' });
   });
 });

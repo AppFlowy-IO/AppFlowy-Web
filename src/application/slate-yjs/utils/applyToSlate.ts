@@ -34,28 +34,30 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
   });
 
   events.forEach((event, index) => {
+    const path = event.path;
+
     Log.debug(`Processing event ${index + 1}/${events.length}:`, {
       path: event.path,
       type: event.constructor.name,
     });
 
     // Handle block-level changes (document.blocks)
-    if (isEqual(event.path, ['document', 'blocks'])) {
+    if (path.length === 2 && path[0] === 'document' && path[1] === 'blocks') {
       Log.debug('→ Applying block map changes');
       applyBlocksYEvent(editor, event as BlockMapEvent);
     }
 
     // Handle individual block updates (document.blocks[blockId])
-    if (isEqual(event.path, ['document', 'blocks', event.path[2]])) {
-      const blockId = event.path[2] as string;
+    if (path.length === 3 && path[0] === 'document' && path[1] === 'blocks') {
+      const blockId = path[2] as string;
 
       Log.debug(`→ Applying block update for blockId: ${blockId}`);
       applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>);
     }
 
     // Handle text content changes (document.meta.text_map[textId])
-    if (isEqual(event.path, ['document', 'meta', 'text_map', event.path[3]])) {
-      const textId = event.path[3] as string;
+    if (path.length === 4 && path[0] === 'document' && path[1] === 'meta' && path[2] === 'text_map') {
+      const textId = path[3] as string;
 
       Log.debug(`→ Applying text content changes for textId: ${textId}`);
       applyTextYEvent(editor, textId, event as YTextEvent);

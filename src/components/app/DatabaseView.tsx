@@ -57,7 +57,7 @@ function DatabaseView(props: DatabaseViewProps) {
   // server fetches for any ancestor missing from the shallow outline, so it
   // resolves the database container even when the outline tree doesn't yet
   // include the route view's parent (e.g. immediately after refresh while
-  // the outline still loads at depth=2).
+  // the outline still uses a bounded depth).
   const breadcrumbContainerView = useMemo((): View | undefined => {
     if (containerView) return undefined;
     if (viewMeta.extra?.embedded) return undefined;
@@ -264,6 +264,8 @@ function DatabaseView(props: DatabaseViewProps) {
 
     switch (viewMeta.layout) {
       case ViewLayout.Grid:
+      case ViewLayout.List:
+      case ViewLayout.Gallery:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;

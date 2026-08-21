@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { View } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -34,6 +34,9 @@ export function useViewMeta({
   onNotFound,
 }: UseViewMetaProps): UseViewMetaResult {
   const [databaseName, setDatabaseName] = useState<string>('');
+  const onNotFoundRef = useRef(onNotFound);
+
+  onNotFoundRef.current = onNotFound;
 
   const loadWithRetry = useCallback(
     async (
@@ -88,11 +91,11 @@ export function useViewMeta({
           return null;
         }
 
-        onNotFound?.();
+        onNotFoundRef.current?.();
         throw error;
       }
     },
-    [loadWithRetry, viewId, ignoreMetaErrors, onNotFound]
+    [loadWithRetry, viewId, ignoreMetaErrors]
   );
 
   // Initial load

@@ -1,12 +1,7 @@
 import { toBase64 } from 'lib0/buffer';
 
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
-import {
-  RowId,
-  Types,
-  User,
-  View,
-} from '@/application/types';
+import { RowDocumentSourcePayload, RowId, Types, User, View } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -18,7 +13,132 @@ export interface CollabFullSyncBatchResult {
   collabType: Types;
   missingUpdate: Uint8Array;
   serverStateVector: Uint8Array;
+  collabVersion?: string;
+  messageId?: collab.IRid;
   error?: string;
+}
+
+export interface CollabFullSyncBatchOptions {
+  /**
+   * Marks a single oversized item for the server's bounded slow-sync lane.
+   * Ordinary batch requests intentionally omit this header.
+   */
+  syncLane?: 'slow';
+  /** Cancels an in-flight request when its owning workspace/session changes. */
+  signal?: AbortSignal;
+  /** Bounds ordinary requests that participate in a serialized workflow. */
+  timeoutMs?: number;
+}
+
+export const SLOW_SYNC_PROBE_TIMEOUT_MS = 120_000;
+const SLOW_SYNC_SERVER_PROCESSING_BUDGET_MS = 60_000;
+const SLOW_SYNC_NETWORK_HEADROOM_MS = 30_000;
+const SLOW_SYNC_MIN_UPLOAD_BITS_PER_SECOND = 1_500_000;
+const SLOW_SYNC_PROTOBUF_HEADROOM_BYTES = 64 * 1024;
+
+/**
+ * Budget upload time at 1.5 Mbps, then leave the server's full processing
+ * window plus transport/metadata headroom. The probe keeps its smaller fixed
+ * timeout because it carries no document state.
+ */
+export function getSlowSyncUploadTimeoutMs(payloadBytes: number): number {
+  const boundedPayloadBytes = Math.max(0, Number.isFinite(payloadBytes) ? payloadBytes : 0);
+  const uploadMs = Math.ceil(
+    ((boundedPayloadBytes + SLOW_SYNC_PROTOBUF_HEADROOM_BYTES) * 8 * 1_000) / SLOW_SYNC_MIN_UPLOAD_BITS_PER_SECOND
+  );
+
+  return Math.max(
+    SLOW_SYNC_PROBE_TIMEOUT_MS,
+    uploadMs + SLOW_SYNC_SERVER_PROCESSING_BUDGET_MS + SLOW_SYNC_NETWORK_HEADROOM_MS
+  );
+}
+
+function canUseStreamingGzip(): boolean {
+  return typeof globalThis.CompressionStream === 'function' && typeof globalThis.DecompressionStream === 'function';
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+
+  const reason = (signal as AbortSignal & { reason?: unknown }).reason;
+
+  if (reason !== undefined) throw reason;
+
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+  throw error;
+}
+
+async function transformGzip(
+  payload: Uint8Array,
+  mode: 'compress' | 'decompress',
+  signal?: AbortSignal
+): Promise<Uint8Array> {
+  throwIfAborted(signal);
+  if (payload.byteLength === 0) return payload;
+
+  const transformer = mode === 'compress' ? new CompressionStream('gzip') : new DecompressionStream('gzip');
+  // Copy into a plain ArrayBuffer so TypeScript and Blob do not have to account
+  // for a SharedArrayBuffer-backed Uint8Array.
+  const input = new Blob([payload.slice().buffer]).stream();
+  const output = input.pipeThrough(transformer);
+  const reader = output.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  const cancelReader = () => {
+    void reader.cancel(signal?.reason).catch(() => undefined);
+  };
+
+  signal?.addEventListener('abort', cancelReader, { once: true });
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+
+      throwIfAborted(signal);
+      if (done) break;
+      chunks.push(value);
+      totalBytes += value.byteLength;
+    }
+
+    const result = new Uint8Array(totalBytes);
+    let offset = 0;
+
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+
+    throwIfAborted(signal);
+    return result;
+  } finally {
+    signal?.removeEventListener('abort', cancelReader);
+    reader.releaseLock();
+  }
+}
+
+async function decodeFullSyncResultPayload(
+  payload: Uint8Array,
+  compression: collab.PayloadCompressionType,
+  signal?: AbortSignal
+): Promise<Uint8Array> {
+  throwIfAborted(signal);
+
+  switch (compression) {
+    case collab.PayloadCompressionType.COMPRESSION_NONE:
+      return payload;
+    case collab.PayloadCompressionType.COMPRESSION_GZIP:
+      if (!canUseStreamingGzip()) {
+        throw new Error('Server returned a gzip full-sync result, but this browser cannot decompress gzip streams');
+      }
+
+      return transformGzip(payload, 'decompress', signal);
+    case collab.PayloadCompressionType.COMPRESSION_ZSTD:
+      throw new Error('Server returned a zstd full-sync result, but the Web client has no zstd decoder');
+    default:
+      throw new Error(`Unsupported full-sync result compression: ${compression}`);
+  }
 }
 
 export async function updateCollab(
@@ -68,18 +188,53 @@ export async function collabFullSyncBatch(
     collabType: Types;
     stateVector: Uint8Array;
     docState: Uint8Array;
-  }>
+    collabVersion?: string | null;
+  }>,
+  options?: CollabFullSyncBatchOptions
 ): Promise<CollabFullSyncBatchResult[]> {
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
+  const streamingGzipAvailable = canUseStreamingGzip();
+  const slowSyncPayloadBytes = items.reduce(
+    (total, item) => total + item.stateVector.byteLength + item.docState.byteLength,
+    0
+  );
+
+  if (options?.syncLane === 'slow' && !streamingGzipAvailable) {
+    throw new Error('HTTP slow-sync requires browser gzip compression support');
+  }
+
+  if (options?.syncLane === 'slow' && items.length !== 1) {
+    throw new Error('HTTP slow-sync requires exactly one collab item');
+  }
+
+  const compression =
+    options?.syncLane === 'slow'
+      ? collab.PayloadCompressionType.COMPRESSION_GZIP
+      : collab.PayloadCompressionType.COMPRESSION_NONE;
+  const preparedItems = await Promise.all(
+    items.map(async (item) => {
+      if (compression !== collab.PayloadCompressionType.COMPRESSION_GZIP) {
+        return { ...item, compression };
+      }
+
+      const [stateVector, docState] = await Promise.all([
+        transformGzip(item.stateVector, 'compress', options?.signal),
+        transformGzip(item.docState, 'compress', options?.signal),
+      ]);
+
+      return { ...item, stateVector, docState, compression };
+    })
+  );
 
   // Build the protobuf request
   const request = collab.CollabBatchSyncRequest.create({
-    items: items.map((item) => ({
+    items: preparedItems.map((item) => ({
       objectId: item.objectId,
       collabType: item.collabType,
-      compression: collab.PayloadCompressionType.COMPRESSION_NONE,
+      compression: item.compression,
       sv: item.stateVector,
       docState: item.docState,
+      collabVersion: item.collabVersion ?? undefined,
     })),
     responseCompression: collab.PayloadCompressionType.COMPRESSION_NONE,
   });
@@ -89,6 +244,8 @@ export async function collabFullSyncBatch(
 
   const deviceId = getOrCreateDeviceId();
   const axiosInstance = getAxios();
+  const timeoutMs =
+    options?.timeoutMs ?? (options?.syncLane === 'slow' ? getSlowSyncUploadTimeoutMs(slowSyncPayloadBytes) : undefined);
 
   // Send the request with protobuf content type.
   // Use validateStatus to prevent axios from throwing on 429/503 so we can
@@ -98,8 +255,13 @@ export async function collabFullSyncBatch(
       'Content-Type': 'application/octet-stream',
       'client-version': 'web',
       'device-id': deviceId,
+      ...(options?.syncLane ? { 'x-appflowy-sync-lane': options.syncLane } : {}),
     },
     responseType: 'arraybuffer',
+    signal: options?.signal,
+    // A slow upload or its lightweight probe must not hold the serialized
+    // workspace lane forever.
+    ...(timeoutMs !== undefined ? { timeout: timeoutMs } : {}),
     // Axios' default transform sends typed-array `.buffer`, which can include
     // protobufjs' pooled zero padding beyond this Uint8Array view.
     transformRequest: [(data: Uint8Array) => data],
@@ -136,11 +298,24 @@ export async function collabFullSyncBatch(
       });
     }
 
+    // Error results can use the request compression enum while carrying raw
+    // default vectors. Preserve the explicit server error instead of masking
+    // it with a decompression exception.
+    const resultCompression = result.error
+      ? collab.PayloadCompressionType.COMPRESSION_NONE
+      : result.compression ?? collab.PayloadCompressionType.COMPRESSION_NONE;
+    const [missingUpdate, serverStateVector] = await Promise.all([
+      decodeFullSyncResultPayload(result.missingUpdate ?? new Uint8Array(), resultCompression, options?.signal),
+      decodeFullSyncResultPayload(result.serverStateVector ?? new Uint8Array(), resultCompression, options?.signal),
+    ]);
+
     results.push({
       objectId: result.objectId ?? '',
       collabType: result.collabType as Types,
-      missingUpdate: result.missingUpdate ?? new Uint8Array(),
-      serverStateVector: result.serverStateVector ?? new Uint8Array(),
+      missingUpdate,
+      serverStateVector,
+      collabVersion: result.collabVersion || undefined,
+      messageId: result.messageId ?? undefined,
       error: result.error || undefined,
     });
   }
@@ -148,19 +323,33 @@ export async function collabFullSyncBatch(
   return results;
 }
 
-export async function getCollab(workspaceId: string, objectId: string, collabType: Types) {
+export async function getCollab(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types,
+  rowDocumentSource?: RowDocumentSourcePayload
+) {
   const url = `/api/workspace/v1/${workspaceId}/collab/${objectId}`;
 
   const data = await executeAPIRequest<{
     doc_state: number[];
     object_id: string;
   }>(() =>
-    getAxios()?.get<APIResponse<{
-      doc_state: number[];
-      object_id: string;
-    }>>(url, {
+    getAxios()?.get<
+      APIResponse<{
+        doc_state: number[];
+        object_id: string;
+      }>
+    >(url, {
       params: {
         collab_type: collabType,
+        ...(rowDocumentSource
+          ? {
+              database_id: rowDocumentSource.database_id,
+              row_id: rowDocumentSource.row_id,
+              row_document_id: objectId,
+            }
+          : {}),
       },
     })
   );
@@ -182,15 +371,17 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
       last_editor?: User;
     };
   }>(() =>
-    getAxios()?.get<APIResponse<{
-      view: View;
-      data: {
-        encoded_collab: number[];
-        row_data: Record<RowId, number[]>;
-        owner?: User;
-        last_editor?: User;
-      };
-    }>>(url)
+    getAxios()?.get<
+      APIResponse<{
+        view: View;
+        data: {
+          encoded_collab: number[];
+          row_data: Record<RowId, number[]>;
+          owner?: User;
+          last_editor?: User;
+        };
+      }>
+    >(url)
   );
 
   const { encoded_collab, row_data, owner, last_editor } = response.data;
@@ -208,7 +399,7 @@ export async function duplicateRowDocument(
   databaseId: string,
   sourceRowId: string,
   newRowId: string,
-  clientDocStateB64?: string,
+  clientDocStateB64?: string
 ): Promise<void> {
   const url = `/api/workspace/${workspaceId}/database/${databaseId}/row/${sourceRowId}/duplicate-document`;
 
@@ -254,18 +445,8 @@ export async function databaseBlobDiff(
 export async function getCollabVersions(workspaceId: string, objectId: string, since?: Date) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
   const from = since?.getTime() || null;
-  const data = await executeAPIRequest<Array<{
-    version: string;
-    parent: string | null;
-    name: string | null;
-    created_at: string;
-    created_by: number | null;
-    deleted_at?: string | null;
-    // Backward compatibility for older server payloads.
-    is_deleted?: boolean;
-    editors: number[];
-  }>>(() =>
-    getAxios()?.get<APIResponse<Array<{
+  const data = await executeAPIRequest<
+    Array<{
       version: string;
       parent: string | null;
       name: string | null;
@@ -275,7 +456,23 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       // Backward compatibility for older server payloads.
       is_deleted?: boolean;
       editors: number[];
-    }>>>(url, {
+    }>
+  >(() =>
+    getAxios()?.get<
+      APIResponse<
+        Array<{
+          version: string;
+          parent: string | null;
+          name: string | null;
+          created_at: string;
+          created_by: number | null;
+          deleted_at?: string | null;
+          // Backward compatibility for older server payloads.
+          is_deleted?: boolean;
+          editors: number[];
+        }>
+      >
+    >(url, {
       params: {
         since: from,
       },
@@ -288,7 +485,7 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       parentId: data.parent,
       name: data.name,
       createdAt: new Date(data.created_at),
-      deletedAt: data.deleted_at ? new Date(data.deleted_at) : (data.is_deleted ? new Date(0) : null),
+      deletedAt: data.deleted_at ? new Date(data.deleted_at) : data.is_deleted ? new Date(0) : null,
       editors: data.editors,
     };
   });
@@ -298,7 +495,7 @@ export async function previewCollabVersion(workspaceId: string, objectId: string
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history/${version}?collab_type=${collabType}`;
 
   const response = await getAxios()?.get(url, {
-    responseType: 'arraybuffer'
+    responseType: 'arraybuffer',
   });
 
   if (!response) {
@@ -348,12 +545,14 @@ export async function revertCollabVersion(workspaceId: string, objectId: string,
     collab_version: string | null;
     version: number; // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
   }>(() =>
-    getAxios()?.post<APIResponse<{
-      state_vector: number[];
-      doc_state: number[];
-      collab_version: string | null;
-      version: number;
-    }>>(url, {
+    getAxios()?.post<
+      APIResponse<{
+        state_vector: number[];
+        doc_state: number[];
+        collab_version: string | null;
+        version: number;
+      }>
+    >(url, {
       version,
       collab_type: collabType,
     })

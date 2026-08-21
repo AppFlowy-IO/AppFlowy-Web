@@ -1,8 +1,8 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { invalidToken, isTokenValid } from '@/application/session/token';
 import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
+import { invalidToken, isTokenValid } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -15,6 +15,9 @@ interface AppAuthLayerProps {
 }
 
 const RETRY_WORKSPACE_INFO_DELAY_MS = 5000;
+// Minimum age of the loaded workspace info before a focus/visibility/online
+// event triggers a background revalidation.
+const REVALIDATE_WORKSPACE_INFO_MIN_AGE_MS = 30_000;
 
 type LoadWorkspaceInfoOptions = { force?: boolean };
 
@@ -63,8 +66,13 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
   const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
+  const [maxUpdateBytes, setMaxUpdateBytes] = useState<number | undefined>(undefined);
+  const [maxSlowSyncUpdateBytes, setMaxSlowSyncUpdateBytes] = useState<number | undefined>(undefined);
+  const [syncLimitsLoaded, setSyncLimitsLoaded] = useState(false);
   const workspaceInfoPromiseRef = useRef<Promise<UserWorkspaceInfo | undefined> | null>(null);
   const workspaceInfoRequestIdRef = useRef(0);
+  const workspaceInfoLoadedAtRef = useRef(0);
+  const pendingWorkspaceChangeRef = useRef<string | null>(null);
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(
@@ -93,6 +101,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       .then(() => UserService.getWorkspaceInfo())
       .then((res) => {
         if (workspaceInfoRequestIdRef.current === requestId) {
+          workspaceInfoLoadedAtRef.current = Date.now();
           setUserWorkspaceInfo(res);
         }
 
@@ -125,15 +134,35 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
         return;
       }
 
-      await WorkspaceService.open(workspaceId);
+      pendingWorkspaceChangeRef.current = workspaceId;
 
-      await loadUserWorkspaceInfo({ force: true });
+      try {
+        await WorkspaceService.open(workspaceId);
 
-      // Clean up old global key for backward compatibility
-      // New per-workspace-per-user keys don't need to be removed on workspace change
-      localStorage.removeItem('last_view_id');
+        const workspaceInfo = await loadUserWorkspaceInfo({ force: true });
 
-      navigate(`/app/${workspaceId}`);
+        // Clean up old global key for backward compatibility
+        // New per-workspace-per-user keys don't need to be removed on workspace change
+        localStorage.removeItem('last_view_id');
+
+        // Keep the URL transition behind the workspace-info refresh so
+        // workspace-scoped consumers never see the new URL with old metadata.
+        // pendingWorkspaceChangeRef suppresses the inverse intermediate state:
+        // the new server selection with the previous URL.
+        navigate(`/app/${workspaceId}`);
+
+        // A failed or inconsistent refresh should fall back to the URL-driven
+        // auto-switch path instead of leaving it suppressed indefinitely.
+        if (workspaceInfo?.selectedWorkspace.id !== workspaceId && pendingWorkspaceChangeRef.current === workspaceId) {
+          pendingWorkspaceChangeRef.current = null;
+        }
+      } catch (error) {
+        if (pendingWorkspaceChangeRef.current === workspaceId) {
+          pendingWorkspaceChangeRef.current = null;
+        }
+
+        throw error;
+      }
     },
     [loadUserWorkspaceInfo, navigate, userWorkspaceInfo]
   );
@@ -219,19 +248,58 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   // Load user workspace info and server info on mount
   useEffect(() => {
     if (!isAuthenticated) {
+      setMaxUpdateBytes(undefined);
+      setMaxSlowSyncUpdateBytes(undefined);
+      setSyncLimitsLoaded(false);
       return;
     }
 
     void loadUserWorkspaceInfo();
 
-    void AuthService.getServerInfo().then((info) => {
-      setEnablePageHistory(info.enable_page_history);
-      setAIEnabled(info.ai_enabled ?? true);
-    }).catch((e) => {
-      console.error('[AppAuthLayer] Failed to load server info:', e);
-      setEnablePageHistory(true);
-      setAIEnabled(true);
-    });
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryAttempt = 0;
+    const serverInfoAbortController = new AbortController();
+
+    const loadServerInfo = () => {
+      void AuthService.getServerInfo(serverInfoAbortController.signal)
+        .then((info) => {
+          if (cancelled) return;
+
+          setEnablePageHistory(info.enable_page_history);
+          setAIEnabled(info.ai_enabled ?? true);
+          setMaxUpdateBytes(info.max_update_bytes);
+          setMaxSlowSyncUpdateBytes(info.max_slow_sync_update_bytes);
+          // A successful response that omits the optional fields is an older
+          // server, not a loading state. The outbox can now safely use its
+          // legacy realtime default while keeping the HTTP slow lane disabled.
+          setSyncLimitsLoaded(true);
+        })
+        .catch((e) => {
+          if (cancelled) return;
+
+          console.error('[AppAuthLayer] Failed to load server info:', e);
+          setEnablePageHistory(true);
+          setAIEnabled(true);
+          setMaxUpdateBytes(undefined);
+          setMaxSlowSyncUpdateBytes(undefined);
+          setSyncLimitsLoaded(false);
+
+          const delayMs = Math.min(30_000, 1_000 * 2 ** retryAttempt);
+
+          retryAttempt += 1;
+          retryTimer = setTimeout(loadServerInfo, delayMs);
+        });
+    };
+
+    setSyncLimitsLoaded(false);
+    loadServerInfo();
+
+    return () => {
+      cancelled = true;
+      serverInfoAbortController.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [loadUserWorkspaceInfo, isAuthenticated]);
 
   // If the app boots while the server is down, the first workspace-info request
@@ -268,7 +336,37 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     };
   }, [isAuthenticated, userWorkspaceInfo, workspaceInfoError, loadUserWorkspaceInfo]);
 
+  // Once loaded, the workspace list (names, icons, roles, member counts) is a
+  // mount-time snapshot: nothing else re-reads it and there is no membership
+  // WebSocket notification. Revalidate on focus/visibility/online (throttled)
+  // so changes made on other devices eventually reach a long-lived tab.
+  useEffect(() => {
+    if (!isAuthenticated || !userWorkspaceInfo) return;
+
+    const revalidate = () => {
+      if (Date.now() - workspaceInfoLoadedAtRef.current < REVALIDATE_WORKSPACE_INFO_MIN_AGE_MS) return;
+      void loadUserWorkspaceInfo();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        revalidate();
+      }
+    };
+
+    window.addEventListener('online', revalidate);
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('online', revalidate);
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isAuthenticated, userWorkspaceInfo, loadUserWorkspaceInfo]);
+
   const retryLoadWorkspaceInfo = useCallback(() => loadUserWorkspaceInfo({ force: true }), [loadUserWorkspaceInfo]);
+  const refreshUserWorkspaceInfo = useCallback(() => loadUserWorkspaceInfo({ force: true }), [loadUserWorkspaceInfo]);
 
   // Auto-switch workspace when the URL points to a different workspace than
   // the currently selected one (e.g. guest opening a shared direct link).
@@ -283,6 +381,15 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     if (!isAuthenticated || !urlWorkspaceId || !userWorkspaceInfo) return;
 
     const selectedId = userWorkspaceInfo.selectedWorkspace.id;
+    const pendingWorkspaceId = pendingWorkspaceChangeRef.current;
+
+    if (pendingWorkspaceId) {
+      if (urlWorkspaceId === pendingWorkspaceId && selectedId === pendingWorkspaceId) {
+        pendingWorkspaceChangeRef.current = null;
+      } else {
+        return;
+      }
+    }
 
     // Already on the correct workspace
     if (urlWorkspaceId === selectedId) return;
@@ -308,11 +415,28 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
       aiEnabled,
+      maxUpdateBytes,
+      maxSlowSyncUpdateBytes,
+      syncLimitsLoaded,
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo,
+      refreshUserWorkspaceInfo,
     }),
-    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, aiEnabled, onChangeWorkspace, workspaceInfoError, retryLoadWorkspaceInfo]
+    [
+      userWorkspaceInfo,
+      currentWorkspaceId,
+      isAuthenticated,
+      enablePageHistory,
+      aiEnabled,
+      maxUpdateBytes,
+      maxSlowSyncUpdateBytes,
+      syncLimitsLoaded,
+      onChangeWorkspace,
+      workspaceInfoError,
+      retryLoadWorkspaceInfo,
+      refreshUserWorkspaceInfo,
+    ]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;

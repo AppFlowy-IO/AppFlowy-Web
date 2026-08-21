@@ -9,7 +9,7 @@ export function createCheckboxCell(fieldId: string, data: string) {
 
   cell.set(YjsDatabaseKey.id, fieldId);
   cell.set(YjsDatabaseKey.data, data);
-  cell.set(YjsDatabaseKey.field_type, String(FieldType.Checkbox));
+  cell.set(YjsDatabaseKey.field_type, FieldType.Checkbox);
   cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
   cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 

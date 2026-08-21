@@ -19,6 +19,10 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
+import {
+  workspaceDatabaseCatalogSchema,
+  WorkspaceDatabaseCatalogTable,
+} from '@/application/db/tables/workspace_database_catalog';
 import { YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -29,7 +33,8 @@ type DexieTables = ViewMetasTable &
   VersionsTable &
   SyncOutboxTable &
   CollabStorageTable &
-  AppViewCacheTable;
+  AppViewCacheTable &
+  WorkspaceDatabaseCatalogTable;
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
@@ -44,6 +49,7 @@ const _schema = Object.assign(
     ...syncOutboxSchema,
     ...collabStorageSchema,
     ...appViewCacheSchema,
+    ...workspaceDatabaseCatalogSchema,
   }
 );
 
@@ -228,6 +234,21 @@ db.version(11).stores({
   ...syncOutboxSchema,
   ...collabStorageSchema,
   ...appViewCacheSchema,
+});
+
+// Version 12: persist the workspace database catalog by view ID. Database
+// identity lookups can now resolve from IndexedDB before fetching the server
+// catalog, without reopening the legacy workspace-database collaboration doc.
+db.version(12).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...appViewCacheSchema,
+  ...workspaceDatabaseCatalogSchema,
 });
 
 const openedSet = new Set<string>();

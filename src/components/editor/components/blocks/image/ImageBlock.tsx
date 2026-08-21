@@ -26,15 +26,27 @@ export const ImageBlock = memo(
     const retry_local_url = data?.retry_local_url;
     const { uploadFile, workspaceId, viewId } = useEditorContext();
     const editor = useSlateStatic() as YjsEditor;
-    const [needRetry, setNeedRetry] = useState(false);
     const [localUrl, setLocalUrl] = useState<string | undefined>(undefined);
     const [loading, setLoading] = useState(false);
 
     const fileHandler = useMemo(() => new FileHandler(), []);
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
     const selected = useSelected();
-    const { url: dataUrl, align } = useMemo(() => data || {}, [data]);
+    const { url: dataUrl, align, pending_upload_id } = useMemo(() => data || {}, [data]);
     const url = useMemo(() => constructFileUrl(dataUrl, workspaceId, viewId), [dataUrl, workspaceId, viewId]);
+    const localFileIdRef = useRef<string>();
+    const previewRemoteUrlRef = useRef<string>();
+    const previousPendingUploadIdRef = useRef(pending_upload_id);
+    const uploadJustSucceeded = Boolean(
+      dataUrl && localUrl && previousPendingUploadIdRef.current && !pending_upload_id
+    );
+    const shouldUseLocalPreview = Boolean(
+      localUrl && (!dataUrl || uploadJustSucceeded || previewRemoteUrlRef.current === dataUrl)
+    );
+    const renderedLocalUrl = shouldUseLocalPreview ? localUrl : undefined;
+    const isUploading = Boolean(pending_upload_id && !dataUrl);
+    const hasImage = Boolean(url || renderedLocalUrl);
+    const needRetry = Boolean(retry_local_url && localUrl && !dataUrl && !isUploading);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const onFocusNode = useCallback(() => {
@@ -68,7 +80,7 @@ export const ImageBlock = memo(
 
     const handleClick = useCallback(async () => {
       try {
-        if (!url && !needRetry) {
+        if (!hasImage && !isUploading && !needRetry) {
           if (containerRef.current && !readOnly) {
             openPopover(blockId, BlockType.ImageBlock, containerRef.current);
           }
@@ -80,21 +92,75 @@ export const ImageBlock = memo(
       } catch (e: any) {
         notify.error(e.message);
       }
-    }, [needRetry, url, readOnly, openPopover, blockId]);
+    }, [blockId, hasImage, isUploading, needRetry, openPopover, readOnly]);
 
     useEffect(() => {
-      if (readOnly) return;
+      if (uploadJustSucceeded && dataUrl) {
+        previewRemoteUrlRef.current = dataUrl;
+      }
+
+      previousPendingUploadIdRef.current = pending_upload_id;
+    }, [dataUrl, pending_upload_id, uploadJustSucceeded]);
+
+    useEffect(() => {
+      if (readOnly || !retry_local_url) return;
+
+      let cancelled = false;
+      const previousFileId = localFileIdRef.current;
+
+      if (previousFileId && previousFileId !== retry_local_url) {
+        localFileIdRef.current = undefined;
+        previewRemoteUrlRef.current = undefined;
+        setLocalUrl(undefined);
+        void fileHandler.cleanup(previousFileId).catch(() => undefined);
+      }
+
       void (async () => {
-        if (retry_local_url) {
+        try {
           const fileData = await fileHandler.getStoredFile(retry_local_url);
 
-          setLocalUrl(fileData?.url);
-          setNeedRetry(!!fileData);
-        } else {
-          setNeedRetry(false);
+          if (!cancelled) {
+            localFileIdRef.current = retry_local_url;
+            previewRemoteUrlRef.current = undefined;
+            setLocalUrl(fileData?.url);
+          }
+        } catch {
+          // The remote upload can still finish even if the local preview is unavailable.
         }
       })();
-    }, [readOnly, retry_local_url, fileHandler]);
+
+      return () => {
+        cancelled = true;
+      };
+    }, [fileHandler, readOnly, retry_local_url]);
+
+    useEffect(() => {
+      if (!localUrl || !dataUrl || shouldUseLocalPreview) return;
+
+      const localFileId = localFileIdRef.current;
+
+      localFileIdRef.current = undefined;
+      previewRemoteUrlRef.current = undefined;
+      setLocalUrl(undefined);
+
+      if (localFileId) {
+        void fileHandler.cleanup(localFileId).catch(() => undefined);
+      }
+    }, [dataUrl, fileHandler, localUrl, shouldUseLocalPreview]);
+
+    useEffect(() => {
+      return () => {
+        const localFileId = localFileIdRef.current;
+
+        if (!localFileId) return;
+
+        if (previewRemoteUrlRef.current) {
+          void fileHandler.cleanup(localFileId).catch(() => undefined);
+        } else {
+          fileHandler.releaseUrl(localFileId);
+        }
+      };
+    }, [fileHandler]);
 
     const uploadFileRemote = useCallback(
       async (file: File) => {
@@ -114,20 +180,19 @@ export const ImageBlock = memo(
       async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!retry_local_url) return;
-        const fileData = await fileHandler.getStoredFile(retry_local_url);
-        const file = fileData?.file;
-
-        if (!file) return;
-
-        const url = await uploadFileRemote(file);
-
-        if (!url) {
-          return;
-        }
 
         setLoading(true);
         try {
-          await fileHandler.cleanup(retry_local_url);
+          const fileData = await fileHandler.getStoredFile(retry_local_url);
+          const file = fileData?.file;
+
+          if (!file) return;
+
+          const url = await uploadFileRemote(file);
+
+          if (!url) return;
+
+          previewRemoteUrlRef.current = url;
           CustomEditor.setBlockData(editor, blockId, {
             url,
             image_type: ImageType.External,
@@ -135,7 +200,7 @@ export const ImageBlock = memo(
             pending_upload_id: '',
           } as ImageBlockData);
         } catch (e) {
-          // do noting
+          // do nothing
         } finally {
           setLoading(false);
         }
@@ -158,11 +223,9 @@ export const ImageBlock = memo(
       >
         <div
           contentEditable={false}
-          className={`embed-block relative ${alignCss} ${
-            url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
-          }`}
+          className={`embed-block relative ${alignCss} ${hasImage ? '!rounded-none !border-none !bg-transparent' : 'p-4'}`}
         >
-          {url || needRetry ? (
+          {hasImage ? (
             <ImageRender
               showToolbar={showToolbar}
               selected={selected}
@@ -173,7 +236,7 @@ export const ImageBlock = memo(
                   url,
                 },
               }}
-              localUrl={localUrl}
+              localUrl={renderedLocalUrl}
             />
           ) : (
             <ImageEmpty
@@ -187,6 +250,15 @@ export const ImageBlock = memo(
               onEscape={onFocusNode}
               containerRef={containerRef}
             />
+          )}
+          {isUploading && (
+            <div
+              data-testid='image-upload-pending'
+              className={'absolute bottom-2 right-4 flex items-center gap-2 text-text-secondary'}
+            >
+              <CircularProgress size={16} />
+              <div className={'font-normal'}>{t('fileDropzone.uploading')}</div>
+            </div>
           )}
           {needRetry && (
             <div className={'absolute bottom-2 right-4 flex items-center gap-2'}>

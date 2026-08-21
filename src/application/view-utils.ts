@@ -15,10 +15,29 @@
 import { View, ViewLayout } from './types';
 
 /**
- * Check if a layout is a database layout (Grid, Board, or Calendar)
+ * Check whether a view represents a space.
+ *
+ * Newer folder-view APIs expose the authoritative marker at the top level,
+ * while older responses only include it in `extra`.
+ */
+export function isSpaceView(
+  view: { is_space?: boolean; extra?: { is_space?: boolean } | null } | null | undefined
+): boolean {
+  return view?.is_space ?? Boolean(view?.extra?.is_space);
+}
+
+/**
+ * Check if a layout is supported as a database layout in Web.
  */
 export function isDatabaseLayout(layout: ViewLayout): boolean {
-  return layout === ViewLayout.Grid || layout === ViewLayout.Board || layout === ViewLayout.Calendar;
+  return (
+    layout === ViewLayout.Grid ||
+    layout === ViewLayout.Board ||
+    layout === ViewLayout.Calendar ||
+    layout === ViewLayout.Chart ||
+    layout === ViewLayout.List ||
+    layout === ViewLayout.Gallery
+  );
 }
 
 /**
@@ -40,7 +59,9 @@ export function isEmbeddedView(view: View | null | undefined): boolean {
  * @param view The view to check
  * @returns true if this view is a database container
  */
-export function isDatabaseContainer(view: View | null | undefined): boolean {
+export function isDatabaseContainer(
+  view: View | null | undefined
+): view is View & { extra: { is_database_container: true } } {
   return view?.extra?.is_database_container === true;
 }
 
@@ -254,26 +275,37 @@ export function resolveActiveDatabaseViewId({
   databasePageId,
   tabViewId,
   visibleViewIds,
+  existingViewIds,
 }: {
   databasePageId?: string;
   tabViewId?: string | null;
   visibleViewIds?: string[];
+  /**
+   * View ids that actually exist in the database collab. Published pages can
+   * carry a `visibleViewIds` list that includes the folder container id, which
+   * is not a database view; when this list is provided, a resolved id that is
+   * not a real database view falls back to the first visible id that is.
+   */
+  existingViewIds?: string[];
 }): string | undefined {
   const hasAuthoritativeVisibleViews = Boolean(visibleViewIds && visibleViewIds.length > 0);
 
+  let resolved: string | undefined;
+
   if (tabViewId && (!hasAuthoritativeVisibleViews || visibleViewIds?.includes(tabViewId))) {
-    return tabViewId;
+    resolved = tabViewId;
+  } else if (!databasePageId) {
+    resolved = visibleViewIds?.[0];
+  } else if (hasAuthoritativeVisibleViews && !visibleViewIds?.includes(databasePageId)) {
+    resolved = visibleViewIds?.[0] ?? databasePageId;
+  } else {
+    resolved = databasePageId;
   }
 
-  if (!databasePageId) {
-    return visibleViewIds?.[0];
-  }
+  if (!existingViewIds || existingViewIds.length === 0) return resolved;
+  if (resolved && existingViewIds.includes(resolved)) return resolved;
 
-  if (hasAuthoritativeVisibleViews && !visibleViewIds?.includes(databasePageId)) {
-    return visibleViewIds?.[0] ?? databasePageId;
-  }
-
-  return databasePageId;
+  return visibleViewIds?.find((id) => existingViewIds.includes(id)) ?? resolved;
 }
 
 /**

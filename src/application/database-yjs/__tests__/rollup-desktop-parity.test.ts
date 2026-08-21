@@ -968,8 +968,10 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
     const relatedRow2 = fixture.relatedFixture.rows[1].id as RowId;
 
     const checkboxFieldId = ensureField(fixture.relatedFixture.fields, FieldType.Checkbox, 'author-checkbox');
-    setCellValue(fixture.relatedFixture.rowMetas[relatedRow1], checkboxFieldId, FieldType.Checkbox, 'Yes');
-    setCellValue(fixture.relatedFixture.rowMetas[relatedRow2], checkboxFieldId, FieldType.Checkbox, 'No');
+    // Desktop decodes supported RichText lazily, while an unsupported Number
+    // payload stays preserved but appears unchecked under a Checkbox field.
+    setCellValue(fixture.relatedFixture.rowMetas[relatedRow1], checkboxFieldId, FieldType.RichText, 'Yes');
+    setCellValue(fixture.relatedFixture.rowMetas[relatedRow2], checkboxFieldId, FieldType.Number, '1');
 
     setRelationCellRowIds(fixture.baseRowMetas[baseRowId], fixture.relationFieldId, [relatedRow1, relatedRow2]);
 

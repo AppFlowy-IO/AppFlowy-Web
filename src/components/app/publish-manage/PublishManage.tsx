@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { validate as uuidValidate } from 'uuid';
 
 import { SubscriptionPlan, View } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { notify } from '@/components/_shared/notify';
 import { flattenViews } from '@/components/_shared/outline/utils';
@@ -21,7 +22,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
-  const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
   const [loading, setLoading] = React.useState<boolean>(false);
   const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const [namespace, setNamespace] = React.useState<string>('');

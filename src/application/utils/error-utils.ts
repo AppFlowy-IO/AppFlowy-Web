@@ -272,6 +272,23 @@ export function determineErrorType(error: unknown): AppError {
 }
 
 /**
+ * Returns whether an error is an authoritative object-access denial.
+ *
+ * `ErrorType.Forbidden` is intentionally broader than permissions: storage,
+ * plan, and feature limits also map to it. Callers that render a no-access UI
+ * must use the server's permission code (or a bare HTTP 403) instead.
+ */
+export function isPermissionDeniedError(error: unknown): boolean {
+  const appError = determineErrorType(error);
+
+  if (appError.code !== undefined) {
+    return appError.code === ERROR_CODE.NOT_HAS_PERMISSION || appError.code === 403;
+  }
+
+  return appError.statusCode === 403;
+}
+
+/**
  * Type guard to check if error is an AppError
  */
 export function isAppError(error: unknown): error is AppError {

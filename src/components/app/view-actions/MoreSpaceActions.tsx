@@ -2,33 +2,39 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { View } from '@/application/types';
+import { PageService } from '@/application/services/domains';
+import { Role, View } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
-import { PageService } from '@/application/services/domains';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useRefreshOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useRefreshOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
 function MoreSpaceActions({
   view,
   onClose,
+  canDuplicateActions,
+  canManageActions,
+  canOpenManageActions,
+  isLoadingActions,
 }: {
   view: View;
   onClose: () => void;
+  canDuplicateActions: boolean;
+  canManageActions: boolean;
+  canOpenManageActions: boolean;
+  isLoadingActions: boolean;
 }) {
   const { t } = useTranslation();
-  const {
-    openCreateSpaceModal,
-    openDeleteSpaceModal,
-    openManageSpaceModal,
-  } = useAppOverlayContext();
+  const { openDeleteSpaceModal, openManageSpaceModal } = useAppOverlayContext();
   const workspaceId = useCurrentWorkspaceId();
+  const userWorkspaceInfo = useUserWorkspaceInfo();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const refreshOutline = useRefreshOutline();
+  const workspaceRole = userWorkspaceInfo?.selectedWorkspace?.role;
+  const canCreateSpace = workspaceRole === Role.Owner || workspaceRole === Role.Member;
 
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;
@@ -53,43 +59,43 @@ function MoreSpaceActions({
 
   return (
     <DropdownMenuGroup>
-      <DropdownMenuItem
-        data-testid={'space-action-manage'}
-        onSelect={handleManageClick}
-      >
-        <SettingsIcon />
-        {t('space.manage')}
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        data-testid={'space-action-duplicate'}
-        onSelect={handleDuplicateClick}
-        disabled={duplicateLoading}
-      >
-        {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />}
-        {t('space.duplicate')}
-      </DropdownMenuItem>
-      <DropdownMenuSeparator className={'w-full'} />
-      <DropdownMenuItem
-        data-testid="create-new-space-button"
-        onSelect={() => {
-          onClose();
-          openCreateSpaceModal();
-        }}
-      >
-        <AddIcon />
-        {t('space.createNewSpace')}
-      </DropdownMenuItem>
-      <DropdownMenuSeparator className={'w-full'} />
-      <DropdownMenuItem
-        data-testid={'space-action-delete'}
-        onSelect={() => {
-          onClose();
-          openDeleteSpaceModal(view.view_id);
-        }}
-      >
-        <DeleteIcon />
-        {t('button.delete')}
-      </DropdownMenuItem>
+      {canOpenManageActions && (
+        <DropdownMenuItem data-testid={'space-action-manage'} onSelect={handleManageClick}>
+          <SettingsIcon />
+          {t('space.manage')}
+        </DropdownMenuItem>
+      )}
+      {canDuplicateActions && canCreateSpace && (
+        <DropdownMenuItem
+          data-testid={'space-action-duplicate'}
+          onSelect={handleDuplicateClick}
+          disabled={duplicateLoading}
+        >
+          {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />}
+          {t('space.duplicate')}
+        </DropdownMenuItem>
+      )}
+      {isLoadingActions && (
+        <DropdownMenuItem data-testid='space-action-permission-loading' disabled>
+          <Progress variant='primary' />
+          {t('loading')}
+        </DropdownMenuItem>
+      )}
+      {canManageActions && (
+        <>
+          <DropdownMenuSeparator className={'w-full'} />
+          <DropdownMenuItem
+            data-testid={'space-action-delete'}
+            onSelect={() => {
+              onClose();
+              openDeleteSpaceModal(view.view_id);
+            }}
+          >
+            <DeleteIcon />
+            {t('button.delete')}
+          </DropdownMenuItem>
+        </>
+      )}
     </DropdownMenuGroup>
   );
 }

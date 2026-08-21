@@ -18,7 +18,7 @@ export interface ChatProps {
   requestInstance: ChatRequest;
   currentUser?: User;
   openingViewId?: string;
-  onOpenView?: (viewId: string) => void;
+  onOpenView?: (viewId: string, rowId?: string) => void;
   onCloseView?: () => void;
   selectionMode?: boolean;
   onOpenSelectionMode?: () => void;

@@ -1,20 +1,25 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateRow,
   DatabaseRelations,
   DateFormat,
+  DuplicatePageOperationOptions,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
+  MentionSearchContext,
   RowId,
+  SearchMentions,
   Subscription,
   TestDatabasePromptConfig,
   TimeFormat,
@@ -28,13 +33,20 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
 export interface DatabaseContextState {
   readOnly: boolean;
+  /**
+   * Whether the current user may comment on this database's row documents.
+   * Independent from [readOnly] — Read-and-comment access is read-only but
+   * still permits inline comments.
+   */
+  canComment?: boolean;
+  /** Canonical server write permission, independent from database UI state. */
+  canWrite?: boolean;
   databaseDoc: YDoc;
   /**
    * The database's page ID in the folder/outline structure.
@@ -49,6 +61,12 @@ export interface DatabaseContextState {
    */
   activeViewId: string;
   rowMap: Record<RowId, YDoc> | null;
+  /**
+   * Set while the row-template editor edits its hidden source row. That row
+   * never joins `row_orders`, so relation edits on it must not write
+   * reciprocal back-links from real rows to the phantom template row.
+   */
+  templateEditingRowId?: RowId;
   ensureRow?: (rowId: string) => Promise<YDoc | undefined> | void;
   loadRowFromSeed?: (rowId: string) => Promise<YDoc | undefined>;
   /**
@@ -58,6 +76,14 @@ export interface DatabaseContextState {
    */
   peekRowDocFromSeed?: (rowId: string) => YDoc | null;
   bindRowSync?: (rowId: string) => void;
+  /**
+   * Local mutation provenance used for safe, additive derived-metadata writes.
+   * Realtime registration alone does not imply that a seed doc is fresh.
+   */
+  hasCellLocalMutation?: (rowId: string, fieldId: string) => boolean;
+  markCellLocalMutation?: (rowId: string, fieldId: string) => void;
+  getCellLocalMutationRevision?: (fieldId: string) => string;
+  subscribeToCellLocalMutations?: (fieldId: string, onStoreChange: () => void) => () => void;
   blobPrefetchComplete?: boolean;
   /** True as soon as row seeds are cached (before IndexedDB persist completes). */
   seedsReady?: boolean;
@@ -70,6 +96,7 @@ export interface DatabaseContextState {
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   createRow?: CreateRow;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -77,27 +104,33 @@ export interface DatabaseContextState {
    * In app mode: loads from server via authenticated API.
    * In publish mode: loads from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /**
    * Create a row document on the server (orphaned view).
    * Only available in app mode - not provided in publish mode.
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: import('@/application/types').CreateRowDocument;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
-  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
+  duplicateRowDocument?: import('@/application/types').DuplicateRowDocument;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: () => void;
   showActions?: boolean;
   workspaceId: string;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
-  addPage?: (parentId: string, payload: import('@/application/types').CreatePagePayload) => Promise<import('@/application/types').CreatePageResponse>;
+  addPage?: (
+    parentId: string,
+    payload: import('@/application/types').CreatePagePayload
+  ) => Promise<import('@/application/types').CreatePageResponse>;
   openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   loadViews?: () => Promise<View[]>;
   uploadFile?: (file: File) => Promise<string>;
   loadDatabasePrompts?: LoadDatabasePrompts;
@@ -151,50 +184,112 @@ export const useCreateRow = () => {
   return context.createRow;
 };
 
+type DatabaseExternalStore = {
+  getDatabase: () => YDatabase | undefined;
+  getSnapshot: () => number;
+  subscribe: (onStoreChange: () => void) => () => void;
+};
+
+const databaseExternalStores = new WeakMap<YDoc, DatabaseExternalStore>();
+
+function createDatabaseExternalStore(databaseDoc: YDoc): DatabaseExternalStore {
+  const dataSection = databaseDoc.getMap(YjsEditorKey.data_section);
+  const subscribers = new Set<() => void>();
+  let database = dataSection.get(YjsEditorKey.database) as YDatabase | undefined;
+  let revision = 0;
+  let observing = false;
+
+  const publish = () => {
+    revision += 1;
+    subscribers.forEach((subscriber) => subscriber());
+  };
+
+  const handleDatabaseChange = () => publish();
+  const readCurrentDatabase = () => dataSection.get(YjsEditorKey.database) as YDatabase | undefined;
+  const replaceObservedDatabase = (nextDatabase: YDatabase | undefined) => {
+    if (nextDatabase === database) return false;
+
+    if (observing) {
+      try {
+        database?.unobserveDeep(handleDatabaseChange);
+      } catch {
+        // The previous database map may already have been destroyed.
+      }
+    }
+
+    database = nextDatabase;
+
+    if (observing) database?.observeDeep(handleDatabaseChange);
+    return true;
+  };
+
+  const handleDataSectionChange = () => {
+    replaceObservedDatabase(readCurrentDatabase());
+    publish();
+  };
+
+  const attach = () => {
+    if (observing) return;
+
+    database = readCurrentDatabase();
+    observing = true;
+    dataSection.observe(handleDataSectionChange);
+    database?.observeDeep(handleDatabaseChange);
+
+    // Close the render-to-subscribe gap with a primitive cached revision. This
+    // is deliberately not an object snapshot: useSyncExternalStore requires
+    // getSnapshot to stay referentially stable until the Yjs store changes.
+    revision += 1;
+  };
+
+  const detach = () => {
+    if (!observing) return;
+
+    observing = false;
+    dataSection.unobserve(handleDataSectionChange);
+    try {
+      database?.unobserveDeep(handleDatabaseChange);
+    } catch {
+      // Ignore teardown of an already-destroyed Yjs map.
+    }
+  };
+
+  return {
+    getDatabase: () => database,
+    getSnapshot: () => revision,
+    subscribe: (onStoreChange) => {
+      subscribers.add(onStoreChange);
+      if (subscribers.size === 1) attach();
+
+      return () => {
+        subscribers.delete(onStoreChange);
+        if (subscribers.size === 0) detach();
+      };
+    },
+  };
+}
+
+function getDatabaseExternalStore(databaseDoc: YDoc) {
+  let store = databaseExternalStores.get(databaseDoc);
+
+  if (!store) {
+    store = createDatabaseExternalStore(databaseDoc);
+    databaseExternalStores.set(databaseDoc, store);
+  }
+
+  return store;
+}
+
 export const useDatabase = () => {
   const context = useDatabaseContext();
   const databaseDoc = context.databaseDoc;
-  const [, forceUpdate] = useState(0);
-  const dataSection = databaseDoc?.getMap(YjsEditorKey.data_section);
-  const database = dataSection?.get(YjsEditorKey.database) as YDatabase;
+  const store = getDatabaseExternalStore(databaseDoc);
 
-  // Re-render when database key is added to dataSection (initial load via websocket).
-  useEffect(() => {
-    if (!dataSection) return;
-
-    const handleChange = () => {
-      forceUpdate((prev) => prev + 1);
-    };
-
-    dataSection.observe(handleChange);
-
-    return () => {
-      dataSection.unobserve(handleChange);
-    };
-  }, [dataSection, databaseDoc?.guid]);
-
-  // Re-render on database content changes (rows, fields, views added/modified).
-  useEffect(() => {
-    if (!database) {
-      return;
-    }
-
-    const handleChange = () => {
-      forceUpdate((prev) => prev + 1);
-    };
-
-    database.observeDeep(handleChange);
-
-    return () => {
-      try {
-        database.unobserveDeep(handleChange);
-      } catch {
-        // Ignore errors from unobserving destroyed Yjs objects
-      }
-    };
-  }, [database]);
-
-  return database;
+  useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  // Preserve the established hook contract. During initial hydration the
+  // runtime value may still be absent (as before), but widening this return
+  // type would force unrelated consumers to add guards across the codebase.
+  return store.getDatabase() as YDatabase;
 };
 
 export const useNavigateToRow = () => {
@@ -353,10 +448,9 @@ export const useDatabaseSelectedView = (viewId: string) => {
 export const useDefaultTimeSetting = (): DefaultTimeSetting => {
   const currentUser = useCurrentUser();
 
-  
   return {
-    dateFormat: currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat ?? DateFormat.Local,
-    timeFormat: currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat ?? TimeFormat.TwelveHour,
-    startWeekOn: currentUser?.metadata?.[MetadataKey.StartWeekOn] as number ?? 0,
-  }
-}
+    dateFormat: (currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat) ?? DateFormat.Local,
+    timeFormat: (currentUser?.metadata?.[MetadataKey.TimeFormat] as TimeFormat) ?? TimeFormat.TwelveHour,
+    startWeekOn: (currentUser?.metadata?.[MetadataKey.StartWeekOn] as number) ?? 0,
+  };
+};

@@ -8,6 +8,7 @@ import {
   getCachedAppView,
   getCachedAppViewFromDisk,
   invalidateViewCache,
+  invalidateWorkspaceViewMemoryCache,
 } from '../cached-api';
 
 jest.mock('@/application/db', () => ({
@@ -137,6 +138,15 @@ function createView(viewId: string, name: string): View {
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
+
 describe('cached app view cache user scoping', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -154,12 +164,30 @@ describe('cached app view cache user scoping', () => {
       workspace_id: 'workspace-a',
       view_id: view.view_id,
       data: view,
-      updated_at: 1,
+      updated_at: Date.now(),
     });
 
     await expect(getCachedAppViewFromDisk('workspace-a', view.view_id)).resolves.toBe(view);
 
     expect(appViewCacheTable.get).toHaveBeenCalledWith(['user-a', 'workspace-a', view.view_id]);
+  });
+
+  it('drops and deletes over-age durable view cache records', async () => {
+    const view = createView('view-too-old', 'stale disk cache');
+    const eightDaysMs = 8 * 24 * 60 * 60 * 1000;
+
+    setCurrentUser('user-a');
+    appViewCacheTable.get.mockResolvedValue({
+      user_id: 'user-a',
+      workspace_id: 'workspace-a',
+      view_id: view.view_id,
+      data: view,
+      updated_at: Date.now() - eightDaysMs,
+    });
+
+    await expect(getCachedAppViewFromDisk('workspace-a', view.view_id)).resolves.toBeUndefined();
+
+    expect(appViewCacheTable.delete).toHaveBeenCalledWith(['user-a', 'workspace-a', view.view_id]);
   });
 
   it('does not promote durable fallback data into the fresh in-memory cache', async () => {
@@ -174,7 +202,7 @@ describe('cached app view cache user scoping', () => {
       workspace_id: workspaceId,
       view_id: viewId,
       data: diskView,
-      updated_at: 1,
+      updated_at: Date.now(),
     });
     getViewMock.mockResolvedValue(serverView);
 
@@ -229,5 +257,54 @@ describe('cached app view cache user scoping', () => {
     invalidateViewCache('workspace-a', 'view-a');
 
     expect(appViewCacheTable.delete).toHaveBeenCalledWith(['user-a', 'workspace-a', 'view-a']);
+  });
+
+  it('fences an invalidated request from overwriting or detaching its replacement', async () => {
+    const staleRequest = createDeferred<View>();
+    const currentRequest = createDeferred<View>();
+    const staleView = createView('view-a', 'stale');
+    const currentView = createView('view-a', 'current');
+
+    setCurrentUser('user-a');
+    getViewMock.mockReturnValueOnce(staleRequest.promise).mockReturnValueOnce(currentRequest.promise);
+
+    const stale = getAppViewCached('workspace-a', 'view-a');
+
+    invalidateViewCache('workspace-a', 'view-a');
+    const current = getAppViewCached('workspace-a', 'view-a');
+
+    staleRequest.resolve(staleView);
+    await expect(stale).resolves.toBe(staleView);
+
+    // The old finally handler must not remove the replacement request.
+    const sharedCurrent = getAppViewCached('workspace-a', 'view-a');
+
+    expect(getViewMock).toHaveBeenCalledTimes(2);
+
+    currentRequest.resolve(currentView);
+    await expect(Promise.all([current, sharedCurrent])).resolves.toEqual([currentView, currentView]);
+    expect(getCachedAppView('workspace-a', 'view-a')).toBe(currentView);
+  });
+
+  it('clears one workspace memory scope and fences its pending responses', async () => {
+    const staleRequest = createDeferred<View>();
+    const staleView = createView('pending-a', 'stale pending');
+    const otherView = createView('view-b', 'other workspace');
+
+    setCurrentUser('user-a');
+    getViewMock.mockReturnValueOnce(staleRequest.promise).mockResolvedValueOnce(otherView);
+
+    const stale = getAppViewCached('workspace-a', 'pending-a');
+
+    await expect(getAppViewCached('workspace-b', 'view-b')).resolves.toBe(otherView);
+    invalidateWorkspaceViewMemoryCache('workspace-a');
+
+    expect(getCachedAppView('workspace-a', 'pending-a')).toBeUndefined();
+    expect(getCachedAppView('workspace-b', 'view-b')).toBe(otherView);
+
+    staleRequest.resolve(staleView);
+    await expect(stale).resolves.toBe(staleView);
+    expect(getCachedAppView('workspace-a', 'pending-a')).toBeUndefined();
+    expect(appViewCacheTable.delete).not.toHaveBeenCalledWith(['user-a', 'workspace-a', 'pending-a']);
   });
 });

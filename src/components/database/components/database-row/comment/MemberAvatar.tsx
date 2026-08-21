@@ -19,7 +19,7 @@ function MemberAvatar({ uid, size = 'md' }: { uid: string; size?: 'xs' | 'sm' | 
       {member?.avatar_url ? (
         <AvatarImage src={member.avatar_url} alt={displayName} />
       ) : null}
-      <AvatarFallback>{initial}</AvatarFallback>
+      <AvatarFallback name={displayName}>{initial}</AvatarFallback>
     </Avatar>
   );
 }

@@ -4,6 +4,8 @@ import * as Y from 'yjs';
 import {
   createBlock,
   createEmptyDocument,
+  deepCopyBlock,
+  deleteBlock,
   getBlock,
   getChildrenArray,
   getText,
@@ -78,11 +80,12 @@ describe('pageIdFromDocumentId', () => {
 
     // Should be a valid UUID format
     expect(pageId1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(pageId1).toBe('69d1e3fb-c2f3-5156-b8e3-636273bad252');
   });
 
   it('should generate different page_ids for different document_ids', () => {
     const documentId1 = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
-    const documentId2 = '7f02259c-f53b-67c2-c1b1-69gcbb42663e';
+    const documentId2 = '7f02259c-f53b-67c2-a1b1-69fcbb42663e';
 
     const pageId1 = pageIdFromDocumentId(documentId1);
     const pageId2 = pageIdFromDocumentId(documentId2);
@@ -171,6 +174,63 @@ describe('initializeDocumentStructure', () => {
     expect(pageId).toBe(expectedPageId);
   });
 
+  it('should use document-scoped initial paragraph ids when documentId is provided', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+    initializeDocumentStructure(doc, true, documentId);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+
+    expect(paragraphId).toBe('TdtM1tmgqJ');
+    expect(paragraphBlock.get(YjsEditorKey.block_children)).toBe('NyYr0DfnAu');
+    expect(paragraphBlock.get(YjsEditorKey.block_external_id)).toBe('VbaxI-lEf5');
+    expect(childrenMap.has('NyYr0DfnAu')).toBe(true);
+    expect(textMap.has('VbaxI-lEf5')).toBe(true);
+  });
+
+  it('should not override the local Yjs client id when initializing document structure', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+    const originalClientId = doc.clientID;
+
+    initializeDocumentStructure(doc, true, documentId);
+
+    expect(doc.clientID).toBe(originalClientId);
+  });
+
+  it('should clean up document-scoped paragraph children and text ids when deleted', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+
+    initializeDocumentStructure(doc, true, documentId);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+    const paragraphChildrenId = paragraphBlock.get(YjsEditorKey.block_children);
+    const paragraphTextId = paragraphBlock.get(YjsEditorKey.block_external_id);
+
+    deleteBlock(sharedRoot, paragraphId);
+
+    expect(blocks.has(paragraphId)).toBe(false);
+    expect(childrenMap.has(paragraphChildrenId)).toBe(false);
+    expect(textMap.has(paragraphTextId)).toBe(false);
+    expect(pageChildren.toArray()).toEqual([]);
+  });
+
   it('should skip initialization if document already exists', () => {
     // First initialization
     initializeDocumentStructure(doc, false);
@@ -251,6 +311,84 @@ describe('initializeDocumentStructure', () => {
     expect(paragraphBlock.get(YjsEditorKey.block_type)).toBe(BlockType.HeadingBlock);
     expect(JSON.parse(paragraphBlock.get(YjsEditorKey.block_data))).toEqual({ level: 2 });
     expect(textMap.get(paragraphId).toDelta()).toEqual([{ insert: 'Hello AppFlowy' }]);
+  });
+});
+
+describe('deepCopyBlock', () => {
+  it('strips view-scoped comment ids from a duplicated block and its descendants', () => {
+    const doc = new Y.Doc();
+
+    initializeDocumentStructure(doc, false);
+
+    const { sharedRoot, pageId } = getDocumentData(doc);
+    const page = getBlock(pageId, sharedRoot);
+    const source = createTextBlock({
+      sharedRoot,
+      parent: page,
+      type: BlockType.Paragraph,
+      data: {},
+      text: '',
+    });
+    const sourceText = getRequiredText(source, sharedRoot);
+
+    sourceText.applyDelta([
+      { insert: 'plain ' },
+      { insert: 'commented', attributes: { bold: true, 'comment-ids': ['comment-1'] } },
+    ]);
+
+    const child = createTextBlock({
+      sharedRoot,
+      parent: source,
+      type: BlockType.Paragraph,
+      data: {},
+      text: '',
+    });
+
+    getRequiredText(child, sharedRoot).applyDelta([
+      { insert: 'nested', attributes: { 'comment-ids': ['comment-2'] } },
+    ]);
+
+    const copiedId = deepCopyBlock(sharedRoot, source, undefined, true);
+    const copied = getBlock(copiedId!, sharedRoot);
+    const copiedChildren = getChildrenArray(copied.get(YjsEditorKey.block_children), sharedRoot);
+    const copiedChild = getBlock(copiedChildren.get(0), sharedRoot);
+
+    expect(getRequiredText(copied, sharedRoot).toDelta()).toEqual([
+      { insert: 'plain ' },
+      { insert: 'commented', attributes: { bold: true } },
+    ]);
+    expect(getRequiredText(copiedChild, sharedRoot).toDelta()).toEqual([{ insert: 'nested' }]);
+    expect(sourceText.toDelta()).toEqual([
+      { insert: 'plain ' },
+      { insert: 'commented', attributes: { bold: true, 'comment-ids': ['comment-1'] } },
+    ]);
+  });
+
+  it('preserves comment ids when the deep copy is used to move content', () => {
+    const doc = new Y.Doc();
+
+    initializeDocumentStructure(doc, false);
+
+    const { sharedRoot, pageId } = getDocumentData(doc);
+    const page = getBlock(pageId, sharedRoot);
+    const source = createTextBlock({
+      sharedRoot,
+      parent: page,
+      type: BlockType.Paragraph,
+      data: {},
+      text: '',
+    });
+
+    getRequiredText(source, sharedRoot).applyDelta([
+      { insert: 'commented', attributes: { 'comment-ids': ['comment-1'] } },
+    ]);
+
+    const copiedId = deepCopyBlock(sharedRoot, source);
+    const copied = getBlock(copiedId!, sharedRoot);
+
+    expect(getRequiredText(copied, sharedRoot).toDelta()).toEqual([
+      { insert: 'commented', attributes: { 'comment-ids': ['comment-1'] } },
+    ]);
   });
 });
 
