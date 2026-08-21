@@ -26,15 +26,17 @@ export const ImageBlock = memo(
     const retry_local_url = data?.retry_local_url;
     const { uploadFile, workspaceId, viewId } = useEditorContext();
     const editor = useSlateStatic() as YjsEditor;
-    const [needRetry, setNeedRetry] = useState(false);
     const [localUrl, setLocalUrl] = useState<string | undefined>(undefined);
     const [loading, setLoading] = useState(false);
 
     const fileHandler = useMemo(() => new FileHandler(), []);
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
     const selected = useSelected();
-    const { url: dataUrl, align } = useMemo(() => data || {}, [data]);
+    const { url: dataUrl, align, pending_upload_id } = useMemo(() => data || {}, [data]);
     const url = useMemo(() => constructFileUrl(dataUrl, workspaceId, viewId), [dataUrl, workspaceId, viewId]);
+    const isUploading = Boolean(pending_upload_id && !dataUrl);
+    const hasImage = Boolean(url || localUrl);
+    const needRetry = Boolean(retry_local_url && localUrl && !dataUrl && !isUploading);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const onFocusNode = useCallback(() => {
@@ -68,7 +70,7 @@ export const ImageBlock = memo(
 
     const handleClick = useCallback(async () => {
       try {
-        if (!url && !needRetry) {
+        if (!hasImage && !isUploading && !needRetry) {
           if (containerRef.current && !readOnly) {
             openPopover(blockId, BlockType.ImageBlock, containerRef.current);
           }
@@ -80,21 +82,30 @@ export const ImageBlock = memo(
       } catch (e: any) {
         notify.error(e.message);
       }
-    }, [needRetry, url, readOnly, openPopover, blockId]);
+    }, [blockId, hasImage, isUploading, needRetry, openPopover, readOnly]);
 
     useEffect(() => {
       if (readOnly) return;
-      void (async () => {
-        if (retry_local_url) {
-          const fileData = await fileHandler.getStoredFile(retry_local_url);
 
+      let cancelled = false;
+
+      if (!retry_local_url || dataUrl) {
+        setLocalUrl(undefined);
+        return;
+      }
+
+      void (async () => {
+        const fileData = await fileHandler.getStoredFile(retry_local_url);
+
+        if (!cancelled) {
           setLocalUrl(fileData?.url);
-          setNeedRetry(!!fileData);
-        } else {
-          setNeedRetry(false);
         }
       })();
-    }, [readOnly, retry_local_url, fileHandler]);
+
+      return () => {
+        cancelled = true;
+      };
+    }, [dataUrl, fileHandler, readOnly, retry_local_url]);
 
     const uploadFileRemote = useCallback(
       async (file: File) => {
@@ -158,11 +169,9 @@ export const ImageBlock = memo(
       >
         <div
           contentEditable={false}
-          className={`embed-block relative ${alignCss} ${
-            url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
-          }`}
+          className={`embed-block relative ${alignCss} ${hasImage ? '!rounded-none !border-none !bg-transparent' : 'p-4'}`}
         >
-          {url || needRetry ? (
+          {hasImage ? (
             <ImageRender
               showToolbar={showToolbar}
               selected={selected}
@@ -187,6 +196,15 @@ export const ImageBlock = memo(
               onEscape={onFocusNode}
               containerRef={containerRef}
             />
+          )}
+          {isUploading && (
+            <div
+              data-testid='image-upload-pending'
+              className={'absolute bottom-2 right-4 flex items-center gap-2 text-text-secondary'}
+            >
+              <CircularProgress size={16} />
+              <div className={'font-normal'}>{t('fileDropzone.uploading')}</div>
+            </div>
           )}
           {needRetry && (
             <div className={'absolute bottom-2 right-4 flex items-center gap-2'}>
