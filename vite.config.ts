@@ -7,6 +7,7 @@ import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
 import { stripTestIdPlugin } from './vite-plugin-strip-testid';
+import { VITE_DEDUPED_DEPENDENCIES, VITE_OPTIMIZED_DEPENDENCIES } from './vite.dependencies';
 
 const resourcesPath = path.resolve(__dirname, '../resources');
 const isDev = process.env.NODE_ENV ? process.env.NODE_ENV === 'development' : true;
@@ -245,6 +246,7 @@ export default defineConfig({
       : {},
   },
   resolve: {
+    dedupe: [...VITE_DEDUPED_DEPENDENCIES],
     alias: [
       { find: '@protobufjs/inquire', replacement: path.resolve(__dirname, 'src/shims/protobufjs-inquire.cjs') },
       { find: 'src/', replacement: `${__dirname}/src/` },
@@ -253,17 +255,7 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react-katex',
-      '@appflowyinc/editor',
-      'react-colorful',
-      'i18next',
-      'i18next-browser-languagedetector',
-      'i18next-resources-to-backend',
-      'react-i18next'
-    ],
+    include: [...VITE_OPTIMIZED_DEPENDENCIES],
   },
   css: {
     preprocessorOptions: {
