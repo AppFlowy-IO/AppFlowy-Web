@@ -19,7 +19,7 @@ jest.mock('axios', () => ({
 
 jest.mock('@/application/session/token', () => ({
   getTokenParsed: jest.fn(),
-  saveGoTrueAuth: jest.fn(),
+  saveGoTrueAuth: jest.fn(() => true),
 }));
 
 jest.mock('../cloud-auth', () => ({

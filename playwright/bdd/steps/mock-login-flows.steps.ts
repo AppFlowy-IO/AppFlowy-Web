@@ -22,9 +22,19 @@ type MockLoginState = {
   refreshedRefreshToken: string;
   verifiedAccessTokens: string[];
   refreshTokenRequests: Array<{ refresh_token?: string }>;
+  passwordTokenRequests: number;
+  passwordResponseDelayMs: number;
+};
+
+type PasswordRecoveryState = {
+  email: string;
+  requests: number;
 };
 
 const loginStateByPage = new WeakMap<Page, MockLoginState>();
+const passwordRecoveryStateByPage = new WeakMap<Page, PasswordRecoveryState>();
+
+const UNSAFE_BACKSLASH_REDIRECT = '/\\evil.example/app';
 
 Before(async ({ page }) => {
   setupPageErrorHandling(page);
@@ -58,8 +68,106 @@ When('I complete {string} sign in', async ({ page }, methodValue: string) => {
   }
 });
 
+When('I complete password sign in with a backslash authority redirect', async ({ page }) => {
+  const state = getLoginState(page, 'password');
+
+  await page.route(/^https?:\/\/evil\.example(?:\/|$)/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html',
+      body: '<main>Unsafe external redirect reached</main>',
+    })
+  );
+  await completePasswordSignIn(page, state, UNSAFE_BACKSLASH_REDIRECT);
+});
+
+Given('the password recovery API will fail', async ({ page }) => {
+  const state: PasswordRecoveryState = {
+    email: generateRandomEmail(),
+    requests: 0,
+  };
+
+  passwordRecoveryStateByPage.set(page, state);
+  await page.route(/\/recover(?:\?|$)/, (route) => {
+    state.requests += 1;
+
+    return route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Recovery service unavailable' }),
+    });
+  });
+});
+
+When('I submit a password recovery request', async ({ page }) => {
+  const state = getPasswordRecoveryState(page);
+
+  await page.goto(
+    `/login?action=resetPassword&email=${encodeURIComponent(state.email)}&redirectTo=${encodeURIComponent('/app')}`,
+    { waitUntil: 'domcontentloaded' }
+  );
+  await expect(page.getByText('Reset password', { exact: true })).toBeVisible();
+  await page.locator('input[type="email"]').fill(state.email);
+
+  const recoveryResponse = page.waitForResponse(/\/recover(?:\?|$)/);
+
+  await page.getByRole('button', { name: 'Submit', exact: true }).click();
+  await recoveryResponse;
+});
+
+Given('the password sign-in API responds slowly', async ({ page }) => {
+  const state = getLoginState(page, 'password');
+
+  state.passwordResponseDelayMs = 500;
+});
+
+When('I rapidly submit password sign in twice', async ({ page }) => {
+  const state = getLoginState(page, 'password');
+
+  await page.goto(`/login?redirectTo=${encodeURIComponent('/app')}`, { waitUntil: 'domcontentloaded' });
+  await expect(AuthSelectors.emailInput(page)).toBeVisible();
+  await AuthSelectors.emailInput(page).fill(state.email);
+  await AuthSelectors.passwordSignInButton(page).click();
+  await expect(page).toHaveURL(/action=enterPassword/);
+  await AuthSelectors.passwordInput(page).fill(state.password);
+
+  const submitButton = AuthSelectors.passwordSubmitButton(page);
+  const buttonBounds = await submitButton.boundingBox();
+
+  if (!buttonBounds) {
+    throw new Error('Password submit button has no clickable bounds');
+  }
+
+  const passwordResponse = page.waitForResponse(/\/token\?grant_type=password$/);
+
+  await page.mouse.click(buttonBounds.x + buttonBounds.width / 2, buttonBounds.y + buttonBounds.height / 2, {
+    clickCount: 2,
+  });
+  await passwordResponse;
+});
+
 Then('I am redirected to the app', async ({ page }) => {
   await expect(page).toHaveURL(/\/app(?:\/|$)/, { timeout: 15000 });
+});
+
+Then('I am redirected to the safe app fallback on the configured origin', async ({ page }) => {
+  await expect(page).toHaveURL(/\/app(?:[/?#]|$)/, { timeout: 30000 });
+  expect(new URL(page.url()).origin).toBe(new URL(TestConfig.baseUrl).origin);
+});
+
+Then('password recovery stays on the form and does not show success', async ({ page }) => {
+  const state = getPasswordRecoveryState(page);
+
+  await expect(page).toHaveURL(/action=resetPassword/, { timeout: 3000 });
+  await expect(page.getByText('Reset password', { exact: true })).toBeVisible();
+  await expect(page.getByText('Check your email to reset password', { exact: true })).toHaveCount(0);
+  expect(state.requests).toBe(1);
+});
+
+Then('exactly one password sign-in request is sent', async ({ page }) => {
+  const state = getLoginState(page, 'password');
+
+  expect(state.passwordTokenRequests).toBe(1);
 });
 
 Then('the saved auth token is the refreshed token for {string} sign in', async ({ page }, methodValue: string) => {
@@ -68,7 +176,9 @@ Then('the saved auth token is the refreshed token for {string} sign in', async (
   const token = await page.evaluate(() => {
     const raw = localStorage.getItem('token');
 
-    return raw ? JSON.parse(raw) as { access_token?: string; refresh_token?: string; user?: { id?: string; email?: string } } : null;
+    return raw
+      ? (JSON.parse(raw) as { access_token?: string; refresh_token?: string; user?: { id?: string; email?: string } })
+      : null;
   });
 
   expect(state.verifiedAccessTokens).toEqual([state.initialAccessToken]);
@@ -101,6 +211,16 @@ function getLoginState(page: Page, method: SignInMethod): MockLoginState {
   return state;
 }
 
+function getPasswordRecoveryState(page: Page): PasswordRecoveryState {
+  const state = passwordRecoveryStateByPage.get(page);
+
+  if (!state) {
+    throw new Error('Password recovery state has not been configured');
+  }
+
+  return state;
+}
+
 function createMockLoginState(method: SignInMethod): MockLoginState {
   const email = generateRandomEmail();
   const userId = uuidv4();
@@ -118,6 +238,8 @@ function createMockLoginState(method: SignInMethod): MockLoginState {
     refreshedRefreshToken: `${methodTokenPrefix(method)}-refreshed-refresh-${uuidv4()}`,
     verifiedAccessTokens: [],
     refreshTokenRequests: [],
+    passwordTokenRequests: 0,
+    passwordResponseDelayMs: 0,
   };
 }
 
@@ -210,13 +332,19 @@ async function mockCompletedSessionApis(page: Page, state: MockLoginState) {
 }
 
 async function mockGoTrueSignInApis(page: Page, state: MockLoginState) {
-  await page.route(/\/token\?grant_type=password$/, (route) =>
-    route.fulfill({
+  await page.route(/\/token\?grant_type=password$/, async (route) => {
+    state.passwordTokenRequests += 1;
+
+    if (state.passwordResponseDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, state.passwordResponseDelayMs));
+    }
+
+    return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(createGoTrueToken(state, 'initial')),
-    })
-  );
+    });
+  });
 
   await page.route(/\/verify$/, (route) =>
     route.fulfill({
@@ -245,8 +373,8 @@ async function mockGoTrueSignInApis(page: Page, state: MockLoginState) {
   });
 }
 
-async function completePasswordSignIn(page: Page, state: MockLoginState) {
-  await page.goto(`/login?redirectTo=${encodeURIComponent('/app')}`, { waitUntil: 'domcontentloaded' });
+async function completePasswordSignIn(page: Page, state: MockLoginState, redirectTo = '/app') {
+  await page.goto(`/login?redirectTo=${encodeURIComponent(redirectTo)}`, { waitUntil: 'domcontentloaded' });
   await expect(AuthSelectors.emailInput(page)).toBeVisible();
   await AuthSelectors.emailInput(page).fill(state.email);
   await AuthSelectors.passwordSignInButton(page).click();
@@ -282,7 +410,9 @@ async function completeOAuthCallbackSignIn(page: Page, state: MockLoginState) {
   const refreshResponse = page.waitForResponse(/\/token\?grant_type=refresh_token$/);
 
   await page.goto(
-    `/auth/callback#access_token=${encodeURIComponent(state.initialAccessToken)}&refresh_token=${encodeURIComponent(state.initialRefreshToken)}`,
+    `/auth/callback#access_token=${encodeURIComponent(state.initialAccessToken)}&refresh_token=${encodeURIComponent(
+      state.initialRefreshToken
+    )}`,
     { waitUntil: 'domcontentloaded' }
   );
   await refreshResponse;

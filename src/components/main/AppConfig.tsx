@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSnackbar } from 'notistack';
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo } from 'react';
 
 import { clearData, db } from '@/application/db';
 import { UserService } from '@/application/services/domains';
@@ -11,7 +11,6 @@ import { User } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { createInitialTimezone, UserTimezone } from '@/application/user-timezone.types';
 import { InfoSnackbarProps } from '@/components/_shared/notify';
-import { LoginModal } from '@/components/login';
 import { AFConfigContext, defaultConfig } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
@@ -20,13 +19,26 @@ import { Log } from '@/utils/log';
 
 initAPIService(defaultConfig);
 
-function AppConfig({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(isTokenValid());
+const LoginModal = React.lazy(() => import('@/components/login/LoginModal'));
 
-  const userId = useMemo(() => {
-    if (!isAuthenticated) return;
-    return getTokenParsed()?.user?.id;
-  }, [isAuthenticated]);
+interface AuthenticationState {
+  isAuthenticated: boolean;
+  userId?: string;
+}
+
+function readAuthenticationState(): AuthenticationState {
+  const isAuthenticated = isTokenValid();
+
+  return {
+    isAuthenticated,
+    userId: isAuthenticated ? getTokenParsed()?.user?.id : undefined,
+  };
+}
+
+function AppConfig({ children }: { children: React.ReactNode }) {
+  const [authenticationState, setAuthenticationState] = React.useState<AuthenticationState>(readAuthenticationState);
+  const authenticatedUserIdRef = React.useRef(authenticationState.userId);
+  const { isAuthenticated, userId } = authenticationState;
 
   const currentUser = useLiveQuery(async () => {
     if (!userId) return;
@@ -54,150 +66,89 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    return on(EventType.SESSION_VALID, () => {
-      setIsAuthenticated(true);
-    });
-  }, []);
+    const syncAuthenticationState = (clearUserCaches = false) => {
+      const nextState = readAuthenticationState();
+      const switchedAccount =
+        authenticatedUserIdRef.current !== undefined &&
+        nextState.userId !== undefined &&
+        authenticatedUserIdRef.current !== nextState.userId;
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      return;
-    }
+      if (clearUserCaches || !nextState.isAuthenticated || switchedAccount) clearHttpResponseCaches();
+      authenticatedUserIdRef.current = nextState.userId;
+      setAuthenticationState(nextState);
+    };
 
-    void (async () => {
-      try {
-        await UserService.getCurrent();
-      } catch (e) {
-        Log.error(e);
-      }
-    })();
-  }, [isAuthenticated]);
+    const invalidateAuthenticationState = () => {
+      // The HTTP ETag/response cache is keyed by URL without user identity.
+      // Drop it before another account can sign in within this tab.
+      clearHttpResponseCaches();
+      authenticatedUserIdRef.current = undefined;
+      setAuthenticationState({ isAuthenticated: false });
+    };
 
-  // Authentication state synchronization effects
-  // Note: These are intentionally separate effects with different lifecycles:
-  // 1. Storage listener - handles cross-tab token changes
-  // 2. State sync on change - bidirectional sync between localStorage and React state
-  // 3. Mount sync with delay - safety net for OAuth callback race conditions
-  // 4. SESSION_INVALID listener - event-based invalidation from failed API calls
-  // Consolidating these would reduce clarity and make debugging harder
-
-  // 1. Cross-tab synchronization via storage events
-  useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key !== 'token') return;
-
-      const valid = isTokenValid();
-
-      // Token removed/replaced by another tab — same cross-user replay
-      // concern as the SESSION_INVALID handler below.
-      if (!valid) clearHttpResponseCaches();
-      setIsAuthenticated(valid);
+      // A token replacement may belong to another account even when an opaque
+      // access token has no decodable user claim. Clear URL-keyed caches for
+      // every cross-tab replacement; same-account refreshes simply pay a small
+      // cache miss.
+      syncAuthenticationState(true);
     };
+
+    const unsubscribeValid = on(EventType.SESSION_VALID, () => syncAuthenticationState());
+    const unsubscribeInvalid = on(EventType.SESSION_INVALID, invalidateAuthenticationState);
 
     window.addEventListener('storage', handleStorageChange);
     return () => {
+      unsubscribeValid();
+      unsubscribeInvalid();
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
-
-  // 2. Bidirectional sync between localStorage token and React state
-  // Handles cases where token was saved but state wasn't updated (e.g., after page reload or OAuth callback)
-  useEffect(() => {
-    const hasToken = isTokenValid();
-
-    Log.debug('[AppConfig] sync check', {
-      hasToken,
-      isAuthenticated,
-      willSync: hasToken && !isAuthenticated,
-    });
-
-    // If token exists but state says not authenticated, sync the state
-    if (hasToken && !isAuthenticated) {
-      Log.debug('[AppConfig] syncing authentication state - token exists but state is false');
-      setIsAuthenticated(true);
-    }
-    // If no token but state says authenticated, invalidate the session
-    else if (!hasToken && isAuthenticated) {
-      Log.debug('[AppConfig] token removed but state still authenticated - invalidating');
-      setIsAuthenticated(false);
-    }
-  }, [isAuthenticated]);
-
-  // 3. Proactive sync on mount with delay - safety net for OAuth callback race conditions
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      const hasToken = isTokenValid();
-
-      Log.debug('[AppConfig] mount sync check', {
-        hasToken,
-        isAuthenticated,
-      });
-
-      if (hasToken && !isAuthenticated) {
-        Log.debug('[AppConfig] mount sync - forcing authentication state to true');
-        setIsAuthenticated(true);
-      }
-    }, 100); // Small delay to allow all initialization to complete
-
-    return () => clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount - isAuthenticated is intentionally captured from closure
-
-  // 4. Event-based session invalidation from failed API calls
-  useEffect(() => {
-    return on(EventType.SESSION_INVALID, () => {
-      // The HTTP ETag/response cache is keyed by URL without user identity —
-      // drop it so a later login as a different user can't be served the
-      // previous user's cached bodies.
-      clearHttpResponseCaches();
-      setIsAuthenticated(false);
-    });
-  }, []);
   useAppLanguage();
 
-  const [hasCheckedTimezone, setHasCheckedTimezone] = useState(false);
+  const timezoneInfo = useUserTimezone({ updateInterval: 0 });
 
-  // Handle initial timezone setup - only when timezone is not set
-  const handleTimezoneSetup = useCallback(
-    async (detectedTimezone: string) => {
-      if (!isAuthenticated || hasCheckedTimezone) return;
+  // Fetch the profile once per authenticated user. The cache layer persists the
+  // response for currentUser, and the same response owns the one-time timezone
+  // initialization so startup does not issue duplicate profile requests.
+  useEffect(() => {
+    const detectedTimezone = timezoneInfo?.timezone;
 
-      try {
-        // Get current user profile to check if timezone is already set
-        const user = await UserService.getCurrent();
-        const currentMetadata = user.metadata || {};
+    if (!userId || !detectedTimezone) return;
 
-        // Check if user has timezone metadata
-        const existingTimezone = currentMetadata[MetadataKey.Timezone] as UserTimezone | undefined;
+    let cancelled = false;
 
-        // Only set timezone if it's not already set (None in Rust = no timezone field or null)
-        if (!existingTimezone || existingTimezone.timezone === null || existingTimezone.timezone === undefined) {
-          // Create the UserTimezone struct format matching Rust
-          const timezoneData = createInitialTimezone(detectedTimezone);
+    void UserService.getCurrent()
+      .then(async (user) => {
+        if (cancelled || user.uuid !== userId) return;
 
-          const metadata = {
-            [MetadataKey.Timezone]: timezoneData,
-          };
+        const existingTimezone = user.metadata?.[MetadataKey.Timezone] as UserTimezone | undefined;
 
-          await UserService.updateProfile(metadata);
-          Log.debug('Initial timezone set in user profile:', timezoneData);
-        } else {
-          Log.debug('User timezone already set, skipping update:', existingTimezone);
+        if (existingTimezone?.timezone !== null && existingTimezone?.timezone !== undefined) {
+          return;
         }
 
-        setHasCheckedTimezone(true);
-      } catch (e) {
-        Log.error('Failed to check/update timezone:', e);
-        // Still mark as checked to avoid repeated attempts
-        setHasCheckedTimezone(true);
-      }
-    }, [isAuthenticated, hasCheckedTimezone]);
+        const timezoneData = createInitialTimezone(detectedTimezone);
 
-  // Detect timezone once on mount
-  useUserTimezone({
-    onTimezoneChange: handleTimezoneSetup,
-    updateInterval: 0, // Disable periodic checks - only check once
-  });
+        await UserService.updateProfile({
+          [MetadataKey.Timezone]: timezoneData,
+        });
+
+        if (!cancelled) {
+          Log.debug('Initial timezone set in user profile:', timezoneData);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          Log.error('Failed to load the current user or initialize timezone:', error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [timezoneInfo?.timezone, userId]);
 
   const { enqueueSnackbar, closeSnackbar } = useSnackbar();
 
@@ -251,23 +202,20 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   const configContextValue = useMemo(
     () => ({
       isAuthenticated,
+      authenticatedUserId: userId,
       currentUser,
       updateCurrentUser,
       openLoginModal,
     }),
-    [isAuthenticated, currentUser, updateCurrentUser, openLoginModal]
+    [isAuthenticated, userId, currentUser, updateCurrentUser, openLoginModal]
   );
 
   return (
     <AFConfigContext.Provider value={configContextValue}>
       {children}
       {loginOpen && (
-        <Suspense>
-          <LoginModal
-            redirectTo={loginCompletedRedirectTo}
-            open={loginOpen}
-            onClose={closeLoginModal}
-          />
+        <Suspense fallback={null}>
+          <LoginModal redirectTo={loginCompletedRedirectTo} open={loginOpen} onClose={closeLoginModal} />
         </Suspense>
       )}
     </AFConfigContext.Provider>

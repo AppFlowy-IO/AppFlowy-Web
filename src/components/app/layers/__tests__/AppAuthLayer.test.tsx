@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { useContext } from 'react';
 
 import { UserService, WorkspaceService, AuthService } from '@/application/services/domains';
+import { invalidToken } from '@/application/session/token';
 import { type UserWorkspaceInfo } from '@/application/types';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { AppAuthLayer } from '@/components/app/layers/AppAuthLayer';
@@ -9,16 +10,16 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 
 const mockNavigate = jest.fn();
 let mockWorkspaceId: string | undefined;
+let mockPathname = '/login';
 
 jest.mock('react-router-dom', () => ({
-  useLocation: () => ({ pathname: '/login' }),
+  useLocation: () => ({ pathname: mockPathname }),
   useNavigate: () => mockNavigate,
   useParams: () => ({ workspaceId: mockWorkspaceId }),
 }));
 
 jest.mock('@/application/session/token', () => ({
   invalidToken: jest.fn(),
-  isTokenValid: jest.fn(() => true),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -55,15 +56,83 @@ describe('AppAuthLayer workspace info loading', () => {
   const mockGetWorkspaceInfo = UserService.getWorkspaceInfo as jest.MockedFunction<typeof UserService.getWorkspaceInfo>;
   const mockOpenWorkspace = WorkspaceService.open as jest.MockedFunction<typeof WorkspaceService.open>;
   const mockGetServerInfo = AuthService.getServerInfo as jest.MockedFunction<typeof AuthService.getServerInfo>;
+  const mockInvalidToken = invalidToken as jest.MockedFunction<typeof invalidToken>;
 
   beforeEach(() => {
     jest.clearAllMocks();
     mockWorkspaceId = undefined;
+    mockPathname = '/login';
     mockGetServerInfo.mockResolvedValue({
       enable_page_history: true,
       ai_enabled: true,
     } as never);
     mockOpenWorkspace.mockResolvedValue(undefined as never);
+  });
+
+  it('redirects an unauthenticated app route without timer-based polling', async () => {
+    mockPathname = '/app/workspace-old';
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: false,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <div />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(mockInvalidToken).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith(`/login?redirectTo=${encodeURIComponent(window.location.href)}`);
+    expect(mockGetWorkspaceInfo).not.toHaveBeenCalled();
+  });
+
+  it('clears workspace-scoped state as soon as authentication is invalidated', async () => {
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
+
+    function CaptureAuthContext() {
+      const authContext = useContext(AuthInternalContext);
+
+      return (
+        <div data-testid='selected-workspace'>{authContext?.userWorkspaceInfo?.selectedWorkspace.id ?? 'none'}</div>
+      );
+    }
+
+    const view = render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <CaptureAuthContext />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+
+    view.rerender(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: false,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <CaptureAuthContext />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('none'));
   });
 
   it('forces a fresh workspace-info request after switching workspace and ignores stale responses', async () => {

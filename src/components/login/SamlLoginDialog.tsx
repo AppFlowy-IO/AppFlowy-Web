@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
@@ -26,11 +26,13 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   const reset = useCallback(() => {
     setEmail('');
     setError(null);
     setLoading(false);
+    submittingRef.current = false;
   }, []);
 
   // Cleared once the close transition has finished rather than on open, so a
@@ -39,6 +41,8 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
   const transitionProps = useMemo(() => ({ onExited: reset }), [reset]);
 
   const handleClose = useCallback(() => {
+    if (submittingRef.current) return;
+
     onOpenChange(false);
   }, [onOpenChange]);
 
@@ -60,7 +64,7 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
   const handleSubmit = useCallback(async () => {
     // NormalModal fires `onOk` on Enter regardless of the button's disabled
     // state, so the guard has to live here rather than on the button alone.
-    if (loading) return;
+    if (submittingRef.current) return;
 
     const validationError = validateEmail(email);
 
@@ -72,6 +76,7 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
     // Extract domain from email
     const domain = email.split('@')[1];
 
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -84,9 +89,10 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
       const err = e as { message?: string };
 
       setError(err?.message || t('web.signInError'));
+      submittingRef.current = false;
       setLoading(false);
     }
-  }, [loading, email, validateEmail, onSubmit, t]);
+  }, [email, validateEmail, onSubmit, t]);
 
   const handleOk = useCallback(() => {
     void handleSubmit();
@@ -113,6 +119,7 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
       aria-describedby={DESCRIPTION_ID}
       onClose={handleClose}
       onOk={handleOk}
+      closable={!loading}
       okText={t('web.continueWithSso')}
       okLoading={loading}
       okButtonProps={{ disabled: !email.trim() || loading }}
@@ -122,10 +129,7 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
       PaperProps={PAPER_PROPS}
       TransitionProps={transitionProps}
     >
-      <div
-        data-testid='saml-login-dialog'
-        className='flex w-full flex-col gap-4'
-      >
+      <div data-testid='saml-login-dialog' className='flex w-full flex-col gap-4'>
         <div id={DESCRIPTION_ID} className='help-text text-xs text-text-caption'>
           {t('web.ssoLoginDescription')}
         </div>
@@ -150,11 +154,7 @@ function SamlLoginDialog({ open, onOpenChange, onSubmit }: SamlLoginDialogProps)
         </div>
 
         {error && (
-          <div
-            id={ERROR_ID}
-            className='help-text text-xs text-text-error'
-            role='alert'
-          >
+          <div id={ERROR_ID} className='help-text text-xs text-text-error' role='alert'>
             {error}
           </div>
         )}
