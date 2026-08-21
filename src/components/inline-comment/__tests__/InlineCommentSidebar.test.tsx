@@ -206,6 +206,19 @@ describe('InlineCommentSidebar', () => {
     expect(createReply).toHaveBeenCalledWith('open-comment', 'Sounds good');
   });
 
+  it('shows a loading indicator while a reply is being submitted', () => {
+    setContext({ mutatingCommentIds: new Set(['open-comment']) });
+    render(<InlineCommentSidebar />);
+
+    fireEvent.click(screen.getByTestId('inline-comment-reply-button'));
+
+    const input = screen.getByTestId('inline-comment-reply-input');
+
+    expect(input.getAttribute('aria-busy')).toBe('true');
+    expect(input.disabled).toBe(true);
+    expect(screen.queryByTestId('inline-comment-reply-loading')).not.toBeNull();
+  });
+
   it('deletes a thread through the action menu and its confirmation', async () => {
     render(<InlineCommentSidebar />);
 
