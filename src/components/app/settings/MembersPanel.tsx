@@ -186,11 +186,17 @@ function MembersPanelForWorkspace({
   const groupSearchInputRef = useRef<HTMLInputElement | null>(null);
   const removingRef = useRef(false);
 
-  const isOwner = useMemo(() => {
-    const workspace = userWorkspaceInfo?.workspaces.find((w) => w.id === currentWorkspaceId);
-
-    return workspace?.role === Role.Owner || isSameUserUid(workspace?.owner?.uid, currentUser?.uid);
-  }, [userWorkspaceInfo?.workspaces, currentWorkspaceId, currentUser?.uid]);
+  const currentWorkspace = useMemo(
+    () => userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId),
+    [userWorkspaceInfo?.workspaces, currentWorkspaceId]
+  );
+  const isOwner = currentWorkspace?.role === Role.Owner || isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
+  // The list endpoint exposes summaries to Members, but group rosters and all
+  // mutations remain Owner-only.
+  const canViewGroups = isOwner || currentWorkspace?.role === Role.Member;
+  const groupGridColumns = isOwner
+    ? 'grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px_32px]'
+    : 'grid-cols-[minmax(0,2fr)_minmax(120px,1fr)]';
 
   useEffect(() => {
     if (!currentWorkspaceId) return;
@@ -226,8 +232,9 @@ function MembersPanelForWorkspace({
   }, []);
 
   useEffect(() => {
-    if (!currentWorkspaceId || !isOwner) {
+    if (!currentWorkspaceId || !canViewGroups) {
       applyGroups([]);
+      setLoadingGroups(false);
       return;
     }
 
@@ -249,7 +256,7 @@ function MembersPanelForWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [applyGroups, currentWorkspaceId, isOwner, t]);
+  }, [applyGroups, canViewGroups, currentWorkspaceId, t]);
 
   useEffect(() => {
     if (!currentWorkspaceId || !isOwner) {
@@ -658,7 +665,7 @@ function MembersPanelForWorkspace({
 
             <TabsContent value='groups' className='outline-none'>
               <div className='flex flex-col gap-5'>
-                {!isOwner ? (
+                {!canViewGroups ? (
                   <div className='rounded-400 border border-border-primary px-4 py-6 text-sm text-text-secondary'>
                     {t('settings.appearance.people.groupsOwnerOnly')}
                   </div>
@@ -712,22 +719,29 @@ function MembersPanelForWorkspace({
                           )}
                         </div>
                       )}
-                      <Button
-                        type='button'
-                        size='lg'
-                        onClick={() => setShowCreateGroup(true)}
-                        data-testid='people-create-group-button'
-                        className='focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                      >
-                        {t('settings.appearance.people.createGroup')}
-                      </Button>
+                      {isOwner && (
+                        <Button
+                          type='button'
+                          size='lg'
+                          onClick={() => setShowCreateGroup(true)}
+                          data-testid='people-create-group-button'
+                          className='focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                        >
+                          {t('settings.appearance.people.createGroup')}
+                        </Button>
+                      )}
                     </div>
 
                     <div className='flex flex-col'>
-                      <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium leading-[18px] text-text-secondary'>
+                      <div
+                        className={cn(
+                          'grid gap-4 border-b border-border-primary pb-2 text-xs font-medium leading-[18px] text-text-secondary',
+                          groupGridColumns
+                        )}
+                      >
                         <span>{t('settings.appearance.people.groupsTab')}</span>
                         <span>{t('settings.appearance.people.membersTab')}</span>
-                        <span className='col-span-2 w-16' aria-hidden='true' />
+                        {isOwner && <span className='col-span-2 w-16' aria-hidden='true' />}
                       </div>
                       {loadingGroups && groups.length === 0 ? (
                         <div className='py-5 text-center text-sm text-text-secondary'>
@@ -745,7 +759,10 @@ function MembersPanelForWorkspace({
                             <div
                               key={group.group_id}
                               data-testid={`group-row-${group.group_id}`}
-                              className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_32px_32px] items-center gap-4 border-b border-border-primary py-3 text-sm'
+                              className={cn(
+                                'grid items-center gap-4 border-b border-border-primary py-3 text-sm',
+                                groupGridColumns
+                              )}
                             >
                               <div className='flex min-w-0 items-center gap-3'>
                                 <WorkspaceGroupIcon variant='settings-row' />
@@ -754,41 +771,48 @@ function MembersPanelForWorkspace({
                               <span className='truncate text-text-secondary'>
                                 {groupMemberCountLabel(group.member_count, t)}
                               </span>
-                              <button
-                                type='button'
-                                data-testid={`group-edit-${group.group_id}`}
-                                className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                                aria-label={`${t('button.edit')} ${group.name}`}
-                                onClick={() => setSelectedGroup(group)}
-                              >
-                                <EditIcon aria-hidden='true' className='h-5 w-5' />
-                              </button>
-                              <div>
-                                {isScimManaged ? (
-                                  <span className='block h-7 w-7' aria-hidden='true' />
-                                ) : (
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <button
-                                        type='button'
-                                        disabled={deletingGroupId === group.group_id}
-                                        className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
-                                        aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
-                                      >
-                                        <MoreIcon aria-hidden='true' className='h-4 w-4' />
-                                      </button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
-                                      <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
-                                        {t('settings.appearance.people.renameGroup')}
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem variant='destructive' onSelect={() => requestDeleteGroup(group)}>
-                                        {t('settings.appearance.people.deleteGroup')}
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                )}
-                              </div>
+                              {isOwner && (
+                                <button
+                                  type='button'
+                                  data-testid={`group-edit-${group.group_id}`}
+                                  className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                                  aria-label={`${t('button.edit')} ${group.name}`}
+                                  onClick={() => setSelectedGroup(group)}
+                                >
+                                  <EditIcon aria-hidden='true' className='h-5 w-5' />
+                                </button>
+                              )}
+                              {isOwner && (
+                                <div>
+                                  {isScimManaged ? (
+                                    <span className='block h-7 w-7' aria-hidden='true' />
+                                  ) : (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <button
+                                          type='button'
+                                          disabled={deletingGroupId === group.group_id}
+                                          className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
+                                          aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
+                                        >
+                                          <MoreIcon aria-hidden='true' className='h-4 w-4' />
+                                        </button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
+                                        <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
+                                          {t('settings.appearance.people.renameGroup')}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          variant='destructive'
+                                          onSelect={() => requestDeleteGroup(group)}
+                                        >
+                                          {t('settings.appearance.people.deleteGroup')}
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })
@@ -801,7 +825,7 @@ function MembersPanelForWorkspace({
           </Tabs>
         </div>
       </div>
-      {selectedGroupForPanel && currentWorkspaceId && (
+      {isOwner && selectedGroupForPanel && currentWorkspaceId && (
         <GroupDetailModal
           open
           workspaceId={currentWorkspaceId}
@@ -812,7 +836,7 @@ function MembersPanelForWorkspace({
           workspaceMembers={members}
         />
       )}
-      {showCreateGroup && currentWorkspaceId && (
+      {isOwner && showCreateGroup && currentWorkspaceId && (
         <CreateGroupModal
           open
           workspaceId={currentWorkspaceId}
@@ -821,7 +845,7 @@ function MembersPanelForWorkspace({
           onCreated={refreshGroups}
         />
       )}
-      {renamingGroup && (
+      {isOwner && renamingGroup && (
         <Dialog
           open
           onOpenChange={(isOpen) => {
@@ -893,7 +917,7 @@ function MembersPanelForWorkspace({
           </DialogContent>
         </Dialog>
       )}
-      {deleteConfirmationGroup && (
+      {isOwner && deleteConfirmationGroup && (
         <AlertDialog
           open
           onOpenChange={(isOpen) => {
