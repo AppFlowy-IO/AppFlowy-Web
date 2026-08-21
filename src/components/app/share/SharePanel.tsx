@@ -157,6 +157,7 @@ function SharePanel({
               hasFullAccess={hasFullAccess}
               canGrantFullAccess={canManageFullAccess}
               canManageGroupAccess={canManageGroupAccess}
+              isWorkspaceOwner={isOwner}
             />
             {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
           </>

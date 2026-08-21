@@ -112,7 +112,7 @@ export function GroupAccessLevelDropdown({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant='ghost' className='flex items-center justify-center gap-1.5' disabled={!canModify}>
+        <Button variant='ghost' className='flex items-center justify-center gap-1.5'>
           {getAccessLevelText(group.access_level)}
           <ArrowDownIcon className='text-icon-secondary' />
         </Button>

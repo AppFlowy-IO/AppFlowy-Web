@@ -8,7 +8,6 @@ import {
   IPeopleWithAccessType,
   MentionablePerson,
   MentionPersonRole,
-  Role,
   SubscriptionInterval,
   SubscriptionPlan,
   WorkspaceGroup,
@@ -20,7 +19,7 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
 import { AccessService, BillingService, WorkspaceService } from '@/application/services/domains';
-import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -55,6 +54,7 @@ interface InviteGuestProps {
   hasFullAccess: boolean;
   canGrantFullAccess: boolean;
   canManageGroupAccess: boolean;
+  isWorkspaceOwner: boolean;
 }
 
 interface InviteSubmission {
@@ -75,6 +75,7 @@ export function InviteGuest({
   hasFullAccess,
   canGrantFullAccess,
   canManageGroupAccess,
+  isWorkspaceOwner,
 }: InviteGuestProps) {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
@@ -105,8 +106,6 @@ export function InviteGuest({
   // Combined loading state: show loading when people, mentionable, or group data is loading
   const isLoading = isLoadingPeople || isLoadingMentionable || isLoadingGroups;
   const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const userWorkspaceInfo = useUserWorkspaceInfo();
-  const isOwner = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
 
   useEffect(() => {
     latestInviteTargetRef.current = { workspaceId: currentWorkspaceId, viewId };
@@ -130,13 +129,19 @@ export function InviteGuest({
     };
   }, [currentWorkspaceId, viewId]);
 
+  // Group selections made while authority was held must not survive losing it.
+  useEffect(() => {
+    if (canManageGroupAccess) return;
+
+    setEmailTags((currentTags) =>
+      currentTags.some((tag) => tag.kind === 'group') ? currentTags.filter((tag) => tag.kind !== 'group') : currentTags
+    );
+  }, [canManageGroupAccess]);
+
   useEffect(() => {
     if (!currentWorkspaceId || !canManageGroupAccess) {
       setWorkspaceGroups([]);
       setIsLoadingGroups(false);
-      setEmailTags((currentTags) =>
-        currentTags.some((tag) => tag.kind === 'group') ? currentTags.filter((tag) => tag.kind !== 'group') : currentTags
-      );
       return;
     }
 
@@ -545,7 +550,7 @@ export function InviteGuest({
     const workspaceId = currentWorkspaceId;
 
     if (!workspaceId) return;
-    if (!isOwner) {
+    if (!isWorkspaceOwner) {
       toast.error('Please ask the workspace owner to upgrade to Pro to unlock guest editors.');
       return;
     }
@@ -570,7 +575,7 @@ export function InviteGuest({
     } finally {
       setUpgradeLoading(false);
     }
-  }, [currentWorkspaceId, isOwner]);
+  }, [currentWorkspaceId, isWorkspaceOwner]);
 
   const handleSendInvites = useCallback(async () => {
     if (!currentWorkspaceId) return;

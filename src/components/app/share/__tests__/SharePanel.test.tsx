@@ -149,7 +149,9 @@ describe('SharePanel', () => {
     renderSharePanel(AccessLevel.FullAccess);
 
     await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
-    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ canManageGroupAccess: true }));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canManageGroupAccess: true, isWorkspaceOwner: false })
+    );
     expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ canManageGroupAccess: true }));
   });
 
@@ -161,7 +163,9 @@ describe('SharePanel', () => {
     renderSharePanel(AccessLevel.FullAccess);
 
     await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
-    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ canManageGroupAccess: true }));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(
+      expect.objectContaining({ canManageGroupAccess: true, isWorkspaceOwner: true })
+    );
     expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ canManageGroupAccess: true }));
   });
 

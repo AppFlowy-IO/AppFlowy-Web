@@ -292,6 +292,18 @@ function MembersPanelForWorkspace({
     };
   }, [currentWorkspaceId, isOwner]);
 
+  // Owner-only dialogs are gated on `isOwner` below; also clear their state so a
+  // stale dialog cannot reappear if ownership is later regained.
+  useEffect(() => {
+    if (isOwner) return;
+
+    setSelectedGroup(null);
+    setShowCreateGroup(false);
+    setRenamingGroup(null);
+    setRenamingGroupName('');
+    setDeleteConfirmationGroup(null);
+  }, [isOwner]);
+
   useEffect(() => {
     if (!showGroupSearch) return;
 
@@ -775,46 +787,46 @@ function MembersPanelForWorkspace({
                                 {groupMemberCountLabel(group.member_count, t)}
                               </span>
                               {isOwner && (
-                                <button
-                                  type='button'
-                                  data-testid={`group-edit-${group.group_id}`}
-                                  className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
-                                  aria-label={`${t('button.edit')} ${group.name}`}
-                                  onClick={() => setSelectedGroup(group)}
-                                >
-                                  <EditIcon aria-hidden='true' className='h-5 w-5' />
-                                </button>
-                              )}
-                              {isOwner && (
-                                <div>
-                                  {isScimManaged ? (
-                                    <span className='block h-7 w-7' aria-hidden='true' />
-                                  ) : (
-                                    <DropdownMenu>
-                                      <DropdownMenuTrigger asChild>
-                                        <button
-                                          type='button'
-                                          disabled={deletingGroupId === group.group_id}
-                                          className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
-                                          aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
-                                        >
-                                          <MoreIcon aria-hidden='true' className='h-4 w-4' />
-                                        </button>
-                                      </DropdownMenuTrigger>
-                                      <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
-                                        <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
-                                          {t('settings.appearance.people.renameGroup')}
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem
-                                          variant='destructive'
-                                          onSelect={() => requestDeleteGroup(group)}
-                                        >
-                                          {t('settings.appearance.people.deleteGroup')}
-                                        </DropdownMenuItem>
-                                      </DropdownMenuContent>
-                                    </DropdownMenu>
-                                  )}
-                                </div>
+                                <>
+                                  <button
+                                    type='button'
+                                    data-testid={`group-edit-${group.group_id}`}
+                                    className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick'
+                                    aria-label={`${t('button.edit')} ${group.name}`}
+                                    onClick={() => setSelectedGroup(group)}
+                                  >
+                                    <EditIcon aria-hidden='true' className='h-5 w-5' />
+                                  </button>
+                                  <div>
+                                    {isScimManaged ? (
+                                      <span className='block h-7 w-7' aria-hidden='true' />
+                                    ) : (
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            type='button'
+                                            disabled={deletingGroupId === group.group_id}
+                                            className='flex h-7 w-7 items-center justify-center rounded-300 text-icon-secondary hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-theme-thick disabled:opacity-50'
+                                            aria-label={`${t('settings.appearance.people.groupActions')} ${group.name}`}
+                                          >
+                                            <MoreIcon aria-hidden='true' className='h-4 w-4' />
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align='end' className='w-[180px] min-w-[180px]'>
+                                          <DropdownMenuItem onSelect={() => startRenameGroup(group)}>
+                                            {t('settings.appearance.people.renameGroup')}
+                                          </DropdownMenuItem>
+                                          <DropdownMenuItem
+                                            variant='destructive'
+                                            onSelect={() => requestDeleteGroup(group)}
+                                          >
+                                            {t('settings.appearance.people.deleteGroup')}
+                                          </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    )}
+                                  </div>
+                                </>
                               )}
                             </div>
                           );

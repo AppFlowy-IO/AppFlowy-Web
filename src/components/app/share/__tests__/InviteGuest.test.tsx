@@ -48,7 +48,6 @@ jest.mock('@/components/_shared/notify', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-1',
-  useUserWorkspaceInfo: () => ({ selectedWorkspace: { role: 'Owner' } }),
 }));
 
 jest.mock('@/utils/subscription', () => ({
@@ -152,6 +151,7 @@ function inviteGuestProps(overrides: Partial<ComponentProps<typeof InviteGuest>>
     hasFullAccess: true,
     canGrantFullAccess: true,
     canManageGroupAccess: true,
+    isWorkspaceOwner: true,
     ...overrides,
   };
 }
