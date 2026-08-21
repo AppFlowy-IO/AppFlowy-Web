@@ -495,7 +495,9 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       const parentItem = page.locator(
         `[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${parentName}"))`
       ).first();
-      const addChildBtn = parentItem.getByTestId('inline-add-page');
+      const parentRow = parentItem.locator(':scope > [data-testid^="page-"]');
+      const addChildBtn = parentRow.getByTestId('inline-add-page');
+
       await expect(addChildBtn).toBeVisible({ timeout: 5000 });
       await addChildBtn.click({ force: true });
       await page.waitForTimeout(500);
