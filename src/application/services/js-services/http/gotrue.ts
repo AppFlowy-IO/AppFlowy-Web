@@ -1,6 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 
-import { getTokenParsed, invalidToken, saveGoTrueAuth } from '@/application/session/token';
+import { getTokenParsed, invalidToken, saveGoTrueAuth, type GoTrueAuthUser } from '@/application/session/token';
 import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -47,6 +47,7 @@ interface RefreshedToken {
   access_token: string;
   expires_at: number;
   refresh_token: string;
+  user: GoTrueAuthUser;
 }
 
 // In-flight refreshes shared by concurrent callers with the same refresh token

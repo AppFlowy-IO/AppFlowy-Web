@@ -97,9 +97,13 @@ jobs:
             shard: ''
             description: 'Database filters and field type switching'
           - name: 'gallery-bdd'
-            spec: ''
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
             shard: ''
-            description: 'Migrated Gallery behavior scenarios'
+            description: 'Authentication regressions and migrated Gallery behavior scenarios'
             bdd: true
           - name: 'embedded'
             spec: 'playwright/e2e/embeded'
@@ -253,9 +257,11 @@ jobs:
           CI: true
           BASE_URL: http://localhost:3000
 
-      - name: Run Gallery BDD tests
+      - name: Run Auth and Gallery BDD tests
         if: ${{ matrix.test-group.bdd }}
-        run: pnpm run test:e2e:bdd:gallery
+        run: |
+          pnpm exec bddgen test -c playwright.bdd.config.ts
+          pnpm exec playwright test -c playwright.bdd.config.ts ${{ matrix.test-group.spec }}
         env:
           CI: true
           BASE_URL: http://localhost:3000
