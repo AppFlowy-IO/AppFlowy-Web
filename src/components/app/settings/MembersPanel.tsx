@@ -56,6 +56,11 @@ type GroupDetailTab = 'general' | 'members';
 const GROUP_EXCLUDED_WORKSPACE_ROLES = [Role.Guest];
 const PEOPLE_GUIDE_URL = 'https://appflowy.com/guide/getting-started-with-appflowy';
 const SCIM_GROUP_SOURCE = 'scim';
+const MEMBERS_TABLE_GRID_COLUMNS = 'grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_minmax(0,2fr)_32px]';
+const PEOPLE_TABLE_HEADER_CLASS_NAME =
+  'grid gap-4 border-b border-border-primary pb-2 text-xs font-medium text-text-secondary';
+const PEOPLE_TABLE_ROW_CLASS_NAME = 'grid min-h-[60px] items-center gap-4 border-b border-border-primary py-3 text-sm';
+const PEOPLE_TABLE_STATUS_CLASS_NAME = 'py-6 text-center text-sm text-text-secondary';
 
 function parseInviteEmails(value: string): string[] {
   return Array.from(
@@ -580,18 +585,21 @@ function MembersPanelForWorkspace({
                 )}
 
                 <div className='flex flex-col'>
-                  <div className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_minmax(0,2fr)_32px] gap-4 border-b border-border-primary pb-2 text-xs font-medium text-text-secondary'>
+                  <div
+                    data-testid='members-table-header'
+                    className={cn(PEOPLE_TABLE_HEADER_CLASS_NAME, MEMBERS_TABLE_GRID_COLUMNS)}
+                  >
                     <span>{t('settings.appearance.members.user')}</span>
                     <span>{t('settings.appearance.members.role')}</span>
                     <span>{t('settings.appearance.members.email')}</span>
                     <span className='w-6' aria-hidden='true' />
                   </div>
                   {loadingMembers && members.length === 0 ? (
-                    <div className='py-6 text-center text-sm text-text-secondary'>
+                    <div data-testid='members-table-status' className={PEOPLE_TABLE_STATUS_CLASS_NAME}>
                       <Progress />
                     </div>
                   ) : members.length === 0 ? (
-                    <div className='py-6 text-center text-sm text-text-secondary'>
+                    <div data-testid='members-table-status' className={PEOPLE_TABLE_STATUS_CLASS_NAME}>
                       {t('settings.appearance.members.noMembers')}
                     </div>
                   ) : (
@@ -605,7 +613,7 @@ function MembersPanelForWorkspace({
                         <div
                           key={m.email || `member-${idx}`}
                           data-testid={`members-row-${m.email || idx}`}
-                          className='grid grid-cols-[minmax(0,2fr)_minmax(120px,1fr)_minmax(0,2fr)_32px] items-center gap-4 border-b border-border-primary py-3 text-sm'
+                          className={cn(PEOPLE_TABLE_ROW_CLASS_NAME, MEMBERS_TABLE_GRID_COLUMNS)}
                         >
                           <div className='flex min-w-0 items-center gap-3'>
                             <Avatar size='md'>
@@ -734,21 +742,19 @@ function MembersPanelForWorkspace({
 
                     <div className='flex flex-col'>
                       <div
-                        className={cn(
-                          'grid gap-4 border-b border-border-primary pb-2 text-xs font-medium leading-[18px] text-text-secondary',
-                          groupGridColumns
-                        )}
+                        data-testid='groups-table-header'
+                        className={cn(PEOPLE_TABLE_HEADER_CLASS_NAME, groupGridColumns)}
                       >
                         <span>{t('settings.appearance.people.groupsTab')}</span>
                         <span>{t('settings.appearance.people.membersTab')}</span>
                         {isOwner && <span className='col-span-2 w-16' aria-hidden='true' />}
                       </div>
                       {loadingGroups && groups.length === 0 ? (
-                        <div className='py-5 text-center text-sm text-text-secondary'>
+                        <div data-testid='groups-table-status' className={PEOPLE_TABLE_STATUS_CLASS_NAME}>
                           <Progress />
                         </div>
                       ) : visibleGroups.length === 0 ? (
-                        <div className='py-5 text-center text-sm text-text-secondary'>
+                        <div data-testid='groups-table-status' className={PEOPLE_TABLE_STATUS_CLASS_NAME}>
                           {t('settings.appearance.people.noGroups')}
                         </div>
                       ) : (
@@ -759,10 +765,7 @@ function MembersPanelForWorkspace({
                             <div
                               key={group.group_id}
                               data-testid={`group-row-${group.group_id}`}
-                              className={cn(
-                                'grid items-center gap-4 border-b border-border-primary py-3 text-sm',
-                                groupGridColumns
-                              )}
+                              className={cn(PEOPLE_TABLE_ROW_CLASS_NAME, groupGridColumns)}
                             >
                               <div className='flex min-w-0 items-center gap-3'>
                                 <WorkspaceGroupIcon variant='settings-row' />

@@ -163,6 +163,63 @@ describe('MembersPanel workspace group parity', () => {
     expect(learnMore.getAttribute('target')).toBe('_blank');
   });
 
+  it('uses the Members table typography and spacing for group summaries', async () => {
+    render(<MembersPanel />);
+    await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalled());
+
+    const memberHeader = screen.getByTestId('members-table-header');
+    const memberRow = screen.getByTestId(`members-row-${workspaceMember.email}`);
+
+    fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
+
+    const groupHeader = screen.getByTestId('groups-table-header');
+    const row = groupRow();
+    const sharedHeaderClasses = [
+      'grid',
+      'gap-4',
+      'border-b',
+      'border-border-primary',
+      'pb-2',
+      'text-xs',
+      'font-medium',
+      'text-text-secondary',
+    ];
+    const sharedRowClasses = [
+      'grid',
+      'min-h-[60px]',
+      'items-center',
+      'gap-4',
+      'border-b',
+      'border-border-primary',
+      'py-3',
+      'text-sm',
+    ];
+
+    sharedHeaderClasses.forEach((className) => {
+      expect(memberHeader.classList.contains(className)).toBe(true);
+      expect(groupHeader.classList.contains(className)).toBe(true);
+    });
+    sharedRowClasses.forEach((className) => {
+      expect(memberRow.classList.contains(className)).toBe(true);
+      expect(row.classList.contains(className)).toBe(true);
+    });
+    expect(groupHeader.className).not.toContain('leading-[');
+  });
+
+  it('uses the Members table spacing for the empty Groups state', async () => {
+    mockGetMembers.mockResolvedValueOnce([]);
+    mockGetWorkspaceGroups.mockResolvedValueOnce({ groups: [] });
+
+    render(<MembersPanel />);
+    await waitFor(() => expect(screen.getByTestId('members-table-status')).toBeTruthy());
+    const memberStatusClassName = screen.getByTestId('members-table-status').className;
+
+    fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
+
+    expect(screen.getByTestId('groups-table-status').className).toBe(memberStatusClassName);
+    expect(screen.getByTestId('groups-table-status').classList.contains('py-6')).toBe(true);
+  });
+
   it('shows workspace group summaries without management controls to members', async () => {
     const memberVisibleGroup = { ...group, member_count: 1 };
 

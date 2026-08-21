@@ -31,7 +31,7 @@ export function WorkspaceGroupIcon({ variant, className }: WorkspaceGroupIconPro
 
   const containerClassName: Record<Exclude<WorkspaceGroupIconVariant, 'chip' | 'hero'>, string> = {
     row: 'h-8 w-8 rounded-300',
-    'settings-row': 'h-9 w-9 rounded-full',
+    'settings-row': 'h-8 w-8 rounded-full',
     name: 'h-12 w-12 rounded-400 border border-border-primary',
     detail: 'h-16 w-16 rounded-full',
   };
