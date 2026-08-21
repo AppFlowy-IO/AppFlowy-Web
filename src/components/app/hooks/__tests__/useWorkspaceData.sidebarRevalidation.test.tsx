@@ -1110,6 +1110,50 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['refreshed-child-id']);
   });
 
+  it('keeps the active nested view when a parent refresh returns only direct children', async () => {
+    const eventEmitter = new EventEmitter();
+    const activeView = createView('active-view-id');
+    const databaseContainer = createView('database-container-id', {
+      children: [activeView],
+      has_children: true,
+      name: 'Original database name',
+    });
+    const root = createView('space-id', {
+      children: [databaseContainer],
+      has_children: true,
+    });
+    const refreshedRoot = createView('space-id', {
+      children: [
+        createView('database-container-id', {
+          children: [],
+          has_children: true,
+          name: 'Updated database name',
+        }),
+      ],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.refresh as jest.Mock).mockResolvedValueOnce(refreshedRoot);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(findView(result.current.outline ?? [], activeView.view_id)).not.toBeNull();
+    });
+
+    await act(async () => {
+      await result.current.loadViewChildren?.(root.view_id);
+    });
+
+    const refreshedContainer = findView(result.current.outline ?? [], databaseContainer.view_id);
+
+    expect(refreshedContainer?.name).toBe('Updated database name');
+    expect(findView(result.current.outline ?? [], activeView.view_id)).not.toBeNull();
+  });
+
   it('starts refresh immediately and shows disk cached children while the server request is pending', async () => {
     const eventEmitter = new EventEmitter();
     const root = createView('space-id', {

@@ -36,6 +36,84 @@ export function dedupeViewsByViewId(views: View[]): View[] {
 }
 
 /**
+ * A shallow view response is authoritative for its direct child list, but an
+ * empty `children` array at the response depth boundary does not mean that the
+ * child has no descendants. Preserve descendants already hydrated in the
+ * outline unless the response explicitly marks the child as empty.
+ */
+function preserveShallowDescendants(existingChildren: View[], incomingChildren: View[]): View[] {
+  if (existingChildren.length === 0 || incomingChildren.length === 0) return incomingChildren;
+
+  const existingById = new Map(existingChildren.map((view) => [view.view_id, view]));
+  let changed = false;
+
+  const nextChildren = incomingChildren.map((incoming) => {
+    const existing = existingById.get(incoming.view_id);
+
+    if (!existing) return incoming;
+
+    const incomingDescendants = incoming.children ?? [];
+    let nextDescendants = incomingDescendants;
+
+    if (incomingDescendants.length > 0) {
+      nextDescendants = preserveShallowDescendants(existing.children ?? [], incomingDescendants);
+    } else if (incoming.has_children !== false && existing.children?.length > 0) {
+      nextDescendants = existing.children;
+    }
+
+    if (nextDescendants === incomingDescendants) return incoming;
+
+    changed = true;
+    return { ...incoming, children: nextDescendants };
+  });
+
+  return changed ? nextChildren : incomingChildren;
+}
+
+function mergeChildrenIntoOutlineInternal(
+  outline: View[],
+  parentViewId: string,
+  children: View[],
+  hasChildrenOverride: boolean | undefined,
+  preserveDescendants: boolean
+): View[] {
+  let changed = false;
+  const dedupedChildren = dedupeViewsByViewId(children);
+
+  const next = outline.map((view) => {
+    if (view.view_id === parentViewId) {
+      const nextChildren = preserveDescendants
+        ? preserveShallowDescendants(view.children ?? [], dedupedChildren)
+        : dedupedChildren;
+      const nextHasChildren = hasChildrenOverride ?? (nextChildren.length > 0);
+
+      if (view.children === nextChildren && view.has_children === nextHasChildren) return view;
+      changed = true;
+      return { ...view, children: nextChildren, has_children: nextHasChildren };
+    }
+
+    if (view.children && view.children.length > 0) {
+      const nextChildren = mergeChildrenIntoOutlineInternal(
+        view.children,
+        parentViewId,
+        dedupedChildren,
+        hasChildrenOverride,
+        preserveDescendants
+      );
+
+      if (nextChildren !== view.children) {
+        changed = true;
+        return { ...view, children: nextChildren };
+      }
+    }
+
+    return view;
+  });
+
+  return changed ? next : outline;
+}
+
+/**
  * Immutably replaces a single view's children in the outline tree.
  * Returns the original array reference if the parentViewId is not found
  * (referential equality check to minimize re-renders).
@@ -49,32 +127,20 @@ export function mergeChildrenIntoOutline(
   children: View[],
   hasChildrenOverride?: boolean
 ): View[] {
-  let changed = false;
-  const dedupedChildren = dedupeViewsByViewId(children);
+  return mergeChildrenIntoOutlineInternal(outline, parentViewId, children, hasChildrenOverride, false);
+}
 
-  const next = outline.map((view) => {
-    if (view.view_id === parentViewId) {
-      const nextHasChildren = hasChildrenOverride ?? (dedupedChildren.length > 0);
-
-      // Only create a new object if children/has_children actually differ
-      if (view.children === dedupedChildren && view.has_children === nextHasChildren) return view;
-      changed = true;
-      return { ...view, children: dedupedChildren, has_children: nextHasChildren };
-    }
-
-    if (view.children && view.children.length > 0) {
-      const nextChildren = mergeChildrenIntoOutline(view.children, parentViewId, dedupedChildren, hasChildrenOverride);
-
-      if (nextChildren !== view.children) {
-        changed = true;
-        return { ...view, children: nextChildren };
-      }
-    }
-
-    return view;
-  });
-
-  return changed ? next : outline;
+/**
+ * Merge children returned by a bounded-depth request while retaining deeper
+ * descendants that are outside that request's authoritative depth.
+ */
+export function mergeShallowChildrenIntoOutline(
+  outline: View[],
+  parentViewId: string,
+  children: View[],
+  hasChildrenOverride?: boolean
+): View[] {
+  return mergeChildrenIntoOutlineInternal(outline, parentViewId, children, hasChildrenOverride, true);
 }
 
 export interface OutlineMerge {
