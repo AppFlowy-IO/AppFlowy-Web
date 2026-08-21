@@ -34,8 +34,18 @@ export const ImageBlock = memo(
     const selected = useSelected();
     const { url: dataUrl, align, pending_upload_id } = useMemo(() => data || {}, [data]);
     const url = useMemo(() => constructFileUrl(dataUrl, workspaceId, viewId), [dataUrl, workspaceId, viewId]);
+    const localFileIdRef = useRef<string>();
+    const previewRemoteUrlRef = useRef<string>();
+    const previousPendingUploadIdRef = useRef(pending_upload_id);
+    const uploadJustSucceeded = Boolean(
+      dataUrl && localUrl && previousPendingUploadIdRef.current && !pending_upload_id
+    );
+    const shouldUseLocalPreview = Boolean(
+      localUrl && (!dataUrl || uploadJustSucceeded || previewRemoteUrlRef.current === dataUrl)
+    );
+    const renderedLocalUrl = shouldUseLocalPreview ? localUrl : undefined;
     const isUploading = Boolean(pending_upload_id && !dataUrl);
-    const hasImage = Boolean(url || localUrl);
+    const hasImage = Boolean(url || renderedLocalUrl);
     const needRetry = Boolean(retry_local_url && localUrl && !dataUrl && !isUploading);
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -85,27 +95,72 @@ export const ImageBlock = memo(
     }, [blockId, hasImage, isUploading, needRetry, openPopover, readOnly]);
 
     useEffect(() => {
-      if (readOnly) return;
+      if (uploadJustSucceeded && dataUrl) {
+        previewRemoteUrlRef.current = dataUrl;
+      }
+
+      previousPendingUploadIdRef.current = pending_upload_id;
+    }, [dataUrl, pending_upload_id, uploadJustSucceeded]);
+
+    useEffect(() => {
+      if (readOnly || !retry_local_url) return;
 
       let cancelled = false;
+      const previousFileId = localFileIdRef.current;
 
-      if (!retry_local_url || dataUrl) {
+      if (previousFileId && previousFileId !== retry_local_url) {
+        localFileIdRef.current = undefined;
+        previewRemoteUrlRef.current = undefined;
         setLocalUrl(undefined);
-        return;
+        void fileHandler.cleanup(previousFileId).catch(() => undefined);
       }
 
       void (async () => {
-        const fileData = await fileHandler.getStoredFile(retry_local_url);
+        try {
+          const fileData = await fileHandler.getStoredFile(retry_local_url);
 
-        if (!cancelled) {
-          setLocalUrl(fileData?.url);
+          if (!cancelled) {
+            localFileIdRef.current = retry_local_url;
+            previewRemoteUrlRef.current = undefined;
+            setLocalUrl(fileData?.url);
+          }
+        } catch {
+          // The remote upload can still finish even if the local preview is unavailable.
         }
       })();
 
       return () => {
         cancelled = true;
       };
-    }, [dataUrl, fileHandler, readOnly, retry_local_url]);
+    }, [fileHandler, readOnly, retry_local_url]);
+
+    useEffect(() => {
+      if (!localUrl || !dataUrl || shouldUseLocalPreview) return;
+
+      const localFileId = localFileIdRef.current;
+
+      localFileIdRef.current = undefined;
+      previewRemoteUrlRef.current = undefined;
+      setLocalUrl(undefined);
+
+      if (localFileId) {
+        void fileHandler.cleanup(localFileId).catch(() => undefined);
+      }
+    }, [dataUrl, fileHandler, localUrl, shouldUseLocalPreview]);
+
+    useEffect(() => {
+      return () => {
+        const localFileId = localFileIdRef.current;
+
+        if (!localFileId) return;
+
+        if (previewRemoteUrlRef.current) {
+          void fileHandler.cleanup(localFileId).catch(() => undefined);
+        } else {
+          fileHandler.releaseUrl(localFileId);
+        }
+      };
+    }, [fileHandler]);
 
     const uploadFileRemote = useCallback(
       async (file: File) => {
@@ -125,20 +180,19 @@ export const ImageBlock = memo(
       async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (!retry_local_url) return;
-        const fileData = await fileHandler.getStoredFile(retry_local_url);
-        const file = fileData?.file;
-
-        if (!file) return;
-
-        const url = await uploadFileRemote(file);
-
-        if (!url) {
-          return;
-        }
 
         setLoading(true);
         try {
-          await fileHandler.cleanup(retry_local_url);
+          const fileData = await fileHandler.getStoredFile(retry_local_url);
+          const file = fileData?.file;
+
+          if (!file) return;
+
+          const url = await uploadFileRemote(file);
+
+          if (!url) return;
+
+          previewRemoteUrlRef.current = url;
           CustomEditor.setBlockData(editor, blockId, {
             url,
             image_type: ImageType.External,
@@ -146,7 +200,7 @@ export const ImageBlock = memo(
             pending_upload_id: '',
           } as ImageBlockData);
         } catch (e) {
-          // do noting
+          // do nothing
         } finally {
           setLoading(false);
         }
@@ -182,7 +236,7 @@ export const ImageBlock = memo(
                   url,
                 },
               }}
-              localUrl={localUrl}
+              localUrl={renderedLocalUrl}
             />
           ) : (
             <ImageEmpty

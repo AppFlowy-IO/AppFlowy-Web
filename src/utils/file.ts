@@ -201,13 +201,19 @@ export class FileHandler {
     }
   }
 
+  // Release an in-memory preview without deleting the persisted retry file.
+  releaseUrl(id: string): void {
+    const url = this.fileUrls.get(id);
+
+    if (!url) return;
+
+    URL.revokeObjectURL(url);
+    this.fileUrls.delete(id);
+  }
+
   // Clean up single file and its resources
   async cleanup(id: string): Promise<void> {
-    if (this.fileUrls.has(id)) {
-      URL.revokeObjectURL(this.fileUrls.get(id)!);
-      this.fileUrls.delete(id);
-    }
-
+    this.releaseUrl(id);
     await this.storage.deleteFile(id);
   }
 
