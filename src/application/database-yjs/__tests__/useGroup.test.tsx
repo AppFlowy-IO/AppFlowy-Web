@@ -29,6 +29,7 @@ import {
   useUpdateDatabaseLayout,
 } from '@/application/database-yjs/dispatch';
 import { useGroupByFieldDispatch as useGroupByFieldDispatchCompatibility } from '@/application/database-yjs/dispatch/group';
+import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { generateListFieldSettings } from '@/application/database-yjs/list-layout';
 import { DatabaseViewLayout, GalleryCardSize, YDatabase, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
@@ -341,6 +342,56 @@ describe('useGroup', () => {
       { group_color: 'appflowy_tint5', id: 'A', visible: false },
     ]);
     expect(columns?.get(1)).toBe(firstA);
+  });
+
+  it('keeps automatic group-column synchronization out of history and preserves redo', () => {
+    const fieldId = 'field-id';
+    const groupId = 'group-id';
+    const viewId = 'grid-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [{ id: fieldId, visible: true }],
+      viewId,
+    });
+    const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+      database?.set('history-marker', true);
+    });
+    history.undo();
+    expect(history.canRedo()).toBe(true);
+
+    const { result } = renderHook(() => useSyncGridGroupColumnsDispatch(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => result.current([fieldId, 'new-dynamic-group']));
+
+    const columns = database
+      ?.get(YjsDatabaseKey.views)
+      ?.get(viewId)
+      ?.get(YjsDatabaseKey.groups)
+      ?.get(0)
+      ?.get(YjsDatabaseKey.groups);
+
+    expect(columns?.toJSON()).toEqual([
+      { id: fieldId, visible: true },
+      { id: 'new-dynamic-group', visible: true },
+    ]);
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+
+    act(() => {
+      history.redo();
+    });
+
+    expect(database?.get('history-marker')).toBe(true);
+    expect(columns?.toJSON()).toEqual([
+      { id: fieldId, visible: true },
+      { id: 'new-dynamic-group', visible: true },
+    ]);
   });
 
   it('reorders nested group maps without losing visibility or group color', () => {

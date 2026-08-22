@@ -111,7 +111,7 @@ function AITextCellActions({
     });
 
     if (result) {
-      updateCell(result);
+      updateCell(result, undefined, { policy: 'skip' });
     }
   }, [row, generateAISummaryForRow, getCellData, updateCell, database]);
 
@@ -143,7 +143,7 @@ function AITextCellActions({
     });
 
     if (result) {
-      updateCell(result);
+      updateCell(result, undefined, { policy: 'skip' });
     }
   }, [getCellData, database, row, updateCell, language, generateAITranslateForRow]);
 

@@ -5,6 +5,7 @@ import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/
 import { getCellDataText, parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
 import { parseSelectOptionTypeOptions, SelectOptionColor } from '@/application/database-yjs/fields';
+import { getOrCreateDatabaseHistoryManager } from '@/application/database-yjs/history';
 import { useCellSelector } from '@/application/database-yjs/selector';
 import {
   YDatabase,
@@ -170,6 +171,38 @@ describe('Bug B (fixed) — field-type conversion preserves select values', () =
     expect(cell.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
     expect(cell.get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
     expect(getCellDataText(cell, field)).toBe('0,60,82');
+  });
+
+  it('undoes and redoes the field schema while preserving the source-typed row cell', () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    history.registerRowDoc(rowId, rowDoc);
+
+    act(() => {
+      void switchType(fieldId, FieldType.RichText);
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.data)).toBe(CELL_DATA);
+
+    act(() => {
+      history.undo();
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+    expect(history.canUndo()).toBe(false);
+
+    act(() => {
+      history.redo();
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.data)).toBe(CELL_DATA);
   });
 
   it('schema-only switching immediately refreshes the subscribed cell value', async () => {
@@ -438,10 +471,7 @@ describe('Created/LastEditedTime -> DateTime (desktop parity: materialize timest
     const rowOrders = new Y.Array<{ id: string; height: number }>();
 
     fields.set(fieldId, createTimestampField(type));
-    rowOrders.push([
-      { id: rowId, height: 36 },
-      ...(offscreen ? [{ id: offscreen.rowId, height: 36 }] : []),
-    ]);
+    rowOrders.push([{ id: rowId, height: 36 }, ...(offscreen ? [{ id: offscreen.rowId, height: 36 }] : [])]);
     view.set(YjsDatabaseKey.row_orders, rowOrders);
     views.set(viewId, view);
     database.set(YjsDatabaseKey.id, databaseId);
@@ -453,13 +483,7 @@ describe('Created/LastEditedTime -> DateTime (desktop parity: materialize timest
     // (created/last-edited time has no cell data of its own).
     const rowDoc = createRowDoc(rowId, databaseId, {}, meta.createdAt ?? '0', meta.lastModified ?? '0');
     const offscreenRowDoc = offscreen
-      ? createRowDoc(
-          offscreen.rowId,
-          databaseId,
-          {},
-          offscreen.createdAt ?? '0',
-          offscreen.lastModified ?? '0'
-        )
+      ? createRowDoc(offscreen.rowId, databaseId, {}, offscreen.createdAt ?? '0', offscreen.lastModified ?? '0')
       : undefined;
     const ensureRow = offscreenRowDoc ? jest.fn(async () => offscreenRowDoc) : undefined;
     const contextValue = {

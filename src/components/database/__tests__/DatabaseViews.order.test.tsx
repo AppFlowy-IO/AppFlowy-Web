@@ -2,7 +2,7 @@ import { expect } from '@jest/globals';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
+import { DatabaseContext, DatabaseContextState, runDatabaseAction } from '@/application/database-yjs';
 import { DatabaseViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import DatabaseViews from '@/components/database/DatabaseViews';
@@ -85,9 +85,25 @@ jest.mock('@/components/database/fullcalendar', () => ({
   Calendar: () => null,
 }));
 
+jest.mock('@/components/database/list/List', () => ({
+  __esModule: true,
+  default: () => (
+    <button data-testid='list-layout' type='button'>
+      List layout
+    </button>
+  ),
+}));
+
 jest.mock('@/components/database/gallery', () => ({
   __esModule: true,
-  default: () => <div data-testid='gallery-layout' />,
+  default: () => (
+    <div data-testid='gallery-layout'>
+      <button data-testid='gallery-focus-target' type='button'>
+        Gallery focus target
+      </button>
+      <div data-testid='gallery-surface' />
+    </div>
+  ),
 }));
 
 jest.mock('@/components/database/components/UnsupportedView', () => () => null);
@@ -135,6 +151,52 @@ function createDatabaseDoc(
   sharedRoot.set(YjsEditorKey.database, database);
 
   return doc;
+}
+
+const HISTORY_PROBE_KEY = 'database_history_scope_probe';
+
+function renderHistoryLayout(layout: DatabaseViewLayout) {
+  const viewId = layout === DatabaseViewLayout.List ? 'list' : 'gallery';
+  const doc = createDatabaseDoc(`db-${viewId}-history`, [{ viewId, name: `${viewId} view`, createdAt: '100', layout }]);
+  const contextValue: DatabaseContextState = {
+    readOnly: false,
+    databaseDoc: doc,
+    databasePageId: viewId,
+    activeViewId: viewId,
+    rowMap: {},
+    workspaceId: 'workspace-id',
+  };
+
+  const rendered = render(
+    <DatabaseContext.Provider value={contextValue}>
+      <DatabaseViews activeViewId={viewId} databasePageId={viewId} onChangeView={jest.fn()} visibleViewIds={[viewId]} />
+    </DatabaseContext.Provider>
+  );
+
+  return { doc, rendered };
+}
+
+function captureHistoryProbe(doc: YDoc) {
+  runDatabaseAction(doc, { type: 'database.history-scope-probe' }, () => {
+    doc.getMap(YjsEditorKey.data_section).set(HISTORY_PROBE_KEY, 'changed');
+  });
+}
+
+function dispatchHistoryShortcut(target: EventTarget, redo = false) {
+  const modifier = navigator.userAgent.includes('Mac OS X') ? { metaKey: true } : { ctrlKey: true };
+  const event = new KeyboardEvent('keydown', {
+    bubbles: true,
+    cancelable: true,
+    key: 'z',
+    shiftKey: redo,
+    ...modifier,
+  });
+
+  Object.defineProperty(event, 'which', { value: 90 });
+  act(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
 }
 
 function renderDatabaseViews({
@@ -479,6 +541,62 @@ describe('DatabaseViews order', () => {
     });
     expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
 
+    doc.destroy();
+  });
+});
+
+describe('DatabaseViews history shortcut scope', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    global.__databaseViewsOrderTestState = undefined;
+  });
+
+  it('keeps action → undo → redo ownership after List grouping and viewport nesting', async () => {
+    const { doc, rendered } = renderHistoryLayout(DatabaseViewLayout.List);
+    const list = await screen.findByTestId('list-layout');
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+
+    act(() => list.focus());
+    act(() => captureHistoryProbe(doc));
+    expect(sharedRoot.get(HISTORY_PROBE_KEY)).toBe('changed');
+
+    const undoEvent = dispatchHistoryShortcut(list);
+
+    expect(undoEvent.defaultPrevented).toBe(true);
+    expect(sharedRoot.has(HISTORY_PROBE_KEY)).toBe(false);
+
+    const redoEvent = dispatchHistoryShortcut(list, true);
+
+    expect(redoEvent.defaultPrevented).toBe(true);
+    expect(sharedRoot.get(HISTORY_PROBE_KEY)).toBe('changed');
+
+    rendered.unmount();
+    doc.destroy();
+  });
+
+  it('retains Gallery redo ownership when pointerdown on a nonfocusable surface precedes blur', async () => {
+    const { doc, rendered } = renderHistoryLayout(DatabaseViewLayout.Gallery);
+    const focusTarget = await screen.findByTestId('gallery-focus-target');
+    const surface = screen.getByTestId('gallery-surface');
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+
+    act(() => focusTarget.focus());
+    act(() => captureHistoryProbe(doc));
+    dispatchHistoryShortcut(focusTarget);
+    expect(sharedRoot.has(HISTORY_PROBE_KEY)).toBe(false);
+
+    act(() => {
+      surface.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+      focusTarget.blur();
+    });
+    await act(async () => Promise.resolve());
+
+    const redoEvent = dispatchHistoryShortcut(surface, true);
+
+    expect(redoEvent.defaultPrevented).toBe(true);
+    expect(sharedRoot.get(HISTORY_PROBE_KEY)).toBe('changed');
+
+    rendered.unmount();
     doc.destroy();
   });
 });

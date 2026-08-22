@@ -15,6 +15,7 @@ import {
   removeRowsFromDatabase,
   restoreSoftDeletedRowsInDatabase,
 } from '@/application/database-yjs/dispatch/row-lifecycle';
+import { runDatabaseAction } from '@/application/database-yjs/history';
 import { getRowDocumentSourceFromView } from '@/application/row-document/lifecycle';
 import { RowDocumentSourcePayload, View, YDatabase, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
@@ -54,7 +55,12 @@ function TrashPage() {
         throw new Error('Database not found for trashed row page');
       }
 
-      mutate(sharedRoot, database, [source.row_id]);
+      // Global Trash is outside the database editor's local history. Keep
+      // these lifecycle changes out of that history and preserve any redo
+      // action that was already available in an open database editor.
+      runDatabaseAction(doc, { type: 'database.global-trash-row-lifecycle', policy: 'skip' }, () => {
+        mutate(sharedRoot, database, [source.row_id]);
+      });
     },
     [bindViewSync, loadView]
   );
@@ -155,7 +161,7 @@ function TrashPage() {
           <div className={'flex gap-2'}>
             <Tooltip title={t('trash.restore')}>
               <IconButton
-                data-testid="trash-restore-button"
+                data-testid='trash-restore-button'
                 size={'small'}
                 onClick={() => {
                   void handleRestore(row.view_id);
@@ -166,7 +172,7 @@ function TrashPage() {
             </Tooltip>
             <Tooltip title={t('button.delete')}>
               <IconButton
-                data-testid="trash-delete-button"
+                data-testid='trash-delete-button'
                 size={'small'}
                 onClick={() => {
                   setDeleteViewId(row.view_id);
@@ -230,7 +236,7 @@ function TrashPage() {
           {!trashList ? (
             <TableSkeleton rows={8} columns={4} />
           ) : (
-            <TableContainer data-testid="trash-table" className={'appflowy-scroller'} sx={{ maxHeight: '100%' }}>
+            <TableContainer data-testid='trash-table' className={'appflowy-scroller'} sx={{ maxHeight: '100%' }}>
               <Table stickyHeader aria-label='sticky table'>
                 <TableHead>
                   <TableRow>
@@ -250,7 +256,7 @@ function TrashPage() {
                   {trashList.map((row) => {
                     return (
                       <TableRow
-                        data-testid="trash-table-row"
+                        data-testid='trash-table-row'
                         hover
                         role='checkbox'
                         tabIndex={-1}

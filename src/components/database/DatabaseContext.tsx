@@ -2,6 +2,11 @@ import { useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
+import {
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseAction,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
 import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { exposeDatabaseTestContext, type DatabaseTestWindow } from './database-test-context';
@@ -32,7 +37,11 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
     const owner = testContextOwner.current;
 
     testWindow.Y = Y;
-    return exposeDatabaseTestContext(testWindow, owner, value);
+    return exposeDatabaseTestContext(testWindow, owner, value, {
+      getOrCreateDatabaseHistoryManager,
+      runDatabaseAction,
+      runDatabaseRowAction,
+    });
   }, [value]);
 
   return <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>;

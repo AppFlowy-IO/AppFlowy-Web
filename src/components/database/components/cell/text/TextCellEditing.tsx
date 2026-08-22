@@ -5,6 +5,11 @@ import { FieldId } from '@/application/types';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
+const isEnterHotkey = createHotkey(HOT_KEY_NAME.ENTER);
+const isEscapeHotkey = createHotkey(HOT_KEY_NAME.ESCAPE);
+const isUndoHotkey = createHotkey(HOT_KEY_NAME.UNDO);
+const isRedoHotkey = createHotkey(HOT_KEY_NAME.REDO);
+
 function TextCellEditing(
   {
     defaultValue = '',
@@ -26,6 +31,14 @@ function TextCellEditing(
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
 
   const [inputValue, setInputValue] = useState<string>(defaultValue);
+  const [prevDefaultValue, setPrevDefaultValue] = useState<string>(defaultValue);
+
+  // Reconcile external value changes (undo/redo, remote sync) during render
+  // instead of in an effect, avoiding an extra commit + paint of the stale value.
+  if (defaultValue !== prevDefaultValue) {
+    setPrevDefaultValue(defaultValue);
+    setInputValue(defaultValue);
+  }
 
   return (
     <TextareaAutosize
@@ -40,8 +53,13 @@ function TextCellEditing(
         onChange?.(e.target.value);
       }}
       onKeyDown={(e) => {
-        e.stopPropagation();
-        if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent) || createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) {
+        const isHistoryHotkey = isUndoHotkey(e.nativeEvent) || isRedoHotkey(e.nativeEvent);
+
+        if (!isHistoryHotkey || inputValue !== defaultValue) {
+          e.stopPropagation();
+        }
+
+        if (isEnterHotkey(e.nativeEvent) || isEscapeHotkey(e.nativeEvent)) {
           if (inputValue !== defaultValue) {
             onUpdateCell(inputValue);
           }

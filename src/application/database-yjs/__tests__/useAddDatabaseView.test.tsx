@@ -10,6 +10,7 @@ import {
   useAddDatabaseView,
   useDuplicateDatabaseView,
 } from '@/application/database-yjs';
+import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import {
   DatabaseViewLayout,
   View,
@@ -146,7 +147,143 @@ function createView(overrides: Partial<View>): View {
   };
 }
 
+function createAddViewUpdate(databaseDoc: YDoc, viewId: string): number[] {
+  const remoteDoc = new Y.Doc();
+
+  Y.applyUpdate(remoteDoc, Y.encodeStateAsUpdate(databaseDoc));
+  const remoteRoot = remoteDoc.getMap(YjsEditorKey.data_section);
+  const remoteDatabase = remoteRoot.get(YjsEditorKey.database) as Y.Map<unknown>;
+  let views = remoteDatabase.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>> | undefined;
+
+  if (!views) {
+    views = new Y.Map<Y.Map<unknown>>();
+    remoteDatabase.set(YjsDatabaseKey.views, views);
+  }
+
+  const view = new Y.Map<unknown>();
+
+  view.set(YjsDatabaseKey.id, viewId);
+  view.set(YjsDatabaseKey.name, 'Created view');
+  view.set(YjsDatabaseKey.field_orders, new Y.Array());
+  views.set(viewId, view);
+
+  return Array.from(Y.encodeStateAsUpdate(remoteDoc, Y.encodeStateVector(databaseDoc)));
+}
+
+function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
+  return databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as Y.Map<unknown>;
+}
+
 describe('useAddDatabaseView', () => {
+  it('applies created-tab updates without adding history or clearing redo', async () => {
+    const databaseId = 'db-history';
+    const baseViewId = 'base-view-id';
+    const newViewId = 'new-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+    const database = getDatabase(databaseDoc);
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+      database.set('history-marker', true);
+    });
+    history.undo();
+    expect(history.canRedo()).toBe(true);
+
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: newViewId,
+      database_id: databaseId,
+      database_update: createAddViewUpdate(databaseDoc, newViewId),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Grid, 'Created view');
+    });
+
+    const views = database.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+
+    expect(views.has(newViewId)).toBe(true);
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+    act(() => {
+      history.redo();
+    });
+    expect(database.get('history-marker')).toBe(true);
+    expect(views.has(newViewId)).toBe(true);
+  });
+
+  it('copies duplicated-tab configuration without adding history or clearing redo', async () => {
+    const databaseId = 'db-duplicate-history';
+    const baseViewId = 'base-view-id';
+    const duplicatedViewId = 'duplicated-view-id';
+    const databaseDoc = createDatabaseDoc(databaseId);
+
+    addExistingGridView(databaseDoc, baseViewId);
+    const database = getDatabase(databaseDoc);
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+      database.set('history-marker', true);
+    });
+    history.undo();
+    expect(history.canRedo()).toBe(true);
+
+    const createDatabaseView = jest.fn(async () => ({
+      view_id: duplicatedViewId,
+      database_id: databaseId,
+      database_update: createAddViewUpdate(databaseDoc, duplicatedViewId),
+    }));
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: baseViewId,
+      activeViewId: baseViewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useDuplicateDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(baseViewId, 'Grid (Copy)');
+    });
+
+    const views = database.get(YjsDatabaseKey.views) as Y.Map<Y.Map<unknown>>;
+    const sourceView = views.get(baseViewId);
+    const duplicatedView = views.get(duplicatedViewId);
+
+    expect(duplicatedView?.get(YjsDatabaseKey.field_orders)?.toJSON()).toEqual(
+      sourceView?.get(YjsDatabaseKey.field_orders)?.toJSON()
+    );
+    expect(duplicatedView?.get(YjsDatabaseKey.field_settings)?.toJSON()).toEqual(
+      sourceView?.get(YjsDatabaseKey.field_settings)?.toJSON()
+    );
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+
+    act(() => {
+      history.redo();
+    });
+
+    expect(database.get('history-marker')).toBe(true);
+    expect(views.has(duplicatedViewId)).toBe(true);
+  });
+
   it('normalizes the Grid field defaults returned for a server-created List tab', async () => {
     const databaseId = 'db-1';
     const baseViewId = 'base-view-id';
@@ -166,7 +303,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc,
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       isDocumentBlock: false,
@@ -222,7 +359,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc,
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       deletePage,
@@ -266,7 +403,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc,
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       deletePage,
@@ -312,7 +449,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc,
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       deletePage,
@@ -350,7 +487,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc,
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       isDocumentBlock: false,
@@ -387,7 +524,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc,
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       deletePage,
@@ -450,7 +587,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc: createDatabaseDoc(databaseId),
       databasePageId: baseViewId,
       activeViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       loadViewMeta,
@@ -518,7 +655,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc: createDatabaseDoc(databaseId),
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       loadViewMeta,
@@ -580,7 +717,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc: createDatabaseDoc(databaseId),
       databasePageId: baseViewId,
       activeViewId: baseViewId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       loadViewMeta,
@@ -643,7 +780,7 @@ describe('useAddDatabaseView', () => {
       databaseDoc: createDatabaseDoc(databaseId),
       databasePageId: containerId,
       activeViewId: containerId,
-      rowDocMap: {},
+      rowMap: {},
       workspaceId: 'workspace-id',
       createDatabaseView,
       loadViewMeta,

@@ -30,12 +30,7 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import {
-  FieldType,
-  FilterType,
-  isAttributionFieldType,
-  RowMetaKey,
-} from '@/application/database-yjs/database.type';
+import { FieldType, FilterType, isAttributionFieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
@@ -48,9 +43,15 @@ import {
   relationFilterFillData,
 } from '@/application/database-yjs/filter';
 import { normalizeGroupIdentifiers } from '@/application/database-yjs/group';
+import {
+  createDatabaseHistoryGroup,
+  executeDatabaseOperations as executeOperations,
+  getOrCreateDatabaseHistoryManager,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
-import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
+import { getPrimaryFieldId, useCalendarLayoutSetting, useDatabaseViewLayout } from '@/application/database-yjs/selector';
 import {
   applyTemplateCellsToRow,
   DatabaseRowTemplateStore,
@@ -68,7 +69,6 @@ import {
 } from '@/application/row-document/lifecycle';
 import { PageService } from '@/application/services/domains';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
   BlockType,
@@ -84,8 +84,8 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { Log } from '@/utils/log';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 import { applyRelationReciprocalInserts } from './relation';
 import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
@@ -185,6 +185,7 @@ export function useMoveCardDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const database = useDatabase();
+  const { databaseDoc } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
 
@@ -202,22 +203,32 @@ export function useMoveCardDispatch() {
       startColumnId: string;
       finishColumnId: string;
     }) => {
+      if (!view) {
+        throw new Error(`Unable to reorder card`);
+      }
+
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+      const rowDoc = rowMap?.[rowId];
+      const historyGroup = createDatabaseHistoryGroup();
+
+      if (!isAttributionFieldType(fieldType)) {
+        if (!rowDoc) {
+          throw new Error(`Unable to reorder card`);
+        }
+
+        getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
+      }
+
       executeOperations(
         sharedRoot,
         [
           () => {
-            if (!view) {
-              throw new Error(`Unable to reorder card`);
-            }
-
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-            if (!field) {
-              throw new Error(`Field not found`);
-            }
-
-            const fieldType = Number(field.get(YjsDatabaseKey.type));
-
             if (isAttributionFieldType(fieldType)) {
               // Attribution columns are groupable for display, but moving a
               // card must never rewrite their read-only row metadata.
@@ -228,69 +239,70 @@ export function useMoveCardDispatch() {
               return;
             }
 
-            const rowDoc = rowMap?.[rowId];
+            runDatabaseRowAction(
+              rowDoc as YDoc,
+              { type: 'row.move-card-cell', rowId, fieldId, fieldType, historyGroup },
+              () => {
+                const row = (rowDoc as YDoc)
+                  .getMap(YjsEditorKey.data_section)
+                  .get(YjsEditorKey.database_row) as YDatabaseRow;
+                const cells = row.get(YjsDatabaseKey.cells);
+                const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+                let cellChanged = false;
+                let cell = cells.get(fieldId);
 
-            if (!rowDoc) {
-              throw new Error(`Unable to reorder card`);
-            }
+                if (!cell) {
+                  // if the cell is empty, create a new cell and set data to finishColumnId
+                  if (isSelectOptionField) {
+                    cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
+                  } else if (fieldType === FieldType.Checkbox) {
+                    cell = createCheckboxCell(fieldId, finishColumnId);
+                  }
 
-            const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
-
-            const cells = row.get(YjsDatabaseKey.cells);
-            const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
-            let cellChanged = false;
-
-            let cell = cells.get(fieldId);
-
-            if (!cell) {
-              // if the cell is empty, create a new cell and set data to finishColumnId
-              if (isSelectOptionField) {
-                cell = createSelectOptionCell(fieldId, fieldType, finishColumnId);
-              } else if (fieldType === FieldType.Checkbox) {
-                cell = createCheckboxCell(fieldId, finishColumnId);
-              }
-
-              if (cell) {
-                cells.set(fieldId, cell);
-                cellChanged = true;
-              }
-            } else {
-              const cellData = parseYDatabaseCellToCell(cell, field).data;
-              let newCellData = cellData;
-
-              if (isSelectOptionField) {
-                const selectedIds = (cellData as string)?.split(',') ?? [];
-                const index = selectedIds.findIndex((id) => id === startColumnId);
-
-                if (selectedIds.includes(finishColumnId)) {
-                  // if the finishColumnId is already in the selectedIds
-                  selectedIds.splice(index, 1); // remove the startColumnId from the selectedIds
+                  if (cell) {
+                    cells.set(fieldId, cell);
+                    cellChanged = true;
+                  }
                 } else {
-                  selectedIds.splice(index, 1, finishColumnId); // replace the startColumnId with finishColumnId
+                  const cellData = parseYDatabaseCellToCell(cell, field).data;
+                  let newCellData = cellData;
+
+                  if (isSelectOptionField) {
+                    const selectedIds = (cellData as string)?.split(',') ?? [];
+                    const index = selectedIds.findIndex((id) => id === startColumnId);
+
+                    if (selectedIds.includes(finishColumnId)) {
+                      // if the finishColumnId is already in the selectedIds
+                      selectedIds.splice(index, 1); // remove the startColumnId from the selectedIds
+                    } else {
+                      selectedIds.splice(index, 1, finishColumnId); // replace the startColumnId with finishColumnId
+                    }
+
+                    newCellData = selectedIds.join(',');
+                  } else if (fieldType === FieldType.Checkbox) {
+                    newCellData = finishColumnId;
+                  }
+
+                  cell.set(YjsDatabaseKey.data, newCellData);
+                  setCellStoredType(cell, fieldType);
+                  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+                  cellChanged = newCellData !== cellData;
                 }
 
-                newCellData = selectedIds.join(',');
-              } else if (fieldType === FieldType.Checkbox) {
-                newCellData = finishColumnId;
+                if (cellChanged) {
+                  touchRowAttribution(row, actorUid);
+                }
               }
-
-              cell.set(YjsDatabaseKey.data, newCellData);
-              setCellStoredType(cell, fieldType);
-              cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-              cellChanged = newCellData !== cellData;
-            }
-
-            if (cellChanged) {
-              touchRowAttribution(row, actorUid);
-            }
+            );
 
             reorderRow(rowId, beforeRowId, view);
           },
         ],
-        'reorderCard'
+        'reorderCard',
+        { type: 'database.reorder-card', rowId, fieldId, fieldType, historyGroup }
       );
     },
-    [actorUid, database, rowMap, sharedRoot, view]
+    [actorUid, database, databaseDoc, rowMap, sharedRoot, view]
   );
 }
 
@@ -332,7 +344,7 @@ export function useBulkDeleteRowDispatch() {
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (rowIds: string[]) => {
+    (rowIds: string[], historyGroup?: object) => {
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -356,7 +368,8 @@ export function useBulkDeleteRowDispatch() {
             }
           });
         },
-        'bulkDeleteRowDispatch'
+        'bulkDeleteRowDispatch',
+        historyGroup
       );
       rowIds.forEach((rowId) => {
         void deleteOutboxByObjectId(rowId);
@@ -555,6 +568,7 @@ export function useNewRowDispatch() {
       beforeRowId,
       cellsData,
       tailing = false,
+      historyGroup,
       templateId,
       skipDefaultTemplate = false,
       openAfterCreate = false,
@@ -572,6 +586,7 @@ export function useNewRowDispatch() {
           }
       >;
       tailing?: boolean;
+      historyGroup?: object;
       /** Explicit template selection. An unknown id is an error, matching Desktop. */
       templateId?: string;
       /** Bypass the configured default while preserving normal row creation. */
@@ -844,7 +859,8 @@ export function useNewRowDispatch() {
             rowOrders.insert(index, [row]);
           }
         },
-        'newRowDispatch'
+        'newRowDispatch',
+        historyGroup
       );
 
       if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
@@ -1227,7 +1243,9 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         return;
       }
 
-      rowDoc.transact(() => {
+      const policy = key === RowMetaKey.IconId || key === RowMetaKey.CoverId ? 'capture' : 'skip';
+
+      runDatabaseRowAction(rowDoc, { type: 'row.update-meta', rowId, policy }, () => {
         if (value === undefined) {
           meta.delete(keyId);
         } else {

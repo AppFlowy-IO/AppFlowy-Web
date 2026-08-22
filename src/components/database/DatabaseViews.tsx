@@ -15,6 +15,7 @@ import {
   DatabaseConditionsContext,
 } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
@@ -418,49 +419,51 @@ function DatabaseViews({
   const content = (
     <DatabaseSearchProvider activeViewId={activeViewId}>
       <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
-        <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
-        <DatabaseTabs
-          viewName={viewName}
-          databasePageId={databasePageId}
-          selectedViewId={activeViewId}
-          setSelectedViewId={handleViewChange}
-          viewIds={displayedViewIds}
-          onViewAddedToDatabase={handleViewAddedToDatabase}
-          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-          onViewIdsChanged={onViewIdsChanged}
-          onReorderTabs={handleReorderTabs}
-        />
+        <DatabaseHistoryScope className='contents'>
+          <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
+            <DatabaseTabs
+              viewName={viewName}
+              databasePageId={databasePageId}
+              selectedViewId={activeViewId}
+              setSelectedViewId={handleViewChange}
+              viewIds={displayedViewIds}
+              onViewAddedToDatabase={handleViewAddedToDatabase}
+              onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+              onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+              onViewIdsChanged={onViewIdsChanged}
+              onReorderTabs={handleReorderTabs}
+            />
 
-        <DatabaseConditions />
+            <DatabaseConditions />
 
-        <div
-          className={cn(
-            'relative flex w-full flex-col',
-            shouldUseFixedViewport
-              ? shouldAutoShrinkViewport
-                ? shouldScrollEmbeddedViewport
-                  ? 'min-h-0 overflow-y-auto overflow-x-hidden'
-                  : 'min-h-0 overflow-hidden'
-                : 'h-full min-h-0 flex-1 overflow-hidden'
-              : 'overflow-visible'
-          )}
-          style={viewportStyle}
-        >
-          <div
-            className={cn(
-              'w-full',
-              shouldUseFixedViewport &&
-                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
-            )}
-            style={viewportStyle}
-          >
-            <Suspense fallback={null}>
-              <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-            </Suspense>
-          </div>
-        </div>
-        </DatabaseConditionsActionsContext.Provider>
+            <div
+              className={cn(
+                'relative flex w-full flex-col',
+                shouldUseFixedViewport
+                  ? shouldAutoShrinkViewport
+                    ? shouldScrollEmbeddedViewport
+                      ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+                      : 'min-h-0 overflow-hidden'
+                    : 'h-full min-h-0 flex-1 overflow-hidden'
+                  : 'overflow-visible'
+              )}
+              style={viewportStyle}
+            >
+              <div
+                className={cn(
+                  'w-full',
+                  shouldUseFixedViewport &&
+                    (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+                )}
+                style={viewportStyle}
+              >
+                <Suspense fallback={null}>
+                  <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+                </Suspense>
+              </div>
+            </div>
+          </DatabaseConditionsActionsContext.Provider>
+        </DatabaseHistoryScope>
       </DatabaseConditionsContext.Provider>
     </DatabaseSearchProvider>
   );
