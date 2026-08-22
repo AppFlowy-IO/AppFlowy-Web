@@ -240,9 +240,12 @@ function memberInitial(member: SpaceMember, t: TFunction): string {
 }
 
 // "Workspace owner · annie@acme.com": the workspace role the PRD asks for,
-// plus the email so people with the same name stay distinguishable.
+// plus the email so people with the same name stay distinguishable. When the
+// name line already shows the email, it is not repeated.
 function memberSubtitle(member: SpaceMember, t: TFunction): string {
-  return [workspaceRoleLabel(member.workspace_role, t), member.email || null]
+  const email = member.email && member.email !== displayNameForMember(member, t) ? member.email : null;
+
+  return [workspaceRoleLabel(member.workspace_role, t), email]
     .filter((part): part is string => Boolean(part))
     .join(' · ');
 }
@@ -1821,7 +1824,7 @@ function PublicAccessCard({
           <div className='text-sm text-text-secondary'>{t('space.permissionManager.publicAccessDescription')}</div>
         </div>
         <div
-          className='grid items-center gap-3 border-b border-border-primary px-4 py-2 text-xs font-medium uppercase tracking-wide text-text-tertiary'
+          className='grid items-center gap-3 border-b border-border-primary px-4 py-2 text-xs font-medium text-text-tertiary'
           style={{ gridTemplateColumns: 'minmax(0, 1fr) 160px' }}
         >
           <span>{t('space.permissionManager.who')}</span>
