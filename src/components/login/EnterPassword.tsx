@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { AuthService } from '@/application/services/domains';
+import { buildLoginUrl } from '@/application/session/sign_in';
 import { LOGIN_ACTION } from '@/components/login/const';
 import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -15,9 +16,13 @@ export function EnterPassword({ email, redirectTo }: { email: string; redirectTo
   const [loading, setLoading] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const submittingRef = useRef(false);
 
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
+    if (submittingRef.current) return;
+
+    submittingRef.current = true;
     setLoading(true);
     setError('');
     try {
@@ -26,6 +31,7 @@ export function EnterPassword({ email, redirectTo }: { email: string; redirectTo
     } catch (error: any) {
       setError(error.message);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -50,7 +56,7 @@ export function EnterPassword({ email, redirectTo }: { email: string; redirectTo
       <div className={'flex w-full flex-col gap-2'}>
         <div className={'flex flex-col gap-1'}>
           <PasswordInput
-            data-testid="password-input"
+            data-testid='password-input'
             autoFocus
             size={'md'}
             className={'w-full'}
@@ -61,6 +67,7 @@ export function EnterPassword({ email, redirectTo }: { email: string; redirectTo
             value={password}
             placeholder={t('signIn.enterPassword')}
             variant={error ? 'destructive' : 'default'}
+            disabled={loading}
             onKeyDown={(e) => {
               if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                 void handleSubmit(e);
@@ -72,14 +79,25 @@ export function EnterPassword({ email, redirectTo }: { email: string; redirectTo
         <Button
           variant={'link'}
           onClick={() => {
-            window.location.href = `/login?action=${LOGIN_ACTION.RESET_PASSWORD}&email=${email}&redirectTo=${redirectTo}`;
+            window.location.href = buildLoginUrl({
+              action: LOGIN_ACTION.RESET_PASSWORD,
+              email,
+              redirectTo,
+            });
           }}
+          disabled={loading}
           className={'w-full justify-start px-0 text-sm'}
         >
           {t('signIn.forgotPassword')}
         </Button>
       </div>
-      <Button data-testid="password-submit-button" size={'lg'} className={'w-full'} onMouseDown={handleSubmit}>
+      <Button
+        data-testid='password-submit-button'
+        loading={loading}
+        size={'lg'}
+        className={'w-full'}
+        onClick={handleSubmit}
+      >
         {loading ? (
           <>
             <Progress />
@@ -92,8 +110,9 @@ export function EnterPassword({ email, redirectTo }: { email: string; redirectTo
       <Button
         variant={'link'}
         onClick={() => {
-          window.location.href = `/login?redirectTo=${redirectTo}`;
+          window.location.href = buildLoginUrl({ redirectTo });
         }}
+        disabled={loading}
         className={'w-full'}
       >
         {t('backToLogin')}

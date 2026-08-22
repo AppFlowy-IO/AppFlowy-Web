@@ -55,25 +55,28 @@ const Button = React.forwardRef<
     VariantProps<typeof buttonVariants> & {
       asChild?: boolean;
     }
->(({ className, variant, size, loading, asChild = false, children, danger, ...props }, ref) => {
+>(({ className, variant, size, loading, asChild = false, children, danger, disabled, onClick, ...props }, ref) => {
   const Comp = asChild ? Slot : 'button';
+  const isDisabled = Boolean(disabled || loading);
 
   return (
     <Comp
+      {...props}
       ref={ref}
       data-slot='button'
       className={cn(buttonVariants({ variant, size, className, loading, danger }))}
+      aria-busy={loading || undefined}
+      aria-disabled={isDisabled || undefined}
+      disabled={asChild ? undefined : isDisabled}
       onClick={(e) => {
-        if (loading) {
+        if (isDisabled) {
+          e.preventDefault();
           e.stopPropagation();
           return;
         }
 
-        if (props.onClick) {
-          props.onClick(e);
-        }
+        onClick?.(e);
       }}
-      {...props}
     >
       {children}
     </Comp>

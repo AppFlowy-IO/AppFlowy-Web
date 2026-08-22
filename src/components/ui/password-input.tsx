@@ -65,9 +65,10 @@ export interface PasswordInputProps
 }
 
 const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
-  ({ className, variant, size, inputProps, inputRef, ...props }, ref) => {
+  ({ className, variant, size, inputProps, inputRef, disabled, ...props }, ref) => {
     const [focused, setFocused] = React.useState(false);
     const [showPassword, setShowPassword] = React.useState(false);
+    const isDisabled = Boolean(disabled || inputProps?.disabled);
 
     const togglePasswordVisibility = (e: React.MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
@@ -80,6 +81,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
         data-slot='input'
         className={cn(inputVariants({ variant, size }), className)}
         data-focused={focused}
+        aria-disabled={isDisabled || undefined}
       >
         <input
           ref={inputRef}
@@ -93,6 +95,7 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           )}
           {...props}
           {...inputProps}
+          disabled={isDisabled}
           onFocus={(e) => {
             setFocused(true);
             props?.onFocus?.(e);
@@ -103,10 +106,12 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
           }}
         />
         <Button
+          type='button'
           size='icon-sm'
           onMouseDown={togglePasswordVisibility}
           tabIndex={-1}
           variant='ghost'
+          disabled={isDisabled}
           aria-label={showPassword ? 'hide password' : 'show password'}
         >
           {showPassword ? <HideIcon className='h-5 w-5' /> : <ShowIcon className='h-5 w-5' />}

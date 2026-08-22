@@ -2,7 +2,8 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
-import { invalidToken, isTokenValid } from '@/application/session/token';
+import { buildLoginUrl } from '@/application/session/sign_in';
+import { invalidToken } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -46,10 +47,12 @@ function isRetryableWorkspaceInfoError(error: Error): boolean {
  * 9. AppAuthLayer effect runs → sees authenticated user → no logout
  * 10. AppWorkspaceRedirect component loads workspace info and redirects to /app/:workspaceId
  *
- * Race Condition Fixes:
- * - Old token cleared BEFORE OAuth processing to prevent axios interceptor auto-refresh race
- * - Multi-stage auth checks (50ms + 100ms delays) to wait for React state sync
- * - Proactive state sync in AppConfig to force isAuthenticated sync on mount
+ * AppConfig owns the single authentication state. This layer consumes that
+ * state and redirects immediately when an app route becomes unauthenticated.
+ *
+ * AppProvider mounts this layer with `key={authenticatedUserId}`, so every
+ * sign-in, sign-out, or account switch remounts it (and every layer below)
+ * with fresh state. Nothing here has to reset account-scoped state by hand.
  */
 
 // First layer: Authentication and service initialization
@@ -57,6 +60,7 @@ function isRetryableWorkspaceInfoError(error: Error): boolean {
 // Does not depend on workspace ID - establishes basic authentication context
 export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const context = useContext(AFConfigContext);
+  const hasConfigContext = context !== undefined;
   const isAuthenticated = context?.isAuthenticated;
   const location = useLocation();
   const navigate = useNavigate();
@@ -83,7 +87,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   // Handle user logout
   const logout = useCallback(() => {
     invalidToken();
-    navigate(`/login?redirectTo=${encodeURIComponent(window.location.href)}`);
+    navigate(buildLoginUrl({ redirectTo: window.location.href }));
   }, [navigate]);
 
   // Load user workspace information
@@ -167,92 +171,20 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     [loadUserWorkspaceInfo, navigate, userWorkspaceInfo]
   );
 
-  // If the user is not authenticated, log out the user
-  // But check localStorage token first to avoid redirect loops after login
-  // This handles the race condition where token exists but React state hasn't synced yet
+  // AppConfig initializes synchronously from storage and owns all session events,
+  // so this layer does not need timer-based token polling or a second auth source.
   useEffect(() => {
-    // Don't check if we're already on login/auth pages
-    if (location.pathname === '/login' || location.pathname.startsWith('/auth/callback')) {
-      return;
-    }
+    if (!hasConfigContext || isAuthenticated) return;
+    if (location.pathname === '/login' || location.pathname.startsWith('/auth/callback')) return;
 
-    // Multi-stage timeout to handle various race conditions:
-    // 1. Wait for React context to initialize (50ms)
-    // 2. Check token and auth state multiple times to handle async state updates
-    // 3. Only logout if consistently unauthenticated across multiple checks
-    let secondCheckTimeoutId: number | null = null;
+    logout();
+  }, [hasConfigContext, isAuthenticated, location.pathname, logout]);
 
-    const timeoutId = window.setTimeout(() => {
-      // First check - token and auth state
-      const hasToken = isTokenValid();
-
-      Log.debug('[AppAuthLayer] auth check (initial)', {
-        path: location.pathname,
-        isAuthenticated,
-        hasToken,
-        contextReady: !!context,
-      });
-
-      // If token exists, trust it and wait for state to sync
-      // This prevents logout during OAuth callback → /app navigation
-      if (hasToken) {
-        Log.debug('[AppAuthLayer] token exists, skipping logout check (waiting for state sync)');
-        return;
-      }
-
-      // If no token but we're not sure context is ready, don't logout yet
-      if (!context) {
-        Log.debug('[AppAuthLayer] context not ready, skipping logout check');
-        return;
-      }
-
-      // Double-check after additional delay to handle async state updates
-      // This catches cases where token was just saved but state hasn't propagated
-      secondCheckTimeoutId = window.setTimeout(() => {
-        const hasTokenSecondCheck = isTokenValid();
-        const isAuthenticatedSecondCheck = context?.isAuthenticated;
-
-        Log.debug('[AppAuthLayer] auth check (second)', {
-          path: location.pathname,
-          isAuthenticated: isAuthenticatedSecondCheck,
-          hasToken: hasTokenSecondCheck,
-          contextReady: !!context,
-        });
-
-        // Only redirect if BOTH checks confirm no authentication:
-        // 1. Context exists and says not authenticated
-        // 2. No token exists in localStorage (checked twice)
-        // 3. Still on the same page (user didn't navigate away)
-        if (context && !isAuthenticatedSecondCheck && !hasTokenSecondCheck) {
-          console.warn('[AppAuthLayer] redirecting to /login because auth check failed (double-checked)', {
-            path: location.pathname,
-            isAuthenticated: isAuthenticatedSecondCheck,
-            hasToken: hasTokenSecondCheck,
-            hasContext: !!context,
-          });
-          logout();
-        } else if (hasTokenSecondCheck && !isAuthenticatedSecondCheck) {
-          Log.debug('[AppAuthLayer] token exists but state not synced - will sync via AppConfig effect');
-        }
-      }, 100); // Additional 100ms delay for second check
-    }, 50); // Initial delay to allow context to initialize
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (secondCheckTimeoutId !== null) {
-        window.clearTimeout(secondCheckTimeoutId);
-      }
-    };
-  }, [isAuthenticated, location.pathname, logout, context]);
-
-  // Load user workspace info and server info on mount
+  // Load user workspace info and server info on mount. An unauthenticated
+  // instance only exists for the commit in which AppProvider remounts this
+  // layer, so there is no account-scoped state to clear here.
   useEffect(() => {
-    if (!isAuthenticated) {
-      setMaxUpdateBytes(undefined);
-      setMaxSlowSyncUpdateBytes(undefined);
-      setSyncLimitsLoaded(false);
-      return;
-    }
+    if (!isAuthenticated) return;
 
     void loadUserWorkspaceInfo();
 
@@ -404,7 +336,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     void WorkspaceService.open(urlWorkspaceId)
       .then(() => loadUserWorkspaceInfo({ force: true }))
       .catch((e) => Log.warn('[AppAuthLayer] failed to open URL workspace', e));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, params.workspaceId, userWorkspaceInfo?.selectedWorkspace.id, loadUserWorkspaceInfo]);
 
   // Context value for authentication layer
