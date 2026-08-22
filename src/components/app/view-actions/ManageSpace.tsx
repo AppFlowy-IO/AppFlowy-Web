@@ -1,4 +1,4 @@
-import { ChevronDown, Globe2, LockKeyhole, Shield, Users } from 'lucide-react';
+import { ChevronDown, Globe2, LockKeyhole, Settings2, Shield, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -8,12 +8,10 @@ import { WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
   legacySpacePermission,
-  SpaceInvitePolicy,
   SpaceMember,
   SpaceMemberRole,
   SpacePermission,
   SpacePermissionSettings,
-  SpaceSidebarEditPolicy,
   SpaceVisibility,
   WorkspaceGroupSpacePermission,
   WorkspaceMember,
@@ -27,7 +25,9 @@ import {
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import {
+  defaultSpacePermissionSettings,
   isPrivateSpaceVisibility,
+  LEGACY_SPACE_VISIBILITIES,
   SELECTABLE_SPACE_VISIBILITIES,
   spaceVisibilityDescription,
   spaceVisibilityLabel,
@@ -67,20 +67,10 @@ const MODAL_WIDTH = 680;
 const CONTENT_WIDTH = 640;
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
 
+// The outline only carries the binary `is_private` marker, so a space whose
+// structured settings have not loaded yet is seeded as Public or Private.
 function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings {
-  return {
-    visibility: isPrivate ? SpaceVisibility.Private : SpaceVisibility.Public,
-    owner_access_level: AccessLevel.FullAccess,
-    member_default_access_level: AccessLevel.ReadAndWrite,
-    invite_policy: SpaceInvitePolicy.OwnersOnly,
-    sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
-    invite_link_enabled: false,
-    security: {
-      disable_guests: false,
-      disable_public_links: false,
-      disable_export: false,
-    },
-  };
+  return defaultSpacePermissionSettings(isPrivate ? SpaceVisibility.Private : SpaceVisibility.Public);
 }
 
 function normalizePermissionSettings(permission: SpacePermissionSettings, isPrivate: boolean): SpacePermissionSettings {
@@ -116,20 +106,20 @@ function equalPermissionSettings(left: SpacePermissionSettings, right: SpacePerm
   );
 }
 
-// A Public <-> Private flip is first applied through the binary compatibility
-// endpoint, which maps losslessly onto the structured visibility. Any other
-// transition (including values this client does not know) goes straight to the
-// structured update.
+function isKnownSpaceVisibility(visibility: SpaceVisibility): boolean {
+  return (SELECTABLE_SPACE_VISIBILITIES as readonly SpaceVisibility[]).includes(visibility);
+}
+
+// Crossing the private/non-private boundary (Private <-> Public, Private <->
+// Custom) is first applied through the binary compatibility endpoint, which
+// keeps the legacy marker in step. Public <-> Custom are both non-private, and
+// any transition involving a value this client does not know goes straight to
+// the structured update.
 function legacyVisibilityBridgeSteps(current: SpaceVisibility, requested: SpaceVisibility): readonly SpacePermission[] {
-  if (current === SpaceVisibility.Private && requested === SpaceVisibility.Public) {
-    return [SpacePermission.Public];
-  }
+  if (!isKnownSpaceVisibility(current) || !isKnownSpaceVisibility(requested)) return [];
+  if (isPrivateSpaceVisibility(current) === isPrivateSpaceVisibility(requested)) return [];
 
-  if (current === SpaceVisibility.Public && requested === SpaceVisibility.Private) {
-    return [SpacePermission.Private];
-  }
-
-  return [];
+  return [legacySpacePermission(requested)];
 }
 
 function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction): string {
@@ -184,6 +174,20 @@ function isMutableSpaceMember(member: SpaceMember): boolean {
   return !INHERITED_MEMBER_SOURCES.has(member.source);
 }
 
+function VisibilityIcon({ visibility }: { visibility: SpaceVisibility }) {
+  const className = 'h-5 w-5 text-icon-primary';
+
+  switch (visibility) {
+    case SpaceVisibility.Private:
+      return <LockKeyhole className={className} />;
+    case SpaceVisibility.Custom:
+      return <Settings2 className={className} />;
+    case SpaceVisibility.Public:
+    default:
+      return <Globe2 className={className} />;
+  }
+}
+
 function AccessDropdown({
   value,
   disabled,
@@ -226,10 +230,12 @@ function AccessDropdown({
 
 function VisibilityDropdown({
   value,
+  options,
   disabled,
   onChange,
 }: {
   value: SpaceVisibility;
+  options: readonly SpaceVisibility[];
   disabled?: boolean;
   onChange: (value: SpaceVisibility) => void;
 }) {
@@ -251,7 +257,7 @@ function VisibilityDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-[320px]'>
-        {SELECTABLE_SPACE_VISIBILITIES.map((option) => (
+        {options.map((option) => (
           <DropdownMenuItem
             key={option}
             data-testid={`manage-space-visibility-option-${option}`}
@@ -819,9 +825,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   // A public space makes every workspace member an implicit space member, so
   // its roster is informational only. Gate on the loaded (server) visibility,
-  // not the unsaved draft, and on Public specifically: a future visibility that
-  // allows removing members must keep the controls.
+  // not the unsaved draft, and on Public specifically: a custom space has the
+  // same implicit roster but lets managers remove anyone from it, including
+  // `workspace_default` rows (the server records a default-access revocation).
   const membersReadOnly = loadedPermissionSettings?.visibility === SpaceVisibility.Public;
+  const implicitMembersRemovable = loadedPermissionSettings?.visibility === SpaceVisibility.Custom;
 
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
@@ -1162,11 +1170,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                 <div className='rounded-400 border border-border-primary'>
                   <div className='flex items-center gap-3 border-b border-border-primary px-4 py-3'>
                     <div className='flex h-8 w-8 items-center justify-center rounded-full bg-fill-content-hover'>
-                      {permissionSettings.visibility === SpaceVisibility.Private ? (
-                        <LockKeyhole className='h-5 w-5 text-icon-primary' />
-                      ) : (
-                        <Globe2 className='h-5 w-5 text-icon-primary' />
-                      )}
+                      <VisibilityIcon visibility={permissionSettings.visibility} />
                     </div>
                     <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
                       <div className='font-medium text-text-primary'>
@@ -1178,6 +1182,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     </div>
                     <VisibilityDropdown
                       value={permissionSettings.visibility}
+                      // The legacy editor can only persist the binary marker, so
+                      // it must not offer a visibility that would be downgraded.
+                      options={legacyPermissionMode ? LEGACY_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES}
                       disabled={permissionSettingsDisabled}
                       onChange={handleVisibilityChange}
                     />
@@ -1298,7 +1305,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                                   value={member.role}
                                   readOnly={membersReadOnly}
                                   disabled={membersDisabled || mutatingMemberUid === member.uid}
-                                  canRemove={!membersReadOnly && mutable && canManageMembers}
+                                  canRemove={
+                                    !membersReadOnly && canManageMembers && (mutable || implicitMembersRemovable)
+                                  }
                                   onChange={(role) => void handleUpdateMemberRole(member, role)}
                                   onRemove={() => void handleRemoveMember(member)}
                                 />
