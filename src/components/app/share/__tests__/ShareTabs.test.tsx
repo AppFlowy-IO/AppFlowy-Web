@@ -5,18 +5,28 @@ import ShareTabs from '@/components/app/share/ShareTabs';
 const mockUpdateGroupInAccessList = jest.fn();
 const mockSharePanelProps = jest.fn();
 const mockPublishPanelProps = jest.fn();
-let mockObjectPermission: { can_read: boolean; can_share: boolean } | undefined;
+const mockUseViewActionPermissions = jest.fn();
+let mockCanShare = true;
+let mockHasLoadedPermission = true;
+let mockIsLoadingPermission = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAppView: () => ({ is_published: false }),
+  useAppView: (viewId: string) => ({ view_id: viewId, is_published: false }),
 }));
 
-jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
-  useViewObjectPermission: () => mockObjectPermission,
+jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
+  useViewActionPermissions: (...args: unknown[]) => {
+    mockUseViewActionPermissions(...args);
+    return {
+      canManageViewActions: mockCanShare,
+      hasLoadedViewActionPermissions: mockHasLoadedPermission,
+      isLoadingViewActionPermissions: mockIsLoadingPermission,
+    };
+  },
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
@@ -73,7 +83,10 @@ describe('ShareTabs publish availability', () => {
     mockSharePanelProps.mockClear();
     mockUpdateGroupInAccessList.mockClear();
     mockPublishPanelProps.mockClear();
-    mockObjectPermission = { can_read: true, can_share: true };
+    mockUseViewActionPermissions.mockClear();
+    mockCanShare = true;
+    mockHasLoadedPermission = true;
+    mockIsLoadingPermission = false;
   });
 
   it('keeps Share available while removing Publish when requested', () => {
@@ -88,6 +101,10 @@ describe('ShareTabs publish availability', () => {
     renderShareTabs(false);
 
     expect(screen.getByTestId('publish-tab')).toBeTruthy();
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      expect.objectContaining({ view_id: 'database-view' }),
+      true
+    );
   });
 
   it('falls back to Share when Publish is removed after being selected', () => {
@@ -114,7 +131,7 @@ describe('ShareTabs publish availability', () => {
   });
 
   it('uses canonical can_share instead of the legacy access-level result', () => {
-    mockObjectPermission = { can_read: true, can_share: false };
+    mockCanShare = false;
 
     renderShareTabs(false);
 
@@ -127,5 +144,21 @@ describe('ShareTabs publish availability', () => {
 
     fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
     expect(mockPublishPanelProps).toHaveBeenCalledWith(expect.objectContaining({ canShare: false }));
+  });
+
+  it('keeps publishing in a loading state while object permission resolves', () => {
+    mockCanShare = false;
+    mockHasLoadedPermission = false;
+    mockIsLoadingPermission = true;
+
+    renderShareTabs(false);
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+
+    expect(mockPublishPanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canShare: false,
+        shareDetailsLoading: true,
+      })
+    );
   });
 });
