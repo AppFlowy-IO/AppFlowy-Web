@@ -2,18 +2,14 @@ import { OutlinedInput } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CreatePagePayload, SpacePermission, SpaceVisibility } from '@/application/types';
+import { CreatePagePayload, legacySpacePermission, SpaceVisibility } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppOperations } from '@/components/app/app.hooks';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
 
-const DEFAULT_SPACE_VISIBILITY = SpaceVisibility.Default;
-
-function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
-  return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
-}
+const DEFAULT_SPACE_VISIBILITY = SpaceVisibility.Public;
 
 function CreateSpaceModal({
   open,
@@ -42,9 +38,9 @@ function CreateSpaceModal({
         name: spaceName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
-        // The server's existing compatibility endpoint maps Public to its
-        // canonical Default visibility without applying the structured API's
-        // single-default creation guard. Desktop uses this same path.
+        // Creation goes through the binary compatibility endpoint, which maps
+        // Public/Private losslessly onto the structured visibility. Desktop uses
+        // this same path.
         space_permission: legacySpacePermission(spaceVisibility),
       };
 
