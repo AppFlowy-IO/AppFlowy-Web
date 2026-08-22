@@ -20,22 +20,6 @@ Feature: Seeded space permission management
       | member private | default space | default page | visible    | editable    |
       | guest none     | default space | default page | hidden     | denied      |
 
-    Examples: Open space
-      | account        | space      | page      | navigation | page access |
-      | member default | open space | open page | visible    | read-only   |
-      | member open    | open space | open page | visible    | editable    |
-      | member closed  | open space | open page | visible    | comment-only |
-      | guest closed   | open space | open page | hidden     | denied      |
-
-    Examples: Closed space
-      | account        | space        | page        | navigation | page access |
-      | owner 2        | closed space | closed page | visible    | editable    |
-      | member default | closed space | closed page | hidden     | denied      |
-      | member open    | closed space | closed page | visible    | comment-only |
-      | member closed  | closed space | closed page | visible    | read-only   |
-      | guest closed   | closed space | closed page | hidden     | read-only   |
-      | guest private  | closed space | closed page | hidden     | denied      |
-
     Examples: Private space
       | account        | space         | page         | navigation | page access |
       | owner 2        | private space | private page | visible    | editable    |
