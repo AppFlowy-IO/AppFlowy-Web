@@ -3301,6 +3301,8 @@
     "publicPermissionDescription": "All workspace members with full access",
     "privatePermission": "Private",
     "privatePermissionDescription": "Only you can access this space",
+    "customPermission": "Custom",
+    "customPermissionDescription": "All workspace members by default, and owners can remove members",
     "spaceIconBackground": "Background color",
     "spaceIcon": "Icon",
     "dangerZone": "Danger Zone",
