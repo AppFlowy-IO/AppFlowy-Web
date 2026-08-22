@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
+  legacySpacePermission,
   SpaceInvitePolicy,
   SpaceMember,
   SpaceMemberRole,
@@ -18,20 +19,19 @@ import {
   WorkspaceMember,
 } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
-import {
-  useAppOperations,
-  useAppView,
-  useCurrentWorkspaceId,
-  useEventEmitter,
-  useUserWorkspaceInfo,
-} from '@/components/app/app.hooks';
+import { useAppOperations, useAppView, useCurrentWorkspaceId, useEventEmitter } from '@/components/app/app.hooks';
 import {
   getWorkspaceMemberUid,
   useAddableWorkspaceMembers,
   WorkspaceMemberInlineSearch,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
-import { SELECTABLE_SPACE_VISIBILITIES } from '@/components/app/view-actions/spaceVisibilityOptions';
+import {
+  isPrivateSpaceVisibility,
+  SELECTABLE_SPACE_VISIBILITIES,
+  spaceVisibilityDescription,
+  spaceVisibilityLabel,
+} from '@/components/app/view-actions/spaceVisibilityOptions';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -69,10 +69,9 @@ const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
 
 function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings {
   return {
-    visibility: isPrivate ? SpaceVisibility.Private : SpaceVisibility.Default,
+    visibility: isPrivate ? SpaceVisibility.Private : SpaceVisibility.Public,
     owner_access_level: AccessLevel.FullAccess,
     member_default_access_level: AccessLevel.ReadAndWrite,
-    everyone_else_access_level: isPrivate ? null : AccessLevel.ReadOnly,
     invite_policy: SpaceInvitePolicy.OwnersOnly,
     sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
     invite_link_enabled: false,
@@ -86,18 +85,13 @@ function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings 
 
 function normalizePermissionSettings(permission: SpacePermissionSettings, isPrivate: boolean): SpacePermissionSettings {
   const fallback = defaultPermissionSettings(isPrivate);
-  const visibility = permission.visibility ?? fallback.visibility;
-  const everyoneElseAccessLevel =
-    permission.everyone_else_access_level === undefined
-      ? fallback.everyone_else_access_level
-      : permission.everyone_else_access_level;
 
   return {
-    visibility,
+    // Keep whatever visibility the server returned, including values this
+    // client does not know yet, so a save never rewrites it behind the user.
+    visibility: permission.visibility ?? fallback.visibility,
     owner_access_level: permission.owner_access_level ?? fallback.owner_access_level,
     member_default_access_level: permission.member_default_access_level ?? fallback.member_default_access_level,
-    everyone_else_access_level:
-      visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private ? null : everyoneElseAccessLevel,
     invite_policy: permission.invite_policy ?? fallback.invite_policy,
     sidebar_edit_policy: permission.sidebar_edit_policy ?? fallback.sidebar_edit_policy,
     invite_link_enabled: permission.invite_link_enabled ?? fallback.invite_link_enabled,
@@ -113,7 +107,6 @@ function equalPermissionSettings(left: SpacePermissionSettings, right: SpacePerm
     left.visibility === right.visibility &&
     left.owner_access_level === right.owner_access_level &&
     left.member_default_access_level === right.member_default_access_level &&
-    left.everyone_else_access_level === right.everyone_else_access_level &&
     left.invite_policy === right.invite_policy &&
     left.sidebar_edit_policy === right.sidebar_edit_policy &&
     left.invite_link_enabled === right.invite_link_enabled &&
@@ -123,27 +116,17 @@ function equalPermissionSettings(left: SpacePermissionSettings, right: SpacePerm
   );
 }
 
-function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
-  return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
-}
-
+// A Public <-> Private flip is first applied through the binary compatibility
+// endpoint, which maps losslessly onto the structured visibility. Any other
+// transition (including values this client does not know) goes straight to the
+// structured update.
 function legacyVisibilityBridgeSteps(current: SpaceVisibility, requested: SpaceVisibility): readonly SpacePermission[] {
-  if (current === SpaceVisibility.Private && requested === SpaceVisibility.Default) {
+  if (current === SpaceVisibility.Private && requested === SpaceVisibility.Public) {
     return [SpacePermission.Public];
   }
 
-  if (current === SpaceVisibility.Default && requested === SpaceVisibility.Private) {
+  if (current === SpaceVisibility.Public && requested === SpaceVisibility.Private) {
     return [SpacePermission.Private];
-  }
-
-  if (
-    (current === SpaceVisibility.Open || current === SpaceVisibility.Closed) &&
-    requested === SpaceVisibility.Default
-  ) {
-    // The compatibility API treats Open and Closed as already public, so a
-    // direct Public request is a no-op. An explicit privacy flip makes the
-    // following Public request map the space to the canonical Default value.
-    return [SpacePermission.Private, SpacePermission.Public];
   }
 
   return [];
@@ -174,34 +157,6 @@ function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction)
   return message.toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
     ? t('space.permissionManager.lastOwnerRequired')
     : message;
-}
-
-function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
-  switch (visibility) {
-    case SpaceVisibility.Default:
-      return t('space.publicPermission');
-    case SpaceVisibility.Closed:
-      return t('space.permissionManager.closed');
-    case SpaceVisibility.Private:
-      return t('space.privatePermission');
-    case SpaceVisibility.Open:
-    default:
-      return t('space.permissionManager.open');
-  }
-}
-
-function visibilityDescription(visibility: SpaceVisibility, t: TFunction): string {
-  switch (visibility) {
-    case SpaceVisibility.Default:
-      return t('space.publicPermissionDescription');
-    case SpaceVisibility.Closed:
-      return t('space.permissionManager.closedVisibilityDescription');
-    case SpaceVisibility.Private:
-      return t('space.permissionManager.privateVisibilityDescription');
-    case SpaceVisibility.Open:
-    default:
-      return t('space.permissionManager.openVisibilityDescription');
-  }
 }
 
 function displayNameForMember(member: SpaceMember, t: TFunction): string {
@@ -291,7 +246,7 @@ function VisibilityDropdown({
           className='min-w-[140px] justify-between'
           data-testid='manage-space-visibility-trigger'
         >
-          {visibilityLabel(value, t)}
+          {spaceVisibilityLabel(value, t)}
           <ChevronDown className='h-4 w-4 text-icon-tertiary' />
         </Button>
       </DropdownMenuTrigger>
@@ -304,8 +259,8 @@ function VisibilityDropdown({
             className='items-start justify-between gap-4'
           >
             <div className='flex flex-col gap-0.5'>
-              <span>{visibilityLabel(option, t)}</span>
-              <span className='text-xs text-text-secondary'>{visibilityDescription(option, t)}</span>
+              <span>{spaceVisibilityLabel(option, t)}</span>
+              <span className='text-xs text-text-secondary'>{spaceVisibilityDescription(option, t)}</span>
             </div>
             {option === value && <DropdownMenuItemTick />}
           </DropdownMenuItem>
@@ -385,10 +340,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const { updateSpace: updateLegacySpace } = useAppOperations();
   const workspaceId = useCurrentWorkspaceId();
   const eventEmitter = useEventEmitter();
-  const userWorkspaceInfo = useUserWorkspaceInfo();
   const { t } = useTranslation();
-  const currentWorkspaceName =
-    userWorkspaceInfo?.selectedWorkspace?.name || t('space.permissionManager.workspaceFallbackName');
   const [tab, setTab] = useState<ManageSpaceTab>('general');
   const [spaceName, setSpaceName] = useState<string>(view?.name || '');
   const [spaceIcon, setSpaceIcon] = useState<string>(view?.extra?.space_icon || '');
@@ -726,19 +678,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     }));
   }, []);
 
-  const handleVisibilityChange = useCallback((visibility: SpaceVisibility) => {
-    setPermissionSettings((current) => {
-      const next = { ...current, visibility };
-
-      if (visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private) {
-        next.everyone_else_access_level = null;
-      } else if (current.everyone_else_access_level === null) {
-        next.everyone_else_access_level = AccessLevel.ReadOnly;
-      }
-
-      return next;
-    });
-  }, []);
+  const handleVisibilityChange = useCallback(
+    (visibility: SpaceVisibility) => updatePermission({ visibility }),
+    [updatePermission]
+  );
 
   const handleSave = useCallback(async () => {
     if (!workspaceId) return;
@@ -766,8 +709,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           name: trimmedName,
           space_icon: spaceIcon,
           space_icon_color: spaceIconColor,
-          space_permission:
-            permissionSettings.visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public,
+          space_permission: legacySpacePermission(permissionSettings.visibility),
         });
       } else {
         const permissionChanged =
@@ -785,11 +727,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           if (bridgeSteps.length > 0) {
             if (!updateLegacySpace) throw new Error(t('space.error.updateSpace'));
 
-            // Structured Default transitions enforce singleton semantics. The
-            // unchanged compatibility route maps the user-facing Public choice
-            // to Default, including historical Open/Closed spaces. Keep the old
-            // metadata on every intermediate request so only the final structured
-            // write commits the user's form edits.
+            // Keep the old metadata on the compatibility request so only the
+            // final structured write commits the user's form edits.
             for (const spacePermission of bridgeSteps) {
               await updateLegacySpace({
                 view_id: viewId,
@@ -808,20 +747,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           });
         } catch (error) {
           if (bridgeMutationApplied && loadedPermissionSettings) {
-            const loadedVisibility = loadedPermissionSettings.visibility;
-
-            // Private/Default compatibility transitions can restore the binary
-            // marker first. Open/Closed have no exact legacy representation and
-            // are restored by the structured request below.
-            if (
-              updateLegacySpace &&
-              (loadedVisibility === SpaceVisibility.Private || loadedVisibility === SpaceVisibility.Default)
-            ) {
+            // Restore the binary marker first, then the structured settings.
+            if (updateLegacySpace) {
               try {
                 await updateLegacySpace({
                   view_id: viewId,
                   ...loadedMetadata,
-                  space_permission: legacySpacePermission(loadedVisibility),
+                  space_permission: legacySpacePermission(loadedPermissionSettings.visibility),
                 });
               } catch (rollbackError) {
                 Log.error('[ManageSpace] Failed to roll back legacy space visibility', {
@@ -1192,10 +1124,10 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     </div>
                     <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
                       <div className='font-medium text-text-primary'>
-                        {visibilityLabel(permissionSettings.visibility, t)}
+                        {spaceVisibilityLabel(permissionSettings.visibility, t)}
                       </div>
                       <div className='truncate text-sm text-text-secondary'>
-                        {visibilityDescription(permissionSettings.visibility, t)}
+                        {spaceVisibilityDescription(permissionSettings.visibility, t)}
                       </div>
                     </div>
                     <VisibilityDropdown
@@ -1222,7 +1154,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       <PermissionPrincipalRow
                         icon={<Users className='h-5 w-5 text-icon-primary' />}
                         title={t('space.permissionManager.members')}
-                        description={t('space.permissionManager.membersDescription')}
+                        description={
+                          isPrivateSpaceVisibility(permissionSettings.visibility)
+                            ? t('space.permissionManager.membersDescription')
+                            : t('space.permissionManager.publicMembersDescription')
+                        }
                         testId='manage-space-members-default-access-row'
                         trailing={
                           <AccessDropdown
@@ -1231,27 +1167,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                             onChange={(value) => {
                               if (value !== null) updatePermission({ member_default_access_level: value });
                             }}
-                          />
-                        }
-                      />
-
-                      <PermissionPrincipalRow
-                        icon={<Globe2 className='h-5 w-5 text-icon-primary' />}
-                        title={t('space.permissionManager.everyoneAtWorkspace', {
-                          workspaceName: currentWorkspaceName,
-                        })}
-                        description={t('space.permissionManager.everyoneDescription')}
-                        testId='manage-space-workspace-fallback-row'
-                        trailing={
-                          <AccessDropdown
-                            value={permissionSettings.everyone_else_access_level}
-                            disabled={
-                              permissionSettingsDisabled ||
-                              permissionSettings.visibility === SpaceVisibility.Closed ||
-                              permissionSettings.visibility === SpaceVisibility.Private
-                            }
-                            includeNoAccess
-                            onChange={(value) => updatePermission({ everyone_else_access_level: value })}
                           />
                         }
                         last
