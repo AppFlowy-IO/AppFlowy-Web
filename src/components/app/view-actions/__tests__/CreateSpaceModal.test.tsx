@@ -54,19 +54,18 @@ describe('CreateSpaceModal visibility options', () => {
     });
   });
 
-  it('offers Public and Private while keeping Open and Closed hidden', () => {
+  it('offers only Public and Private, defaulting to Public', () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);
 
     expect(screen.getByTestId('space-visibility-button').textContent).toContain('space.publicPermission');
     fireEvent.click(screen.getByTestId('space-visibility-button'));
 
-    expect(screen.queryByTestId('space-visibility-option-open')).toBeNull();
-    expect(screen.queryByTestId('space-visibility-option-closed')).toBeNull();
-    expect(screen.getByTestId('space-visibility-option-default').textContent).toContain('space.publicPermission');
-    expect(screen.getByTestId('space-visibility-option-private')).toBeTruthy();
+    expect(screen.getAllByTestId(/^space-visibility-option-/)).toHaveLength(2);
+    expect(screen.getByTestId('space-visibility-option-public').textContent).toContain('space.publicPermission');
+    expect(screen.getByTestId('space-visibility-option-private').textContent).toContain('space.privatePermission');
   });
 
-  it('uses the compatibility Public value so the server maps it to Default', async () => {
+  it('uses the compatibility Public value for a public space', async () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);
 
     fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {

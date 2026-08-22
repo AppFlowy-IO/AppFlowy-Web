@@ -167,14 +167,13 @@ describe('http_api client (unit)', () => {
 
     module.initAPIService(baseConfig);
     const payload = {
-      name: 'Closed space',
+      name: 'Private space',
       space_icon: 'lock',
       space_icon_color: '#123456',
       permission: {
-        visibility: SpaceVisibility.Closed,
+        visibility: SpaceVisibility.Private,
         owner_access_level: AccessLevel.FullAccess,
         member_default_access_level: AccessLevel.ReadAndWrite,
-        everyone_else_access_level: null,
         invite_policy: SpaceInvitePolicy.OwnersOnly,
         sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
         invite_link_enabled: false,
@@ -197,6 +196,7 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1', payload);
     expect(mockAxiosInstance.patch.mock.calls[0][0]).not.toBe('/api/workspace/workspace-1/space/space-1');
     expect(mockAxiosInstance.patch.mock.calls[0][1]).not.toHaveProperty('space_permission');
+    expect(mockAxiosInstance.patch.mock.calls[0][1].permission).not.toHaveProperty('everyone_else_access_level');
   });
 
   it('lists structured spaces with their permission settings', async () => {
@@ -206,13 +206,12 @@ describe('http_api client (unit)', () => {
     const spaces = {
       spaces: [
         {
-          space_id: 'space-default',
+          space_id: 'space-public',
           name: 'General',
           permission: {
-            visibility: SpaceVisibility.Default,
+            visibility: SpaceVisibility.Public,
             owner_access_level: AccessLevel.FullAccess,
             member_default_access_level: AccessLevel.ReadAndWrite,
-            everyone_else_access_level: AccessLevel.ReadOnly,
             invite_policy: SpaceInvitePolicy.OwnersOnly,
             sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
             invite_link_enabled: false,
@@ -225,7 +224,6 @@ describe('http_api client (unit)', () => {
           current_user_access_level: AccessLevel.FullAccess,
           explicit_member_count: 1,
           is_explicit_member: true,
-          can_join: false,
           can_leave: false,
         },
       ],

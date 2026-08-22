@@ -21,11 +21,10 @@ jest.mock('@/application/services/js-services/http/core', () => ({
   getAxios: jest.fn(),
 }));
 
-const closedPermission: SpacePermissionSettings = {
-  visibility: SpaceVisibility.Closed,
+const privatePermission: SpacePermissionSettings = {
+  visibility: SpaceVisibility.Private,
   owner_access_level: AccessLevel.FullAccess,
   member_default_access_level: AccessLevel.ReadAndWrite,
-  everyone_else_access_level: null,
   invite_policy: SpaceInvitePolicy.OwnersOnly,
   sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
   invite_link_enabled: false,
@@ -65,7 +64,7 @@ describe('createSpaceWithInitialPage', () => {
     });
   });
 
-  it('preserves a structured Closed ACL while composing space and initial-page creation', async () => {
+  it('preserves a structured Private ACL while composing space and initial-page creation', async () => {
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'space-id' });
       if (url === '/api/workspace/workspace-id/page-view') return apiResponse({ view_id: 'page-id' });
@@ -74,11 +73,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: 'icon',
         space_icon_color: '#000000',
         view_id: 'space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         // Even a compatibility value must never route the structured request
         // through the lossy legacy endpoint or reach the structured endpoint.
         space_permission: SpacePermission.Public,
@@ -96,11 +95,11 @@ describe('createSpaceWithInitialPage', () => {
     });
 
     expect(post).toHaveBeenNthCalledWith(1, '/api/workspace/workspace-id/spaces', {
-      name: 'Closed space',
+      name: 'Private space',
       space_icon: 'icon',
       space_icon_color: '#000000',
       view_id: 'space-id',
-      permission: closedPermission,
+      permission: privatePermission,
     });
     expect(post).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-id/page-view', {
       parent_view_id: 'space-id',
@@ -134,10 +133,10 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(pageError);
@@ -161,11 +160,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
         view_id: 'explicit-space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(pageError);
@@ -184,11 +183,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
         view_id: 'requested-space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(createError);
@@ -210,10 +209,10 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(createError);
@@ -260,11 +259,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
         view_id: 'space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document, view_id: 'page-id' },
       })
     ).resolves.toEqual({
@@ -299,14 +298,14 @@ describe('createSpace legacy fallback', () => {
   const endpointMissing = { code: 404, message: 'Not Found', httpStatus: 404 };
 
   function structuredPayload(visibility: SpaceVisibility): SpacePermissionSettings {
-    return { ...closedPermission, visibility };
+    return { ...privatePermission, visibility };
   }
 
   it.each([
-    [SpaceVisibility.Open, SpacePermission.Public],
-    [SpaceVisibility.Default, SpacePermission.Public],
-    [SpaceVisibility.Closed, SpacePermission.Private],
+    [SpaceVisibility.Public, SpacePermission.Public],
     [SpaceVisibility.Private, SpacePermission.Private],
+    // A visibility this client does not know yet is public-like, never private.
+    ['custom' as SpaceVisibility, SpacePermission.Public],
   ])('downgrades %s visibility to the legacy binary permission on a 404', async (visibility, expectedLegacy) => {
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') throw endpointMissing;
@@ -332,9 +331,9 @@ describe('createSpace legacy fallback', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    await expect(
-      createSpace('workspace-id', { name: 'A space', permission: closedPermission })
-    ).rejects.toBe(serverError);
+    await expect(createSpace('workspace-id', { name: 'A space', permission: privatePermission })).rejects.toBe(
+      serverError
+    );
 
     expect(post).toHaveBeenCalledTimes(1);
   });
