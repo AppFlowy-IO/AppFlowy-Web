@@ -331,6 +331,9 @@ describe('ManageSpace ACL management', () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
     await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Renamed public space' },
+    });
     fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Default}`));
     fireEvent.click(screen.getByTestId('manage-space-save'));
 
@@ -348,6 +351,7 @@ describe('ManageSpace ACL management', () => {
         'workspace-1',
         'space-1',
         expect.objectContaining({
+          name: 'Renamed public space',
           permission: expect.objectContaining({
             visibility: SpaceVisibility.Default,
           }),
@@ -357,6 +361,82 @@ describe('ManageSpace ACL management', () => {
     expect(mockUpdateSpace.mock.invocationCallOrder[0]).toBeLessThan(
       mockUpdateStructuredSpace.mock.invocationCallOrder[0]
     );
+  });
+
+  it.each([SpaceVisibility.Open, SpaceVisibility.Closed])(
+    'maps an existing %s space to Default through the compatibility API',
+    async (visibility) => {
+      mockGetSpacePermission.mockResolvedValue(
+        permissionResponse({
+          permission: {
+            ...openPermission,
+            visibility,
+            everyone_else_access_level: visibility === SpaceVisibility.Closed ? null : AccessLevel.ReadOnly,
+          },
+        })
+      );
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+      fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Default}`));
+      fireEvent.click(screen.getByTestId('manage-space-save'));
+
+      await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledTimes(2));
+      expect(mockUpdateSpace.mock.calls.map(([payload]) => payload.space_permission)).toEqual([
+        SpacePermission.Private,
+        SpacePermission.Public,
+      ]);
+      expect(mockUpdateSpace.mock.calls).toEqual([
+        [
+          {
+            view_id: 'space-1',
+            name: 'Space one',
+            space_icon: 'space',
+            space_icon_color: '#000000',
+            space_permission: SpacePermission.Private,
+          },
+        ],
+        [
+          {
+            view_id: 'space-1',
+            name: 'Space one',
+            space_icon: 'space',
+            space_icon_color: '#000000',
+            space_permission: SpacePermission.Public,
+          },
+        ],
+      ]);
+      await waitFor(() =>
+        expect(mockUpdateStructuredSpace).toHaveBeenCalledWith(
+          'workspace-1',
+          'space-1',
+          expect.objectContaining({
+            permission: expect.objectContaining({ visibility: SpaceVisibility.Default }),
+          })
+        )
+      );
+      expect(mockUpdateSpace.mock.invocationCallOrder[1]).toBeLessThan(
+        mockUpdateStructuredSpace.mock.invocationCallOrder[0]
+      );
+    }
+  );
+
+  it('restores an Open space when its compatibility bridge fails midway', async () => {
+    mockUpdateSpace.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Public bridge failed'));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Default}`));
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+    expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+      name: 'Space one',
+      space_icon: 'space',
+      space_icon_color: '#000000',
+      permission: openPermission,
+    });
+    expect(toast.error).toHaveBeenCalledWith('Public bridge failed');
   });
 
   it('rolls back the compatibility visibility when the structured update fails', async () => {
@@ -373,12 +453,50 @@ describe('ManageSpace ACL management', () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
     await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Rename that must roll back' },
+    });
     fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Default}`));
     fireEvent.click(screen.getByTestId('manage-space-save'));
 
     await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledTimes(2));
-    expect(mockUpdateSpace.mock.calls[0][0].space_permission).toBe(SpacePermission.Public);
-    expect(mockUpdateSpace.mock.calls[1][0].space_permission).toBe(SpacePermission.Private);
+    expect(mockUpdateSpace.mock.calls).toEqual([
+      [
+        {
+          view_id: 'space-1',
+          name: 'Space one',
+          space_icon: 'space',
+          space_icon_color: '#000000',
+          space_permission: SpacePermission.Public,
+        },
+      ],
+      [
+        {
+          view_id: 'space-1',
+          name: 'Space one',
+          space_icon: 'space',
+          space_icon_color: '#000000',
+          space_permission: SpacePermission.Private,
+        },
+      ],
+    ]);
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(2));
+    expect(mockUpdateStructuredSpace.mock.calls[0][2]).toEqual(
+      expect.objectContaining({
+        name: 'Rename that must roll back',
+        permission: expect.objectContaining({ visibility: SpaceVisibility.Default }),
+      })
+    );
+    expect(mockUpdateStructuredSpace.mock.calls[1][2]).toEqual({
+      name: 'Space one',
+      space_icon: 'space',
+      space_icon_color: '#000000',
+      permission: {
+        ...openPermission,
+        visibility: SpaceVisibility.Private,
+        everyone_else_access_level: null,
+      },
+    });
   });
 
   it('atomically saves metadata and a changed structured ACL without a legacy visibility update', async () => {

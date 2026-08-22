@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FC, type ReactN
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
-import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
+import { APP_EVENTS } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
@@ -12,6 +12,7 @@ import {
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
 import { type CollabObjectPermission, LoadViewMetaOptions, LoadViewOptions, TextCount, View } from '@/application/types';
+import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
@@ -54,13 +55,7 @@ const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 // between the same pages does not refire identical permission GETs.
 const PERMISSION_PROBE_TTL_MS = 10000;
 const PERMISSION_PROBE_CACHE_MAX = 200;
-const OBJECT_PERMISSION_DENIED_CODES = new Set<number>([
-  ERROR_CODE.NOT_LOGGED_IN,
-  ERROR_CODE.NOT_HAS_PERMISSION,
-  ERROR_CODE.USER_UNAUTHORIZED,
-  401,
-  403,
-]);
+const PERMISSION_PROBE_RETRY_DELAYS_MS = [250, 1000, 3000] as const;
 
 // Stable "not resolvable" result for breadcrumb ancestors. Identity matters:
 // the fallback-crumb effect depends on `originalCrumbs`, and a fresh [] per
@@ -457,8 +452,9 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     let cancelled = false;
     const workspaceId = currentWorkspaceId;
     const sessionRevision = permissionProbeSessionRevisionRef.current;
+    const retryTimers = new Set<ReturnType<typeof setTimeout>>();
 
-    activeViewIds.forEach((activeViewId) => {
+    const probeActiveView = (activeViewId: string, retryAttempt = 0) => {
       const cacheKey = createPermissionProbeCacheKey(requesterId, workspaceId, activeViewId);
       const probeRevision = permissionProbeRevisionRef.current.get(cacheKey) ?? 0;
       const cached = permissionProbeCache.get(cacheKey);
@@ -486,14 +482,12 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
               };
             })
             .catch((error: unknown): PermissionProbeResult => {
-              // Only a definitive permission denial counts. Transient/network/404
-              // errors must not evict local data (a brand-new page can briefly 404
-              // here before the server projects its permission records).
-              const code = (error as { code?: number } | null)?.code;
-
               return {
                 ...target,
-                verdict: code !== undefined && OBJECT_PERMISSION_DENIED_CODES.has(code) ? 'denied' : 'unknown',
+                // Authentication, transient, and not-found failures do not prove
+                // that this user lost object access. Only the server's explicit
+                // permission denial is authoritative enough to evict local data.
+                verdict: isPermissionDeniedError(error) ? 'denied' : 'unknown',
               };
             });
 
@@ -516,12 +510,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       }
 
       void probe.then((result) => {
-        // A denied verdict is a permission error and must not be served from the
-        // probe cache for the rest of its TTL: the server can grant access at any
-        // moment, and a retained denial keeps suppressing the re-probe. Evict it
-        // as soon as it resolves (before any supersession guard), keyed on the
-        // promise identity so a newer probe is never dropped by an older one.
-        if (result.verdict === 'denied') {
+        // Denials can be restored at any moment, while unknown results need a
+        // bounded retry instead of remaining inert for the cache TTL. Key the
+        // eviction on promise identity so an older result cannot drop a newer
+        // probe created by a permission notification.
+        if (result.verdict !== 'allowed') {
           const retained = permissionProbeCache.get(cacheKey);
 
           if (retained && retained.promise === probe) permissionProbeCache.delete(cacheKey);
@@ -561,12 +554,26 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
           }
         } else if (result.verdict === 'allowed' && !cancelled && activeViewId === viewId) {
           setNoAccessViewId((prev) => (prev === activeViewId ? null : prev));
+        } else if (
+          result.verdict === 'unknown' &&
+          !cancelled &&
+          retryAttempt < PERMISSION_PROBE_RETRY_DELAYS_MS.length
+        ) {
+          const timer = setTimeout(() => {
+            retryTimers.delete(timer);
+            if (!cancelled) probeActiveView(activeViewId, retryAttempt + 1);
+          }, PERMISSION_PROBE_RETRY_DELAYS_MS[retryAttempt]);
+
+          retryTimers.add(timer);
         }
       });
-    });
+    };
+
+    activeViewIds.forEach((activeViewId) => probeActiveView(activeViewId));
 
     return () => {
       cancelled = true;
+      retryTimers.forEach(clearTimeout);
     };
   }, [
     viewId,
@@ -605,6 +612,22 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       ).filter((activeViewId) => activeViewId !== excludedViewId);
 
       if (activeViewIds.length === 0) return;
+      // Existing capabilities may have been downgraded. Remove them before the
+      // asynchronous re-probe so editors, comments, and share controls fall back
+      // to the safe read-only state instead of retaining stale authority.
+      setObjectPermissions((current) => {
+        const next = { ...current };
+        let changed = false;
+
+        activeViewIds.forEach((activeViewId) => {
+          if (activeViewId in next) {
+            delete next[activeViewId];
+            changed = true;
+          }
+        });
+
+        return changed ? next : current;
+      });
       activeViewIds.forEach(invalidatePermissionProbe);
       setPermissionProbeRefreshRevision((revision) => revision + 1);
     };

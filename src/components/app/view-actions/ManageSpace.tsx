@@ -127,11 +127,26 @@ function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
   return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
 }
 
-function requiresLegacyVisibilityBridge(current: SpaceVisibility, requested: SpaceVisibility): boolean {
-  return (
-    (current === SpaceVisibility.Private && requested === SpaceVisibility.Default) ||
-    (current === SpaceVisibility.Default && requested === SpaceVisibility.Private)
-  );
+function legacyVisibilityBridgeSteps(current: SpaceVisibility, requested: SpaceVisibility): readonly SpacePermission[] {
+  if (current === SpaceVisibility.Private && requested === SpaceVisibility.Default) {
+    return [SpacePermission.Public];
+  }
+
+  if (current === SpaceVisibility.Default && requested === SpaceVisibility.Private) {
+    return [SpacePermission.Private];
+  }
+
+  if (
+    (current === SpaceVisibility.Open || current === SpaceVisibility.Closed) &&
+    requested === SpaceVisibility.Default
+  ) {
+    // The compatibility API treats Open and Closed as already public, so a
+    // direct Public request is a no-op. An explicit privacy flip makes the
+    // following Public request map the space to the canonical Default value.
+    return [SpacePermission.Private, SpacePermission.Public];
+  }
+
+  return [];
 }
 
 function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction): string {
@@ -446,6 +461,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // is recomputed whenever the outline changes identity (realtime sync, a
   // sibling rename, expand/collapse), and we must not reset the form mid-edit.
   const viewRef = useRef(view);
+  const loadedSpaceMetadataRef = useRef({
+    name: view?.name || '',
+    space_icon: view?.extra?.space_icon || '',
+    space_icon_color: view?.extra?.space_icon_color || '',
+  });
 
   useEffect(() => {
     viewRef.current = view;
@@ -458,10 +478,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     const currentView = viewRef.current;
 
     if (!currentView) return;
+    const loadedMetadata = {
+      name: currentView.name || '',
+      space_icon: currentView.extra?.space_icon || '',
+      space_icon_color: currentView.extra?.space_icon_color || '',
+    };
+
+    loadedSpaceMetadataRef.current = loadedMetadata;
     setTab('general');
-    setSpaceName(currentView.name || '');
-    setSpaceIcon(currentView.extra?.space_icon || '');
-    setSpaceIconColor(currentView.extra?.space_icon_color || '');
+    setSpaceName(loadedMetadata.name);
+    setSpaceIcon(loadedMetadata.space_icon);
+    setSpaceIconColor(loadedMetadata.space_icon_color);
     setPermissionSettings(defaultPermissionSettings(Boolean(currentView.is_private)));
     setLoadedPermissionSettings(null);
     setCanManageSpace(false);
@@ -747,29 +774,32 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           canManageSpace &&
           loadedPermissionSettings !== null &&
           !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
-        const bridgesLegacyVisibility =
-          permissionChanged &&
-          loadedPermissionSettings !== null &&
-          requiresLegacyVisibilityBridge(loadedPermissionSettings.visibility, permissionSettings.visibility);
-
-        if (bridgesLegacyVisibility) {
-          if (!updateLegacySpace) throw new Error(t('space.error.updateSpace'));
-
-          // The structured API reserves Default as a singleton. Route the
-          // Route canonical Public/Private transitions through the compatibility
-          // API first; the unchanged server maps Public to Default just as it
-          // does for Desktop. The structured write below then applies the
-          // remaining access settings against the transitioned visibility.
-          await updateLegacySpace({
-            view_id: viewId,
-            name: trimmedName,
-            space_icon: spaceIcon,
-            space_icon_color: spaceIconColor,
-            space_permission: legacySpacePermission(permissionSettings.visibility),
-          });
-        }
+        const bridgeSteps =
+          permissionChanged && loadedPermissionSettings
+            ? legacyVisibilityBridgeSteps(loadedPermissionSettings.visibility, permissionSettings.visibility)
+            : [];
+        const loadedMetadata = loadedSpaceMetadataRef.current;
+        let bridgeMutationApplied = false;
 
         try {
+          if (bridgeSteps.length > 0) {
+            if (!updateLegacySpace) throw new Error(t('space.error.updateSpace'));
+
+            // Structured Default transitions enforce singleton semantics. The
+            // unchanged compatibility route maps the user-facing Public choice
+            // to Default, including historical Open/Closed spaces. Keep the old
+            // metadata on every intermediate request so only the final structured
+            // write commits the user's form edits.
+            for (const spacePermission of bridgeSteps) {
+              await updateLegacySpace({
+                view_id: viewId,
+                ...loadedMetadata,
+                space_permission: spacePermission,
+              });
+              bridgeMutationApplied = true;
+            }
+          }
+
           await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
             name: trimmedName,
             space_icon: spaceIcon,
@@ -777,17 +807,38 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             ...(permissionChanged ? { permission: permissionSettings } : {}),
           });
         } catch (error) {
-          if (bridgesLegacyVisibility && updateLegacySpace && loadedPermissionSettings) {
+          if (bridgeMutationApplied && loadedPermissionSettings) {
+            const loadedVisibility = loadedPermissionSettings.visibility;
+
+            // Private/Default compatibility transitions can restore the binary
+            // marker first. Open/Closed have no exact legacy representation and
+            // are restored by the structured request below.
+            if (
+              updateLegacySpace &&
+              (loadedVisibility === SpaceVisibility.Private || loadedVisibility === SpaceVisibility.Default)
+            ) {
+              try {
+                await updateLegacySpace({
+                  view_id: viewId,
+                  ...loadedMetadata,
+                  space_permission: legacySpacePermission(loadedVisibility),
+                });
+              } catch (rollbackError) {
+                Log.error('[ManageSpace] Failed to roll back legacy space visibility', {
+                  workspaceId,
+                  viewId,
+                  rollbackError,
+                });
+              }
+            }
+
             try {
-              await updateLegacySpace({
-                view_id: viewId,
-                name: trimmedName,
-                space_icon: spaceIcon,
-                space_icon_color: spaceIconColor,
-                space_permission: legacySpacePermission(loadedPermissionSettings.visibility),
+              await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
+                ...loadedMetadata,
+                permission: loadedPermissionSettings,
               });
             } catch (rollbackError) {
-              Log.error('[ManageSpace] Failed to roll back legacy space visibility', {
+              Log.error('[ManageSpace] Failed to restore structured space settings', {
                 workspaceId,
                 viewId,
                 rollbackError,

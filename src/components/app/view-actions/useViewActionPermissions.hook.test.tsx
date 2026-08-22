@@ -80,6 +80,23 @@ describe('useViewActionPermissions', () => {
     expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'database-id', Types.Database);
   });
 
+  it('fetches a database container permission through its folder view identity', async () => {
+    mockGetObjectPermission.mockResolvedValue(createPermission());
+    const container = createView({
+      layout: ViewLayout.Grid,
+      extra: {
+        is_space: false,
+        is_database_container: true,
+        database_id: 'database-id',
+      },
+    });
+
+    const { result } = renderHook(() => useViewActionPermissions(container, true));
+
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'view-id', Types.Document);
+  });
+
   it('reuses the active-page permission without issuing a duplicate request', async () => {
     const permission = createPermission({ can_share: true });
     const wrapper = ({ children }: { children: ReactNode }) => (

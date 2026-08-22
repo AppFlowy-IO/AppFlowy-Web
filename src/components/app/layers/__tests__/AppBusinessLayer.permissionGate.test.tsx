@@ -274,20 +274,48 @@ describe('AppBusinessLayer permission gates', () => {
     });
   });
 
-  it.each([
-    ERROR_CODE.NOT_LOGGED_IN,
-    ERROR_CODE.NOT_HAS_PERMISSION,
-    ERROR_CODE.USER_UNAUTHORIZED,
-    401,
-    403,
-  ])('treats object-permission error code %s as a definitive denial', async (code) => {
-    const eventEmitter = new EventEmitter();
+  it.each([ERROR_CODE.NOT_HAS_PERMISSION, 403])(
+    'treats object-permission error code %s as a definitive denial',
+    async (code) => {
+      const eventEmitter = new EventEmitter();
 
-    (AccessService.getObjectPermission as jest.Mock).mockRejectedValue({ code });
+      (AccessService.getObjectPermission as jest.Mock).mockRejectedValue({ code });
+      renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+      await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
+      expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+    }
+  );
+
+  it.each([ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.USER_UNAUTHORIZED, 401])(
+    'does not purge local data for authentication error code %s',
+    async (code) => {
+      const eventEmitter = new EventEmitter();
+
+      (AccessService.getObjectPermission as jest.Mock).mockRejectedValue({ code });
+      renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+      await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('no-access').textContent).toBe('false');
+      expect(screen.getByTestId('object-permission').textContent).toBe('null');
+      expect(deleteCollabDB).not.toHaveBeenCalled();
+    }
+  );
+
+  it('retries an unknown permission result and recovers capabilities', async () => {
+    const eventEmitter = new EventEmitter();
+    const permission = createObjectPermission(routeViewId);
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockRejectedValueOnce({ code: -1 })
+      .mockResolvedValueOnce(permission);
     renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
 
-    await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
-    expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2), { timeout: 1500 });
+    await waitFor(() => {
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(permission);
+    });
+    expect(deleteCollabDB).not.toHaveBeenCalled();
   });
 
   it('loads materialized metadata through the recursively primed flat index', async () => {
@@ -553,6 +581,37 @@ describe('AppBusinessLayer permission gates', () => {
     });
     expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, routeViewId);
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+  });
+
+  it('drops stale capabilities while a broad permission revalidation is pending', async () => {
+    const eventEmitter = new EventEmitter();
+    let resolveRevalidation!: (permission: CollabObjectPermission) => void;
+    const pendingRevalidation = new Promise<CollabObjectPermission>((resolve) => {
+      resolveRevalidation = resolve;
+    });
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockReturnValueOnce(pendingRevalidation);
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('object-permission').textContent).toBe('null');
+
+    await act(async () => {
+      resolveRevalidation(createObjectPermission(routeViewId, Types.Document, { can_write: false }));
+      await pendingRevalidation;
+    });
+
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+      createObjectPermission(routeViewId, Types.Document, { can_write: false })
+    );
   });
 
   it('re-probes the active route when access is restored', async () => {
