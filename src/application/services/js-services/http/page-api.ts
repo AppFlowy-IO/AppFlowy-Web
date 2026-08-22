@@ -10,9 +10,7 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   CreateSpaceWithInitialPageResponse,
-  SpacePermission,
-  SpacePermissionSettings,
-  SpaceVisibility,
+  legacySpacePermission,
   UpdatePagePayload,
   UpdateSpacePayload,
   ViewIconType,
@@ -135,18 +133,6 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
   );
 }
 
-/**
- * Downgrade structured permission settings to the legacy binary permission
- * for servers that predate the structured `/spaces` endpoint. Open and
- * Default spaces grant everyone-else access, which is what legacy Public
- * means; Closed and Private do not, which is legacy Private.
- */
-function legacySpacePermissionFromSettings(permission: SpacePermissionSettings): SpacePermission {
-  return permission.visibility === SpaceVisibility.Open || permission.visibility === SpaceVisibility.Default
-    ? SpacePermission.Public
-    : SpacePermission.Private;
-}
-
 export async function createSpace(workspaceId: string, payload: CreateSpacePayload): Promise<string> {
   if (payload.permission) {
     const url = `/api/workspace/${workspaceId}/spaces`;
@@ -172,7 +158,7 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 
       return createSpace(workspaceId, {
         ...legacyPayload,
-        space_permission: legacySpacePermissionFromSettings(permission),
+        space_permission: legacySpacePermission(permission.visibility),
       });
     }
   }

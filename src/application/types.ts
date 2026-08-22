@@ -1444,11 +1444,28 @@ export enum SpacePermission {
   Private = 1,
 }
 
+/**
+ * Structured space visibility as emitted by the server.
+ *
+ * Public: every non-guest workspace member is implicitly a space member with
+ * `member_default_access_level` (workspace owners get `owner_access_level`).
+ * Private: only explicit members can access the space.
+ *
+ * The server may introduce further values later (for example `custom`, which
+ * behaves like Public but lets members be removed). Treat any unknown value as
+ * public-like for display, and pass it through unchanged when saving.
+ */
 export enum SpaceVisibility {
-  Default = 'default',
-  Open = 'open',
-  Closed = 'closed',
+  Public = 'public',
   Private = 'private',
+}
+
+/**
+ * Map a structured visibility onto the legacy binary `space_permission` used by
+ * `POST /space` and `PATCH /space/{id}`: Private is 1, everything else is 0.
+ */
+export function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
+  return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
 }
 
 export enum SpaceMemberRole {
@@ -1476,7 +1493,6 @@ export interface SpacePermissionSettings {
   visibility: SpaceVisibility;
   owner_access_level: AccessLevel;
   member_default_access_level: AccessLevel;
-  everyone_else_access_level?: AccessLevel | null;
   invite_policy: SpaceInvitePolicy;
   sidebar_edit_policy: SpaceSidebarEditPolicy;
   invite_link_enabled: boolean;
@@ -1512,7 +1528,6 @@ export interface SpaceListItem {
   current_user_access_level?: AccessLevel | null;
   explicit_member_count: number;
   is_explicit_member: boolean;
-  can_join: boolean;
   can_leave: boolean;
 }
 
