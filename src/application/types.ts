@@ -1450,22 +1450,35 @@ export enum SpacePermission {
  * Public: every non-guest workspace member is implicitly a space member with
  * `member_default_access_level` (workspace owners get `owner_access_level`).
  * Private: only explicit members can access the space.
+ * Custom: like Public, except managers can remove individual members (an
+ * implicit `workspace_default` member can be removed and later re-added); it
+ * cannot be joined or left. Only the structured `POST /spaces` can create it.
  *
- * The server may introduce further values later (for example `custom`, which
- * behaves like Public but lets members be removed). Treat any unknown value as
+ * The server may introduce further values later. Treat any unknown value as
  * public-like for display, and pass it through unchanged when saving.
  */
 export enum SpaceVisibility {
   Public = 'public',
   Private = 'private',
+  Custom = 'custom',
 }
 
 /**
  * Map a structured visibility onto the legacy binary `space_permission` used by
- * `POST /space` and `PATCH /space/{id}`: Private is 1, everything else is 0.
+ * `POST /space` and `PATCH /space/{id}`: Private is 1, everything else
+ * (Public, Custom, unknown values) is 0.
  */
 export function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
   return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
+}
+
+/**
+ * Whether the legacy binary `space_permission` expresses this visibility
+ * losslessly. Only Public and Private do; Custom (and any unknown value) needs
+ * the structured space endpoints and must never be silently downgraded.
+ */
+export function isLegacyCompatibleSpaceVisibility(visibility: SpaceVisibility): boolean {
+  return visibility === SpaceVisibility.Public || visibility === SpaceVisibility.Private;
 }
 
 export enum SpaceMemberRole {
