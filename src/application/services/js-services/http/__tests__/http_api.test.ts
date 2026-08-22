@@ -162,6 +162,32 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.delete).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1/group/group-1');
   });
 
+  it('keeps the empty body of a 304 untouched while preserving exact uids on real payloads', async () => {
+    const module = await import('../http_api');
+    const { parseResponseWithExactUid } = await import('../workspace-api');
+
+    module.initAPIService(baseConfig);
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: { code: 0, data: { members: [], groups: [] } },
+    });
+
+    await module.getSpaceMembers('workspace-1', 'space-1');
+
+    const [, config] = mockAxiosInstance.get.mock.calls[0] as [string, { transformResponse: [(data: unknown) => unknown] }];
+    const [transform] = config.transformResponse;
+
+    // A 304 Not Modified arrives with an empty body before the ETag replay
+    // interceptor runs; the transform must not throw on it.
+    expect(transform('')).toBe('');
+    expect(transform('   ')).toBe('   ');
+    expect(transform(undefined)).toBeUndefined();
+    expect(transform).toBe(parseResponseWithExactUid);
+    // Oversized uids survive as strings instead of losing precision.
+    expect(transform('{"members":[{"uid":3456789012345678901,"email":"a@b.c"}]}')).toEqual({
+      members: [{ uid: '3456789012345678901', email: 'a@b.c' }],
+    });
+  });
+
   it('re-exports the atomic structured space update client', async () => {
     const module = await import('../http_api');
 

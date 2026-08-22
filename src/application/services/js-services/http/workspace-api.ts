@@ -36,8 +36,12 @@ import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from 
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
-function parseResponseWithExactUid(data: unknown) {
-  if (typeof data !== 'string') return data;
+// Runs as an axios `transformResponse`, so it also sees the empty body of a
+// `304 Not Modified` before the ETag replay interceptor can hand back the
+// cached payload. Leave such bodies untouched instead of throwing
+// "Unexpected end of JSON input" and masking the 304.
+export function parseResponseWithExactUid(data: unknown) {
+  if (typeof data !== 'string' || data.trim() === '') return data;
 
   return JSON.parse(data.replace(UID_FIELD_REGEX, '"uid":"$1"')) as unknown;
 }
