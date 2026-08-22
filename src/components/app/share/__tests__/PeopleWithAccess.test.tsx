@@ -63,20 +63,22 @@ jest.mock('@/components/app/share/GroupAccessLevelDropdown', () => ({
     canManageFullAccess: boolean;
     onAccessLevelChange: (groupId: string, accessLevel: AccessLevel) => Promise<AccessLevel | null | undefined>;
     onRemoveAccess: (groupId: string) => Promise<AccessLevel | null | undefined>;
-  }) => (
-    <>
-      <button
-        disabled={!canModify}
-        data-can-manage-full-access={String(canManageFullAccess)}
-        onClick={() => void onAccessLevelChange(group.group_id, group.access_level).then(mockGroupMutationResult)}
-      >
-        update:{group.group_id}
-      </button>
-      <button disabled={!canModify} onClick={() => void onRemoveAccess(group.group_id).then(mockGroupMutationResult)}>
-        remove:{group.group_id}
-      </button>
-    </>
-  ),
+  }) =>
+    canModify ? (
+      <>
+        <button
+          data-can-manage-full-access={String(canManageFullAccess)}
+          onClick={() => void onAccessLevelChange(group.group_id, group.access_level).then(mockGroupMutationResult)}
+        >
+          update:{group.group_id}
+        </button>
+        <button onClick={() => void onRemoveAccess(group.group_id).then(mockGroupMutationResult)}>
+          remove:{group.group_id}
+        </button>
+      </>
+    ) : (
+      <span data-testid={`group-access-readonly:${group.group_id}`}>{group.access_level}</span>
+    ),
 }));
 
 const removedPerson: IPeopleWithAccessType = {
@@ -123,6 +125,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={onPersonRemoved}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -152,6 +155,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={updateGroupInAccessList}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -189,6 +193,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={updateGroupInAccessList}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -206,6 +211,36 @@ describe('PeopleWithAccess', () => {
     expect(updateGroupInAccessList.mock.invocationCallOrder[0]).toBeLessThan(onPeopleChange.mock.invocationCallOrder[0]);
   });
 
+  it('does not expose group mutation controls without workspace-member group authority', () => {
+    const updateGroupInAccessList = jest.fn();
+
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[]}
+        groups={[sharedGroup]}
+        editableGroupIds={new Set([sharedGroup.group_id])}
+        isLoading={false}
+        onPeopleChange={async () => undefined}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={updateGroupInAccessList}
+        hasFullAccess
+        canManageGroupAccess={false}
+        canManageFullAccess={false}
+        canGrantFullAccess={false}
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    expect(screen.getByText(sharedGroup.name)).toBeTruthy();
+    expect(screen.getByTestId(`group-access-readonly:${sharedGroup.group_id}`)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `update:${sharedGroup.group_id}` })).toBeNull();
+    expect(screen.queryByRole('button', { name: `remove:${sharedGroup.group_id}` })).toBeNull();
+    expect(mockSharePageToGroup).not.toHaveBeenCalled();
+    expect(mockRevokeGroupAccess).not.toHaveBeenCalled();
+    expect(updateGroupInAccessList).not.toHaveBeenCalled();
+  });
+
   it('keeps inherited or stronger-effective group rows visible but disabled', () => {
     const { container } = render(
       <PeopleWithAccess
@@ -218,6 +253,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -227,8 +263,9 @@ describe('PeopleWithAccess', () => {
     expect(screen.getByText(sharedGroup.name)).toBeTruthy();
     expect(container.querySelector("[data-slot='workspace-group-icon']")).not.toBeNull();
     expect(container.querySelector("[data-slot='workspace-group-icon-container']")).not.toBeNull();
-    expect(screen.getByRole('button', { name: `update:${sharedGroup.group_id}` }).disabled).toBe(true);
-    expect(screen.getByRole('button', { name: `remove:${sharedGroup.group_id}` }).disabled).toBe(true);
+    expect(screen.getByTestId(`group-access-readonly:${sharedGroup.group_id}`)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: `update:${sharedGroup.group_id}` })).toBeNull();
+    expect(screen.queryByRole('button', { name: `remove:${sharedGroup.group_id}` })).toBeNull();
   });
 
   it('passes the narrower Full Access management capability to group rows', () => {
@@ -243,6 +280,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess={false}
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -273,6 +311,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -296,6 +335,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}
@@ -326,6 +366,7 @@ describe('PeopleWithAccess', () => {
         onPersonRemoved={jest.fn()}
         updateGroupInAccessList={jest.fn()}
         hasFullAccess
+        canManageGroupAccess
         canManageFullAccess
         canGrantFullAccess
         sectionType={ShareSectionType.Shared}

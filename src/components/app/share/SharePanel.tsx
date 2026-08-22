@@ -8,6 +8,7 @@ import {
   SubscriptionPlan,
   WorkspaceGroupViewPermission,
 } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { notify } from '@/components/_shared/notify';
 import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
@@ -16,6 +17,7 @@ import { InviteGuest } from '@/components/app/share/InviteGuest';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
 import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 import type { ShareAccessRefreshResult } from './useShareAccessDetails';
@@ -48,15 +50,18 @@ function SharePanel({
   sectionType: ShareSectionType;
 }) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
+  const currentUser = useCurrentUser();
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
   const role = selectedWorkspace?.role;
   const loadMentionableUsers = useLoadMentionableUsers();
   const [mentionable, setMentionable] = useState<MentionablePerson[]>([]);
   const [isLoadingMentionable, setIsLoadingMentionable] = useState(false);
   const [mentionableError, setMentionableError] = useState<string | null>(null);
-  const isOwner = role === Role.Owner;
+  const isOwner = role === Role.Owner || isSameUserUid(selectedWorkspace?.owner?.uid, currentUser?.uid);
   const isMember = role === Role.Member;
   const showInviteControls = currentUserAccessLevel !== undefined && currentUserAccessLevel !== AccessLevel.ReadOnly;
+  // Page Full Access does not make a Guest part of the workspace group boundary.
+  const canManageGroupAccess = hasFullAccess && (isOwner || isMember);
 
   // Load mentionable users
   const loadMentionableData = useCallback(async () => {
@@ -151,6 +156,8 @@ function SharePanel({
               }}
               hasFullAccess={hasFullAccess}
               canGrantFullAccess={canManageFullAccess}
+              canManageGroupAccess={canManageGroupAccess}
+              isWorkspaceOwner={isOwner}
             />
             {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
           </>
@@ -165,6 +172,7 @@ function SharePanel({
           onPersonRemoved={onPersonRemoved}
           updateGroupInAccessList={updateGroupInAccessList}
           hasFullAccess={hasFullAccess}
+          canManageGroupAccess={canManageGroupAccess}
           canManageFullAccess={canManageFullAccess}
           canGrantFullAccess={canManageFullAccess}
           sectionType={sectionType}

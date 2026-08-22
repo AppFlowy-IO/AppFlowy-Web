@@ -103,6 +103,7 @@ export function InlineCommentComposer() {
         />
         <button
           aria-label={t('inlineComment.addComment')}
+          aria-busy={submitting}
           data-testid={'inline-comment-submit'}
           disabled={!content.trim() || submitting}
           onClick={submit}
@@ -110,10 +111,24 @@ export function InlineCommentComposer() {
             'mb-0.5 flex shrink-0 items-center justify-center p-1 transition-colors',
             // Desktop keeps the send glyph in its brand color while it can be
             // submitted and greys it out otherwise.
-            content.trim() && !submitting ? 'text-brand-skyline hover:opacity-90' : 'text-icon-tertiary'
+            submitting
+              ? 'text-brand-skyline'
+              : content.trim()
+              ? 'text-brand-skyline hover:opacity-90'
+              : 'text-icon-tertiary'
           )}
         >
-          <SendCommentIcon className={'h-5 w-5'} />
+          {submitting ? (
+            <span
+              aria-hidden={'true'}
+              data-testid={'inline-comment-submit-loading'}
+              className={
+                'h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none'
+              }
+            />
+          ) : (
+            <SendCommentIcon className={'h-5 w-5'} />
+          )}
         </button>
       </div>
     </Portal>

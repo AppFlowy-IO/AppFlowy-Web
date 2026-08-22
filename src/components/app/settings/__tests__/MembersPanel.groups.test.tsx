@@ -15,6 +15,7 @@ const mockAddWorkspaceGroupMember = jest.fn();
 const mockRemoveWorkspaceGroupMember = jest.fn();
 const mockTranslate = (key: string, values?: { count?: number }) => values?.count ?? key;
 let mockCurrentWorkspaceId = 'workspace-1';
+let mockWorkspaceRole = Role.Owner;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: mockTranslate }),
@@ -51,12 +52,12 @@ jest.mock('@/components/app/app.hooks', () => ({
     workspaces: [
       {
         id: 'workspace-1',
-        role: Role.Owner,
+        role: mockWorkspaceRole,
         owner: { uid: 9007199254740991 },
       },
       {
         id: 'workspace-2',
-        role: Role.Owner,
+        role: mockWorkspaceRole,
         owner: { uid: 9007199254740991 },
       },
     ],
@@ -142,6 +143,7 @@ describe('MembersPanel workspace group parity', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockCurrentWorkspaceId = 'workspace-1';
+    mockWorkspaceRole = Role.Owner;
     mockGetMembers.mockResolvedValue([workspaceMember]);
     mockGetWorkspaceGroups.mockResolvedValue({ groups: [group] });
     mockCreateWorkspaceGroup.mockResolvedValue(group);
@@ -159,6 +161,108 @@ describe('MembersPanel workspace group parity', () => {
 
     expect(learnMore.getAttribute('href')).toBe('https://appflowy.com/guide/getting-started-with-appflowy');
     expect(learnMore.getAttribute('target')).toBe('_blank');
+  });
+
+  it('uses the Members table typography and spacing for group summaries', async () => {
+    render(<MembersPanel />);
+    await waitFor(() => expect(mockGetWorkspaceGroups).toHaveBeenCalled());
+
+    const memberHeader = screen.getByTestId('members-table-header');
+    const memberRow = screen.getByTestId(`members-row-${workspaceMember.email}`);
+
+    fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
+
+    const groupHeader = screen.getByTestId('groups-table-header');
+    const row = groupRow();
+    const sharedHeaderClasses = [
+      'grid',
+      'gap-4',
+      'border-b',
+      'border-border-primary',
+      'pb-2',
+      'text-xs',
+      'font-medium',
+      'text-text-secondary',
+    ];
+    const sharedRowClasses = [
+      'grid',
+      'min-h-[60px]',
+      'items-center',
+      'gap-4',
+      'border-b',
+      'border-border-primary',
+      'py-3',
+      'text-sm',
+    ];
+
+    sharedHeaderClasses.forEach((className) => {
+      expect(memberHeader.classList.contains(className)).toBe(true);
+      expect(groupHeader.classList.contains(className)).toBe(true);
+    });
+    sharedRowClasses.forEach((className) => {
+      expect(memberRow.classList.contains(className)).toBe(true);
+      expect(row.classList.contains(className)).toBe(true);
+    });
+    expect(groupHeader.className).not.toContain('leading-[');
+  });
+
+  it('uses the Members table spacing for the empty Groups state', async () => {
+    mockGetMembers.mockResolvedValueOnce([]);
+    mockGetWorkspaceGroups.mockResolvedValueOnce({ groups: [] });
+
+    render(<MembersPanel />);
+    await waitFor(() => expect(screen.getByTestId('members-table-status')).toBeTruthy());
+    const memberStatusClassName = screen.getByTestId('members-table-status').className;
+
+    fireEvent.click(screen.getByRole('tab', { name: /settings\.appearance\.people\.groupsTab/ }));
+
+    expect(screen.getByTestId('groups-table-status').className).toBe(memberStatusClassName);
+    expect(screen.getByTestId('groups-table-status').classList.contains('py-6')).toBe(true);
+  });
+
+  it('shows workspace group summaries without management controls to members', async () => {
+    const memberVisibleGroup = { ...group, member_count: 1 };
+
+    mockWorkspaceRole = Role.Member;
+    mockGetWorkspaceGroups.mockResolvedValueOnce({ groups: [memberVisibleGroup] });
+
+    await renderGroupsPanel();
+
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
+    expect(screen.getByRole('tab', { name: 'settings.appearance.people.groupsTab 1' })).toBeTruthy();
+
+    const row = screen.getByTestId(`group-row-${memberVisibleGroup.group_id}`);
+
+    expect(within(row).getByText(memberVisibleGroup.name)).toBeTruthy();
+    expect(within(row).getByText('1')).toBeTruthy();
+    expect(screen.queryByTestId('people-create-group-button')).toBeNull();
+    expect(screen.queryByTestId(`group-edit-${memberVisibleGroup.group_id}`)).toBeNull();
+    expect(
+      within(row).queryByRole('button', {
+        name: `settings.appearance.people.groupActions ${memberVisibleGroup.name}`,
+      })
+    ).toBeNull();
+
+    fireEvent.click(row);
+
+    expect(screen.queryByTestId('group-detail-modal')).toBeNull();
+    expect(mockGetWorkspaceGroupMembers).not.toHaveBeenCalled();
+    expect(mockCreateWorkspaceGroup).not.toHaveBeenCalled();
+    expect(mockUpdateWorkspaceGroup).not.toHaveBeenCalled();
+    expect(mockRemoveWorkspaceGroup).not.toHaveBeenCalled();
+  });
+
+  it('does not request workspace group summaries for guests', async () => {
+    mockWorkspaceRole = Role.Guest;
+
+    render(<MembersPanel />);
+    await waitFor(() => expect(mockGetMembers).toHaveBeenCalledWith('workspace-1', false));
+    fireEvent.click(screen.getByRole('tab', { name: 'settings.appearance.people.groupsTab 0' }));
+
+    expect(mockGetWorkspaceGroups).not.toHaveBeenCalled();
+    expect(screen.getByText('settings.appearance.people.groupsOwnerOnly')).toBeTruthy();
+    expect(screen.queryByTestId(`group-row-${group.group_id}`)).toBeNull();
+    expect(screen.queryByTestId('people-create-group-button')).toBeNull();
   });
 
   it('renames a group through a modal instead of inline editing', async () => {

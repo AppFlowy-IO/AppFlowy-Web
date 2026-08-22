@@ -23,6 +23,7 @@ import {
   addViewToOutline,
   deduplicateOutlineChildren,
   mergeChildrenIntoOutline,
+  mergeShallowChildrenIntoOutline,
   removeViewFromOutline,
   reorderChildrenInOutline,
   updateViewInOutline,
@@ -1044,7 +1045,12 @@ export function useWorkspaceData() {
       }
 
       const parentExists = Boolean(findView(stableOutlineRef.current, viewId));
-      const nextOutline = mergeChildrenIntoOutline(stableOutlineRef.current, viewId, children, viewData.has_children);
+      const nextOutline = mergeShallowChildrenIntoOutline(
+        stableOutlineRef.current,
+        viewId,
+        children,
+        viewData.has_children
+      );
 
       if (nextOutline !== stableOutlineRef.current) {
         stableOutlineRef.current = nextOutline;
@@ -1299,7 +1305,12 @@ export function useWorkspaceData() {
           if (!viewId) continue;
 
           const children = viewData.children ?? [];
-          const mergedOutline = mergeChildrenIntoOutline(nextOutline, viewId, children, viewData?.has_children);
+          const mergedOutline = mergeShallowChildrenIntoOutline(
+            nextOutline,
+            viewId,
+            children,
+            viewData?.has_children
+          );
 
           if (mergedOutline !== nextOutline) {
             nextOutline = mergedOutline;

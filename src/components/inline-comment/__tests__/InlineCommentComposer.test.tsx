@@ -16,9 +16,10 @@ jest.mock('react-i18next', () => ({
 
 const cancelPendingComment = jest.fn();
 const submitPendingComment = jest.fn().mockResolvedValue(undefined);
+let mockMutatingCommentIds = new Set<string>();
 
 jest.mock('../InlineCommentContext', () => ({
-  useInlineCommentStatus: () => ({ mutatingCommentIds: new Set() }),
+  useInlineCommentStatus: () => ({ mutatingCommentIds: mockMutatingCommentIds }),
   useInlineCommentCompose: () => ({
     cancelPendingComment,
     pendingComment: {
@@ -39,6 +40,7 @@ jest.mock('../InlineCommentContext', () => ({
 describe('InlineCommentComposer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMutatingCommentIds = new Set();
   });
 
   it('renders the compact desktop compose menu', () => {
@@ -61,6 +63,17 @@ describe('InlineCommentComposer', () => {
 
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(submitPendingComment).toHaveBeenCalledWith('Review this');
+  });
+
+  it('shows a loading indicator while the comment is being submitted', () => {
+    mockMutatingCommentIds = new Set(['new']);
+    render(<InlineCommentComposer />);
+
+    const submitButton = screen.getByTestId('inline-comment-submit');
+
+    expect(submitButton.getAttribute('aria-busy')).toBe('true');
+    expect(submitButton.disabled).toBe(true);
+    expect(screen.queryByTestId('inline-comment-submit-loading')).not.toBeNull();
   });
 
   it('dismisses with Escape or an outside pointer press', () => {

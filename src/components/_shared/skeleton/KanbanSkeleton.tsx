@@ -7,6 +7,7 @@ function KanbanSkeleton({ includeTitle = true, includeTabs = true }: { includeTi
 
   return (
     <div
+      data-testid='kanban-skeleton'
       className={`appflowy-custom-scroller w-full overflow-x-auto py-${
         includeTitle ? '2' : '0'
       }  min-w-0 max-w-full px-24 max-sm:px-6`}

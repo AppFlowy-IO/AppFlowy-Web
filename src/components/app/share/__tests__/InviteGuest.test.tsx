@@ -48,7 +48,6 @@ jest.mock('@/components/_shared/notify', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-1',
-  useUserWorkspaceInfo: () => ({ selectedWorkspace: { role: 'Owner' } }),
 }));
 
 jest.mock('@/utils/subscription', () => ({
@@ -59,6 +58,12 @@ jest.mock('@/components/ui/popover', () => ({
   Popover: ({ children }: { children: ReactNode }) => <>{children}</>,
   PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   PopoverTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('@/components/ui/tooltip', () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipContent: ({ children }: { children: ReactNode }) => <>{children}</>,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
 jest.mock('../InviteInput', () => ({
@@ -145,6 +150,8 @@ function inviteGuestProps(overrides: Partial<ComponentProps<typeof InviteGuest>>
     viewId: 'view-1',
     hasFullAccess: true,
     canGrantFullAccess: true,
+    canManageGroupAccess: true,
+    isWorkspaceOwner: true,
     ...overrides,
   };
 }
@@ -164,6 +171,65 @@ describe('InviteGuest group sharing', () => {
     mockSharePageToGroups.mockReset();
     mockNotifyError.mockReset();
     mockNotifySuccess.mockReset();
+  });
+
+  it('loads group summaries for a workspace member with page Full Access', async () => {
+    renderInviteGuest();
+
+    expect(await screen.findByTestId(`suggestion-group:${successfulGroup.group_id}`)).toBeTruthy();
+    expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
+  });
+
+  it('does not load group summaries for a workspace member without page Full Access', async () => {
+    renderInviteGuest({ hasFullAccess: false, canManageGroupAccess: false });
+
+    await waitFor(() => expect(mockGetWorkspaceGroups).not.toHaveBeenCalled());
+    expect(screen.queryByTestId(`suggestion-group:${successfulGroup.group_id}`)).toBeNull();
+    expect(screen.getByLabelText('invite-input').readOnly).toBe(true);
+  });
+
+  it('keeps person sharing available to a Full Access guest without loading or mutating groups', async () => {
+    renderInviteGuest({ canManageGroupAccess: false });
+
+    await waitFor(() => expect(mockGetWorkspaceGroups).not.toHaveBeenCalled());
+    expect(screen.queryByTestId(`suggestion-group:${successfulGroup.group_id}`)).toBeNull();
+
+    const input = screen.getByLabelText('invite-input');
+
+    expect(input.readOnly).toBe(false);
+    fireEvent.change(input, { target: { value: 'person@example.com' } });
+    fireEvent.click(await screen.findByTestId('suggestion-email:person@example.com'));
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+
+    await waitFor(() =>
+      expect(mockSharePageTo).toHaveBeenCalledWith('workspace-1', 'view-1', ['person@example.com'], AccessLevel.ReadOnly)
+    );
+    expect(mockSharePageToGroup).not.toHaveBeenCalled();
+  });
+
+  it('drops selected groups when group authority is lost but still submits selected people', async () => {
+    const { rerender } = render(<InviteGuest {...inviteGuestProps()} />);
+
+    fireEvent.click(await screen.findByTestId(`suggestion-group:${successfulGroup.group_id}`));
+    const input = screen.getByLabelText('invite-input');
+
+    fireEvent.change(input, { target: { value: 'person@example.com' } });
+    fireEvent.click(await screen.findByTestId('suggestion-email:person@example.com'));
+    expect(screen.getByTestId(`tag-group:${successfulGroup.group_id}`)).toBeTruthy();
+    expect(screen.getByTestId('tag-user:person@example.com')).toBeTruthy();
+
+    rerender(<InviteGuest {...inviteGuestProps({ canManageGroupAccess: false })} />);
+
+    await waitFor(() => expect(screen.queryByTestId(`tag-group:${successfulGroup.group_id}`)).toBeNull());
+    expect(screen.queryByTestId(`suggestion-group:${successfulGroup.group_id}`)).toBeNull();
+    expect(screen.getByTestId('tag-user:person@example.com')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'shareAction.invite' }));
+
+    await waitFor(() =>
+      expect(mockSharePageTo).toHaveBeenCalledWith('workspace-1', 'view-1', ['person@example.com'], AccessLevel.ReadOnly)
+    );
+    expect(mockSharePageToGroup).not.toHaveBeenCalled();
   });
 
   it('keeps only failed recipients selected and allows retry after a partially successful send', async () => {
