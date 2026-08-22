@@ -1471,6 +1471,25 @@ export enum SpaceVisibility {
 }
 
 /**
+ * Collapse the retired legacy wire values onto their modern equivalents:
+ * `default`/`open` → Public, `closed` → Private. A server that predates the
+ * public/private rework still emits them, and they must select the matching
+ * card instead of reading as an unknown type. Any other unknown value is kept
+ * verbatim so a newer server's future visibility is never rewritten on save.
+ */
+export function normalizeKnownLegacySpaceVisibility(visibility: SpaceVisibility): SpaceVisibility {
+  switch (visibility as unknown as string) {
+    case 'default':
+    case 'open':
+      return SpaceVisibility.Public;
+    case 'closed':
+      return SpaceVisibility.Private;
+    default:
+      return visibility;
+  }
+}
+
+/**
  * Map a structured visibility onto the legacy binary `space_permission` used by
  * `POST /space` and `PATCH /space/{id}`: Private is 1, everything else
  * (Public, Custom, unknown values) is 0.

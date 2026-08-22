@@ -432,6 +432,18 @@ describe('ManageSpace ACL management', () => {
       expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
     });
 
+    it("highlights Public when an older server still returns the legacy 'default' visibility", async () => {
+      mockGetSpacePermission.mockResolvedValue(
+        permissionResponse({
+          permission: { ...publicPermission, visibility: 'default' as unknown as SpaceVisibility },
+        }),
+      );
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      expectSelectedVisibility(SpaceVisibility.Public);
+    });
+
     it('confirms Public → Private with the PRD copy and then saves only the structured update', async () => {
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);

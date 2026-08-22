@@ -8,6 +8,7 @@ import { WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
   legacySpacePermission,
+  normalizeKnownLegacySpaceVisibility,
   Role,
   SpaceMember,
   SpaceMemberRole,
@@ -104,9 +105,10 @@ function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings 
 
 function normalizePermissionSettings(permission: SpacePermissionSettings, isPrivate: boolean): SpacePermissionSettings {
   const fallback = defaultPermissionSettings(isPrivate);
-  // Keep whatever visibility the server returned, including values this
+  // Collapse the retired default/open/closed aliases (an older server still
+  // emits them) so the matching card highlights, but keep any other value this
   // client does not know yet, so a save never rewrites it behind the user.
-  const visibility = permission.visibility ?? fallback.visibility;
+  const visibility = normalizeKnownLegacySpaceVisibility(permission.visibility ?? fallback.visibility);
 
   return {
     visibility,
