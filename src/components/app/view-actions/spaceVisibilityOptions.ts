@@ -1,8 +1,5 @@
 import { SpaceVisibility } from '@/application/types';
 
-// Open and Closed depend on space discovery, which is not available in the
-// clients yet. Keep those enum values for existing server data, but do not
-// offer them as new selections.
+// Default is the wire value for a public space. Open and Closed remain valid
+// for existing server data, but new client choices use the public/private model.
 export const SELECTABLE_SPACE_VISIBILITIES = [SpaceVisibility.Default, SpaceVisibility.Private] as const;
-
-export const SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT = [SpaceVisibility.Private] as const;

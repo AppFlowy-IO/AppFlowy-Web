@@ -31,10 +31,7 @@ import {
   WorkspaceMemberInlineSearch,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
-import {
-  SELECTABLE_SPACE_VISIBILITIES,
-  SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT,
-} from '@/components/app/view-actions/spaceVisibilityOptions';
+import { SELECTABLE_SPACE_VISIBILITIES } from '@/components/app/view-actions/spaceVisibilityOptions';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -50,6 +47,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { getErrorMessage, isUnsupportedRouteError } from '@/utils/errors';
+import { Log } from '@/utils/log';
 
 import type { TFunction } from 'i18next';
 import type { KeyboardEvent } from 'react';
@@ -70,7 +68,7 @@ const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
 
 function defaultPermissionSettings(isPrivate: boolean): SpacePermissionSettings {
   return {
-    visibility: isPrivate ? SpaceVisibility.Private : SpaceVisibility.Open,
+    visibility: isPrivate ? SpaceVisibility.Private : SpaceVisibility.Default,
     owner_access_level: AccessLevel.FullAccess,
     member_default_access_level: AccessLevel.ReadAndWrite,
     everyone_else_access_level: isPrivate ? null : AccessLevel.ReadOnly,
@@ -124,6 +122,17 @@ function equalPermissionSettings(left: SpacePermissionSettings, right: SpacePerm
   );
 }
 
+function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
+  return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
+}
+
+function requiresLegacyVisibilityBridge(current: SpaceVisibility, requested: SpaceVisibility): boolean {
+  return (
+    (current === SpaceVisibility.Private && requested === SpaceVisibility.Default) ||
+    (current === SpaceVisibility.Default && requested === SpaceVisibility.Private)
+  );
+}
+
 function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction): string {
   switch (accessLevel) {
     case AccessLevel.FullAccess:
@@ -146,7 +155,7 @@ function roleLabel(role: SpaceMemberRole, t: TFunction): string {
 function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
   switch (visibility) {
     case SpaceVisibility.Default:
-      return t('space.permissionManager.default');
+      return t('space.publicPermission');
     case SpaceVisibility.Closed:
       return t('space.permissionManager.closed');
     case SpaceVisibility.Private:
@@ -160,7 +169,7 @@ function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
 function visibilityDescription(visibility: SpaceVisibility, t: TFunction): string {
   switch (visibility) {
     case SpaceVisibility.Default:
-      return t('space.permissionManager.defaultVisibilityDescription');
+      return t('space.publicPermissionDescription');
     case SpaceVisibility.Closed:
       return t('space.permissionManager.closedVisibilityDescription');
     case SpaceVisibility.Private:
@@ -239,16 +248,13 @@ function AccessDropdown({
 function VisibilityDropdown({
   value,
   disabled,
-  allowDefault,
   onChange,
 }: {
   value: SpaceVisibility;
   disabled?: boolean;
-  allowDefault: boolean;
   onChange: (value: SpaceVisibility) => void;
 }) {
   const { t } = useTranslation();
-  const options = allowDefault ? SELECTABLE_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT;
 
   return (
     <DropdownMenu>
@@ -266,7 +272,7 @@ function VisibilityDropdown({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end' className='w-[320px]'>
-        {options.map((option) => (
+        {SELECTABLE_SPACE_VISIBILITIES.map((option) => (
           <DropdownMenuItem
             key={option}
             data-testid={`manage-space-visibility-option-${option}`}
@@ -381,7 +387,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
   const [legacyPermissionMode, setLegacyPermissionMode] = useState(false);
   const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
-  const [hasOtherDefaultSpace, setHasOtherDefaultSpace] = useState<boolean>();
   const [saving, setSaving] = useState(false);
   const [mutatingMemberUid, setMutatingMemberUid] = useState<string | null>(null);
   const [mutatingGroupIds, setMutatingGroupIds] = useState<Set<string>>(() => new Set());
@@ -422,7 +427,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setCanEditSidebar(false);
     setCanManageMembers(false);
     setCanInviteMembers(false);
-    setHasOtherDefaultSpace(undefined);
     setSpaceMembersLoaded(false);
     setSpaceMembers([]);
     setSpaceGroups([]);
@@ -458,7 +462,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setPermissionLoaded(false);
     setPermissionLoadFailed(false);
     setLegacyPermissionMode(false);
-    setHasOtherDefaultSpace(undefined);
     setSpaceMembersLoaded(false);
     setLoadingMembers(false);
     setSpaceMembers([]);
@@ -564,7 +567,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     void (async () => {
       let shouldLoadWorkspaceMembers = false;
       let shouldLoadSpaceMembers = false;
-      const spacesRequest = WorkspaceService.getSpaces(workspaceId).catch(() => null);
 
       try {
         const permission = await WorkspaceService.getSpacePermission(workspaceId, viewId);
@@ -582,16 +584,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setCanManageMembers(permission.can_manage_members);
         setCanInviteMembers(permission.can_invite_members);
         setLegacyPermissionMode(false);
-        void spacesRequest.then((spacesResult) => {
-          if (!isCurrentSettingsRequest()) return;
-          setHasOtherDefaultSpace(
-            spacesResult
-              ? spacesResult.spaces.some(
-                  (space) => space.space_id !== viewId && space.permission.visibility === SpaceVisibility.Default
-                )
-              : undefined
-          );
-        });
         setPermissionLoaded(true);
         shouldLoadWorkspaceMembers = permission.can_manage_members || permission.can_invite_members;
         shouldLoadSpaceMembers = permission.can_manage_members;
@@ -609,7 +601,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           setPermissionLoaded(useLegacyManagement);
           setPermissionLoadFailed(!useLegacyManagement);
           setLegacyPermissionMode(useLegacyManagement);
-          setHasOtherDefaultSpace(undefined);
           setSpaceMembersLoaded(false);
           setSpaceMembers([]);
           setSpaceGroups([]);
@@ -747,13 +738,56 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           canManageSpace &&
           loadedPermissionSettings !== null &&
           !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
+        const bridgesLegacyVisibility =
+          permissionChanged &&
+          loadedPermissionSettings !== null &&
+          requiresLegacyVisibilityBridge(loadedPermissionSettings.visibility, permissionSettings.visibility);
 
-        await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
-          name: trimmedName,
-          space_icon: spaceIcon,
-          space_icon_color: spaceIconColor,
-          ...(permissionChanged ? { permission: permissionSettings } : {}),
-        });
+        if (bridgesLegacyVisibility) {
+          if (!updateLegacySpace) throw new Error(t('space.error.updateSpace'));
+
+          // The structured API reserves Default as a singleton. Route the
+          // Route canonical Public/Private transitions through the compatibility
+          // API first; the unchanged server maps Public to Default just as it
+          // does for Desktop. The structured write below then applies the
+          // remaining access settings against the transitioned visibility.
+          await updateLegacySpace({
+            view_id: viewId,
+            name: trimmedName,
+            space_icon: spaceIcon,
+            space_icon_color: spaceIconColor,
+            space_permission: legacySpacePermission(permissionSettings.visibility),
+          });
+        }
+
+        try {
+          await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
+            name: trimmedName,
+            space_icon: spaceIcon,
+            space_icon_color: spaceIconColor,
+            ...(permissionChanged ? { permission: permissionSettings } : {}),
+          });
+        } catch (error) {
+          if (bridgesLegacyVisibility && updateLegacySpace && loadedPermissionSettings) {
+            try {
+              await updateLegacySpace({
+                view_id: viewId,
+                name: trimmedName,
+                space_icon: spaceIcon,
+                space_icon_color: spaceIconColor,
+                space_permission: legacySpacePermission(loadedPermissionSettings.visibility),
+              });
+            } catch (rollbackError) {
+              Log.error('[ManageSpace] Failed to roll back legacy space visibility', {
+                workspaceId,
+                viewId,
+                rollbackError,
+              });
+            }
+          }
+
+          throw error;
+        }
       }
 
       toast.success(t('space.success.updateSpace'));
@@ -1002,8 +1036,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const membersDisabled =
     loadingMembers || !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canManageMembers;
   const addMembersDisabled = !permissionLoaded || permissionLoadFailed || !canInviteMembers;
-  const allowDefaultVisibility =
-    loadedPermissionSettings?.visibility === SpaceVisibility.Default || hasOtherDefaultSpace === false;
 
   return (
     <NormalModal
@@ -1099,7 +1131,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       )}
                     </div>
                     <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
-                      <div className='font-medium text-text-primary'>{t('space.permissionManager.default')}</div>
+                      <div className='font-medium text-text-primary'>
+                        {visibilityLabel(permissionSettings.visibility, t)}
+                      </div>
                       <div className='truncate text-sm text-text-secondary'>
                         {visibilityDescription(permissionSettings.visibility, t)}
                       </div>
@@ -1107,7 +1141,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     <VisibilityDropdown
                       value={permissionSettings.visibility}
                       disabled={permissionSettingsDisabled}
-                      allowDefault={allowDefaultVisibility}
                       onChange={handleVisibilityChange}
                     />
                   </div>

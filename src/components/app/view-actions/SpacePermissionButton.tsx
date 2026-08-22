@@ -9,10 +9,7 @@ import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as PublicIcon } from '@/assets/icons/public.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
-import {
-  SELECTABLE_SPACE_VISIBILITIES,
-  SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT,
-} from '@/components/app/view-actions/spaceVisibilityOptions';
+import { SELECTABLE_SPACE_VISIBILITIES } from '@/components/app/view-actions/spaceVisibilityOptions';
 
 function isRestrictedVisibility(visibility: SpaceVisibility) {
   return visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private;
@@ -21,7 +18,7 @@ function isRestrictedVisibility(visibility: SpaceVisibility) {
 function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
   switch (visibility) {
     case SpaceVisibility.Default:
-      return t('space.permissionManager.default');
+      return t('space.publicPermission');
     case SpaceVisibility.Closed:
       return t('space.permissionManager.closed');
     case SpaceVisibility.Private:
@@ -35,7 +32,7 @@ function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
 function visibilityDescription(visibility: SpaceVisibility, t: TFunction): string {
   switch (visibility) {
     case SpaceVisibility.Default:
-      return t('space.permissionManager.defaultVisibilityDescription');
+      return t('space.publicPermissionDescription');
     case SpaceVisibility.Closed:
       return t('space.permissionManager.closedVisibilityDescription');
     case SpaceVisibility.Private:
@@ -49,16 +46,13 @@ function visibilityDescription(visibility: SpaceVisibility, t: TFunction): strin
 function SpacePermissionButton({
   onSelected,
   value,
-  allowDefault = true,
 }: {
   value: SpaceVisibility;
   onSelected?: (permission: SpaceVisibility) => void;
-  allowDefault?: boolean;
 }) {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const { t } = useTranslation();
   const SelectedIcon = isRestrictedVisibility(value) ? LockIcon : PublicIcon;
-  const visibilityOptions = allowDefault ? SELECTABLE_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT;
 
   return (
     <>
@@ -84,7 +78,7 @@ function SpacePermissionButton({
           }}
           className={'flex flex-col gap-2 p-2'}
         >
-          {visibilityOptions.map((option, index) => {
+          {SELECTABLE_SPACE_VISIBILITIES.map((option, index) => {
             const OptionIcon = isRestrictedVisibility(option) ? LockIcon : PublicIcon;
 
             return (
@@ -105,7 +99,7 @@ function SpacePermissionButton({
                   </div>
                   {option === value && <TickIcon className={'h-6 w-6 text-function-success'} />}
                 </Button>
-                {index < visibilityOptions.length - 1 && <Divider />}
+                {index < SELECTABLE_SPACE_VISIBILITIES.length - 1 && <Divider />}
               </React.Fragment>
             );
           })}
