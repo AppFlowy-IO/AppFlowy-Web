@@ -196,6 +196,24 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/gotrue/, ''),
       },
+      // Optional same-origin proxy for the AppFlowy Cloud API and WebSocket,
+      // for local servers that send no CORS headers (e.g. a build without the
+      // `cors-af` feature). Set APPFLOWY_DEV_API_PROXY_TARGET=http://localhost:8001
+      // together with APPFLOWY_BASE_URL=http://localhost:<vite port> and
+      // APPFLOWY_WS_BASE_URL=ws://localhost:<vite port>/ws/v2.
+      ...(process.env.APPFLOWY_DEV_API_PROXY_TARGET
+        ? {
+            '/api': {
+              target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
+              changeOrigin: true,
+            },
+            '/ws': {
+              target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
+              changeOrigin: true,
+              ws: true,
+            },
+          }
+        : {}),
     },
     cors: false,
     sourcemapIgnoreList: false,
