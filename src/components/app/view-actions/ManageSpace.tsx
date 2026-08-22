@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Globe2, LockKeyhole, Plus, Settings2, Shield, UserRound, Users } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -531,7 +531,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [spaceName, setSpaceName] = useState<string>(view?.name || '');
   const [spaceIcon, setSpaceIcon] = useState<string>(view?.extra?.space_icon || '');
   const [spaceIconColor, setSpaceIconColor] = useState<string>(view?.extra?.space_icon_color || '');
-  const [permissionSettings, setPermissionSettings] = useState<SpacePermissionSettings>(
+  const [permissionSettings, setPermissionSettings] = useState<SpacePermissionSettings>(() =>
     defaultPermissionSettings(Boolean(view?.is_private))
   );
   const [loadedPermissionSettings, setLoadedPermissionSettings] = useState<SpacePermissionSettings | null>(null);
@@ -1631,80 +1631,31 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       </div>
                     ) : (
                       <div className='flex flex-col'>
-                        {visibleSpaceMembers.map((member) => {
-                          const mutable = isMutableSpaceMember(member);
-
-                          return (
-                            <div
-                              key={`${member.uid}-${member.source}`}
-                              data-testid={`space-member-row-${member.uid}`}
-                              className='grid items-center gap-3 border-b border-border-primary py-3'
-                              style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
-                            >
-                              <div className='flex min-w-0 items-center gap-3'>
-                                <Avatar size='md'>
-                                  <AvatarFallback name={displayNameForMember(member, t)}>
-                                    {memberInitial(member, t)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className='min-w-0'>
-                                  <div className='truncate font-medium text-text-primary'>
-                                    {displayNameForMember(member, t)}
-                                  </div>
-                                  <div
-                                    className='truncate text-sm text-text-secondary'
-                                    data-testid='space-member-subtitle'
-                                  >
-                                    {memberSubtitle(member, t)}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className='flex justify-end'>
-                                <RoleDropdown
-                                  value={member.role}
-                                  readOnly={membersReadOnly}
-                                  disabled={membersDisabled || mutatingMemberUid === member.uid}
-                                  canRemove={
-                                    !membersReadOnly && canManageMembers && (mutable || implicitMembersRemovable)
-                                  }
-                                  onChange={(role) => void handleUpdateMemberRole(member, role)}
-                                  onRemove={() => void handleRemoveMember(member)}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
+                        {visibleSpaceMembers.map((member) => (
+                          <SpaceMemberRowItem
+                            key={`${member.uid}-${member.source}`}
+                            member={member}
+                            readOnly={membersReadOnly}
+                            disabled={membersDisabled || mutatingMemberUid === member.uid}
+                            canRemove={
+                              !membersReadOnly &&
+                              canManageMembers &&
+                              (isMutableSpaceMember(member) || implicitMembersRemovable)
+                            }
+                            onChangeRole={handleUpdateMemberRole}
+                            onRemove={handleRemoveMember}
+                          />
+                        ))}
                         {visibleSpaceGroups.map((group) => (
-                          <div
+                          <SpaceGroupRowItem
                             key={`group:${group.group_id}`}
-                            data-testid={`space-group-row-${group.group_id}`}
-                            className='grid items-center gap-3 border-b border-border-primary py-3'
-                            style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
-                          >
-                            <div className='flex min-w-0 items-center gap-3'>
-                              <Avatar size='md'>
-                                <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
-                              </Avatar>
-                              <div className='min-w-0'>
-                                <div className='truncate font-medium text-text-primary'>{group.name}</div>
-                                <div className='truncate text-sm text-text-secondary' data-testid='space-group-subtitle'>
-                                  {t('space.permissionManager.groupInfo', { count: group.member_count })}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className='flex justify-end'>
-                              <RoleDropdown
-                                value={group.role}
-                                readOnly={membersReadOnly}
-                                disabled={membersDisabled || mutatingGroupIds.has(group.group_id)}
-                                canRemove={!membersReadOnly && canManageMembers}
-                                onChange={(role) => handleUpdateGroupRole(group, role)}
-                                onRemove={() => void handleRemoveGroup(group)}
-                              />
-                            </div>
-                          </div>
+                            group={group}
+                            readOnly={membersReadOnly}
+                            disabled={membersDisabled || mutatingGroupIds.has(group.group_id)}
+                            canRemove={!membersReadOnly && canManageMembers}
+                            onChangeRole={handleUpdateGroupRole}
+                            onRemove={handleRemoveGroup}
+                          />
                         ))}
                       </div>
                     )}
@@ -1950,6 +1901,104 @@ function CustomPermissionsCard({
     </section>
   );
 }
+
+const SpaceMemberRowItem = memo(function SpaceMemberRowItem({
+  member,
+  readOnly,
+  disabled,
+  canRemove,
+  onChangeRole,
+  onRemove,
+}: {
+  member: SpaceMember;
+  readOnly: boolean;
+  disabled: boolean;
+  canRemove: boolean;
+  onChangeRole: (member: SpaceMember, role: SpaceMemberRole) => Promise<void>;
+  onRemove: (member: SpaceMember) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      data-testid={`space-member-row-${member.uid}`}
+      className='grid items-center gap-3 border-b border-border-primary py-3'
+      style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
+    >
+      <div className='flex min-w-0 items-center gap-3'>
+        <Avatar size='md'>
+          <AvatarFallback name={displayNameForMember(member, t)}>{memberInitial(member, t)}</AvatarFallback>
+        </Avatar>
+        <div className='min-w-0'>
+          <div className='truncate font-medium text-text-primary'>{displayNameForMember(member, t)}</div>
+          <div className='truncate text-sm text-text-secondary' data-testid='space-member-subtitle'>
+            {memberSubtitle(member, t)}
+          </div>
+        </div>
+      </div>
+
+      <div className='flex justify-end'>
+        <RoleDropdown
+          value={member.role}
+          readOnly={readOnly}
+          disabled={disabled}
+          canRemove={canRemove}
+          onChange={(role) => void onChangeRole(member, role)}
+          onRemove={() => void onRemove(member)}
+        />
+      </div>
+    </div>
+  );
+});
+
+const SpaceGroupRowItem = memo(function SpaceGroupRowItem({
+  group,
+  readOnly,
+  disabled,
+  canRemove,
+  onChangeRole,
+  onRemove,
+}: {
+  group: WorkspaceGroupSpacePermission;
+  readOnly: boolean;
+  disabled: boolean;
+  canRemove: boolean;
+  onChangeRole: (group: WorkspaceGroupSpacePermission, role: SpaceMemberRole) => void;
+  onRemove: (group: WorkspaceGroupSpacePermission) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div
+      data-testid={`space-group-row-${group.group_id}`}
+      className='grid items-center gap-3 border-b border-border-primary py-3'
+      style={{ gridTemplateColumns: MEMBER_GRID_COLUMNS }}
+    >
+      <div className='flex min-w-0 items-center gap-3'>
+        <Avatar size='md'>
+          <AvatarFallback name={group.name}>{group.name.slice(0, 1).toUpperCase()}</AvatarFallback>
+        </Avatar>
+        <div className='min-w-0'>
+          <div className='truncate font-medium text-text-primary'>{group.name}</div>
+          <div className='truncate text-sm text-text-secondary' data-testid='space-group-subtitle'>
+            {t('space.permissionManager.groupInfo', { count: group.member_count })}
+          </div>
+        </div>
+      </div>
+
+      <div className='flex justify-end'>
+        <RoleDropdown
+          value={group.role}
+          readOnly={readOnly}
+          disabled={disabled}
+          canRemove={canRemove}
+          onChange={(role) => onChangeRole(group, role)}
+          onRemove={() => void onRemove(group)}
+        />
+      </div>
+    </div>
+  );
+});
 
 function PermissionPrincipalRow({
   icon,
