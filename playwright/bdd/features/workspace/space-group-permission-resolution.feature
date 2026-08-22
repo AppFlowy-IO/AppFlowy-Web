@@ -8,8 +8,11 @@ Feature: Seeded space group permission resolution
     Given the seeded stg0822 space group permission fixture exists
 
   # nathan ∈ group One (space member, Can view) + group Two (page share on Page A, Can edit).
+  # Group membership also makes the private space discoverable in the sidebar.
   Scenario: Member of both groups gets the highest permission on the shared page
     Given I sign in as seeded stg0822 "nathan"
+    When I open the seeded stg0822 workspace
+    Then the seeded stg0822 "group space A" space navigation is "visible"
     When I directly open the seeded stg0822 "group page A"
     Then the directly opened seeded stg0822 page is "editable"
     When I directly open the seeded stg0822 "group page B"
@@ -18,6 +21,8 @@ Feature: Seeded space group permission resolution
   # reader ∈ group One only: the space-level Can view grant applies to every page.
   Scenario: Member of the space group only can view every page
     Given I sign in as seeded stg0822 "reader"
+    When I open the seeded stg0822 workspace
+    Then the seeded stg0822 "group space A" space navigation is "visible"
     When I directly open the seeded stg0822 "group page A"
     Then the directly opened seeded stg0822 page is "read-only"
     When I directly open the seeded stg0822 "group page B"
