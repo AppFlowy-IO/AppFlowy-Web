@@ -273,17 +273,23 @@ function VisibilityDropdown({
 function RoleDropdown({
   value,
   disabled,
+  readOnly,
   onChange,
   onRemove,
   canRemove,
 }: {
   value: SpaceMemberRole;
   disabled?: boolean;
+  readOnly?: boolean;
   onChange: (value: SpaceMemberRole) => void;
   onRemove: () => void;
   canRemove: boolean;
 }) {
   const { t } = useTranslation();
+
+  if (readOnly) {
+    return <span className='px-2 text-sm text-text-primary'>{roleLabel(value, t)}</span>;
+  }
 
   return (
     <DropdownMenu>
@@ -573,7 +579,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setCanInviteMembers(permission.can_invite_members);
         setLegacyPermissionMode(false);
         setPermissionLoaded(true);
-        shouldLoadWorkspaceMembers = permission.can_manage_members || permission.can_invite_members;
+        shouldLoadWorkspaceMembers =
+          normalizedPermission.visibility !== SpaceVisibility.Public &&
+          (permission.can_manage_members || permission.can_invite_members);
         shouldLoadSpaceMembers = permission.can_manage_members;
       } catch (error) {
         if (isCurrentSettingsRequest()) {
@@ -809,11 +817,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     workspaceId,
   ]);
 
+  // A public space makes every workspace member an implicit space member, so
+  // its roster is informational only. Gate on the loaded (server) visibility,
+  // not the unsaved draft, and on Public specifically: a future visibility that
+  // allows removing members must keep the controls.
+  const membersReadOnly = loadedPermissionSettings?.visibility === SpaceVisibility.Public;
+
   const handleAddMember = useCallback(
     async (workspaceMember: WorkspaceMember) => {
       const uid = getWorkspaceMemberUid(workspaceMember);
 
-      if (!uid || !permissionLoaded || permissionLoadFailed || !canInviteMembers || !workspaceId) {
+      if (!uid || membersReadOnly || !permissionLoaded || permissionLoadFailed || !canInviteMembers || !workspaceId) {
         return;
       }
 
@@ -835,6 +849,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     [
       canInviteMembers,
       canManageMembers,
+      membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
       permissionSettings.member_default_access_level,
@@ -847,7 +862,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleUpdateMemberRole = useCallback(
     async (member: SpaceMember, role: SpaceMemberRole) => {
-      if (member.role === role || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) {
+      if (
+        member.role === role ||
+        membersReadOnly ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        !canManageMembers ||
+        !workspaceId
+      ) {
         return;
       }
 
@@ -878,6 +900,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
       permissionSettings.member_default_access_level,
@@ -890,7 +913,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleRemoveMember = useCallback(
     async (member: SpaceMember) => {
-      if (!permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
+      if (membersReadOnly || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
       setMutatingMemberUid(member.uid);
       try {
         await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
@@ -902,7 +925,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         setMutatingMemberUid(null);
       }
     },
-    [canManageMembers, permissionLoadFailed, permissionLoaded, refreshSpaceMembers, t, viewId, workspaceId]
+    [
+      canManageMembers,
+      membersReadOnly,
+      permissionLoadFailed,
+      permissionLoaded,
+      refreshSpaceMembers,
+      t,
+      viewId,
+      workspaceId,
+    ]
   );
 
   const setGroupMutationPending = useCallback((groupId: string, pending: boolean) => {
@@ -921,7 +953,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleUpdateGroupRole = useCallback(
     async (group: WorkspaceGroupSpacePermission, role: SpaceMemberRole) => {
-      if (group.role === role || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) {
+      if (
+        group.role === role ||
+        membersReadOnly ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        !canManageMembers ||
+        !workspaceId
+      ) {
         return;
       }
 
@@ -962,6 +1001,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
       permissionSettings.member_default_access_level,
@@ -975,7 +1015,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleRemoveGroup = useCallback(
     async (group: WorkspaceGroupSpacePermission) => {
-      if (!permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
+      if (membersReadOnly || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
       const requestGeneration = spaceRequestRef.current.generation;
 
       setGroupMutationPending(group.group_id, true);
@@ -1007,6 +1047,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     },
     [
       canManageMembers,
+      membersReadOnly,
       permissionLoadFailed,
       permissionLoaded,
       refreshSpaceMembers,
@@ -1026,8 +1067,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const metadataDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canEditSidebar;
   const permissionSettingsDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
   const membersDisabled =
-    loadingMembers || !permissionLoaded || permissionLoadFailed || !spaceMembersLoaded || !canManageMembers;
-  const addMembersDisabled = !permissionLoaded || permissionLoadFailed || !canInviteMembers;
+    membersReadOnly ||
+    loadingMembers ||
+    !permissionLoaded ||
+    permissionLoadFailed ||
+    !spaceMembersLoaded ||
+    !canManageMembers;
+  const addMembersDisabled = membersReadOnly || !permissionLoaded || permissionLoadFailed || !canInviteMembers;
 
   return (
     <NormalModal
@@ -1183,23 +1229,25 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           <TabsContent value='members' className='min-h-0'>
             <div className='appflowy-scroller max-h-[64vh] overflow-y-auto py-2 pr-1'>
               <div className='flex flex-col gap-4'>
-                <WorkspaceMemberInlineSearch
-                  search={memberSearch}
-                  onSearchChange={setMemberSearch}
-                  addableMembers={addableWorkspaceMembers}
-                  searchPlaceholder={t('space.permissionManager.searchMembers')}
-                  addButtonLabel={t('space.permissionManager.addMembers')}
-                  addResultLabel={t('space.permissionManager.notInSpace')}
-                  addActionLabel={t('space.permissionManager.add')}
-                  ownerBadgeLabel={t('space.permissionManager.workspaceOwner')}
-                  unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
-                  unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
-                  inputDisabled={addMembersDisabled}
-                  addButtonDisabled={addMembersDisabled || Boolean(addingUid)}
-                  addingUid={addingUid}
-                  onInputKeyDown={handleMemberSearchKeyDown}
-                  onAddMember={(member) => void handleAddMember(member)}
-                />
+                {!membersReadOnly && (
+                  <WorkspaceMemberInlineSearch
+                    search={memberSearch}
+                    onSearchChange={setMemberSearch}
+                    addableMembers={addableWorkspaceMembers}
+                    searchPlaceholder={t('space.permissionManager.searchMembers')}
+                    addButtonLabel={t('space.permissionManager.addMembers')}
+                    addResultLabel={t('space.permissionManager.notInSpace')}
+                    addActionLabel={t('space.permissionManager.add')}
+                    ownerBadgeLabel={t('space.permissionManager.workspaceOwner')}
+                    unavailableTitle={t('space.permissionManager.workspaceMemberUidUnavailable')}
+                    unavailableHint={t('space.permissionManager.workspaceMemberUidUnavailableHint')}
+                    inputDisabled={addMembersDisabled}
+                    addButtonDisabled={addMembersDisabled || Boolean(addingUid)}
+                    addingUid={addingUid}
+                    onInputKeyDown={handleMemberSearchKeyDown}
+                    onAddMember={(member) => void handleAddMember(member)}
+                  />
+                )}
 
                 {canManageMembers && showCurrentSpaceMemberList && (
                   <>
@@ -1248,8 +1296,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                               <div className='flex justify-end'>
                                 <RoleDropdown
                                   value={member.role}
+                                  readOnly={membersReadOnly}
                                   disabled={membersDisabled || mutatingMemberUid === member.uid}
-                                  canRemove={mutable && canManageMembers}
+                                  canRemove={!membersReadOnly && mutable && canManageMembers}
                                   onChange={(role) => void handleUpdateMemberRole(member, role)}
                                   onRemove={() => void handleRemoveMember(member)}
                                 />
@@ -1284,8 +1333,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                             <div className='flex justify-end'>
                               <RoleDropdown
                                 value={group.role}
+                                readOnly={membersReadOnly}
                                 disabled={membersDisabled || mutatingGroupIds.has(group.group_id)}
-                                canRemove={canManageMembers}
+                                canRemove={!membersReadOnly && canManageMembers}
                                 onChange={(role) => void handleUpdateGroupRole(group, role)}
                                 onRemove={() => void handleRemoveGroup(group)}
                               />
