@@ -6,14 +6,26 @@ import { SpaceVisibility } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as PublicIcon } from '@/assets/icons/public.svg';
+import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
 import {
-  isPrivateSpaceVisibility,
   SELECTABLE_SPACE_VISIBILITIES,
   spaceVisibilityDescription,
   spaceVisibilityLabel,
 } from '@/components/app/view-actions/spaceVisibilityOptions';
+
+function visibilityIcon(visibility: SpaceVisibility) {
+  switch (visibility) {
+    case SpaceVisibility.Private:
+      return LockIcon;
+    case SpaceVisibility.Custom:
+      return SettingsIcon;
+    case SpaceVisibility.Public:
+    default:
+      return PublicIcon;
+  }
+}
 
 function SpacePermissionButton({
   onSelected,
@@ -24,7 +36,7 @@ function SpacePermissionButton({
 }) {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const { t } = useTranslation();
-  const SelectedIcon = isPrivateSpaceVisibility(value) ? LockIcon : PublicIcon;
+  const SelectedIcon = visibilityIcon(value);
 
   return (
     <>
@@ -51,7 +63,7 @@ function SpacePermissionButton({
           className={'flex flex-col gap-2 p-2'}
         >
           {SELECTABLE_SPACE_VISIBILITIES.map((option, index) => {
-            const OptionIcon = isPrivateSpaceVisibility(option) ? LockIcon : PublicIcon;
+            const OptionIcon = visibilityIcon(option);
 
             return (
               <React.Fragment key={option}>

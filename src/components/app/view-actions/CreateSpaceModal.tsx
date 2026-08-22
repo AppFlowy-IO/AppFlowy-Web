@@ -2,12 +2,18 @@ import { OutlinedInput } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CreatePagePayload, legacySpacePermission, SpaceVisibility } from '@/application/types';
+import {
+  CreatePagePayload,
+  isLegacyCompatibleSpaceVisibility,
+  legacySpacePermission,
+  SpaceVisibility,
+} from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppOperations } from '@/components/app/app.hooks';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
+import { defaultSpacePermissionSettings } from '@/components/app/view-actions/spaceVisibilityOptions';
 
 const DEFAULT_SPACE_VISIBILITY = SpaceVisibility.Public;
 
@@ -38,10 +44,14 @@ function CreateSpaceModal({
         name: spaceName,
         space_icon: spaceIcon,
         space_icon_color: spaceIconColor,
-        // Creation goes through the binary compatibility endpoint, which maps
-        // Public/Private losslessly onto the structured visibility. Desktop uses
-        // this same path.
-        space_permission: legacySpacePermission(spaceVisibility),
+        // Public/Private go through the binary compatibility endpoint, which
+        // maps them losslessly onto the structured visibility (desktop uses this
+        // same path). Custom has no binary form, so it is created through the
+        // structured endpoint with the default settings and never falls back to
+        // the legacy route.
+        ...(isLegacyCompatibleSpaceVisibility(spaceVisibility)
+          ? { space_permission: legacySpacePermission(spaceVisibility) }
+          : { permission: defaultSpacePermissionSettings(spaceVisibility) }),
       };
 
       if (initialPage) {

@@ -10,6 +10,7 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   CreateSpaceWithInitialPageResponse,
+  isLegacyCompatibleSpaceVisibility,
   legacySpacePermission,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -147,14 +148,23 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
     } catch (error) {
       if (!isUnsupportedRouteError(error)) throw error;
 
+      const { permission, ...legacyPayload } = payload;
+
       // Older servers do not expose the structured endpoint. Fall back to the
-      // legacy one so space creation keeps working; only the binary
-      // public/private part of the settings can be preserved there.
+      // legacy one only when the binary public/private marker expresses the
+      // requested visibility losslessly; a custom space would be silently
+      // downgraded to public there, so surface the failure instead.
+      if (!isLegacyCompatibleSpaceVisibility(permission.visibility)) {
+        Log.warn('[createSpace] structured /spaces endpoint unavailable and visibility has no legacy form', {
+          workspaceId,
+          visibility: permission.visibility,
+        });
+        throw error;
+      }
+
       Log.warn('[createSpace] structured /spaces endpoint unavailable, falling back to legacy /space', {
         workspaceId,
       });
-
-      const { permission, ...legacyPayload } = payload;
 
       return createSpace(workspaceId, {
         ...legacyPayload,
