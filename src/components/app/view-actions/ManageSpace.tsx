@@ -75,10 +75,12 @@ const PUBLIC_MEMBER_ACCESS_OPTIONS: readonly AccessLevel[] = [
   AccessLevel.ReadAndWrite,
   AccessLevel.ReadOnly,
 ];
-// Custom permissions card: both audiences may also be locked out entirely.
+// Custom permissions card: both audiences support every level (PRD §17/§39,
+// including Can view and comment) and may also be locked out entirely.
 const CUSTOM_ACCESS_OPTIONS: readonly (AccessLevel | null)[] = [
   AccessLevel.FullAccess,
   AccessLevel.ReadAndWrite,
+  AccessLevel.ReadAndComment,
   AccessLevel.ReadOnly,
   null,
 ];

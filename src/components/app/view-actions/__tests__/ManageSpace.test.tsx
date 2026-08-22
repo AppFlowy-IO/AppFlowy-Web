@@ -757,16 +757,19 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-everyone-else-row').textContent).toContain(
         'space.permissionManager.everyoneElseDescription'
       );
-      // Full access / Can edit / Can view / No access for both audiences.
+      // Every level (PRD §17/§39, including Can view and comment) plus No
+      // access, for both audiences.
       expect(screen.getAllByTestId(/^manage-space-custom-members-access-option-/).map((el) => el.textContent)).toEqual([
         'shareAction.fullAccess',
         'shareAction.canEditselected',
+        'shareAction.canViewAndComment',
         'shareAction.canView',
         'space.permissionManager.noAccess',
       ]);
       expect(screen.getAllByTestId(/^manage-space-everyone-else-access-option-/).map((el) => el.textContent)).toEqual([
         'shareAction.fullAccess',
         'shareAction.canEdit',
+        'shareAction.canViewAndComment',
         'shareAction.canViewselected',
         'space.permissionManager.noAccess',
       ]);
