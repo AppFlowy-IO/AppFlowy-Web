@@ -1448,14 +1448,21 @@ export enum SpacePermission {
  * Structured space visibility as emitted by the server.
  *
  * Public: every non-guest workspace member is implicitly a space member with
- * `member_default_access_level` (workspace owners get `owner_access_level`).
+ * `member_default_access_level` (workspace owners get `owner_access_level`);
+ * the roster is derived from the workspace and read-only.
  * Private: only explicit members can access the space.
- * Custom: like Public, except managers can remove individual members (an
- * implicit `workspace_default` member can be removed and later re-added); it
- * cannot be joined or left. Only the structured `POST /spaces` can create it.
+ * Custom: explicitly managed membership with three audiences. Space owners
+ * (people or groups with the owner role) hold `owner_access_level`, space
+ * members (people or groups with the member role) all share
+ * `member_default_access_level`, and every other non-guest workspace member
+ * ("everyone else") receives `everyone_else_access_level`. Either collective
+ * level may be `null` (No access). Membership does not follow later workspace
+ * membership or role changes.
  *
- * The server may introduce further values later. Treat any unknown value as
- * public-like for display, and pass it through unchanged when saving.
+ * The server also accepts the legacy wire values `default`/`open` (Public)
+ * and `closed` (Private) on input but only ever emits these three. It may
+ * introduce further values later: treat any unknown value as public-like for
+ * display, and pass it through unchanged when saving.
  */
 export enum SpaceVisibility {
   Public = 'public',
@@ -1505,7 +1512,20 @@ export interface SpaceSecuritySettings {
 export interface SpacePermissionSettings {
   visibility: SpaceVisibility;
   owner_access_level: AccessLevel;
-  member_default_access_level: AccessLevel;
+  /**
+   * Collective access for space members. Public: every non-guest workspace
+   * member. Private: the default for newly added explicit members. Custom:
+   * every explicit person or group member; `null` (No access) is only valid
+   * for custom spaces.
+   */
+  member_default_access_level: AccessLevel | null;
+  /**
+   * Custom spaces only: access for workspace members who are neither space
+   * owners nor space members ("everyone else"); `null` means No access. The
+   * server ignores it for public and private spaces and always emits `null`
+   * there. Older servers omit the field entirely.
+   */
+  everyone_else_access_level?: AccessLevel | null;
   invite_policy: SpaceInvitePolicy;
   sidebar_edit_policy: SpaceSidebarEditPolicy;
   invite_link_enabled: boolean;
@@ -1555,6 +1575,8 @@ export interface SpaceMember {
   role: SpaceMemberRole;
   access_level: AccessLevel;
   source: string;
+  /** The member's workspace role, shown under the name ("Workspace owner"). */
+  workspace_role?: Role;
 }
 
 export interface WorkspaceGroupSpacePermission {
@@ -1588,6 +1610,11 @@ export interface AddSpaceMemberPayload {
 export interface UpdateSpaceMemberPayload {
   role?: SpaceMemberRole;
   access_level?: AccessLevel;
+}
+
+export interface AddSpaceGroupPermissionPayload {
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
 }
 
 export interface WorkspaceGroup {

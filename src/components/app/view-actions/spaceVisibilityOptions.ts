@@ -40,7 +40,7 @@ export function spaceVisibilityLabel(visibility: SpaceVisibility, t: TFunction):
 export function spaceVisibilityDescription(visibility: SpaceVisibility, t: TFunction): string {
   switch (visibility) {
     case SpaceVisibility.Private:
-      return t('space.permissionManager.privateVisibilityDescription');
+      return t('space.privatePermissionDescription');
     case SpaceVisibility.Custom:
       return t('space.customPermissionDescription');
     case SpaceVisibility.Public:
@@ -50,15 +50,26 @@ export function spaceVisibilityDescription(visibility: SpaceVisibility, t: TFunc
 }
 
 /**
+ * The everyone-else level a space receives when it becomes custom: other
+ * workspace members can view. Public and private spaces have no everyone-else
+ * audience, which the server represents as `null`.
+ */
+export function defaultEveryoneElseAccessLevel(visibility: SpaceVisibility): AccessLevel | null {
+  return visibility === SpaceVisibility.Custom ? AccessLevel.ReadOnly : null;
+}
+
+/**
  * The structured settings a freshly created space receives for `visibility`.
- * Mirrors the server defaults; the create flow sends these verbatim when the
- * visibility cannot be expressed through the legacy `space_permission`.
+ * Mirrors the server defaults (owners Full access, members Can edit, everyone
+ * else Can view on custom spaces); the create flow sends these verbatim when
+ * the visibility cannot be expressed through the legacy `space_permission`.
  */
 export function defaultSpacePermissionSettings(visibility: SpaceVisibility): SpacePermissionSettings {
   return {
     visibility,
     owner_access_level: AccessLevel.FullAccess,
     member_default_access_level: AccessLevel.ReadAndWrite,
+    everyone_else_access_level: defaultEveryoneElseAccessLevel(visibility),
     invite_policy: SpaceInvitePolicy.OwnersOnly,
     sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
     invite_link_enabled: false,

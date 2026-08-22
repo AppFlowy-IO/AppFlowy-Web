@@ -162,6 +162,36 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.delete).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1/group/group-1');
   });
 
+  it('grants a workspace group on a space through the space group route', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const payload = {
+      role: SpaceMemberRole.Member,
+      access_level: AccessLevel.ReadAndWrite,
+    };
+    const grantedGroup = {
+      group_id: 'group-1',
+      name: 'Engineering',
+      role: SpaceMemberRole.Member,
+      access_level: AccessLevel.ReadAndWrite,
+      member_count: 12,
+      source: 'manual',
+    };
+
+    mockAxiosInstance.post.mockResolvedValueOnce({
+      data: { code: 0, data: grantedGroup },
+    });
+
+    await expect(module.addSpaceGroupPermission('workspace-1', 'space-1', 'group-1', payload)).resolves.toEqual(
+      grantedGroup
+    );
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/spaces/space-1/group/group-1',
+      payload
+    );
+  });
+
   it('keeps the empty body of a 304 untouched while preserving exact uids on real payloads', async () => {
     const module = await import('../http_api');
     const { parseResponseWithExactUid } = await import('../workspace-api');
