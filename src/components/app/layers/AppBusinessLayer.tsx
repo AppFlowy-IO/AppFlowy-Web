@@ -11,7 +11,7 @@ import {
   resolveWorkspaceViewMetadata,
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
-import { LoadViewMetaOptions, LoadViewOptions, TextCount, View } from '@/application/types';
+import { type CollabObjectPermission, LoadViewMetaOptions, LoadViewOptions, TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
@@ -38,6 +38,7 @@ import {
   createPermissionProbeCacheKey,
   findPermissionProbeView,
   getPermissionProbePurgeObjectIds,
+  isCollabObjectPermissionForTarget,
   resolvePermissionProbeTarget,
   type PermissionProbeTarget,
 } from './permissionProbe';
@@ -53,6 +54,13 @@ const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 // between the same pages does not refire identical permission GETs.
 const PERMISSION_PROBE_TTL_MS = 10000;
 const PERMISSION_PROBE_CACHE_MAX = 200;
+const OBJECT_PERMISSION_DENIED_CODES = new Set<number>([
+  ERROR_CODE.NOT_LOGGED_IN,
+  ERROR_CODE.NOT_HAS_PERMISSION,
+  ERROR_CODE.USER_UNAUTHORIZED,
+  401,
+  403,
+]);
 
 // Stable "not resolvable" result for breadcrumb ancestors. Identity matters:
 // the fallback-crumb effect depends on `originalCrumbs`, and a fresh [] per
@@ -61,7 +69,10 @@ const PERMISSION_PROBE_CACHE_MAX = 200;
 const NO_BREADCRUMB_ANCESTORS: View[] = [];
 
 type PermissionProbeVerdict = 'allowed' | 'denied' | 'unknown';
-type PermissionProbeResult = PermissionProbeTarget & { verdict: PermissionProbeVerdict };
+type PermissionProbeResult = PermissionProbeTarget & {
+  verdict: PermissionProbeVerdict;
+  permission?: CollabObjectPermission;
+};
 const permissionProbeCache = new Map<string, { probedAt: number; promise: Promise<PermissionProbeResult> }>();
 const ROUTE_NOT_FOUND_MESSAGE_PATTERN = /\b(not\s*found|record\s*not\s*found|view\s*not\s*found|page\s*not\s*found)\b/i;
 
@@ -387,6 +398,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   // during render — navigating away never flashes the no-access screen on
   // the next page while waiting for an effect to reset a flag.
   const [noAccessViewId, setNoAccessViewId] = useState<string | null>(null);
+  const [objectPermissions, setObjectPermissions] = useState<Record<string, CollabObjectPermission>>({});
   const viewNoAccess = Boolean(viewId && noAccessViewId === viewId);
 
   useEffect(() => {
@@ -410,6 +422,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     // rendered gate immediately when either identity changes; the probe below
     // then runs under the new requester-scoped cache key.
     setNoAccessViewId(null);
+    setObjectPermissions({});
   }, [currentWorkspaceId, requesterId]);
 
   useEffect(() => {
@@ -428,6 +441,18 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     );
 
     if (activeViewIds.length === 0) return;
+
+    // Only active routes need to participate in render permissions. Pruning
+    // old entries bounds the context and prevents a prior navigation from
+    // accidentally becoming a fallback permission source.
+    setObjectPermissions((current) => {
+      const activeViewIdSet = new Set(activeViewIds);
+      const retained = Object.fromEntries(
+        Object.entries(current).filter(([permissionViewId]) => activeViewIdSet.has(permissionViewId))
+      );
+
+      return Object.keys(retained).length === Object.keys(current).length ? current : retained;
+    });
 
     let cancelled = false;
     const workspaceId = currentWorkspaceId;
@@ -449,12 +474,17 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
         const probePermission = (target: PermissionProbeTarget) =>
           AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType)
-            .then(
-              (permission): PermissionProbeResult => ({
+            .then((permission): PermissionProbeResult => {
+              if (!isCollabObjectPermissionForTarget(permission, target)) {
+                return { ...target, verdict: 'unknown' };
+              }
+
+              return {
                 ...target,
-                verdict: permission?.can_read === false ? 'denied' : 'allowed',
-              })
-            )
+                permission,
+                verdict: permission.can_read ? 'allowed' : 'denied',
+              };
+            })
             .catch((error: unknown): PermissionProbeResult => {
               // Only a definitive permission denial counts. Transient/network/404
               // errors must not evict local data (a brand-new page can briefly 404
@@ -463,7 +493,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
               return {
                 ...target,
-                verdict: code === ERROR_CODE.NOT_HAS_PERMISSION || code === 403 ? 'denied' : 'unknown',
+                verdict: code !== undefined && OBJECT_PERMISSION_DENIED_CODES.has(code) ? 'denied' : 'unknown',
               };
             });
 
@@ -508,6 +538,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         // A TTL refresh may replace an unresolved probe without a push event.
         // In that case only the newest promise is allowed to mutate access state.
         if (latestProbe && latestProbe.promise !== probe) return;
+
+        const permission = result.permission;
+
+        if (permission && !cancelled) {
+          setObjectPermissions((current) =>
+            current[activeViewId] === permission ? current : { ...current, [activeViewId]: permission }
+          );
+        }
 
         if (result.verdict === 'denied') {
           // Evict even if this navigation was superseded — revoked content must
@@ -581,6 +619,13 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!revokedViewId) return;
       invalidatePermissionProbe(revokedViewId);
       setNoAccessViewId(revokedViewId);
+      setObjectPermissions((current) => {
+        if (!(revokedViewId in current)) return current;
+        const next = { ...current };
+
+        delete next[revokedViewId];
+        return next;
+      });
       setOpenModalViewId((currentModalViewId) =>
         currentModalViewId === revokedViewId ? undefined : currentModalViewId
       );
@@ -593,7 +638,10 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!restoredViewId) return;
       invalidatePermissionProbe(restoredViewId);
       setNoAccessViewId((prev) => (prev === restoredViewId ? null : prev));
-      revalidateActiveViews(restoredViewId);
+      // Unlike revocation, restoration must include the restored active view
+      // itself so its safe read-only state can be replaced by fresh
+      // capabilities from the object-permission API.
+      revalidateActiveViews();
     };
 
     syncContext.eventEmitter?.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
@@ -816,6 +864,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       onRendered,
       notFound: viewNotFound,
       viewNoAccess,
+      objectPermissions,
       viewHasBeenDeleted,
       openPageModalViewId: openModalViewId,
       openPageModal,
@@ -828,6 +877,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       onRendered,
       viewNotFound,
       viewNoAccess,
+      objectPermissions,
       viewHasBeenDeleted,
       openModalViewId,
       openPageModal,

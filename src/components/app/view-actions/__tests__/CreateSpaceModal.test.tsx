@@ -96,9 +96,13 @@ describe('CreateSpaceModal visibility options', () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);
 
     await waitFor(() => expect(mockGetSpaces).toHaveBeenCalledWith('workspace-1'));
+    expect(screen.getByTestId('space-visibility-button').textContent).toContain('space.privatePermission');
     fireEvent.click(screen.getByTestId('space-visibility-button'));
 
+    expect(screen.queryByTestId('space-visibility-option-open')).toBeNull();
+    expect(screen.queryByTestId('space-visibility-option-closed')).toBeNull();
     expect(screen.queryByTestId('space-visibility-option-default')).toBeNull();
+    expect(screen.getByTestId('space-visibility-option-private')).toBeTruthy();
   });
 
   it('offers Default when the workspace has no active Default space', async () => {
@@ -109,6 +113,8 @@ describe('CreateSpaceModal visibility options', () => {
     await waitFor(() => expect(mockGetSpaces).toHaveBeenCalledWith('workspace-1'));
     fireEvent.click(screen.getByTestId('space-visibility-button'));
 
+    expect(screen.queryByTestId('space-visibility-option-open')).toBeNull();
+    expect(screen.queryByTestId('space-visibility-option-closed')).toBeNull();
     await waitFor(() => expect(screen.getByTestId('space-visibility-option-default')).toBeTruthy());
   });
 
@@ -131,7 +137,7 @@ describe('CreateSpaceModal visibility options', () => {
 
     await waitFor(() => expect(mockGetSpaces).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.getByTestId('space-visibility-button').textContent).toContain('space.permissionManager.open')
+      expect(screen.getByTestId('space-visibility-button').textContent).toContain('space.privatePermission')
     );
   });
 

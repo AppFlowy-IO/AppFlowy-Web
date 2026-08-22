@@ -9,13 +9,10 @@ import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as PublicIcon } from '@/assets/icons/public.svg';
 import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
-
-const SPACE_VISIBILITY_OPTIONS = [
-  SpaceVisibility.Open,
-  SpaceVisibility.Closed,
-  SpaceVisibility.Private,
-  SpaceVisibility.Default,
-];
+import {
+  SELECTABLE_SPACE_VISIBILITIES,
+  SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT,
+} from '@/components/app/view-actions/spaceVisibilityOptions';
 
 function isRestrictedVisibility(visibility: SpaceVisibility) {
   return visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private;
@@ -61,9 +58,7 @@ function SpacePermissionButton({
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const { t } = useTranslation();
   const SelectedIcon = isRestrictedVisibility(value) ? LockIcon : PublicIcon;
-  const visibilityOptions = allowDefault
-    ? SPACE_VISIBILITY_OPTIONS
-    : SPACE_VISIBILITY_OPTIONS.filter((option) => option !== SpaceVisibility.Default);
+  const visibilityOptions = allowDefault ? SELECTABLE_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT;
 
   return (
     <>

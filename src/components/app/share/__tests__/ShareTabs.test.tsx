@@ -4,6 +4,8 @@ import ShareTabs from '@/components/app/share/ShareTabs';
 
 const mockUpdateGroupInAccessList = jest.fn();
 const mockSharePanelProps = jest.fn();
+const mockPublishPanelProps = jest.fn();
+let mockObjectPermission: { can_read: boolean; can_share: boolean } | undefined;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -11,6 +13,10 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useAppView: () => ({ is_published: false }),
+}));
+
+jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
+  useViewObjectPermission: () => mockObjectPermission,
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
@@ -42,7 +48,10 @@ jest.mock('@/components/app/share/SharePanel', () => ({
 
 jest.mock('@/components/app/share/PublishPanel', () => ({
   __esModule: true,
-  default: () => <div data-testid='publish-panel' />,
+  default: (props: unknown) => {
+    mockPublishPanelProps(props);
+    return <div data-testid='publish-panel' />;
+  },
 }));
 
 jest.mock('@/components/app/share/TemplatePanel', () => ({
@@ -63,6 +72,8 @@ describe('ShareTabs publish availability', () => {
   beforeEach(() => {
     mockSharePanelProps.mockClear();
     mockUpdateGroupInAccessList.mockClear();
+    mockPublishPanelProps.mockClear();
+    mockObjectPermission = { can_read: true, can_share: true };
   });
 
   it('keeps Share available while removing Publish when requested', () => {
@@ -100,5 +111,21 @@ describe('ShareTabs publish availability', () => {
         canManageFullAccess: false,
       })
     );
+  });
+
+  it('uses canonical can_share instead of the legacy access-level result', () => {
+    mockObjectPermission = { can_read: true, can_share: false };
+
+    renderShareTabs(false);
+
+    expect(mockSharePanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasFullAccess: false,
+        canManageFullAccess: false,
+      })
+    );
+
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+    expect(mockPublishPanelProps).toHaveBeenCalledWith(expect.objectContaining({ canShare: false }));
   });
 });

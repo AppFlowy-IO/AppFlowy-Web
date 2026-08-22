@@ -31,6 +31,10 @@ import {
   WorkspaceMemberInlineSearch,
 } from '@/components/app/share/WorkspaceMemberInlineSearch';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
+import {
+  SELECTABLE_SPACE_VISIBILITIES,
+  SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT,
+} from '@/components/app/view-actions/spaceVisibilityOptions';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -57,13 +61,6 @@ const ACCESS_OPTIONS = [
   AccessLevel.ReadAndComment,
   AccessLevel.ReadAndWrite,
   AccessLevel.FullAccess,
-];
-
-const VISIBILITY_OPTIONS = [
-  SpaceVisibility.Open,
-  SpaceVisibility.Closed,
-  SpaceVisibility.Private,
-  SpaceVisibility.Default,
 ];
 
 const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share']);
@@ -243,21 +240,15 @@ function VisibilityDropdown({
   value,
   disabled,
   allowDefault,
-  legacy,
   onChange,
 }: {
   value: SpaceVisibility;
   disabled?: boolean;
   allowDefault: boolean;
-  legacy?: boolean;
   onChange: (value: SpaceVisibility) => void;
 }) {
   const { t } = useTranslation();
-  const options = legacy
-    ? [SpaceVisibility.Open, SpaceVisibility.Private]
-    : allowDefault
-    ? VISIBILITY_OPTIONS
-    : VISIBILITY_OPTIONS.filter((option) => option !== SpaceVisibility.Default);
+  const options = allowDefault ? SELECTABLE_SPACE_VISIBILITIES : SELECTABLE_SPACE_VISIBILITIES_WITHOUT_DEFAULT;
 
   return (
     <DropdownMenu>
@@ -1117,7 +1108,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       value={permissionSettings.visibility}
                       disabled={permissionSettingsDisabled}
                       allowDefault={allowDefaultVisibility}
-                      legacy={legacyPermissionMode}
                       onChange={handleVisibilityChange}
                     />
                   </div>

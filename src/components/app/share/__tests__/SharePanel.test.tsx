@@ -66,7 +66,8 @@ jest.mock('../CopyLink', () => ({
 function renderSharePanel(
   currentUserAccessLevel: AccessLevel | undefined,
   updateGroupInAccessList = jest.fn(),
-  canManageFullAccess = false
+  canManageFullAccess = false,
+  hasFullAccess = currentUserAccessLevel === AccessLevel.FullAccess
 ) {
   return render(
     <SharePanel
@@ -78,7 +79,7 @@ function renderSharePanel(
       onPeopleChange={async () => undefined}
       onPersonRemoved={() => undefined}
       updateGroupInAccessList={updateGroupInAccessList}
-      hasFullAccess={currentUserAccessLevel === AccessLevel.FullAccess}
+      hasFullAccess={hasFullAccess}
       canManageFullAccess={canManageFullAccess}
       currentUserAccessLevel={currentUserAccessLevel}
       sectionType={ShareSectionType.Private}
@@ -108,11 +109,20 @@ describe('SharePanel', () => {
     expect(mockLoadMentionableUsers).not.toHaveBeenCalled();
   });
 
-  it('keeps invite controls visible for edit users', async () => {
+  it('keeps disabled invite controls visible for edit users without can_share', async () => {
     renderSharePanel(AccessLevel.ReadAndWrite);
 
     expect(screen.getByTestId('invite-guest')).toBeTruthy();
     await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ hasFullAccess: false }));
+  });
+
+  it('does not infer can_share from a stale Full Access display level', async () => {
+    renderSharePanel(AccessLevel.FullAccess, jest.fn(), false, false);
+
+    await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ hasFullAccess: false }));
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ hasFullAccess: false }));
   });
 
   it('does not load subscription data when invite controls are hidden', () => {
@@ -169,7 +179,7 @@ describe('SharePanel', () => {
     expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ canManageGroupAccess: true }));
   });
 
-  it('does not allow a workspace member without page Full Access to manage group grants', async () => {
+  it('does not allow a workspace member without can_share to manage group grants', async () => {
     renderSharePanel(AccessLevel.ReadAndWrite);
 
     await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));

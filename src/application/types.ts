@@ -2238,6 +2238,23 @@ export interface ObjectPermission {
   governing_view_id?: string | null;
 }
 
+/**
+ * Authoritative capabilities returned by the collab object-permission API.
+ *
+ * `access_level` is display metadata. Callers must use the capability fields
+ * instead of reconstructing permissions from that level.
+ */
+export interface CollabObjectPermission {
+  object_id: string;
+  collab_type: Types;
+  governing_view_id: string;
+  access_level: AccessLevel | null;
+  can_read: boolean;
+  can_write: boolean;
+  can_comment: boolean;
+  can_share: boolean;
+}
+
 export interface ShareAccessDetails {
   view_id?: string;
   target?: {

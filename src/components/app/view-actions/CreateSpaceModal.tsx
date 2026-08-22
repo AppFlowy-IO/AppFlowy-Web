@@ -18,6 +18,8 @@ import { useAppOperations, useCurrentWorkspaceId, useEventEmitter } from '@/comp
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
 
+const FALLBACK_SPACE_VISIBILITY = SpaceVisibility.Private;
+
 function createSpacePermissionSettings(visibility: SpaceVisibility): SpacePermissionSettings {
   const everyoneElseAccessLevel =
     visibility === SpaceVisibility.Closed || visibility === SpaceVisibility.Private ? null : AccessLevel.ReadOnly;
@@ -52,7 +54,7 @@ function CreateSpaceModal({
   const [spaceName, setSpaceName] = React.useState<string>('');
   const [spaceIcon, setSpaceIcon] = React.useState<string>('');
   const [spaceIconColor, setSpaceIconColor] = React.useState<string>('');
-  const [spaceVisibility, setSpaceVisibility] = React.useState<SpaceVisibility>(SpaceVisibility.Open);
+  const [spaceVisibility, setSpaceVisibility] = React.useState<SpaceVisibility>(FALLBACK_SPACE_VISIBILITY);
   const [defaultVisibilityAvailable, setDefaultVisibilityAvailable] = React.useState(false);
   const [loading, setLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
@@ -70,7 +72,7 @@ function CreateSpaceModal({
       defaultAvailabilityRequestRef.current = requestSequence;
       setDefaultVisibilityAvailable(false);
       if (resetSelectionWhileLoading) {
-        setSpaceVisibility((current) => (current === SpaceVisibility.Default ? SpaceVisibility.Open : current));
+        setSpaceVisibility((current) => (current === SpaceVisibility.Default ? FALLBACK_SPACE_VISIBILITY : current));
       }
 
       void WorkspaceService.getSpaces(workspaceId)
@@ -80,7 +82,7 @@ function CreateSpaceModal({
 
           setDefaultVisibilityAvailable(!hasDefaultSpace);
           if (hasDefaultSpace) {
-            setSpaceVisibility((current) => (current === SpaceVisibility.Default ? SpaceVisibility.Open : current));
+            setSpaceVisibility((current) => (current === SpaceVisibility.Default ? FALLBACK_SPACE_VISIBILITY : current));
           }
         })
         .catch(() => {
@@ -88,7 +90,7 @@ function CreateSpaceModal({
           // Fail closed if the invariant cannot be verified. Other visibility
           // choices remain usable.
           setDefaultVisibilityAvailable(false);
-          setSpaceVisibility((current) => (current === SpaceVisibility.Default ? SpaceVisibility.Open : current));
+          setSpaceVisibility((current) => (current === SpaceVisibility.Default ? FALLBACK_SPACE_VISIBILITY : current));
         });
     },
     [open, workspaceId]

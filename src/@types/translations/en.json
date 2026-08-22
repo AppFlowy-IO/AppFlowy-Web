@@ -3293,7 +3293,7 @@
     "addNewSpace": "Create Space",
     "collapseAllSubPages": "Collapse all subpages",
     "createNewSpace": "Create a new space",
-    "createSpaceDescription": "Create default, open, closed, and private spaces to better organize your work.",
+    "createSpaceDescription": "Create spaces to better organize your work.",
     "spaceName": "Space name",
     "spaceNamePlaceholder": "e.g. Marketing, Engineering, HR",
     "permission": "Space permission",

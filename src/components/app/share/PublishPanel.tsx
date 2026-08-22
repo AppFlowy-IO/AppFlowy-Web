@@ -2,7 +2,6 @@ import { Button, CircularProgress, Tooltip, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { AccessLevel } from '@/application/types';
 import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
 import { notify } from '@/components/_shared/notify';
 import { Switch } from '@/components/_shared/switch';
@@ -15,14 +14,14 @@ function PublishPanel({
   opened,
   onClose,
   onOpenPublishManage,
-  currentUserAccessLevel,
+  canShare,
   shareDetailsLoading,
 }: {
   viewId: string;
   onClose: () => void;
   opened: boolean;
   onOpenPublishManage?: () => void;
-  currentUserAccessLevel?: AccessLevel;
+  canShare: boolean;
   shareDetailsLoading?: boolean;
 }) {
   const { t } = useTranslation();
@@ -203,12 +202,11 @@ function PublishPanel({
 
   const renderUnpublished = useCallback(() => {
     if (!view) return null;
-    const isReadOnlyUser = currentUserAccessLevel === AccessLevel.ReadOnly;
-    const publishDisabled = isReadOnlyUser || shareDetailsLoading || publishLoading;
+    const publishDisabled = !canShare || shareDetailsLoading || publishLoading;
     const publishButton = (
       <Button
         onClick={() => {
-          if (isReadOnlyUser) return;
+          if (!canShare) return;
           void handlePublish();
         }}
         variant={'contained'}
@@ -225,14 +223,14 @@ function PublishPanel({
     return (
       <div className={'flex w-full flex-col gap-4'}>
         <Tooltip
-          disableHoverListener={!isReadOnlyUser}
-          title={isReadOnlyUser ? t('shareAction.readOnlyPublishTooltip') : ''}
+          disableHoverListener={canShare}
+          title={!canShare ? t('shareAction.readOnlyPublishTooltip') : ''}
         >
           <span className={'w-full'}>{publishButton}</span>
         </Tooltip>
       </div>
     );
-  }, [currentUserAccessLevel, handlePublish, publishLoading, shareDetailsLoading, t, view]);
+  }, [canShare, handlePublish, publishLoading, shareDetailsLoading, t, view]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch px-3 py-4'>

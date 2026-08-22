@@ -158,6 +158,7 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.getByTestId('more-page-duplicate')).toBeTruthy();
+    expect(screen.getByTestId('more-page-lock')).toBeTruthy();
     expect(screen.queryByTestId('more-page-move-to')).toBeNull();
     expect(screen.queryByTestId('view-action-delete')).toBeNull();
     expect(screen.getByTestId('more-page-find-and-replace')).toBeTruthy();
@@ -175,6 +176,7 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.queryByTestId('more-page-duplicate')).toBeNull();
+    expect(screen.queryByTestId('more-page-lock')).toBeNull();
   });
 
   it('keeps space duplicate for members while hiding selected-space management and workspace create', () => {

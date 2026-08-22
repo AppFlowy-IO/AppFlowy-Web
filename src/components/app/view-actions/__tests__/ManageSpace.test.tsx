@@ -303,14 +303,13 @@ describe('ManageSpace ACL management', () => {
     mockRemoveSpaceGroupPermission.mockResolvedValue(undefined);
   });
 
-  it('clears and locks workspace fallback access when Closed is selected', async () => {
+  it('hides Open and Closed while allowing Private to be selected', async () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
     await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
-    const closedOption = screen.getByText('space.permissionManager.closed').closest('button');
-
-    expect(closedOption).not.toBeNull();
-    fireEvent.click(closedOption as HTMLButtonElement);
+    expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Open}`)).toBeNull();
+    expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Closed}`)).toBeNull();
+    fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Private}`));
 
     const fallbackRow = screen.getByTestId('manage-space-workspace-fallback-row');
 
@@ -323,7 +322,7 @@ describe('ManageSpace ACL management', () => {
         'space-1',
         expect.objectContaining({
           permission: expect.objectContaining({
-            visibility: SpaceVisibility.Closed,
+            visibility: SpaceVisibility.Private,
             everyone_else_access_level: null,
           }),
         })
@@ -367,6 +366,7 @@ describe('ManageSpace ACL management', () => {
 
       expect(screen.queryByText('space.permissionManager.membersTab')).toBeNull();
       expect(screen.queryByTestId('manage-space-members-default-access-row')).toBeNull();
+      expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Open}`)).toBeNull();
       expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Closed}`)).toBeNull();
       expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Default}`)).toBeNull();
 
@@ -564,7 +564,7 @@ describe('ManageSpace ACL management', () => {
     await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
 
     expect(screen.getByTestId('manage-space-visibility-option-default')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('manage-space-visibility-option-open'));
+    fireEvent.click(screen.getByTestId('manage-space-visibility-option-private'));
     expect(screen.getByTestId('manage-space-visibility-option-default')).toBeTruthy();
     fireEvent.click(screen.getByTestId('manage-space-visibility-option-default'));
     fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
