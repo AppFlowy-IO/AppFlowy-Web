@@ -9,6 +9,7 @@ const { Given, When, Then, Before, After } = createBdd();
 
 const PASSWORD = 'AppFlowy!@123';
 const ACCESS_LEVEL_READ_ONLY = 10;
+const ACCESS_LEVEL_READ_AND_COMMENT = 20;
 const ACCESS_LEVEL_READ_AND_WRITE = 30;
 const ACCESS_LEVEL_FULL_ACCESS = 50;
 // Workspace member uids exceed Number.MAX_SAFE_INTEGER; keep them as strings
@@ -1259,6 +1260,8 @@ function accessLevelFromLabel(label: string): number | null {
       return null;
     case 'Can view':
       return ACCESS_LEVEL_READ_ONLY;
+    case 'Can view and comment':
+      return ACCESS_LEVEL_READ_AND_COMMENT;
     case 'Can edit':
       return ACCESS_LEVEL_READ_AND_WRITE;
     case 'Full access':
@@ -1280,3 +1283,57 @@ function visibilityFromLabel(label: string): string {
       throw new Error(`Unsupported space access label: ${label}`);
   }
 }
+
+const COLLECTIVE_LEVEL_TRIGGERS: Record<string, string> = {
+  'space members': 'manage-space-custom-members-access',
+  'everyone else': 'manage-space-everyone-else-access',
+};
+
+Then(
+  'the Custom permissions {string} dropdown offers every access level',
+  async ({ page }, audience: string) => {
+    const triggerTestId = COLLECTIVE_LEVEL_TRIGGERS[audience];
+
+    if (!triggerTestId) throw new Error(`Unknown collective audience: ${audience}`);
+    const trigger = manageSpaceModal(page).getByTestId(triggerTestId);
+
+    await expect(trigger).toBeEnabled({ timeout: 15000 });
+    await trigger.click();
+    const expected: Array<[string, string]> = [
+      [`${triggerTestId}-option-${ACCESS_LEVEL_FULL_ACCESS}`, 'Full access'],
+      [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_WRITE}`, 'Can edit'],
+      [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_COMMENT}`, 'Can view and comment'],
+      [`${triggerTestId}-option-${ACCESS_LEVEL_READ_ONLY}`, 'Can view'],
+      [`${triggerTestId}-option-none`, 'No access'],
+    ];
+
+    for (const [testId, label] of expected) {
+      await expect(page.getByTestId(testId)).toContainText(label);
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId(`${triggerTestId}-option-none`)).toHaveCount(0);
+  }
+);
+
+When(
+  'I demote seeded scp0822 {string} to Space member in the members list',
+  async ({ page }, accountAliasValue: string) => {
+    const fixture = requireFixture(page);
+    const row = spaceMemberRow(page, scpUid(fixture, accountAliasValue));
+
+    await row.getByRole('button', { name: 'Space owner' }).click();
+    await page.getByRole('menuitem').filter({ hasText: 'Space member' }).first().click();
+  }
+);
+
+Then('the last-owner protection error is shown', async ({ page }) => {
+  await expect(
+    page.getByText('This space must have at least one owner', { exact: false }).first()
+  ).toBeVisible({ timeout: 15000 });
+});
+
+When('I close the Manage Space panel without saving', async ({ page }) => {
+  await page.keyboard.press('Escape');
+  await expect(manageSpaceModal(page)).toHaveCount(0, { timeout: 15000 });
+});

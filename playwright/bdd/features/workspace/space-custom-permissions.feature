@@ -164,3 +164,47 @@ Feature: Seeded Public, Private and Custom space permissions
     Then the Custom permissions card shows Space members "Can view" and everyone else "Can view" without reload
     When I open the Manage Space members tab of the open panel
     Then the Manage Space members list shows seeded scp0822 "member" as "Space member" with the subtitle "Workspace member"
+
+  # (i) PRD §12/§39 Public: the Members tab makes the automatic membership visible — every
+  # workspace member is listed with a space role and their workspace role underneath.
+  Scenario: The Public Members tab lists every workspace member
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "public space" manage space members tab
+    Then the Manage Space members list shows seeded scp0822 "owner" as "Space owner" with the subtitle "Workspace owner"
+    And the Manage Space members list shows seeded scp0822 "member" as "Space member" with the subtitle "Workspace member"
+    And the Manage Space members list shows seeded scp0822 "editor" as "Space member" with the subtitle "Workspace member"
+    And the Manage Space members list shows seeded scp0822 "outsider" as "Space member" with the subtitle "Workspace member"
+
+  # (j) PRD §17/§39 Custom General: both collective dropdowns offer all five access levels and
+  # Can view and comment applies like any other level.
+  Scenario: The collective dropdowns offer every access level including comment-only
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "custom space" manage space panel
+    Then the Custom permissions "space members" dropdown offers every access level
+    And the Custom permissions "everyone else" dropdown offers every access level
+    When I set the Custom permissions space members level to "Can view and comment"
+    And I save the Manage Space panel
+    Then the seeded scp0822 "custom space" members level is "Can view and comment" via the API
+    When I sign in as seeded scp0822 "member"
+    And I directly open the seeded scp0822 "custom page"
+    Then the directly opened seeded scp0822 page is "read-only"
+
+  # (k) PRD §37/§39 Safety: the roster refuses to orphan a space — the last Space owner cannot
+  # be demoted.
+  Scenario: The last Space owner cannot be demoted
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "custom space" manage space members tab
+    And I demote seeded scp0822 "owner" to Space member in the members list
+    Then the last-owner protection error is shown
+    And the Manage Space members list shows seeded scp0822 "owner" as "Space owner" with the subtitle "Workspace owner"
+
+  # (l) PRD §36/§39 Safety: permission changes apply only after Save — closing the panel
+  # discards the pending level, and reopening shows the saved state.
+  Scenario: Permission changes apply only after Save
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "custom space" manage space panel
+    And I set the Custom permissions space members level to "Can view"
+    And I close the Manage Space panel without saving
+    Then the seeded scp0822 "custom space" members level is "Can edit" via the API
+    When I open the seeded scp0822 "custom space" manage space panel
+    Then the Custom permissions card shows Space members "Can edit" and everyone else "Can view"
