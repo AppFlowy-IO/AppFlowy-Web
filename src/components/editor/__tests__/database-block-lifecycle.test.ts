@@ -1,6 +1,9 @@
 import type { View } from '@/application/types';
 import { ViewLayout } from '@/application/types';
-import { resolveDatabaseBlockDeletionTarget } from '@/components/editor/database-block-lifecycle';
+import {
+  resolveDatabaseBlockDeletionTarget,
+  resolveEmbeddedDatabaseViewId,
+} from '@/components/editor/database-block-lifecycle';
 
 function createView(viewId: string, overrides: Partial<View> = {}): View {
   return {
@@ -56,5 +59,59 @@ describe('resolveDatabaseBlockDeletionTarget', () => {
     await expect(resolveDatabaseBlockDeletionTarget('missing-view', jest.fn().mockResolvedValue(null))).resolves.toBe(
       null
     );
+  });
+});
+
+describe('resolveEmbeddedDatabaseViewId', () => {
+  it('recovers the unique linked view under the document without using the original database view', async () => {
+    const linkedView = createView('linked-view', {
+      extra: { database_id: 'database-id', embedded: true, is_space: false },
+      layout: ViewLayout.Grid,
+      parent_view_id: 'document',
+    });
+    const loadViewMeta = jest.fn().mockResolvedValue(
+      createView('document', {
+        children: [
+          createView('unrelated-view', {
+            extra: { database_id: 'other-database', is_space: false },
+            layout: ViewLayout.Grid,
+            parent_view_id: 'document',
+          }),
+          linkedView,
+          createView('database-container', {
+            extra: { database_id: 'database-id', is_database_container: true, is_space: false },
+            layout: ViewLayout.Grid,
+            parent_view_id: 'document',
+          }),
+        ],
+      })
+    );
+
+    await expect(resolveEmbeddedDatabaseViewId('document', 'database-id', loadViewMeta)).resolves.toBe(
+      'linked-view'
+    );
+    expect(loadViewMeta).toHaveBeenCalledWith('document', undefined, { authoritative: true });
+  });
+
+  it('does not guess when more than one linked view has the same parent and database', async () => {
+    const loadViewMeta = jest.fn().mockResolvedValue(
+      createView('document', {
+        children: ['linked-a', 'linked-b'].map((viewId) =>
+          createView(viewId, {
+            extra: { database_id: 'database-id', embedded: true, is_space: false },
+            layout: ViewLayout.Grid,
+            parent_view_id: 'document',
+          })
+        ),
+      })
+    );
+
+    await expect(resolveEmbeddedDatabaseViewId('document', 'database-id', loadViewMeta)).resolves.toBeNull();
+  });
+
+  it('does not guess when the document has no matching linked view', async () => {
+    const loadViewMeta = jest.fn().mockResolvedValue(createView('document'));
+
+    await expect(resolveEmbeddedDatabaseViewId('document', 'database-id', loadViewMeta)).resolves.toBeNull();
   });
 });
