@@ -3345,6 +3345,7 @@
       "members": "Members",
       "ownersDescription": "Can manage settings and members",
       "membersDescription": "Default access for members added to this space",
+      "publicMembersDescription": "Default access for all workspace members",
       "ownerRoleDescription": "Can edit space settings and has full access to space pages.",
       "memberRoleDescription": "Cannot edit space settings and can access space pages.",
       "remove": "Remove",
