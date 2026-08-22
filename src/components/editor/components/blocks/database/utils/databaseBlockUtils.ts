@@ -101,9 +101,20 @@ export function removeViewId(data: DatabaseNodeData, viewId: string): DatabaseNo
   };
 }
 
-/** Replace embedded database view IDs while preserving the callback's exact order. */
+/**
+ * Replace embedded database view IDs while preserving the callback's exact order.
+ *
+ * The tab bar is a runtime projection and may briefly be empty while Folder
+ * metadata is loading. It must not erase the block's last durable view id;
+ * an explicitly deleted last view remains as a tombstone for the deleted-view
+ * UI until the user removes the block itself.
+ */
 export function replaceViewIds(data: DatabaseNodeData, viewIds: string[]): DatabaseNodeData {
   const uniqueViewIds = Array.from(new Set(viewIds.filter(Boolean)));
+
+  if (uniqueViewIds.length === 0 && getViewIds(data).length > 0) {
+    return data;
+  }
 
   return {
     ...data,

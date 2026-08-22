@@ -70,6 +70,7 @@ function PermissionedMoreActionsContent({
         onDeleted={onDeleted}
         viewId={viewId}
         canDuplicateActions={canCreateViewActions}
+        canEditActions={canCreateViewActions}
         canManageActions={canManageViewActions}
         canUsePageHistory={canUsePageHistory}
         isLoadingActions={isResolvingViewActionPermissions}

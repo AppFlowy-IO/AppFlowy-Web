@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useContext, useState, type MutableRefObject, type ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { deleteCollabDB } from '@/application/db';
 import { AccessService, ViewService } from '@/application/services/domains';
 import {
@@ -13,7 +13,7 @@ import {
   resolveWorkspaceViewMetadata,
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
-import { Types, type View, ViewLayout } from '@/application/types';
+import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
 import { useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
@@ -103,6 +103,29 @@ function createView(viewId: string, children: View[] = []): View {
   };
 }
 
+function createObjectPermission(
+  objectId: string,
+  collabType: Types = Types.Document,
+  overrides: Partial<CollabObjectPermission> = {}
+): CollabObjectPermission {
+  return {
+    object_id: objectId,
+    collab_type: collabType,
+    governing_view_id: objectId,
+    access_level: AccessLevel.FullAccess,
+    can_read: true,
+    can_write: true,
+    can_comment: true,
+    can_share: true,
+    ...overrides,
+  };
+}
+
+function resolveObjectPermission(overrides: Partial<CollabObjectPermission> = {}) {
+  return (_workspaceId: string, objectId: string, collabType: Types = Types.Document) =>
+    Promise.resolve(createObjectPermission(objectId, collabType, overrides));
+}
+
 function NavigationProbe({ modalTargetId }: { modalTargetId: string }) {
   const navigation = useContext(AppNavigationContext);
 
@@ -115,6 +138,9 @@ function NavigationProbe({ modalTargetId }: { modalTargetId: string }) {
       </button>
       <span data-testid={'modal-view-id'}>{navigation.openPageModalViewId ?? ''}</span>
       <span data-testid={'no-access'}>{String(navigation.viewNoAccess)}</span>
+      <span data-testid={'object-permission'}>
+        {JSON.stringify(navigation.objectPermissions?.[routeViewId] ?? null)}
+      </span>
     </>
   );
 }
@@ -228,13 +254,74 @@ describe('AppBusinessLayer permission gates', () => {
       (_workspaceId: string, _viewId: string, loader: () => Promise<View | null | undefined>) => loader()
     );
     (deleteCollabDB as jest.Mock).mockResolvedValue(undefined);
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission());
+  });
+
+  it('exposes all canonical object capabilities to active page consumers', async () => {
+    const eventEmitter = new EventEmitter();
+    const permission = createObjectPermission(routeViewId, Types.Document, {
+      access_level: AccessLevel.FullAccess,
+      can_write: false,
+      can_comment: true,
+      can_share: false,
+    });
+
+    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue(permission);
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => {
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(permission);
+    });
+  });
+
+  it.each([ERROR_CODE.NOT_HAS_PERMISSION, 403])(
+    'treats object-permission error code %s as a definitive denial',
+    async (code) => {
+      const eventEmitter = new EventEmitter();
+
+      (AccessService.getObjectPermission as jest.Mock).mockRejectedValue({ code });
+      renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+      await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
+      expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
+    }
+  );
+
+  it.each([ERROR_CODE.NOT_LOGGED_IN, ERROR_CODE.USER_UNAUTHORIZED, 401])(
+    'does not purge local data for authentication error code %s',
+    async (code) => {
+      const eventEmitter = new EventEmitter();
+
+      (AccessService.getObjectPermission as jest.Mock).mockRejectedValue({ code });
+      renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+      await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('no-access').textContent).toBe('false');
+      expect(screen.getByTestId('object-permission').textContent).toBe('null');
+      expect(deleteCollabDB).not.toHaveBeenCalled();
+    }
+  );
+
+  it('retries an unknown permission result and recovers capabilities', async () => {
+    const eventEmitter = new EventEmitter();
+    const permission = createObjectPermission(routeViewId);
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockRejectedValueOnce({ code: -1 })
+      .mockResolvedValueOnce(permission);
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2), { timeout: 1500 });
+    await waitFor(() => {
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(permission);
+    });
+    expect(deleteCollabDB).not.toHaveBeenCalled();
   });
 
   it('loads materialized metadata through the recursively primed flat index', async () => {
     const eventEmitter = new EventEmitter();
     const outlineView = { ...createView(modalViewId), name: 'Materialized database view' };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue(outlineView);
     renderBusinessLayer(
       eventEmitter,
@@ -259,7 +346,6 @@ describe('AppBusinessLayer permission gates', () => {
     const staleOutlineView = { ...createView(modalViewId), name: 'Stale outline name' };
     const freshRemoteView = { ...createView(modalViewId), name: 'Fresh server name' };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue(undefined);
     (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
       Promise.resolve(viewId === modalViewId ? freshRemoteView : undefined)
@@ -287,7 +373,6 @@ describe('AppBusinessLayer permission gates', () => {
     const child = createView(parentViewId);
     const remoteView = { ...createView(modalViewId, [child]), name: 'Remote database container' };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
       Promise.resolve(viewId === modalViewId ? remoteView : undefined)
     );
@@ -314,7 +399,6 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
     const cachedView = { ...createView(modalViewId), name: 'Cached database view' };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (getCachedWorkspaceViewMetadata as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
       viewId === modalViewId ? cachedView : undefined
     );
@@ -343,7 +427,6 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
     const remoteView = { ...createView(modalViewId), name: 'Resolved database view' };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
       Promise.resolve(viewId === modalViewId ? remoteView : undefined)
     );
@@ -370,7 +453,6 @@ describe('AppBusinessLayer permission gates', () => {
     const staleOutlineView = { ...createView(modalViewId), name: 'Stale outline name' };
     const freshRemoteView = { ...createView(modalViewId), name: 'Fresh server name' };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (getCachedWorkspaceViewMetadata as jest.Mock).mockReturnValue({
       ...staleOutlineView,
       name: 'Stale flat-cache name',
@@ -404,8 +486,9 @@ describe('AppBusinessLayer permission gates', () => {
     const routeView = createView(routeViewId);
     const modalView = createView(modalViewId);
 
-    (AccessService.getObjectPermission as jest.Mock).mockImplementation((_workspaceId: string, objectId: string) =>
-      Promise.resolve({ can_read: objectId !== modalViewId })
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(
+      (_workspaceId: string, objectId: string, collabType: Types) =>
+        Promise.resolve(createObjectPermission(objectId, collabType, { can_read: objectId !== modalViewId }))
     );
     renderBusinessLayer(eventEmitter, [routeView, modalView]);
 
@@ -428,7 +511,6 @@ describe('AppBusinessLayer permission gates', () => {
   it('closes an exactly revoked modal even when it has the route view id', async () => {
     const eventEmitter = new EventEmitter();
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     renderBusinessLayer(eventEmitter, [createView(routeViewId)], routeViewId);
 
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalled());
@@ -453,8 +535,8 @@ describe('AppBusinessLayer permission gates', () => {
     const childView = createView(routeViewId);
 
     (AccessService.getObjectPermission as jest.Mock)
-      .mockResolvedValueOnce({ can_read: true })
-      .mockResolvedValueOnce({ can_read: false });
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
     renderBusinessLayer(eventEmitter, [createView(parentViewId, [childView])]);
 
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
@@ -479,8 +561,8 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
 
     (AccessService.getObjectPermission as jest.Mock)
-      .mockResolvedValueOnce({ can_read: true })
-      .mockResolvedValueOnce({ can_read: false });
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
     renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
 
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
@@ -501,16 +583,70 @@ describe('AppBusinessLayer permission gates', () => {
     expect(deleteCollabDB).toHaveBeenCalledWith(routeViewId, { destroyDoc: true });
   });
 
+  it('drops stale capabilities while a broad permission revalidation is pending', async () => {
+    const eventEmitter = new EventEmitter();
+    let resolveRevalidation!: (permission: CollabObjectPermission) => void;
+    const pendingRevalidation = new Promise<CollabObjectPermission>((resolve) => {
+      resolveRevalidation = resolve;
+    });
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockReturnValueOnce(pendingRevalidation);
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('object-permission').textContent).not.toBe('null'));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'workspace-group-id' });
+    });
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('object-permission').textContent).toBe('null');
+
+    await act(async () => {
+      resolveRevalidation(createObjectPermission(routeViewId, Types.Document, { can_write: false }));
+      await pendingRevalidation;
+    });
+
+    expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+      createObjectPermission(routeViewId, Types.Document, { can_write: false })
+    );
+  });
+
+  it('re-probes the active route when access is restored', async () => {
+    const eventEmitter = new EventEmitter();
+
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId));
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(screen.getByTestId('no-access').textContent).toBe('true'));
+
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.VIEW_ACCESS_RESTORED, { viewId: routeViewId });
+    });
+
+    await waitFor(() => {
+      expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('no-access').textContent).toBe('false');
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+        createObjectPermission(routeViewId)
+      );
+    });
+  });
+
   it('ignores an older allowed probe after a broad permission change denies the route', async () => {
     const eventEmitter = new EventEmitter();
-    let resolveInitialProbe!: (permission: { can_read: boolean }) => void;
-    const initialProbe = new Promise<{ can_read: boolean }>((resolve) => {
+    let resolveInitialProbe!: (permission: CollabObjectPermission) => void;
+    const initialProbe = new Promise<CollabObjectPermission>((resolve) => {
       resolveInitialProbe = resolve;
     });
 
     (AccessService.getObjectPermission as jest.Mock)
       .mockReturnValueOnce(initialProbe)
-      .mockResolvedValueOnce({ can_read: false });
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_read: false }));
     renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
 
     await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
@@ -524,7 +660,7 @@ describe('AppBusinessLayer permission gates', () => {
     });
 
     await act(async () => {
-      resolveInitialProbe({ can_read: true });
+      resolveInitialProbe(createObjectPermission(routeViewId));
       await initialProbe;
     });
 
@@ -536,8 +672,11 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
     let modalCanRead = true;
 
-    (AccessService.getObjectPermission as jest.Mock).mockImplementation((_workspaceId: string, objectId: string) =>
-      Promise.resolve({ can_read: objectId !== modalViewId || modalCanRead })
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(
+      (_workspaceId: string, objectId: string, collabType: Types) =>
+        Promise.resolve(
+          createObjectPermission(objectId, collabType, { can_read: objectId !== modalViewId || modalCanRead })
+        )
     );
     renderBusinessLayer(eventEmitter, [createView(routeViewId), createView(modalViewId)]);
 
@@ -578,8 +717,6 @@ describe('AppBusinessLayer permission gates', () => {
       const eventEmitter = new EventEmitter();
 
       (ViewService.get as jest.Mock).mockRejectedValue(metadataError);
-      (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
-
       // Empty outline: the shared page has not been folded into the guest's
       // outline yet, which is what forces the network metadata lookup.
       renderBusinessLayer(eventEmitter, []);
@@ -601,7 +738,9 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
 
     (ViewService.get as jest.Mock).mockRejectedValue({ code: 403 });
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: false });
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(
+      resolveObjectPermission({ can_read: false })
+    );
 
     renderBusinessLayer(eventEmitter, []);
 
@@ -615,7 +754,6 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
     const routeView = { ...createView(routeViewId), parent_view_id: parentViewId };
 
-    (AccessService.getObjectPermission as jest.Mock).mockResolvedValue({ can_read: true });
     (ViewService.get as jest.Mock).mockImplementation((_workspaceId: string, id: string) =>
       id === routeViewId ? Promise.resolve(routeView) : Promise.reject({ code: 403 })
     );

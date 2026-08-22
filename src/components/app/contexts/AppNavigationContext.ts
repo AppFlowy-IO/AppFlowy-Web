@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 
-import { AppendBreadcrumb, View } from '@/application/types';
+import { AppendBreadcrumb, CollabObjectPermission, View } from '@/application/types';
 
 /**
  * Navigation state context — changes on every page navigation.
@@ -22,6 +22,7 @@ import { AppendBreadcrumb, View } from '@/application/types';
  * - `useViewErrorStatus()` — memoized `{ notFound, deleted }`
  * - `useOpenPageModal()` — open a view in a modal overlay
  * - `useOpenModalViewId()` — the view ID currently shown in the modal
+ * - `useViewObjectPermission()` — canonical permission for an active view
  */
 export interface AppNavigationContextType {
   /** The view ID from the current route (e.g. `/app/:workspaceId/:viewId`). */
@@ -38,6 +39,8 @@ export interface AppNavigationContextType {
   notFound?: boolean;
   /** True when the current user has no read access to the requested view. */
   viewNoAccess?: boolean;
+  /** Canonical object permissions for the currently rendered route and modal. */
+  objectPermissions?: Readonly<Record<string, CollabObjectPermission>>;
   /** True when the requested view exists but has been soft-deleted. */
   viewHasBeenDeleted?: boolean;
   /** The view ID currently displayed in the page modal overlay, if any. */

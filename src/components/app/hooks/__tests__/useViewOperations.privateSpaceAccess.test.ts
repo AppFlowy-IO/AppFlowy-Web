@@ -154,3 +154,53 @@ describe('getViewCanCommentStatus', () => {
     expect(getViewCanWriteStatus('child-page', outline)).toBe(true);
   });
 });
+
+describe('canonical object-permission capabilities', () => {
+  const fullAccessOutline = shareWithMePrivateSpaceOutline(
+    AccessLevel.FullAccess,
+    createView({ view_id: 'child-page' })
+  );
+
+  it('uses can_write and can_comment instead of re-deriving them from access_level', () => {
+    const permission = {
+      can_read: true,
+      can_write: false,
+      can_comment: true,
+      can_share: false,
+    };
+
+    expect(getViewReadOnlyStatus('child-page', fullAccessOutline, null, permission)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', fullAccessOutline, null, permission)).toBe(false);
+    expect(getViewCanCommentStatus('child-page', fullAccessOutline, null, permission)).toBe(true);
+  });
+
+  it('lets a canonical writable verdict override stale read-only outline metadata', () => {
+    const readOnlyOutline = shareWithMePrivateSpaceOutline(
+      AccessLevel.ReadOnly,
+      createView({ view_id: 'child-page' })
+    );
+    const permission = {
+      can_read: true,
+      can_write: true,
+      can_comment: false,
+      can_share: false,
+    };
+
+    expect(getViewReadOnlyStatus('child-page', readOnlyOutline, null, permission)).toBe(false);
+    expect(getViewCanWriteStatus('child-page', readOnlyOutline, null, permission)).toBe(true);
+    expect(getViewCanCommentStatus('child-page', readOnlyOutline, null, permission)).toBe(false);
+  });
+
+  it('requires can_read even when write and comment are unexpectedly true', () => {
+    const permission = {
+      can_read: false,
+      can_write: true,
+      can_comment: true,
+      can_share: true,
+    };
+
+    expect(getViewReadOnlyStatus('child-page', fullAccessOutline, null, permission)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', fullAccessOutline, null, permission)).toBe(false);
+    expect(getViewCanCommentStatus('child-page', fullAccessOutline, null, permission)).toBe(false);
+  });
+});

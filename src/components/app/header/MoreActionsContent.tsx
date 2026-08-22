@@ -34,6 +34,7 @@ function MoreActionsContent({
   onOpenHistory,
   onFindAndReplace,
   canDuplicateActions = true,
+  canEditActions = canDuplicateActions,
   canManageActions = true,
   canUsePageHistory = true,
   isLoadingActions = false,
@@ -44,6 +45,7 @@ function MoreActionsContent({
   onOpenHistory?: () => void;
   onFindAndReplace?: () => void;
   canDuplicateActions?: boolean;
+  canEditActions?: boolean;
   canManageActions?: boolean;
   canUsePageHistory?: boolean;
   isLoadingActions?: boolean;
@@ -146,7 +148,7 @@ function MoreActionsContent({
   return (
     <DropdownMenuGroup>
       <div ref={containerRef} />
-      {canManageActions && isDocument && (
+      {canEditActions && isDocument && (
         <>
           <DropdownMenuItem
             data-testid={'more-page-lock'}

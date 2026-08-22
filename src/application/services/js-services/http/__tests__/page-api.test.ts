@@ -1,5 +1,7 @@
 import {
   AccessLevel,
+  isLegacyCompatibleSpaceVisibility,
+  legacySpacePermission,
   SpaceInvitePolicy,
   SpacePermission,
   SpacePermissionSettings,
@@ -21,11 +23,10 @@ jest.mock('@/application/services/js-services/http/core', () => ({
   getAxios: jest.fn(),
 }));
 
-const closedPermission: SpacePermissionSettings = {
-  visibility: SpaceVisibility.Closed,
+const privatePermission: SpacePermissionSettings = {
+  visibility: SpaceVisibility.Private,
   owner_access_level: AccessLevel.FullAccess,
   member_default_access_level: AccessLevel.ReadAndWrite,
-  everyone_else_access_level: null,
   invite_policy: SpaceInvitePolicy.OwnersOnly,
   sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
   invite_link_enabled: false,
@@ -65,7 +66,7 @@ describe('createSpaceWithInitialPage', () => {
     });
   });
 
-  it('preserves a structured Closed ACL while composing space and initial-page creation', async () => {
+  it('preserves a structured Private ACL while composing space and initial-page creation', async () => {
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'space-id' });
       if (url === '/api/workspace/workspace-id/page-view') return apiResponse({ view_id: 'page-id' });
@@ -74,11 +75,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: 'icon',
         space_icon_color: '#000000',
         view_id: 'space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         // Even a compatibility value must never route the structured request
         // through the lossy legacy endpoint or reach the structured endpoint.
         space_permission: SpacePermission.Public,
@@ -96,11 +97,11 @@ describe('createSpaceWithInitialPage', () => {
     });
 
     expect(post).toHaveBeenNthCalledWith(1, '/api/workspace/workspace-id/spaces', {
-      name: 'Closed space',
+      name: 'Private space',
       space_icon: 'icon',
       space_icon_color: '#000000',
       view_id: 'space-id',
-      permission: closedPermission,
+      permission: privatePermission,
     });
     expect(post).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-id/page-view', {
       parent_view_id: 'space-id',
@@ -134,10 +135,10 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(pageError);
@@ -161,11 +162,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
         view_id: 'explicit-space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(pageError);
@@ -184,11 +185,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
         view_id: 'requested-space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(createError);
@@ -210,10 +211,10 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document },
       })
     ).rejects.toBe(createError);
@@ -260,11 +261,11 @@ describe('createSpaceWithInitialPage', () => {
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
-        name: 'Closed space',
+        name: 'Private space',
         space_icon: '',
         space_icon_color: '',
         view_id: 'space-id',
-        permission: closedPermission,
+        permission: privatePermission,
         initial_page: { layout: ViewLayout.Document, view_id: 'page-id' },
       })
     ).resolves.toEqual({
@@ -299,13 +300,11 @@ describe('createSpace legacy fallback', () => {
   const endpointMissing = { code: 404, message: 'Not Found', httpStatus: 404 };
 
   function structuredPayload(visibility: SpaceVisibility): SpacePermissionSettings {
-    return { ...closedPermission, visibility };
+    return { ...privatePermission, visibility };
   }
 
   it.each([
-    [SpaceVisibility.Open, SpacePermission.Public],
-    [SpaceVisibility.Default, SpacePermission.Public],
-    [SpaceVisibility.Closed, SpacePermission.Private],
+    [SpaceVisibility.Public, SpacePermission.Public],
     [SpaceVisibility.Private, SpacePermission.Private],
   ])('downgrades %s visibility to the legacy binary permission on a 404', async (visibility, expectedLegacy) => {
     post.mockImplementation(async (url: string) => {
@@ -332,10 +331,71 @@ describe('createSpace legacy fallback', () => {
       throw new Error(`Unexpected URL: ${url}`);
     });
 
-    await expect(
-      createSpace('workspace-id', { name: 'A space', permission: closedPermission })
-    ).rejects.toBe(serverError);
+    await expect(createSpace('workspace-id', { name: 'A space', permission: privatePermission })).rejects.toBe(
+      serverError
+    );
 
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a custom space through the structured endpoint only', async () => {
+    const customPermission = structuredPayload(SpaceVisibility.Custom);
+
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'custom-space-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpace('workspace-id', {
+        name: 'Custom space',
+        permission: customPermission,
+        // A stray compatibility value must never reach either endpoint.
+        space_permission: SpacePermission.Private,
+      })
+    ).resolves.toBe('custom-space-id');
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/api/workspace/workspace-id/spaces', {
+      name: 'Custom space',
+      permission: customPermission,
+    });
+  });
+
+  it('does not silently downgrade a custom space to the legacy endpoint on a 404', async () => {
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') throw endpointMissing;
+      if (url === '/api/workspace/workspace-id/space') return apiResponse({ view_id: 'space-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpace('workspace-id', { name: 'Custom space', permission: structuredPayload(SpaceVisibility.Custom) })
+    ).rejects.toBe(endpointMissing);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls.map(([url]) => url)).not.toContain('/api/workspace/workspace-id/space');
+  });
+});
+
+describe('legacy space permission mapping', () => {
+  it.each([
+    [SpaceVisibility.Public, SpacePermission.Public],
+    [SpaceVisibility.Private, SpacePermission.Private],
+    // Custom is non-private: its legacy marker is 0, like Public.
+    [SpaceVisibility.Custom, SpacePermission.Public],
+    // A visibility this client does not know yet is public-like, never private.
+    ['invite_only' as SpaceVisibility, SpacePermission.Public],
+  ])('maps %s visibility to legacy space_permission %s', (visibility, expectedLegacy) => {
+    expect(legacySpacePermission(visibility)).toBe(expectedLegacy);
+  });
+
+  it.each([
+    [SpaceVisibility.Public, true],
+    [SpaceVisibility.Private, true],
+    [SpaceVisibility.Custom, false],
+    ['invite_only' as SpaceVisibility, false],
+  ])('treats %s visibility as legacy-compatible: %s', (visibility, expected) => {
+    expect(isLegacyCompatibleSpaceVisibility(visibility)).toBe(expected);
   });
 });

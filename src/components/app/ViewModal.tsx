@@ -39,6 +39,10 @@ import {
   getViewCanWriteStatus,
   useViewOperations,
 } from '@/components/app/hooks/useViewOperations';
+import {
+  INITIAL_VIEW_OBJECT_CAPABILITIES,
+  useViewObjectPermission,
+} from '@/components/app/hooks/useViewObjectPermission';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -65,6 +69,7 @@ const Transition = React.forwardRef(function Transition(
 });
 
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
+  const objectPermission = useViewObjectPermission(viewId) ?? INITIAL_VIEW_OBJECT_CAPABILITIES;
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
   const operations = useAppOperations();
@@ -386,20 +391,20 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
-  }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
+    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, getViewReadOnlyStatus, objectPermission, outline, resolvedView]);
 
   // Comment permission is independent from editability, so a locked or
   // read-and-comment page opened in the modal still offers the comment action.
   const canComment = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewCanCommentStatus(effectiveViewId, outline, resolvedView);
-  }, [effectiveViewId, outline, resolvedView]);
+    return getViewCanCommentStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, objectPermission, outline, resolvedView]);
 
   const canWrite = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView);
-  }, [effectiveViewId, outline, resolvedView]);
+    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, objectPermission, outline, resolvedView]);
 
   const View = useMemo(() => {
     switch (layout) {

@@ -71,7 +71,7 @@ describe('useShareAccessDetails', () => {
     mockInvalidateShareDetailCache.mockReset();
     mockGetSpacePermission.mockReset();
     mockGetSpacePermission.mockResolvedValue({
-      permission: { visibility: SpaceVisibility.Open },
+      permission: { visibility: SpaceVisibility.Public },
       can_manage_space: false,
     });
     mockCurrentUserId = '1001';
@@ -303,7 +303,7 @@ describe('useShareAccessDetails', () => {
     ];
     mockGetSpacePermission
       .mockResolvedValueOnce({
-        permission: { visibility: SpaceVisibility.Open },
+        permission: { visibility: SpaceVisibility.Public },
         can_manage_space: true,
       })
       .mockResolvedValueOnce({

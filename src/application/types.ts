@@ -1444,11 +1444,67 @@ export enum SpacePermission {
   Private = 1,
 }
 
+/**
+ * Structured space visibility as emitted by the server.
+ *
+ * Public: every non-guest workspace member is implicitly a space member with
+ * `member_default_access_level` (workspace owners get `owner_access_level`);
+ * the roster is derived from the workspace and read-only.
+ * Private: only explicit members can access the space.
+ * Custom: explicitly managed membership with three audiences. Space owners
+ * (people or groups with the owner role) hold `owner_access_level`, space
+ * members (people or groups with the member role) all share
+ * `member_default_access_level`, and every other non-guest workspace member
+ * ("everyone else") receives `everyone_else_access_level`. Either collective
+ * level may be `null` (No access). Membership does not follow later workspace
+ * membership or role changes.
+ *
+ * The server also accepts the legacy wire values `default`/`open` (Public)
+ * and `closed` (Private) on input but only ever emits these three. It may
+ * introduce further values later: treat any unknown value as public-like for
+ * display, and pass it through unchanged when saving.
+ */
 export enum SpaceVisibility {
-  Default = 'default',
-  Open = 'open',
-  Closed = 'closed',
+  Public = 'public',
   Private = 'private',
+  Custom = 'custom',
+}
+
+/**
+ * Collapse the retired legacy wire values onto their modern equivalents:
+ * `default`/`open` → Public, `closed` → Private. A server that predates the
+ * public/private rework still emits them, and they must select the matching
+ * card instead of reading as an unknown type. Any other unknown value is kept
+ * verbatim so a newer server's future visibility is never rewritten on save.
+ */
+export function normalizeKnownLegacySpaceVisibility(visibility: SpaceVisibility): SpaceVisibility {
+  switch (visibility as unknown as string) {
+    case 'default':
+    case 'open':
+      return SpaceVisibility.Public;
+    case 'closed':
+      return SpaceVisibility.Private;
+    default:
+      return visibility;
+  }
+}
+
+/**
+ * Map a structured visibility onto the legacy binary `space_permission` used by
+ * `POST /space` and `PATCH /space/{id}`: Private is 1, everything else
+ * (Public, Custom, unknown values) is 0.
+ */
+export function legacySpacePermission(visibility: SpaceVisibility): SpacePermission {
+  return visibility === SpaceVisibility.Private ? SpacePermission.Private : SpacePermission.Public;
+}
+
+/**
+ * Whether the legacy binary `space_permission` expresses this visibility
+ * losslessly. Only Public and Private do; Custom (and any unknown value) needs
+ * the structured space endpoints and must never be silently downgraded.
+ */
+export function isLegacyCompatibleSpaceVisibility(visibility: SpaceVisibility): boolean {
+  return visibility === SpaceVisibility.Public || visibility === SpaceVisibility.Private;
 }
 
 export enum SpaceMemberRole {
@@ -1475,7 +1531,19 @@ export interface SpaceSecuritySettings {
 export interface SpacePermissionSettings {
   visibility: SpaceVisibility;
   owner_access_level: AccessLevel;
-  member_default_access_level: AccessLevel;
+  /**
+   * Collective access for space members. Public: every non-guest workspace
+   * member. Private: the default for newly added explicit members. Custom:
+   * every explicit person or group member; `null` (No access) is only valid
+   * for custom spaces.
+   */
+  member_default_access_level: AccessLevel | null;
+  /**
+   * Custom spaces only: access for workspace members who are neither space
+   * owners nor space members ("everyone else"); `null` means No access. The
+   * server ignores it for public and private spaces and always emits `null`
+   * there. Older servers omit the field entirely.
+   */
   everyone_else_access_level?: AccessLevel | null;
   invite_policy: SpaceInvitePolicy;
   sidebar_edit_policy: SpaceSidebarEditPolicy;
@@ -1512,7 +1580,6 @@ export interface SpaceListItem {
   current_user_access_level?: AccessLevel | null;
   explicit_member_count: number;
   is_explicit_member: boolean;
-  can_join: boolean;
   can_leave: boolean;
 }
 
@@ -1527,6 +1594,8 @@ export interface SpaceMember {
   role: SpaceMemberRole;
   access_level: AccessLevel;
   source: string;
+  /** The member's workspace role, shown under the name ("Workspace owner"). */
+  workspace_role?: Role;
 }
 
 export interface WorkspaceGroupSpacePermission {
@@ -1560,6 +1629,11 @@ export interface AddSpaceMemberPayload {
 export interface UpdateSpaceMemberPayload {
   role?: SpaceMemberRole;
   access_level?: AccessLevel;
+}
+
+export interface AddSpaceGroupPermissionPayload {
+  role: SpaceMemberRole;
+  access_level: AccessLevel;
 }
 
 export interface WorkspaceGroup {
@@ -2236,6 +2310,23 @@ export interface ObjectPermission {
   ancestor_creator?: boolean;
   parent_private_view_id?: string | null;
   governing_view_id?: string | null;
+}
+
+/**
+ * Authoritative capabilities returned by the collab object-permission API.
+ *
+ * `access_level` is display metadata. Callers must use the capability fields
+ * instead of reconstructing permissions from that level.
+ */
+export interface CollabObjectPermission {
+  object_id: string;
+  collab_type: Types;
+  governing_view_id: string;
+  access_level: AccessLevel | null;
+  can_read: boolean;
+  can_write: boolean;
+  can_comment: boolean;
+  can_share: boolean;
 }
 
 export interface ShareAccessDetails {

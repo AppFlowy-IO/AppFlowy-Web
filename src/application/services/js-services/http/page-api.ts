@@ -10,9 +10,8 @@ import {
   CreateSpacePayload,
   CreateSpaceWithInitialPagePayload,
   CreateSpaceWithInitialPageResponse,
-  SpacePermission,
-  SpacePermissionSettings,
-  SpaceVisibility,
+  isLegacyCompatibleSpaceVisibility,
+  legacySpacePermission,
   UpdatePagePayload,
   UpdateSpacePayload,
   ViewIconType,
@@ -135,18 +134,6 @@ export async function movePageTo(workspaceId: string, viewId: string, parentView
   );
 }
 
-/**
- * Downgrade structured permission settings to the legacy binary permission
- * for servers that predate the structured `/spaces` endpoint. Open and
- * Default spaces grant everyone-else access, which is what legacy Public
- * means; Closed and Private do not, which is legacy Private.
- */
-function legacySpacePermissionFromSettings(permission: SpacePermissionSettings): SpacePermission {
-  return permission.visibility === SpaceVisibility.Open || permission.visibility === SpaceVisibility.Default
-    ? SpacePermission.Public
-    : SpacePermission.Private;
-}
-
 export async function createSpace(workspaceId: string, payload: CreateSpacePayload): Promise<string> {
   if (payload.permission) {
     const url = `/api/workspace/${workspaceId}/spaces`;
@@ -161,18 +148,27 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
     } catch (error) {
       if (!isUnsupportedRouteError(error)) throw error;
 
+      const { permission, ...legacyPayload } = payload;
+
       // Older servers do not expose the structured endpoint. Fall back to the
-      // legacy one so space creation keeps working; only the binary
-      // public/private part of the settings can be preserved there.
+      // legacy one only when the binary public/private marker expresses the
+      // requested visibility losslessly; a custom space would be silently
+      // downgraded to public there, so surface the failure instead.
+      if (!isLegacyCompatibleSpaceVisibility(permission.visibility)) {
+        Log.warn('[createSpace] structured /spaces endpoint unavailable and visibility has no legacy form', {
+          workspaceId,
+          visibility: permission.visibility,
+        });
+        throw error;
+      }
+
       Log.warn('[createSpace] structured /spaces endpoint unavailable, falling back to legacy /space', {
         workspaceId,
       });
 
-      const { permission, ...legacyPayload } = payload;
-
       return createSpace(workspaceId, {
         ...legacyPayload,
-        space_permission: legacySpacePermissionFromSettings(permission),
+        space_permission: legacySpacePermission(permission.visibility),
       });
     }
   }

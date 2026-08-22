@@ -521,9 +521,8 @@ Then('the seeded group-share page is editable but share controls are read only',
   const titleInput = PageSelectors.titleInput(page).first();
   const editor = EditorSelectors.firstEditor(page);
   const input = inviteInput(page);
-  const groupAccessButton = shareGroupRow(page, group.name)
-    .getByRole('button', { name: /Can view|Can edit|Full access/ })
-    .first();
+  const groupRow = shareGroupRow(page, group.name);
+  const groupAccessButton = groupRow.getByRole('button', { name: /Can view|Can edit|Full access/ }).first();
 
   await expect(titleInput).toBeVisible({ timeout: 15000 });
   await expect(titleInput).toBeEnabled();
@@ -532,8 +531,13 @@ Then('the seeded group-share page is editable but share controls are read only',
   await expect(input).toBeVisible({ timeout: 15000 });
   await expect.poll(async () => input.evaluate((element) => (element as HTMLInputElement).readOnly)).toBe(true);
   await expect(ShareSelectors.inviteButton(page)).toBeDisabled();
-  await expect(groupAccessButton).toBeVisible({ timeout: 15000 });
-  await expect(groupAccessButton).toBeDisabled();
+  // A viewer who cannot manage the share sees the group's access as a plain
+  // label (no dropdown); older builds rendered a disabled button instead.
+  await expect(groupRow).toBeVisible({ timeout: 15000 });
+  await expect(groupRow.getByText('Can edit', { exact: true })).toBeVisible({ timeout: 15000 });
+  if ((await groupAccessButton.count()) > 0) {
+    await expect(groupAccessButton).toBeDisabled();
+  }
 });
 
 function requireState(page: Page): ScenarioState {

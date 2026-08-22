@@ -2,6 +2,7 @@ import { getTokenParsed } from '@/application/session/token';
 import {
   AccessLevel,
   AFWebUser,
+  CollabObjectPermission,
   GetRequestAccessInfoResponse,
   Invitation,
   RequestAccessInfoStatus,
@@ -235,17 +236,6 @@ export async function getShareDetail(
   });
 
   return promise;
-}
-
-/** Effective permission of the current user on a single collab object. */
-export interface CollabObjectPermission {
-  object_id?: string;
-  access_level?: AccessLevel | null;
-  governing_view_id?: string | null;
-  can_read?: boolean;
-  can_write?: boolean;
-  can_comment?: boolean;
-  can_share?: boolean;
 }
 
 export async function getObjectPermission(workspaceId: string, objectId: string, collabType: Types = Types.Document) {

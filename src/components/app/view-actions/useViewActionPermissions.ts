@@ -1,109 +1,94 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { AccessService } from '@/application/services/domains';
-import { ObjectPermission, View } from '@/application/types';
-import { findAncestors, findSharedAccessLevel } from '@/components/_shared/outline/utils';
-import { useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { resolveCurrentUserAccessLevel } from '@/components/app/share/shareAccessLevel';
+import { type CollabObjectPermission, View } from '@/application/types';
+import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPermission';
+import {
+  isCollabObjectPermissionForTarget,
+  resolvePermissionProbeTarget,
+} from '@/components/app/layers/permissionProbe';
 import {
   canUseChildViewCreationActions,
   canUsePageHistoryAction,
   canUseViewMutationActions,
 } from '@/components/app/view-actions/viewActionPermission';
-import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 export function useViewActionPermissions(view: View | null | undefined, opened: boolean) {
   const workspaceId = useCurrentWorkspaceId();
-  const currentUser = useCurrentUserOptional();
-  const outline = useAppOutline();
   const viewId = view?.view_id;
+  const activeObjectPermission = useViewObjectPermission(viewId);
+  const resolvedTarget = viewId ? resolvePermissionProbeTarget(viewId, view) : undefined;
+  const collabObjectId = resolvedTarget?.collabObjectId;
+  const collabType = resolvedTarget?.collabType;
   const requestSeq = useRef(0);
-  const outlineRef = useRef(outline);
-  const outlineAccessLevelRef = useRef<ReturnType<typeof findSharedAccessLevel> | undefined>(undefined);
   const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
-  const [currentUserPermission, setCurrentUserPermission] = useState<ObjectPermission | null>(null);
+  const [objectPermission, setObjectPermission] = useState<CollabObjectPermission | null>(null);
   const [isLoadingViewActionPermissions, setIsLoadingViewActionPermissions] = useState(false);
-  const outlineAccessLevel = useMemo(() => {
-    if (!viewId) return undefined;
-
-    return findSharedAccessLevel(outline || [], viewId) ?? view?.access_level;
-  }, [outline, view?.access_level, viewId]);
-
-  useEffect(() => {
-    outlineRef.current = outline;
-    outlineAccessLevelRef.current = outlineAccessLevel;
-  }, [outline, outlineAccessLevel]);
 
   useEffect(() => {
     setLoadedViewId(null);
-    setCurrentUserPermission(null);
+    setObjectPermission(null);
     setIsLoadingViewActionPermissions(false);
   }, [viewId]);
 
   useEffect(() => {
-    if (!opened || !workspaceId || !viewId) {
+    if (!opened || !workspaceId || !viewId || collabObjectId === undefined || collabType === undefined) {
       setIsLoadingViewActionPermissions(false);
       return;
     }
 
-    const controller = new AbortController();
     const seq = ++requestSeq.current;
-    const ancestorViewIds = findAncestors(outlineRef.current || [], viewId)?.map((item) => item.view_id) || [];
+    const target = { collabObjectId, collabType };
+
+    if (activeObjectPermission && isCollabObjectPermissionForTarget(activeObjectPermission, target)) {
+      setObjectPermission(activeObjectPermission);
+      setLoadedViewId(viewId);
+      setIsLoadingViewActionPermissions(false);
+
+      return;
+    }
+
+    let cancelled = false;
 
     setLoadedViewId(null);
-    setCurrentUserPermission(null);
+    setObjectPermission(null);
     setIsLoadingViewActionPermissions(true);
 
-    void AccessService.getShareDetail(workspaceId, viewId, ancestorViewIds, controller.signal)
-      .then((detail) => {
-        if (controller.signal.aborted || seq !== requestSeq.current) return;
-        const accessLevel = resolveCurrentUserAccessLevel({
-          currentUserEmail: currentUser?.email,
-          currentUserPermission: detail.current_user_permission ?? null,
-          outlineAccessLevel: outlineAccessLevelRef.current,
-          sharedPeople: detail.shared_with ?? [],
-        });
-        const permission =
-          detail.current_user_permission || accessLevel !== undefined
-            ? {
-                ...(detail.current_user_permission ?? {}),
-                access_level: accessLevel,
-              }
-            : null;
+    void AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType)
+      .then((permission) => {
+        if (cancelled || seq !== requestSeq.current) return;
 
-        setCurrentUserPermission(permission);
+        setObjectPermission(isCollabObjectPermissionForTarget(permission, target) ? permission : null);
         setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
       })
       .catch((error) => {
-        if (controller.signal.aborted || seq !== requestSeq.current) return;
+        if (cancelled || seq !== requestSeq.current) return;
         console.error(error);
-        setCurrentUserPermission(null);
+        setObjectPermission(null);
         setLoadedViewId(viewId);
         setIsLoadingViewActionPermissions(false);
       });
 
     return () => {
-      controller.abort();
+      cancelled = true;
     };
-  }, [currentUser?.email, opened, viewId, workspaceId]);
+  }, [activeObjectPermission, collabObjectId, collabType, opened, viewId, workspaceId]);
 
-  const canLoadViewActionPermissions = Boolean(opened && workspaceId && viewId);
+  const canLoadViewActionPermissions = Boolean(
+    opened && workspaceId && viewId && collabObjectId !== undefined && collabType !== undefined
+  );
   const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
+  const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
   const canManageViewActions = hasLoadedViewActionPermissions
-    ? canUseViewMutationActions({
-        currentUserPermission,
-      })
+    ? canUseViewMutationActions({ objectPermission: permissionForCurrentView })
     : false;
   const canUsePageHistory = hasLoadedViewActionPermissions
-    ? canUsePageHistoryAction({
-        currentUserPermission,
-      })
+    ? canUsePageHistoryAction({ objectPermission: permissionForCurrentView })
     : false;
   const canCreateViewActions = hasLoadedViewActionPermissions
-    ? canUseChildViewCreationActions({
-        currentUserPermission,
-      })
+    ? canUseChildViewCreationActions({ objectPermission: permissionForCurrentView })
     : false;
 
   return {

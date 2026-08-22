@@ -8,6 +8,7 @@ import PublishPanel from '@/components/app/share/PublishPanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
 import { useShareAccessDetails } from '@/components/app/share/useShareAccessDetails';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -49,10 +50,15 @@ function ShareTabs({
     removePersonFromAccessList,
     updateGroupInAccessList,
     currentUserAccessLevel,
-    hasFullAccess,
     canManageFullAccess,
     sectionType,
   } = useShareAccessDetails(viewId, opened);
+  const {
+    canManageViewActions: canShare,
+    hasLoadedViewActionPermissions,
+    isLoadingViewActionPermissions,
+  } = useViewActionPermissions(view, opened);
+  const isResolvingSharePermission = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   const options = useMemo(() => {
     return [
@@ -130,8 +136,8 @@ function ShareTabs({
                 onPeopleChange={loadPeople}
                 onPersonRemoved={removePersonFromAccessList}
                 updateGroupInAccessList={updateGroupInAccessList}
-                hasFullAccess={hasFullAccess}
-                canManageFullAccess={canManageFullAccess}
+                hasFullAccess={canShare}
+                canManageFullAccess={canShare && canManageFullAccess}
                 currentUserAccessLevel={currentUserAccessLevel}
                 sectionType={sectionType}
               />
@@ -141,8 +147,8 @@ function ShareTabs({
                 onClose={onClose}
                 opened={opened}
                 onOpenPublishManage={onOpenPublishManage}
-                currentUserAccessLevel={currentUserAccessLevel}
-                shareDetailsLoading={isLoadingPeople}
+                canShare={canShare}
+                shareDetailsLoading={isLoadingPeople || isResolvingSharePermission}
               />
             ) : (
               <option.Panel

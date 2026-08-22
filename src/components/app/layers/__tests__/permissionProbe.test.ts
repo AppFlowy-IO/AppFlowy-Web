@@ -1,10 +1,11 @@
-import { Types, type View, ViewLayout } from '@/application/types';
+import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import {
   bumpPermissionProbeRevision,
   clearPermissionProbeCacheForScope,
   createPermissionProbeCacheKey,
   findPermissionProbeView,
   getPermissionProbePurgeObjectIds,
+  isCollabObjectPermissionForTarget,
   resolvePermissionProbeTarget,
 } from '@/components/app/layers/permissionProbe';
 
@@ -21,6 +22,20 @@ function createView(viewId: string, layout: ViewLayout, databaseId?: string): Vi
     children: [],
     is_published: false,
     is_private: false,
+  };
+}
+
+function createPermission(overrides: Partial<CollabObjectPermission> = {}): CollabObjectPermission {
+  return {
+    object_id: 'document-id',
+    collab_type: Types.Document,
+    governing_view_id: 'document-id',
+    access_level: AccessLevel.ReadAndWrite,
+    can_read: true,
+    can_write: true,
+    can_comment: true,
+    can_share: false,
+    ...overrides,
   };
 }
 
@@ -45,6 +60,42 @@ describe('permission probe identity', () => {
       collabObjectId: 'document-id',
       collabType: Types.Document,
     });
+  });
+
+  it('keeps a database container on its document permission target', () => {
+    const container = createView('container-id', ViewLayout.Grid, 'database-id');
+
+    container.extra = {
+      ...container.extra,
+      is_database_container: true,
+    };
+
+    expect(resolvePermissionProbeTarget('container-id', container)).toEqual({
+      collabObjectId: 'container-id',
+      collabType: Types.Document,
+    });
+  });
+
+  it('accepts a complete object-permission response for the requested target', () => {
+    expect(
+      isCollabObjectPermissionForTarget(createPermission(), {
+        collabObjectId: 'document-id',
+        collabType: Types.Document,
+      })
+    ).toBe(true);
+  });
+
+  it.each([
+    [{ ...createPermission(), can_write: undefined }],
+    [{ ...createPermission(), object_id: 'different-id' }],
+    [{ ...createPermission(), collab_type: Types.Database }],
+  ])('rejects incomplete or mismatched object-permission responses', (permission) => {
+    expect(
+      isCollabObjectPermissionForTarget(permission, {
+        collabObjectId: 'document-id',
+        collabType: Types.Document,
+      })
+    ).toBe(false);
   });
 
   it('finds the routed child when cached metadata is returned as a navigation root', () => {

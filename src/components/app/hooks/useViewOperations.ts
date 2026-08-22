@@ -31,6 +31,7 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
+import type { ViewObjectCapabilities } from './useViewObjectPermission';
 
 /**
  * Determine whether the editor should be read-only for the given view.
@@ -42,7 +43,12 @@ import { useDatabaseIdentity } from './useDatabaseIdentity';
  * misses the view and a lock check against the outline alone would let edits
  * through.
  */
-export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+export function getViewReadOnlyStatus(
+  viewId: string,
+  outline?: View[],
+  fallbackView?: View | null,
+  permission?: ViewObjectCapabilities
+) {
   const isMobile = getPlatform().isMobile;
 
   if (isMobile) return true; // Mobile has highest priority - always readonly
@@ -59,6 +65,8 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
 
     if (view?.is_locked) return true;
 
+    if (permission) return !permission.can_read || !permission.can_write;
+
     // Resolve the effective shared access level, inheriting from the nearest
     // ancestor inside the "Shared with me" space. This makes pages inside a
     // View-only private space read-only even though the page itself carries no
@@ -69,6 +77,8 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
       return sharedAccessLevel <= AccessLevel.ReadAndComment;
     }
   }
+
+  if (permission) return !permission.can_read || !permission.can_write;
 
   // Structured-space members can receive a normal-outline view whose effective
   // access is available only on the direct-URL fallback. Keep the title and
@@ -86,7 +96,14 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
  * and Read-and-comment access both use a read-only Slate editor but still
  * permit inline comments.
  */
-export function getViewCanCommentStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+export function getViewCanCommentStatus(
+  viewId: string,
+  outline?: View[],
+  fallbackView?: View | null,
+  permission?: ViewObjectCapabilities
+) {
+  if (permission) return permission.can_read && permission.can_comment;
+
   if (outline) {
     const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
 
@@ -111,7 +128,14 @@ export function getViewCanCommentStatus(viewId: string, outline?: View[], fallba
  * but they do not require comment anchors to use the narrow
  * Read-and-comment persistence lane.
  */
-export function getViewCanWriteStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+export function getViewCanWriteStatus(
+  viewId: string,
+  outline?: View[],
+  fallbackView?: View | null,
+  permission?: ViewObjectCapabilities
+) {
+  if (permission) return permission.can_read && permission.can_write;
+
   if (outline) {
     const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
 
@@ -175,8 +199,8 @@ export function useViewOperations({
 
   // Check if view should be readonly based on access permissions
   const getViewReadOnlyStatusFromOutline = useCallback(
-    (viewId: string, outline?: View[], fallbackView?: View | null) => {
-      return getViewReadOnlyStatus(viewId, outline, fallbackView);
+    (viewId: string, outline?: View[], fallbackView?: View | null, permission?: ViewObjectCapabilities) => {
+      return getViewReadOnlyStatus(viewId, outline, fallbackView, permission);
     },
     []
   );
