@@ -445,7 +445,8 @@ Then(
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.getByText(roleLabel, { exact: true }).first()).toBeVisible();
     await expect(row.getByTestId('space-member-subtitle')).toContainText(subtitle);
-    await expect(row.getByTestId('space-member-subtitle')).toContainText(scpAccountEmail(accountAliasValue));
+    // The email shows on the name line (no display name) or in the subtitle.
+    await expect(row).toContainText(scpAccountEmail(accountAliasValue));
   }
 );
 
