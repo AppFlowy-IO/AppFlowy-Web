@@ -3425,8 +3425,7 @@
     "manageSpace": "Manage space",
     "renameSpace": "Rename space",
     "mSpaceIconColor": "Space icon color",
-    "mSpaceIcon": "Space icon",
-    "newBadge": "NEW"
+    "mSpaceIcon": "Space icon"
   },
   "publish": {
     "hasNotBeenPublished": "This page hasn't been published yet",

@@ -95,10 +95,18 @@ describe('CreateSpaceModal visibility options', () => {
     expect(screen.getByTestId('space-visibility-option-private').textContent).toContain(
       'space.privatePermissionDescription'
     );
-    // Only the new Custom option carries the NEW badge.
-    expect(screen.getAllByTestId('space-visibility-new-badge')).toHaveLength(1);
-    expect(screen.getByTestId('space-visibility-option-custom').textContent).toContain('space.newBadge');
-    expect(screen.getByTestId('space-visibility-option-public').textContent).not.toContain('space.newBadge');
+    // The current type is the only highlighted option; choosing another moves
+    // the highlight.
+    expect(screen.getByTestId('space-visibility-option-public').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('space-visibility-option-public').getAttribute('data-selected')).toBe('true');
+    expect(screen.getByTestId('space-visibility-option-custom').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('space-visibility-option-private').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.queryByTestId('space-visibility-new-badge')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('space-visibility-option-custom'));
+    fireEvent.click(screen.getByTestId('space-visibility-button'));
+    expect(screen.getByTestId('space-visibility-option-custom').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('space-visibility-option-public').getAttribute('aria-pressed')).toBe('false');
   });
 
   it('uses the compatibility Public value for a public space', async () => {

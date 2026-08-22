@@ -1,4 +1,4 @@
-import { ChevronDown, Globe2, LockKeyhole, Plus, Settings2, Shield, UserRound, Users } from 'lucide-react';
+import { Check, ChevronDown, Globe2, LockKeyhole, Plus, Settings2, Shield, UserRound, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -349,7 +349,7 @@ function VisibilityCards({
 
   return (
     <div
-      role='radiogroup'
+      role='group'
       aria-label={t('space.permissionManager.spaceAccess')}
       className='grid gap-3'
       style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
@@ -358,31 +358,37 @@ function VisibilityCards({
       {options.map((option) => {
         const selected = option === value;
 
+        // The selected card (the current type, or the pending one before Save)
+        // is unmistakable: accent border, tinted background and a check mark.
         return (
           <button
             key={option}
             type='button'
-            role='radio'
-            aria-checked={selected}
+            aria-pressed={selected}
             disabled={disabled}
             data-testid={`manage-space-visibility-option-${option}`}
             data-selected={selected ? 'true' : 'false'}
             onClick={() => onSelect(option)}
             className={cn(
-              'flex min-h-[96px] flex-col items-start gap-2 rounded-400 border px-3 py-3 text-left transition-colors',
-              'hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick',
+              'relative flex min-h-[96px] flex-col items-start gap-2 rounded-400 border px-3 py-3 pr-8 text-left transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick',
               'disabled:cursor-not-allowed disabled:opacity-60',
-              selected ? 'border-border-theme-thick bg-fill-theme-select' : 'border-border-primary'
+              selected
+                ? 'border-border-theme-thick bg-fill-theme-select ring-1 ring-border-theme-thick hover:bg-fill-theme-select'
+                : 'border-border-primary hover:bg-fill-content-hover'
             )}
           >
+            {selected && (
+              <span
+                className='absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-fill-theme-thick text-text-on-fill'
+                data-testid='manage-space-visibility-selected-check'
+              >
+                <Check className='h-3.5 w-3.5' aria-hidden />
+              </span>
+            )}
             <div className='flex w-full items-center gap-2'>
               <VisibilityIcon visibility={option} className='h-4 w-4' />
               <span className='font-medium text-text-primary'>{spaceVisibilityLabel(option, t)}</span>
-              {option === SpaceVisibility.Custom && (
-                <span className='ml-auto rounded-full bg-fill-theme-thick px-2 py-[1px] text-xs font-medium text-text-on-fill'>
-                  {t('space.newBadge')}
-                </span>
-              )}
             </div>
             <span className='text-xs leading-4 text-text-secondary'>{spaceVisibilityDescription(option, t)}</span>
           </button>

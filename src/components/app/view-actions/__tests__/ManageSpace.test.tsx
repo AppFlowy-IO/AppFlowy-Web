@@ -347,6 +347,19 @@ function visibilityOption(visibility: SpaceVisibility) {
   return screen.getByTestId(`manage-space-visibility-option-${visibility}`);
 }
 
+// Exactly one card is highlighted: the current type (or the pending one before
+// Save), with the accent state and the check mark; the others are neutral.
+function expectSelectedVisibility(visibility: SpaceVisibility) {
+  for (const candidate of [SpaceVisibility.Public, SpaceVisibility.Private, SpaceVisibility.Custom]) {
+    const option = visibilityOption(candidate);
+    const selected = candidate === visibility;
+
+    expect(option.getAttribute('aria-pressed')).toBe(String(selected));
+    expect(option.getAttribute('data-selected')).toBe(String(selected));
+    expect(within(option).queryByTestId('manage-space-visibility-selected-check') !== null).toBe(selected);
+  }
+}
+
 async function waitForSettingsLoaded() {
   await waitFor(() => expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(false));
 }
@@ -396,12 +409,27 @@ describe('ManageSpace ACL management', () => {
       expect(visibilityOption(SpaceVisibility.Public).textContent).toContain('space.publicPermissionDescription');
       expect(visibilityOption(SpaceVisibility.Private).textContent).toContain('space.privatePermissionDescription');
       expect(visibilityOption(SpaceVisibility.Custom).textContent).toContain('space.customPermissionDescription');
-      expect(visibilityOption(SpaceVisibility.Custom).textContent).toContain('space.newBadge');
-      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-checked')).toBe('true');
-      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-checked')).toBe('false');
+      expect(visibilityOption(SpaceVisibility.Custom).textContent).not.toContain('space.newBadge');
+      expectSelectedVisibility(SpaceVisibility.Public);
       expect(screen.getByTestId('manage-space-public-access-card')).toBeTruthy();
       expect(screen.queryByTestId('manage-space-custom-permissions-card')).toBeNull();
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
+    });
+
+    it('opens a custom space with the Custom card highlighted and moves the highlight on selection', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      expectSelectedVisibility(SpaceVisibility.Custom);
+
+      fireEvent.click(visibilityOption(SpaceVisibility.Private));
+      // Still Custom until the switch is confirmed ...
+      expectSelectedVisibility(SpaceVisibility.Custom);
+      confirmPending();
+      // ... then the highlight follows the pending type before Save.
+      expectSelectedVisibility(SpaceVisibility.Private);
+      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
     });
 
     it('confirms Public → Private with the PRD copy and then saves only the structured update', async () => {
@@ -417,11 +445,11 @@ describe('ManageSpace ACL management', () => {
         'space.permissionManager.confirmToPrivateAction'
       );
       // Nothing moves until the user agrees.
-      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-checked')).toBe('true');
+      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-pressed')).toBe('true');
 
       confirmPending();
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      expect(visibilityOption(SpaceVisibility.Private).getAttribute('aria-checked')).toBe('true');
+      expect(visibilityOption(SpaceVisibility.Private).getAttribute('aria-pressed')).toBe('true');
       expect(screen.getByTestId('manage-space-private-access-card')).toBeTruthy();
       fireEvent.click(saveButton());
 
@@ -446,7 +474,7 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(screen.getByTestId('manage-space-confirm-dialog-cancel'));
 
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-checked')).toBe('true');
+      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-pressed')).toBe('true');
       fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
@@ -528,7 +556,7 @@ describe('ManageSpace ACL management', () => {
 
       expect(screen.queryByTestId('manage-space-public-access-card')).toBeNull();
       expect(screen.getByTestId('manage-space-custom-permissions-card')).toBeTruthy();
-      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-checked')).toBe('true');
+      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-pressed')).toBe('true');
       fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
@@ -587,11 +615,11 @@ describe('ManageSpace ACL management', () => {
       await waitForSettingsLoaded();
       fireEvent.click(visibilityOption(SpaceVisibility.Public));
       confirmPending();
-      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-checked')).toBe('true');
+      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-pressed')).toBe('true');
 
       fireEvent.click(visibilityOption(SpaceVisibility.Custom));
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-checked')).toBe('true');
+      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-pressed')).toBe('true');
       // The everyone-else level the server holds survives the round trip.
       expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.canView');
       fireEvent.click(saveButton());
@@ -612,9 +640,9 @@ describe('ManageSpace ACL management', () => {
       // No card claims the unknown value, and the generic rows stay editable.
       expect(screen.queryByTestId('manage-space-public-access-card')).toBeNull();
       expect(screen.queryByTestId('manage-space-custom-permissions-card')).toBeNull();
-      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-checked')).toBe('false');
-      expect(visibilityOption(SpaceVisibility.Private).getAttribute('aria-checked')).toBe('false');
-      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-checked')).toBe('false');
+      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-pressed')).toBe('false');
+      expect(visibilityOption(SpaceVisibility.Private).getAttribute('aria-pressed')).toBe('false');
+      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-pressed')).toBe('false');
       // Only an exact Public visibility makes the roster read-only.
       await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
 

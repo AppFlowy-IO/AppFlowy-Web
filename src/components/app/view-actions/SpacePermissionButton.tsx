@@ -64,12 +64,19 @@ function SpacePermissionButton({
         >
           {SELECTABLE_SPACE_VISIBILITIES.map((option, index) => {
             const OptionIcon = visibilityIcon(option);
+            const selected = option === value;
 
             return (
               <React.Fragment key={option}>
                 <Button
                   data-testid={`space-visibility-option-${option}`}
-                  className={'justify-start gap-2 px-4'}
+                  data-selected={selected ? 'true' : 'false'}
+                  aria-pressed={selected}
+                  className={
+                    selected
+                      ? 'justify-start gap-2 rounded-300 border border-border-theme-thick bg-fill-theme-select px-4'
+                      : 'justify-start gap-2 rounded-300 border border-transparent px-4'
+                  }
                   startIcon={<OptionIcon />}
                   color={'inherit'}
                   onClick={() => {
@@ -78,22 +85,10 @@ function SpacePermissionButton({
                   }}
                 >
                   <div className={'flex w-full flex-col items-start'}>
-                    <div className={'flex items-center gap-2 text-base font-normal'}>
-                      {spaceVisibilityLabel(option, t)}
-                      {option === SpaceVisibility.Custom && (
-                        <span
-                          className={
-                            'rounded-full bg-fill-theme-thick px-2 py-[1px] text-xs font-medium text-text-on-fill'
-                          }
-                          data-testid='space-visibility-new-badge'
-                        >
-                          {t('space.newBadge')}
-                        </span>
-                      )}
-                    </div>
+                    <div className={'text-base font-normal'}>{spaceVisibilityLabel(option, t)}</div>
                     <div className={'text-left text-text-secondary'}>{spaceVisibilityDescription(option, t)}</div>
                   </div>
-                  {option === value && <TickIcon className={'h-6 w-6 text-function-success'} />}
+                  {selected && <TickIcon className={'h-6 w-6 text-function-success'} />}
                 </Button>
                 {index < SELECTABLE_SPACE_VISIBILITIES.length - 1 && <Divider />}
               </React.Fragment>
