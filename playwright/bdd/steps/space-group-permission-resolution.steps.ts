@@ -17,6 +17,16 @@ const SEEDED_GROUP_ONE_ROLE = SPACE_MEMBER_ROLE_MEMBER;
 const SEEDED_GROUP_ONE_ACCESS = ACCESS_LEVEL_READ_ONLY;
 // Seeded page-level share for group Two on Group Page A.
 const SEEDED_GROUP_TWO_PAGE_ACCESS = ACCESS_LEVEL_READ_AND_WRITE;
+// Workspace member uids exceed Number.MAX_SAFE_INTEGER; keep them as strings
+// when they travel through JSON so group member calls address the right user.
+const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
+// A server-pushed permission change has to reach the open page over the
+// WebSocket and trigger a re-probe; allow generous time before calling it a gap.
+const LIVE_REFRESH_TIMEOUT_MS = 60000;
+// The app drops to a safe read-only state the moment the push arrives and only
+// then re-probes the server (with up to 250/1000/3000ms retries). Hold the
+// observed verdict past that window so a transient state cannot satisfy it.
+const LIVE_REFRESH_SETTLE_MS = 5000;
 
 const STG_ACCOUNTS = {
   owner: 'stg0822-own@appflowy.local',
@@ -55,6 +65,12 @@ type StgPageAlias = keyof typeof STG_PAGES;
 type SeededStgPage = (typeof STG_PAGES)[StgPageAlias];
 type SeededStgSpace = (typeof STG_SPACES)[StgSpaceAlias];
 
+// Seeded group rosters: nathan sits in both groups, reader only in group One.
+const SEEDED_GROUP_MEMBERSHIPS: Record<StgGroupAlias, StgAccountAlias[]> = {
+  'group one': ['nathan', 'reader'],
+  'group two': ['nathan'],
+};
+
 type ApiResponse<T> = {
   code?: number;
   message?: string;
@@ -80,6 +96,21 @@ type WorkspaceGroup = {
 
 type WorkspaceGroupsPayload = {
   groups: WorkspaceGroup[];
+};
+
+type WorkspaceMember = {
+  uid?: string | number;
+  email: string;
+};
+
+type WorkspaceGroupMember = {
+  uid?: string | number;
+  email: string;
+  name?: string;
+};
+
+type WorkspaceGroupMembersPayload = {
+  members: WorkspaceGroupMember[];
 };
 
 type SpaceGroupPermission = {
@@ -120,6 +151,18 @@ type FixtureContext = {
   groupIds: Record<StgGroupAlias, string>;
 };
 
+// Snapshot of the open browser page taken right before an owner API mutation.
+// A live permission refresh must keep the URL and the in-memory marker intact:
+// a reload recreates `window`, a navigation changes the URL.
+type LiveSession = {
+  label: string;
+  url: string;
+  marker: string;
+  mutatedAt: number;
+};
+
+type LiveMarkerWindow = Window & { __stg0822LiveMarker?: string };
+
 type ScenarioState = {
   fixture?: FixtureContext;
   currentSeededPage?: SeededStgPage;
@@ -127,6 +170,10 @@ type ScenarioState = {
   // Set before the owner-role mutation starts so the After hook restores the
   // canonical group One grant even when a later assertion fails.
   restoreGroupOneGrant?: boolean;
+  // Set before a group membership mutation starts so the After hook re-adds
+  // every seeded membership even when a later live assertion fails.
+  restoreGroupMemberships?: boolean;
+  liveSession?: LiveSession;
 };
 
 const stateByPage = new WeakMap<Page, ScenarioState>();
@@ -140,23 +187,31 @@ Before(async ({ page }) => {
 After(async ({ page, request }) => {
   const state = stateByPage.get(page);
 
-  if (!state?.restoreGroupOneGrant) return;
+  if (!state?.restoreGroupOneGrant && !state?.restoreGroupMemberships) return;
 
   // Re-authenticate the owner through the API: the browser session may now belong
   // to another seeded account (or be gone entirely) when the scenario ends.
   const fixture = await resolveFixtureContext(request);
 
-  await ensureSeededGroupOneGrant(request, fixture);
+  if (state.restoreGroupMemberships) {
+    await ensureSeededGroupMemberships(request, fixture);
+  }
+
+  if (state.restoreGroupOneGrant) {
+    await ensureSeededGroupOneGrant(request, fixture);
+  }
 });
 
 Given('the seeded stg0822 space group permission fixture exists', async ({ page, request }) => {
   // Seed with (server repo):
   // cargo test --test space_group_permission_seed seed_space_group_permission_suite -- --ignored --nocapture
   //
-  // Resolving the context here also re-asserts the seeded group One grant, so an
-  // interrupted owner-role scenario cannot leak into the read-only scenarios.
+  // Resolving the context here also re-asserts the seeded group rosters and the
+  // group One grant, so an interrupted mutating scenario cannot leak into the
+  // read-only scenarios.
   const fixture = await resolveFixtureContext(request);
 
+  await ensureSeededGroupMemberships(request, fixture);
   await ensureSeededGroupOneGrant(request, fixture);
   requireState(page).fixture = fixture;
 });
@@ -206,37 +261,195 @@ Then(
 );
 
 Then('the directly opened seeded stg0822 page is {string}', async ({ page }, access: string) => {
-  const seededPage = requireCurrentSeededPage(page);
-  const title = page.getByText(seededPage.title, { exact: true });
-  const titleInput = PageSelectors.titleInput(page);
-  const editor = EditorSelectors.firstEditor(page);
-
-  switch (access) {
-    case 'editable':
-      await expect(title.first()).toBeVisible({ timeout: 30000 });
-      await expect(titleInput.first()).toBeVisible({ timeout: 15000 });
-      await expect(titleInput.first()).toBeEnabled();
-      await expect(editor).toBeVisible({ timeout: 30000 });
-      await expect(editor).toHaveAttribute('contenteditable', 'true');
-      break;
-    case 'read-only':
-      await expect(title.first()).toBeVisible({ timeout: 30000 });
-      await expect(titleInput).toHaveCount(0, { timeout: 15000 });
-      await expect(editor).toBeVisible({ timeout: 30000 });
-      await expect(editor).toHaveAttribute('contenteditable', 'false');
-      await selectFirstEditorWord(page, editor);
-      await waitForSelectionEffects(page);
-      await expect(page.getByTestId('inline-comment-readonly-trigger')).toHaveCount(0);
-      break;
-    case 'denied':
-      await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout: 30000 });
-      await expect(title).toHaveCount(0);
-      await expect(titleInput).toHaveCount(0);
-      break;
-    default:
-      throw new Error(`Unsupported seeded stg0822 page access expectation: ${access}`);
-  }
+  await expectSeededPageAccess(page, requireCurrentSeededPage(page), access);
 });
+
+// The page stays open while the owner mutates permissions over the API; the
+// server's permission-changed push must flip the rendered access in place.
+Then('the open seeded stg0822 page becomes {string} without reload', async ({ page }, access: string) => {
+  const seededPage = requireCurrentSeededPage(page);
+  const live = requireLiveSession(page);
+
+  await expectSeededPageAccess(page, seededPage, access, LIVE_REFRESH_TIMEOUT_MS);
+
+  const elapsedMs = Date.now() - live.mutatedAt;
+
+  // Re-assert once the re-probe has had time to settle: the verdict must be
+  // the server's, not the interim safe state.
+  await page.waitForTimeout(LIVE_REFRESH_SETTLE_MS);
+  await expectSeededPageAccess(page, seededPage, access, 5000);
+  await expectNoReloadSince(page, live);
+  console.log(`[stg0822 live] ${seededPage.title} became ${access} ${elapsedMs}ms after ${live.label}`);
+});
+
+Then(
+  'the seeded stg0822 {string} space navigation becomes {string} without reload',
+  async ({ page }, spaceAliasValue: string, visibility: string) => {
+    const seededSpace = stgSpace(spaceAliasValue);
+    const live = requireLiveSession(page);
+    const spaceItem = SpaceSelectors.itemByName(page, seededSpace.name);
+    const expectSpaceVisibility = async (timeout: number) => {
+      switch (visibility) {
+        case 'visible':
+          await expect(spaceItem).toBeVisible({ timeout });
+          break;
+        case 'hidden':
+          // The outline may be cleared while it refetches; only a resolved outline
+          // that still lacks the space proves the sidebar dropped it.
+          await expect(spaceItem).toHaveCount(0, { timeout });
+          await waitForResolvedFolderOutline(page);
+          await expect(spaceItem).toHaveCount(0);
+          break;
+        default:
+          throw new Error(`Unsupported seeded stg0822 space navigation visibility: ${visibility}`);
+      }
+    };
+
+    await expectSpaceVisibility(LIVE_REFRESH_TIMEOUT_MS);
+
+    const elapsedMs = Date.now() - live.mutatedAt;
+
+    // Re-assert once the outline refetch has had time to settle.
+    await page.waitForTimeout(LIVE_REFRESH_SETTLE_MS);
+    await expectSpaceVisibility(5000);
+    await expectNoReloadSince(page, live);
+    console.log(`[stg0822 live] ${seededSpace.name} navigation became ${visibility} ${elapsedMs}ms after ${live.label}`);
+  }
+);
+
+When(
+  'the owner removes seeded stg0822 {string} from seeded stg0822 {string} via the API',
+  async ({ page, request }, accountAliasValue: string, groupAliasValue: string) => {
+    const state = requireState(page);
+    const fixture = requireFixture(page);
+    const groupId = stgGroupId(fixture, groupAliasValue);
+    const email = stgAccountEmail(accountAliasValue);
+    const uid = await findSeededWorkspaceMemberUid(request, fixture, email);
+
+    // Register the restore before the mutation so a failed live assertion
+    // cannot leave the seeded roster short of a member.
+    state.restoreGroupMemberships = true;
+    await markLiveSession(page, state, `removing ${accountAliasValue} from ${groupAliasValue}`);
+    await deleteApi(request, fixture.ownerToken, `${groupMembersApiPath(fixture, groupId)}/${uid}`);
+    await expect
+      .poll(async () => listGroupMemberEmails(request, fixture, groupId), {
+        timeout: 15000,
+        message: `expected ${accountAliasValue} to leave ${groupAliasValue}`,
+      })
+      .not.toContain(email);
+  }
+);
+
+When(
+  'the owner adds seeded stg0822 {string} to seeded stg0822 {string} via the API',
+  async ({ page, request }, accountAliasValue: string, groupAliasValue: string) => {
+    const state = requireState(page);
+    const fixture = requireFixture(page);
+    const groupId = stgGroupId(fixture, groupAliasValue);
+    const email = stgAccountEmail(accountAliasValue);
+    const uid = await findSeededWorkspaceMemberUid(request, fixture, email);
+
+    await markLiveSession(page, state, `adding ${accountAliasValue} to ${groupAliasValue}`);
+    await addGroupMember(request, fixture, groupId, uid);
+    await expect
+      .poll(async () => listGroupMemberEmails(request, fixture, groupId), {
+        timeout: 15000,
+        message: `expected ${accountAliasValue} to join ${groupAliasValue}`,
+      })
+      .toContain(email);
+  }
+);
+
+When(
+  'the owner revokes seeded stg0822 {string} from the seeded stg0822 {string} space via the API',
+  async ({ page, request }, groupAliasValue: string, spaceAliasValue: string) => {
+    const state = requireState(page);
+    const fixture = requireFixture(page);
+    const seededSpace = stgSpace(spaceAliasValue);
+    const groupId = stgGroupId(fixture, groupAliasValue);
+
+    if (groupAliasValue === 'group one') {
+      state.restoreGroupOneGrant = true;
+    }
+
+    await markLiveSession(page, state, `revoking ${groupAliasValue} from ${spaceAliasValue}`);
+    await deleteApi(request, fixture.ownerToken, spaceGroupApiPath(fixture.workspaceId, seededSpace.viewId, groupId));
+    await expect
+      .poll(async () => findSpaceGroupGrant(request, fixture, groupId), {
+        timeout: 15000,
+        message: `expected the ${groupAliasValue} space grant to be revoked`,
+      })
+      .toBeUndefined();
+  }
+);
+
+When(
+  'the owner grants seeded stg0822 {string} on the seeded stg0822 {string} space as {string} with {string} via the API',
+  async ({ page, request }, groupAliasValue: string, spaceAliasValue: string, role: string, accessLabel: string) => {
+    const state = requireState(page);
+    const fixture = requireFixture(page);
+    const seededSpace = stgSpace(spaceAliasValue);
+    const groupId = stgGroupId(fixture, groupAliasValue);
+    const payload = { role: spaceRoleFromLabel(role), access_level: accessLevelFromLabel(accessLabel) };
+
+    if (groupAliasValue === 'group one') {
+      state.restoreGroupOneGrant = true;
+    }
+
+    await markLiveSession(page, state, `granting ${groupAliasValue} ${role} / ${accessLabel} on ${spaceAliasValue}`);
+    await postApi<SpaceGroupPermission>(
+      request,
+      fixture.ownerToken,
+      spaceGroupApiPath(fixture.workspaceId, seededSpace.viewId, groupId),
+      payload
+    );
+    await expect
+      .poll(
+        async () => {
+          const grant = await findSpaceGroupGrant(request, fixture, groupId);
+
+          return grant ? `${grant.role}:${grant.access_level}` : 'missing';
+        },
+        { timeout: 15000, message: `expected ${groupAliasValue} to hold role ${role} with ${accessLabel}` }
+      )
+      .toBe(`${payload.role}:${payload.access_level}`);
+  }
+);
+
+When(
+  'the owner changes the space access of seeded stg0822 {string} on the seeded stg0822 {string} space to {string} via the API',
+  async ({ page, request }, groupAliasValue: string, spaceAliasValue: string, accessLabel: string) => {
+    const state = requireState(page);
+    const fixture = requireFixture(page);
+    const seededSpace = stgSpace(spaceAliasValue);
+    const groupId = stgGroupId(fixture, groupAliasValue);
+    const current = await findSpaceGroupGrant(request, fixture, groupId);
+
+    if (!current) {
+      throw new Error(`Seeded stg0822 ${groupAliasValue} holds no grant on ${spaceAliasValue}`);
+    }
+
+    if (groupAliasValue === 'group one') {
+      state.restoreGroupOneGrant = true;
+    }
+
+    const payload = { role: current.role, access_level: accessLevelFromLabel(accessLabel) };
+
+    await markLiveSession(page, state, `changing ${groupAliasValue} space access to ${accessLabel}`);
+    await patchApi<SpaceGroupPermission>(
+      request,
+      fixture.ownerToken,
+      spaceGroupApiPath(fixture.workspaceId, seededSpace.viewId, groupId),
+      payload
+    );
+    await expect
+      .poll(async () => (await findSpaceGroupGrant(request, fixture, groupId))?.access_level, {
+        timeout: 15000,
+        message: `expected the ${groupAliasValue} space access to become ${accessLabel}`,
+      })
+      .toBe(payload.access_level);
+  }
+);
 
 When('I open the seeded stg0822 {string} manage space members tab', async ({ page }, spaceAliasValue: string) => {
   const seededSpace = stgSpace(spaceAliasValue);
@@ -368,6 +581,67 @@ Then(
     await expect(row.getByText('Owner', { exact: true }).first()).toBeVisible();
   }
 );
+
+async function expectSeededPageAccess(page: Page, seededPage: SeededStgPage, access: string, timeout = 30000) {
+  const title = page.getByText(seededPage.title, { exact: true });
+  const titleInput = PageSelectors.titleInput(page);
+  const editor = EditorSelectors.firstEditor(page);
+
+  switch (access) {
+    case 'editable':
+      await expect(title.first()).toBeVisible({ timeout });
+      await expect(titleInput.first()).toBeVisible({ timeout });
+      await expect(titleInput.first()).toBeEnabled();
+      await expect(editor).toBeVisible({ timeout });
+      await expect(editor).toHaveAttribute('contenteditable', 'true', { timeout });
+      break;
+    case 'read-only':
+      await expect(title.first()).toBeVisible({ timeout });
+      await expect(titleInput).toHaveCount(0, { timeout });
+      await expect(editor).toBeVisible({ timeout });
+      await expect(editor).toHaveAttribute('contenteditable', 'false', { timeout });
+      await selectFirstEditorWord(page, editor);
+      await waitForSelectionEffects(page);
+      await expect(page.getByTestId('inline-comment-readonly-trigger')).toHaveCount(0);
+      break;
+    case 'denied':
+      await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout });
+      await expect(title).toHaveCount(0);
+      await expect(titleInput).toHaveCount(0);
+      break;
+    default:
+      throw new Error(`Unsupported seeded stg0822 page access expectation: ${access}`);
+  }
+}
+
+// Stamp the open page right before an owner API mutation: a reload would
+// recreate `window` and lose the marker, a navigation would change the URL.
+async function markLiveSession(page: Page, state: ScenarioState, label: string) {
+  const marker = `stg0822-live-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  await page.evaluate((value) => {
+    (window as LiveMarkerWindow).__stg0822LiveMarker = value;
+  }, marker);
+  state.liveSession = { label, url: page.url(), marker, mutatedAt: Date.now() };
+}
+
+async function expectNoReloadSince(page: Page, live: LiveSession) {
+  expect(page.url(), `the page must not navigate while ${live.label} refreshes it live`).toBe(live.url);
+
+  const marker = await page.evaluate(() => (window as LiveMarkerWindow).__stg0822LiveMarker);
+
+  expect(marker, `the page must not reload while ${live.label} refreshes it live`).toBe(live.marker);
+}
+
+function requireLiveSession(page: Page): LiveSession {
+  const live = requireState(page).liveSession;
+
+  if (!live) {
+    throw new Error('No owner API mutation has been issued against the open seeded stg0822 page');
+  }
+
+  return live;
+}
 
 async function selectFirstEditorWord(page: Page, editor: Locator) {
   const firstText = editor.locator('[data-slate-string="true"]').first();
@@ -597,6 +871,84 @@ async function findViewGroupGrant(
   return payload.groups.find((group) => group.group_id === groupId);
 }
 
+// Re-add any seeded group member that a live-refresh scenario removed. Members
+// that are already present are left untouched, so this is safe to run eagerly.
+async function ensureSeededGroupMemberships(request: APIRequestContext, fixture: FixtureContext) {
+  for (const alias of Object.keys(SEEDED_GROUP_MEMBERSHIPS) as StgGroupAlias[]) {
+    const groupId = fixture.groupIds[alias];
+    const emails = await listGroupMemberEmails(request, fixture, groupId);
+
+    for (const accountAlias of SEEDED_GROUP_MEMBERSHIPS[alias]) {
+      const email = STG_ACCOUNTS[accountAlias];
+
+      if (emails.includes(email)) continue;
+
+      const uid = await findSeededWorkspaceMemberUid(request, fixture, email);
+
+      await addGroupMember(request, fixture, groupId, uid);
+    }
+
+    const restored = await listGroupMemberEmails(request, fixture, groupId);
+    const missing = SEEDED_GROUP_MEMBERSHIPS[alias].filter(
+      (accountAlias) => !restored.includes(STG_ACCOUNTS[accountAlias])
+    );
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Seeded stg0822 ${alias} is still missing ${missing.join(', ')} after restore: ${restored.join(', ')}`
+      );
+    }
+  }
+}
+
+async function listGroupMemberEmails(
+  request: APIRequestContext,
+  fixture: FixtureContext,
+  groupId: string
+): Promise<string[]> {
+  const payload = await getApiPreservingUid<WorkspaceGroupMembersPayload>(
+    request,
+    fixture.ownerToken,
+    groupMembersApiPath(fixture, groupId)
+  );
+
+  return payload.members.map((member) => member.email.toLowerCase());
+}
+
+async function addGroupMember(request: APIRequestContext, fixture: FixtureContext, groupId: string, uid: string) {
+  if (!/^\d+$/.test(uid)) {
+    throw new Error(`Workspace group member UID must be numeric, got: ${uid}`);
+  }
+
+  // Send the uid as a raw JSON number: it is larger than Number.MAX_SAFE_INTEGER,
+  // so a JS number literal would round it to a different user.
+  await postRawApi<void>(request, fixture.ownerToken, groupMembersApiPath(fixture, groupId), `{"uid":${uid}}`);
+}
+
+// Resolve a seeded account's uid through the owner's workspace member list.
+async function findSeededWorkspaceMemberUid(
+  request: APIRequestContext,
+  fixture: FixtureContext,
+  email: string
+): Promise<string> {
+  const members = await getApiPreservingUid<WorkspaceMember[]>(
+    request,
+    fixture.ownerToken,
+    `/api/workspace/${fixture.workspaceId}/member?include_pending=true`
+  );
+  const member = members.find((workspaceMember) => workspaceMember.email.toLowerCase() === email.toLowerCase());
+
+  if (member?.uid === undefined || member.uid === null) {
+    throw new Error(`Seeded stg0822 workspace member uid not found for ${email}`);
+  }
+
+  return String(member.uid);
+}
+
+function groupMembersApiPath(fixture: FixtureContext, groupId: string): string {
+  return `/api/workspace/${fixture.workspaceId}/groups/${groupId}/members`;
+}
+
 function spaceGroupApiPath(workspaceId: string, spaceId: string, groupId?: string): string {
   const base = `/api/workspace/${workspaceId}/spaces/${spaceId}/group`;
 
@@ -630,18 +982,60 @@ async function signInSeededOwnerViaApi(request: APIRequestContext): Promise<stri
 }
 
 async function getApi<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
+  return getApiResponse<T>(request, token, path, false);
+}
+
+async function getApiPreservingUid<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
+  return getApiResponse<T>(request, token, path, true);
+}
+
+async function getApiResponse<T>(
+  request: APIRequestContext,
+  token: string,
+  path: string,
+  preserveUid: boolean
+): Promise<T> {
   const response = await request.get(`${TestConfig.apiUrl}${path}`, {
     headers: apiHeaders(token),
     failOnStatusCode: false,
   });
   const text = await response.text();
-  const body = parseApiResponse<T>(text);
+  const body = parseApiResponse<T>(text, preserveUid);
 
   if (!response.ok() || body?.code !== 0 || body.data === undefined) {
     throw new Error(`API GET failed for ${path}: HTTP ${response.status()} ${text}`);
   }
 
   return body.data;
+}
+
+async function postRawApi<T>(request: APIRequestContext, token: string, path: string, data: string): Promise<T> {
+  const response = await request.post(`${TestConfig.apiUrl}${path}`, {
+    headers: apiHeaders(token),
+    data,
+    failOnStatusCode: false,
+  });
+  const text = await response.text();
+  const body = parseApiResponse<T>(text, true);
+
+  if (!response.ok() || body?.code !== 0) {
+    throw new Error(`API POST failed for ${path}: HTTP ${response.status()} ${text}`);
+  }
+
+  return body.data as T;
+}
+
+async function deleteApi(request: APIRequestContext, token: string, path: string): Promise<void> {
+  const response = await request.delete(`${TestConfig.apiUrl}${path}`, {
+    headers: apiHeaders(token),
+    failOnStatusCode: false,
+  });
+  const text = await response.text();
+  const body = parseApiResponse<void>(text);
+
+  if (response.ok() && (!text || body?.code === 0)) return;
+
+  throw new Error(`API DELETE failed for ${path}: HTTP ${response.status()} ${text}`);
 }
 
 async function postApi<T>(
@@ -686,10 +1080,10 @@ async function patchApi<T>(
   return body.data as T;
 }
 
-function parseApiResponse<T>(text: string): ApiResponse<T> | null {
+function parseApiResponse<T>(text: string, preserveUid = false): ApiResponse<T> | null {
   if (!text) return null;
 
-  return parseJson(text) as ApiResponse<T> | null;
+  return parseJson(preserveUid ? text.replace(UID_FIELD_REGEX, '"uid":"$1"') : text) as ApiResponse<T> | null;
 }
 
 function parseJson(text: string): unknown | null {
@@ -859,6 +1253,17 @@ function accessLevelFromLabel(label: string): number {
       return ACCESS_LEVEL_FULL_ACCESS;
     default:
       throw new Error(`Unsupported space access label: ${label}`);
+  }
+}
+
+function spaceRoleFromLabel(label: string): string {
+  switch (label) {
+    case 'Member':
+      return SPACE_MEMBER_ROLE_MEMBER;
+    case 'Owner':
+      return 'owner';
+    default:
+      throw new Error(`Unsupported space role label: ${label}`);
   }
 }
 
