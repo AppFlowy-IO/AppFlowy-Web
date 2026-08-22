@@ -1389,7 +1389,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[6%]' }}
       okLoading={saving}
       onOk={handleSave}
-      okButtonProps={{ disabled: metadataDisabled || saving, 'data-testid': 'manage-space-save' }}
+      okButtonProps={{ disabled: metadataDisabled || saving }}
       overflowHidden
       PaperProps={{
         style: {

@@ -373,7 +373,7 @@ function confirmPending() {
 }
 
 function saveButton() {
-  return screen.getByTestId('manage-space-save');
+  return screen.getByTestId('modal-ok-button');
 }
 
 function structuredUpdatePermission(callIndex = 0): SpacePermissionSettings {

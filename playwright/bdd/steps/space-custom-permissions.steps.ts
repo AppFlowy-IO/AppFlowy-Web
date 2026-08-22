@@ -428,7 +428,7 @@ When('I confirm the Manage Space dialog', async ({ page }) => {
 
 When('I save the Manage Space panel', async ({ page }) => {
   const modal = manageSpaceModal(page);
-  const save = modal.getByTestId('manage-space-save');
+  const save = modal.getByTestId('modal-ok-button');
 
   await expect(save).toBeEnabled({ timeout: 15000 });
   await save.click();
