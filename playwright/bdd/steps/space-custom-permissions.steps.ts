@@ -1337,3 +1337,14 @@ When('I close the Manage Space panel without saving', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(manageSpaceModal(page)).toHaveCount(0, { timeout: 15000 });
 });
+
+Then('the {string} space access card is selected', async ({ page }, visibilityLabel: string) => {
+  const visibility = visibilityFromLabel(visibilityLabel);
+  const modal = manageSpaceModal(page);
+  const selected = modal.getByTestId(`manage-space-visibility-option-${visibility}`);
+
+  await expect(selected).toHaveAttribute('data-selected', 'true', { timeout: 15000 });
+  await expect(selected.getByTestId('manage-space-visibility-selected-check')).toBeVisible();
+  // Exactly one card carries the highlight.
+  await expect(modal.locator('[data-testid^="manage-space-visibility-option-"][data-selected="true"]')).toHaveCount(1);
+});
