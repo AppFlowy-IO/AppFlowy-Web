@@ -184,6 +184,11 @@ const publicPermission: SpacePermissionSettings = {
   visibility: SpaceVisibility.Public,
 };
 
+const customPermission: SpacePermissionSettings = {
+  ...privatePermission,
+  visibility: SpaceVisibility.Custom,
+};
+
 const workspaceCandidate: WorkspaceMember = {
   uid: '1234567890123456',
   name: 'Candidate',
@@ -263,6 +268,18 @@ function creatorMember(): SpaceMember {
   };
 }
 
+// An implicit member a public or custom space lists for every workspace member.
+function workspaceDefaultMember(): SpaceMember {
+  return {
+    uid: '4567890123456789',
+    name: 'Default member',
+    email: 'default-member@appflowy.io',
+    role: SpaceMemberRole.Member,
+    access_level: AccessLevel.ReadAndWrite,
+    source: 'workspace_default',
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -290,14 +307,20 @@ describe('ManageSpace ACL management', () => {
     mockRemoveSpaceGroupPermission.mockResolvedValue(undefined);
   });
 
-  it('offers only Public and Private and flips a public space to Private through the compatibility API', async () => {
+  it('offers Public, Custom and Private and flips a public space to Private through the compatibility API', async () => {
     mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
     await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
-    expect(screen.getAllByTestId(/^manage-space-visibility-option-/)).toHaveLength(2);
+    expect(screen.getAllByTestId(/^manage-space-visibility-option-/)).toHaveLength(3);
     expect(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Public}`).textContent).toContain(
       'space.publicPermission'
+    );
+    expect(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Custom}`).textContent).toContain(
+      'space.customPermission'
+    );
+    expect(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Custom}`).textContent).toContain(
+      'space.customPermissionDescription'
     );
     expect(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Private}`).textContent).toContain(
       'space.privatePermission'
@@ -468,8 +491,10 @@ describe('ManageSpace ACL management', () => {
 
       expect(screen.queryByText('space.permissionManager.membersTab')).toBeNull();
       expect(screen.queryByTestId('manage-space-members-default-access-row')).toBeNull();
+      // The binary editor cannot persist Custom, so it must not offer it.
       expect(screen.getAllByTestId(/^manage-space-visibility-option-/)).toHaveLength(2);
       expect(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Public}`)).toBeTruthy();
+      expect(screen.queryByTestId(`manage-space-visibility-option-${SpaceVisibility.Custom}`)).toBeNull();
 
       fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Private}`));
       fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
@@ -929,11 +954,160 @@ describe('ManageSpace ACL management', () => {
     expect(screen.queryByRole('button', { name: 'space.permissionManager.remove' })).toBeNull();
   });
 
+  it('lets managers edit a custom space roster, including removing default members', async () => {
+    const explicitMember = manualMember();
+    const defaultMember = workspaceDefaultMember();
+    const memberGroup = group('group-1', 'Engineering');
+
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    mockGetSpaceMembers.mockResolvedValue({ members: [explicitMember, defaultMember], groups: [memberGroup] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    const defaultRow = await screen.findByTestId(`space-member-row-${defaultMember.uid}`);
+    const explicitRow = screen.getByTestId(`space-member-row-${explicitMember.uid}`);
+    const groupRow = screen.getByTestId('space-group-row-group-1');
+
+    // The header icon/description treat Custom as a non-private space with the
+    // same implicit roster as Public ...
+    expect(screen.getByTestId('manage-space-visibility-trigger').textContent).toContain('space.customPermission');
+    expect(screen.getByTestId('manage-space-members-default-access-row').textContent).toContain(
+      'space.permissionManager.publicMembersDescription'
+    );
+    // ... but the roster stays editable: members can be added and every row,
+    // including an implicit workspace_default one, can be removed.
+    await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
+    expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
+    expect(screen.queryByText('space.permissionManager.inheritedAccessManagedFromGeneral')).toBeNull();
+    expect(within(defaultRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
+    expect(within(explicitRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
+    expect(within(groupRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
+
+    fireEvent.click(within(defaultRow).getByRole('button', { name: 'space.permissionManager.remove' }));
+
+    await waitFor(() => expect(mockRemoveSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', defaultMember.uid));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('space.permissionManager.removeSpaceMemberSuccess'));
+    expect(mockUpdateSpaceMember).not.toHaveBeenCalled();
+  });
+
+  it('keeps default members of a private space non-removable', async () => {
+    const defaultMember = workspaceDefaultMember();
+
+    mockGetSpaceMembers.mockResolvedValue({ members: [defaultMember], groups: [] });
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    const defaultRow = await screen.findByTestId(`space-member-row-${defaultMember.uid}`);
+
+    expect(within(defaultRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(true);
+    expect(screen.getByText('space.permissionManager.inheritedAccessManagedFromGeneral')).toBeTruthy();
+  });
+
+  it('flips a private space to Custom through the compatibility Public marker before the structured update', async () => {
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Renamed custom space' },
+    });
+    fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Custom}`));
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledTimes(1));
+    expect(mockUpdateSpace).toHaveBeenCalledWith({
+      view_id: 'space-1',
+      name: 'Space one',
+      space_icon: 'space',
+      space_icon_color: '#000000',
+      space_permission: SpacePermission.Public,
+    });
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+        name: 'Renamed custom space',
+        space_icon: 'space',
+        space_icon_color: '#000000',
+        permission: customPermission,
+      })
+    );
+    expect(mockUpdateSpace.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUpdateStructuredSpace.mock.invocationCallOrder[0]
+    );
+  });
+
+  it('flips a custom space to Private through the compatibility API before the structured update', async () => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Private}`));
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledTimes(1));
+    expect(mockUpdateSpace).toHaveBeenCalledWith(expect.objectContaining({ space_permission: SpacePermission.Private }));
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith(
+        'workspace-1',
+        'space-1',
+        expect.objectContaining({ permission: privatePermission })
+      )
+    );
+    expect(mockUpdateSpace.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUpdateStructuredSpace.mock.invocationCallOrder[0]
+    );
+  });
+
+  it.each([
+    ['public', publicPermission, SpaceVisibility.Custom, customPermission],
+    ['custom', customPermission, SpaceVisibility.Public, publicPermission],
+  ])(
+    'switches a %s space between Public and Custom without a compatibility flip',
+    async (_label, loaded, requested, expected) => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: loaded }));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+      fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${requested}`));
+      fireEvent.click(screen.getByTestId('manage-space-save'));
+
+      await waitFor(() =>
+        expect(mockUpdateStructuredSpace).toHaveBeenCalledWith(
+          'workspace-1',
+          'space-1',
+          expect.objectContaining({ permission: expected })
+        )
+      );
+      expect(mockUpdateSpace).not.toHaveBeenCalled();
+    }
+  );
+
+  it('restores the non-private compatibility marker of a custom space when the structured update fails', async () => {
+    mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    mockUpdateStructuredSpace.mockRejectedValueOnce(new Error('Structured update failed'));
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitFor(() => expect(screen.getByTestId('manage-space-visibility-trigger').disabled).toBe(false));
+    fireEvent.click(screen.getByTestId(`manage-space-visibility-option-${SpaceVisibility.Private}`));
+    fireEvent.click(screen.getByTestId('manage-space-save'));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Structured update failed'));
+    await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledTimes(2));
+    expect(mockUpdateSpace.mock.calls.map(([payload]) => payload.space_permission)).toEqual([
+      SpacePermission.Private,
+      // Custom maps onto the non-private legacy marker, exactly like Public.
+      SpacePermission.Public,
+    ]);
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(2));
+    expect(mockUpdateStructuredSpace.mock.calls[1][2]).toEqual({
+      name: 'Space one',
+      space_icon: 'space',
+      space_icon_color: '#000000',
+      permission: customPermission,
+    });
+  });
+
   it('passes an unknown visibility through unchanged and labels it Public', async () => {
-    const customVisibility = 'custom' as SpaceVisibility;
+    const unknownVisibility = 'invite_only' as SpaceVisibility;
 
     mockGetSpacePermission.mockResolvedValue(
-      permissionResponse({ permission: { ...privatePermission, visibility: customVisibility } })
+      permissionResponse({ permission: { ...privatePermission, visibility: unknownVisibility } })
     );
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
@@ -956,7 +1130,7 @@ describe('ManageSpace ACL management', () => {
         'space-1',
         expect.objectContaining({
           permission: expect.objectContaining({
-            visibility: customVisibility,
+            visibility: unknownVisibility,
             member_default_access_level: AccessLevel.ReadOnly,
           }),
         })

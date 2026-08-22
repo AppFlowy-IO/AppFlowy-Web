@@ -1,12 +1,36 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { SpacePermission, ViewLayout } from '@/application/types';
+import {
+  AccessLevel,
+  SpaceInvitePolicy,
+  SpacePermission,
+  SpacePermissionSettings,
+  SpaceSidebarEditPolicy,
+  SpaceVisibility,
+  ViewLayout,
+} from '@/application/types';
+import { notify } from '@/components/_shared/notify';
 import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
 
 import type { ReactNode } from 'react';
 
 const mockCreateSpace = jest.fn();
 const mockCreateSpaceWithInitialPage = jest.fn();
+
+// The default structured settings a new custom space is created with.
+const customPermission: SpacePermissionSettings = {
+  visibility: SpaceVisibility.Custom,
+  owner_access_level: AccessLevel.FullAccess,
+  member_default_access_level: AccessLevel.ReadAndWrite,
+  invite_policy: SpaceInvitePolicy.OwnersOnly,
+  sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
+  invite_link_enabled: false,
+  security: {
+    disable_guests: false,
+    disable_public_links: false,
+    disable_export: false,
+  },
+};
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -54,14 +78,18 @@ describe('CreateSpaceModal visibility options', () => {
     });
   });
 
-  it('offers only Public and Private, defaulting to Public', () => {
+  it('offers Public, Custom and Private, defaulting to Public', () => {
     render(<CreateSpaceModal open onClose={jest.fn()} />);
 
     expect(screen.getByTestId('space-visibility-button').textContent).toContain('space.publicPermission');
     fireEvent.click(screen.getByTestId('space-visibility-button'));
 
-    expect(screen.getAllByTestId(/^space-visibility-option-/)).toHaveLength(2);
+    expect(screen.getAllByTestId(/^space-visibility-option-/)).toHaveLength(3);
     expect(screen.getByTestId('space-visibility-option-public').textContent).toContain('space.publicPermission');
+    expect(screen.getByTestId('space-visibility-option-custom').textContent).toContain('space.customPermission');
+    expect(screen.getByTestId('space-visibility-option-custom').textContent).toContain(
+      'space.customPermissionDescription'
+    );
     expect(screen.getByTestId('space-visibility-option-private').textContent).toContain('space.privatePermission');
   });
 
@@ -97,6 +125,61 @@ describe('CreateSpaceModal visibility options', () => {
         })
       )
     );
+  });
+
+  it('sends the structured custom permission instead of a legacy value for a custom space', async () => {
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      target: { value: 'Custom space' },
+    });
+    fireEvent.click(screen.getByTestId('space-visibility-button'));
+    fireEvent.click(screen.getByTestId('space-visibility-option-custom'));
+    expect(screen.getByTestId('space-visibility-button').textContent).toContain('space.customPermission');
+    fireEvent.click(screen.getByTestId('create-space-save'));
+
+    await waitFor(() =>
+      expect(mockCreateSpace).toHaveBeenCalledWith({
+        name: 'Custom space',
+        space_icon: '',
+        space_icon_color: '',
+        permission: customPermission,
+      })
+    );
+    expect(mockCreateSpace.mock.calls[0][0]).not.toHaveProperty('space_permission');
+  });
+
+  it('keeps the structured custom permission when creating the initial page', async () => {
+    const initialPage = { layout: ViewLayout.Document, name: 'First page' };
+
+    render(<CreateSpaceModal open onClose={jest.fn()} initialPage={initialPage} />);
+    fireEvent.click(screen.getByTestId('space-visibility-button'));
+    fireEvent.click(screen.getByTestId('space-visibility-option-custom'));
+    fireEvent.click(screen.getByTestId('create-space-save'));
+
+    await waitFor(() =>
+      expect(mockCreateSpaceWithInitialPage).toHaveBeenCalledWith({
+        name: '',
+        space_icon: '',
+        space_icon_color: '',
+        permission: customPermission,
+        initial_page: initialPage,
+      })
+    );
+    expect(mockCreateSpaceWithInitialPage.mock.calls[0][0]).not.toHaveProperty('space_permission');
+    expect(mockCreateSpace).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a structured create failure for a custom space instead of swallowing it', async () => {
+    mockCreateSpace.mockRejectedValueOnce(new Error('structured spaces unavailable'));
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+
+    fireEvent.click(screen.getByTestId('space-visibility-button'));
+    fireEvent.click(screen.getByTestId('space-visibility-option-custom'));
+    fireEvent.click(screen.getByTestId('create-space-save'));
+
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('structured spaces unavailable'));
+    expect(mockCreateSpace).toHaveBeenCalledTimes(1);
   });
 
   it('uses the same Public compatibility path when creating the initial page', async () => {

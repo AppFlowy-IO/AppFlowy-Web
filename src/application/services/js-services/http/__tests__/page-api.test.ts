@@ -1,5 +1,7 @@
 import {
   AccessLevel,
+  isLegacyCompatibleSpaceVisibility,
+  legacySpacePermission,
   SpaceInvitePolicy,
   SpacePermission,
   SpacePermissionSettings,
@@ -304,8 +306,6 @@ describe('createSpace legacy fallback', () => {
   it.each([
     [SpaceVisibility.Public, SpacePermission.Public],
     [SpaceVisibility.Private, SpacePermission.Private],
-    // A visibility this client does not know yet is public-like, never private.
-    ['custom' as SpaceVisibility, SpacePermission.Public],
   ])('downgrades %s visibility to the legacy binary permission on a 404', async (visibility, expectedLegacy) => {
     post.mockImplementation(async (url: string) => {
       if (url === '/api/workspace/workspace-id/spaces') throw endpointMissing;
@@ -336,5 +336,66 @@ describe('createSpace legacy fallback', () => {
     );
 
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a custom space through the structured endpoint only', async () => {
+    const customPermission = structuredPayload(SpaceVisibility.Custom);
+
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'custom-space-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpace('workspace-id', {
+        name: 'Custom space',
+        permission: customPermission,
+        // A stray compatibility value must never reach either endpoint.
+        space_permission: SpacePermission.Private,
+      })
+    ).resolves.toBe('custom-space-id');
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/api/workspace/workspace-id/spaces', {
+      name: 'Custom space',
+      permission: customPermission,
+    });
+  });
+
+  it('does not silently downgrade a custom space to the legacy endpoint on a 404', async () => {
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') throw endpointMissing;
+      if (url === '/api/workspace/workspace-id/space') return apiResponse({ view_id: 'space-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+
+    await expect(
+      createSpace('workspace-id', { name: 'Custom space', permission: structuredPayload(SpaceVisibility.Custom) })
+    ).rejects.toBe(endpointMissing);
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls.map(([url]) => url)).not.toContain('/api/workspace/workspace-id/space');
+  });
+});
+
+describe('legacy space permission mapping', () => {
+  it.each([
+    [SpaceVisibility.Public, SpacePermission.Public],
+    [SpaceVisibility.Private, SpacePermission.Private],
+    // Custom is non-private: its legacy marker is 0, like Public.
+    [SpaceVisibility.Custom, SpacePermission.Public],
+    // A visibility this client does not know yet is public-like, never private.
+    ['invite_only' as SpaceVisibility, SpacePermission.Public],
+  ])('maps %s visibility to legacy space_permission %s', (visibility, expectedLegacy) => {
+    expect(legacySpacePermission(visibility)).toBe(expectedLegacy);
+  });
+
+  it.each([
+    [SpaceVisibility.Public, true],
+    [SpaceVisibility.Private, true],
+    [SpaceVisibility.Custom, false],
+    ['invite_only' as SpaceVisibility, false],
+  ])('treats %s visibility as legacy-compatible: %s', (visibility, expected) => {
+    expect(isLegacyCompatibleSpaceVisibility(visibility)).toBe(expected);
   });
 });
