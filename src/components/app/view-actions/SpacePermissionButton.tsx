@@ -78,7 +78,19 @@ function SpacePermissionButton({
                   }}
                 >
                   <div className={'flex w-full flex-col items-start'}>
-                    <div className={'text-base font-normal'}>{spaceVisibilityLabel(option, t)}</div>
+                    <div className={'flex items-center gap-2 text-base font-normal'}>
+                      {spaceVisibilityLabel(option, t)}
+                      {option === SpaceVisibility.Custom && (
+                        <span
+                          className={
+                            'rounded-full bg-fill-theme-thick px-2 py-[1px] text-xs font-medium text-text-on-fill'
+                          }
+                          data-testid='space-visibility-new-badge'
+                        >
+                          {t('space.newBadge')}
+                        </span>
+                      )}
+                    </div>
                     <div className={'text-left text-text-secondary'}>{spaceVisibilityDescription(option, t)}</div>
                   </div>
                   {option === value && <TickIcon className={'h-6 w-6 text-function-success'} />}

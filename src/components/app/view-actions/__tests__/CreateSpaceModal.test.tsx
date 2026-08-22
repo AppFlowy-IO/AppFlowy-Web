@@ -22,6 +22,7 @@ const customPermission: SpacePermissionSettings = {
   visibility: SpaceVisibility.Custom,
   owner_access_level: AccessLevel.FullAccess,
   member_default_access_level: AccessLevel.ReadAndWrite,
+  everyone_else_access_level: AccessLevel.ReadOnly,
   invite_policy: SpaceInvitePolicy.OwnersOnly,
   sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
   invite_link_enabled: false,
@@ -91,6 +92,13 @@ describe('CreateSpaceModal visibility options', () => {
       'space.customPermissionDescription'
     );
     expect(screen.getByTestId('space-visibility-option-private').textContent).toContain('space.privatePermission');
+    expect(screen.getByTestId('space-visibility-option-private').textContent).toContain(
+      'space.privatePermissionDescription'
+    );
+    // Only the new Custom option carries the NEW badge.
+    expect(screen.getAllByTestId('space-visibility-new-badge')).toHaveLength(1);
+    expect(screen.getByTestId('space-visibility-option-custom').textContent).toContain('space.newBadge');
+    expect(screen.getByTestId('space-visibility-option-public').textContent).not.toContain('space.newBadge');
   });
 
   it('uses the compatibility Public value for a public space', async () => {
