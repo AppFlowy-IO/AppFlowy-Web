@@ -6,7 +6,7 @@ import { clearData, db } from '@/application/db';
 import { UserService } from '@/application/services/domains';
 import { clearHttpResponseCaches, initAPIService } from '@/application/services/js-services/http/core';
 import { EventType, on } from '@/application/session';
-import { getTokenParsed, isTokenValid } from '@/application/session/token';
+import { getTokenParsed } from '@/application/session/token';
 import { User } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { createInitialTimezone, UserTimezone } from '@/application/user-timezone.types';
@@ -27,12 +27,12 @@ interface AuthenticationState {
 }
 
 function readAuthenticationState(): AuthenticationState {
-  const isAuthenticated = isTokenValid();
+  // A parsed token always carries a stable user id (see normalizeAuthToken), so
+  // "authenticated" and "known identity" are one fact read from one parse.
+  // AppProvider relies on this to remount account-scoped providers by key.
+  const userId = getTokenParsed()?.user.id;
 
-  return {
-    isAuthenticated,
-    userId: isAuthenticated ? getTokenParsed()?.user?.id : undefined,
-  };
+  return { isAuthenticated: userId !== undefined, userId };
 }
 
 function AppConfig({ children }: { children: React.ReactNode }) {
@@ -66,21 +66,20 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const syncAuthenticationState = (clearUserCaches = false) => {
+    const syncAuthenticationState = () => {
       const nextState = readAuthenticationState();
-      const switchedAccount =
-        authenticatedUserIdRef.current !== undefined &&
-        nextState.userId !== undefined &&
-        authenticatedUserIdRef.current !== nextState.userId;
 
-      if (clearUserCaches || !nextState.isAuthenticated || switchedAccount) clearHttpResponseCaches();
+      // The HTTP ETag/response cache is keyed by URL without user identity.
+      // Drop it whenever the identity this tab acts as changes (sign-in,
+      // sign-out, account switch, or a token that no longer resolves to a
+      // user). A same-account refresh from another tab keeps it.
+      if (nextState.userId !== authenticatedUserIdRef.current) clearHttpResponseCaches();
       authenticatedUserIdRef.current = nextState.userId;
       setAuthenticationState(nextState);
     };
 
     const invalidateAuthenticationState = () => {
-      // The HTTP ETag/response cache is keyed by URL without user identity.
-      // Drop it before another account can sign in within this tab.
+      // Always drop the cache: the same tab may sign in as another account next.
       clearHttpResponseCaches();
       authenticatedUserIdRef.current = undefined;
       setAuthenticationState({ isAuthenticated: false });
@@ -88,14 +87,10 @@ function AppConfig({ children }: { children: React.ReactNode }) {
 
     const handleStorageChange = (event: StorageEvent) => {
       if (event.key !== 'token') return;
-      // A token replacement may belong to another account even when an opaque
-      // access token has no decodable user claim. Clear URL-keyed caches for
-      // every cross-tab replacement; same-account refreshes simply pay a small
-      // cache miss.
-      syncAuthenticationState(true);
+      syncAuthenticationState();
     };
 
-    const unsubscribeValid = on(EventType.SESSION_VALID, () => syncAuthenticationState());
+    const unsubscribeValid = on(EventType.SESSION_VALID, syncAuthenticationState);
     const unsubscribeInvalid = on(EventType.SESSION_INVALID, invalidateAuthenticationState);
 
     window.addEventListener('storage', handleStorageChange);

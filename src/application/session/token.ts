@@ -104,7 +104,21 @@ function parseAuthToken(tokenData: unknown): GoTrueAuthToken | null {
   }
 }
 
+// The stored token is read by both axios interceptors and by several cache-key
+// builders, so the last successful parse is memoized on the raw stored string.
+// The string itself is the cache key: every save or removal changes it, and a
+// failed parse is never cached so a bad value is removed on each read.
+let memoizedRawToken: string | null = null;
+let memoizedParsedToken: GoTrueAuthToken | null = null;
+
+function memoizeParsedToken(rawToken: string | null, parsed: GoTrueAuthToken | null) {
+  memoizedRawToken = rawToken;
+  memoizedParsedToken = parsed;
+}
+
 function removeStoredToken() {
+  memoizeParsedToken(null, null);
+
   try {
     window.localStorage.removeItem(TOKEN_STORAGE_KEY);
   } catch {
@@ -126,6 +140,7 @@ export function saveGoTrueAuth(tokenData: string): boolean {
     return false;
   }
 
+  memoizeParsedToken(serialized, parsed);
   emit(EventType.SESSION_REFRESH, serialized);
   return true;
 }
@@ -169,10 +184,15 @@ export function getTokenParsed(): GoTrueAuthToken | null {
   const token = getToken();
 
   if (!token) return null;
+  if (token === memoizedRawToken && memoizedParsedToken) return memoizedParsedToken;
 
   const parsed = parseAuthToken(token);
 
-  if (!parsed) removeStoredToken();
+  if (!parsed) {
+    removeStoredToken();
+    return null;
+  }
 
+  memoizeParsedToken(token, parsed);
   return parsed;
 }

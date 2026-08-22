@@ -4,6 +4,7 @@ import { useContext } from 'react';
 import { UserService, WorkspaceService, AuthService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { type UserWorkspaceInfo } from '@/application/types';
+import { AppProvider } from '@/components/app/app.hooks';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { AppAuthLayer } from '@/components/app/layers/AppAuthLayer';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -32,6 +33,16 @@ jest.mock('@/application/services/domains', () => ({
   WorkspaceService: {
     open: jest.fn(),
   },
+}));
+
+// AppProvider composes the workspace layers under AppAuthLayer; they are
+// irrelevant to these tests, so render their children directly.
+jest.mock('@/components/app/layers/AppSyncLayer', () => ({
+  AppSyncLayer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('@/components/app/layers/AppBusinessLayer', () => ({
+  AppBusinessLayer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 function createDeferred<T>() {
@@ -91,7 +102,7 @@ describe('AppAuthLayer workspace info loading', () => {
     expect(mockGetWorkspaceInfo).not.toHaveBeenCalled();
   });
 
-  it('clears workspace-scoped state as soon as authentication is invalidated', async () => {
+  it('remounts the account-scoped layers when authentication is invalidated or the account changes', async () => {
     mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
 
     function CaptureAuthContext() {
@@ -102,37 +113,38 @@ describe('AppAuthLayer workspace info loading', () => {
       );
     }
 
-    const view = render(
+    const renderApp = (config: { isAuthenticated: boolean; authenticatedUserId?: string }) => (
       <AFConfigContext.Provider
         value={{
-          isAuthenticated: true,
+          ...config,
           updateCurrentUser: jest.fn(),
           openLoginModal: jest.fn(),
         }}
       >
-        <AppAuthLayer>
+        <AppProvider>
           <CaptureAuthContext />
-        </AppAuthLayer>
+        </AppProvider>
       </AFConfigContext.Provider>
     );
+
+    const view = render(renderApp({ isAuthenticated: true, authenticatedUserId: 'user-1' }));
 
     await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+    expect(mockGetWorkspaceInfo).toHaveBeenCalledTimes(1);
 
-    view.rerender(
-      <AFConfigContext.Provider
-        value={{
-          isAuthenticated: false,
-          updateCurrentUser: jest.fn(),
-          openLoginModal: jest.fn(),
-        }}
-      >
-        <AppAuthLayer>
-          <CaptureAuthContext />
-        </AppAuthLayer>
-      </AFConfigContext.Provider>
-    );
+    // Sign-out: the workspace-scoped subtree unmounts in the same commit and
+    // the fresh, unauthenticated layer does not load workspace info.
+    view.rerender(renderApp({ isAuthenticated: false }));
 
-    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('none'));
+    expect(screen.queryByTestId('selected-workspace')).toBeNull();
+    expect(screen.getByRole('status', { name: 'Loading workspace' })).toBeTruthy();
+    expect(mockGetWorkspaceInfo).toHaveBeenCalledTimes(1);
+
+    // Sign-in as another account: a new layer instance loads from scratch.
+    view.rerender(renderApp({ isAuthenticated: true, authenticatedUserId: 'user-2' }));
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+    expect(mockGetWorkspaceInfo).toHaveBeenCalledTimes(2);
   });
 
   it('forces a fresh workspace-info request after switching workspace and ignores stale responses', async () => {

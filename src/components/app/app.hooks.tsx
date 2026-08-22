@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
-import LoadingDots from '@/components/_shared/LoadingDots';
+import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
 import { findView } from '@/components/_shared/outline/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -72,18 +72,6 @@ function WorkspaceBootstrapError({ error, onRetry }: { error: Error; onRetry?: (
   );
 }
 
-function WorkspaceBootstrapLoading() {
-  return (
-    <div
-      role='status'
-      aria-label='Loading workspace'
-      className='fixed inset-0 flex items-center justify-center bg-background-primary'
-    >
-      <LoadingDots className='flex items-center justify-center' />
-    </div>
-  );
-}
-
 // Internal component to conditionally render sync and business layers only when workspace ID exists
 const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
   const authContext = useContext(AuthInternalContext);
@@ -92,7 +80,7 @@ const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
   // Unmount user/workspace-scoped providers in the same render that auth is
   // invalidated. AppAuthLayer will redirect to login after this commit.
   if (!isAuthenticated) {
-    return <WorkspaceBootstrapLoading />;
+    return <FullScreenLoading label='Loading workspace' />;
   }
 
   // Show loading animation while workspace ID is being loaded
@@ -101,7 +89,7 @@ const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
       return <WorkspaceBootstrapError error={workspaceInfoError} onRetry={retryLoadWorkspaceInfo} />;
     }
 
-    return <WorkspaceBootstrapLoading />;
+    return <FullScreenLoading label='Loading workspace' />;
   }
 
   return (

@@ -2,6 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
+import { buildLoginUrl } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
@@ -48,6 +49,10 @@ function isRetryableWorkspaceInfoError(error: Error): boolean {
  *
  * AppConfig owns the single authentication state. This layer consumes that
  * state and redirects immediately when an app route becomes unauthenticated.
+ *
+ * AppProvider mounts this layer with `key={authenticatedUserId}`, so every
+ * sign-in, sign-out, or account switch remounts it (and every layer below)
+ * with fresh state. Nothing here has to reset account-scoped state by hand.
  */
 
 // First layer: Authentication and service initialization
@@ -55,6 +60,7 @@ function isRetryableWorkspaceInfoError(error: Error): boolean {
 // Does not depend on workspace ID - establishes basic authentication context
 export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const context = useContext(AFConfigContext);
+  const hasConfigContext = context !== undefined;
   const isAuthenticated = context?.isAuthenticated;
   const location = useLocation();
   const navigate = useNavigate();
@@ -81,7 +87,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   // Handle user logout
   const logout = useCallback(() => {
     invalidToken();
-    navigate(`/login?redirectTo=${encodeURIComponent(window.location.href)}`);
+    navigate(buildLoginUrl({ redirectTo: window.location.href }));
   }, [navigate]);
 
   // Load user workspace information
@@ -168,30 +174,17 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   // AppConfig initializes synchronously from storage and owns all session events,
   // so this layer does not need timer-based token polling or a second auth source.
   useEffect(() => {
-    if (!context || isAuthenticated) return;
+    if (!hasConfigContext || isAuthenticated) return;
     if (location.pathname === '/login' || location.pathname.startsWith('/auth/callback')) return;
 
     logout();
-  }, [isAuthenticated, location.pathname, logout, context]);
+  }, [hasConfigContext, isAuthenticated, location.pathname, logout]);
 
-  // Load user workspace info and server info on mount
+  // Load user workspace info and server info on mount. An unauthenticated
+  // instance only exists for the commit in which AppProvider remounts this
+  // layer, so there is no account-scoped state to clear here.
   useEffect(() => {
-    if (!isAuthenticated) {
-      // Invalidate in-flight responses and unmount all workspace-scoped data
-      // before another account can authenticate in the same tab.
-      workspaceInfoRequestIdRef.current += 1;
-      workspaceInfoPromiseRef.current = null;
-      workspaceInfoLoadedAtRef.current = 0;
-      pendingWorkspaceChangeRef.current = null;
-      setUserWorkspaceInfo(undefined);
-      setWorkspaceInfoError(undefined);
-      setEnablePageHistory(undefined);
-      setAIEnabled(false);
-      setMaxUpdateBytes(undefined);
-      setMaxSlowSyncUpdateBytes(undefined);
-      setSyncLimitsLoaded(false);
-      return;
-    }
+    if (!isAuthenticated) return;
 
     void loadUserWorkspaceInfo();
 

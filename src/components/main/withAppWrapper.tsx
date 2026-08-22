@@ -3,7 +3,7 @@ import { SnackbarProvider } from 'notistack';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
-import LoadingDots from '@/components/_shared/LoadingDots';
+import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
 import CustomSnackbar from '@/components/_shared/notify/CustomSnackbar';
 import AppConfig from '@/components/main/AppConfig';
 import AppTheme from '@/components/main/AppTheme';
@@ -21,18 +21,6 @@ const StyledSnackbarProvider = styled(SnackbarProvider)`
     background-color: var(--function-info);
   }
 `;
-
-function AppRouteLoading() {
-  return (
-    <div
-      role='status'
-      aria-label='Loading page'
-      className='fixed inset-0 flex items-center justify-center bg-background-primary'
-    >
-      <LoadingDots className='flex items-center justify-center' />
-    </div>
-  );
-}
 
 export default function withAppWrapper(Component: React.FC): React.FC {
   return function AppWrapper(): JSX.Element {
@@ -55,7 +43,7 @@ export default function withAppWrapper(Component: React.FC): React.FC {
             }}
           >
             <AppConfig>
-              <Suspense fallback={<AppRouteLoading />}>
+              <Suspense fallback={<FullScreenLoading label='Loading page' />}>
                 <Component />
               </Suspense>
             </AppConfig>

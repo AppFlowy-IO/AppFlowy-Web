@@ -45,18 +45,19 @@ jest.mock('@/application/services/js-services/http/core', () => ({
   initAPIService: jest.fn(),
 }));
 
+// Mirrors the real module: a stored token only parses when it resolves to a
+// stable user id, so "no user identity" and "no token" are the same outcome.
 jest.mock('@/application/session/token', () => ({
   getTokenParsed: jest.fn(() =>
-    mockTokenValid
+    mockTokenValid && mockUserId
       ? {
           access_token: 'access-token',
           expires_at: 1,
           refresh_token: 'refresh-token',
-          user: mockUserId ? { id: mockUserId, email: 'person@example.com' } : undefined,
+          user: { id: mockUserId, email: 'person@example.com' },
         }
       : null
   ),
-  isTokenValid: jest.fn(() => mockTokenValid),
 }));
 
 jest.mock('@/components/main/hooks/useUserTimezone', () => ({
@@ -193,7 +194,29 @@ describe('AppConfig authentication startup', () => {
     expect(mockClearHttpResponseCaches).toHaveBeenCalledTimes(1);
   });
 
-  it('clears user-scoped caches for a cross-tab token replacement without user claims', async () => {
+  it('keeps user-scoped caches for a same-account token refresh from another tab', async () => {
+    mockTokenValid = true;
+
+    render(
+      <AppConfig>
+        <AuthenticationState />
+      </AppConfig>
+    );
+
+    await waitFor(() => expect(mockGetCurrent).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'token' }));
+    });
+
+    expect(screen.getByTestId('authentication-state').textContent).toBe('true');
+    expect(screen.getByTestId('authenticated-user-id').textContent).toBe('user-1');
+    expect(mockClearHttpResponseCaches).not.toHaveBeenCalled();
+    // Same identity: the profile effect does not re-run.
+    expect(mockGetCurrent).toHaveBeenCalledTimes(1);
+  });
+
+  it('signs out and clears caches when another tab stores a token without a user identity', async () => {
     mockTokenValid = true;
 
     render(
@@ -209,6 +232,7 @@ describe('AppConfig authentication startup', () => {
       window.dispatchEvent(new StorageEvent('storage', { key: 'token' }));
     });
 
+    expect(screen.getByTestId('authentication-state').textContent).toBe('false');
     expect(screen.getByTestId('authenticated-user-id').textContent).toBe('none');
     expect(mockClearHttpResponseCaches).toHaveBeenCalledTimes(1);
   });
