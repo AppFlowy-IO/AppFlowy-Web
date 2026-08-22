@@ -63,7 +63,6 @@ type StgGroupAlias = keyof typeof STG_GROUPS;
 type StgSpaceAlias = keyof typeof STG_SPACES;
 type StgPageAlias = keyof typeof STG_PAGES;
 type SeededStgPage = (typeof STG_PAGES)[StgPageAlias];
-type SeededStgSpace = (typeof STG_SPACES)[StgSpaceAlias];
 
 // Seeded group rosters: nathan sits in both groups, reader only in group One.
 const SEEDED_GROUP_MEMBERSHIPS: Record<StgGroupAlias, StgAccountAlias[]> = {
@@ -166,7 +165,6 @@ type LiveMarkerWindow = Window & { __stg0822LiveMarker?: string };
 type ScenarioState = {
   fixture?: FixtureContext;
   currentSeededPage?: SeededStgPage;
-  currentSpace?: SeededStgSpace;
   // Set before the owner-role mutation starts so the After hook restores the
   // canonical group One grant even when a later assertion fails.
   restoreGroupOneGrant?: boolean;
@@ -454,7 +452,6 @@ When(
 When('I open the seeded stg0822 {string} manage space members tab', async ({ page }, spaceAliasValue: string) => {
   const seededSpace = stgSpace(spaceAliasValue);
 
-  requireState(page).currentSpace = seededSpace;
   await openManageSpacePanel(page, seededSpace.name);
   await openManageSpaceMembersTab(page);
 });
@@ -466,13 +463,14 @@ Then(
     const groupId = stgGroupId(fixture, groupAliasValue);
     const row = spaceGroupRow(page, groupId);
 
-    // The Manage Space members tab renders a group's role (Owner/Member) and its
-    // "Group" badge; the access level has no UI affordance there, so it is
-    // verified through the space group permission API instead.
+    // The Manage Space members tab renders a group's role (Space owner / Space
+    // member) and its "Group · N members" line; the access level has no UI
+    // affordance there, so it is verified through the space group permission
+    // API instead.
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.getByText(stgGroupName(groupAliasValue), { exact: true }).first()).toBeVisible();
-    await expect(row.getByText('Group', { exact: true }).first()).toBeVisible();
-    await expect(row.getByText(role, { exact: true }).first()).toBeVisible();
+    await expect(row.getByTestId('space-group-subtitle')).toContainText(/^Group · \d+ members?$/);
+    await expect(row.getByText(spaceRoleLabel(role), { exact: true }).first()).toBeVisible();
 
     await expect
       .poll(
@@ -492,10 +490,9 @@ When(
   async ({ page, request }, groupAliasValue: string, role: string) => {
     const state = requireState(page);
     const fixture = requireFixture(page);
-    const currentSpace = requireCurrentSpace(page);
     const groupId = stgGroupId(fixture, groupAliasValue);
     const row = spaceGroupRow(page, groupId);
-    const roleButton = row.getByRole('button', { name: /^(Owner|Member)$/ });
+    const roleButton = row.getByRole('button', { name: /^(Space owner|Space member)$/ });
 
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(roleButton).toBeEnabled({ timeout: 15000 });
@@ -507,7 +504,13 @@ When(
     }
 
     await roleButton.click();
-    await page.getByRole('menuitem', { name: new RegExp(`^${escapeRegExp(role)}\\b`) }).click();
+    await page.getByRole('menuitem', { name: new RegExp(`^${escapeRegExp(spaceRoleLabel(role))}\\b`) }).click();
+
+    // Promoting a group to Space owners asks for confirmation first.
+    if (role === 'Owner') {
+      await expect(page.getByTestId('manage-space-confirm-dialog')).toContainText('Make this group Space owners?');
+      await page.getByTestId('manage-space-confirm-ok').click();
+    }
 
     // The click starts an async mutation. Wait for the server to hold the new
     // role before touching the page again; otherwise navigation can abort the
@@ -520,18 +523,10 @@ When(
       .toBe(role.toLowerCase());
 
     // The server broadcasts a permission-changed notification while the PATCH
-    // is still in flight. The Manage Space panel reacts by clearing its roster
-    // and re-fetching it, but that refetch carries the stored ETag, the server
-    // answers 304 with an empty body, and the app's `parseResponseWithExactUid`
-    // transform throws "Unexpected end of JSON input" before the 304 replay
-    // interceptor can hand back the cached body. The roster therefore stays
-    // empty in this page load, so reload and reopen the panel to read the
-    // committed role from a fresh 200 response.
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await openManageSpacePanel(page, currentSpace.name);
-    await openManageSpaceMembersTab(page);
+    // is still in flight; the Manage Space panel re-fetches its roster (a 304
+    // replays the cached body) and renders the committed role in place.
     await expect(row).toBeVisible({ timeout: 15000 });
-    await expect(row.getByText(role, { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    await expect(row.getByText(spaceRoleLabel(role), { exact: true }).first()).toBeVisible({ timeout: 15000 });
   }
 );
 
@@ -578,7 +573,7 @@ Then(
     const row = spaceGroupRow(page, groupOneId);
 
     await expect(row).toBeVisible({ timeout: 15000 });
-    await expect(row.getByText('Owner', { exact: true }).first()).toBeVisible();
+    await expect(row.getByText(spaceRoleLabel('Owner'), { exact: true }).first()).toBeVisible();
   }
 );
 
@@ -678,16 +673,6 @@ function requireFixture(page: Page): FixtureContext {
   }
 
   return fixture;
-}
-
-function requireCurrentSpace(page: Page): SeededStgSpace {
-  const currentSpace = requireState(page).currentSpace;
-
-  if (!currentSpace) {
-    throw new Error('No seeded stg0822 Manage Space panel has been opened');
-  }
-
-  return currentSpace;
 }
 
 function requireCurrentSeededPage(page: Page): SeededStgPage {
@@ -1253,6 +1238,18 @@ function accessLevelFromLabel(label: string): number {
       return ACCESS_LEVEL_FULL_ACCESS;
     default:
       throw new Error(`Unsupported space access label: ${label}`);
+  }
+}
+
+// The Members tab uses the PRD's explicit role terminology.
+function spaceRoleLabel(role: string): string {
+  switch (role) {
+    case 'Owner':
+      return 'Space owner';
+    case 'Member':
+      return 'Space member';
+    default:
+      throw new Error(`Unsupported space role: ${role}`);
   }
 }
 

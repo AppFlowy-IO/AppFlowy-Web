@@ -388,7 +388,7 @@ Then(
 
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.getByText(email, { exact: true }).first()).toBeVisible();
-    await expect(row.getByText(role, { exact: true }).first()).toBeVisible();
+    await expect(row.getByText(spaceRoleLabel(role), { exact: true }).first()).toBeVisible();
   }
 );
 
@@ -445,7 +445,7 @@ When('I remove seeded spm0622 {string} from the current space', async ({ page },
   const row = spaceMemberRow(page, email);
 
   await expect(row).toBeVisible({ timeout: 15000 });
-  await row.getByRole('button', { name: 'Member' }).click();
+  await row.getByRole('button', { name: spaceRoleLabel('Member') }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await expect(row).toHaveCount(0, { timeout: 15000 });
   requireState(page).addedSpaceMemberEmails.delete(email);
@@ -1003,6 +1003,18 @@ function accessLevelFromLabel(label: string): number {
       return ACCESS_LEVEL_READ_AND_WRITE;
     default:
       throw new Error(`Unsupported Manage Space access label: ${label}`);
+  }
+}
+
+// The Members tab uses the PRD's explicit role terminology.
+function spaceRoleLabel(role: string): string {
+  switch (role) {
+    case 'Owner':
+      return 'Space owner';
+    case 'Member':
+      return 'Space member';
+    default:
+      throw new Error(`Unsupported space role: ${role}`);
   }
 }
 
