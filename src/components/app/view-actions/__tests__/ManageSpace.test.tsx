@@ -1,6 +1,7 @@
 import EventEmitter from 'events';
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import {
@@ -627,8 +628,11 @@ describe('ManageSpace ACL management', () => {
 
     const row = await screen.findByTestId(`space-member-row-${member.uid}`);
     const removeButton = within(row).getByRole('button', { name: 'space.permissionManager.remove' });
+    const roleTrigger = within(row).getByRole('button', { name: 'space.permissionManager.owner' });
 
     expect(removeButton.disabled).toBe(false);
+    expect(roleTrigger.className).toContain('w-fit');
+    expect(roleTrigger.className).not.toContain('min-w-[210px]');
     fireEvent.click(
       within(row).getByRole('button', {
         name: 'space.permissionManager.member space.permissionManager.memberRoleDescription',
@@ -646,6 +650,26 @@ describe('ManageSpace ACL management', () => {
     await waitFor(() => expect(removeButton.disabled).toBe(false));
     fireEvent.click(removeButton);
     await waitFor(() => expect(mockRemoveSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', member.uid));
+  });
+
+  it('explains how to keep an owner when the server rejects a role change', async () => {
+    const member = creatorMember();
+
+    mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+    mockUpdateSpaceMember.mockRejectedValueOnce(
+      new Error('Invalid request:space must keep at least one explicit owner')
+    );
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+    fireEvent.click(
+      within(row).getByRole('button', {
+        name: 'space.permissionManager.member space.permissionManager.memberRoleDescription',
+      })
+    );
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('space.permissionManager.lastOwnerRequired'));
   });
 
   it('fetches active workspace members and defensively filters pending invitations', async () => {

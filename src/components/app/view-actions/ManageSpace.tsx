@@ -62,6 +62,7 @@ const ACCESS_OPTIONS = [
 ];
 
 const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share']);
+const LAST_EXPLICIT_OWNER_ERROR = 'space must keep at least one explicit owner';
 const MODAL_WIDTH = 680;
 const CONTENT_WIDTH = 640;
 const MEMBER_GRID_COLUMNS = 'minmax(0, 1fr) 220px';
@@ -150,6 +151,14 @@ function accessLabel(accessLevel: AccessLevel | null | undefined, t: TFunction):
 
 function roleLabel(role: SpaceMemberRole, t: TFunction): string {
   return role === SpaceMemberRole.Owner ? t('space.permissionManager.owner') : t('space.permissionManager.member');
+}
+
+function manageSpaceErrorMessage(error: unknown, fallback: string, t: TFunction): string {
+  const message = getErrorMessage(error, fallback);
+
+  return message.toLowerCase().includes(LAST_EXPLICIT_OWNER_ERROR)
+    ? t('space.permissionManager.lastOwnerRequired')
+    : message;
 }
 
 function visibilityLabel(visibility: SpaceVisibility, t: TFunction): string {
@@ -314,7 +323,7 @@ function RoleDropdown({
           variant='ghost'
           size='sm'
           disabled={disabled}
-          className='min-w-[210px] justify-end px-2 text-text-primary'
+          className='w-fit justify-end px-2 text-text-primary'
         >
           {roleLabel(value, t)}
           <ChevronDown className='h-4 w-4 text-icon-tertiary' />
@@ -879,7 +888,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
         await refreshSpaceMembers();
       } catch (error) {
-        toast.error(getErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed')));
+        toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
       } finally {
         setMutatingMemberUid(null);
       }
@@ -905,7 +914,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         await refreshSpaceMembers();
         toast.success(t('space.permissionManager.removeSpaceMemberSuccess'));
       } catch (error) {
-        toast.error(getErrorMessage(error, t('space.permissionManager.removeSpaceMemberFailed')));
+        toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.removeSpaceMemberFailed'), t));
       } finally {
         setMutatingMemberUid(null);
       }
@@ -960,7 +969,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         await refreshSpaceMembers();
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(getErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed')));
+          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {
@@ -1005,7 +1014,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         toast.success(t('shareAction.removeGroupAccessSuccess', { group: group.name }));
       } catch (error) {
         if (spaceRequestRef.current.generation === requestGeneration) {
-          toast.error(getErrorMessage(error, t('shareAction.removeAccessError')));
+          toast.error(manageSpaceErrorMessage(error, t('shareAction.removeAccessError'), t));
         }
       } finally {
         if (spaceRequestRef.current.generation === requestGeneration) {

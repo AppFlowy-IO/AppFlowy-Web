@@ -3377,7 +3377,8 @@
       "addSpaceMemberFailed": "Failed to add space member",
       "updateSpaceMemberFailed": "Failed to update space member",
       "removeSpaceMemberSuccess": "Space member removed",
-      "removeSpaceMemberFailed": "Failed to remove space member"
+      "removeSpaceMemberFailed": "Failed to remove space member",
+      "lastOwnerRequired": "This space must have at least one owner. Make another member an owner before changing or removing this owner."
     },
     "createSpace": "Create space",
     "manageSpace": "Manage space",
