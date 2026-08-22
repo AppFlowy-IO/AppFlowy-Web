@@ -57,3 +57,46 @@ Feature: Seeded space group permission resolution
     And I directly open the seeded stg0822 "group page B"
     Then the directly opened seeded stg0822 page is "editable"
     And seeded stg0822 "reader" can manage the seeded stg0822 "group space A"
+
+  # Live refresh: the owner mutates group membership over the API while nathan's browser
+  # session stays on Page A. The server pushes a permission-changed notification and the
+  # open page downgrades, then upgrades again, without any reload or navigation.
+  # Mutating: the After hook re-adds every seeded group membership via API.
+  @live-refresh
+  Scenario: Removing a member from the page-share group downgrades the open page live
+    Given I sign in as seeded stg0822 "nathan"
+    When I directly open the seeded stg0822 "group page A"
+    Then the directly opened seeded stg0822 page is "editable"
+    When the owner removes seeded stg0822 "nathan" from seeded stg0822 "group two" via the API
+    Then the open seeded stg0822 page becomes "read-only" without reload
+    When the owner adds seeded stg0822 "nathan" to seeded stg0822 "group two" via the API
+    Then the open seeded stg0822 page becomes "editable" without reload
+
+  # Live refresh: revoking group One's space grant must deny the open page and drop the
+  # private space from the sidebar in place; re-granting it restores both.
+  # Mutating: the After hook always restores group One to Member / Can view via API.
+  @live-refresh
+  Scenario: Removing the group from the space hides it live and restores it
+    Given I sign in as seeded stg0822 "reader"
+    When I open the seeded stg0822 workspace
+    Then the seeded stg0822 "group space A" space navigation is "visible"
+    When I directly open the seeded stg0822 "group page B"
+    Then the directly opened seeded stg0822 page is "read-only"
+    When the owner revokes seeded stg0822 "group one" from the seeded stg0822 "group space A" space via the API
+    Then the open seeded stg0822 page becomes "denied" without reload
+    And the seeded stg0822 "group space A" space navigation becomes "hidden" without reload
+    When the owner grants seeded stg0822 "group one" on the seeded stg0822 "group space A" space as "Member" with "Can view" via the API
+    Then the seeded stg0822 "group space A" space navigation becomes "visible" without reload
+    And the open seeded stg0822 page becomes "read-only" without reload
+
+  # Live refresh: changing group One's space access level re-probes the open page in place.
+  # Mutating: the After hook always restores group One to Member / Can view via API.
+  @live-refresh
+  Scenario: Changing the space group access updates an open page live
+    Given I sign in as seeded stg0822 "reader"
+    When I directly open the seeded stg0822 "group page B"
+    Then the directly opened seeded stg0822 page is "read-only"
+    When the owner changes the space access of seeded stg0822 "group one" on the seeded stg0822 "group space A" space to "Can edit" via the API
+    Then the open seeded stg0822 page becomes "editable" without reload
+    When the owner changes the space access of seeded stg0822 "group one" on the seeded stg0822 "group space A" space to "Can view" via the API
+    Then the open seeded stg0822 page becomes "read-only" without reload
