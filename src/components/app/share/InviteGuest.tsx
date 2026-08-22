@@ -8,7 +8,6 @@ import {
   IPeopleWithAccessType,
   MentionablePerson,
   MentionPersonRole,
-  Role,
   SubscriptionInterval,
   SubscriptionPlan,
   WorkspaceGroup,
@@ -20,7 +19,7 @@ import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
 import { AccessService, BillingService, WorkspaceService } from '@/application/services/domains';
-import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -54,6 +53,8 @@ interface InviteGuestProps {
   viewId: string;
   hasFullAccess: boolean;
   canGrantFullAccess: boolean;
+  canManageGroupAccess: boolean;
+  isWorkspaceOwner: boolean;
 }
 
 interface InviteSubmission {
@@ -73,6 +74,8 @@ export function InviteGuest({
   viewId,
   hasFullAccess,
   canGrantFullAccess,
+  canManageGroupAccess,
+  isWorkspaceOwner,
 }: InviteGuestProps) {
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = useState<string>('');
@@ -103,8 +106,6 @@ export function InviteGuest({
   // Combined loading state: show loading when people, mentionable, or group data is loading
   const isLoading = isLoadingPeople || isLoadingMentionable || isLoadingGroups;
   const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const userWorkspaceInfo = useUserWorkspaceInfo();
-  const isOwner = userWorkspaceInfo?.selectedWorkspace?.role === Role.Owner;
 
   useEffect(() => {
     latestInviteTargetRef.current = { workspaceId: currentWorkspaceId, viewId };
@@ -128,9 +129,19 @@ export function InviteGuest({
     };
   }, [currentWorkspaceId, viewId]);
 
+  // Group selections made while authority was held must not survive losing it.
   useEffect(() => {
-    if (!currentWorkspaceId || canNotInvite) {
+    if (canManageGroupAccess) return;
+
+    setEmailTags((currentTags) =>
+      currentTags.some((tag) => tag.kind === 'group') ? currentTags.filter((tag) => tag.kind !== 'group') : currentTags
+    );
+  }, [canManageGroupAccess]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId || !canManageGroupAccess) {
       setWorkspaceGroups([]);
+      setIsLoadingGroups(false);
       return;
     }
 
@@ -156,7 +167,7 @@ export function InviteGuest({
     return () => {
       cancelled = true;
     };
-  }, [canNotInvite, currentWorkspaceId]);
+  }, [canManageGroupAccess, currentWorkspaceId]);
 
   // Clamp during render: a selection made before permissions resolved must
   // never let a user submit a level they cannot grant.
@@ -378,48 +389,55 @@ export function InviteGuest({
     [isDataLoadingComplete, hasSuggestionData, isOpen]
   );
 
-  const handleInvite = useCallback((emailOrUserOrGroup: string | MentionablePerson | WorkspaceGroup) => {
-    if (typeof emailOrUserOrGroup !== 'string' && 'group_id' in emailOrUserOrGroup) {
-      const group = emailOrUserOrGroup;
+  const handleInvite = useCallback(
+    (emailOrUserOrGroup: string | MentionablePerson | WorkspaceGroup) => {
+      if (typeof emailOrUserOrGroup !== 'string' && 'group_id' in emailOrUserOrGroup) {
+        if (!canManageGroupAccess) return;
+
+        const group = emailOrUserOrGroup;
+        const newTag: EmailTag = {
+          id: `group:${group.group_id}`,
+          email: group.name,
+          avatar: '',
+          name: group.name,
+          kind: 'group',
+          groupId: group.group_id,
+          memberCount: group.member_count,
+        };
+
+        setEmailTags((prev) =>
+          prev.some((tag) => tag.kind === 'group' && tag.groupId === group.group_id) ? prev : [...prev, newTag]
+        );
+        setSearchValue('');
+        setIsOpen(false);
+        return;
+      }
+
+      const emailOrUser = emailOrUserOrGroup;
+      const isNew = typeof emailOrUser === 'string';
+      const email = typeof emailOrUser === 'string' ? emailOrUser : emailOrUser.email;
+      const isGuest = typeof emailOrUser === 'string' ? true : emailOrUser.role === MentionPersonRole.Guest;
+
+      // Add email to tags instead of immediately inviting
       const newTag: EmailTag = {
-        id: `group:${group.group_id}`,
-        email: group.name,
-        avatar: '',
-        name: group.name,
-        kind: 'group',
-        groupId: group.group_id,
-        memberCount: group.member_count,
+        id: `user:${email}`,
+        email: email,
+        new: isNew,
+        isGuest: isGuest,
+        avatar: typeof emailOrUser === 'string' ? '' : emailOrUser.avatar_url || '',
+        name: typeof emailOrUser === 'string' ? undefined : emailOrUser.name, // Include name if from mentionable list
+        kind: 'user',
       };
 
       setEmailTags((prev) =>
-        prev.some((tag) => tag.kind === 'group' && tag.groupId === group.group_id) ? prev : [...prev, newTag]
+        prev.some((tag) => tag.kind !== 'group' && tag.email === email) ? prev : [...prev, newTag]
       );
+
       setSearchValue('');
       setIsOpen(false);
-      return;
-    }
-
-    const emailOrUser = emailOrUserOrGroup;
-    const isNew = typeof emailOrUser === 'string';
-    const email = typeof emailOrUser === 'string' ? emailOrUser : emailOrUser.email;
-    const isGuest = typeof emailOrUser === 'string' ? true : emailOrUser.role === MentionPersonRole.Guest;
-
-    // Add email to tags instead of immediately inviting
-    const newTag: EmailTag = {
-      id: `user:${email}`,
-      email: email,
-      new: isNew,
-      isGuest: isGuest,
-      avatar: typeof emailOrUser === 'string' ? '' : emailOrUser.avatar_url || '',
-      name: typeof emailOrUser === 'string' ? undefined : emailOrUser.name, // Include name if from mentionable list
-      kind: 'user',
-    };
-
-    setEmailTags((prev) => (prev.some((tag) => tag.kind !== 'group' && tag.email === email) ? prev : [...prev, newTag]));
-
-    setSearchValue('');
-    setIsOpen(false);
-  }, []);
+    },
+    [canManageGroupAccess]
+  );
 
   const handleEmailTagsChange = useCallback((newTags: EmailTag[]) => {
     setEmailTags(newTags);
@@ -532,7 +550,7 @@ export function InviteGuest({
     const workspaceId = currentWorkspaceId;
 
     if (!workspaceId) return;
-    if (!isOwner) {
+    if (!isWorkspaceOwner) {
       toast.error('Please ask the workspace owner to upgrade to Pro to unlock guest editors.');
       return;
     }
@@ -557,7 +575,7 @@ export function InviteGuest({
     } finally {
       setUpgradeLoading(false);
     }
-  }, [currentWorkspaceId, isOwner]);
+  }, [currentWorkspaceId, isWorkspaceOwner]);
 
   const handleSendInvites = useCallback(async () => {
     if (!currentWorkspaceId) return;
@@ -569,7 +587,9 @@ export function InviteGuest({
       return;
     }
 
-    const pendingInvites = emailTags.filter((tag) => tag.kind !== 'group' || Boolean(tag.groupId));
+    const pendingInvites = emailTags.filter(
+      (tag) => tag.kind !== 'group' || (canManageGroupAccess && Boolean(tag.groupId))
+    );
 
     if (pendingInvites.length === 0) return;
 
@@ -652,7 +672,7 @@ export function InviteGuest({
         setInviteLoading(false);
       }
     }
-  }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, effectiveAccessLevel]);
+  }, [canManageGroupAccess, currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, effectiveAccessLevel]);
 
   const commitCurrentSearchValue = useCallback(
     (preferSuggestion: boolean) => {

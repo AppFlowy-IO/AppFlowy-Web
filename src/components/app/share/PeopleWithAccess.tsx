@@ -27,6 +27,7 @@ interface PeopleWithAccessProps {
   onPersonRemoved: (email: string) => void;
   updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
+  canManageGroupAccess: boolean;
   canManageFullAccess: boolean;
   canGrantFullAccess: boolean;
   sectionType: ShareSectionType;
@@ -42,6 +43,7 @@ export function PeopleWithAccess({
   updateGroupInAccessList,
   isLoading,
   hasFullAccess,
+  canManageGroupAccess,
   canManageFullAccess,
   canGrantFullAccess,
   sectionType,
@@ -122,7 +124,7 @@ export function PeopleWithAccess({
 
   const handleGroupAccessLevelChange = useCallback(
     async (groupId: string, newAccessLevel: AccessLevel) => {
-      if (!currentWorkspaceId) return;
+      if (!currentWorkspaceId || !canManageGroupAccess) return;
       await AccessService.sharePageToGroup(currentWorkspaceId, viewId, groupId, newAccessLevel);
       updateGroupInAccessList(groupId, newAccessLevel);
       const refreshResult = await onPeopleChange();
@@ -130,12 +132,12 @@ export function PeopleWithAccess({
       if (!refreshResult) return undefined;
       return refreshResult.effectiveGroups.find((group) => group.group_id === groupId)?.access_level ?? null;
     },
-    [currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
+    [canManageGroupAccess, currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
   );
 
   const handleRemoveGroupAccess = useCallback(
     async (groupId: string) => {
-      if (!currentWorkspaceId) return;
+      if (!currentWorkspaceId || !canManageGroupAccess) return;
       await AccessService.revokeGroupAccess(currentWorkspaceId, viewId, groupId);
       updateGroupInAccessList(groupId, null);
       const refreshResult = await onPeopleChange();
@@ -143,7 +145,7 @@ export function PeopleWithAccess({
       if (!refreshResult) return undefined;
       return refreshResult.effectiveGroups.find((group) => group.group_id === groupId)?.access_level ?? null;
     },
-    [currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
+    [canManageGroupAccess, currentWorkspaceId, onPeopleChange, updateGroupInAccessList, viewId]
   );
 
   const currentUserRole = people.find((p) => p.email === currentUser?.email)?.role;
@@ -195,7 +197,7 @@ export function PeopleWithAccess({
             </div>
             <GroupAccessLevelDropdown
               group={group}
-              canModify={hasFullAccess && editableGroupIds.has(group.group_id)}
+              canModify={canManageGroupAccess && editableGroupIds.has(group.group_id)}
               currentUserHasFullAccess={hasFullAccess}
               canManageFullAccess={canManageFullAccess}
               onAccessLevelChange={handleGroupAccessLevelChange}
