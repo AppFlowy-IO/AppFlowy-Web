@@ -719,7 +719,7 @@ describe('ManageSpace ACL management', () => {
   });
 
   describe('public access card', () => {
-    it('renders the Who / Access table with the design copy and an editable members level', async () => {
+    it('renders the access rows without a redundant table header', async () => {
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
@@ -728,8 +728,8 @@ describe('ManageSpace ACL management', () => {
 
       expect(card.textContent).toContain('space.permissionManager.publicAccessTitle');
       expect(card.textContent).toContain('space.permissionManager.publicAccessDescription');
-      expect(card.textContent).toContain('space.permissionManager.who');
-      expect(card.textContent).toContain('space.permissionManager.access');
+      expect(card.textContent).not.toContain('space.permissionManager.who');
+      expect(card.textContent).not.toContain('space.permissionManager.access');
       expect(screen.getByTestId('manage-space-workspace-owners-row').textContent).toContain(
         'space.permissionManager.workspaceOwnersDescription'
       );

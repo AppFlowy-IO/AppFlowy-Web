@@ -3380,8 +3380,6 @@
       "everyoneElseDescription": "Access for other workspace members",
       "publicAccessTitle": "Public access",
       "publicAccessDescription": "This space is public. Everyone in the workspace can access with the permissions below.",
-      "who": "Who",
-      "access": "Access",
       "workspaceOwners": "Workspace owners",
       "workspaceOwnersDescription": "You and other workspace owners",
       "workspaceMembers": "Workspace members",
