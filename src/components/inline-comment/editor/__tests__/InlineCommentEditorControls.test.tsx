@@ -10,6 +10,7 @@ const mockStartComment = jest.fn();
 const mockToastError = jest.fn();
 const mockToDOMRange = jest.fn();
 const mockToSlateRange = jest.fn();
+let mockEditorRegistered = true;
 
 jest.mock('@mui/material', () => ({
   Portal: ({ children }: { children: React.ReactNode }) => children,
@@ -44,7 +45,7 @@ jest.mock('@/components/ui/tooltip', () => ({
 jest.mock('@/components/inline-comment/InlineCommentContext', () => ({
   useInlineCommentComposeOptional: () => ({
     active: true,
-    isEditorRegistered: (editor: YjsEditor) => editor === mockEditor,
+    isEditorRegistered: (editor: YjsEditor) => mockEditorRegistered && editor === mockEditor,
     startComment: (...args: unknown[]) => mockStartComment(...args),
   }),
 }));
@@ -65,6 +66,7 @@ describe('InlineCommentEditorControls', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockEditorRegistered = true;
     mockStartComment.mockReturnValue(true);
     mockToSlateRange.mockReturnValue(selectedRange);
     mockToDOMRange.mockReturnValue({
@@ -86,7 +88,8 @@ describe('InlineCommentEditorControls', () => {
     const trigger = screen.getByTestId('inline-comment-readonly-trigger').querySelector('button');
 
     expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute('aria-disabled')).toBe('true');
+    expect(trigger?.hasAttribute('aria-disabled')).toBe(false);
+    expect(trigger?.getAttribute('aria-label')).toBe('inlineComment.permissionDenied');
     expect(screen.getByText('inlineComment.permissionDenied')).not.toBeNull();
     fireEvent.click(trigger as HTMLButtonElement);
     expect(mockToastError).toHaveBeenCalledWith('inlineComment.permissionDenied');
@@ -100,5 +103,19 @@ describe('InlineCommentEditorControls', () => {
 
     fireEvent.click(trigger as HTMLButtonElement);
     expect(mockStartComment).toHaveBeenCalledWith(mockEditor, selectedRange);
+  });
+
+  it('does not install selection and viewport listeners for an inactive editor', () => {
+    mockEditorRegistered = false;
+    const requestAnimationFrameSpy = jest.spyOn(window, 'requestAnimationFrame');
+
+    render(<InlineCommentEditorControls canComment={true} />);
+    requestAnimationFrameSpy.mockClear();
+
+    fireEvent(document, new Event('selectionchange'));
+    fireEvent(window, new Event('resize'));
+    fireEvent(window, new Event('scroll'));
+
+    expect(requestAnimationFrameSpy).not.toHaveBeenCalled();
   });
 });

@@ -58,8 +58,7 @@ export function InlineCommentAction({ selectionSupported = true }: { selectionSu
 
   return (
     <ActionButton
-      aria-disabled={Boolean(unavailableMessage)}
-      aria-label={t('inlineComment.addComment')}
+      aria-label={unavailableMessage ?? t('inlineComment.addComment')}
       data-testid={'inline-comment-toolbar-action'}
       tooltip={unavailableMessage ?? t('inlineComment.addComment')}
       onClick={handleClick}

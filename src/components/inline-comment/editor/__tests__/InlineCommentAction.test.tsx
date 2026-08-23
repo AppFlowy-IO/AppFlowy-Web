@@ -81,7 +81,8 @@ describe('useInlineCommentActionEnabled', () => {
 
     const action = screen.getByTestId('inline-comment-toolbar-action');
 
-    expect(action.getAttribute('aria-disabled')).toBe('true');
+    expect(action.hasAttribute('aria-disabled')).toBe(false);
+    expect(action.getAttribute('aria-label')).toBe('inlineComment.permissionDenied');
     expect(action.getAttribute('data-tooltip')).toBe('inlineComment.permissionDenied');
     fireEvent.click(action);
     expect(mockToastError).toHaveBeenCalledWith('inlineComment.permissionDenied');

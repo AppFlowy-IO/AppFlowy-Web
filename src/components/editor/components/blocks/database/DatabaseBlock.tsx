@@ -8,7 +8,10 @@ import { DatabaseContextState } from '@/application/database-yjs';
 import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
 import { UIVariant, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
-import { resolveEmbeddedDatabaseViewId } from '@/components/editor/database-block-lifecycle';
+import {
+  persistRecoveredDatabaseViewId,
+  resolveEmbeddedDatabaseViewId,
+} from '@/components/editor/database-block-lifecycle';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Log } from '@/utils/log';
@@ -202,7 +205,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
    */
   const handleViewIdsChanged = useCallback(
     (currentViewIds: string[]) => {
-      if (readOnly) return;
+      if (readOnly) return false;
 
       const existingViewIds = getViewIds(node.data);
       const updatedData = replaceViewIds(node.data, currentViewIds);
@@ -217,7 +220,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
         existingViewIds.length !== nextViewIds.length ||
         existingViewIds.some((viewId, index) => viewId !== nextViewIds[index]);
 
-      if (!orderChanged) return;
+      if (!orderChanged) return true;
 
       Log.debug('[DatabaseBlock] View IDs changed', {
         addedViewIds,
@@ -231,8 +234,10 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
         const path = ReactEditor.findPath(editor, node as unknown as Element);
 
         Transforms.setNodes(editor, { data: updatedData }, { at: path });
+        return true;
       } catch (e) {
         console.error('[DatabaseBlock] Error updating view_ids:', e);
+        return false;
       }
     },
     [editor, node, readOnly]
@@ -270,9 +275,29 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
     // shared block once so subsequent clients do not need recovery.
     if (readOnly || persistedViewId || !recoveredViewId || persistedRecoveryKeyRef.current === recoveryKey) return;
 
-    persistedRecoveryKeyRef.current = recoveryKey;
-    handleViewIdsChanged([recoveredViewId]);
-  }, [handleViewIdsChanged, persistedViewId, readOnly, recoveredViewId, recoveryKey]);
+    let cancelled = false;
+
+    void persistRecoveredDatabaseViewId(recoveredViewId, handleViewIdsChanged, {
+      isCancelled: () => cancelled,
+    }).then((persisted) => {
+      if (cancelled) return;
+
+      if (persisted) {
+        persistedRecoveryKeyRef.current = recoveryKey;
+        return;
+      }
+
+      Log.warn('[DatabaseBlock] Failed to persist recovered database view id', {
+        parentViewId,
+        databaseId,
+        recoveredViewId,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [databaseId, handleViewIdsChanged, parentViewId, persistedViewId, readOnly, recoveredViewId, recoveryKey]);
 
   const { paddingStart, paddingEnd, width } = useResizePositioning({
     editor,

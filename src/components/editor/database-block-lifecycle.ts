@@ -1,6 +1,41 @@
 import type { LoadViewMeta, ViewLayout } from '@/application/types';
 import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren } from '@/application/view-utils';
 
+export const DATABASE_VIEW_IDS_PERSIST_RETRY_DELAYS_MS = [100, 500, 1500] as const;
+
+type PersistRecoveredDatabaseViewIdOptions = {
+  isCancelled?: () => boolean;
+  retryDelaysMs?: readonly number[];
+  wait?: (delayMs: number) => Promise<void>;
+};
+
+/**
+ * Persist a recovered database tab id, retrying while Slate finishes mounting
+ * the block path. A failed path lookup must not make recovery permanently look
+ * complete for the lifetime of the component.
+ */
+export async function persistRecoveredDatabaseViewId(
+  recoveredViewId: string,
+  persistViewIds: (viewIds: string[]) => boolean,
+  options: PersistRecoveredDatabaseViewIdOptions = {}
+): Promise<boolean> {
+  const {
+    isCancelled = () => false,
+    retryDelaysMs = DATABASE_VIEW_IDS_PERSIST_RETRY_DELAYS_MS,
+    wait = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  } = options;
+
+  for (let attempt = 0; ; attempt += 1) {
+    if (isCancelled()) return false;
+    if (persistViewIds([recoveredViewId])) return true;
+
+    const retryDelayMs = retryDelaysMs[attempt];
+
+    if (retryDelayMs === undefined) return false;
+    await wait(retryDelayMs);
+  }
+}
+
 /**
  * Recover the single linked database view owned by a document.
  *

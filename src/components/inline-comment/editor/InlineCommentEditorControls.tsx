@@ -105,6 +105,8 @@ export function InlineCommentEditorControls({ canComment }: { canComment: boolea
   }, [canComment, editor, inlineComments, t]);
 
   useEffect(() => {
+    if (!editorRegistered) return;
+
     // `updatePosition` resolves a DOM range and measures it, so running it once
     // per scroll event would force a layout read per event. Coalesce to one read
     // per frame instead.
@@ -132,7 +134,7 @@ export function InlineCommentEditorControls({ canComment }: { canComment: boolea
       window.removeEventListener('resize', scheduleUpdate);
       window.removeEventListener('scroll', scheduleUpdate, { capture: true });
     };
-  }, [updatePosition]);
+  }, [editorRegistered, updatePosition]);
 
   if (!position || !editorRegistered) return null;
 
@@ -150,8 +152,7 @@ export function InlineCommentEditorControls({ canComment }: { canComment: boolea
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              aria-disabled={!canComment}
-              aria-label={t('inlineComment.addComment')}
+              aria-label={t(canComment ? 'inlineComment.addComment' : 'inlineComment.permissionDenied')}
               className={'rounded p-1.5 text-comment-icon hover:opacity-80'}
               onClick={startComment}
             >

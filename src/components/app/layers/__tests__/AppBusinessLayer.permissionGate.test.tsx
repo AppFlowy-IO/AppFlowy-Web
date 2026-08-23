@@ -16,6 +16,7 @@ import { getTokenParsed } from '@/application/session/token';
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
 import { AppNavigationContext } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useAuthInternal } from '@/components/app/contexts/AuthInternalContext';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { useDatabaseOperations } from '@/components/app/hooks/useDatabaseOperations';
@@ -700,6 +701,51 @@ describe('AppBusinessLayer permission gates', () => {
     expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
       createObjectPermission(routeViewId, Types.Document, { can_write: false })
     );
+  });
+
+  it('re-probes active permissions after reconnect, visibility recovery, and coming online', async () => {
+    const eventEmitter = new EventEmitter() as AppEventEmitter;
+    const visibilityState = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+
+    eventEmitter.webSocketReadyState = WebSocket.OPEN;
+    (AccessService.getObjectPermission as jest.Mock)
+      .mockResolvedValueOnce(createObjectPermission(routeViewId))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_write: false }))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_comment: false }))
+      .mockResolvedValueOnce(createObjectPermission(routeViewId, Types.Document, { can_share: false }));
+    renderBusinessLayer(eventEmitter, [createView(routeViewId)]);
+
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(1);
+
+    visibilityState.mockReturnValue('visible');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    await waitFor(() => expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(3));
+
+    act(() => {
+      eventEmitter.webSocketReadyState = WebSocket.CONNECTING;
+      eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CONNECTING);
+      eventEmitter.webSocketReadyState = WebSocket.OPEN;
+      eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    await waitFor(() => {
+      expect(AccessService.getObjectPermission).toHaveBeenCalledTimes(4);
+      expect(JSON.parse(screen.getByTestId('object-permission').textContent || 'null')).toEqual(
+        createObjectPermission(routeViewId, Types.Document, { can_share: false })
+      );
+    });
+    visibilityState.mockRestore();
   });
 
   it('re-probes the active route when access is restored', async () => {

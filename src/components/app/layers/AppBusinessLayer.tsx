@@ -56,6 +56,7 @@ const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 const PERMISSION_PROBE_TTL_MS = 10000;
 const PERMISSION_PROBE_CACHE_MAX = 200;
 const PERMISSION_PROBE_RETRY_DELAYS_MS = [250, 1000, 3000] as const;
+const WS_READY_STATE_OPEN = 1;
 
 // Stable "not resolvable" result for breadcrumb ancestors. Identity matters:
 // the fallback-crumb effect depends on `originalCrumbs`, and a fresh [] per
@@ -673,14 +674,51 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       revalidateActiveViews();
     };
 
+    // Permission notifications sent while the websocket is disconnected are
+    // not replayed. Re-probe the active route and modal after connectivity or
+    // browser lifecycle events that can follow a missed notification.
+    let lastReadyState = syncContext.eventEmitter?.webSocketReadyState;
+    let disconnectedSinceLastOpen = lastReadyState !== undefined && lastReadyState !== WS_READY_STATE_OPEN;
+
+    const handleWebSocketStatus = (readyState: number) => {
+      if (readyState === lastReadyState) return;
+
+      lastReadyState = readyState;
+      if (readyState !== WS_READY_STATE_OPEN) {
+        disconnectedSinceLastOpen = true;
+        return;
+      }
+
+      if (disconnectedSinceLastOpen) {
+        disconnectedSinceLastOpen = false;
+        revalidateActiveViews();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        revalidateActiveViews();
+      }
+    };
+
+    const handleOnline = () => {
+      revalidateActiveViews();
+    };
+
     syncContext.eventEmitter?.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
     syncContext.eventEmitter?.on(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
+    syncContext.eventEmitter?.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
 
     return () => {
       syncContext.eventEmitter?.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
       syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
       syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
+      syncContext.eventEmitter?.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
     };
   }, [
     activePermissionViewIds,
