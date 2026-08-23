@@ -190,19 +190,20 @@ function seededSettings(visibility: 'public' | 'private' | 'custom'): SpacePermi
   };
 }
 
-Before(async ({ page }) => {
+Before({ tags: '@scp0822-space-permissions' }, async ({ page }) => {
   setupPageErrorHandling(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   stateByPage.set(page, {});
 });
 
-// Every scenario may have switched a space type, changed a collective level
-// or edited the roster; always put the seeded shape back so reruns and the
-// other scenarios are deterministic. Re-authenticate through the API: the
-// browser session may belong to another seeded account by now.
-After(async ({ request }) => {
-  const fixture = await resolveFixtureContext(request);
+// A scenario that loaded this fixture may have switched a space type, changed
+// a collective level, or edited the roster. Restore only those scenarios: all
+// step files are registered for every generated BDD test, so resolving this
+// seeded account unconditionally would make unrelated suites depend on it.
+After({ tags: '@scp0822-space-permissions' }, async ({ page, request }) => {
+  const fixture = stateByPage.get(page)?.fixture;
 
+  if (!fixture) return;
   await restoreSeededShape(request, fixture);
 });
 
