@@ -66,6 +66,22 @@ export function isDatabaseContainer(
 }
 
 /**
+ * Detect the documented web shape for a linked database view.
+ *
+ * Web currently marks every embedded database view as a container. A linked
+ * view is still distinguishable because it is embedded and owns no child
+ * views. `has_children` takes precedence over an empty, lazily loaded children
+ * array so an actual container is not mistaken for a linked view.
+ */
+export function isEmbeddedDatabaseViewWithoutChildren(view: View | null | undefined): boolean {
+  if (!view || !isDatabaseLayout(view.layout) || !isEmbeddedView(view)) return false;
+
+  const hasLoadedChildren = Boolean(view.children?.length) || view.has_children === true;
+
+  return !hasLoadedChildren;
+}
+
+/**
  * Get the database_id from a view's extra field.
  *
  * The database_id is stored in the extra field for both:
@@ -146,8 +162,7 @@ export function isLinkedDatabaseViewUnderDocument(
   //    a. Not marked as a container (desktop behavior), OR
   //    b. Embedded with no children (web workaround for incorrect is_database_container flag)
   const isNonContainerView = !isDatabaseContainer(view);
-  const hasLoadedChildren = (view.children && view.children.length > 0) || view.has_children === true;
-  const isEmbeddedWithNoChildren = isEmbeddedView(view) && !hasLoadedChildren;
+  const isEmbeddedWithNoChildren = isEmbeddedDatabaseViewWithoutChildren(view);
 
   return (
     isDatabaseLayout(view.layout) &&

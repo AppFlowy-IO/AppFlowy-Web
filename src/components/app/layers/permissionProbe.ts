@@ -1,5 +1,9 @@
 import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
-import { getDatabaseIdFromExtra, isDatabaseContainer } from '@/application/view-utils';
+import {
+  getDatabaseIdFromExtra,
+  isDatabaseContainer,
+  isEmbeddedDatabaseViewWithoutChildren,
+} from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 
 const DATABASE_VIEW_LAYOUTS = new Set<ViewLayout>([
@@ -54,7 +58,12 @@ export function isCollabObjectPermissionForTarget(
  * routed view id for both identities.
  */
 export function resolvePermissionProbeTarget(viewId: string, view?: View | null): PermissionProbeTarget {
-  if (view && DATABASE_VIEW_LAYOUTS.has(view.layout) && !isDatabaseContainer(view)) {
+  const isDatabaseCollab =
+    view &&
+    DATABASE_VIEW_LAYOUTS.has(view.layout) &&
+    (!isDatabaseContainer(view) || isEmbeddedDatabaseViewWithoutChildren(view));
+
+  if (isDatabaseCollab) {
     return {
       collabObjectId: getDatabaseIdFromExtra(view) ?? viewId,
       collabType: Types.Database,

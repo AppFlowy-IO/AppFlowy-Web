@@ -166,14 +166,21 @@ function applyVisibility(
   target: SpaceVisibility
 ): SpacePermissionSettings {
   if (target === SpaceVisibility.Custom) {
+    const loadedCustom = loaded?.visibility === SpaceVisibility.Custom ? loaded : null;
+
     return {
       ...current,
       visibility: target,
-      member_default_access_level: current.member_default_access_level ?? AccessLevel.ReadAndWrite,
-      everyone_else_access_level:
-        loaded?.visibility === SpaceVisibility.Custom
-          ? (current.everyone_else_access_level ?? loaded.everyone_else_access_level ?? null)
-          : defaultEveryoneElseAccessLevel(target),
+      // Public/Private cannot represent No access and temporarily coerce it to
+      // Can edit. Returning to the loaded Custom type must restore the server
+      // draft, including an intentional null, rather than preserve that
+      // compatibility coercion.
+      member_default_access_level: loadedCustom
+        ? loadedCustom.member_default_access_level
+        : current.member_default_access_level ?? AccessLevel.ReadAndWrite,
+      everyone_else_access_level: loadedCustom
+        ? loadedCustom.everyone_else_access_level ?? null
+        : defaultEveryoneElseAccessLevel(target),
     };
   }
 
@@ -191,7 +198,7 @@ function permissionSettingsForSave(settings: SpacePermissionSettings): SpacePerm
   return {
     ...settings,
     everyone_else_access_level:
-      settings.visibility === SpaceVisibility.Custom ? (settings.everyone_else_access_level ?? null) : null,
+      settings.visibility === SpaceVisibility.Custom ? settings.everyone_else_access_level ?? null : null,
   };
 }
 
@@ -934,8 +941,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           field === 'everyone_else_access_level'
             ? 'everyone-else'
             : permissionSettings.visibility === SpaceVisibility.Public
-              ? 'workspace-members'
-              : 'space-members';
+            ? 'workspace-members'
+            : 'space-members';
 
         setPendingConfirmation({ kind: 'full-access', audience });
         return;
@@ -1024,7 +1031,6 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // not the unsaved draft, and on Public specifically: a custom space lists
   // explicit people and groups that managers add and remove freely.
   const membersReadOnly = loadedPermissionSettings?.visibility === SpaceVisibility.Public;
-  const implicitMembersRemovable = loadedPermissionSettings?.visibility === SpaceVisibility.Custom;
   // Explicit members receive the collective member level; the per-member value
   // only matters on servers that still honour it.
   const explicitMemberAccessLevel = permissionSettings.member_default_access_level ?? AccessLevel.ReadOnly;
@@ -1168,7 +1174,17 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const handleRemoveMember = useCallback(
     async (member: SpaceMember) => {
-      if (membersReadOnly || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
+      if (
+        !isMutableSpaceMember(member) ||
+        membersReadOnly ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        !canManageMembers ||
+        !workspaceId
+      ) {
+        return;
+      }
+
       setMutatingMemberUid(member.uid);
       try {
         await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
@@ -1377,7 +1393,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const draftIsCustom = draftVisibility === SpaceVisibility.Custom;
   const draftIsPublic = draftVisibility === SpaceVisibility.Public;
   const draftIsPrivate = isPrivateSpaceVisibility(draftVisibility);
-  const confirmationCopy = pendingConfirmation ? confirmationTexts(pendingConfirmation, loadedPermissionSettings, t) : null;
+  const confirmationCopy = pendingConfirmation
+    ? confirmationTexts(pendingConfirmation, loadedPermissionSettings, t)
+    : null;
   const membersHaveNoAccess =
     loadedPermissionSettings?.visibility === SpaceVisibility.Custom &&
     loadedPermissionSettings.member_default_access_level === null;
@@ -1637,11 +1655,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                             member={member}
                             readOnly={membersReadOnly}
                             disabled={membersDisabled || mutatingMemberUid === member.uid}
-                            canRemove={
-                              !membersReadOnly &&
-                              canManageMembers &&
-                              (isMutableSpaceMember(member) || implicitMembersRemovable)
-                            }
+                            canRemove={!membersReadOnly && canManageMembers && isMutableSpaceMember(member)}
                             onChangeRole={handleUpdateMemberRole}
                             onRemove={handleRemoveMember}
                           />

@@ -5,6 +5,7 @@ import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 import { DatabaseContextState } from '@/application/database-yjs';
+import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
 import { UIVariant, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import { resolveEmbeddedDatabaseViewId } from '@/components/editor/database-block-lifecycle';
@@ -45,6 +46,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
   const persistedViewId = persistedViewIds[0] ?? '';
   const parentViewId = typeof node.data?.parent_id === 'string' ? node.data.parent_id : '';
   const databaseId = typeof node.data?.database_id === 'string' ? node.data.database_id : undefined;
+  const preferredLayout = getDatabaseLayoutFromBlockType(node.type);
   const context = useEditorContext();
   const workspaceId = context.workspaceId;
   const recoveryKey = parentViewId && databaseId ? `${parentViewId}:${databaseId}` : '';
@@ -243,7 +245,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
 
     let cancelled = false;
 
-    void resolveEmbeddedDatabaseViewId(parentViewId, databaseId, loadViewMeta)
+    void resolveEmbeddedDatabaseViewId(parentViewId, databaseId, loadViewMeta, preferredLayout)
       .then((resolvedViewId) => {
         if (cancelled || !resolvedViewId) return;
 
@@ -261,7 +263,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
     return () => {
       cancelled = true;
     };
-  }, [context.loadViewMeta, databaseId, parentViewId, persistedViewId, recoveredViewId, recoveryKey]);
+  }, [context.loadViewMeta, databaseId, parentViewId, persistedViewId, preferredLayout, recoveredViewId, recoveryKey]);
 
   useEffect(() => {
     // Read-only members render from recovered local state. Editors repair the

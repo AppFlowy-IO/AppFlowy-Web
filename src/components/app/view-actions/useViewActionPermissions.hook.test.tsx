@@ -6,10 +6,14 @@ import { AppNavigationContext } from '@/components/app/contexts/AppNavigationCon
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 
 const mockGetObjectPermission = jest.fn();
+const mockGetView = jest.fn();
 
 jest.mock('@/application/services/domains', () => ({
   AccessService: {
     getObjectPermission: (...args: unknown[]) => mockGetObjectPermission(...args),
+  },
+  ViewService: {
+    get: (...args: unknown[]) => mockGetView(...args),
   },
 }));
 
@@ -48,6 +52,7 @@ function createPermission(overrides: Partial<CollabObjectPermission> = {}): Coll
 describe('useViewActionPermissions', () => {
   beforeEach(() => {
     mockGetObjectPermission.mockReset();
+    mockGetView.mockReset();
   });
 
   it('resolves action gates from the object-permission endpoint', async () => {
@@ -95,6 +100,30 @@ describe('useViewActionPermissions', () => {
 
     await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
     expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'view-id', Types.Document);
+  });
+
+  it('resolves an off-outline database view from its known ID', async () => {
+    const databaseView = createView({
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, database_id: 'database-id' },
+    });
+
+    mockGetView.mockResolvedValue(databaseView);
+    mockGetObjectPermission.mockResolvedValue(
+      createPermission({
+        object_id: 'database-id',
+        collab_type: Types.Database,
+        can_share: true,
+      })
+    );
+
+    const { result } = renderHook(() => useViewActionPermissions(undefined, true, 'view-id'));
+
+    expect(result.current.hasLoadedViewActionPermissions).toBe(false);
+    await waitFor(() => expect(result.current.hasLoadedViewActionPermissions).toBe(true));
+    expect(mockGetView).toHaveBeenCalledWith('workspace-id', 'view-id');
+    expect(mockGetObjectPermission).toHaveBeenCalledWith('workspace-id', 'database-id', Types.Database);
+    expect(result.current.canManageViewActions).toBe(true);
   });
 
   it('reuses the active-page permission without issuing a duplicate request', async () => {

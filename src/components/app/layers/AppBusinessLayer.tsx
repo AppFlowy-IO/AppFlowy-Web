@@ -154,6 +154,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   // UI state
   const [rendered, setRendered] = useState(false);
   const [openModalViewId, setOpenModalViewId] = useState<string | undefined>(undefined);
+  const [openModalEffectiveViewId, setOpenModalEffectiveViewId] = useState<string | undefined>(undefined);
+  const openModalViewIdRef = useRef(openModalViewId);
   const wordCountRef = useRef<Record<string, TextCount>>({});
   const routeViewExistsCacheRef = useRef<Map<string, RouteViewExistsCacheEntry>>(new Map());
   const routeViewExistsInFlightRef = useRef<Map<string, Promise<boolean | null>>>(new Map());
@@ -166,6 +168,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     return id;
   }, [params.viewId]);
   const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM) ?? undefined;
+
+  openModalViewIdRef.current = openModalViewId;
 
   // Initialize workspace data management
   const {
@@ -395,6 +399,19 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const [noAccessViewId, setNoAccessViewId] = useState<string | null>(null);
   const [objectPermissions, setObjectPermissions] = useState<Record<string, CollabObjectPermission>>({});
   const viewNoAccess = Boolean(viewId && noAccessViewId === viewId);
+  const activePermissionViewIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            viewHasBeenDeleted ? undefined : viewId,
+            openModalViewId,
+            openModalViewId ? openModalEffectiveViewId : undefined,
+          ].filter((activeViewId): activeViewId is string => Boolean(activeViewId))
+        )
+      ),
+    [openModalEffectiveViewId, openModalViewId, viewHasBeenDeleted, viewId]
+  );
 
   useEffect(() => {
     const invalidatePermissionProbeSession = () => {
@@ -423,25 +440,17 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   useEffect(() => {
     if (!currentWorkspaceId || !requesterId) return;
 
-    // A page modal owns a separate collab from the route underneath it. Probe
-    // both active targets so opening a cached modal never bypasses the
-    // open-time permission gate. De-duplicate the common case where both ids
-    // happen to be the same.
-    const activeViewIds = Array.from(
-      new Set(
-        [viewHasBeenDeleted ? undefined : viewId, openModalViewId].filter((activeViewId): activeViewId is string =>
-          Boolean(activeViewId)
-        )
-      )
-    );
-
-    if (activeViewIds.length === 0) return;
+    // A page modal owns a separate collab from the route underneath it. A
+    // database-container modal also mounts its first child, so probe both the
+    // requested container and the effective child before cached content is
+    // allowed to render.
+    if (activePermissionViewIds.length === 0) return;
 
     // Only active routes need to participate in render permissions. Pruning
     // old entries bounds the context and prevents a prior navigation from
     // accidentally becoming a fallback permission source.
     setObjectPermissions((current) => {
-      const activeViewIdSet = new Set(activeViewIds);
+      const activeViewIdSet = new Set(activePermissionViewIds);
       const retained = Object.fromEntries(
         Object.entries(current).filter(([permissionViewId]) => activeViewIdSet.has(permissionViewId))
       );
@@ -548,9 +557,9 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
             if (activeViewId === viewId) setNoAccessViewId(activeViewId);
             // ViewModal owns its loaded Y.Doc and does not consume the route's
             // no-access state, so close it to stop rendering revoked content.
-            setOpenModalViewId((currentModalViewId) =>
-              currentModalViewId === activeViewId ? undefined : currentModalViewId
-            );
+            if (activeViewId === openModalViewId || activeViewId === openModalEffectiveViewId) {
+              setOpenModalViewId(undefined);
+            }
           }
         } else if (result.verdict === 'allowed' && !cancelled && activeViewId === viewId) {
           setNoAccessViewId((prev) => (prev === activeViewId ? null : prev));
@@ -569,18 +578,19 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       });
     };
 
-    activeViewIds.forEach((activeViewId) => probeActiveView(activeViewId));
+    activePermissionViewIds.forEach((activeViewId) => probeActiveView(activeViewId));
 
     return () => {
       cancelled = true;
       retryTimers.forEach(clearTimeout);
     };
   }, [
+    activePermissionViewIds,
     viewId,
     openModalViewId,
+    openModalEffectiveViewId,
     currentWorkspaceId,
     requesterId,
-    viewHasBeenDeleted,
     stableOutlineRef,
     permissionProbeRefreshRevision,
   ]);
@@ -603,13 +613,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       // A targeted share notification does not name affected descendants, and
       // a broad permission notification may name a group instead of a view.
       // Conservatively re-probe the few currently rendered targets.
-      const activeViewIds = Array.from(
-        new Set(
-          [viewHasBeenDeleted ? undefined : viewId, openModalViewId].filter(
-            (activeViewId): activeViewId is string => Boolean(activeViewId)
-          )
-        )
-      ).filter((activeViewId) => activeViewId !== excludedViewId);
+      const activeViewIds = activePermissionViewIds.filter((activeViewId) => activeViewId !== excludedViewId);
 
       if (activeViewIds.length === 0) return;
       // Existing capabilities may have been downgraded. Remove them before the
@@ -649,9 +653,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         delete next[revokedViewId];
         return next;
       });
-      setOpenModalViewId((currentModalViewId) =>
-        currentModalViewId === revokedViewId ? undefined : currentModalViewId
-      );
+
+      if (revokedViewId === openModalViewId || revokedViewId === openModalEffectiveViewId) {
+        setOpenModalViewId(undefined);
+      }
+
       revalidateActiveViews(revokedViewId);
     };
 
@@ -676,7 +682,14 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_REVOKED, handleViewAccessRevoked);
       syncContext.eventEmitter?.off(APP_EVENTS.VIEW_ACCESS_RESTORED, handleViewAccessRestored);
     };
-  }, [syncContext.eventEmitter, currentWorkspaceId, requesterId, viewId, openModalViewId, viewHasBeenDeleted]);
+  }, [
+    activePermissionViewIds,
+    syncContext.eventEmitter,
+    currentWorkspaceId,
+    requesterId,
+    openModalEffectiveViewId,
+    openModalViewId,
+  ]);
 
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {
@@ -764,9 +777,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
         return Promise.reject(deletedView);
       }
 
-      let view: View | null | undefined = options?.metadataOnly || options?.authoritative
-        ? undefined
-        : findView(stableOutlineRef.current || [], viewId);
+      let view: View | null | undefined =
+        options?.metadataOnly || options?.authoritative ? undefined : findView(stableOutlineRef.current || [], viewId);
 
       // Metadata-only callers use the recursively primed flat index rather
       // than stableOutlineRef directly. Permission changes clear that index,
@@ -776,9 +788,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       if (!view && currentWorkspaceId) {
         try {
           if (options?.metadataOnly) {
-            view = options.authoritative
-              ? undefined
-              : getCachedWorkspaceViewMetadata(currentWorkspaceId, viewId);
+            view = options.authoritative ? undefined : getCachedWorkspaceViewMetadata(currentWorkspaceId, viewId);
 
             if (!view) {
               const loader = () =>
@@ -793,8 +803,12 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
           } else {
             // Preserve the original contract for navigation, database tabs,
             // and editor callers: a direct folder lookup retains its
-            // immediate children instead of returning flattened metadata.
-            view = await ViewService.get(currentWorkspaceId, viewId);
+            // immediate children instead of returning flattened metadata. An
+            // authoritative recovery must also bypass ViewService's short
+            // positive cache without flattening away those children.
+            view = options?.authoritative
+              ? await ViewService.refresh(currentWorkspaceId, viewId)
+              : await ViewService.get(currentWorkspaceId, viewId);
           }
         } catch {
           // fall through to rejection
@@ -831,7 +845,15 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     setRendered(true);
   }, []);
 
+  const setOpenPageModalEffectiveViewId = useCallback((modalViewId: string, effectiveViewId?: string) => {
+    // Ignore cleanup or metadata results from a modal that was superseded by
+    // another target while its async resolution was still in flight.
+    if (openModalViewIdRef.current !== modalViewId) return;
+    setOpenModalEffectiveViewId(effectiveViewId);
+  }, []);
+
   const openPageModal = useCallback((viewId: string) => {
+    setOpenModalEffectiveViewId(undefined);
     setOpenModalViewId(viewId);
   }, []);
 
@@ -890,6 +912,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       objectPermissions,
       viewHasBeenDeleted,
       openPageModalViewId: openModalViewId,
+      setOpenPageModalEffectiveViewId,
       openPageModal,
     }),
     [
@@ -903,6 +926,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       objectPermissions,
       viewHasBeenDeleted,
       openModalViewId,
+      setOpenPageModalEffectiveViewId,
       openPageModal,
     ]
   );

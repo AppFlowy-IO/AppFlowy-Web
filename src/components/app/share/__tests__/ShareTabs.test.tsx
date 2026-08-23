@@ -9,13 +9,14 @@ const mockUseViewActionPermissions = jest.fn();
 let mockCanShare = true;
 let mockHasLoadedPermission = true;
 let mockIsLoadingPermission = false;
+let mockOutlineViewAvailable = true;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAppView: (viewId: string) => ({ view_id: viewId, is_published: false }),
+  useAppView: (viewId: string) => (mockOutlineViewAvailable ? { view_id: viewId, is_published: false } : undefined),
 }));
 
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
@@ -87,6 +88,7 @@ describe('ShareTabs publish availability', () => {
     mockCanShare = true;
     mockHasLoadedPermission = true;
     mockIsLoadingPermission = false;
+    mockOutlineViewAvailable = true;
   });
 
   it('keeps Share available while removing Publish when requested', () => {
@@ -103,8 +105,17 @@ describe('ShareTabs publish availability', () => {
     expect(screen.getByTestId('publish-tab')).toBeTruthy();
     expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
       expect.objectContaining({ view_id: 'database-view' }),
-      true
+      true,
+      'database-view'
     );
+  });
+
+  it('passes the known ID when the page is absent from the outline', () => {
+    mockOutlineViewAvailable = false;
+
+    renderShareTabs(false);
+
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(undefined, true, 'database-view');
   });
 
   it('falls back to Share when Publish is removed after being selected', () => {

@@ -58,7 +58,7 @@ function PermissionedMoreActionsContent({
     canUsePageHistory,
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
-  } = useViewActionPermissions(view, true);
+  } = useViewActionPermissions(view, true, viewId);
   const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   return (

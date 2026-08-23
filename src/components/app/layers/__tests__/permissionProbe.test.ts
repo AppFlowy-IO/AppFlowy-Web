@@ -48,11 +48,12 @@ describe('permission probe identity', () => {
     ViewLayout.List,
     ViewLayout.Gallery,
   ])('uses the canonical database collab id for database layout %s', (layout) => {
-    expect(resolvePermissionProbeTarget('database-view-id', createView('database-view-id', layout, 'database-id')))
-      .toEqual({
-        collabObjectId: 'database-id',
-        collabType: Types.Database,
-      });
+    expect(
+      resolvePermissionProbeTarget('database-view-id', createView('database-view-id', layout, 'database-id'))
+    ).toEqual({
+      collabObjectId: 'database-id',
+      collabType: Types.Database,
+    });
   });
 
   it('uses the routed view id for documents', () => {
@@ -69,6 +70,37 @@ describe('permission probe identity', () => {
       ...container.extra,
       is_database_container: true,
     };
+
+    expect(resolvePermissionProbeTarget('container-id', container)).toEqual({
+      collabObjectId: 'container-id',
+      collabType: Types.Document,
+    });
+  });
+
+  it('uses the database target for an embedded childless view with the web container marker', () => {
+    const linkedView = createView('linked-view-id', ViewLayout.Grid, 'database-id');
+
+    linkedView.extra = {
+      ...linkedView.extra,
+      embedded: true,
+      is_database_container: true,
+    };
+
+    expect(resolvePermissionProbeTarget('linked-view-id', linkedView)).toEqual({
+      collabObjectId: 'database-id',
+      collabType: Types.Database,
+    });
+  });
+
+  it('keeps an embedded lazy-loaded container on its document permission target', () => {
+    const container = createView('container-id', ViewLayout.Grid, 'database-id');
+
+    container.extra = {
+      ...container.extra,
+      embedded: true,
+      is_database_container: true,
+    };
+    container.has_children = true;
 
     expect(resolvePermissionProbeTarget('container-id', container)).toEqual({
       collabObjectId: 'container-id',

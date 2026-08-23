@@ -5,6 +5,7 @@ import { AccessService, WorkspaceService } from '@/application/services/domains'
 import {
   AccessLevel,
   IPeopleWithAccessType,
+  normalizeKnownLegacySpaceVisibility,
   ObjectPermission,
   Role,
   SpaceVisibility,
@@ -212,11 +213,15 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
         fullAccessAuthorityContext.kind === 'space'
           ? WorkspaceService.getSpacePermission(currentWorkspaceId, fullAccessAuthorityContext.spaceId)
               .then((permission) => {
-                const isPrivate = permission.permission.visibility === SpaceVisibility.Private;
+                const visibility = normalizeKnownLegacySpaceVisibility(permission.permission.visibility);
+                const usesStructuredManagementCapability =
+                  visibility === SpaceVisibility.Private || visibility === SpaceVisibility.Custom;
 
                 return {
-                  canManage: isPrivate ? permission.can_manage_space : fullAccessAuthorityContext.publicCanManage,
-                  acceptsLegacyCreatorSignals: !isPrivate,
+                  canManage: usesStructuredManagementCapability
+                    ? permission.can_manage_space
+                    : fullAccessAuthorityContext.publicCanManage,
+                  acceptsLegacyCreatorSignals: !usesStructuredManagementCapability,
                 };
               })
               .catch((error) =>

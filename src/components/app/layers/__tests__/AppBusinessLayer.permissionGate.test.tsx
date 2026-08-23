@@ -89,6 +89,8 @@ const workspaceId = '00000000-0000-4000-8000-000000000000';
 const routeViewId = '00000000-0000-4000-8000-000000000001';
 const modalViewId = '00000000-0000-4000-8000-000000000002';
 const parentViewId = '00000000-0000-4000-8000-000000000003';
+const effectiveModalViewId = '00000000-0000-4000-8000-000000000004';
+const modalDatabaseId = '00000000-0000-4000-8000-000000000005';
 
 function createView(viewId: string, children: View[] = []): View {
   return {
@@ -126,7 +128,7 @@ function resolveObjectPermission(overrides: Partial<CollabObjectPermission> = {}
     Promise.resolve(createObjectPermission(objectId, collabType, overrides));
 }
 
-function NavigationProbe({ modalTargetId }: { modalTargetId: string }) {
+function NavigationProbe({ modalTargetId, effectiveTargetId }: { modalTargetId: string; effectiveTargetId?: string }) {
   const navigation = useContext(AppNavigationContext);
 
   if (!navigation) throw new Error('Missing navigation context');
@@ -136,10 +138,21 @@ function NavigationProbe({ modalTargetId }: { modalTargetId: string }) {
       <button type={'button'} onClick={() => navigation.openPageModal?.(modalTargetId)}>
         open modal
       </button>
+      {effectiveTargetId && (
+        <button
+          type={'button'}
+          onClick={() => navigation.setOpenPageModalEffectiveViewId?.(modalTargetId, effectiveTargetId)}
+        >
+          report effective modal
+        </button>
+      )}
       <span data-testid={'modal-view-id'}>{navigation.openPageModalViewId ?? ''}</span>
       <span data-testid={'no-access'}>{String(navigation.viewNoAccess)}</span>
       <span data-testid={'object-permission'}>
         {JSON.stringify(navigation.objectPermissions?.[routeViewId] ?? null)}
+      </span>
+      <span data-testid={'effective-modal-permission'}>
+        {JSON.stringify(effectiveTargetId ? navigation.objectPermissions?.[effectiveTargetId] ?? null : null)}
       </span>
     </>
   );
@@ -171,7 +184,9 @@ function OperationsProbe({
             .loadViewMeta(
               targetViewId,
               (view) => setCallbackName(view?.name ?? ''),
-              metadataOnly ? { authoritative, metadataOnly: true } : undefined
+              metadataOnly || authoritative
+                ? { authoritative, ...(metadataOnly ? { metadataOnly: true } : {}) }
+                : undefined
             )
             .then((view) => {
               setLoadedName(view?.name ?? '');
@@ -219,14 +234,7 @@ function renderBusinessLayer(
   return render(
     <MemoryRouter initialEntries={[`/${routeViewId}`]} future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
       <Routes>
-        <Route
-          path={'/:viewId'}
-          element={
-            <AppBusinessLayer>
-              {child}
-            </AppBusinessLayer>
-          }
-        />
+        <Route path={'/:viewId'} element={<AppBusinessLayer>{child}</AppBusinessLayer>} />
       </Routes>
     </MemoryRouter>
   );
@@ -395,6 +403,33 @@ describe('AppBusinessLayer permission gates', () => {
     expect(ViewService.get).toHaveBeenCalledWith(workspaceId, modalViewId);
   });
 
+  it('force-refreshes an authoritative full metadata load without flattening its children', async () => {
+    const eventEmitter = new EventEmitter();
+    const child = createView(parentViewId);
+    const freshRemoteView = { ...createView(modalViewId, [child]), name: 'Fresh database parent' };
+
+    (ViewService.refresh as jest.Mock).mockImplementation((_workspaceId: string, viewId: string) =>
+      Promise.resolve(viewId === modalViewId ? freshRemoteView : undefined)
+    );
+
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId)],
+      modalViewId,
+      <OperationsProbe targetViewId={modalViewId} authoritative />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'load metadata' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loaded-metadata-name').textContent).toBe(freshRemoteView.name);
+      expect(screen.getByTestId('loaded-metadata-child-ids').textContent).toBe(JSON.stringify([child.view_id]));
+    });
+    expect(resolveWorkspaceViewMetadata).not.toHaveBeenCalled();
+    expect(ViewService.get).not.toHaveBeenCalledWith(workspaceId, modalViewId);
+    expect(ViewService.refresh).toHaveBeenCalledWith(workspaceId, modalViewId);
+  });
+
   it('loads metadata-only off-outline values from the global index before using the network resolver', async () => {
     const eventEmitter = new EventEmitter();
     const cachedView = { ...createView(modalViewId), name: 'Cached database view' };
@@ -506,6 +541,59 @@ describe('AppBusinessLayer permission gates', () => {
     expect(invalidateWorkspaceViewMetadata).toHaveBeenCalledWith(workspaceId, modalViewId);
     expect(deleteCollabDB).toHaveBeenCalledWith(modalViewId, { destroyDoc: true });
     expect(screen.getByTestId('no-access').textContent).toBe('false');
+  });
+
+  it('stores and revalidates the effective database child permission for a container modal', async () => {
+    const eventEmitter = new EventEmitter();
+    let childCanRead = true;
+    const databaseChild: View = {
+      ...createView(effectiveModalViewId),
+      layout: ViewLayout.Grid,
+      extra: { database_id: modalDatabaseId, is_space: false },
+      parent_view_id: modalViewId,
+    };
+    const modalContainer: View = {
+      ...createView(modalViewId, [databaseChild]),
+      layout: ViewLayout.Grid,
+      extra: { database_id: modalDatabaseId, is_database_container: true, is_space: false },
+    };
+
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(
+      (_workspaceId: string, objectId: string, collabType: Types) =>
+        Promise.resolve(
+          createObjectPermission(objectId, collabType, {
+            can_read: objectId !== modalDatabaseId || childCanRead,
+            can_write: objectId !== modalDatabaseId,
+          })
+        )
+    );
+    renderBusinessLayer(
+      eventEmitter,
+      [createView(routeViewId), modalContainer],
+      modalViewId,
+      <NavigationProbe modalTargetId={modalViewId} effectiveTargetId={effectiveModalViewId} />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'open modal' }));
+    await waitFor(() => expect(screen.getByTestId('modal-view-id').textContent).toBe(modalViewId));
+    fireEvent.click(screen.getByRole('button', { name: 'report effective modal' }));
+
+    await waitFor(() => {
+      expect(AccessService.getObjectPermission).toHaveBeenCalledWith(workspaceId, modalDatabaseId, Types.Database);
+      expect(JSON.parse(screen.getByTestId('effective-modal-permission').textContent || 'null')).toEqual(
+        createObjectPermission(modalDatabaseId, Types.Database, { can_read: true, can_write: false })
+      );
+    });
+
+    childCanRead = false;
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: modalDatabaseId });
+    });
+
+    await waitFor(() => expect(screen.getByTestId('modal-view-id').textContent).toBe(''));
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, effectiveModalViewId);
+    expect(deleteCollabDB).toHaveBeenCalledWith(effectiveModalViewId, { destroyDoc: true });
+    expect(deleteCollabDB).toHaveBeenCalledWith(modalDatabaseId, { destroyDoc: true });
   });
 
   it('closes an exactly revoked modal even when it has the route view id', async () => {
@@ -738,9 +826,7 @@ describe('AppBusinessLayer permission gates', () => {
     const eventEmitter = new EventEmitter();
 
     (ViewService.get as jest.Mock).mockRejectedValue({ code: 403 });
-    (AccessService.getObjectPermission as jest.Mock).mockImplementation(
-      resolveObjectPermission({ can_read: false })
-    );
+    (AccessService.getObjectPermission as jest.Mock).mockImplementation(resolveObjectPermission({ can_read: false }));
 
     renderBusinessLayer(eventEmitter, []);
 

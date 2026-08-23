@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { AccessService } from '@/application/services/domains';
+import { AccessService, ViewService } from '@/application/services/domains';
 import { type CollabObjectPermission, View } from '@/application/types';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPermission';
 import {
   isCollabObjectPermissionForTarget,
+  findPermissionProbeView,
   resolvePermissionProbeTarget,
 } from '@/components/app/layers/permissionProbe';
 import {
@@ -14,11 +15,11 @@ import {
   canUseViewMutationActions,
 } from '@/components/app/view-actions/viewActionPermission';
 
-export function useViewActionPermissions(view: View | null | undefined, opened: boolean) {
+export function useViewActionPermissions(view: View | null | undefined, opened: boolean, fallbackViewId?: string) {
   const workspaceId = useCurrentWorkspaceId();
-  const viewId = view?.view_id;
+  const viewId = view?.view_id ?? fallbackViewId;
   const activeObjectPermission = useViewObjectPermission(viewId);
-  const resolvedTarget = viewId ? resolvePermissionProbeTarget(viewId, view) : undefined;
+  const resolvedTarget = viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined;
   const collabObjectId = resolvedTarget?.collabObjectId;
   const collabType = resolvedTarget?.collabType;
   const requestSeq = useRef(0);
@@ -33,15 +34,22 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
   }, [viewId]);
 
   useEffect(() => {
-    if (!opened || !workspaceId || !viewId || collabObjectId === undefined || collabType === undefined) {
+    if (!opened || !workspaceId || !viewId) {
       setIsLoadingViewActionPermissions(false);
       return;
     }
 
     const seq = ++requestSeq.current;
-    const target = { collabObjectId, collabType };
+    const knownTarget =
+      collabObjectId !== undefined && collabType !== undefined ? { collabObjectId, collabType } : undefined;
 
-    if (activeObjectPermission && isCollabObjectPermissionForTarget(activeObjectPermission, target)) {
+    // AppBusinessLayer indexes canonical permissions by folder view id after
+    // validating their collab identity. This is also the best source when an
+    // off-outline database view has no local metadata yet.
+    if (
+      activeObjectPermission &&
+      (!knownTarget || isCollabObjectPermissionForTarget(activeObjectPermission, knownTarget))
+    ) {
       setObjectPermission(activeObjectPermission);
       setLoadedViewId(viewId);
       setIsLoadingViewActionPermissions(false);
@@ -55,8 +63,26 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
     setObjectPermission(null);
     setIsLoadingViewActionPermissions(true);
 
-    void AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType)
-      .then((permission) => {
+    void (async () => {
+      let target = knownTarget;
+
+      if (!target) {
+        // A modal or fallback route can be valid without being materialized in
+        // the outline. Resolve its database identity from direct metadata; if
+        // that workspace-scoped read is unavailable to a guest, fall back to
+        // the document identity and let the permission endpoint decide.
+        const responseRoot = await ViewService.get(workspaceId, viewId).catch(() => undefined);
+        const fallbackView = findPermissionProbeView(viewId, responseRoot);
+
+        target = resolvePermissionProbeTarget(viewId, fallbackView);
+      }
+
+      return {
+        permission: await AccessService.getObjectPermission(workspaceId, target.collabObjectId, target.collabType),
+        target,
+      };
+    })()
+      .then(({ permission, target }) => {
         if (cancelled || seq !== requestSeq.current) return;
 
         setObjectPermission(isCollabObjectPermissionForTarget(permission, target) ? permission : null);
@@ -76,9 +102,7 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
     };
   }, [activeObjectPermission, collabObjectId, collabType, opened, viewId, workspaceId]);
 
-  const canLoadViewActionPermissions = Boolean(
-    opened && workspaceId && viewId && collabObjectId !== undefined && collabType !== undefined
-  );
+  const canLoadViewActionPermissions = Boolean(opened && workspaceId && viewId);
   const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
   const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
   const canManageViewActions = hasLoadedViewActionPermissions

@@ -227,6 +227,17 @@ export function useOpenPageModal() {
   return context.openPageModal;
 }
 
+/** Report the effective folder view mounted inside the active page modal. */
+export function useSetOpenPageModalEffectiveViewId() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useSetOpenPageModalEffectiveViewId must be used within an AppProvider');
+  }
+
+  return context.setOpenPageModalEffectiveViewId;
+}
+
 /** The view ID from the current route. */
 export function useAppViewId() {
   const context = useContext(AppNavigationContext);

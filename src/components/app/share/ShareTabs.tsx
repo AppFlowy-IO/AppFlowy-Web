@@ -57,7 +57,7 @@ function ShareTabs({
     canManageViewActions: canShare,
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
-  } = useViewActionPermissions(view, opened);
+  } = useViewActionPermissions(view, opened, viewId);
   const isResolvingSharePermission = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   const options = useMemo(() => {

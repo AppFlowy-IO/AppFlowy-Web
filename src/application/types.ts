@@ -1270,9 +1270,9 @@ export interface LoadViewMetaOptions {
   /** Resolve display fields from the flat workspace metadata index when possible. */
   metadataOnly?: boolean;
   /**
-   * Bypass the materialized outline and flat positive cache after an access
-   * change, forcing a server refresh through the shared metadata resolver so
-   * in-flight and negative caching are still retained.
+   * Bypass the materialized outline and service caches. Metadata-only callers
+   * refresh through the shared flat resolver; full callers retain the direct
+   * response's immediate children for navigation and recovery flows.
    */
   authoritative?: boolean;
 }

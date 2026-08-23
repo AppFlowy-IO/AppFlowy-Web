@@ -1,5 +1,5 @@
-import type { LoadViewMeta } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import type { LoadViewMeta, ViewLayout } from '@/application/types';
+import { isDatabaseContainer, isEmbeddedDatabaseViewWithoutChildren } from '@/application/view-utils';
 
 /**
  * Recover the single linked database view owned by a document.
@@ -13,15 +13,26 @@ import { isDatabaseContainer } from '@/application/view-utils';
 export async function resolveEmbeddedDatabaseViewId(
   parentViewId: string,
   databaseId: string,
-  loadViewMeta: LoadViewMeta
+  loadViewMeta: LoadViewMeta,
+  preferredLayout?: ViewLayout
 ): Promise<string | null> {
   if (!parentViewId || !databaseId) return null;
 
-  const parentView = await loadViewMeta(parentViewId, undefined, { authoritative: true });
+  // Force the direct, child-preserving folder response. A metadata-only
+  // refresh intentionally flattens children and cannot recover the link.
+  const parentView = await loadViewMeta(parentViewId, undefined, {
+    authoritative: true,
+    metadataOnly: false,
+  });
   const matchingViewIds = Array.from(
     new Set(
       (parentView?.children ?? [])
-        .filter((view) => view.extra?.database_id === databaseId && !isDatabaseContainer(view))
+        .filter(
+          (view) =>
+            view.extra?.database_id === databaseId &&
+            (preferredLayout === undefined || view.layout === preferredLayout) &&
+            (!isDatabaseContainer(view) || isEmbeddedDatabaseViewWithoutChildren(view))
+        )
         .map((view) => view.view_id)
         .filter(Boolean)
     )

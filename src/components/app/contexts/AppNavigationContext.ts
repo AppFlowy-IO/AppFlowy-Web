@@ -45,6 +45,11 @@ export interface AppNavigationContextType {
   viewHasBeenDeleted?: boolean;
   /** The view ID currently displayed in the page modal overlay, if any. */
   openPageModalViewId?: string;
+  /**
+   * Report the folder view actually mounted by a page modal. Database
+   * containers render a child view with a separate permission target.
+   */
+  setOpenPageModalEffectiveViewId?: (modalViewId: string, effectiveViewId?: string) => void;
   /** Open a view in the page modal overlay. */
   openPageModal?: (viewId: string) => void;
 }

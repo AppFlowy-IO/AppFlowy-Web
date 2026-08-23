@@ -332,6 +332,18 @@ function workspaceDefaultMember(): SpaceMember {
   };
 }
 
+function pageShareMember(): SpaceMember {
+  return {
+    uid: '5678901234567890',
+    name: 'Page-shared member',
+    email: 'page-shared-member@appflowy.io',
+    role: SpaceMemberRole.Member,
+    access_level: AccessLevel.ReadOnly,
+    source: 'page_share',
+    workspace_role: Role.Member,
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -436,7 +448,7 @@ describe('ManageSpace ACL management', () => {
       mockGetSpacePermission.mockResolvedValue(
         permissionResponse({
           permission: { ...publicPermission, visibility: 'default' as unknown as SpaceVisibility },
-        }),
+        })
       );
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
@@ -640,6 +652,34 @@ describe('ManageSpace ACL management', () => {
       expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
     });
 
+    it('restores loaded Custom No access after a Public round trip', async () => {
+      mockGetSpacePermission.mockResolvedValue(
+        permissionResponse({
+          permission: { ...customPermission, member_default_access_level: null },
+        })
+      );
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain(
+        'space.permissionManager.noAccess'
+      );
+
+      fireEvent.click(visibilityOption(SpaceVisibility.Public));
+      confirmPending();
+      expect(screen.getByTestId('manage-space-workspace-members-access').textContent).toContain('shareAction.canEdit');
+
+      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
+      expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
+      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain(
+        'space.permissionManager.noAccess'
+      );
+
+      fireEvent.click(saveButton());
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+      expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
+    });
+
     it('passes an unknown visibility through unchanged', async () => {
       const unknownVisibility = 'invite_only' as SpaceVisibility;
 
@@ -701,9 +741,9 @@ describe('ManageSpace ACL management', () => {
         'space.permissionManager.switchToCustomDescription'
       );
       // Full access / Can edit / Can view, no "No access" on a public space.
-      expect(screen.getAllByTestId(/^manage-space-workspace-members-access-option-/).map((el) => el.textContent)).toEqual(
-        ['shareAction.fullAccess', 'shareAction.canEditselected', 'shareAction.canView']
-      );
+      expect(
+        screen.getAllByTestId(/^manage-space-workspace-members-access-option-/).map((el) => el.textContent)
+      ).toEqual(['shareAction.fullAccess', 'shareAction.canEditselected', 'shareAction.canView']);
 
       fireEvent.click(screen.getByTestId(`manage-space-workspace-members-access-option-${AccessLevel.ReadOnly}`));
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
@@ -1201,9 +1241,7 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
 
       expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
-      expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(
-        expect.objectContaining({ excludePending: true })
-      );
+      expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(expect.objectContaining({ excludePending: true }));
       fireEvent.click(screen.getByTestId('inline-member-add'));
 
       await waitFor(() =>
@@ -1355,9 +1393,7 @@ describe('ManageSpace ACL management', () => {
     });
 
     it('lets invite-only members add people without calling the manager-only member list', async () => {
-      mockGetSpacePermission.mockResolvedValue(
-        permissionResponse({ canManageMembers: false, canInviteMembers: true })
-      );
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ canManageMembers: false, canInviteMembers: true }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
       await waitFor(() => expect(screen.getByTestId('inline-member-add').disabled).toBe(false));
@@ -1479,31 +1515,34 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByRole('button', { name: 'space.permissionManager.remove' })).toBeNull();
     });
 
-    it('lets managers edit a custom space roster, including removing any listed member', async () => {
+    it('keeps page-share members inherited while allowing explicit Custom members to be removed', async () => {
       const explicitMember = manualMember();
-      const defaultMember = workspaceDefaultMember();
+      const inheritedMember = pageShareMember();
       const memberGroup = group('group-1', 'Engineering');
 
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
-      mockGetSpaceMembers.mockResolvedValue({ members: [explicitMember, defaultMember], groups: [memberGroup] });
+      mockGetSpaceMembers.mockResolvedValue({ members: [explicitMember, inheritedMember], groups: [memberGroup] });
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-      const defaultRow = await screen.findByTestId(`space-member-row-${defaultMember.uid}`);
+      const inheritedRow = await screen.findByTestId(`space-member-row-${inheritedMember.uid}`);
       const explicitRow = screen.getByTestId(`space-member-row-${explicitMember.uid}`);
       const groupRow = screen.getByTestId('space-group-row-group-1');
 
       await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
       expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
       expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
-      expect(screen.queryByText('space.permissionManager.inheritedAccessManagedFromGeneral')).toBeNull();
-      expect(within(defaultRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
+      expect(screen.getByText('space.permissionManager.inheritedAccessManagedFromGeneral')).toBeTruthy();
+      expect(within(inheritedRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(true);
       expect(within(explicitRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
       expect(within(groupRow).getByRole('button', { name: 'space.permissionManager.remove' }).disabled).toBe(false);
 
-      fireEvent.click(within(defaultRow).getByRole('button', { name: 'space.permissionManager.remove' }));
+      fireEvent.click(within(inheritedRow).getByRole('button', { name: 'space.permissionManager.remove' }));
+      expect(mockRemoveSpaceMember).not.toHaveBeenCalled();
+
+      fireEvent.click(within(explicitRow).getByRole('button', { name: 'space.permissionManager.remove' }));
 
       await waitFor(() =>
-        expect(mockRemoveSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', defaultMember.uid)
+        expect(mockRemoveSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', explicitMember.uid)
       );
       await waitFor(() =>
         expect(toast.success).toHaveBeenCalledWith('space.permissionManager.removeSpaceMemberSuccess')

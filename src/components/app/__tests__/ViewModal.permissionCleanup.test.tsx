@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import * as Y from 'yjs';
 
-import { ViewLayout, type View } from '@/application/types';
+import { AccessLevel, Types, ViewLayout, type View } from '@/application/types';
 
 const modalViewId = '00000000-0000-4000-8000-000000000001';
 const mockView: View = {
@@ -15,9 +15,28 @@ const mockView: View = {
   is_published: false,
   is_private: false,
 };
+let mockOutlineViews: View[] = [mockView];
 const mockLoadView = jest.fn();
 const mockBindViewSync = jest.fn();
 const mockNoop = jest.fn();
+const mockSetOpenPageModalEffectiveViewId = jest.fn();
+let mockObjectPermissions: Record<string, ReturnType<typeof createMockPermission>> = {};
+
+function createMockPermission(viewId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    object_id: viewId,
+    collab_type: Types.Document,
+    governing_view_id: viewId,
+    access_level: AccessLevel.FullAccess,
+    can_read: true,
+    can_write: true,
+    can_comment: true,
+    can_share: true,
+    ...overrides,
+  };
+}
+
+const mockUseViewObjectPermission = jest.fn((viewId?: string) => (viewId ? mockObjectPermissions[viewId] : undefined));
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -49,7 +68,7 @@ jest.mock('@/components/app/app.hooks', () => ({
     setWordCount: mockNoop,
     uploadFile: mockNoop,
   }),
-  useAppOutline: () => [mockView],
+  useAppOutline: () => mockOutlineViews,
   useCurrentWorkspaceId: () => 'workspace-id',
   useEventEmitter: () => undefined,
   useGetMentionUser: () => mockNoop,
@@ -57,6 +76,17 @@ jest.mock('@/components/app/app.hooks', () => ({
   useLoadViews: () => mockNoop,
   useOpenPageModal: () => mockNoop,
   useScheduleDeferredCleanup: () => mockNoop,
+  useSetOpenPageModalEffectiveViewId: () => mockSetOpenPageModalEffectiveViewId,
+}));
+
+jest.mock('@/components/app/hooks/useViewObjectPermission', () => ({
+  INITIAL_VIEW_OBJECT_CAPABILITIES: {
+    can_read: true,
+    can_write: false,
+    can_comment: false,
+    can_share: false,
+  },
+  useViewObjectPermission: (viewId?: string) => mockUseViewObjectPermission(viewId),
 }));
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
@@ -114,6 +144,49 @@ import ViewModal from '@/components/app/ViewModal';
 describe('ViewModal permission cleanup', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockOutlineViews = [mockView];
+    mockObjectPermissions = { [modalViewId]: createMockPermission(modalViewId) };
+  });
+
+  it('waits for the effective database child permission before loading cached content', async () => {
+    const childViewId = '00000000-0000-4000-8000-000000000010';
+    const databaseId = '00000000-0000-4000-8000-000000000011';
+    const childView: View = {
+      ...mockView,
+      view_id: childViewId,
+      name: 'Database child',
+      layout: ViewLayout.Grid,
+      extra: { database_id: databaseId, is_space: false },
+      parent_view_id: modalViewId,
+    };
+    const containerView: View = {
+      ...mockView,
+      layout: ViewLayout.Grid,
+      extra: { database_id: databaseId, is_database_container: true, is_space: false },
+      children: [childView],
+    };
+    const childDoc = new Y.Doc({ guid: 'database-child-doc' });
+
+    mockOutlineViews = [containerView];
+    mockLoadView.mockResolvedValue(childDoc);
+    const { rerender } = render(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await waitFor(() => expect(mockSetOpenPageModalEffectiveViewId).toHaveBeenCalledWith(modalViewId, childViewId));
+    expect(mockUseViewObjectPermission).toHaveBeenCalledWith(childViewId);
+    expect(mockLoadView).not.toHaveBeenCalled();
+
+    mockObjectPermissions = {
+      ...mockObjectPermissions,
+      [childViewId]: createMockPermission(databaseId, {
+        collab_type: Types.Database,
+        governing_view_id: childViewId,
+        can_write: false,
+      }),
+    };
+    rerender(<ViewModal viewId={modalViewId} open={true} onClose={mockNoop} />);
+
+    await waitFor(() => expect(mockLoadView).toHaveBeenCalledWith(childViewId, false, true));
+    await screen.findByText('database-child-doc');
   });
 
   it('drops a loaded Y.Doc when a security close bypasses handleClose', async () => {
