@@ -1792,13 +1792,6 @@ function PublicAccessCard({
           <div className='font-medium text-text-primary'>{t('space.permissionManager.publicAccessTitle')}</div>
           <div className='text-sm text-text-secondary'>{t('space.permissionManager.publicAccessDescription')}</div>
         </div>
-        <div
-          className='grid items-center gap-3 border-b border-border-primary px-4 py-2 text-xs font-medium text-text-tertiary'
-          style={{ gridTemplateColumns: 'minmax(0, 1fr) 160px' }}
-        >
-          <span>{t('space.permissionManager.who')}</span>
-          <span className='text-right'>{t('space.permissionManager.access')}</span>
-        </div>
         <PermissionPrincipalRow
           icon={<Shield className='h-5 w-5 text-icon-primary' />}
           title={t('space.permissionManager.workspaceOwners')}

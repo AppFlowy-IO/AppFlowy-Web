@@ -299,8 +299,8 @@ Then('the Manage Space general tab shows the Public access card', async ({ page 
       exact: true,
     })
   ).toBeVisible();
-  await expect(card.getByText('Who', { exact: true })).toBeVisible();
-  await expect(card.getByText('Access', { exact: true })).toBeVisible();
+  await expect(card.getByText('Who', { exact: true })).toHaveCount(0);
+  await expect(card.getByText('Access', { exact: true })).toHaveCount(0);
   await expect(card.getByText('Need different access levels?', { exact: true })).toBeVisible();
   await expect(
     card.getByText(
