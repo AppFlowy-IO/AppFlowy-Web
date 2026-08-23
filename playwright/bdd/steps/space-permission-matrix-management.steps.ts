@@ -3,11 +3,15 @@ import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
+import {
+  SPM0622_ACCOUNTS as SPM_ACCOUNTS,
+  SPM0622_PASSWORD as PASSWORD,
+  type Spm0622AccountAlias as SpmAccountAlias,
+} from '../../support/spm0622-fixture';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { When, Then, Before, After } = createBdd();
 
-const PASSWORD = 'AppFlowy!@123';
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 const TEMPORARY_PRIVATE_SPACE_PREFIX = 'spm0622 BDD Private Space';
 const TEMPORARY_PRIVATE_PAGE_PREFIX = 'spm0622 BDD Private Page';
@@ -19,17 +23,6 @@ const ACCESS_LEVEL_FULL_ACCESS = 50;
 const SPACE_MEMBER_ROLE_OWNER = 'owner';
 const SPACE_MEMBER_ROLE_MEMBER = 'member';
 const SEEDED_PRIVATE_SPACE_MEMBER_DEFAULT_ACCESS = ACCESS_LEVEL_READ_ONLY;
-
-const SPM_ACCOUNTS = {
-  'owner 1': 'spm0622-owner1@appflowy.local',
-  'owner 2': 'spm0622-owner2@appflowy.local',
-  'member default': 'spm0622-member-default@appflowy.local',
-  'member open': 'spm0622-member-open@appflowy.local',
-  'member closed': 'spm0622-member-closed@appflowy.local',
-  'member private': 'spm0622-member-private@appflowy.local',
-  'guest private': 'spm0622-guest-private@appflowy.local',
-  'guest none': 'spm0622-guest-none@appflowy.local',
-} as const;
 
 const SPM_SPACES = {
   'default space': {
@@ -51,7 +44,7 @@ const SPM_SPACES = {
 const SPM_PAGES = {
   'default page': {
     viewId: '25fe29de-a747-482e-8d1f-ea5d0dc17d9a',
-    title: 'spm0622 Default Matrix Page',
+    title: 'spm0622 General Matrix Page',
   },
   'private page': {
     viewId: 'd79a7c58-79fb-4c98-a550-83bc4a8685c5',
@@ -63,7 +56,6 @@ const SPM_PAGES = {
   },
 } as const;
 
-type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 type SpmSpaceAlias = keyof typeof SPM_SPACES;
 type SpmPageAlias = keyof typeof SPM_PAGES;
 type SeededSpmPage = (typeof SPM_PAGES)[SpmPageAlias];
@@ -276,7 +268,11 @@ Then('the directly opened seeded spm0622 page is {string}', async ({ page }, acc
       await expect(editor).toHaveAttribute('contenteditable', 'false');
       await selectFirstEditorWord(page, editor);
       await waitForSelectionEffects(page);
-      await expect(page.getByTestId('inline-comment-readonly-trigger')).toHaveCount(0);
+      await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible();
+      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
       break;
     case 'denied':
       await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout: 30000 });

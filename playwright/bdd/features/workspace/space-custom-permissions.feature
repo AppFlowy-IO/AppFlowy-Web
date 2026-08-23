@@ -79,6 +79,23 @@ Feature: Seeded Public, Private and Custom space permissions
     And I directly open the seeded scp0822 "custom page"
     Then the directly opened seeded scp0822 page is "denied"
 
+  # The page share menu lists explicit principals only. Everyone else remains
+  # effective Can view access, represented once under General access instead
+  # of expanding every workspace or group member into an individual row.
+  Scenario: Custom page share panel separates explicit principals from general access
+    Given I sign in as seeded scp0822 "owner"
+    When I directly open the seeded scp0822 "custom page"
+    And I open the share panel
+    Then the share panel shows shared person "scp0822-own@appflowy.local" with "Full access"
+    And the share panel shows shared person "scp0822-member@appflowy.local" with "Can edit"
+    And the share panel shows shared group "scp0822 Editors" with "Can edit"
+    And the share panel does not show shared person "scp0822-editor@appflowy.local"
+    And the share panel does not show shared person "scp0822-outsider@appflowy.local"
+    And the share panel general access is "Can view"
+    When I sign in as seeded scp0822 "outsider"
+    And I directly open the seeded scp0822 "custom page"
+    Then the directly opened seeded scp0822 page is "read-only"
+
   # (d) Removing a listed custom member changes their audience to everyone else (Can view).
   Scenario: Removing a custom member drops them to the everyone-else level
     Given I sign in as seeded scp0822 "owner"

@@ -51,6 +51,7 @@ function ShareTabs({
     updateGroupInAccessList,
     currentUserAccessLevel,
     canManageFullAccess,
+    generalAccessLevel,
     sectionType,
   } = useShareAccessDetails(viewId, opened);
   const {
@@ -139,6 +140,7 @@ function ShareTabs({
                 hasFullAccess={canShare}
                 canManageFullAccess={canShare && canManageFullAccess}
                 currentUserAccessLevel={currentUserAccessLevel}
+                generalAccessLevel={generalAccessLevel}
                 sectionType={sectionType}
               />
             ) : option.value === TabKey.PUBLISH ? (

@@ -225,7 +225,7 @@ const EditorEditable = () => {
             </Suspense>
           )}
 
-          {canComment && <InlineCommentEditorControls readOnly={readOnly} />}
+          {readOnly && <InlineCommentEditorControls canComment={canComment} />}
 
           <div className={cn('pointer-events-none absolute left-0 right-0 top-0 flex h-full justify-center')}>
             <div

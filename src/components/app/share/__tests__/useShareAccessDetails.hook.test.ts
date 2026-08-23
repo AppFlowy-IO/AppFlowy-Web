@@ -281,6 +281,78 @@ describe('useShareAccessDetails', () => {
     expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', 'space-1');
   });
 
+  it.each([
+    [
+      'Custom Can view and comment',
+      SpaceVisibility.Custom,
+      undefined,
+      AccessLevel.ReadAndComment,
+      AccessLevel.ReadAndComment,
+    ],
+    ['Custom No access', SpaceVisibility.Custom, undefined, null, null],
+    ['Public Can edit', SpaceVisibility.Public, AccessLevel.ReadAndWrite, undefined, AccessLevel.ReadAndWrite],
+    ['Private Restricted', SpaceVisibility.Private, AccessLevel.ReadAndWrite, undefined, null],
+  ])(
+    'exposes %s from the governing space as General access',
+    async (_label, visibility, memberDefault, everyoneElse, expected) => {
+      mockOutline = [
+        {
+          view_id: 'space-1',
+          name: 'Structured space',
+          icon: null,
+          layout: ViewLayout.Document,
+          extra: { is_space: true },
+          children: [{ ...mockOutline[0], is_private: visibility === SpaceVisibility.Private }],
+          is_published: false,
+          is_private: visibility === SpaceVisibility.Private,
+        },
+      ];
+      mockGetSpacePermission.mockResolvedValueOnce({
+        permission: {
+          visibility,
+          member_default_access_level: memberDefault,
+          everyone_else_access_level: everyoneElse,
+        },
+        can_manage_space: false,
+      });
+      mockGetShareDetail.mockResolvedValueOnce({
+        shared_with: [],
+        current_user_permission: { access_level: AccessLevel.FullAccess },
+      });
+
+      const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+      await waitFor(() => expect(result.current.generalAccessLevel).toBe(expected));
+    }
+  );
+
+  it('uses Can view for Custom General access when an older server omits the additive field', async () => {
+    mockOutline = [
+      {
+        view_id: 'space-1',
+        name: 'Custom space',
+        icon: null,
+        layout: ViewLayout.Document,
+        extra: { is_space: true },
+        children: [{ ...mockOutline[0], is_private: false }],
+        is_published: false,
+        is_private: false,
+      },
+    ];
+    mockGetSpacePermission.mockResolvedValueOnce({
+      permission: { visibility: SpaceVisibility.Custom },
+      can_manage_space: false,
+    });
+    mockGetShareDetail.mockResolvedValueOnce({
+      shared_with: [],
+      current_user_permission: { access_level: AccessLevel.FullAccess },
+    });
+
+    const { result } = renderHook(() => useShareAccessDetails('view-1', true));
+
+    await waitFor(() => expect(result.current.generalAccessLevel).toBe(AccessLevel.ReadOnly));
+  });
+
   it('does not replace a denied custom-space capability with creator signals', async () => {
     mockWorkspaceRole = Role.Owner;
     mockOutline = [

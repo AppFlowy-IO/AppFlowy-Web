@@ -1,13 +1,18 @@
+import EventEmitter from 'events';
+
 import { act, render, waitFor } from '@testing-library/react';
 import { createEditor, Operation, Transforms } from 'slate';
 import { ReactEditor, withReact } from 'slate-react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { InlineComment } from '@/application/inline-comment';
 import { YjsEditor } from '@/application/slate-yjs';
 import { insertBlock, withTestingYDoc } from '@/application/slate-yjs/__tests__/withTestingYjsEditor';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs } from '@/application/slate-yjs/plugins/withYjs';
 import { BlockType, CollabOrigin } from '@/application/types';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
+import { Log } from '@/utils/log';
 
 import { InlineCommentProvider, operationsCanAffectAnchors, useInlineCommentContext } from '../InlineCommentContext';
 import { collectInlineCommentAnchors } from '../editor/anchors';
@@ -68,6 +73,7 @@ describe('InlineCommentProvider selection lifetime', () => {
   }
 
   beforeEach(() => {
+    jest.useRealTimers();
     jest.clearAllMocks();
     applyAnchorUpdate.mockResolvedValue(undefined);
     createComment.mockResolvedValue('comment-1');
@@ -85,6 +91,7 @@ describe('InlineCommentProvider selection lifetime', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     dialogElement.remove();
     jest.restoreAllMocks();
   });
@@ -127,6 +134,174 @@ describe('InlineCommentProvider selection lifetime', () => {
 
     act(() => unregisterPageEditor());
     expect(context.isEditorRegistered(pageEditor)).toBe(false);
+  });
+
+  it('debounces matching workspace notifications before refetching the displayed comment list', async () => {
+    const eventEmitter = new EventEmitter() as AppEventEmitter;
+    const editor = withReact(createEditor()) as YjsEditor;
+    const remoteComment: InlineComment = {
+      user: { uuid: 'user-2', name: 'Nathan', avatarUrl: null },
+      commentId: 'comment-remote',
+      viewId: 'view-1',
+      blockId: 'block-1',
+      content: 'Remote review',
+      replyCommentId: null,
+      isResolved: false,
+      isDeleted: false,
+      canBeDeleted: false,
+      createdAt: '2026-08-23T00:00:00Z',
+      updatedAt: '2026-08-23T00:00:00Z',
+    };
+
+    editor.children = [
+      {
+        type: BlockType.Paragraph,
+        blockId: 'block-1',
+        children: [{ text: 'Review me', 'comment-ids': ['comment-remote'] }],
+      },
+    ];
+    listComments.mockResolvedValueOnce([]).mockResolvedValue([remoteComment]);
+
+    render(
+      <InlineCommentProvider eventEmitter={eventEmitter} workspaceId={'workspace-1'} viewId={'view-1'}>
+        <Probe />
+      </InlineCommentProvider>
+    );
+
+    await act(async () => {
+      context.registerEditor(editor, { canComment: true, canWrite: true, readOnly: false, viewId: 'view-1' });
+    });
+    await waitFor(() => expect(listComments).toHaveBeenCalledTimes(1));
+    jest.useFakeTimers();
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.INLINE_COMMENT_CHANGED, {
+        workspaceId: 'workspace-1',
+        viewId: 'other-view',
+      });
+      await Promise.resolve();
+    });
+    expect(listComments).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.INLINE_COMMENT_CHANGED, {
+        workspaceId: 'workspace-1',
+        viewId: 'view-1',
+      });
+      eventEmitter.emit(APP_EVENTS.INLINE_COMMENT_CHANGED, {
+        workspaceId: 'workspace-1',
+        viewId: 'view-1',
+      });
+      await Promise.resolve();
+    });
+
+    expect(listComments).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(2999);
+      await Promise.resolve();
+    });
+    expect(listComments).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(context.comments).toEqual([remoteComment]);
+    expect(context.anchors.has(remoteComment.commentId)).toBe(true);
+    expect(listComments).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a failed notification refetch without requiring a page reload', async () => {
+    jest.useFakeTimers();
+    const eventEmitter = new EventEmitter() as AppEventEmitter;
+    const editor = withReact(createEditor()) as YjsEditor;
+    const warningSpy = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
+
+    render(
+      <InlineCommentProvider eventEmitter={eventEmitter} workspaceId={'workspace-1'} viewId={'view-1'}>
+        <Probe />
+      </InlineCommentProvider>
+    );
+
+    await act(async () => {
+      context.registerEditor(editor, { canComment: true, canWrite: true, readOnly: false, viewId: 'view-1' });
+      await Promise.resolve();
+    });
+    expect(listComments).toHaveBeenCalledTimes(1);
+
+    listComments.mockRejectedValueOnce(new Error('temporary comment read failure')).mockResolvedValue([]);
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.INLINE_COMMENT_CHANGED, {
+        workspaceId: 'workspace-1',
+        viewId: 'view-1',
+      });
+      await Promise.resolve();
+    });
+
+    expect(listComments).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(3000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(listComments).toHaveBeenCalledTimes(2);
+    expect(warningSpy).toHaveBeenCalledWith(
+      '[InlineComment] background revalidation failed',
+      expect.objectContaining({
+        attempt: 1,
+        reason: 'workspace-notification',
+        retryDelayMs: 500,
+        viewId: 'view-1',
+        workspaceId: 'workspace-1',
+      })
+    );
+
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(listComments).toHaveBeenCalledTimes(3);
+  });
+
+  it('revalidates after reconnect and when a hidden tab becomes visible', async () => {
+    const eventEmitter = new EventEmitter() as AppEventEmitter;
+    const editor = withReact(createEditor()) as YjsEditor;
+    const visibilityState = jest.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+
+    eventEmitter.webSocketReadyState = WebSocket.OPEN;
+    render(
+      <InlineCommentProvider eventEmitter={eventEmitter} workspaceId={'workspace-1'} viewId={'view-1'}>
+        <Probe />
+      </InlineCommentProvider>
+    );
+
+    await act(async () => {
+      context.registerEditor(editor, { canComment: true, canWrite: true, readOnly: false, viewId: 'view-1' });
+    });
+    await waitFor(() => expect(listComments).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      eventEmitter.webSocketReadyState = WebSocket.CONNECTING;
+      eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.CONNECTING);
+      eventEmitter.webSocketReadyState = WebSocket.OPEN;
+      eventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, WebSocket.OPEN);
+    });
+    await waitFor(() => expect(listComments).toHaveBeenCalledTimes(2));
+
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(listComments).toHaveBeenCalledTimes(2);
+
+    visibilityState.mockReturnValue('visible');
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(listComments).toHaveBeenCalledTimes(3));
   });
 
   it('tracks edits that arrive while comment creation and reload are pending', async () => {

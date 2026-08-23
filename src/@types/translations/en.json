@@ -189,6 +189,7 @@
     "generalAccess": "General access",
     "anyoneAt": "Anyone at ",
     "anyoneInThisGroupWithTheLinkHasFullAccess": "Anyone in this group with the link has full access",
+    "anyoneInThisGroupWithTheLinkCanAccess": "Anyone in this group with the link can access this page",
     "fullAccess": "Full access",
     "peopleWithAccess": "People with access",
     "readOnly": "Can view",
@@ -3577,7 +3578,8 @@
   "inlineComment": {
     "comments": "Comments",
     "addComment": "Add a comment",
-    "addCommentShortcut": "Add a comment (Mod+Shift+M)",
+    "permissionDenied": "You don't have permission to comment on this page.",
+    "unsupportedSelection": "Select text within a single text block to add a comment.",
     "open": "Open",
     "resolved": "Resolved",
     "all": "All",

@@ -597,7 +597,11 @@ async function expectSeededPageAccess(page: Page, seededPage: SeededStgPage, acc
       await expect(editor).toHaveAttribute('contenteditable', 'false', { timeout });
       await selectFirstEditorWord(page, editor);
       await waitForSelectionEffects(page);
-      await expect(page.getByTestId('inline-comment-readonly-trigger')).toHaveCount(0);
+      await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible();
+      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
       break;
     case 'denied':
       await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout });

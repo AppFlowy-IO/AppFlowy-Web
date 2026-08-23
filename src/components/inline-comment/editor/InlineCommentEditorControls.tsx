@@ -1,6 +1,7 @@
 import { Portal } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { Range } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
 
@@ -58,7 +59,7 @@ function getTriggerPosition(editor: YjsEditor, range: Range): TriggerPosition | 
   }
 }
 
-export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean }) {
+export function InlineCommentEditorControls({ canComment }: { canComment: boolean }) {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;
   const inlineComments = useInlineCommentComposeOptional();
@@ -67,7 +68,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
   const editorRegistered = Boolean(inlineComments?.active && inlineComments.isEditorRegistered(editor));
 
   const updatePosition = useCallback(() => {
-    if (!readOnly || !editorRegistered) {
+    if (!editorRegistered) {
       rangeRef.current = null;
       setPosition(null);
       return;
@@ -84,18 +85,24 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
 
     rangeRef.current = range;
     setPosition(getTriggerPosition(editor, range));
-  }, [editor, editorRegistered, readOnly]);
+  }, [editor, editorRegistered]);
 
   const startComment = useCallback(() => {
     if (!inlineComments) return;
+    if (!canComment) {
+      toast.error(t('inlineComment.permissionDenied'));
+      return;
+    }
 
     const range = rangeRef.current ?? getReadOnlyRange(editor) ?? undefined;
 
     if (inlineComments.startComment(editor, range)) {
       rangeRef.current = null;
       setPosition(null);
+    } else {
+      toast.error(t('inlineComment.unsupportedSelection'));
     }
-  }, [editor, inlineComments]);
+  }, [canComment, editor, inlineComments, t]);
 
   useEffect(() => {
     // `updatePosition` resolves a DOM range and measures it, so running it once
@@ -127,33 +134,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
     };
   }, [updatePosition]);
 
-  useEffect(() => {
-    if (!editorRegistered || !inlineComments) return;
-
-    let editorDom: HTMLElement;
-
-    try {
-      editorDom = ReactEditor.toDOMNode(editor, editor);
-    } catch {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'm') {
-        if (inlineComments.startComment(editor, rangeRef.current ?? undefined)) {
-          event.preventDefault();
-          event.stopPropagation();
-          rangeRef.current = null;
-          setPosition(null);
-        }
-      }
-    };
-
-    editorDom.addEventListener('keydown', handleKeyDown);
-    return () => editorDom.removeEventListener('keydown', handleKeyDown);
-  }, [editor, editorRegistered, inlineComments]);
-
-  if (!readOnly || !position || !editorRegistered) return null;
+  if (!position || !editorRegistered) return null;
 
   return (
     <Portal>
@@ -169,6 +150,7 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
         <Tooltip>
           <TooltipTrigger asChild>
             <button
+              aria-disabled={!canComment}
               aria-label={t('inlineComment.addComment')}
               className={'rounded p-1.5 text-comment-icon hover:opacity-80'}
               onClick={startComment}
@@ -176,7 +158,9 @@ export function InlineCommentEditorControls({ readOnly }: { readOnly: boolean })
               <AddCommentIcon className={'h-5 w-5'} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side={'top'}>{t('inlineComment.addCommentShortcut')}</TooltipContent>
+          <TooltipContent side={'top'}>
+            {t(canComment ? 'inlineComment.addComment' : 'inlineComment.permissionDenied')}
+          </TooltipContent>
         </Tooltip>
       </div>
     </Portal>

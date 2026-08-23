@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { AccessLevel } from '@/application/types';
 import ShareTabs from '@/components/app/share/ShareTabs';
 
 const mockUpdateGroupInAccessList = jest.fn();
@@ -45,6 +46,7 @@ jest.mock('@/components/app/share/useShareAccessDetails', () => ({
     currentUserAccessLevel: undefined,
     hasFullAccess: true,
     canManageFullAccess: false,
+    generalAccessLevel: AccessLevel.ReadOnly,
     sectionType: undefined,
   }),
 }));
@@ -137,6 +139,7 @@ describe('ShareTabs publish availability', () => {
       expect.objectContaining({
         updateGroupInAccessList: mockUpdateGroupInAccessList,
         canManageFullAccess: false,
+        generalAccessLevel: AccessLevel.ReadOnly,
       })
     );
   });

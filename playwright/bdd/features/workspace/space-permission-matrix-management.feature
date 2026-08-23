@@ -88,14 +88,14 @@ Feature: Seeded space permission management
     When I open the People settings groups tab
     Then the workspace groups list shows "spm0622 Full Access Space Group" with "2 members"
     When I open workspace group "spm0622 Full Access Space Group"
-    Then the group detail panel shows workspace member "spm0622-member-default@appflowy.local"
-    And the group detail panel shows workspace member "spm0622-member-open@appflowy.local"
-    And the group detail panel does not show workspace member "spm0622-member-closed@appflowy.local"
-    And the group detail member search for "spm0622-member-closed@appflowy.local" shows an addable workspace member
-    When I add workspace member "spm0622-member-closed@appflowy.local" to the open group
-    Then the group detail panel shows workspace member "spm0622-member-closed@appflowy.local"
-    When I remove workspace member "spm0622-member-closed@appflowy.local" from the open group
-    Then the group detail panel does not show workspace member "spm0622-member-closed@appflowy.local"
+    Then the group detail panel shows workspace member "spm0622-member-general@appflowy.local"
+    And the group detail panel shows workspace member "spm0622-member-shared@appflowy.local"
+    And the group detail panel does not show workspace member "spm0622-member-restricted@appflowy.local"
+    And the group detail member search for "spm0622-member-restricted@appflowy.local" shows an addable workspace member
+    When I add workspace member "spm0622-member-restricted@appflowy.local" to the open group
+    Then the group detail panel shows workspace member "spm0622-member-restricted@appflowy.local"
+    When I remove workspace member "spm0622-member-restricted@appflowy.local" from the open group
+    Then the group detail panel does not show workspace member "spm0622-member-restricted@appflowy.local"
 
   Scenario: Seeded group membership grants and revokes Full Access to its private space
     Given I sign in as seeded spm0622 "owner 1"
@@ -103,14 +103,14 @@ Feature: Seeded space permission management
     When I return as seeded spm0622 "owner 1" without resetting group membership
     And I open the People settings groups tab
     And I open workspace group "spm0622 Full Access Space Group"
-    And I add workspace member "spm0622-member-closed@appflowy.local" to the open group
-    Then the group detail panel shows workspace member "spm0622-member-closed@appflowy.local"
+    And I add workspace member "spm0622-member-restricted@appflowy.local" to the open group
+    Then the group detail panel shows workspace member "spm0622-member-restricted@appflowy.local"
     And seeded spm0622 "member closed" can manage the seeded group Full Access page
     When I return as seeded spm0622 "owner 1" without resetting group membership
     And I open the People settings groups tab
     And I open workspace group "spm0622 Full Access Space Group"
-    And I remove workspace member "spm0622-member-closed@appflowy.local" from the open group
-    Then the group detail panel does not show workspace member "spm0622-member-closed@appflowy.local"
+    And I remove workspace member "spm0622-member-restricted@appflowy.local" from the open group
+    Then the group detail panel does not show workspace member "spm0622-member-restricted@appflowy.local"
     And seeded spm0622 "member closed" cannot open the seeded group Full Access page
 
   Scenario: Seeded group Can edit access is enforced and revoked

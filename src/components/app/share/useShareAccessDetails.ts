@@ -8,6 +8,7 @@ import {
   normalizeKnownLegacySpaceVisibility,
   ObjectPermission,
   Role,
+  SpacePermissionSettings,
   SpaceVisibility,
   WorkspaceGroupViewPermission,
 } from '@/application/types';
@@ -66,6 +67,26 @@ type FullAccessAuthorityContext =
 interface FullAccessAuthorityResolution {
   canManage: boolean;
   acceptsLegacyCreatorSignals: boolean;
+  generalAccessLevel?: AccessLevel | null;
+}
+
+function resolveStructuredGeneralAccessLevel(permission: SpacePermissionSettings): AccessLevel | null | undefined {
+  const visibility = normalizeKnownLegacySpaceVisibility(permission.visibility);
+
+  switch (visibility) {
+    case SpaceVisibility.Public:
+      return permission.member_default_access_level ?? AccessLevel.ReadAndWrite;
+    case SpaceVisibility.Custom:
+      // Older Custom-capable servers may omit this additive field. The PRD default is Can view;
+      // an explicit null is distinct and means No access.
+      return permission.everyone_else_access_level === undefined
+        ? AccessLevel.ReadOnly
+        : permission.everyone_else_access_level;
+    case SpaceVisibility.Private:
+      return null;
+    default:
+      return undefined;
+  }
 }
 
 function normalizeEmail(email: string) {
@@ -166,7 +187,11 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
   const [hasLoadedPeople, setHasLoadedPeople] = useState(false);
   const [loadedPeopleViewId, setLoadedPeopleViewId] = useState<string | null>(null);
   const [currentUserPermission, setCurrentUserPermission] = useState<ObjectPermission | null>(null);
-  const [fullAccessAuthority, setFullAccessAuthority] = useState({ viewId, canManage: false });
+  const [fullAccessAuthority, setFullAccessAuthority] = useState<{
+    viewId: string;
+    canManage: boolean;
+    generalAccessLevel?: AccessLevel | null;
+  }>({ viewId, canManage: false });
   const [deniedViewId, setDeniedViewId] = useState<string | null>(null);
   const loadPeopleRequestSeq = useRef(0);
   const pendingRevocations = useRef<{ viewId: string; emails: Map<string, number> }>({
@@ -222,6 +247,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
                     ? permission.can_manage_space
                     : fullAccessAuthorityContext.publicCanManage,
                   acceptsLegacyCreatorSignals: !usesStructuredManagementCapability,
+                  generalAccessLevel: resolveStructuredGeneralAccessLevel(permission.permission),
                 };
               })
               .catch((error) =>
@@ -333,6 +359,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
                 (resolvedFullAccessAuthority.acceptsLegacyCreatorSignals &&
                   (detail.current_user_permission?.object_creator === true ||
                     detail.current_user_permission?.ancestor_creator === true)),
+              generalAccessLevel: resolvedFullAccessAuthority.generalAccessLevel,
             });
             setDeniedViewId(null);
             setHasLoadedPeople(true);
@@ -528,6 +555,10 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     hasLoadedPeople && loadedPeopleViewId === viewId && fullAccessAuthority.viewId === viewId
       ? fullAccessAuthority.canManage
       : false;
+  const generalAccessLevel =
+    hasLoadedPeople && loadedPeopleViewId === viewId && fullAccessAuthority.viewId === viewId
+      ? fullAccessAuthority.generalAccessLevel
+      : undefined;
   const currentUserAccessLevel = useMemo(() => {
     if (accessDetailsDenied) return undefined;
 
@@ -577,6 +608,7 @@ export function useShareAccessDetails(viewId: string, opened: boolean) {
     currentUserAccessLevel,
     hasFullAccess: currentUserAccessLevel === AccessLevel.FullAccess,
     canManageFullAccess,
+    generalAccessLevel,
     sectionType,
   };
 }
