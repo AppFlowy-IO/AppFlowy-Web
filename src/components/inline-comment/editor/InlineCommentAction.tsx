@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { useSlate } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -15,9 +16,10 @@ function useInlineCommentActionState() {
   const inlineComments = useInlineCommentComposeOptional();
 
   return {
+    canComment: Boolean(canComment),
     editor,
     inlineComments,
-    enabled: Boolean(canComment && inlineComments?.active && inlineComments.isEditorRegistered(editor)),
+    enabled: Boolean(inlineComments?.active && inlineComments.isEditorRegistered(editor)),
   };
 }
 
@@ -29,24 +31,36 @@ export function useInlineCommentActionEnabled(): boolean {
   return useInlineCommentActionState().enabled;
 }
 
-export function InlineCommentAction() {
+export function InlineCommentAction({ selectionSupported = true }: { selectionSupported?: boolean }) {
   const { t } = useTranslation();
-  const { editor, enabled, inlineComments } = useInlineCommentActionState();
+  const { canComment, editor, enabled, inlineComments } = useInlineCommentActionState();
   const { forceShow } = useSelectionToolbarContext();
+  const unavailableMessage = !canComment
+    ? t('inlineComment.permissionDenied')
+    : !selectionSupported
+    ? t('inlineComment.unsupportedSelection')
+    : null;
 
   const handleClick = useCallback(() => {
+    if (unavailableMessage) {
+      toast.error(unavailableMessage);
+      return;
+    }
+
     if (inlineComments?.startComment(editor)) {
       forceShow(false);
+    } else {
+      toast.error(t('inlineComment.unsupportedSelection'));
     }
-  }, [editor, forceShow, inlineComments]);
+  }, [editor, forceShow, inlineComments, t, unavailableMessage]);
 
   if (!enabled) return null;
 
   return (
     <ActionButton
-      aria-label={t('inlineComment.addComment')}
+      aria-label={unavailableMessage ?? t('inlineComment.addComment')}
       data-testid={'inline-comment-toolbar-action'}
-      tooltip={t('inlineComment.addCommentShortcut')}
+      tooltip={unavailableMessage ?? t('inlineComment.addComment')}
       onClick={handleClick}
     >
       {/* Desktop tints the toolbar comment icon with commentColorScheme.icon. */}

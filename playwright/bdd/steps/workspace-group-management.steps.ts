@@ -9,11 +9,15 @@ import {
   SpaceSelectors,
   WorkspaceSelectors,
 } from '../../support/selectors';
+import {
+  SPM0622_ACCOUNTS as SPM_ACCOUNTS,
+  SPM0622_PASSWORD as PASSWORD,
+  type Spm0622AccountAlias as SpmAccountAlias,
+} from '../../support/spm0622-fixture';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
 
-const PASSWORD = 'AppFlowy!@123';
 const NATHAN_EMAIL = 'nathan@appflowy.io';
 const EVA_EMAIL = 'eva@appflowy.io';
 const TEMPORARY_GROUP_PREFIX = 'bdd group management';
@@ -22,19 +26,6 @@ const SPM_GROUP_SPACE_NAME = 'spm0622 Group Full Access Space';
 const SPM_GROUP_PAGE_ID = 'ff52f801-5960-44d9-850f-8099a8faf4bc';
 const SPM_GROUP_PAGE_TITLE = 'spm0622 Group Full Access Page';
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
-
-const SPM_ACCOUNTS = {
-  'owner 1': 'spm0622-owner1@appflowy.local',
-  'owner 2': 'spm0622-owner2@appflowy.local',
-  'member default': 'spm0622-member-default@appflowy.local',
-  'member open': 'spm0622-member-open@appflowy.local',
-  'member closed': 'spm0622-member-closed@appflowy.local',
-  'member private': 'spm0622-member-private@appflowy.local',
-  'guest closed': 'spm0622-guest-closed@appflowy.local',
-  'guest private': 'spm0622-guest-private@appflowy.local',
-  'guest none': 'spm0622-guest-none@appflowy.local',
-} as const;
-type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 
 type ApiResponse<T> = {
   code?: number;

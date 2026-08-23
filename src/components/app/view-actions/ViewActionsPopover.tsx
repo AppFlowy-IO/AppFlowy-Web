@@ -91,6 +91,7 @@ function ViewActionsPopover({
           view={view}
           onClose={onClose}
           canDuplicateActions={canCreateViewActions}
+          canEditActions={canCreateViewActions}
           canManageActions={canManageViewActions}
           isLoadingActions={isResolvingViewActionPermissions}
         />

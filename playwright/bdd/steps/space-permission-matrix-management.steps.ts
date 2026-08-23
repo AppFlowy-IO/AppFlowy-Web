@@ -3,11 +3,15 @@ import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
+import {
+  SPM0622_ACCOUNTS as SPM_ACCOUNTS,
+  SPM0622_PASSWORD as PASSWORD,
+  type Spm0622AccountAlias as SpmAccountAlias,
+} from '../../support/spm0622-fixture';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { When, Then, Before, After } = createBdd();
 
-const PASSWORD = 'AppFlowy!@123';
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 const TEMPORARY_PRIVATE_SPACE_PREFIX = 'spm0622 BDD Private Space';
 const TEMPORARY_PRIVATE_PAGE_PREFIX = 'spm0622 BDD Private Page';
@@ -20,34 +24,12 @@ const SPACE_MEMBER_ROLE_OWNER = 'owner';
 const SPACE_MEMBER_ROLE_MEMBER = 'member';
 const SEEDED_PRIVATE_SPACE_MEMBER_DEFAULT_ACCESS = ACCESS_LEVEL_READ_ONLY;
 
-const SPM_ACCOUNTS = {
-  'owner 1': 'spm0622-owner1@appflowy.local',
-  'owner 2': 'spm0622-owner2@appflowy.local',
-  'member default': 'spm0622-member-default@appflowy.local',
-  'member open': 'spm0622-member-open@appflowy.local',
-  'member closed': 'spm0622-member-closed@appflowy.local',
-  'member private': 'spm0622-member-private@appflowy.local',
-  'guest closed': 'spm0622-guest-closed@appflowy.local',
-  'guest private': 'spm0622-guest-private@appflowy.local',
-  'guest none': 'spm0622-guest-none@appflowy.local',
-} as const;
-
 const SPM_SPACES = {
   'default space': {
     // The fixture reuses the workspace's built-in space, whose id is generated
     // when the owner workspace is created.
     viewId: undefined,
     name: 'General',
-  },
-  'open space': {
-    // The fixture reuses the workspace's built-in space, whose id is generated
-    // when the owner workspace is created.
-    viewId: undefined,
-    name: 'Shared',
-  },
-  'closed space': {
-    viewId: 'c7e01ef6-d221-4c93-8976-3a1d5c00f603',
-    name: 'spm0622 Closed Matrix Space',
   },
   'private space': {
     viewId: 'bf0d2d13-6466-4420-a0c0-d4a225f882dc',
@@ -62,15 +44,7 @@ const SPM_SPACES = {
 const SPM_PAGES = {
   'default page': {
     viewId: '25fe29de-a747-482e-8d1f-ea5d0dc17d9a',
-    title: 'spm0622 Default Matrix Page',
-  },
-  'open page': {
-    viewId: '370d83d6-911c-4375-8df1-1541f72c95a6',
-    title: 'spm0622 Open Matrix Page',
-  },
-  'closed page': {
-    viewId: '7d4b3710-df1d-4d04-9d7e-cfa7a9b1ad62',
-    title: 'spm0622 Closed Matrix Page',
+    title: 'spm0622 General Matrix Page',
   },
   'private page': {
     viewId: 'd79a7c58-79fb-4c98-a550-83bc4a8685c5',
@@ -82,7 +56,6 @@ const SPM_PAGES = {
   },
 } as const;
 
-type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 type SpmSpaceAlias = keyof typeof SPM_SPACES;
 type SpmPageAlias = keyof typeof SPM_PAGES;
 type SeededSpmPage = (typeof SPM_PAGES)[SpmPageAlias];
@@ -125,7 +98,6 @@ type SpacePermissionSettingsPayload = {
   visibility: string;
   owner_access_level: number;
   member_default_access_level: number;
-  everyone_else_access_level?: number | null;
   invite_policy: string;
   sidebar_edit_policy: string;
   invite_link_enabled: boolean;
@@ -296,15 +268,11 @@ Then('the directly opened seeded spm0622 page is {string}', async ({ page }, acc
       await expect(editor).toHaveAttribute('contenteditable', 'false');
       await selectFirstEditorWord(page, editor);
       await waitForSelectionEffects(page);
-      await expect(page.getByTestId('inline-comment-readonly-trigger')).toHaveCount(0);
-      break;
-    case 'comment-only':
-      await expect(title.first()).toBeVisible({ timeout: 30000 });
-      await expect(titleInput).toHaveCount(0, { timeout: 15000 });
-      await expect(editor).toBeVisible({ timeout: 30000 });
-      await expect(editor).toHaveAttribute('contenteditable', 'false');
-      await selectFirstEditorWord(page, editor);
-      await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible({ timeout: 15000 });
+      await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible();
+      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
       break;
     case 'denied':
       await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout: 30000 });
@@ -416,7 +384,7 @@ Then(
 
     await expect(row).toBeVisible({ timeout: 15000 });
     await expect(row.getByText(email, { exact: true }).first()).toBeVisible();
-    await expect(row.getByText(role, { exact: true }).first()).toBeVisible();
+    await expect(row.getByText(spaceRoleLabel(role), { exact: true }).first()).toBeVisible();
   }
 );
 
@@ -473,7 +441,7 @@ When('I remove seeded spm0622 {string} from the current space', async ({ page },
   const row = spaceMemberRow(page, email);
 
   await expect(row).toBeVisible({ timeout: 15000 });
-  await row.getByRole('button', { name: 'Member' }).click();
+  await row.getByRole('button', { name: spaceRoleLabel('Member') }).click();
   await page.getByRole('menuitem', { name: 'Remove' }).click();
   await expect(row).toHaveCount(0, { timeout: 15000 });
   requireState(page).addedSpaceMemberEmails.delete(email);
@@ -1031,6 +999,18 @@ function accessLevelFromLabel(label: string): number {
       return ACCESS_LEVEL_READ_AND_WRITE;
     default:
       throw new Error(`Unsupported Manage Space access label: ${label}`);
+  }
+}
+
+// The Members tab uses the PRD's explicit role terminology.
+function spaceRoleLabel(role: string): string {
+  switch (role) {
+    case 'Owner':
+      return 'Space owner';
+    case 'Member':
+      return 'Space member';
+    default:
+      throw new Error(`Unsupported space role: ${role}`);
   }
 }
 

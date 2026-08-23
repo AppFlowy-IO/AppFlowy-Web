@@ -10,10 +10,10 @@ Feature: Workspace group management
     When I open the People settings groups tab
     And I create a temporary workspace group
     And I open the temporary workspace group
-    And I add workspace member "spm0622-member-closed@appflowy.local" to the temporary group
-    Then the temporary group shows workspace member "spm0622-member-closed@appflowy.local"
-    When I remove workspace member "spm0622-member-closed@appflowy.local" from the temporary group
-    Then the temporary group does not show workspace member "spm0622-member-closed@appflowy.local"
+    And I add workspace member "spm0622-member-restricted@appflowy.local" to the temporary group
+    Then the temporary group shows workspace member "spm0622-member-restricted@appflowy.local"
+    When I remove workspace member "spm0622-member-restricted@appflowy.local" from the temporary group
+    Then the temporary group does not show workspace member "spm0622-member-restricted@appflowy.local"
     When I delete the temporary workspace group
     Then the temporary workspace group is not listed
 

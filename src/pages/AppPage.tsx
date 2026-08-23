@@ -39,6 +39,10 @@ import {
   getViewCanWriteStatus,
   getViewReadOnlyStatus,
 } from '@/components/app/hooks/useViewOperations';
+import {
+  INITIAL_VIEW_OBJECT_CAPABILITIES,
+  useViewObjectPermission,
+} from '@/components/app/hooks/useViewObjectPermission';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -51,6 +55,7 @@ const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
 
 function AppPage() {
   const viewId = useAppViewId();
+  const objectPermission = useViewObjectPermission(viewId) ?? INITIAL_VIEW_OBJECT_CAPABILITIES;
   const outline = useAppOutline();
   const ref = React.useRef<HTMLDivElement>(null);
   const workspaceId = useCurrentWorkspaceId();
@@ -491,18 +496,18 @@ function AppPage() {
   // pages opened by direct URL before the outline branch has loaded.
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
-    return getViewReadOnlyStatus(viewId, outline, view);
-  }, [viewId, outline, view]);
+    return getViewReadOnlyStatus(viewId, outline, view, objectPermission);
+  }, [viewId, outline, view, objectPermission]);
 
   const canComment = useMemo(() => {
     if (!viewId) return false;
-    return getViewCanCommentStatus(viewId, outline, view);
-  }, [outline, view, viewId]);
+    return getViewCanCommentStatus(viewId, outline, view, objectPermission);
+  }, [objectPermission, outline, view, viewId]);
 
   const canWrite = useMemo(() => {
     if (!viewId) return false;
-    return getViewCanWriteStatus(viewId, outline, view);
-  }, [outline, view, viewId]);
+    return getViewCanWriteStatus(viewId, outline, view, objectPermission);
+  }, [objectPermission, outline, view, viewId]);
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)

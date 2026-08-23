@@ -31,6 +31,7 @@ import {
   useLoadViews,
   useOpenPageModal,
   useScheduleDeferredCleanup,
+  useSetOpenPageModalEffectiveViewId,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
@@ -39,6 +40,10 @@ import {
   getViewCanWriteStatus,
   useViewOperations,
 } from '@/components/app/hooks/useViewOperations';
+import {
+  INITIAL_VIEW_OBJECT_CAPABILITIES,
+  useViewObjectPermission,
+} from '@/components/app/hooks/useViewObjectPermission';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -81,6 +86,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     uploadFile,
   } = operations;
   const openPageModal = useOpenPageModal();
+  const setOpenPageModalEffectiveViewId = useSetOpenPageModalEffectiveViewId();
   const loadViews = useLoadViews();
   const eventEmitter = useEventEmitter();
   const getMentionUser = useGetMentionUser();
@@ -135,6 +141,20 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
     return viewId;
   }, [viewId, outlineView, fallbackMeta]);
+
+  // A database container and the child it mounts are independent permission
+  // targets. Report the effective child to AppBusinessLayer, then consume only
+  // the capability that was probed and stored for that exact folder view.
+  const probedObjectPermission = useViewObjectPermission(effectiveViewId);
+  const objectPermission = probedObjectPermission ?? INITIAL_VIEW_OBJECT_CAPABILITIES;
+  const canReadEffectiveView = probedObjectPermission?.can_read === true;
+
+  useEffect(() => {
+    if (!open || !viewId || !effectiveViewId) return;
+
+    setOpenPageModalEffectiveViewId?.(viewId, effectiveViewId);
+    return () => setOpenPageModalEffectiveViewId?.(viewId);
+  }, [effectiveViewId, open, setOpenPageModalEffectiveViewId, viewId]);
 
   // Get effective view from outline
   const effectiveOutlineView = useMemo(() => {
@@ -206,10 +226,10 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const hasResolvedView = !!resolvedView;
 
   useEffect(() => {
-    if (open && effectiveViewId && hasResolvedView) {
+    if (open && effectiveViewId && hasResolvedView && canReadEffectiveView && doc?.id !== effectiveViewId) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [open, effectiveViewId, loadPageDoc, hasResolvedView]);
+  }, [canReadEffectiveView, doc?.id, effectiveViewId, hasResolvedView, loadPageDoc, open]);
 
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
@@ -386,20 +406,20 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
-  }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
+    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, getViewReadOnlyStatus, objectPermission, outline, resolvedView]);
 
   // Comment permission is independent from editability, so a locked or
   // read-and-comment page opened in the modal still offers the comment action.
   const canComment = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewCanCommentStatus(effectiveViewId, outline, resolvedView);
-  }, [effectiveViewId, outline, resolvedView]);
+    return getViewCanCommentStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, objectPermission, outline, resolvedView]);
 
   const canWrite = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView);
-  }, [effectiveViewId, outline, resolvedView]);
+    return getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
+  }, [effectiveViewId, objectPermission, outline, resolvedView]);
 
   const View = useMemo(() => {
     switch (layout) {
@@ -418,7 +438,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!open || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if (!open || !canReadEffectiveView || !doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return (
       <View
         requestInstance={requestInstance}
@@ -465,6 +485,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [
     doc,
     open,
+    canReadEffectiveView,
     viewMeta,
     View,
     requestInstance,

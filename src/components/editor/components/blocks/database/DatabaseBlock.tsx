@@ -5,8 +5,13 @@ import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 import { DatabaseContextState } from '@/application/database-yjs';
+import { getDatabaseLayoutFromBlockType } from '@/application/database-block';
 import { UIVariant, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
+import {
+  persistRecoveredDatabaseViewId,
+  resolveEmbeddedDatabaseViewId,
+} from '@/components/editor/database-block-lifecycle';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Log } from '@/utils/log';
@@ -40,12 +45,19 @@ type DatabaseBlockBodyProps = EditorElementProps<DatabaseNode> & {
 };
 
 function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...attributes }: DatabaseBlockBodyProps) {
-  const viewIds = getViewIds(node.data);
-  const viewId = viewIds.length > 0 ? viewIds[0] : '';
-  const allowedViewIds = Array.isArray(node.data?.view_ids) ? node.data.view_ids : undefined;
+  const persistedViewIds = getViewIds(node.data);
+  const persistedViewId = persistedViewIds[0] ?? '';
+  const parentViewId = typeof node.data?.parent_id === 'string' ? node.data.parent_id : '';
   const databaseId = typeof node.data?.database_id === 'string' ? node.data.database_id : undefined;
+  const preferredLayout = getDatabaseLayoutFromBlockType(node.type);
   const context = useEditorContext();
   const workspaceId = context.workspaceId;
+  const recoveryKey = parentViewId && databaseId ? `${parentViewId}:${databaseId}` : '';
+  const [recoveredView, setRecoveredView] = useState<{ key: string; viewId: string } | null>(null);
+  const recoveredViewId = recoveredView?.key === recoveryKey ? recoveredView.viewId : '';
+  const persistedRecoveryKeyRef = useRef('');
+  const viewId = persistedViewId || recoveredViewId;
+  const allowedViewIds = persistedViewIds.length > 0 ? persistedViewIds : recoveredViewId ? [recoveredViewId] : [];
 
   const navigateToView = context?.navigateToView;
   const loadView = context?.loadView;
@@ -193,7 +205,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
    */
   const handleViewIdsChanged = useCallback(
     (currentViewIds: string[]) => {
-      if (readOnly) return;
+      if (readOnly) return false;
 
       const existingViewIds = getViewIds(node.data);
       const updatedData = replaceViewIds(node.data, currentViewIds);
@@ -208,7 +220,7 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
         existingViewIds.length !== nextViewIds.length ||
         existingViewIds.some((viewId, index) => viewId !== nextViewIds[index]);
 
-      if (!orderChanged) return;
+      if (!orderChanged) return true;
 
       Log.debug('[DatabaseBlock] View IDs changed', {
         addedViewIds,
@@ -222,12 +234,70 @@ function DatabaseBlockBody({ node, children, editor, forwardedRef, readOnly, ...
         const path = ReactEditor.findPath(editor, node as unknown as Element);
 
         Transforms.setNodes(editor, { data: updatedData }, { at: path });
+        return true;
       } catch (e) {
         console.error('[DatabaseBlock] Error updating view_ids:', e);
+        return false;
       }
     },
     [editor, node, readOnly]
   );
+
+  useEffect(() => {
+    const loadViewMeta = context.loadViewMeta;
+
+    if (persistedViewId || recoveredViewId || !recoveryKey || !databaseId || !loadViewMeta) return;
+
+    let cancelled = false;
+
+    void resolveEmbeddedDatabaseViewId(parentViewId, databaseId, loadViewMeta, preferredLayout)
+      .then((resolvedViewId) => {
+        if (cancelled || !resolvedViewId) return;
+
+        setRecoveredView({ key: recoveryKey, viewId: resolvedViewId });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        Log.warn('[DatabaseBlock] Failed to recover linked database view id', {
+          parentViewId,
+          databaseId,
+          error,
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [context.loadViewMeta, databaseId, parentViewId, persistedViewId, preferredLayout, recoveredViewId, recoveryKey]);
+
+  useEffect(() => {
+    // Read-only members render from recovered local state. Editors repair the
+    // shared block once so subsequent clients do not need recovery.
+    if (readOnly || persistedViewId || !recoveredViewId || persistedRecoveryKeyRef.current === recoveryKey) return;
+
+    let cancelled = false;
+
+    void persistRecoveredDatabaseViewId(recoveredViewId, handleViewIdsChanged, {
+      isCancelled: () => cancelled,
+    }).then((persisted) => {
+      if (cancelled) return;
+
+      if (persisted) {
+        persistedRecoveryKeyRef.current = recoveryKey;
+        return;
+      }
+
+      Log.warn('[DatabaseBlock] Failed to persist recovered database view id', {
+        parentViewId,
+        databaseId,
+        recoveredViewId,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [databaseId, handleViewIdsChanged, parentViewId, persistedViewId, readOnly, recoveredViewId, recoveryKey]);
 
   const { paddingStart, paddingEnd, width } = useResizePositioning({
     editor,
@@ -326,11 +396,14 @@ export const DatabaseBlock = memo(
     const nextViewIds = getViewIds(nextProps.node.data);
     const prevDatabaseId = prevProps.node.data.database_id;
     const nextDatabaseId = nextProps.node.data.database_id;
+    const prevParentViewId = prevProps.node.data.parent_id;
+    const nextParentViewId = nextProps.node.data.parent_id;
     const prevIsDuplicatePlaceholder = isDatabaseDuplicatePlaceholder(prevProps.node.data);
     const nextIsDuplicatePlaceholder = isDatabaseDuplicatePlaceholder(nextProps.node.data);
 
     return (
       prevDatabaseId === nextDatabaseId &&
+      prevParentViewId === nextParentViewId &&
       prevIsDuplicatePlaceholder === nextIsDuplicatePlaceholder &&
       prevViewIds.length === nextViewIds.length &&
       prevViewIds.every((id, index) => id === nextViewIds[index])

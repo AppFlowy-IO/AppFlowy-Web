@@ -10,6 +10,7 @@ const mockGetSubscriptions = jest.fn(async () => []);
 const mockLoadMentionableUsers = jest.fn(async () => []);
 const mockInviteGuestProps = jest.fn();
 const mockPeopleWithAccessProps = jest.fn();
+const mockGeneralAccessProps = jest.fn();
 let mockIsHosted = false;
 let mockWorkspaceRole: Role | undefined = Role.Member;
 let mockWorkspaceOwnerUid: string | number = '101';
@@ -56,7 +57,10 @@ jest.mock('../PeopleWithAccess', () => ({
 }));
 
 jest.mock('../GeneralAccess', () => ({
-  GeneralAccess: () => <div data-testid='general-access' />,
+  GeneralAccess: (props: unknown) => {
+    mockGeneralAccessProps(props);
+    return <div data-testid='general-access' />;
+  },
 }));
 
 jest.mock('../CopyLink', () => ({
@@ -66,7 +70,9 @@ jest.mock('../CopyLink', () => ({
 function renderSharePanel(
   currentUserAccessLevel: AccessLevel | undefined,
   updateGroupInAccessList = jest.fn(),
-  canManageFullAccess = false
+  canManageFullAccess = false,
+  hasFullAccess = currentUserAccessLevel === AccessLevel.FullAccess,
+  generalAccessLevel: AccessLevel | null = null
 ) {
   return render(
     <SharePanel
@@ -78,9 +84,10 @@ function renderSharePanel(
       onPeopleChange={async () => undefined}
       onPersonRemoved={() => undefined}
       updateGroupInAccessList={updateGroupInAccessList}
-      hasFullAccess={currentUserAccessLevel === AccessLevel.FullAccess}
+      hasFullAccess={hasFullAccess}
       canManageFullAccess={canManageFullAccess}
       currentUserAccessLevel={currentUserAccessLevel}
+      generalAccessLevel={generalAccessLevel}
       sectionType={ShareSectionType.Private}
     />
   );
@@ -92,6 +99,7 @@ describe('SharePanel', () => {
     mockLoadMentionableUsers.mockClear();
     mockInviteGuestProps.mockClear();
     mockPeopleWithAccessProps.mockClear();
+    mockGeneralAccessProps.mockClear();
     mockIsHosted = false;
     mockWorkspaceRole = Role.Member;
     mockWorkspaceOwnerUid = '101';
@@ -108,11 +116,20 @@ describe('SharePanel', () => {
     expect(mockLoadMentionableUsers).not.toHaveBeenCalled();
   });
 
-  it('keeps invite controls visible for edit users', async () => {
+  it('keeps disabled invite controls visible for edit users without can_share', async () => {
     renderSharePanel(AccessLevel.ReadAndWrite);
 
     expect(screen.getByTestId('invite-guest')).toBeTruthy();
     await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ hasFullAccess: false }));
+  });
+
+  it('does not infer can_share from a stale Full Access display level', async () => {
+    renderSharePanel(AccessLevel.FullAccess, jest.fn(), false, false);
+
+    await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));
+    expect(mockInviteGuestProps).toHaveBeenCalledWith(expect.objectContaining({ hasFullAccess: false }));
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ hasFullAccess: false }));
   });
 
   it('does not load subscription data when invite controls are hidden', () => {
@@ -132,6 +149,15 @@ describe('SharePanel', () => {
     expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
       expect.objectContaining({ updateGroupInAccessList, canManageFullAccess: true })
     );
+  });
+
+  it('forwards the governing-space General access level', () => {
+    renderSharePanel(AccessLevel.ReadOnly, jest.fn(), true, false, AccessLevel.ReadAndComment);
+
+    expect(mockGeneralAccessProps).toHaveBeenCalledWith({
+      sectionType: ShareSectionType.Private,
+      accessLevel: AccessLevel.ReadAndComment,
+    });
   });
 
   it('uses owner-tier authority for Full Access invite and row controls', async () => {
@@ -169,7 +195,7 @@ describe('SharePanel', () => {
     expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(expect.objectContaining({ canManageGroupAccess: true }));
   });
 
-  it('does not allow a workspace member without page Full Access to manage group grants', async () => {
+  it('does not allow a workspace member without can_share to manage group grants', async () => {
     renderSharePanel(AccessLevel.ReadAndWrite);
 
     await waitFor(() => expect(mockLoadMentionableUsers).toHaveBeenCalledTimes(1));

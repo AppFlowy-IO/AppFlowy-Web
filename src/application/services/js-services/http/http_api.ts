@@ -43,6 +43,7 @@ export {
   addSpaceMember,
   updateSpaceMember,
   removeSpaceMember,
+  addSpaceGroupPermission,
   updateSpaceGroupPermission,
   removeSpaceGroupPermission,
   getWorkspaceGroups,

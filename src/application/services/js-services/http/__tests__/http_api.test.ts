@@ -162,19 +162,74 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.delete).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1/group/group-1');
   });
 
+  it('grants a workspace group on a space through the space group route', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+    const payload = {
+      role: SpaceMemberRole.Member,
+      access_level: AccessLevel.ReadAndWrite,
+    };
+    const grantedGroup = {
+      group_id: 'group-1',
+      name: 'Engineering',
+      role: SpaceMemberRole.Member,
+      access_level: AccessLevel.ReadAndWrite,
+      member_count: 12,
+      source: 'manual',
+    };
+
+    mockAxiosInstance.post.mockResolvedValueOnce({
+      data: { code: 0, data: grantedGroup },
+    });
+
+    await expect(module.addSpaceGroupPermission('workspace-1', 'space-1', 'group-1', payload)).resolves.toEqual(
+      grantedGroup
+    );
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith(
+      '/api/workspace/workspace-1/spaces/space-1/group/group-1',
+      payload
+    );
+  });
+
+  it('keeps the empty body of a 304 untouched while preserving exact uids on real payloads', async () => {
+    const module = await import('../http_api');
+    const { parseResponseWithExactUid } = await import('../workspace-api');
+
+    module.initAPIService(baseConfig);
+    mockAxiosInstance.get.mockResolvedValueOnce({
+      data: { code: 0, data: { members: [], groups: [] } },
+    });
+
+    await module.getSpaceMembers('workspace-1', 'space-1');
+
+    const [, config] = mockAxiosInstance.get.mock.calls[0] as [string, { transformResponse: [(data: unknown) => unknown] }];
+    const [transform] = config.transformResponse;
+
+    // A 304 Not Modified arrives with an empty body before the ETag replay
+    // interceptor runs; the transform must not throw on it.
+    expect(transform('')).toBe('');
+    expect(transform('   ')).toBe('   ');
+    expect(transform(undefined)).toBeUndefined();
+    expect(transform).toBe(parseResponseWithExactUid);
+    // Oversized uids survive as strings instead of losing precision.
+    expect(transform('{"members":[{"uid":3456789012345678901,"email":"a@b.c"}]}')).toEqual({
+      members: [{ uid: '3456789012345678901', email: 'a@b.c' }],
+    });
+  });
+
   it('re-exports the atomic structured space update client', async () => {
     const module = await import('../http_api');
 
     module.initAPIService(baseConfig);
     const payload = {
-      name: 'Closed space',
+      name: 'Private space',
       space_icon: 'lock',
       space_icon_color: '#123456',
       permission: {
-        visibility: SpaceVisibility.Closed,
+        visibility: SpaceVisibility.Private,
         owner_access_level: AccessLevel.FullAccess,
         member_default_access_level: AccessLevel.ReadAndWrite,
-        everyone_else_access_level: null,
         invite_policy: SpaceInvitePolicy.OwnersOnly,
         sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
         invite_link_enabled: false,
@@ -197,6 +252,7 @@ describe('http_api client (unit)', () => {
     expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/api/workspace/workspace-1/spaces/space-1', payload);
     expect(mockAxiosInstance.patch.mock.calls[0][0]).not.toBe('/api/workspace/workspace-1/space/space-1');
     expect(mockAxiosInstance.patch.mock.calls[0][1]).not.toHaveProperty('space_permission');
+    expect(mockAxiosInstance.patch.mock.calls[0][1].permission).not.toHaveProperty('everyone_else_access_level');
   });
 
   it('lists structured spaces with their permission settings', async () => {
@@ -206,13 +262,12 @@ describe('http_api client (unit)', () => {
     const spaces = {
       spaces: [
         {
-          space_id: 'space-default',
+          space_id: 'space-public',
           name: 'General',
           permission: {
-            visibility: SpaceVisibility.Default,
+            visibility: SpaceVisibility.Public,
             owner_access_level: AccessLevel.FullAccess,
             member_default_access_level: AccessLevel.ReadAndWrite,
-            everyone_else_access_level: AccessLevel.ReadOnly,
             invite_policy: SpaceInvitePolicy.OwnersOnly,
             sidebar_edit_policy: SpaceSidebarEditPolicy.OwnersOnly,
             invite_link_enabled: false,
@@ -225,7 +280,6 @@ describe('http_api client (unit)', () => {
           current_user_access_level: AccessLevel.FullAccess,
           explicit_member_count: 1,
           is_explicit_member: true,
-          can_join: false,
           can_leave: false,
         },
       ],

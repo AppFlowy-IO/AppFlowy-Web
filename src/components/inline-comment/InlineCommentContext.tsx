@@ -1,5 +1,3 @@
-import type EventEmitter from 'events';
-
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Editor, Operation, Range, RangeRef, Transforms } from 'slate';
@@ -10,7 +8,9 @@ import { APP_EVENTS } from '@/application/constants';
 import { InlineComment, InlineCommentReaction } from '@/application/inline-comment';
 import { InlineCommentService } from '@/application/services/domains';
 import { YjsEditor } from '@/application/slate-yjs';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 import {
   addInlineCommentAnchor,
@@ -28,6 +28,11 @@ export const INLINE_COMMENT_DRAWER_WIDTH = 352;
 
 const ANCHOR_REFRESH_RETRY_INTERVAL = 300;
 const ANCHOR_REFRESH_MAX_ATTEMPTS = 20;
+const INLINE_COMMENT_NOTIFICATION_DEBOUNCE_MS = 3000;
+const INLINE_COMMENT_REVALIDATION_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
+const WS_READY_STATE_OPEN = 1;
+
+type InlineCommentRevalidationReason = 'tab-visible' | 'websocket-reconnect' | 'workspace-notification';
 
 function hasAnchorsForTopLevelComments(
   comments: InlineComment[],
@@ -251,7 +256,7 @@ export function InlineCommentProvider({
   workspaceId,
 }: {
   children: React.ReactNode;
-  eventEmitter?: EventEmitter;
+  eventEmitter?: AppEventEmitter;
   viewId?: string;
   workspaceId?: string;
 }) {
@@ -287,7 +292,10 @@ export function InlineCommentProvider({
   const editorRef = useRef<YjsEditor | null>(null);
   const editorCanWriteRef = useRef(false);
   const editorReadOnlyRef = useRef(false);
+  const notificationDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
+  const revalidationGenerationRef = useRef(0);
+  const revalidationRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const setFilter = useCallback((next: InlineCommentFilter) => {
     filterRef.current = next;
@@ -426,6 +434,71 @@ export function InlineCommentProvider({
     },
     [removeAnchorWithoutDeletingComment, scheduleAnchorRefreshRetry, viewId, workspaceId]
   );
+
+  const cancelBackgroundRevalidation = useCallback(() => {
+    revalidationGenerationRef.current += 1;
+
+    if (notificationDebounceTimerRef.current !== null) {
+      clearTimeout(notificationDebounceTimerRef.current);
+      notificationDebounceTimerRef.current = null;
+    }
+
+    if (revalidationRetryTimerRef.current !== null) {
+      clearTimeout(revalidationRetryTimerRef.current);
+      revalidationRetryTimerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Workspace notifications are best-effort and their follow-up HTTP read can
+   * fail transiently. Retry only the active document, and invalidate the whole
+   * attempt chain when navigation or a newer signal supersedes it.
+   */
+  const revalidateInBackground = useCallback(
+    (reason: InlineCommentRevalidationReason) => {
+      cancelBackgroundRevalidation();
+      const generation = revalidationGenerationRef.current;
+
+      const run = async (attempt: number): Promise<void> => {
+        if (generation !== revalidationGenerationRef.current || !editorRef.current) return;
+
+        try {
+          await reload(false);
+        } catch (error) {
+          if (generation !== revalidationGenerationRef.current || !editorRef.current) return;
+
+          const retryDelayMs = INLINE_COMMENT_REVALIDATION_RETRY_DELAYS_MS[attempt];
+
+          Log.warn('[InlineComment] background revalidation failed', {
+            attempt: attempt + 1,
+            error: getErrorMessage(error),
+            reason,
+            retryDelayMs: retryDelayMs ?? null,
+            viewId,
+            workspaceId,
+          });
+
+          if (retryDelayMs === undefined) return;
+
+          revalidationRetryTimerRef.current = setTimeout(() => {
+            revalidationRetryTimerRef.current = null;
+            void run(attempt + 1);
+          }, retryDelayMs);
+        }
+      };
+
+      void run(0);
+    },
+    [cancelBackgroundRevalidation, reload, viewId, workspaceId]
+  );
+
+  const scheduleNotificationRevalidation = useCallback(() => {
+    cancelBackgroundRevalidation();
+    notificationDebounceTimerRef.current = setTimeout(() => {
+      notificationDebounceTimerRef.current = null;
+      revalidateInBackground('workspace-notification');
+    }, INLINE_COMMENT_NOTIFICATION_DEBOUNCE_MS);
+  }, [cancelBackgroundRevalidation, revalidateInBackground]);
 
   const cancelPendingComment = useCallback(() => {
     pendingCommentRef.current?.rangeRef.unref();
@@ -805,6 +878,7 @@ export function InlineCommentProvider({
       return () => {
         if (editorRef.current !== editor) return;
 
+        cancelBackgroundRevalidation();
         cancelPendingComment();
         stopAnchorRefreshRetry();
         requestIdRef.current += 1;
@@ -831,7 +905,15 @@ export function InlineCommentProvider({
         setFilter('open');
       };
     },
-    [cancelPendingComment, setFilter, setFocusedCommentId, stopAnchorRefreshRetry, updateAnchors, viewId]
+    [
+      cancelBackgroundRevalidation,
+      cancelPendingComment,
+      setFilter,
+      setFocusedCommentId,
+      stopAnchorRefreshRetry,
+      updateAnchors,
+      viewId,
+    ]
   );
 
   const updateEditorAccess = useCallback(
@@ -856,7 +938,7 @@ export function InlineCommentProvider({
   }, [active, reload]);
 
   useEffect(() => {
-    if (!active || !eventEmitter) return;
+    if (!active) return;
 
     const handleCommentChanged = (payload: {
       viewId?: string;
@@ -868,23 +950,61 @@ export function InlineCommentProvider({
       const changedWorkspaceId = payload.workspaceId ?? payload.workspace_id;
 
       if (changedViewId === viewId && changedWorkspaceId === workspaceId) {
-        void reload(false).catch(() => undefined);
+        scheduleNotificationRevalidation();
       }
     };
 
-    eventEmitter.on(APP_EVENTS.INLINE_COMMENT_CHANGED, handleCommentChanged);
-    return () => {
-      eventEmitter.off(APP_EVENTS.INLINE_COMMENT_CHANGED, handleCommentChanged);
+    let lastReadyState = eventEmitter?.webSocketReadyState;
+    let disconnectedSinceLastOpen = lastReadyState !== undefined && lastReadyState !== WS_READY_STATE_OPEN;
+
+    const handleWebSocketStatus = (readyState: number) => {
+      if (readyState === lastReadyState) return;
+
+      lastReadyState = readyState;
+      if (readyState !== WS_READY_STATE_OPEN) {
+        disconnectedSinceLastOpen = true;
+        return;
+      }
+
+      if (disconnectedSinceLastOpen) {
+        disconnectedSinceLastOpen = false;
+        revalidateInBackground('websocket-reconnect');
+      }
     };
-  }, [active, eventEmitter, reload, viewId, workspaceId]);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        revalidateInBackground('tab-visible');
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    eventEmitter?.on(APP_EVENTS.INLINE_COMMENT_CHANGED, handleCommentChanged);
+    eventEmitter?.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+    return () => {
+      cancelBackgroundRevalidation();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      eventEmitter?.off(APP_EVENTS.INLINE_COMMENT_CHANGED, handleCommentChanged);
+      eventEmitter?.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+    };
+  }, [
+    active,
+    cancelBackgroundRevalidation,
+    eventEmitter,
+    revalidateInBackground,
+    scheduleNotificationRevalidation,
+    viewId,
+    workspaceId,
+  ]);
 
   useEffect(() => {
     return () => {
       requestIdRef.current += 1;
+      cancelBackgroundRevalidation();
       stopAnchorRefreshRetry();
       pendingCommentRef.current?.rangeRef.unref();
     };
-  }, [stopAnchorRefreshRetry]);
+  }, [cancelBackgroundRevalidation, stopAnchorRefreshRetry]);
 
   const value = useMemo<InlineCommentContextValue>(
     () => ({

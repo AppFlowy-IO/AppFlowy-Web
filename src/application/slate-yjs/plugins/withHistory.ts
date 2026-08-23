@@ -30,20 +30,16 @@ export const YHistoryEditor = {
   },
 
   canUndo(editor: YHistoryEditor) {
-    return editor.undoManager.undoStack.length > 0;
+    return !editor.readOnly && editor.undoManager.undoStack.length > 0;
   },
 
   canRedo(editor: YHistoryEditor) {
-    return editor.undoManager.redoStack.length > 0;
+    return !editor.readOnly && editor.undoManager.redoStack.length > 0;
   },
 };
 
 export function withYHistory<T extends YjsEditor>(editor: T): T & YHistoryEditor {
   const e = editor as T & YHistoryEditor;
-
-  if (e.readOnly) {
-    return e;
-  }
 
   const document = getDocument(e.sharedRoot);
 
@@ -123,14 +119,14 @@ export function withYHistory<T extends YjsEditor>(editor: T): T & YHistoryEditor
   };
 
   e.undo = () => {
-    if (YjsEditor.connected(e)) {
+    if (!e.readOnly && YjsEditor.connected(e)) {
       YjsEditor.flushLocalChanges(e);
       e.undoManager.undo();
     }
   };
 
   e.redo = () => {
-    if (YjsEditor.connected(e)) {
+    if (!e.readOnly && YjsEditor.connected(e)) {
       YjsEditor.flushLocalChanges(e);
       e.undoManager.redo();
     }

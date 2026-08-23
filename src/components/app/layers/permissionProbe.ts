@@ -1,5 +1,9 @@
-import { Types, type View, ViewLayout } from '@/application/types';
-import { getDatabaseIdFromExtra } from '@/application/view-utils';
+import { AccessLevel, type CollabObjectPermission, Types, type View, ViewLayout } from '@/application/types';
+import {
+  getDatabaseIdFromExtra,
+  isDatabaseContainer,
+  isEmbeddedDatabaseViewWithoutChildren,
+} from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 
 const DATABASE_VIEW_LAYOUTS = new Set<ViewLayout>([
@@ -16,6 +20,36 @@ export interface PermissionProbeTarget {
   collabType: Types;
 }
 
+const OBJECT_PERMISSION_ACCESS_LEVELS = new Set<AccessLevel>([
+  AccessLevel.ReadOnly,
+  AccessLevel.ReadAndComment,
+  AccessLevel.ReadAndWrite,
+  AccessLevel.FullAccess,
+]);
+
+/** Reject malformed or mismatched responses before they can grant UI access. */
+export function isCollabObjectPermissionForTarget(
+  value: unknown,
+  target: PermissionProbeTarget
+): value is CollabObjectPermission {
+  if (!value || typeof value !== 'object') return false;
+
+  const permission = value as Partial<CollabObjectPermission>;
+
+  return (
+    permission.object_id === target.collabObjectId &&
+    permission.collab_type === target.collabType &&
+    typeof permission.governing_view_id === 'string' &&
+    permission.governing_view_id.length > 0 &&
+    (permission.access_level === null ||
+      (permission.access_level !== undefined && OBJECT_PERMISSION_ACCESS_LEVELS.has(permission.access_level))) &&
+    typeof permission.can_read === 'boolean' &&
+    typeof permission.can_write === 'boolean' &&
+    typeof permission.can_comment === 'boolean' &&
+    typeof permission.can_share === 'boolean'
+  );
+}
+
 /**
  * Resolve the server/cache identity represented by a routed folder view.
  *
@@ -24,7 +58,12 @@ export interface PermissionProbeTarget {
  * routed view id for both identities.
  */
 export function resolvePermissionProbeTarget(viewId: string, view?: View | null): PermissionProbeTarget {
-  if (view && DATABASE_VIEW_LAYOUTS.has(view.layout)) {
+  const isDatabaseCollab =
+    view &&
+    DATABASE_VIEW_LAYOUTS.has(view.layout) &&
+    (!isDatabaseContainer(view) || isEmbeddedDatabaseViewWithoutChildren(view));
+
+  if (isDatabaseCollab) {
     return {
       collabObjectId: getDatabaseIdFromExtra(view) ?? viewId,
       collabType: Types.Database,

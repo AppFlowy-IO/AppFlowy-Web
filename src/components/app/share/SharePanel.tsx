@@ -34,6 +34,7 @@ function SharePanel({
   hasFullAccess,
   canManageFullAccess,
   currentUserAccessLevel,
+  generalAccessLevel,
   sectionType,
 }: {
   viewId: string;
@@ -47,6 +48,7 @@ function SharePanel({
   hasFullAccess: boolean;
   canManageFullAccess: boolean;
   currentUserAccessLevel?: AccessLevel;
+  generalAccessLevel?: AccessLevel | null;
   sectionType: ShareSectionType;
 }) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
@@ -177,7 +179,7 @@ function SharePanel({
           canGrantFullAccess={canManageFullAccess}
           sectionType={sectionType}
         />
-        <GeneralAccess sectionType={sectionType} />
+        <GeneralAccess sectionType={sectionType} accessLevel={generalAccessLevel} />
         <CopyLink />
       </div>
     </div>

@@ -9,6 +9,7 @@ import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { LOGIN_ACTION } from '@/components/login/const';
 import EmailLogin from '@/components/login/EmailLogin';
 import LoginProvider from '@/components/login/LoginProvider';
+import { readCachedLoginProviders, writeCachedLoginProviders } from '@/components/login/loginProvidersCache';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { getPlatform } from '@/utils/platform';
@@ -25,27 +26,38 @@ const NO_LOGIN_PROVIDERS: LoginProviders = {
 
 export function Login({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
-  const [loginProviders, setLoginProviders] = useState<LoginProviders>(NO_LOGIN_PROVIDERS);
+  const [loginProviders, setLoginProviders] = useState<LoginProviders>(
+    () => readCachedLoginProviders() ?? NO_LOGIN_PROVIDERS
+  );
 
-  // Fetch available auth providers on mount
+  // Render the last server-confirmed configuration immediately, then
+  // revalidate it so deployment changes still become authoritative.
   useEffect(() => {
+    let active = true;
+
     const fetchProviders = async () => {
       try {
         const response = await AuthService.getAuthProviders();
-
-        setLoginProviders({
+        const providers = {
           providers: response.providers || [],
           customProviders: response.customProviders || [],
           ldapProviders: response.ldapProviders || [],
-        });
+        };
+
+        writeCachedLoginProviders(providers);
+        if (active) setLoginProviders(providers);
       } catch (error) {
         console.error('Failed to fetch auth providers:', error);
-        // On error, offer nothing beyond the email form.
-        setLoginProviders(NO_LOGIN_PROVIDERS);
+        // Keep the cached first paint on transient errors. Provider login is
+        // still accepted or rejected by the server when a button is used.
       }
     };
 
     void fetchProviders();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Filter to check if there are any OAuth providers (not EMAIL or PASSWORD)
