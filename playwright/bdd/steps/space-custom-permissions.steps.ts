@@ -289,6 +289,10 @@ When('I open the Manage Space members tab of the open panel', async ({ page }) =
   await openManageSpaceMembersTab(page);
 });
 
+When('I click the Manage Space members tab', async ({ page }) => {
+  await manageSpaceModal(page).getByRole('tab', { name: 'Members' }).click();
+});
+
 Then('the Manage Space general tab shows the Public access card', async ({ page }) => {
   const card = manageSpaceModal(page).getByTestId('manage-space-public-access-card');
 

@@ -252,6 +252,73 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(eventEmitter.listenerCount(APP_EVENTS.PERMISSION_CHANGED)).toBe(0);
   });
 
+  it('refreshes only the changed space subtree and preserves expanded sibling spaces', async () => {
+    const eventEmitter = new EventEmitter();
+    const changedSpaceId = 'changed-space-id';
+    const siblingSpaceId = 'sibling-space-id';
+    const staleChangedChildId = 'stale-changed-child-id';
+    const freshChangedChildId = 'fresh-changed-child-id';
+    const siblingChildId = 'sibling-child-id';
+    const shallowRoot = [
+      createView(changedSpaceId, {
+        extra: { is_space: true },
+        has_children: true,
+      }),
+      createView(siblingSpaceId, {
+        extra: { is_space: true },
+        has_children: true,
+      }),
+    ];
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({ outline: shallowRoot, folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValue([
+      createView(changedSpaceId, {
+        children: [createView(staleChangedChildId)],
+        extra: { is_space: true },
+        has_children: true,
+      }),
+      createView(siblingSpaceId, {
+        children: [createView(siblingChildId)],
+        extra: { is_space: true },
+        has_children: true,
+      }),
+    ]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => expect(result.current.outline).toEqual(shallowRoot));
+    await act(async () => {
+      await result.current.loadViewChildrenBatch?.([changedSpaceId, siblingSpaceId]);
+    });
+    expect(findView(result.current.outline ?? [], staleChangedChildId)).not.toBeNull();
+    expect(findView(result.current.outline ?? [], siblingChildId)).not.toBeNull();
+
+    (ViewService.invalidateCache as jest.Mock).mockClear();
+    (ViewService.getMultiple as jest.Mock).mockClear();
+    (ViewService.getMultiple as jest.Mock).mockResolvedValueOnce([
+      createView(changedSpaceId, {
+        children: [createView(freshChangedChildId)],
+        extra: { is_space: true },
+        has_children: true,
+      }),
+    ]);
+    act(() => {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: changedSpaceId });
+    });
+
+    await waitFor(() => expect(findView(result.current.outline ?? [], freshChangedChildId)).not.toBeNull());
+    expect(findView(result.current.outline ?? [], staleChangedChildId)).toBeNull();
+    expect(findView(result.current.outline ?? [], siblingChildId)).not.toBeNull();
+    expect(ViewService.invalidateCache).toHaveBeenCalledWith(workspaceId, changedSpaceId);
+    expect(ViewService.invalidateCache).not.toHaveBeenCalledWith(workspaceId, siblingSpaceId);
+    expect(ViewService.getMultiple).toHaveBeenCalledTimes(1);
+    expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, [changedSpaceId], 1);
+    expect(ViewService.getOutline).toHaveBeenCalledTimes(2);
+    expect(result.current.loadedViewIds?.has(siblingSpaceId)).toBe(true);
+  });
+
   it('drops a loaded deep subtree that a permission refresh omits from the shallow root', async () => {
     const eventEmitter = new EventEmitter();
     const boundaryId = 'depth-six-boundary-id';

@@ -49,6 +49,20 @@ Feature: Seeded Public, Private and Custom space permissions
     And the Manage Space members list shows seeded scp0822 "member" as "Space member" with the subtitle "Workspace member"
     And the Manage Space members list shows seeded scp0822 "outsider" as "Space member" with the subtitle "Workspace member"
 
+  # Member mutations are immediate, so entering Members with a staged General permission asks
+  # the owner to apply it before exposing the newly materialized Custom roster.
+  Scenario: Opening Members asks before applying a pending switch from Public to Custom
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "public space" manage space panel
+    And I click Switch to Custom in the Public access card
+    And I confirm the Manage Space dialog
+    And I click the Manage Space members tab
+    Then the Manage Space confirmation asks "Apply changes before managing members?" with the action "Apply changes"
+    And the Manage Space confirmation explains "Your permission changes must be applied before you can manage space members."
+    When I confirm the Manage Space dialog
+    Then the seeded scp0822 "public space" is "custom" via the API
+    And the Manage Space members list shows seeded scp0822 "member" as "Space member" with the subtitle "Workspace member"
+
   # (c) The Custom permissions card shows the design copy; No access on either audience locks
   # that audience out (and hides the space from everyone else entirely).
   Scenario: Owner locks audiences out of a Custom space with No access
@@ -234,8 +248,8 @@ Feature: Seeded Public, Private and Custom space permissions
     Then the last-owner protection error is shown
     And the Manage Space members list shows seeded scp0822 "owner" as "Space owner" with the subtitle "Workspace owner"
 
-  # (l) PRD §36/§39 Safety: permission changes apply only after Save — closing the panel
-  # discards the pending level, and reopening shows the saved state.
+  # (l) PRD §36/§39 Safety: permission changes apply only after Save or explicit confirmation
+  # before entering Members. Closing from General discards the pending level.
   Scenario: Permission changes apply only after Save
     Given I sign in as seeded scp0822 "owner"
     When I open the seeded scp0822 "custom space" manage space panel

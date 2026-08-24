@@ -198,12 +198,42 @@ jest.mock('@/components/ui/progress', () => ({
   Progress: () => <span data-testid='progress' />,
 }));
 
-jest.mock('@/components/ui/tabs', () => ({
-  Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TabsTrigger: ({ children }: { children: ReactNode }) => <button>{children}</button>,
-}));
+jest.mock('@/components/ui/tabs', () => {
+  const React = jest.requireActual<typeof import('react')>('react');
+  const TabsContext = React.createContext({ value: '', onValueChange: (_value: string) => undefined });
+
+  return {
+    Tabs: ({
+      children,
+      onValueChange,
+      value,
+    }: {
+      children: ReactNode;
+      onValueChange?: (value: string) => void;
+      value: string;
+    }) => (
+      <TabsContext.Provider value={{ value, onValueChange: onValueChange ?? (() => undefined) }}>
+        <div>{children}</div>
+      </TabsContext.Provider>
+    ),
+    TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabsList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    TabsTrigger: ({ children, disabled, value }: { children: ReactNode; disabled?: boolean; value: string }) => {
+      const tabs = React.useContext(TabsContext);
+
+      return (
+        <button
+          role='tab'
+          aria-selected={tabs.value === value}
+          disabled={disabled}
+          onClick={() => tabs.onValueChange(value)}
+        >
+          {children}
+        </button>
+      );
+    },
+  };
+});
 
 const privatePermission: SpacePermissionSettings = {
   visibility: SpaceVisibility.Private,
@@ -586,6 +616,81 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       // Members keep Can edit; everyone else opens with Can view.
       expect(structuredUpdatePermission()).toEqual(customPermission);
+    });
+
+    it('asks before applying a pending Public → Custom switch and opening Members', async () => {
+      const onClose = jest.fn();
+
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission: publicPermission }))
+        .mockResolvedValue(permissionResponse({ permission: customPermission }));
+      render(<ManageSpace open onClose={onClose} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      expect(screen.queryByTestId('inline-member-search')).toBeNull();
+
+      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
+      confirmPending();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+
+      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
+      expect(confirmDialog().textContent).toContain('space.permissionManager.applyChangesBeforeMembersTitle');
+      expect(confirmDialog().textContent).toContain('space.permissionManager.applyChangesBeforeMembersDescription');
+      expect(screen.getByTestId('manage-space-confirm-ok').textContent).toBe(
+        'space.permissionManager.applyChangesAction'
+      );
+      confirmPending();
+
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
+        permission: customPermission,
+      });
+      expect(onClose).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(
+          screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }).getAttribute('aria-selected')
+        ).toBe('true');
+        expect(screen.getByTestId('inline-member-search').hasAttribute('disabled')).toBe(false);
+        expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
+        expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
+      });
+    });
+
+    it('keeps the unsaved draft on General when applying it before Members is cancelled', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
+      confirmPending();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      fireEvent.click(screen.getByTestId('manage-space-confirm-dialog-cancel'));
+
+      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
+      expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
+        'true'
+      );
+      expectSelectedVisibility(SpaceVisibility.Custom);
+      expect(screen.queryByTestId('inline-member-search')).toBeNull();
+    });
+
+    it('keeps General selected when the confirmed permission draft fails to save', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
+      mockUpdateStructuredSpace.mockRejectedValueOnce(new Error('save failed'));
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      await waitForSettingsLoaded();
+      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
+      confirmPending();
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+      confirmPending();
+
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith('save failed'));
+      expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
+        'true'
+      );
+      expect(screen.queryByTestId('inline-member-search')).toBeNull();
+      expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
     });
 
     it('confirms Custom → Public and drops the everyone-else audience from the payload', async () => {

@@ -61,6 +61,7 @@ import type { TFunction } from 'i18next';
 import type { KeyboardEvent, ReactNode } from 'react';
 
 type ManageSpaceTab = 'general' | 'members';
+type SaveMode = 'close' | 'continue-to-members';
 
 // Collective access for the explicit members of a private space.
 const PRIVATE_MEMBER_ACCESS_OPTIONS: readonly AccessLevel[] = [
@@ -97,6 +98,7 @@ type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members
 type PendingConfirmation =
   | { kind: 'visibility'; target: SpaceVisibility }
   | { kind: 'full-access'; audience: FullAccessAudience }
+  | { kind: 'apply-permission-draft' }
   | { kind: 'group-owner'; group: WorkspaceGroupSpacePermission };
 
 // The outline only carries the binary `is_private` marker, so a space whose
@@ -916,8 +918,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   // Switching the space type is confirmed up front (PRD: every permission
   // impacting switch asks first); the draft only changes after the user
-  // agrees, and nothing is persisted until Save. Going back to the type the
-  // server already holds just restores the draft without asking.
+  // agrees, and nothing is persisted until the user explicitly applies it.
+  // Going back to the type the server already holds just restores the draft
+  // without asking.
   const requestVisibilityChange = useCallback(
     (target: SpaceVisibility) => {
       if (target === permissionSettings.visibility) return;
@@ -953,78 +956,133 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     [permissionSettings, updatePermission]
   );
 
-  const handleSave = useCallback(async () => {
-    if (!workspaceId) return;
-    if (legacyPermissionMode && !updateLegacySpace) return;
-    if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canEditSidebar) {
-      if (permissionLoadFailed) {
-        toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
+  const saveSpace = useCallback(
+    async (mode: SaveMode): Promise<boolean> => {
+      if (!workspaceId) return false;
+      if (legacyPermissionMode && !updateLegacySpace) return false;
+
+      const continueToMembers = mode === 'continue-to-members';
+      const canSave = continueToMembers ? canManageSpace && !legacyPermissionMode : canEditSidebar;
+
+      if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canSave) {
+        if (permissionLoadFailed) {
+          toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
+        }
+
+        return false;
       }
 
-      return;
-    }
+      const trimmedName = spaceName.trim();
 
-    const trimmedName = spaceName.trim();
-
-    if (!trimmedName) {
-      toast.error(t('space.spaceNameCannotBeEmpty'));
-      return;
-    }
-
-    setSaving(true);
-    try {
-      if (legacyPermissionMode) {
-        await updateLegacySpace?.({
-          view_id: viewId,
-          name: trimmedName,
-          space_icon: spaceIcon,
-          space_icon_color: spaceIconColor,
-          space_permission: legacySpacePermission(permissionSettings.visibility),
-        });
-      } else {
-        // The structured update is the single source of truth: the server
-        // keeps the legacy public/private marker in step and applies the
-        // roster transition (materialize / tombstone) that the type switch
-        // implies, so no compatibility write precedes it.
-        const permissionChanged =
-          canManageSpace &&
-          loadedPermissionSettings !== null &&
-          !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
-
-        await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
-          name: trimmedName,
-          space_icon: spaceIcon,
-          space_icon_color: spaceIconColor,
-          ...(permissionChanged ? { permission: permissionSettingsForSave(permissionSettings) } : {}),
-        });
+      if (!continueToMembers && !trimmedName) {
+        toast.error(t('space.spaceNameCannotBeEmpty'));
+        return false;
       }
 
-      toast.success(t('space.success.updateSpace'));
-      onClose();
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('space.error.updateSpace')));
-    } finally {
-      setSaving(false);
-    }
-  }, [
-    canEditSidebar,
-    canManageSpace,
-    legacyPermissionMode,
-    loadedPermissionSettings,
-    loadingSettings,
-    onClose,
-    permissionSettings,
-    permissionLoaded,
-    permissionLoadFailed,
-    saving,
-    spaceIcon,
-    spaceIconColor,
-    spaceName,
-    t,
-    updateLegacySpace,
-    viewId,
-    workspaceId,
-  ]);
+      setSaving(true);
+      try {
+        if (legacyPermissionMode) {
+          await updateLegacySpace?.({
+            view_id: viewId,
+            name: trimmedName,
+            space_icon: spaceIcon,
+            space_icon_color: spaceIconColor,
+            space_permission: legacySpacePermission(permissionSettings.visibility),
+          });
+        } else {
+          // The structured update is the single source of truth: the server
+          // keeps the legacy public/private marker in step and applies the
+          // roster transition (materialize / tombstone) that the type switch
+          // implies, so no compatibility write precedes it.
+          const permissionChanged =
+            canManageSpace &&
+            loadedPermissionSettings !== null &&
+            !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
+
+          const savedPermission = permissionChanged ? permissionSettingsForSave(permissionSettings) : null;
+
+          await WorkspaceService.updateStructuredSpace(
+            workspaceId,
+            viewId,
+            continueToMembers
+              ? { permission: savedPermission ?? undefined }
+              : {
+                  name: trimmedName,
+                  space_icon: spaceIcon,
+                  space_icon_color: spaceIconColor,
+                  ...(savedPermission ? { permission: savedPermission } : {}),
+                }
+          );
+
+          if (continueToMembers && savedPermission) {
+            // Member mutations are immediate, unlike the General draft. Keep
+            // them behind the saved ACL, then reload the permission response and
+            // materialized roster before enabling the tab's controls.
+            beginPermissionRefresh();
+            setPermissionRefreshRevision((revision) => revision + 1);
+          }
+        }
+
+        toast.success(t('space.success.updateSpace'));
+        if (!continueToMembers) onClose();
+        return true;
+      } catch (error) {
+        toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      beginPermissionRefresh,
+      canEditSidebar,
+      canManageSpace,
+      legacyPermissionMode,
+      loadedPermissionSettings,
+      loadingSettings,
+      onClose,
+      permissionSettings,
+      permissionLoaded,
+      permissionLoadFailed,
+      saving,
+      spaceIcon,
+      spaceIconColor,
+      spaceName,
+      t,
+      updateLegacySpace,
+      viewId,
+      workspaceId,
+    ]
+  );
+
+  const handleSave = useCallback(() => saveSpace('close'), [saveSpace]);
+
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const nextTab = value as ManageSpaceTab;
+
+      if (nextTab !== 'members') {
+        setTab(nextTab);
+        return;
+      }
+
+      const hasPermissionDraft =
+        canManageSpace &&
+        loadedPermissionSettings !== null &&
+        !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
+
+      if (!hasPermissionDraft) {
+        setTab(nextTab);
+        return;
+      }
+
+      // A type switch (especially Public -> Custom) changes which roster the
+      // server exposes. Ask before persisting the draft so the immediate
+      // member mutations never target a different server-side roster.
+      setPendingConfirmation({ kind: 'apply-permission-draft' });
+    },
+    [canManageSpace, loadedPermissionSettings, permissionSettings]
+  );
 
   // A public space makes every workspace member an implicit space member, so
   // its roster is informational only. Gate on the loaded (server) visibility,
@@ -1363,11 +1421,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
             : { member_default_access_level: AccessLevel.FullAccess }
         );
         break;
+      case 'apply-permission-draft':
+        void saveSpace('continue-to-members').then((saved) => {
+          if (saved) setTab('members');
+        });
+        break;
       case 'group-owner':
         void commitGroupRole(pendingConfirmation.group, SpaceMemberRole.Owner);
         break;
     }
-  }, [commitGroupRole, commitVisibility, pendingConfirmation, updatePermission]);
+  }, [commitGroupRole, commitVisibility, pendingConfirmation, saveSpace, updatePermission]);
 
   const workspaceName = useMemo(() => {
     const workspaces = userWorkspaceInfo?.workspaces ?? [];
@@ -1421,15 +1484,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         'data-testid': 'manage-space-modal',
       }}
     >
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as ManageSpaceTab)}
-        className='min-h-0 max-w-full'
-        style={{ width: CONTENT_WIDTH }}
-      >
+      <Tabs value={tab} onValueChange={handleTabChange} className='min-h-0 max-w-full' style={{ width: CONTENT_WIDTH }}>
         <TabsList>
-          <TabsTrigger value='general'>{t('space.permissionManager.generalTab')}</TabsTrigger>
-          {!legacyPermissionMode && <TabsTrigger value='members'>{t('space.permissionManager.membersTab')}</TabsTrigger>}
+          <TabsTrigger value='general' disabled={saving}>
+            {t('space.permissionManager.generalTab')}
+          </TabsTrigger>
+          {!legacyPermissionMode && (
+            <TabsTrigger value='members' disabled={saving}>
+              {t('space.permissionManager.membersTab')}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value='general' className='min-h-0'>
@@ -1760,6 +1824,14 @@ function confirmationTexts(
             danger: true,
           };
       }
+
+    case 'apply-permission-draft':
+      return {
+        title: t('space.permissionManager.applyChangesBeforeMembersTitle'),
+        description: t('space.permissionManager.applyChangesBeforeMembersDescription'),
+        confirmText: t('space.permissionManager.applyChangesAction'),
+        danger: false,
+      };
 
     case 'group-owner':
     default:
