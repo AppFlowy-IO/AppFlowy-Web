@@ -307,10 +307,9 @@ Then('the Manage Space general tab shows the Public access card', async ({ page 
   await expect(card.getByText('Access', { exact: true })).toHaveCount(0);
   await expect(card.getByText('Need different access levels?', { exact: true })).toBeVisible();
   await expect(
-    card.getByText(
-      'Switch to a Custom space to give specific people or groups edit access, while others can view.',
-      { exact: true }
-    )
+    card.getByText('Switch to a Custom space to give specific people or groups edit access, while others can view.', {
+      exact: true,
+    })
   ).toBeVisible();
   await expect(card.getByTestId('manage-space-switch-to-custom')).toHaveText('Switch to Custom');
   await expect(manageSpaceModal(page).getByTestId('manage-space-custom-permissions-card')).toHaveCount(0);
@@ -384,7 +383,9 @@ Then(
     await page.waitForTimeout(LIVE_REFRESH_SETTLE_MS);
     await expectCustomLevels(page, membersLabel, everyoneElseLabel, 5000);
     await expectNoReloadSince(page, live);
-    console.log(`[scp0822 live] Manage Space showed ${membersLabel} / ${everyoneElseLabel} ${elapsedMs}ms after ${live.label}`);
+    console.log(
+      `[scp0822 live] Manage Space showed ${membersLabel} / ${everyoneElseLabel} ${elapsedMs}ms after ${live.label}`
+    );
   }
 );
 
@@ -432,14 +433,11 @@ When('I confirm the Manage Space dialog', async ({ page }) => {
   await expect(page.getByTestId('manage-space-confirm-dialog')).toHaveCount(0, { timeout: 15000 });
 });
 
-When('I save the Manage Space panel', async ({ page }) => {
+Then('the Manage Space panel has no footer actions', async ({ page }) => {
   const modal = manageSpaceModal(page);
-  const save = modal.getByTestId('modal-ok-button');
 
-  await expect(save).toBeEnabled({ timeout: 15000 });
-  await save.click();
-  // A successful save closes the panel; a failure keeps it open with a toast.
-  await expect(modal).toHaveCount(0, { timeout: 20000 });
+  await expect(modal.getByTestId('modal-ok-button')).toHaveCount(0);
+  await expect(modal.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
 });
 
 Then(
@@ -478,16 +476,19 @@ Then(
   }
 );
 
-When('I remove seeded scp0822 {string} from the Manage Space members list', async ({ page }, accountAliasValue: string) => {
-  const fixture = requireFixture(page);
-  const row = spaceMemberRow(page, scpUid(fixture, accountAliasValue));
-  const roleButton = row.getByRole('button', { name: /^(Space owner|Space member)$/ });
+When(
+  'I remove seeded scp0822 {string} from the Manage Space members list',
+  async ({ page }, accountAliasValue: string) => {
+    const fixture = requireFixture(page);
+    const row = spaceMemberRow(page, scpUid(fixture, accountAliasValue));
+    const roleButton = row.getByRole('button', { name: /^(Space owner|Space member)$/ });
 
-  await expect(roleButton).toBeEnabled({ timeout: 15000 });
-  await roleButton.click();
-  await page.getByRole('menuitem', { name: 'Remove' }).click();
-  await expect(row).toHaveCount(0, { timeout: 15000 });
-});
+    await expect(roleButton).toBeEnabled({ timeout: 15000 });
+    await roleButton.click();
+    await page.getByRole('menuitem', { name: 'Remove' }).click();
+    await expect(row).toHaveCount(0, { timeout: 15000 });
+  }
+);
 
 Then(
   'the seeded scp0822 {string} is {string} via the API',
@@ -512,7 +513,10 @@ Then(
 
     await expect
       .poll(
-        async () => (await getSpacePermission(request, fixture, seededSpace.viewId)).permission.member_default_access_level,
+        async () =>
+          (
+            await getSpacePermission(request, fixture, seededSpace.viewId)
+          ).permission.member_default_access_level,
         { timeout: 15000, message: `expected ${spaceAliasValue} members to be ${accessLabel}` }
       )
       .toBe(accessLevelFromLabel(accessLabel));
@@ -545,9 +549,9 @@ Then(
     await expect
       .poll(
         async () =>
-          (await listSpaceMembers(request, fixture, seededSpace.viewId)).members.some(
-            (member) => String(member.uid) === uid
-          ),
+          (
+            await listSpaceMembers(request, fixture, seededSpace.viewId)
+          ).members.some((member) => String(member.uid) === uid),
         { timeout: 15000, message: `expected ${accountAliasValue} to leave the ${spaceAliasValue} roster` }
       )
       .toBe(false);
@@ -599,7 +603,7 @@ When(
       ...current,
       visibility,
       member_default_access_level: current.member_default_access_level ?? ACCESS_LEVEL_READ_AND_WRITE,
-      everyone_else_access_level: visibility === 'custom' ? (current.everyone_else_access_level ?? null) : null,
+      everyone_else_access_level: visibility === 'custom' ? current.everyone_else_access_level ?? null : null,
     });
   }
 );
@@ -813,7 +817,9 @@ async function resolveFixtureContext(request: APIRequestContext): Promise<Fixtur
   const editorsGroup = groups.groups.find((candidate) => candidate.name === SCP_EDITORS_GROUP_NAME);
 
   if (!editorsGroup) {
-    throw new Error(`Seeded workspace group "${SCP_EDITORS_GROUP_NAME}" not found; run the scp0822 seed (see the Given step)`);
+    throw new Error(
+      `Seeded workspace group "${SCP_EDITORS_GROUP_NAME}" not found; run the scp0822 seed (see the Given step)`
+    );
   }
 
   const members = await getApiPreservingUid<WorkspaceMemberPayload[]>(
@@ -870,7 +876,9 @@ async function findSeededWorkspace(
     if (hostsSeededSpace) return { workspaceId, workspaceName: candidate.workspace_name || '' };
   }
 
-  throw new Error(`No workspace of ${SCP_ACCOUNTS.owner} hosts the seeded scp0822 spaces; run the seed (see the Given step)`);
+  throw new Error(
+    `No workspace of ${SCP_ACCOUNTS.owner} hosts the seeded scp0822 spaces; run the seed (see the Given step)`
+  );
 }
 
 // Put the three spaces back into the deterministic seeded shape: types and
@@ -898,10 +906,15 @@ async function restoreSeededShape(request: APIRequestContext, fixture: FixtureCo
     if (uid === fixture.uids.member) {
       memberListed = true;
       if (row.role !== 'member') {
-        await patchApi(request, fixture.ownerToken, `${spaceMembersApiPath(fixture.workspaceId, customSpaceId)}/${uid}`, {
-          role: 'member',
-          access_level: ACCESS_LEVEL_READ_AND_WRITE,
-        });
+        await patchApi(
+          request,
+          fixture.ownerToken,
+          `${spaceMembersApiPath(fixture.workspaceId, customSpaceId)}/${uid}`,
+          {
+            role: 'member',
+            access_level: ACCESS_LEVEL_READ_AND_WRITE,
+          }
+        );
       }
 
       continue;
@@ -925,9 +938,19 @@ async function restoreSeededShape(request: APIRequestContext, fixture: FixtureCo
   const editorsPayload = { role: 'member', access_level: ACCESS_LEVEL_READ_AND_WRITE };
 
   if (!editorsGrant) {
-    await postApi(request, fixture.ownerToken, spaceGroupApiPath(fixture.workspaceId, customSpaceId, fixture.editorsGroupId), editorsPayload);
+    await postApi(
+      request,
+      fixture.ownerToken,
+      spaceGroupApiPath(fixture.workspaceId, customSpaceId, fixture.editorsGroupId),
+      editorsPayload
+    );
   } else if (editorsGrant.role !== editorsPayload.role || editorsGrant.access_level !== editorsPayload.access_level) {
-    await patchApi(request, fixture.ownerToken, spaceGroupApiPath(fixture.workspaceId, customSpaceId, fixture.editorsGroupId), editorsPayload);
+    await patchApi(
+      request,
+      fixture.ownerToken,
+      spaceGroupApiPath(fixture.workspaceId, customSpaceId, fixture.editorsGroupId),
+      editorsPayload
+    );
   }
 
   // The public and private spaces carry no explicit rows besides the owner and no groups.
@@ -950,7 +973,9 @@ async function restoreSeededShape(request: APIRequestContext, fixture: FixtureCo
     const restored = (await getSpacePermission(request, fixture, space.viewId)).permission;
 
     if (!sameSettings(restored, seededSettings(space.seededVisibility))) {
-      throw new Error(`Seeded scp0822 ${space.name} is not in its seeded shape after restore: ${JSON.stringify(restored)}`);
+      throw new Error(
+        `Seeded scp0822 ${space.name} is not in its seeded shape after restore: ${JSON.stringify(restored)}`
+      );
     }
   }
 }
@@ -1294,32 +1319,29 @@ const COLLECTIVE_LEVEL_TRIGGERS: Record<string, string> = {
   'everyone else': 'manage-space-everyone-else-access',
 };
 
-Then(
-  'the Custom permissions {string} dropdown offers every access level',
-  async ({ page }, audience: string) => {
-    const triggerTestId = COLLECTIVE_LEVEL_TRIGGERS[audience];
+Then('the Custom permissions {string} dropdown offers every access level', async ({ page }, audience: string) => {
+  const triggerTestId = COLLECTIVE_LEVEL_TRIGGERS[audience];
 
-    if (!triggerTestId) throw new Error(`Unknown collective audience: ${audience}`);
-    const trigger = manageSpaceModal(page).getByTestId(triggerTestId);
+  if (!triggerTestId) throw new Error(`Unknown collective audience: ${audience}`);
+  const trigger = manageSpaceModal(page).getByTestId(triggerTestId);
 
-    await expect(trigger).toBeEnabled({ timeout: 15000 });
-    await trigger.click();
-    const expected: Array<[string, string]> = [
-      [`${triggerTestId}-option-${ACCESS_LEVEL_FULL_ACCESS}`, 'Full access'],
-      [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_WRITE}`, 'Can edit'],
-      [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_COMMENT}`, 'Can view and comment'],
-      [`${triggerTestId}-option-${ACCESS_LEVEL_READ_ONLY}`, 'Can view'],
-      [`${triggerTestId}-option-none`, 'No access'],
-    ];
+  await expect(trigger).toBeEnabled({ timeout: 15000 });
+  await trigger.click();
+  const expected: Array<[string, string]> = [
+    [`${triggerTestId}-option-${ACCESS_LEVEL_FULL_ACCESS}`, 'Full access'],
+    [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_WRITE}`, 'Can edit'],
+    [`${triggerTestId}-option-${ACCESS_LEVEL_READ_AND_COMMENT}`, 'Can view and comment'],
+    [`${triggerTestId}-option-${ACCESS_LEVEL_READ_ONLY}`, 'Can view'],
+    [`${triggerTestId}-option-none`, 'No access'],
+  ];
 
-    for (const [testId, label] of expected) {
-      await expect(page.getByTestId(testId)).toContainText(label);
-    }
-
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId(`${triggerTestId}-option-none`)).toHaveCount(0);
+  for (const [testId, label] of expected) {
+    await expect(page.getByTestId(testId)).toContainText(label);
   }
-);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId(`${triggerTestId}-option-none`)).toHaveCount(0);
+});
 
 When(
   'I demote seeded scp0822 {string} to Space member in the members list',
@@ -1333,12 +1355,12 @@ When(
 );
 
 Then('the last-owner protection error is shown', async ({ page }) => {
-  await expect(
-    page.getByText('This space must have at least one owner', { exact: false }).first()
-  ).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText('This space must have at least one owner', { exact: false }).first()).toBeVisible({
+    timeout: 15000,
+  });
 });
 
-When('I close the Manage Space panel without saving', async ({ page }) => {
+When('I close the Manage Space panel', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(manageSpaceModal(page)).toHaveCount(0, { timeout: 15000 });
 });

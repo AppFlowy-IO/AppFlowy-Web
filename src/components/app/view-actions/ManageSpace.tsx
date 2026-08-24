@@ -61,7 +61,6 @@ import type { TFunction } from 'i18next';
 import type { KeyboardEvent, ReactNode } from 'react';
 
 type ManageSpaceTab = 'general' | 'members';
-type SaveMode = 'close' | 'continue-to-members';
 
 // Collective access for the explicit members of a private space.
 const PRIVATE_MEMBER_ACCESS_OPTIONS: readonly AccessLevel[] = [
@@ -98,7 +97,6 @@ type FullAccessAudience = 'space-members' | 'everyone-else' | 'workspace-members
 type PendingConfirmation =
   | { kind: 'visibility'; target: SpaceVisibility }
   | { kind: 'full-access'; audience: FullAccessAudience }
-  | { kind: 'apply-permission-draft' }
   | { kind: 'group-owner'; group: WorkspaceGroupSpacePermission };
 
 // The outline only carries the binary `is_private` marker, so a space whose
@@ -139,21 +137,6 @@ function normalizePermissionSettings(permission: SpacePermissionSettings, isPriv
       ...permission.security,
     },
   };
-}
-
-function equalPermissionSettings(left: SpacePermissionSettings, right: SpacePermissionSettings): boolean {
-  return (
-    left.visibility === right.visibility &&
-    left.owner_access_level === right.owner_access_level &&
-    left.member_default_access_level === right.member_default_access_level &&
-    (left.everyone_else_access_level ?? null) === (right.everyone_else_access_level ?? null) &&
-    left.invite_policy === right.invite_policy &&
-    left.sidebar_edit_policy === right.sidebar_edit_policy &&
-    left.invite_link_enabled === right.invite_link_enabled &&
-    left.security.disable_guests === right.security.disable_guests &&
-    left.security.disable_public_links === right.security.disable_public_links &&
-    left.security.disable_export === right.security.disable_export
-  );
 }
 
 /**
@@ -569,6 +552,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const settingsRequestSequenceRef = useRef(0);
+  const permissionMutationSequenceRef = useRef(0);
+  const savingRef = useRef(false);
   const spaceRequestRef = useRef({
     generation: 0,
     memberRequestSequence: 0,
@@ -636,6 +621,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     };
 
     loadedSpaceMetadataRef.current = loadedMetadata;
+    permissionMutationSequenceRef.current += 1;
+    savingRef.current = false;
     setTab('general');
     setSpaceName(loadedMetadata.name);
     setSpaceIcon(loadedMetadata.space_icon);
@@ -658,6 +645,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setMutatingGroupIds(new Set());
     setMemberSearch('');
     setPendingConfirmation(null);
+    setSaving(false);
     inputRef.current = null;
   }, [open, viewId]);
 
@@ -898,44 +886,189 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     visibleSpaceGroups.length > 0 ||
     (addableWorkspaceMembers.length === 0 && addableWorkspaceGroups.length === 0);
 
-  const updatePermission = useCallback((patch: Partial<SpacePermissionSettings>) => {
-    setPermissionSettings((current) => ({
-      ...current,
-      ...patch,
-      security: {
-        ...current.security,
-        ...(patch.security ?? {}),
-      },
-    }));
-  }, []);
-
-  const commitVisibility = useCallback(
-    (target: SpaceVisibility) => {
-      setPermissionSettings((current) => applyVisibility(current, loadedPermissionSettings, target));
-    },
-    [loadedPermissionSettings]
-  );
-
-  // Switching the space type is confirmed up front (PRD: every permission
-  // impacting switch asks first); the draft only changes after the user
-  // agrees, and nothing is persisted until the user explicitly applies it.
-  // Going back to the type the server already holds just restores the draft
-  // without asking.
-  const requestVisibilityChange = useCallback(
-    (target: SpaceVisibility) => {
-      if (target === permissionSettings.visibility) return;
-      if (loadedPermissionSettings && target === loadedPermissionSettings.visibility) {
-        commitVisibility(target);
+  const persistMetadata = useCallback(
+    async (patch: Partial<{ name: string; space_icon: string; space_icon_color: string }>) => {
+      if (
+        !workspaceId ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        !canEditSidebar ||
+        (legacyPermissionMode && !updateLegacySpace)
+      ) {
         return;
       }
 
+      const previous = loadedSpaceMetadataRef.current;
+      const next = { ...previous, ...patch };
+      const changed = Object.entries(patch).some(([key, value]) => previous[key as keyof typeof previous] !== value);
+
+      if (!changed) return;
+      loadedSpaceMetadataRef.current = next;
+
+      try {
+        if (legacyPermissionMode) {
+          await updateLegacySpace?.({
+            view_id: viewId,
+            ...next,
+            space_permission: legacySpacePermission(permissionSettings.visibility),
+          });
+        } else {
+          await WorkspaceService.updateStructuredSpace(workspaceId, viewId, patch);
+        }
+      } catch (error) {
+        // Only roll a field back if no newer edit has replaced this request.
+        const current = loadedSpaceMetadataRef.current;
+        const rolledBack = { ...current };
+
+        if (patch.name !== undefined && current.name === next.name) {
+          rolledBack.name = previous.name;
+          setSpaceName(previous.name);
+        }
+
+        if (patch.space_icon !== undefined && current.space_icon === next.space_icon) {
+          rolledBack.space_icon = previous.space_icon;
+          setSpaceIcon(previous.space_icon);
+        }
+
+        if (patch.space_icon_color !== undefined && current.space_icon_color === next.space_icon_color) {
+          rolledBack.space_icon_color = previous.space_icon_color;
+          setSpaceIconColor(previous.space_icon_color);
+        }
+
+        loadedSpaceMetadataRef.current = rolledBack;
+        toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+      }
+    },
+    [
+      canEditSidebar,
+      legacyPermissionMode,
+      permissionLoaded,
+      permissionLoadFailed,
+      permissionSettings.visibility,
+      t,
+      updateLegacySpace,
+      viewId,
+      workspaceId,
+    ]
+  );
+
+  const persistPermission = useCallback(
+    async (nextPermission: SpacePermissionSettings): Promise<boolean> => {
+      if (
+        !workspaceId ||
+        savingRef.current ||
+        loadingSettings ||
+        !permissionLoaded ||
+        permissionLoadFailed ||
+        !canManageSpace ||
+        (legacyPermissionMode && !updateLegacySpace)
+      ) {
+        if (permissionLoadFailed) toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
+        return false;
+      }
+
+      const previousPermission = loadedPermissionSettings ?? permissionSettings;
+      const visibilityChanged = previousPermission.visibility !== nextPermission.visibility;
+      const mutationSequence = permissionMutationSequenceRef.current + 1;
+      const requestGeneration = spaceRequestRef.current.generation;
+      const isCurrentMutation = () =>
+        permissionMutationSequenceRef.current === mutationSequence &&
+        spaceRequestRef.current.generation === requestGeneration;
+
+      permissionMutationSequenceRef.current = mutationSequence;
+      savingRef.current = true;
+      setSaving(true);
+      // Access selections are explicit actions. Reflect them immediately and
+      // let a failed request restore the last server-confirmed settings.
+      setPermissionSettings(nextPermission);
+
+      try {
+        if (legacyPermissionMode) {
+          const metadata = loadedSpaceMetadataRef.current;
+
+          await updateLegacySpace?.({
+            view_id: viewId,
+            ...metadata,
+            space_permission: legacySpacePermission(nextPermission.visibility),
+          });
+        } else {
+          await WorkspaceService.updateStructuredSpace(workspaceId, viewId, {
+            permission: permissionSettingsForSave(nextPermission),
+          });
+        }
+
+        if (!isCurrentMutation()) return false;
+        setLoadedPermissionSettings(nextPermission);
+        toast.success(t('space.success.updateSpace'));
+
+        if (visibilityChanged && !legacyPermissionMode) {
+          // A type transition changes the materialized roster and whether the
+          // workspace directory is needed. Reload only this dialog's data;
+          // sidebar permission notifications are handled independently.
+          beginPermissionRefresh();
+          setPermissionRefreshRevision((revision) => revision + 1);
+        }
+
+        return true;
+      } catch (error) {
+        if (isCurrentMutation()) {
+          setPermissionSettings(previousPermission);
+          toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+        }
+
+        return false;
+      } finally {
+        if (isCurrentMutation()) {
+          savingRef.current = false;
+          setSaving(false);
+        }
+      }
+    },
+    [
+      beginPermissionRefresh,
+      canManageSpace,
+      legacyPermissionMode,
+      loadedPermissionSettings,
+      loadingSettings,
+      permissionLoaded,
+      permissionLoadFailed,
+      permissionSettings,
+      t,
+      updateLegacySpace,
+      viewId,
+      workspaceId,
+    ]
+  );
+
+  const persistPermissionPatch = useCallback(
+    (patch: Partial<SpacePermissionSettings>) => {
+      const nextPermission = {
+        ...permissionSettings,
+        ...patch,
+        security: {
+          ...permissionSettings.security,
+          ...(patch.security ?? {}),
+        },
+      };
+
+      void persistPermission(nextPermission);
+    },
+    [permissionSettings, persistPermission]
+  );
+
+  // Every type selection is confirmed first; confirmation is also the commit
+  // action, so there is no permission draft waiting for a footer Save.
+  const requestVisibilityChange = useCallback(
+    (target: SpaceVisibility) => {
+      if (target === permissionSettings.visibility) return;
       setPendingConfirmation({ kind: 'visibility', target });
     },
-    [commitVisibility, loadedPermissionSettings, permissionSettings.visibility]
+    [permissionSettings.visibility]
   );
 
   // Full access carries space-management rights, so granting it to a whole
-  // audience is confirmed before it lands in the draft.
+  // audience keeps its existing safety confirmation. Other access selections
+  // are persisted as soon as the user chooses them.
   const requestCollectiveAccessChange = useCallback(
     (field: 'member_default_access_level' | 'everyone_else_access_level', value: AccessLevel | null) => {
       if (permissionSettings[field] === value) return;
@@ -951,138 +1084,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         return;
       }
 
-      updatePermission({ [field]: value });
+      persistPermissionPatch({ [field]: value });
     },
-    [permissionSettings, updatePermission]
+    [permissionSettings, persistPermissionPatch]
   );
 
-  const saveSpace = useCallback(
-    async (mode: SaveMode): Promise<boolean> => {
-      if (!workspaceId) return false;
-      if (legacyPermissionMode && !updateLegacySpace) return false;
-
-      const continueToMembers = mode === 'continue-to-members';
-      const canSave = continueToMembers ? canManageSpace && !legacyPermissionMode : canEditSidebar;
-
-      if (loadingSettings || saving || !permissionLoaded || permissionLoadFailed || !canSave) {
-        if (permissionLoadFailed) {
-          toast.error(t('space.permissionManager.loadSpaceSettingsFailed'));
-        }
-
-        return false;
-      }
-
-      const trimmedName = spaceName.trim();
-
-      if (!continueToMembers && !trimmedName) {
-        toast.error(t('space.spaceNameCannotBeEmpty'));
-        return false;
-      }
-
-      setSaving(true);
-      try {
-        if (legacyPermissionMode) {
-          await updateLegacySpace?.({
-            view_id: viewId,
-            name: trimmedName,
-            space_icon: spaceIcon,
-            space_icon_color: spaceIconColor,
-            space_permission: legacySpacePermission(permissionSettings.visibility),
-          });
-        } else {
-          // The structured update is the single source of truth: the server
-          // keeps the legacy public/private marker in step and applies the
-          // roster transition (materialize / tombstone) that the type switch
-          // implies, so no compatibility write precedes it.
-          const permissionChanged =
-            canManageSpace &&
-            loadedPermissionSettings !== null &&
-            !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
-
-          const savedPermission = permissionChanged ? permissionSettingsForSave(permissionSettings) : null;
-
-          await WorkspaceService.updateStructuredSpace(
-            workspaceId,
-            viewId,
-            continueToMembers
-              ? { permission: savedPermission ?? undefined }
-              : {
-                  name: trimmedName,
-                  space_icon: spaceIcon,
-                  space_icon_color: spaceIconColor,
-                  ...(savedPermission ? { permission: savedPermission } : {}),
-                }
-          );
-
-          if (continueToMembers && savedPermission) {
-            // Member mutations are immediate, unlike the General draft. Keep
-            // them behind the saved ACL, then reload the permission response and
-            // materialized roster before enabling the tab's controls.
-            beginPermissionRefresh();
-            setPermissionRefreshRevision((revision) => revision + 1);
-          }
-        }
-
-        toast.success(t('space.success.updateSpace'));
-        if (!continueToMembers) onClose();
-        return true;
-      } catch (error) {
-        toast.error(getErrorMessage(error, t('space.error.updateSpace')));
-        return false;
-      } finally {
-        setSaving(false);
-      }
-    },
-    [
-      beginPermissionRefresh,
-      canEditSidebar,
-      canManageSpace,
-      legacyPermissionMode,
-      loadedPermissionSettings,
-      loadingSettings,
-      onClose,
-      permissionSettings,
-      permissionLoaded,
-      permissionLoadFailed,
-      saving,
-      spaceIcon,
-      spaceIconColor,
-      spaceName,
-      t,
-      updateLegacySpace,
-      viewId,
-      workspaceId,
-    ]
-  );
-
-  const handleSave = useCallback(() => saveSpace('close'), [saveSpace]);
-
-  const handleTabChange = useCallback(
-    (value: string) => {
-      const nextTab = value as ManageSpaceTab;
-
-      if (nextTab !== 'members') {
-        setTab(nextTab);
-        return;
-      }
-
-      const hasPermissionDraft =
-        canManageSpace &&
-        loadedPermissionSettings !== null &&
-        !equalPermissionSettings(permissionSettings, loadedPermissionSettings);
-
-      if (!hasPermissionDraft) {
-        setTab(nextTab);
-        return;
-      }
-
-      // A type switch (especially Public -> Custom) changes which roster the
-      // server exposes. Ask before persisting the draft so the immediate
-      // member mutations never target a different server-side roster.
-      setPendingConfirmation({ kind: 'apply-permission-draft' });
-    },
-    [canManageSpace, loadedPermissionSettings, permissionSettings]
-  );
+  const handleTabChange = useCallback((value: string) => setTab(value as ManageSpaceTab), []);
 
   // A public space makes every workspace member an implicit space member, so
   // its roster is informational only. Gate on the loaded (server) visibility,
@@ -1411,26 +1418,58 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     if (!pendingConfirmation) return;
     setPendingConfirmation(null);
     switch (pendingConfirmation.kind) {
-      case 'visibility':
-        commitVisibility(pendingConfirmation.target);
+      case 'visibility': {
+        const nextPermission = applyVisibility(permissionSettings, loadedPermissionSettings, pendingConfirmation.target);
+
+        void persistPermission(nextPermission);
         break;
+      }
+
       case 'full-access':
-        updatePermission(
+        persistPermissionPatch(
           pendingConfirmation.audience === 'everyone-else'
             ? { everyone_else_access_level: AccessLevel.FullAccess }
             : { member_default_access_level: AccessLevel.FullAccess }
         );
         break;
-      case 'apply-permission-draft':
-        void saveSpace('continue-to-members').then((saved) => {
-          if (saved) setTab('members');
-        });
-        break;
       case 'group-owner':
         void commitGroupRole(pendingConfirmation.group, SpaceMemberRole.Owner);
         break;
     }
-  }, [commitGroupRole, commitVisibility, pendingConfirmation, saveSpace, updatePermission]);
+  }, [
+    commitGroupRole,
+    loadedPermissionSettings,
+    pendingConfirmation,
+    permissionSettings,
+    persistPermission,
+    persistPermissionPatch,
+  ]);
+
+  const handleSpaceNameBlur = useCallback(() => {
+    const trimmedName = spaceName.trim();
+
+    if (!trimmedName) {
+      toast.error(t('space.spaceNameCannotBeEmpty'));
+      setSpaceName(loadedSpaceMetadataRef.current.name);
+      return;
+    }
+
+    setSpaceName(trimmedName);
+    void persistMetadata({ name: trimmedName });
+  }, [persistMetadata, spaceName, t]);
+
+  const handleSpaceNameKeyDown = useCallback((event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') event.currentTarget.blur();
+  }, []);
+
+  const handleSpaceIconChange = useCallback(
+    (icon: string, color: string) => {
+      setSpaceIcon(icon);
+      setSpaceIconColor(color);
+      void persistMetadata({ space_icon: icon, space_icon_color: color });
+    },
+    [persistMetadata]
+  );
 
   const workspaceName = useMemo(() => {
     const workspaces = userWorkspaceInfo?.workspaces ?? [];
@@ -1442,7 +1481,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   if (!view) return null;
 
   const metadataDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canEditSidebar;
-  const permissionSettingsDisabled = loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
+  const permissionSettingsDisabled =
+    saving || loadingSettings || !permissionLoaded || permissionLoadFailed || !canManageSpace;
   const membersDisabled =
     membersReadOnly ||
     loadingMembers ||
@@ -1456,9 +1496,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const draftIsCustom = draftVisibility === SpaceVisibility.Custom;
   const draftIsPublic = draftVisibility === SpaceVisibility.Public;
   const draftIsPrivate = isPrivateSpaceVisibility(draftVisibility);
-  const confirmationCopy = pendingConfirmation
-    ? confirmationTexts(pendingConfirmation, loadedPermissionSettings, t)
-    : null;
+  const confirmationCopy = pendingConfirmation ? confirmationTexts(pendingConfirmation, permissionSettings, t) : null;
   const membersHaveNoAccess =
     loadedPermissionSettings?.visibility === SpaceVisibility.Custom &&
     loadedPermissionSettings.member_default_access_level === null;
@@ -1466,15 +1504,11 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   return (
     <NormalModal
       keepMounted={false}
-      okText={t('button.save')}
-      cancelText={t('button.cancel')}
       open={open}
       onClose={onClose}
       title={t('space.manage')}
       classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[6%]' }}
-      okLoading={saving}
-      onOk={handleSave}
-      okButtonProps={{ disabled: metadataDisabled || saving }}
+      showActions={false}
       overflowHidden
       PaperProps={{
         style: {
@@ -1508,8 +1542,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                       spaceIcon={spaceIcon}
                       spaceIconColor={spaceIconColor}
                       spaceName={spaceName}
-                      onSelectSpaceIcon={setSpaceIcon}
-                      onSelectSpaceIconColor={setSpaceIconColor}
+                      onChange={handleSpaceIconChange}
                       disabled={metadataDisabled}
                     />
                   )}
@@ -1528,6 +1561,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                     }}
                     disabled={metadataDisabled}
                     onChange={(e) => setSpaceName(e.target.value)}
+                    onBlur={handleSpaceNameBlur}
+                    onKeyDown={handleSpaceNameKeyDown}
                     size='md'
                     placeholder={t('space.spaceNamePlaceholder')}
                     className='flex-1'
@@ -1762,14 +1797,14 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
 function confirmationTexts(
   confirmation: PendingConfirmation,
-  loaded: SpacePermissionSettings | null,
+  current: SpacePermissionSettings,
   t: TFunction
 ): { title: string; description: string; confirmText: string; danger: boolean } {
   switch (confirmation.kind) {
     case 'visibility':
       switch (confirmation.target) {
         case SpaceVisibility.Custom:
-          return loaded?.visibility === SpaceVisibility.Private
+          return current.visibility === SpaceVisibility.Private
             ? {
                 title: t('space.permissionManager.confirmToCustomTitle'),
                 description: t('space.permissionManager.confirmPrivateToCustomDescription'),
@@ -1824,14 +1859,6 @@ function confirmationTexts(
             danger: true,
           };
       }
-
-    case 'apply-permission-draft':
-      return {
-        title: t('space.permissionManager.applyChangesBeforeMembersTitle'),
-        description: t('space.permissionManager.applyChangesBeforeMembersDescription'),
-        confirmText: t('space.permissionManager.applyChangesAction'),
-        danger: false,
-      };
 
     case 'group-owner':
     default:

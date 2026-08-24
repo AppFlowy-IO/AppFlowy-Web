@@ -11,6 +11,7 @@ function SpaceIconButton({
   spaceName,
   onSelectSpaceIcon,
   onSelectSpaceIconColor,
+  onChange,
   size,
   container,
   disabled = false,
@@ -18,8 +19,9 @@ function SpaceIconButton({
   spaceIconColor?: string;
   spaceIcon?: string;
   spaceName: string;
-  onSelectSpaceIcon: (icon: string) => void;
-  onSelectSpaceIconColor: (color: string) => void;
+  onSelectSpaceIcon?: (icon: string) => void;
+  onSelectSpaceIconColor?: (color: string) => void;
+  onChange?: (icon: string, color: string) => void;
   size?: number;
   container: HTMLDivElement;
   disabled?: boolean;
@@ -30,12 +32,16 @@ function SpaceIconButton({
     <CustomIconPopover
       enable={!disabled}
       onSelectIcon={({ value, color }) => {
-        onSelectSpaceIcon(value);
-        onSelectSpaceIconColor(color || '');
+        const nextColor = color || '';
+
+        onChange?.(value, nextColor);
+        onSelectSpaceIcon?.(value);
+        onSelectSpaceIconColor?.(nextColor);
       }}
       removeIcon={() => {
-        onSelectSpaceIcon('');
-        onSelectSpaceIconColor('');
+        onChange?.('', '');
+        onSelectSpaceIcon?.('');
+        onSelectSpaceIconColor?.('');
       }}
       defaultActiveTab={'icon'}
       tabs={['icon']}

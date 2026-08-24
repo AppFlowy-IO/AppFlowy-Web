@@ -101,6 +101,7 @@ jest.mock('@/components/_shared/modal', () => ({
     okText,
     okButtonProps,
     PaperProps,
+    showActions = true,
   }: {
     children: ReactNode;
     open: boolean;
@@ -111,20 +112,25 @@ jest.mock('@/components/_shared/modal', () => ({
     okText?: ReactNode;
     okButtonProps?: { disabled?: boolean; 'data-testid'?: string };
     PaperProps?: { 'data-testid'?: string };
+    showActions?: boolean;
   }) =>
     open ? (
       <div data-testid={PaperProps?.['data-testid']}>
         <div data-testid={`${PaperProps?.['data-testid'] ?? 'modal'}-title`}>{title}</div>
-        <button
-          data-testid={okButtonProps?.['data-testid'] ?? 'modal-ok-button'}
-          disabled={okButtonProps?.disabled}
-          onClick={onOk}
-        >
-          {okText ?? 'ok'}
-        </button>
-        <button data-testid={`${PaperProps?.['data-testid'] ?? 'modal'}-cancel`} onClick={onCancel ?? onClose}>
-          cancel
-        </button>
+        {showActions && (
+          <>
+            <button
+              data-testid={okButtonProps?.['data-testid'] ?? 'modal-ok-button'}
+              disabled={okButtonProps?.disabled}
+              onClick={onOk}
+            >
+              {okText ?? 'ok'}
+            </button>
+            <button data-testid={`${PaperProps?.['data-testid'] ?? 'modal'}-cancel`} onClick={onCancel ?? onClose}>
+              cancel
+            </button>
+          </>
+        )}
         {children}
       </div>
     ) : null,
@@ -389,8 +395,8 @@ function visibilityOption(visibility: SpaceVisibility) {
   return screen.getByTestId(`manage-space-visibility-option-${visibility}`);
 }
 
-// Exactly one card is highlighted: the current type (or the pending one before
-// Save), with the accent state and the check mark; the others are neutral.
+// Exactly one card is highlighted: the server-confirmed type, with the accent
+// state and the check mark; the others are neutral.
 function expectSelectedVisibility(visibility: SpaceVisibility) {
   for (const candidate of [SpaceVisibility.Public, SpaceVisibility.Private, SpaceVisibility.Custom]) {
     const option = visibilityOption(candidate);
@@ -412,10 +418,6 @@ function confirmDialog() {
 
 function confirmPending() {
   fireEvent.click(screen.getByTestId('manage-space-confirm-ok'));
-}
-
-function saveButton() {
-  return screen.getByTestId('modal-ok-button');
 }
 
 function structuredUpdatePermission(callIndex = 0): SpacePermissionSettings {
@@ -456,22 +458,25 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-public-access-card')).toBeTruthy();
       expect(screen.queryByTestId('manage-space-custom-permissions-card')).toBeNull();
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
+      expect(screen.queryByTestId('modal-ok-button')).toBeNull();
+      expect(screen.queryByTestId('manage-space-modal-cancel')).toBeNull();
     });
 
-    it('opens a custom space with the Custom card highlighted and moves the highlight on selection', async () => {
-      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+    it('opens a custom space highlighted and commits a confirmed type selection immediately', async () => {
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
+        .mockResolvedValue(permissionResponse({ permission: privatePermission }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
       await waitForSettingsLoaded();
       expectSelectedVisibility(SpaceVisibility.Custom);
 
       fireEvent.click(visibilityOption(SpaceVisibility.Private));
-      // Still Custom until the switch is confirmed ...
       expectSelectedVisibility(SpaceVisibility.Custom);
       confirmPending();
-      // ... then the highlight follows the pending type before Save.
       expectSelectedVisibility(SpaceVisibility.Private);
-      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+      expect(structuredUpdatePermission()).toEqual(privatePermission);
     });
 
     it("highlights Public when an older server still returns the legacy 'default' visibility", async () => {
@@ -486,8 +491,10 @@ describe('ManageSpace ACL management', () => {
       expectSelectedVisibility(SpaceVisibility.Public);
     });
 
-    it('confirms Public → Private with the PRD copy and then saves only the structured update', async () => {
-      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
+    it('confirms Public → Private and immediately sends only the structured permission', async () => {
+      mockGetSpacePermission
+        .mockResolvedValueOnce(permissionResponse({ permission: publicPermission }))
+        .mockResolvedValue(permissionResponse({ permission: privatePermission }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
       await waitForSettingsLoaded();
@@ -505,13 +512,9 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
       expect(visibilityOption(SpaceVisibility.Private).getAttribute('aria-pressed')).toBe('true');
       expect(screen.getByTestId('manage-space-private-access-card')).toBeTruthy();
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
-        name: 'Space one',
-        space_icon: 'space',
-        space_icon_color: '#000000',
         permission: { ...privatePermission, everyone_else_access_level: null },
       });
       // The structured update keeps the legacy marker in step on the server;
@@ -519,7 +522,7 @@ describe('ManageSpace ACL management', () => {
       expect(mockUpdateSpace).not.toHaveBeenCalled();
     });
 
-    it('cancelling a type switch keeps the draft on the loaded type', async () => {
+    it('cancelling a type switch keeps the loaded type and sends no mutation', async () => {
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
@@ -529,19 +532,13 @@ describe('ManageSpace ACL management', () => {
 
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
       expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-pressed')).toBe('true');
-      fireEvent.click(saveButton());
-
-      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
-      expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
+      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
     });
 
     it('confirms Private → Public with the PRD copy', async () => {
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
       await waitForSettingsLoaded();
-      fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
-        target: { value: 'Renamed public space' },
-      });
       fireEvent.click(visibilityOption(SpaceVisibility.Public));
 
       expect(confirmDialog().textContent).toContain('space.permissionManager.confirmToPublicTitle');
@@ -550,13 +547,9 @@ describe('ManageSpace ACL management', () => {
         'space.permissionManager.confirmToPublicAction'
       );
       confirmPending();
-      fireEvent.click(saveButton());
 
       await waitFor(() =>
         expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
-          name: 'Renamed public space',
-          space_icon: 'space',
-          space_icon_color: '#000000',
           permission: { ...publicPermission, everyone_else_access_level: null },
         })
       );
@@ -581,7 +574,6 @@ describe('ManageSpace ACL management', () => {
       expect(customCard.textContent).toContain('space.permissionManager.customPermissionsTitle');
       expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain('shareAction.canEdit');
       expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.canView');
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual(customPermission);
@@ -611,14 +603,13 @@ describe('ManageSpace ACL management', () => {
       expect(screen.queryByTestId('manage-space-public-access-card')).toBeNull();
       expect(screen.getByTestId('manage-space-custom-permissions-card')).toBeTruthy();
       expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-pressed')).toBe('true');
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       // Members keep Can edit; everyone else opens with Can view.
       expect(structuredUpdatePermission()).toEqual(customPermission);
     });
 
-    it('asks before applying a pending Public → Custom switch and opening Members', async () => {
+    it('persists a confirmed Public → Custom switch before Members opens without a second prompt', async () => {
       const onClose = jest.fn();
 
       mockGetSpacePermission
@@ -631,21 +622,20 @@ describe('ManageSpace ACL management', () => {
 
       fireEvent.click(visibilityOption(SpaceVisibility.Custom));
       confirmPending();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-
-      expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
-      expect(confirmDialog().textContent).toContain('space.permissionManager.applyChangesBeforeMembersTitle');
-      expect(confirmDialog().textContent).toContain('space.permissionManager.applyChangesBeforeMembersDescription');
-      expect(screen.getByTestId('manage-space-confirm-ok').textContent).toBe(
-        'space.permissionManager.applyChangesAction'
-      );
-      confirmPending();
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
         permission: customPermission,
       });
       expect(onClose).not.toHaveBeenCalled();
+      await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }).hasAttribute('disabled')).toBe(
+          false
+        )
+      );
+      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
+
       await waitFor(() => {
         expect(
           screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }).getAttribute('aria-selected')
@@ -654,27 +644,26 @@ describe('ManageSpace ACL management', () => {
         expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
         expect(mockGetWorkspaceGroups).toHaveBeenCalledWith('workspace-1');
       });
+      expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
+      expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps the unsaved draft on General when applying it before Members is cancelled', async () => {
-      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
+    it('opens Members directly when there is no type transition to apply', async () => {
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
       await waitForSettingsLoaded();
-      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
-      confirmPending();
       fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-      fireEvent.click(screen.getByTestId('manage-space-confirm-dialog-cancel'));
 
       expect(mockUpdateStructuredSpace).not.toHaveBeenCalled();
-      expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
+      expect(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }).getAttribute('aria-selected')).toBe(
         'true'
       );
-      expectSelectedVisibility(SpaceVisibility.Custom);
-      expect(screen.queryByTestId('inline-member-search')).toBeNull();
+      expect(screen.getByTestId('inline-member-search')).toBeTruthy();
+      expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
     });
 
-    it('keeps General selected when the confirmed permission draft fails to save', async () => {
+    it('rolls a confirmed type selection back when its immediate mutation fails', async () => {
       mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: publicPermission }));
       mockUpdateStructuredSpace.mockRejectedValueOnce(new Error('save failed'));
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
@@ -682,13 +671,12 @@ describe('ManageSpace ACL management', () => {
       await waitForSettingsLoaded();
       fireEvent.click(visibilityOption(SpaceVisibility.Custom));
       confirmPending();
-      fireEvent.click(screen.getByRole('tab', { name: 'space.permissionManager.membersTab' }));
-      confirmPending();
 
       await waitFor(() => expect(toast.error).toHaveBeenCalledWith('save failed'));
       expect(screen.getByRole('tab', { name: 'space.permissionManager.generalTab' }).getAttribute('aria-selected')).toBe(
         'true'
       );
+      expectSelectedVisibility(SpaceVisibility.Public);
       expect(screen.queryByTestId('inline-member-search')).toBeNull();
       expect(mockGetSpacePermission).toHaveBeenCalledTimes(1);
     });
@@ -705,7 +693,6 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(visibilityOption(SpaceVisibility.Public));
       expect(confirmDialog().textContent).toContain('space.permissionManager.confirmToPublicTitle');
       confirmPending();
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({ ...publicPermission, everyone_else_access_level: null });
@@ -727,7 +714,6 @@ describe('ManageSpace ACL management', () => {
       fireEvent.click(visibilityOption(SpaceVisibility.Private));
       expect(confirmDialog().textContent).toContain('space.permissionManager.confirmToPrivateDescription');
       confirmPending();
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({
@@ -735,54 +721,6 @@ describe('ManageSpace ACL management', () => {
         member_default_access_level: AccessLevel.ReadAndWrite,
         everyone_else_access_level: null,
       });
-    });
-
-    it('returns to the loaded type without asking and then saves no permission', async () => {
-      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
-      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
-
-      await waitForSettingsLoaded();
-      fireEvent.click(visibilityOption(SpaceVisibility.Public));
-      confirmPending();
-      expect(visibilityOption(SpaceVisibility.Public).getAttribute('aria-pressed')).toBe('true');
-
-      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
-      expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      expect(visibilityOption(SpaceVisibility.Custom).getAttribute('aria-pressed')).toBe('true');
-      // The everyone-else level the server holds survives the round trip.
-      expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.canView');
-      fireEvent.click(saveButton());
-
-      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
-      expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
-    });
-
-    it('restores loaded Custom No access after a Public round trip', async () => {
-      mockGetSpacePermission.mockResolvedValue(
-        permissionResponse({
-          permission: { ...customPermission, member_default_access_level: null },
-        })
-      );
-      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
-
-      await waitForSettingsLoaded();
-      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain(
-        'space.permissionManager.noAccess'
-      );
-
-      fireEvent.click(visibilityOption(SpaceVisibility.Public));
-      confirmPending();
-      expect(screen.getByTestId('manage-space-workspace-members-access').textContent).toContain('shareAction.canEdit');
-
-      fireEvent.click(visibilityOption(SpaceVisibility.Custom));
-      expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      expect(screen.getByTestId('manage-space-custom-members-access').textContent).toContain(
-        'space.permissionManager.noAccess'
-      );
-
-      fireEvent.click(saveButton());
-      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
-      expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
     });
 
     it('passes an unknown visibility through unchanged', async () => {
@@ -804,7 +742,6 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(screen.getByTestId('inline-member-search').disabled).toBe(false));
 
       fireEvent.click(screen.getByTestId(`manage-space-members-default-access-option-${AccessLevel.ReadOnly}`));
-      fireEvent.click(saveButton());
 
       await waitFor(() =>
         expect(mockUpdateStructuredSpace).toHaveBeenCalledWith(
@@ -852,7 +789,6 @@ describe('ManageSpace ACL management', () => {
 
       fireEvent.click(screen.getByTestId(`manage-space-workspace-members-access-option-${AccessLevel.ReadOnly}`));
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({
@@ -876,6 +812,11 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-workspace-members-access').textContent).toContain(
         'shareAction.fullAccess'
       );
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+      expect(structuredUpdatePermission()).toEqual({
+        ...publicPermission,
+        member_default_access_level: AccessLevel.FullAccess,
+      });
     });
   });
 
@@ -926,12 +867,12 @@ describe('ManageSpace ACL management', () => {
 
       await waitForSettingsLoaded();
       fireEvent.click(screen.getByTestId('manage-space-custom-members-access-option-none'));
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       fireEvent.click(screen.getByTestId('manage-space-everyone-else-access-option-none'));
       expect(screen.queryByTestId('manage-space-confirm-dialog')).toBeNull();
-      fireEvent.click(saveButton());
 
-      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
-      expect(structuredUpdatePermission()).toEqual({
+      await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(2));
+      expect(structuredUpdatePermission(1)).toEqual({
         ...customPermission,
         member_default_access_level: null,
         everyone_else_access_level: null,
@@ -955,7 +896,6 @@ describe('ManageSpace ACL management', () => {
       expect(screen.getByTestId('manage-space-confirm-ok').textContent).toBe('space.permissionManager.grantFullAccess');
       confirmPending();
       expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.fullAccess');
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({
@@ -975,7 +915,6 @@ describe('ManageSpace ACL management', () => {
       await waitForSettingsLoaded();
       expect(screen.getByTestId('manage-space-everyone-else-access').textContent).toContain('shareAction.canView');
       fireEvent.click(screen.getByTestId(`manage-space-custom-members-access-option-${AccessLevel.ReadOnly}`));
-      fireEvent.click(saveButton());
 
       await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
       expect(structuredUpdatePermission()).toEqual({
@@ -986,7 +925,7 @@ describe('ManageSpace ACL management', () => {
     });
   });
 
-  it('atomically saves metadata and a changed structured ACL of a private space', async () => {
+  it('persists permission selections immediately and the name when editing finishes', async () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
     await waitForSettingsLoaded();
@@ -994,23 +933,26 @@ describe('ManageSpace ACL management', () => {
 
     expect(defaultAccessRow.textContent).toContain('space.permissionManager.membersDescription');
     fireEvent.click(screen.getByTestId(`manage-space-members-default-access-option-${AccessLevel.ReadOnly}`));
-    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
-      target: { value: 'Updated space' },
-    });
-    fireEvent.click(saveButton());
-
     await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
-    expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
-      name: 'Updated space',
-      space_icon: 'space',
-      space_icon_color: '#000000',
+    expect(mockUpdateStructuredSpace).toHaveBeenNthCalledWith(1, 'workspace-1', 'space-1', {
       permission: {
         ...privatePermission,
         member_default_access_level: AccessLevel.ReadOnly,
       },
     });
+
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(nameInput, {
+      target: { value: 'Updated space' },
+    });
+    fireEvent.blur(nameInput);
+
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(2));
+    expect(mockUpdateStructuredSpace).toHaveBeenNthCalledWith(2, 'workspace-1', 'space-1', {
+      name: 'Updated space',
+    });
     expect(mockUpdateSpace).not.toHaveBeenCalled();
-    expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('space_permission');
   });
 
   it.each([404, 405])(
@@ -1019,7 +961,9 @@ describe('ManageSpace ACL management', () => {
       mockGetSpacePermission.mockRejectedValueOnce({ code: status, httpStatus: status, message: 'Unsupported route' });
       render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-      await waitFor(() => expect(saveButton().disabled).toBe(false));
+      await waitFor(() =>
+        expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false)
+      );
 
       expect(screen.queryByText('space.permissionManager.membersTab')).toBeNull();
       expect(screen.queryByTestId('manage-space-members-default-access-row')).toBeNull();
@@ -1031,10 +975,13 @@ describe('ManageSpace ACL management', () => {
 
       fireEvent.click(visibilityOption(SpaceVisibility.Private));
       confirmPending();
-      fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+      await waitFor(() => expect(mockUpdateSpace).toHaveBeenCalledTimes(1));
+      const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+      fireEvent.change(nameInput, {
         target: { value: 'Legacy renamed space' },
       });
-      fireEvent.click(saveButton());
+      fireEvent.blur(nameInput);
 
       await waitFor(() =>
         expect(mockUpdateSpace).toHaveBeenCalledWith({
@@ -1049,20 +996,20 @@ describe('ManageSpace ACL management', () => {
     }
   );
 
-  it('omits an unchanged permission from a manager metadata-only save', async () => {
+  it('persists a metadata-only rename on blur without a permission payload', async () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-    await waitFor(() => expect(saveButton().disabled).toBe(false));
-    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+    await waitForSettingsLoaded();
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(nameInput, {
       target: { value: 'Metadata only' },
     });
-    fireEvent.click(saveButton());
+    fireEvent.blur(nameInput);
 
     await waitFor(() =>
       expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
         name: 'Metadata only',
-        space_icon: 'space',
-        space_icon_color: '#000000',
       })
     );
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
@@ -1079,20 +1026,22 @@ describe('ManageSpace ACL management', () => {
     );
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-    await waitFor(() => expect(saveButton().disabled).toBe(false));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false)
+    );
     expect(visibilityOption(SpaceVisibility.Public).disabled).toBe(true);
     expect(visibilityOption(SpaceVisibility.Custom).disabled).toBe(true);
 
-    fireEvent.change(screen.getByPlaceholderText('space.spaceNamePlaceholder'), {
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(nameInput, {
       target: { value: 'Renamed by member' },
     });
-    fireEvent.click(saveButton());
+    fireEvent.blur(nameInput);
 
     await waitFor(() =>
       expect(mockUpdateStructuredSpace).toHaveBeenCalledWith('workspace-1', 'space-1', {
         name: 'Renamed by member',
-        space_icon: 'space',
-        space_icon_color: '#000000',
       })
     );
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
@@ -1119,7 +1068,6 @@ describe('ManageSpace ACL management', () => {
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
     await screen.findByTestId('space-group-row-group-1');
-    expect(saveButton().disabled).toBe(false);
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false);
 
     act(() => {
@@ -1127,7 +1075,6 @@ describe('ManageSpace ACL management', () => {
     });
 
     await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
-    expect(saveButton().disabled).toBe(true);
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
     expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
 
@@ -1145,7 +1092,6 @@ describe('ManageSpace ACL management', () => {
     await screen.findByTestId('space-group-row-group-2');
     expect(mockGetSpaceMembers).toHaveBeenCalledTimes(2);
     expect(screen.queryByTestId('space-group-row-group-1')).toBeNull();
-    expect(saveButton().disabled).toBe(true);
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
   });
 
@@ -1166,7 +1112,9 @@ describe('ManageSpace ACL management', () => {
       .mockReturnValueOnce(latestPermission.promise);
     render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
 
-    await waitFor(() => expect(saveButton().disabled).toBe(false));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(false)
+    );
 
     act(() => {
       mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'first-change' });
@@ -1187,7 +1135,9 @@ describe('ManageSpace ACL management', () => {
         })
       );
     });
-    await waitFor(() => expect(saveButton().disabled).toBe(true));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true)
+    );
 
     await act(async () => {
       stalePermission.resolve(
@@ -1200,7 +1150,6 @@ describe('ManageSpace ACL management', () => {
       );
     });
 
-    expect(saveButton().disabled).toBe(true);
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
   });
 
@@ -1212,7 +1161,6 @@ describe('ManageSpace ACL management', () => {
 
     await screen.findByTestId(`space-member-row-${member.uid}`);
     fireEvent.click(screen.getByTestId(`manage-space-members-default-access-option-${AccessLevel.ReadOnly}`));
-    fireEvent.click(saveButton());
 
     await waitFor(() =>
       expect(mockUpdateStructuredSpace).toHaveBeenCalledWith(
