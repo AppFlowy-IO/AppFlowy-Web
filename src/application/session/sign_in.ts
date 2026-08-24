@@ -21,6 +21,25 @@ export function clearRedirectTo() {
 export const AUTH_CALLBACK_PATH = '/auth/callback';
 export const AUTH_CALLBACK_URL = `${window.location.origin}${AUTH_CALLBACK_PATH}`;
 
+export function isAuthPath(pathname: string): boolean {
+  let decodedPathname: string;
+
+  try {
+    // Match React Router's segment decoding while preserving encoded slashes,
+    // which are data inside a segment rather than route separators.
+    decodedPathname = pathname
+      .split('/')
+      .map((segment) => decodeURIComponent(segment).replace(/\//g, '%2F'))
+      .join('/');
+  } catch {
+    return false;
+  }
+
+  const normalizedPathname = decodedPathname.replace(/\/+$/, '').toLowerCase();
+
+  return normalizedPathname === '/login' || normalizedPathname === AUTH_CALLBACK_PATH;
+}
+
 const MAX_REDIRECT_VALIDATION_DECODES = 5;
 const ABSOLUTE_URL_PATTERN = /^[a-z][a-z\d+.-]*:/i;
 const AUTHORITY_RELATIVE_URL_PATTERN = /^[\\/]{2}/;
@@ -149,7 +168,13 @@ export function afterAuth() {
     // Pattern matches /app/{uuid}/{uuid} or /app/{uuid}
     const hasUserSpecificIds = /\/app\/[a-f0-9-]{36}/i.test(pathname);
 
-    if (hasUserSpecificIds) {
+    if (isAuthPath(pathname)) {
+      // Authentication pages are transitional destinations. Sending a newly
+      // authenticated user back to one can strand them on the login screen and
+      // require a second sign-in attempt.
+      Log.info('[Auth] afterAuth: blocking authentication-route redirect, going to /app', { pathname });
+      window.location.href = '/app';
+    } else if (hasUserSpecificIds) {
       // Don't redirect to user-specific pages from previous sessions
       Log.info('[Auth] afterAuth: blocking user-specific redirect, going to /app', { pathname });
       window.location.href = '/app';
