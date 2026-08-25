@@ -62,12 +62,35 @@ export async function startOutlineDragOver(
   await page.waitForTimeout(150);
   await page.mouse.move(
     targetBox.x + targetBox.width / 2,
-    targetBox.y + targetBox.height * (edge === 'top' ? 0.15 : 0.85),
+    edge === 'top' ? targetBox.y + 1 : targetBox.y + targetBox.height - 1,
     { steps: 12 }
   );
   await page.waitForTimeout(400);
 
   await expect(page.getByTestId('drop-row-line')).toHaveCount(1, { timeout: 10000 });
+}
+
+/**
+ * Holds `sourceName` over the center of `targetName`, the desktop-parity
+ * gesture for making the source a child of the target document.
+ */
+export async function startOutlineDragInto(page: Page, sourceName: string, targetName: string): Promise<void> {
+  const sourceRow = pageItemByName(page, sourceName).locator(':scope > [data-testid^="page-"]').first();
+  const targetRow = pageItemByName(page, targetName).locator(':scope > [data-testid^="page-"]').first();
+
+  await expect(sourceRow).toBeVisible({ timeout: 15000 });
+  await expect(targetRow).toBeVisible({ timeout: 15000 });
+
+  const sourceBox = await boxOf(sourceRow);
+  const targetBox = await boxOf(targetRow);
+
+  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 12 });
+  await page.waitForTimeout(400);
+
+  await expect(targetRow).toHaveAttribute('data-drop-instruction', 'make-child', { timeout: 10000 });
 }
 
 export async function finishOutlineDrag(page: Page): Promise<void> {

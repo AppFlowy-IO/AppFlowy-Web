@@ -25,6 +25,7 @@ import {
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
 import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
+import { useSidebarTreeMonitor } from '@/components/app/outline/reorder/useSidebarTreeMonitor';
 import {
   createSidebarOutlineRevalidationScheduleState,
   floorSidebarOutlineRevalidationStateForOpenWebSocket,
@@ -82,6 +83,10 @@ export function Outline({ width }: { width: number }) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
   const spaceListRef = useRef<HTMLDivElement>(null);
+  const [pageTreeScopeId] = useState(() => Symbol('sidebar-page-tree-scope'));
+
+  useSidebarTreeMonitor({ scopeId: pageTreeScopeId, workspaceId: currentWorkspaceId });
+
   const visibleSpacesFromOutline = useMemo(
     () => outline?.filter((view) => isSpaceView(view) && !view.extra?.is_hidden_space) ?? [],
     [outline]
@@ -674,6 +679,7 @@ export function Outline({ width }: { width: number }) {
               loadedViewIds={loadedViewIds}
               canReorder={canReorderSpaces && visibleSpaces.length > 1}
               dragInstanceId={spaceDragInstanceId}
+              pageTreeScopeId={pageTreeScopeId}
             />
           ))
         )}
