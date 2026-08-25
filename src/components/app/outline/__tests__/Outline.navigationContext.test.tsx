@@ -36,6 +36,7 @@ jest.mock('@/components/app/app.hooks', () => ({
   useLoadViewChildren: () => jest.fn().mockResolvedValue([]),
   useLoadViewChildrenBatch: () => jest.fn().mockResolvedValue([]),
   useMarkViewChildrenStale: () => jest.fn(),
+  useRefreshOutline: () => jest.fn().mockResolvedValue(undefined),
   useRevalidateSidebarOutline: () => undefined,
   useSidebarHighlightedViewIds: () =>
     global.__outlineNavigationTestSelectedViewId ? [global.__outlineNavigationTestSelectedViewId] : [],

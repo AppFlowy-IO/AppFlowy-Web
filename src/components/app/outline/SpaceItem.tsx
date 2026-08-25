@@ -28,6 +28,7 @@ function SpaceItem({
   loadedViewIds,
   canReorder,
   dragInstanceId,
+  pageTreeScopeId,
 }: {
   view: View;
   width: number;
@@ -40,6 +41,8 @@ function SpaceItem({
   loadedViewIds?: Set<string>;
   canReorder?: boolean;
   dragInstanceId?: symbol;
+  /** Shared scope for page reparenting in the workspace sidebar. */
+  pageTreeScopeId?: symbol;
 }) {
   const [hovered, setHovered] = React.useState<boolean>(false);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -57,12 +60,14 @@ function SpaceItem({
 
   // The space's direct children can be reordered within the space.
   const spaceChildren = useMemo(() => view?.children ?? [], [view?.children]);
+  const childAncestorIds = useMemo(() => [view.view_id], [view.view_id]);
+  const childReorderEnabled = pageTreeScopeId ? spaceChildren.length > 0 : spaceChildren.length > 1;
   const { orderedItems: orderedChildren, instanceId: childDragInstanceId } = useReorderableSidebarList({
     items: spaceChildren,
     parentId: view.view_id,
     workspaceId,
     dragType: 'sidebar-view',
-    enabled: spaceChildren.length > 1,
+    enabled: childReorderEnabled,
     errorMessage: 'Failed to reorder pages',
   });
 
@@ -130,6 +135,7 @@ function SpaceItem({
   // Gate the open animation on actual child presence (not a loading flag) so the
   // Collapse opens against real content and animates on the first expand.
   const childrenPresent = orderedChildren.length > 0;
+  const orderedChildIds = useMemo(() => orderedChildren.map((child) => child.view_id), [orderedChildren]);
 
   const renderChildren = useMemo(() => {
     // No loading shimmer here: a fixed-height placeholder spikes then collapses
@@ -153,6 +159,9 @@ function SpaceItem({
               reorderChildren
               reorderInstanceId={childDragInstanceId}
               canReorder={canReorderWithinParent(child, view)}
+              pageTreeScopeId={pageTreeScopeId}
+              ancestorIds={childAncestorIds}
+              siblingIds={orderedChildIds}
             />
           ))}
         </div>
@@ -164,6 +173,9 @@ function SpaceItem({
     childrenPresent,
     orderedChildren,
     childDragInstanceId,
+    pageTreeScopeId,
+    childAncestorIds,
+    orderedChildIds,
     view,
     width,
     renderExtra,

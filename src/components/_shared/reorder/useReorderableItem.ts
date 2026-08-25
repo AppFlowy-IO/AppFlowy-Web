@@ -1,7 +1,18 @@
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import {
+  attachInstruction,
+  extractInstruction,
+  type Instruction,
+} from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+
+import {
+  attachReorderableTreeItemData,
+  extractReorderableTreeItemData,
+  type ReorderableTreeItemData,
+} from '@/components/_shared/reorder/treeItem';
 
 /**
  * Drag state for a single reorderable item (sidebar row, database tab, …).
@@ -15,7 +26,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 export type ReorderableItemDragState =
   | { type: 'idle' }
   | { type: 'dragging' }
-  | { type: 'over'; closestEdge: Edge | null };
+  | { type: 'over'; closestEdge: Edge | null; instruction: Instruction | null };
 
 const idleState: ReorderableItemDragState = { type: 'idle' };
 
@@ -44,6 +55,8 @@ interface UseReorderableItemParams {
    * vertical lists (default) and `['left', 'right']` for horizontal ones.
    */
   allowedEdges?: Edge[];
+  /** Optional metadata that lets this item move across lists in one tree. */
+  treeItem?: ReorderableTreeItemData;
 }
 
 interface UseReorderableItemResult {
@@ -70,6 +83,7 @@ export function useReorderableItem({
   instanceId,
   canDrag,
   allowedEdges = VERTICAL_EDGES,
+  treeItem,
 }: UseReorderableItemParams): UseReorderableItemResult {
   const [dragState, setDragState] = useState<ReorderableItemDragState>(idleState);
   const suppressClickRef = useRef(false);
@@ -104,11 +118,12 @@ export function useReorderableItem({
 
     if (!instanceId || !element) return;
 
-    const data = {
+    const baseData = {
       type: dragType,
       instanceId,
       id,
     };
+    const data = treeItem ? attachReorderableTreeItemData(baseData, treeItem) : baseData;
     const edges = allowedEdgesKey.split(',') as Edge[];
 
     const cleanups: Array<() => void> = [];
@@ -142,10 +157,49 @@ export function useReorderableItem({
     cleanups.push(
       dropTargetForElements({
         element,
-        canDrop: ({ source }) =>
-          source.data.type === dragType && source.data.instanceId === instanceId && source.data.id !== id,
+        canDrop: ({ source }) => {
+          if (source.data.type !== dragType || source.data.id === id) return false;
+
+          const sameList = source.data.instanceId === instanceId;
+          const sourceTreeItem = extractReorderableTreeItemData(source.data);
+
+          if (!treeItem || !sourceTreeItem || sourceTreeItem.scopeId !== treeItem.scopeId) {
+            return sameList;
+          }
+
+          const sourceId = String(source.data.id ?? '');
+
+          // Moving an ancestor beside or inside one of its descendants would
+          // create a cycle. The rendered target already knows its full path.
+          if (treeItem.ancestorIds.includes(sourceId)) return false;
+
+          if (!sameList && (!sourceTreeItem.canMoveAcrossParents || !treeItem.canAcceptMovedSiblings)) {
+            return false;
+          }
+
+          return true;
+        },
         getIsSticky: () => true,
-        getData({ input }) {
+        getData({ input, source }) {
+          const sourceTreeItem = extractReorderableTreeItemData(source.data);
+
+          if (treeItem && sourceTreeItem?.scopeId === treeItem.scopeId) {
+            const block: Instruction['type'][] = [];
+
+            if (!sourceTreeItem.canMoveAcrossParents || !treeItem.canAcceptChildren) {
+              block.push('make-child');
+            }
+
+            return attachInstruction(data, {
+              element,
+              input,
+              currentLevel: treeItem.currentLevel,
+              indentPerLevel: treeItem.indentPerLevel,
+              mode: 'standard',
+              block,
+            });
+          }
+
           return attachClosestEdge(data, {
             element,
             input,
@@ -153,11 +207,23 @@ export function useReorderableItem({
           });
         },
         onDrag({ self }) {
+          const instruction = extractInstruction(self.data);
           const closestEdge = extractClosestEdge(self.data);
+          const instructionEdge =
+            instruction?.type === 'reorder-above' ? 'top' : instruction?.type === 'reorder-below' ? 'bottom' : null;
 
           setDragState((current) => {
-            if (current.type === 'over' && current.closestEdge === closestEdge) return current;
-            return { type: 'over', closestEdge };
+            const nextClosestEdge = instruction ? instructionEdge : closestEdge;
+
+            if (
+              current.type === 'over' &&
+              current.closestEdge === nextClosestEdge &&
+              current.instruction === instruction
+            ) {
+              return current;
+            }
+
+            return { type: 'over', closestEdge: nextClosestEdge, instruction };
           });
         },
         onDragLeave() {
@@ -170,7 +236,7 @@ export function useReorderableItem({
     );
 
     return combine(...cleanups);
-  }, [allowedEdgesKey, canDrag, dragType, elementRef, id, instanceId]);
+  }, [allowedEdgesKey, canDrag, dragType, elementRef, id, instanceId, treeItem]);
 
   return { dragState, shouldSuppressClick };
 }

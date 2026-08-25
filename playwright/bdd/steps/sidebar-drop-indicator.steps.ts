@@ -8,10 +8,11 @@ import {
   readDropIndicatorGeometry,
   readDropIndicatorTargetName,
   readSidebarPageNames,
+  startOutlineDragInto,
   startOutlineDragOver,
 } from '../../support/outline-drag-helpers';
 import { expandPageByName } from '../../support/page/flows';
-import { PageSelectors } from '../../support/selectors';
+import { itemDirectChildPageItems, PageSelectors } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, Then, When } = createBdd();
@@ -60,6 +61,19 @@ When(
   }
 );
 
+When(
+  '{string} is dragged into the center of {string} without dropping',
+  async ({ page }, sourceName: string, targetName: string) => {
+    await startOutlineDragInto(page, sourceName, targetName);
+  }
+);
+
+Then('{string} is the active child drop target', async ({ page }, targetName: string) => {
+  const targetRow = PageSelectors.itemByName(page, targetName).locator(':scope > [data-testid^="page-"]').first();
+
+  await expect(targetRow).toHaveAttribute('data-drop-instruction', 'make-child');
+});
+
 Then('the drop indicator is attached to {string}', async ({ page }, targetName: string) => {
   expect(await readDropIndicatorTargetName(page)).toBe(targetName);
 });
@@ -74,19 +88,16 @@ Then('the drop indicator sits below the expanded children of {string}', async ({
   ).not.toBeNull();
   // Dropping here lands the page after the whole subtree, so the line has to be
   // below the last child's row — not tucked between the parent and that child.
-  expect(geometry.indicatorBottom).toBeGreaterThanOrEqual(
-    (geometry.lastDescendantBottom as number) - EDGE_TOLERANCE_PX
-  );
+  expect(geometry.indicatorBottom).toBeGreaterThanOrEqual((geometry.lastDescendantBottom as number) - EDGE_TOLERANCE_PX);
   expect(geometry.indicatorBottom).toBeGreaterThanOrEqual(geometry.subtreeBottom - EDGE_TOLERANCE_PX);
 });
 
 Then('the drop indicator does not sit at the bottom of the {string} name row', async ({ page }, targetName: string) => {
   const geometry = await readDropIndicatorGeometry(page);
 
-  expect(
-    geometry.indicatorBottom,
-    `the indicator is still pinned to the "${targetName}" name row`
-  ).toBeGreaterThan(geometry.rowBottom + EDGE_TOLERANCE_PX);
+  expect(geometry.indicatorBottom, `the indicator is still pinned to the "${targetName}" name row`).toBeGreaterThan(
+    geometry.rowBottom + EDGE_TOLERANCE_PX
+  );
 });
 
 Then('the drop indicator sits at the bottom of the {string} name row', async ({ page }, targetName: string) => {
@@ -114,4 +125,21 @@ Then('the sidebar lists {string} in that order', async ({ page }, expected: stri
       message: `Waiting for the sidebar order ${expected}`,
     })
     .toEqual(names);
+});
+
+Then('{string} is a direct child of {string}', async ({ page }, childName: string, parentName: string) => {
+  const directChildNames = PageSelectors.itemByName(page, parentName).locator(
+    `${itemDirectChildPageItems()} > [data-testid^="page-"] [data-testid="page-name"]`
+  );
+
+  await expect
+    .poll(() => directChildNames.allTextContents(), {
+      timeout: 30000,
+      message: `Waiting for "${childName}" to become a direct child of "${parentName}"`,
+    })
+    .toContain(childName);
+});
+
+When('the sidebar drag app is reloaded', async ({ page }) => {
+  await page.reload({ waitUntil: 'domcontentloaded' });
 });
