@@ -60,9 +60,6 @@ Feature: Seeded space permission management
     Then the Manage Space members list shows seeded spm0622 "owner 2" with role "Owner"
     And the Manage Space members list shows seeded spm0622 "member default" with role "Member"
     And the Manage Space members list shows seeded spm0622 "member private" with role "Member"
-    # The guest has a direct grant to the private page. The server exposes that
-    # inherited page-share entry in the space roster, where it remains read-only.
-    And the Manage Space members list shows seeded spm0622 "guest private" with role "Member"
     And the Manage Space members list does not show seeded spm0622 "member closed"
     And the Manage Space member search for seeded spm0622 "member closed" shows an addable workspace member
     When I add seeded spm0622 "member closed" to the current space

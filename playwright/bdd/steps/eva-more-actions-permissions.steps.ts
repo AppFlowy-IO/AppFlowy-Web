@@ -55,6 +55,7 @@ type ApiResponse<T> = {
 
 type WorkspaceInfo = {
   visiting_workspace: { workspace_id: string };
+  workspaces: { workspace_id: string }[];
 };
 
 type EvaPermissionFixture = {
@@ -276,6 +277,9 @@ async function prepareEvaPermissionFixture(page: Page, request: APIRequestContex
   const evaToken = await signInApi(request, EVA_EMAIL, FIXTURE_PASSWORD);
   const workspaceInfo = await getApi<WorkspaceInfo>(request, ownerToken, '/api/user/workspace');
   const workspaceId = workspaceInfo.visiting_workspace.workspace_id;
+
+  await joinWorkspaceByInviteCode(request, ownerToken, evaToken, workspaceId);
+
   const evaUid = await findWorkspaceMemberUid(request, ownerToken, workspaceId, EVA_EMAIL);
   const suffix = state.runId.slice(-12);
   const spaceName = `BDD Eva permission actions ${suffix}`;
@@ -414,6 +418,35 @@ async function signInApi(request: APIRequestContext, email: string, password: st
   }
 
   return body.access_token;
+}
+
+async function joinWorkspaceByInviteCode(
+  request: APIRequestContext,
+  ownerToken: string,
+  memberToken: string,
+  workspaceId: string
+): Promise<void> {
+  const memberWorkspace = await getApi<WorkspaceInfo>(request, memberToken, '/api/user/workspace');
+
+  if (memberWorkspace.workspaces.some((workspace) => workspace.workspace_id === workspaceId)) return;
+
+  const createdInvite = await postApi<{ code: string | null }>(
+    request,
+    ownerToken,
+    `/api/workspace/${workspaceId}/invite-code`,
+    { validity_period_hours: 24 }
+  );
+  const inviteCode =
+    createdInvite.code ??
+    (await getApi<{ code: string | null }>(request, ownerToken, `/api/workspace/${workspaceId}/invite-code`)).code;
+
+  if (!inviteCode) {
+    throw new Error(`Workspace ${workspaceId} did not return an invite code`);
+  }
+
+  await postApi<{ workspace_id: string }>(request, memberToken, '/api/workspace/join-by-invite-code', {
+    code: inviteCode,
+  });
 }
 
 async function findWorkspaceMemberUid(

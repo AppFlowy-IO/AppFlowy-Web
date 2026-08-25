@@ -104,6 +104,16 @@ test.describe('Version History — embedded database', () => {
     await expect(previewGrid).toBeVisible({ timeout: 30000 });
 
     testLog.step(6, 'Assert the preview grid actually has data rows');
+    // The shared seeded view can persist collapsed groups. Expand them in the
+    // preview so the row elements are rendered before asserting their content.
+    const collapsedGroupToggles = previewGrid.locator(
+      '[data-testid="grid-group-collapse-toggle"][aria-expanded="false"]'
+    );
+
+    while ((await collapsedGroupToggles.count()) > 0) {
+      await collapsedGroupToggles.first().click();
+    }
+
     const previewRows = modal.locator('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])');
     await expect(previewRows.first()).toBeVisible({ timeout: 30000 });
     expect(await previewRows.count()).toBeGreaterThan(0);
