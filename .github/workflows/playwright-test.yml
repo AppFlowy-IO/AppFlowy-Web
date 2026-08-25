@@ -105,6 +105,16 @@ jobs:
             shard: ''
             description: 'Authentication regressions and migrated Gallery behavior scenarios'
             bdd: true
+          - name: 'space-permissions-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/workspace/create-space-draft.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/workspace/space-custom-permissions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/workspace/space-group-permission-resolution.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/workspace/space-permission-matrix-management.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/page/eva-more-actions-permissions.feature.spec.js
+            shard: ''
+            description: 'Create, manage, member, group, and action permission scenarios for spaces'
+            bdd: true
           - name: 'embedded'
             spec: 'playwright/e2e/embeded'
             shard: ''
@@ -257,7 +267,7 @@ jobs:
           CI: true
           BASE_URL: http://localhost:3000
 
-      - name: Run Auth and Gallery BDD tests
+      - name: Run selected BDD tests
         if: ${{ matrix.test-group.bdd }}
         run: |
           pnpm exec bddgen test -c playwright.bdd.config.ts
