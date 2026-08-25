@@ -1,4 +1,4 @@
-@eva-more-actions-permissions
+@eva-more-actions-permissions @mode:serial
 Feature: Eva page action permissions
   These scenarios create an isolated Custom space for Eva and verify page action menus
   for Full access, Can edit, and Can view pages.

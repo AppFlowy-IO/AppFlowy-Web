@@ -1399,8 +1399,10 @@ Then('the last-owner protection error is shown', async ({ page }) => {
 });
 
 When('I close the Manage Space panel', async ({ page }) => {
-  await page.keyboard.press('Escape');
-  await expect(manageSpaceModal(page)).toHaveCount(0, { timeout: 15000 });
+  const modal = manageSpaceModal(page);
+
+  await modal.getByRole('button', { name: 'Close' }).click();
+  await expect(modal).toBeHidden({ timeout: 15000 });
 });
 
 Then('the {string} space access card is selected', async ({ page }, visibilityLabel: string) => {
