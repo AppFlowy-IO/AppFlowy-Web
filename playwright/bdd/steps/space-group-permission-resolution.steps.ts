@@ -605,9 +605,8 @@ async function expectSeededPageAccess(page: Page, seededPage: SeededStgPage, acc
       await selectFirstEditorWord(page, editor);
       await waitForSelectionEffects(page);
       await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible();
-      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAttribute(
-        'aria-disabled',
-        'true'
+      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAccessibleName(
+        /don't have permission to comment/i
       );
       await clearEditorSelection(page);
       break;

@@ -2,7 +2,7 @@ import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
-import { EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
+import { EditorSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
 import {
   SPM0622_ACCOUNTS as SPM_ACCOUNTS,
   SPM0622_PASSWORD as PASSWORD,
@@ -13,8 +13,8 @@ import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 const { When, Then, Before, After } = createBdd();
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
-const TEMPORARY_PRIVATE_SPACE_PREFIX = 'spm0622 BDD Private Space';
-const TEMPORARY_PRIVATE_PAGE_PREFIX = 'spm0622 BDD Private Page';
+const TEMPORARY_RESTRICTED_CUSTOM_SPACE_PREFIX = 'spm0622 BDD Restricted Custom Space';
+const TEMPORARY_RESTRICTED_CUSTOM_PAGE_PREFIX = 'spm0622 BDD Restricted Custom Page';
 const SPACE_PERMISSION_PRIVATE = 1;
 const VIEW_LAYOUT_DOCUMENT = 0;
 const ACCESS_LEVEL_READ_ONLY = 10;
@@ -22,7 +22,7 @@ const ACCESS_LEVEL_READ_AND_WRITE = 30;
 const ACCESS_LEVEL_FULL_ACCESS = 50;
 const SPACE_MEMBER_ROLE_OWNER = 'owner';
 const SPACE_MEMBER_ROLE_MEMBER = 'member';
-const SEEDED_PRIVATE_SPACE_MEMBER_DEFAULT_ACCESS = ACCESS_LEVEL_READ_ONLY;
+const SEEDED_RESTRICTED_CUSTOM_SPACE_MEMBER_DEFAULT_ACCESS = ACCESS_LEVEL_READ_ONLY;
 
 const SPM_SPACES = {
   'default space': {
@@ -32,6 +32,8 @@ const SPM_SPACES = {
     name: 'General',
   },
   'private space': {
+    // Historical fixture label; the server seeds this as a restricted Custom
+    // space so explicit member and group roster behavior can be exercised.
     viewId: 'bf0d2d13-6466-4420-a0c0-d4a225f882dc',
     name: 'spm0622 Private Matrix Space',
   },
@@ -98,6 +100,7 @@ type SpacePermissionSettingsPayload = {
   visibility: string;
   owner_access_level: number;
   member_default_access_level: number;
+  everyone_else_access_level?: number | null;
   invite_policy: string;
   sidebar_edit_policy: string;
   invite_link_enabled: boolean;
@@ -119,7 +122,7 @@ type ScenarioState = {
   currentSeededPage?: SeededSpmPage;
   temporarySpace?: TemporarySpace;
   addedSpaceMemberEmails: Set<string>;
-  restorePrivateSpaceMemberDefaultAccess?: boolean;
+  restoreRestrictedCustomSpaceMemberDefaultAccess?: boolean;
 };
 
 const stateByPage = new WeakMap<Page, ScenarioState>();
@@ -138,7 +141,7 @@ After(async ({ page, request }) => {
   const needsCleanup =
     state.addedSpaceMemberEmails.size > 0 ||
     Boolean(state.temporarySpace) ||
-    Boolean(state.restorePrivateSpaceMemberDefaultAccess);
+    Boolean(state.restoreRestrictedCustomSpaceMemberDefaultAccess);
 
   if (!needsCleanup) return;
 
@@ -154,9 +157,9 @@ After(async ({ page, request }) => {
   const cleanupSpaceId = state.currentSpaceId || temporarySpace?.spaceId || SPM_SPACES['private space'].viewId;
   const cleanupErrors: string[] = [];
 
-  if (state.restorePrivateSpaceMemberDefaultAccess) {
-    await restoreSeededPrivateSpaceMemberDefaultAccess(request, token, workspaceId).catch((error) => {
-      cleanupErrors.push(`seeded private-space default access: ${String(error)}`);
+  if (state.restoreRestrictedCustomSpaceMemberDefaultAccess) {
+    await restoreSeededRestrictedCustomSpaceMemberDefaultAccess(request, token, workspaceId).catch((error) => {
+      cleanupErrors.push(`seeded restricted Custom-space default access: ${String(error)}`);
     });
   }
 
@@ -269,9 +272,8 @@ Then('the directly opened seeded spm0622 page is {string}', async ({ page }, acc
       await selectFirstEditorWord(page, editor);
       await waitForSelectionEffects(page);
       await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible();
-      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAttribute(
-        'aria-disabled',
-        'true'
+      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAccessibleName(
+        /don't have permission to comment/i
       );
       break;
     case 'denied':
@@ -301,11 +303,11 @@ async function waitForSelectionEffects(page: Page) {
   );
 }
 
-When('I create a temporary seeded spm0622 private space', async ({ page, request }) => {
+When('I create a temporary seeded spm0622 restricted Custom space', async ({ page, request }) => {
   const state = await ensureWorkspaceContext(page, request);
   const suffix = Date.now().toString(36);
-  const spaceName = `${TEMPORARY_PRIVATE_SPACE_PREFIX} ${suffix}`;
-  const pageTitle = `${TEMPORARY_PRIVATE_PAGE_PREFIX} ${suffix}`;
+  const spaceName = `${TEMPORARY_RESTRICTED_CUSTOM_SPACE_PREFIX} ${suffix}`;
+  const pageTitle = `${TEMPORARY_RESTRICTED_CUSTOM_PAGE_PREFIX} ${suffix}`;
   const space = await postApi<{ view_id: string }>(
     request,
     state.ownerToken,
@@ -315,6 +317,22 @@ When('I create a temporary seeded spm0622 private space', async ({ page, request
       space_icon: 'lock',
       space_icon_color: '#555555',
       space_permission: SPACE_PERMISSION_PRIVATE,
+    }
+  );
+  const privatePermission = await getApi<SpacePermissionResponsePayload>(
+    request,
+    state.ownerToken,
+    `/api/workspace/${state.workspaceId}/spaces/${space.view_id}/permission`
+  );
+
+  await patchApi<SpacePermissionResponsePayload>(
+    request,
+    state.ownerToken,
+    `/api/workspace/${state.workspaceId}/spaces/${space.view_id}/permission`,
+    {
+      ...privatePermission.permission,
+      visibility: 'custom',
+      everyone_else_access_level: null,
     }
   );
   const pageResponse = await postApi<{ view_id: string }>(
@@ -352,24 +370,33 @@ When('I open the seeded spm0622 {string} manage space panel', async ({ page }, s
 
 When('I change the Manage Space members default access to {string}', async ({ page }, accessLabelValue: string) => {
   const modal = manageSpaceModal(page);
-  const row = modal.getByTestId('manage-space-members-default-access-row');
-
-  await expect(row).toBeVisible({ timeout: 15000 });
-  await row.getByRole('button', { name: /Can view|Can view and comment|Can edit|Full access/ }).click();
-  await page.getByRole('menuitem', { name: new RegExp(`^${escapeRegExp(accessLabelValue)}$`) }).click();
-
+  const access = accessLevelFromLabel(accessLabelValue);
+  const trigger = modal.getByTestId('manage-space-custom-members-access');
   const state = requireState(page);
+
+  if (!state.workspaceId || !state.currentSpaceId) {
+    throw new Error('The current seeded space must be open before changing its collective access');
+  }
+  const updatePath = `/api/workspace/${state.workspaceId}/spaces/${state.currentSpaceId}`;
+
+  await expect(trigger).toBeVisible({ timeout: 15000 });
+  await expect(trigger).toBeEnabled({ timeout: 15000 });
+  await trigger.click();
+
+  const updateResponse = page.waitForResponse(
+    (response) => response.request().method() === 'PATCH' && new URL(response.url()).pathname === updatePath
+  );
+
+  await page.getByTestId(`manage-space-custom-members-access-option-${access}`).click();
+  expect((await updateResponse).ok()).toBe(true);
+  await expect(trigger).toHaveText(accessLabelValue, { timeout: 15000 });
 
   if (
     state.currentSpaceId === SPM_SPACES['private space'].viewId &&
-    accessLevelFromLabel(accessLabelValue) !== SEEDED_PRIVATE_SPACE_MEMBER_DEFAULT_ACCESS
+    access !== SEEDED_RESTRICTED_CUSTOM_SPACE_MEMBER_DEFAULT_ACCESS
   ) {
-    state.restorePrivateSpaceMemberDefaultAccess = true;
+    state.restoreRestrictedCustomSpaceMemberDefaultAccess = true;
   }
-
-  await ModalSelectors.okButton(page).click();
-  await expect(modal).toHaveCount(0, { timeout: 15000 });
-  await page.waitForTimeout(1500);
 });
 
 When('I open the Manage Space members tab', async ({ page }) => {
@@ -425,7 +452,7 @@ When('I add seeded spm0622 {string} to the current space', async ({ page }, acco
 });
 
 When(
-  'I sign in as seeded spm0622 {string} and reopen the temporary private space Manage Space members tab',
+  'I sign in as seeded spm0622 {string} and reopen the temporary restricted Custom space Manage Space members tab',
   async ({ page }, accountAliasValue: string) => {
     const temporarySpace = requireTemporarySpace(page);
 
@@ -447,43 +474,52 @@ When('I remove seeded spm0622 {string} from the current space', async ({ page },
   requireState(page).addedSpaceMemberEmails.delete(email);
 });
 
-Then('seeded spm0622 {string} cannot see the temporary private space', async ({ page }, accountAliasValue: string) => {
-  const temporarySpace = requireTemporarySpace(page);
+Then(
+  'seeded spm0622 {string} cannot see the temporary restricted Custom space',
+  async ({ page }, accountAliasValue: string) => {
+    const temporarySpace = requireTemporarySpace(page);
 
-  await signInSeededSpmAccount(page, accountAliasValue);
-  await waitForResolvedFolderOutline(page);
-  await expect(SpaceSelectors.itemByName(page, temporarySpace.spaceName)).toHaveCount(0, { timeout: 15000 });
-});
-
-Then('seeded spm0622 {string} can see the temporary private space', async ({ page }, accountAliasValue: string) => {
-  const temporarySpace = requireTemporarySpace(page);
-
-  await signInSeededSpmAccount(page, accountAliasValue);
-  await expect(SpaceSelectors.itemByName(page, temporarySpace.spaceName)).toBeVisible({ timeout: 30000 });
-});
-
-Then('seeded spm0622 {string} can use the temporary private page', async ({ page }, accountAliasValue: string) => {
-  const temporarySpace = requireTemporarySpace(page);
-  const workspaceId = requireWorkspaceId(page);
-
-  await expectCurrentSeededAccount(page, accountAliasValue);
-  await page.goto(`/app/${workspaceId}/${temporarySpace.pageId}`, { waitUntil: 'domcontentloaded' });
-  await expect
-    .poll(() => new URL(page.url()).pathname, { timeout: 30000 })
-    .toBe(`/app/${workspaceId}/${temporarySpace.pageId}`);
-
-  const titleInput = PageSelectors.titleInput(page).first();
-  const editor = EditorSelectors.firstEditor(page);
-
-  await expect(titleInput).toBeVisible({ timeout: 15000 });
-  await expect(titleInput).toHaveText(temporarySpace.pageTitle);
-  await expect(titleInput).toBeEnabled();
-  await expect(editor).toBeVisible({ timeout: 30000 });
-  await expect(editor).toHaveAttribute('contenteditable', 'true');
-});
+    await signInSeededSpmAccount(page, accountAliasValue);
+    await waitForResolvedFolderOutline(page);
+    await expect(SpaceSelectors.itemByName(page, temporarySpace.spaceName)).toHaveCount(0, { timeout: 15000 });
+  }
+);
 
 Then(
-  'seeded spm0622 {string} receives no access to the temporary private page',
+  'seeded spm0622 {string} can see the temporary restricted Custom space',
+  async ({ page }, accountAliasValue: string) => {
+    const temporarySpace = requireTemporarySpace(page);
+
+    await signInSeededSpmAccount(page, accountAliasValue);
+    await expect(SpaceSelectors.itemByName(page, temporarySpace.spaceName)).toBeVisible({ timeout: 30000 });
+  }
+);
+
+Then(
+  'seeded spm0622 {string} can use the temporary restricted Custom page',
+  async ({ page }, accountAliasValue: string) => {
+    const temporarySpace = requireTemporarySpace(page);
+    const workspaceId = requireWorkspaceId(page);
+
+    await expectCurrentSeededAccount(page, accountAliasValue);
+    await page.goto(`/app/${workspaceId}/${temporarySpace.pageId}`, { waitUntil: 'domcontentloaded' });
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 30000 })
+      .toBe(`/app/${workspaceId}/${temporarySpace.pageId}`);
+
+    const titleInput = PageSelectors.titleInput(page).first();
+    const editor = EditorSelectors.firstEditor(page);
+
+    await expect(titleInput).toBeVisible({ timeout: 15000 });
+    await expect(titleInput).toHaveText(temporarySpace.pageTitle);
+    await expect(titleInput).toBeEnabled();
+    await expect(editor).toBeVisible({ timeout: 30000 });
+    await expect(editor).toHaveAttribute('contenteditable', 'true');
+  }
+);
+
+Then(
+  'seeded spm0622 {string} receives no access to the temporary restricted Custom page',
   async ({ page }, accountAliasValue: string) => {
     const temporarySpace = requireTemporarySpace(page);
     const workspaceId = requireWorkspaceId(page);
@@ -564,7 +600,7 @@ function requireTemporarySpace(page: Page): TemporarySpace {
   const temporarySpace = requireState(page).temporarySpace || (page as PageWithTemporarySpace).__spmTemporarySpace;
 
   if (!temporarySpace) {
-    throw new Error('No temporary seeded spm0622 private space has been created');
+    throw new Error('No temporary seeded spm0622 restricted Custom space has been created');
   }
 
   return temporarySpace;
@@ -654,7 +690,7 @@ async function cleanupSpaceMember(
   await deleteApi(request, token, `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`);
 }
 
-async function restoreSeededPrivateSpaceMemberDefaultAccess(
+async function restoreSeededRestrictedCustomSpaceMemberDefaultAccess(
   request: APIRequestContext,
   token: string,
   workspaceId: string
@@ -667,7 +703,7 @@ async function restoreSeededPrivateSpaceMemberDefaultAccess(
   );
   const permission = {
     ...response.permission,
-    member_default_access_level: SEEDED_PRIVATE_SPACE_MEMBER_DEFAULT_ACCESS,
+    member_default_access_level: SEEDED_RESTRICTED_CUSTOM_SPACE_MEMBER_DEFAULT_ACCESS,
   };
 
   await patchApi<SpacePermissionResponsePayload>(
@@ -676,10 +712,14 @@ async function restoreSeededPrivateSpaceMemberDefaultAccess(
     `/api/workspace/${workspaceId}/spaces/${spaceId}/permission`,
     permission
   );
-  await restoreSeededPrivateSpaceMembers(request, token, workspaceId);
+  await restoreSeededRestrictedCustomSpaceMembers(request, token, workspaceId);
 }
 
-async function restoreSeededPrivateSpaceMembers(request: APIRequestContext, token: string, workspaceId: string) {
+async function restoreSeededRestrictedCustomSpaceMembers(
+  request: APIRequestContext,
+  token: string,
+  workspaceId: string
+) {
   const spaceId = SPM_SPACES['private space'].viewId;
   const targets: SpaceMemberRestoreTarget[] = [
     {
@@ -695,7 +735,7 @@ async function restoreSeededPrivateSpaceMembers(request: APIRequestContext, toke
     {
       email: SPM_ACCOUNTS['member private'],
       role: SPACE_MEMBER_ROLE_MEMBER,
-      accessLevel: ACCESS_LEVEL_READ_AND_WRITE,
+      accessLevel: ACCESS_LEVEL_READ_ONLY,
     },
   ];
 
@@ -703,7 +743,9 @@ async function restoreSeededPrivateSpaceMembers(request: APIRequestContext, toke
     const uid = await findWorkspaceMemberUid(request, token, workspaceId, target.email);
 
     if (!uid) {
-      throw new Error(`Could not restore seeded private space member "${target.email}": workspace uid not found`);
+      throw new Error(
+        `Could not restore seeded restricted Custom space member "${target.email}": workspace uid not found`
+      );
     }
 
     await patchApi(request, token, `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`, {
@@ -1012,8 +1054,4 @@ function spaceRoleLabel(role: string): string {
     default:
       throw new Error(`Unsupported space role: ${role}`);
   }
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

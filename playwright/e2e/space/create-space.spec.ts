@@ -72,11 +72,13 @@ test.describe('Space Creation Tests', () => {
       // Step 6: Confirmation closes Create Space and opens the initial page.
       await expect(createSpaceModal).toBeHidden({ timeout: 20000 });
       await expect(renamedSpace).toBeVisible({ timeout: 20000 });
-      await expect(page.getByTestId('view-modal-close')).toBeVisible({ timeout: 20000 });
-      await expect(PageSelectors.titleInput(page)).toBeVisible({ timeout: 20000 });
+      const viewModal = page.getByRole('dialog').filter({ has: page.getByTestId('view-modal-close') });
+
+      await expect(viewModal.getByTestId('view-modal-close')).toBeVisible({ timeout: 20000 });
+      await expect(viewModal.getByTestId('page-title-input')).toBeVisible({ timeout: 20000 });
 
       // Step 7: The created space remains present and interactive.
-      await page.getByTestId('view-modal-close').click();
+      await viewModal.getByTestId('view-modal-close').click();
       const expandedMarker = renamedSpace.getByTestId('space-expanded');
       const wasExpanded = (await expandedMarker.getAttribute('data-expanded')) === 'true';
 
