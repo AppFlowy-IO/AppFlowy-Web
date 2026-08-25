@@ -161,6 +161,13 @@ When(
       storageState: await page.context().storageState({ indexedDB: true }),
       viewport: { width: 1440, height: 900 },
     });
+
+    // The normal sign-in helper installs this context-level flag before the
+    // production build boots. A manually created peer context must do the same
+    // so CollaborativeEditor exposes its E2E editor registry.
+    await peerContext.addInitScript(() => {
+      (window as Window & { Cypress?: boolean }).Cypress = true;
+    });
     const peerPage = await peerContext.newPage();
 
     state.peerContext = peerContext;
