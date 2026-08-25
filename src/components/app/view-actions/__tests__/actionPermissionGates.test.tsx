@@ -1,7 +1,6 @@
 import { describe, expect, it, jest, beforeEach } from '@jest/globals';
 import { render, screen } from '@testing-library/react';
 
-import { Role } from '@/application/types';
 import MoreActionsContent from '@/components/app/header/MoreActionsContent';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
@@ -10,7 +9,6 @@ import type { ReactNode } from 'react';
 
 const mockUseViewActionPermissions = jest.fn();
 const mockUseSpaceActionPermissions = jest.fn();
-let mockWorkspaceRole = Role.Member;
 const mockDocumentView = {
   children: [],
   extra: null,
@@ -98,11 +96,6 @@ jest.mock('@/components/app/app.hooks', () => ({
   useCurrentWorkspaceId: () => 'workspace-1',
   useLoadViewChildren: () => jest.fn(),
   useRefreshOutline: () => jest.fn(),
-  useUserWorkspaceInfo: () => ({
-    selectedWorkspace: {
-      role: mockWorkspaceRole,
-    },
-  }),
 }));
 
 jest.mock('@/components/app/contexts/SyncInternalContext', () => ({
@@ -143,7 +136,6 @@ describe('view action permission gates', () => {
       hasLoadedSpaceActionPermissions: true,
       isLoadingSpaceActionPermissions: false,
     });
-    mockWorkspaceRole = Role.Member;
   });
 
   it('keeps page duplicate available for edit access while hiding full-management actions', () => {
@@ -179,12 +171,11 @@ describe('view action permission gates', () => {
     expect(screen.queryByTestId('more-page-lock')).toBeNull();
   });
 
-  it('keeps space duplicate for members while hiding selected-space management and workspace create', () => {
+  it('hides both owner actions when canonical space-management authority is denied', () => {
     render(
       <MoreSpaceActions
         view={mockSpaceView}
         onClose={jest.fn()}
-        canDuplicateActions
         canManageActions={false}
         canOpenManageActions={false}
         isLoadingActions={false}
@@ -192,61 +183,63 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.queryByTestId('space-action-manage')).toBeNull();
-    expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
+    expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
     expect(screen.queryByTestId('create-new-space-button')).toBeNull();
     expect(screen.queryByTestId('space-action-delete')).toBeNull();
   });
 
-  it('hides space duplicate and workspace create for guests without selected-space management permission', () => {
-    mockWorkspaceRole = Role.Guest;
-
+  it('shows Manage and Duplicate together when canonical space-management authority is granted', () => {
     render(
       <MoreSpaceActions
         view={mockSpaceView}
         onClose={jest.fn()}
-        canDuplicateActions
         canManageActions={false}
-        canOpenManageActions={false}
+        canOpenManageActions
         isLoadingActions={false}
       />
     );
 
-    expect(screen.queryByTestId('create-new-space-button')).toBeNull();
-    expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
-  });
-
-  it('lets sidebar editors open Manage Space without exposing Delete', () => {
-    mockUseViewActionPermissions.mockReturnValue({
-      canCreateViewActions: true,
-      canManageViewActions: false,
-      hasLoadedViewActionPermissions: true,
-      isLoadingViewActionPermissions: false,
-    });
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: true,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
-    });
-
-    render(
-      <ViewActionsPopover
-        view={mockSpaceView}
-        popoverType={{ category: 'space', type: 'more' }}
-        open
-        onOpenChange={jest.fn()}
-      >
-        <button type='button'>trigger</button>
-      </ViewActionsPopover>
-    );
-
-    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true, false);
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
+    expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
     expect(screen.queryByTestId('space-action-delete')).toBeNull();
   });
 
-  it('lets invite-only members open Manage Space without exposing Delete', () => {
+  it.each(['sidebar editor', 'invite-only member', 'member manager'])(
+    'hides Manage and Duplicate from a %s without canonical owner authority',
+    () => {
+      mockUseViewActionPermissions.mockReturnValue({
+        canCreateViewActions: true,
+        canManageViewActions: false,
+        hasLoadedViewActionPermissions: true,
+        isLoadingViewActionPermissions: false,
+      });
+      mockUseSpaceActionPermissions.mockReturnValue({
+        canOpenManageSpace: false,
+        hasLoadedSpaceActionPermissions: true,
+        isLoadingSpaceActionPermissions: false,
+      });
+
+      render(
+        <ViewActionsPopover
+          view={mockSpaceView}
+          popoverType={{ category: 'space', type: 'more' }}
+          open
+          onOpenChange={jest.fn()}
+        >
+          <button type='button'>trigger</button>
+        </ViewActionsPopover>
+      );
+
+      expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
+      expect(screen.queryByTestId('space-action-manage')).toBeNull();
+      expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
+      expect(screen.queryByTestId('space-action-delete')).toBeNull();
+    }
+  );
+
+  it('shows Manage and Duplicate for canonical owners even without generic create/delete permission', () => {
     mockUseViewActionPermissions.mockReturnValue({
-      canCreateViewActions: true,
+      canCreateViewActions: false,
       canManageViewActions: false,
       hasLoadedViewActionPermissions: true,
       isLoadingViewActionPermissions: false,
@@ -269,34 +262,7 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
-    expect(screen.queryByTestId('space-action-delete')).toBeNull();
-  });
-
-  it('lets member managers open Manage Space without exposing Delete', () => {
-    mockUseViewActionPermissions.mockReturnValue({
-      canCreateViewActions: true,
-      canManageViewActions: false,
-      hasLoadedViewActionPermissions: true,
-      isLoadingViewActionPermissions: false,
-    });
-    mockUseSpaceActionPermissions.mockReturnValue({
-      canOpenManageSpace: true,
-      hasLoadedSpaceActionPermissions: true,
-      isLoadingSpaceActionPermissions: false,
-    });
-
-    render(
-      <ViewActionsPopover
-        view={mockSpaceView}
-        popoverType={{ category: 'space', type: 'more' }}
-        open
-        onOpenChange={jest.fn()}
-      >
-        <button type='button'>trigger</button>
-      </ViewActionsPopover>
-    );
-
-    expect(screen.getByTestId('space-action-manage')).toBeTruthy();
+    expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
     expect(screen.queryByTestId('space-action-delete')).toBeNull();
   });
 
@@ -325,8 +291,9 @@ describe('view action permission gates', () => {
     );
 
     expect(screen.queryByTestId('space-action-manage')).toBeNull();
+    expect(screen.queryByTestId('space-action-duplicate')).toBeNull();
     expect(screen.getByTestId('space-action-delete')).toBeTruthy();
-    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true, true);
+    expect(mockUseSpaceActionPermissions).toHaveBeenCalledWith(mockSpaceView, true);
   });
 
   it('does not mount add actions until effective permissions allow mutations', () => {

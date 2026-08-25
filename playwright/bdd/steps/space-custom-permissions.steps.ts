@@ -2,7 +2,7 @@ import { APIRequestContext, expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
-import { EditorSelectors, PageSelectors, SpaceSelectors } from '../../support/selectors';
+import { EditorSelectors, PageSelectors, ShareSelectors, SpaceSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
@@ -438,6 +438,36 @@ Then('the Manage Space panel has no footer actions', async ({ page }) => {
 
   await expect(modal.getByTestId('modal-ok-button')).toHaveCount(0);
   await expect(modal.getByRole('button', { name: 'Cancel', exact: true })).toHaveCount(0);
+});
+
+Then('the Private Manage Space panel shows owner-only access and roster', async ({ page }) => {
+  const modal = manageSpaceModal(page);
+
+  await expect(modal.getByTestId('manage-space-private-access-card')).toContainText('Private access');
+  await expect(modal.getByTestId('manage-space-private-access-card')).toContainText('Only you can access this space.');
+  await modal.getByRole('tab', { name: 'Members' }).click();
+  await expect(modal.getByTestId('private-space-members-info')).toHaveText(
+    'Only you can access a private space. Pages within it can still be shared with collaborators.'
+  );
+  const ownerRow = modal.getByTestId('private-space-owner-row');
+
+  await expect(ownerRow).toContainText('Workspace owner');
+  await expect(modal.getByTestId('private-space-owner-locked-role')).toHaveText('Space owner');
+  await expect(ownerRow.getByRole('button')).toHaveCount(0);
+  await expect(modal.getByTestId('workspace-member-inline-search-input')).toHaveCount(0);
+  await expect(modal.getByTestId('manage-space-public-access-card')).toHaveCount(0);
+  await expect(modal.getByTestId('manage-space-custom-permissions-card')).toHaveCount(0);
+  await expect(modal.getByTestId('manage-space-fallback-access-card')).toHaveCount(0);
+  await expect(modal.getByTestId('manage-space-members-default-access-row')).toHaveCount(0);
+  await expect(modal.getByTestId('manage-space-workspace-members-access')).toHaveCount(0);
+  await expect(modal.getByTestId('manage-space-custom-members-access')).toHaveCount(0);
+});
+
+Then('the seeded scp0822 Private page sharing controls are enabled', async ({ page }) => {
+  const inviteInput = ShareSelectors.emailTagInput(page).locator('input[type="text"]');
+
+  await expect(inviteInput).toBeVisible({ timeout: 15000 });
+  await expect(inviteInput).toBeEditable();
 });
 
 Then(
@@ -953,20 +983,28 @@ async function restoreSeededShape(request: APIRequestContext, fixture: FixtureCo
     );
   }
 
-  // The public and private spaces carry no explicit rows besides the owner and no groups.
-  for (const space of [SCP_SPACES['public space'], SCP_SPACES['private space']]) {
-    const spaceRoster = await listSpaceMembers(request, fixture, space.viewId);
+  // Public follows the workspace but may retain stale direct rows after a test transition.
+  // Private has no roster API: the transition itself tombstones every non-creator principal.
+  const publicSpace = SCP_SPACES['public space'];
+  const publicRoster = await listSpaceMembers(request, fixture, publicSpace.viewId);
 
-    for (const row of spaceRoster.members) {
-      const uid = String(row.uid);
+  for (const row of publicRoster.members) {
+    const uid = String(row.uid);
 
-      if (uid === fixture.uids.owner || row.source === 'workspace_default' || row.source === 'page_share') continue;
-      await deleteApi(request, fixture.ownerToken, `${spaceMembersApiPath(fixture.workspaceId, space.viewId)}/${uid}`);
-    }
+    if (uid === fixture.uids.owner || row.source === 'workspace_default' || row.source === 'page_share') continue;
+    await deleteApi(
+      request,
+      fixture.ownerToken,
+      `${spaceMembersApiPath(fixture.workspaceId, publicSpace.viewId)}/${uid}`
+    );
+  }
 
-    for (const grant of await listSpaceGroups(request, fixture, space.viewId)) {
-      await deleteApi(request, fixture.ownerToken, spaceGroupApiPath(fixture.workspaceId, space.viewId, grant.group_id));
-    }
+  for (const grant of await listSpaceGroups(request, fixture, publicSpace.viewId)) {
+    await deleteApi(
+      request,
+      fixture.ownerToken,
+      spaceGroupApiPath(fixture.workspaceId, publicSpace.viewId, grant.group_id)
+    );
   }
 
   for (const space of Object.values(SCP_SPACES)) {

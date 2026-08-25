@@ -3,26 +3,24 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { PageService } from '@/application/services/domains';
-import { Role, View } from '@/application/types';
+import { View } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useRefreshOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceId, useRefreshOutline } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
 function MoreSpaceActions({
   view,
   onClose,
-  canDuplicateActions,
   canManageActions,
   canOpenManageActions,
   isLoadingActions,
 }: {
   view: View;
   onClose: () => void;
-  canDuplicateActions: boolean;
   canManageActions: boolean;
   canOpenManageActions: boolean;
   isLoadingActions: boolean;
@@ -30,11 +28,8 @@ function MoreSpaceActions({
   const { t } = useTranslation();
   const { openDeleteSpaceModal, openManageSpaceModal } = useAppOverlayContext();
   const workspaceId = useCurrentWorkspaceId();
-  const userWorkspaceInfo = useUserWorkspaceInfo();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const refreshOutline = useRefreshOutline();
-  const workspaceRole = userWorkspaceInfo?.selectedWorkspace?.role;
-  const canCreateSpace = workspaceRole === Role.Owner || workspaceRole === Role.Member;
 
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;
@@ -65,7 +60,7 @@ function MoreSpaceActions({
           {t('space.manage')}
         </DropdownMenuItem>
       )}
-      {canDuplicateActions && canCreateSpace && (
+      {canOpenManageActions && (
         <DropdownMenuItem
           data-testid={'space-action-duplicate'}
           onSelect={handleDuplicateClick}

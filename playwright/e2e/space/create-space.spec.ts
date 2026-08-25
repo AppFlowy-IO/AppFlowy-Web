@@ -1,10 +1,5 @@
 import { test, expect } from '@playwright/test';
-import {
-  PageSelectors,
-  SpaceSelectors,
-  SidebarSelectors,
-  ModalSelectors,
-} from '../../support/selectors';
+import { PageSelectors, SpaceSelectors, SidebarSelectors, ModalSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 
@@ -24,10 +19,7 @@ test.describe('Space Creation Tests', () => {
   test.describe('Create New Space', () => {
     test('should create a new space successfully', async ({ page, request }) => {
       page.on('pageerror', (err) => {
-        if (
-          err.message.includes('No workspace or service found') ||
-          err.message.includes('View not found')
-        ) {
+        if (err.message.includes('No workspace or service found') || err.message.includes('View not found')) {
           return;
         }
       });
@@ -54,45 +46,42 @@ test.describe('Space Creation Tests', () => {
       await expect(ModalSelectors.createNewSpaceButton(page)).toBeVisible({ timeout: 5000 });
       await ModalSelectors.createNewSpaceButton(page).click();
 
-      // Step 4: Fill in the space details
+      // Step 4: Creation uses the same full settings panel as Manage Space,
+      // but remains a local draft until the explicit Create action.
       const createSpaceModal = SpaceSelectors.createSpaceModal(page);
 
-      await expect(createSpaceModal).toBeVisible({ timeout: 5000 });
-      const nameInputContainer = createSpaceModal.getByTestId('space-name-input');
-      await expect(nameInputContainer).toBeVisible();
-      const nameInput = nameInputContainer.locator('input');
-      await nameInput.clear();
+      await expect(createSpaceModal).toBeVisible({ timeout: 20000 });
+      await expect(SpaceSelectors.manageSpaceModal(page)).toHaveCount(0);
+      await expect(createSpaceModal.getByTestId('space-settings-panel')).toBeVisible();
+      await expect(createSpaceModal.getByText('Create space', { exact: true })).toBeVisible();
+      await expect(createSpaceModal.getByTestId('manage-space-public-access-card')).toBeVisible();
+
+      const nameInput = SpaceSelectors.spaceNameInput(page);
+
+      await expect(nameInput).toBeEnabled();
+      await expect(nameInput).toHaveValue('General');
+
+      // Step 5: Editing the draft does not add it to the sidebar. Only Create
+      // persists the space and its initial document.
       await nameInput.fill(spaceName);
+      const renamedSpace = SpaceSelectors.itemByName(page, spaceName);
 
-      // Step 5: Save the new space
-      const saveButton = createSpaceModal.getByTestId('modal-ok-button');
+      await expect(renamedSpace).toHaveCount(0);
+      await createSpaceModal.getByTestId('create-space-submit').click();
 
-      await expect(saveButton).toBeVisible();
-      await saveButton.click();
-      await page.waitForTimeout(3000);
+      // Step 6: Confirmation closes Create Space and opens the initial page.
+      await expect(createSpaceModal).toBeHidden({ timeout: 20000 });
+      await expect(renamedSpace).toBeVisible({ timeout: 20000 });
+      await expect(page.getByTestId('view-modal-close')).toBeVisible({ timeout: 20000 });
+      await expect(PageSelectors.titleInput(page)).toBeVisible({ timeout: 20000 });
 
-      // Step 6: Verify the new space appears in the sidebar
-      // Check that the new space exists — retry with wait if not immediately visible
-      const spaceNames = SpaceSelectors.names(page);
-      const spaceFilter = spaceNames.filter({ hasText: spaceName });
+      // Step 7: The created space remains present and interactive.
+      await page.getByTestId('view-modal-close').click();
+      const expandedMarker = renamedSpace.getByTestId('space-expanded');
+      const wasExpanded = (await expandedMarker.getAttribute('data-expanded')) === 'true';
 
-      const spaceCount = await spaceFilter.count();
-      if (spaceCount === 0) {
-        // Sometimes the space might be created but not immediately visible
-        await page.waitForTimeout(2000);
-      }
-
-      // Verify space exists (either exact name or contains 'Test Space')
-      const allSpaceTexts = await spaceNames.allTextContents();
-      const trimmedNames = allSpaceTexts.map((t) => t.trim());
-      const spaceExists = trimmedNames.some(
-        (name) => name === spaceName || name.includes('Test Space')
-      );
-      expect(spaceExists).toBe(true);
-
-      // Step 7: Verify the new space is clickable
-      await spaceNames.filter({ hasText: spaceName }).first().click({ force: true });
-      await page.waitForTimeout(1000);
+      await renamedSpace.getByTestId('space-name').click();
+      await expect(expandedMarker).toHaveAttribute('data-expanded', String(!wasExpanded));
     });
   });
 });

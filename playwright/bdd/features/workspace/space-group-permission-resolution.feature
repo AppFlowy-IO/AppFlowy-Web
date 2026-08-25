@@ -8,7 +8,7 @@ Feature: Seeded space group permission resolution
     Given the seeded stg0822 space group permission fixture exists
 
   # nathan ∈ group One (space member, Can view) + group Two (page share on Page A, Can edit).
-  # Group membership also makes the private space discoverable in the sidebar.
+  # Group membership also makes the restricted Custom space discoverable in the sidebar.
   Scenario: Member of both groups gets the highest permission on the shared page
     Given I sign in as seeded stg0822 "nathan"
     When I open the seeded stg0822 workspace
@@ -28,7 +28,7 @@ Feature: Seeded space group permission resolution
     When I directly open the seeded stg0822 "group page B"
     Then the directly opened seeded stg0822 page is "read-only"
 
-  # outsider is a workspace member outside both groups: the private space stays invisible.
+  # outsider is a workspace member outside both groups: the restricted Custom space stays invisible.
   Scenario: Workspace member outside both groups has no access
     Given I sign in as seeded stg0822 "outsider"
     When I open the seeded stg0822 workspace
@@ -73,7 +73,7 @@ Feature: Seeded space group permission resolution
     Then the open seeded stg0822 page becomes "editable" without reload
 
   # Live refresh: revoking group One's space grant must deny the open page and drop the
-  # private space from the sidebar in place; re-granting it restores both.
+  # restricted Custom space from the sidebar in place; re-granting it restores both.
   # Mutating: the After hook always restores group One to Member / Can view via API.
   @live-refresh
   Scenario: Removing the group from the space hides it live and restores it
@@ -89,14 +89,15 @@ Feature: Seeded space group permission resolution
     Then the seeded stg0822 "group space A" space navigation becomes "visible" without reload
     And the open seeded stg0822 page becomes "read-only" without reload
 
-  # Live refresh: changing group One's space access level re-probes the open page in place.
-  # Mutating: the After hook always restores group One to Member / Can view via API.
+  # Custom Member principals share one collective access level; an individual group cannot carry
+  # a different level. Changing that collective level re-probes the open page in place.
+  # Mutating: the After hook restores the Custom member level to Can view via API.
   @live-refresh
-  Scenario: Changing the space group access updates an open page live
+  Scenario: Changing Custom space member access updates an open page live
     Given I sign in as seeded stg0822 "reader"
     When I directly open the seeded stg0822 "group page B"
     Then the directly opened seeded stg0822 page is "read-only"
-    When the owner changes the space access of seeded stg0822 "group one" on the seeded stg0822 "group space A" space to "Can edit" via the API
+    When the owner changes the Custom member access of the seeded stg0822 "group space A" space to "Can edit" via the API
     Then the open seeded stg0822 page becomes "editable" without reload
-    When the owner changes the space access of seeded stg0822 "group one" on the seeded stg0822 "group space A" space to "Can view" via the API
+    When the owner changes the Custom member access of the seeded stg0822 "group space A" space to "Can view" via the API
     Then the open seeded stg0822 page becomes "read-only" without reload

@@ -31,7 +31,7 @@ Feature: Eva page action permissions
     And I open Eva's page more menu
     Then Eva's page more menu shows only "Find and replace"
 
-  Scenario: Eva does not see workspace creation from a selected-space more menu
+  Scenario: A space member sees neither Manage Space nor Duplicate Space
     Given I sign in as seeded Eva
     When I open Eva's space more menu for "Annie space"
-    Then Eva's space more menu shows only "Duplicate Space"
+    Then Eva's space more menu shows only ""
