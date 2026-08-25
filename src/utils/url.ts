@@ -25,6 +25,7 @@ export function isSingleURLText(input: string) {
 }
 
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const UUID_VALUE = new RegExp(`^${UUID_PATTERN}$`, 'i');
 const APPFLOWY_PAGE_PATH = new RegExp(`^/app/(${UUID_PATTERN})/(${UUID_PATTERN})/?$`, 'i');
 const APPFLOWY_WORKSPACE_PATH = new RegExp(`^/app/(${UUID_PATTERN})(?:/|$)`, 'i');
 
@@ -32,6 +33,8 @@ export interface AppFlowyPageLink {
   workspaceId: string;
   viewId: string;
   blockId?: string;
+  rowId?: string;
+  databaseViewId?: string;
 }
 
 /** Workspace id segment of an /app route pathname, if present. */
@@ -46,9 +49,10 @@ export function workspaceIdFromAppPathname(pathname: string): string | undefined
  * live folder metadata (including database tab renames) instead of freezing
  * the database container's HTML title into an external-link preview.
  *
- * Only URLs a page mention can fully represent qualify: query params other
- * than blockId (e.g. `r` row targets, `v` database tab selection) carry
- * targeting a mention would silently drop, so those URLs stay plain links.
+ * Database-row routes keep their row and selected database-view targets so
+ * Paste as → Mention can resolve the row title and build a database-row
+ * reference. A `v` tab target without a row still cannot be represented by a
+ * page mention and remains a plain link.
  */
 export function parseAppFlowyPageLink(input: string, appHostname: string): AppFlowyPageLink | undefined {
   const normalized = processUrl(input);
@@ -64,11 +68,31 @@ export function parseAppFlowyPageLink(input: string, appHostname: string): AppFl
 
     if (!match) return;
 
+    const blockId = url.searchParams.get('blockId')?.trim();
+    const rowId = url.searchParams.get('r')?.trim();
+    const databaseViewId = url.searchParams.get('v')?.trim();
+
+    if (rowId) {
+      if (blockId) return;
+      if (!UUID_VALUE.test(rowId)) return;
+
+      for (const key of url.searchParams.keys()) {
+        if (key !== 'r' && key !== 'v') return;
+      }
+
+      if (databaseViewId && !UUID_VALUE.test(databaseViewId)) return;
+
+      return {
+        workspaceId: match[1],
+        viewId: match[2],
+        rowId,
+        ...(databaseViewId ? { databaseViewId } : {}),
+      };
+    }
+
     for (const key of url.searchParams.keys()) {
       if (key !== 'blockId') return;
     }
-
-    const blockId = url.searchParams.get('blockId')?.trim();
 
     return {
       workspaceId: match[1],

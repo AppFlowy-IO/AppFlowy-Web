@@ -34,6 +34,10 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
   const rawDatabaseTitle = mention.data?.title;
   const databaseTitle =
     typeof rawDatabaseTitle === 'string' && rawDatabaseTitle.length > 0 ? rawDatabaseTitle : undefined;
+  const isDatabaseReference =
+    type === MentionType.PageRef &&
+    ((Boolean(databaseRowId) && Boolean(database_id || database_view_id || page_id)) ||
+      (Boolean(database_id) && Boolean(databaseTitle)));
 
   const reminder = useMemo(() => {
     return reminder_id ? { id: reminder_id ?? '', option: reminder_option ?? '' } : undefined;
@@ -43,7 +47,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     // New database mentions include their selected display title. Keep legacy
     // title-less database references on MentionPage so they can still resolve
     // their label from the outline.
-    if (type === MentionType.PageRef && database_id && (databaseRowId || databaseTitle)) {
+    if (isDatabaseReference) {
       return (
         <MentionDatabase
           databaseId={database_id}
@@ -86,6 +90,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     databaseRowId,
     row_document_id,
     databaseTitle,
+    isDatabaseReference,
   ]);
 
   // check if the mention is selected

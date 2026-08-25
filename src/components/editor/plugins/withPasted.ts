@@ -2,8 +2,8 @@ import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import {
   getBlockEntry,
@@ -13,14 +13,14 @@ import {
 } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray, getText } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, MentionType, YjsEditorKey } from '@/application/types';
+import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
+import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
+import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
 import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
-import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
-import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
-import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
@@ -392,9 +392,10 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
  * Page links into the current workspace are inserted as page-reference
  * mentions so they retain the exact view identity and follow live metadata
  * updates. Every other URL — external sites, other workspaces (whose views a
- * mention could not resolve here), or links carrying row/tab targets — is
- * pasted as an inline link and the "Paste as" menu (Mention / URL / Bookmark /
- * Embed) is shown so the user can choose how to render it.
+ * mention could not resolve here), or database-row links that need their row
+ * title resolved — is pasted as an inline link and the "Paste as" menu
+ * (Mention / URL / Bookmark / Embed) is shown so the user can choose how to
+ * render it.
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
   const appFlowyPageLink = parseAppFlowyPageLink(url, window.location.hostname);
@@ -402,6 +403,7 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
 
   if (
     appFlowyPageLink &&
+    !appFlowyPageLink.rowId &&
     currentWorkspaceId &&
     appFlowyPageLink.workspaceId.toLowerCase() === currentWorkspaceId.toLowerCase()
   ) {
@@ -516,11 +518,21 @@ function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string)
   const insertedRange = getInsertedURLRange(editor, url, point);
 
   if (insertedRange) {
+    // Adding the href mark splits a URL pasted after existing text into a new
+    // Slate leaf. Track the range through that split so Paste as actions still
+    // target the URL instead of silently failing validation against a stale
+    // path.
+    const insertedRangeRef = Editor.rangeRef(editor, insertedRange, { affinity: 'inward' });
+
     Transforms.select(editor, insertedRange);
     editor.addMark(EditorMarkFormat.Href, href);
-    Transforms.select(editor, insertedRange);
-    Transforms.collapse(editor, { edge: 'end' });
-    dispatchPasteAsMenuEvent(editor, { url, range: insertedRange });
+    const linkedRange = insertedRangeRef.unref();
+
+    if (linkedRange) {
+      Transforms.select(editor, linkedRange);
+      Transforms.collapse(editor, { edge: 'end' });
+      dispatchPasteAsMenuEvent(editor, { url, range: linkedRange });
+    }
   }
 
   return true;
