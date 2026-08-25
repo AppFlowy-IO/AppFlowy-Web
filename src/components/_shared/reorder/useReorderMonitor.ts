@@ -4,7 +4,14 @@ import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
+import { extractInstruction } from '@atlaskit/pragmatic-drag-and-drop-hitbox/tree-item';
 import React, { useEffect, useRef } from 'react';
+
+import {
+  extractReorderableTreeItemData,
+  moveIdAfterPrevious,
+  resolveTreeMoveDestination,
+} from '@/components/_shared/reorder/treeItem';
 
 const SCROLLABLE_OVERFLOW = /(auto|scroll|overlay)/;
 
@@ -100,6 +107,48 @@ export function useReorderMonitor({
           const targetId = String(target.data.id ?? '');
 
           if (!sourceId || !targetId || sourceId === targetId) return;
+
+          const sourceTreeItem = extractReorderableTreeItemData(source.data);
+          const targetTreeItem = extractReorderableTreeItemData(target.data);
+
+          if (sourceTreeItem && targetTreeItem?.scopeId === sourceTreeItem.scopeId) {
+            // This monitor owns only the source sibling list. A single monitor
+            // at the outline root persists cross-parent and make-child drops.
+            if (target.data.instanceId !== instanceId) return;
+
+            const instruction = extractInstruction(target.data);
+
+            if (!instruction || instruction.type === 'instruction-blocked' || instruction.type === 'reparent') {
+              return;
+            }
+
+            const orderedIds = getOrderedIdsRef.current();
+            const destination = resolveTreeMoveDestination({
+              instruction,
+              sourceId,
+              targetId,
+              targetParentId: targetTreeItem.parentId,
+              targetSiblingIds: orderedIds,
+              targetChildIds: targetTreeItem.childIds,
+            });
+
+            if (!destination) return;
+
+            if (instruction.type === 'make-child' || destination.parentId !== sourceTreeItem.parentId) return;
+
+            const orderedMove = moveIdAfterPrevious(orderedIds, sourceId, destination.prevId);
+
+            if (!orderedMove || orderedMove.fromIndex === orderedMove.toIndex) return;
+
+            onReorderRef.current({
+              movedId: sourceId,
+              prevId: destination.prevId,
+              nextIds: orderedMove.nextIds,
+              fromIndex: orderedMove.fromIndex,
+              toIndex: orderedMove.toIndex,
+            });
+            return;
+          }
 
           const orderedIds = getOrderedIdsRef.current();
           const startIndex = orderedIds.indexOf(sourceId);

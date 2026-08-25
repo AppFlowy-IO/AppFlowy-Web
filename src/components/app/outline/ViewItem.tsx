@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 import { View, ViewIconType, ViewLayout } from '@/application/types';
 import {
+  canBeMoved,
   canReorderWithinParent,
   getFirstChildView,
   isDatabaseContainer,
@@ -26,6 +27,9 @@ import { useReorderableSidebarList } from '@/components/app/outline/reorder/useR
 import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
 import { cn } from '@/lib/utils';
 
+const EMPTY_ANCESTOR_IDS: readonly string[] = [];
+const SIDEBAR_INDENT_PER_LEVEL = 16;
+
 function ViewItem({
   view,
   width,
@@ -40,6 +44,9 @@ function ViewItem({
   reorderInstanceId,
   canReorder,
   reorderChildren,
+  pageTreeScopeId,
+  ancestorIds = EMPTY_ANCESTOR_IDS,
+  siblingIds = EMPTY_ANCESTOR_IDS,
 }: {
   view: View;
   width: number;
@@ -62,6 +69,12 @@ function ViewItem({
    * reordered (e.g. the Shared-with-me section).
    */
   reorderChildren?: boolean;
+  /** Shared scope for moving pages between parents in the real sidebar tree. */
+  pageTreeScopeId?: symbol;
+  /** IDs above this view, used to reject drops that would create a cycle. */
+  ancestorIds?: readonly string[];
+  /** Current display order of the sibling list containing this view. */
+  siblingIds?: readonly string[];
 }) {
   const { t } = useTranslation();
   const selectedViewId = useSidebarSelectedViewId();
@@ -82,6 +95,23 @@ function ViewItem({
 
   const rowRef = useRef<HTMLDivElement>(null);
   const workspaceId = useCurrentWorkspaceIdOptional();
+  const childIds = useMemo(() => view.children?.map((child) => child.view_id) ?? [], [view.children]);
+  const treeItem = useMemo(() => {
+    if (!pageTreeScopeId || !parentView) return undefined;
+
+    return {
+      scopeId: pageTreeScopeId,
+      parentId: parentView.view_id,
+      currentLevel: level,
+      indentPerLevel: SIDEBAR_INDENT_PER_LEVEL,
+      canMoveAcrossParents: canBeMoved(view, parentView),
+      canAcceptChildren: view.layout === ViewLayout.Document,
+      canAcceptMovedSiblings: parentView.layout === ViewLayout.Document && !isDatabaseContainer(parentView),
+      ancestorIds,
+      siblingIds,
+      childIds,
+    };
+  }, [ancestorIds, childIds, level, pageTreeScopeId, parentView, siblingIds, view]);
 
   // This row can be dragged to reorder within the group its parent owns.
   const { dragState, shouldSuppressClick } = useReorderableItem({
@@ -90,16 +120,20 @@ function ViewItem({
     dragType: 'sidebar-view',
     instanceId: reorderInstanceId,
     canDrag: Boolean(canReorder),
+    treeItem,
   });
 
   // This view's own children form a reorderable sibling group (database-container
   // views or nested pages), reordered within this view as their parent.
+  const childReorderEnabled =
+    Boolean(reorderChildren) &&
+    (pageTreeScopeId ? (visibleChildren?.length ?? 0) > 0 : (visibleChildren?.length ?? 0) > 1);
   const { orderedItems: orderedChildren, instanceId: childReorderInstanceId } = useReorderableSidebarList({
     items: visibleChildren ?? [],
     parentId: viewId,
     workspaceId,
     dragType: 'sidebar-view',
-    enabled: Boolean(reorderChildren) && (visibleChildren?.length ?? 0) > 1,
+    enabled: childReorderEnabled,
     errorMessage: 'Failed to reorder pages',
   });
 
@@ -168,6 +202,11 @@ function ViewItem({
   // Calculate left padding based on icon presence
   const showLeftIcon = isRefDatabaseView || hasChildren;
   const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
+  const dropInstruction =
+    dragState.type === 'over' && dragState.instruction?.type !== 'instruction-blocked'
+      ? dragState.instruction?.type
+      : undefined;
+  const isMakeChildTarget = dropInstruction === 'make-child';
 
   const renderItem = useMemo(() => {
     if (!view) return null;
@@ -193,6 +232,7 @@ function ViewItem({
         ref={rowRef}
         data-testid={`page-${view.view_id}`}
         data-selected={selected}
+        data-drop-instruction={dropInstruction}
         style={{
           backgroundColor: selected ? 'var(--fill-content-hover)' : undefined,
           cursor: 'pointer',
@@ -211,7 +251,8 @@ function ViewItem({
         }}
         className={cn(
           'relative my-[1px] flex min-h-[30px] w-full cursor-pointer select-none items-center gap-1 rounded-[8px] px-0.5 py-0.5 text-sm hover:bg-fill-content-hover focus:outline-none',
-          dragState.type === 'dragging' && 'opacity-40'
+          dragState.type === 'dragging' && 'opacity-40',
+          isMakeChildTarget && 'bg-fill-content-hover ring-1 ring-inset ring-border-theme-thick'
         )}
       >
         {renderLeftIcon()}
@@ -278,6 +319,8 @@ function ViewItem({
     viewId,
     handleChangeIcon,
     dragState.type,
+    dropInstruction,
+    isMakeChildTarget,
     shouldSuppressClick,
   ]);
 
@@ -285,6 +328,8 @@ function ViewItem({
   // Gate the open animation on actual presence (not a loading flag) so the
   // Collapse opens against real content and animates on the first expand.
   const childrenPresent = orderedChildren.length > 0;
+  const childAncestorIds = useMemo(() => [...ancestorIds, viewId], [ancestorIds, viewId]);
+  const orderedChildIds = useMemo(() => orderedChildren.map((child) => child.view_id), [orderedChildren]);
 
   const renderChildren = useMemo(() => {
     if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
@@ -317,6 +362,9 @@ function ViewItem({
               reorderChildren={reorderChildren}
               reorderInstanceId={childReorderInstanceId}
               canReorder={canReorderWithinParent(child, view)}
+              pageTreeScopeId={pageTreeScopeId}
+              ancestorIds={childAncestorIds}
+              siblingIds={orderedChildIds}
             />
           ))}
         </div>
@@ -335,6 +383,9 @@ function ViewItem({
     orderedChildren,
     reorderChildren,
     childReorderInstanceId,
+    pageTreeScopeId,
+    childAncestorIds,
+    orderedChildIds,
     width,
     loadingViewIds,
     loadedViewIds,
