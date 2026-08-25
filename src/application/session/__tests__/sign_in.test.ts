@@ -1,4 +1,4 @@
-import { afterAuth, buildLoginUrl, getSafeRedirectUrl, isSafeRedirectUrl, saveRedirectTo } from '../sign_in';
+import { afterAuth, buildLoginUrl, getSafeRedirectUrl, isAuthPath, isSafeRedirectUrl, saveRedirectTo } from '../sign_in';
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -133,6 +133,22 @@ describe('getSafeRedirectUrl', () => {
   });
 });
 
+describe('isAuthPath', () => {
+  it.each(['/login', '/login/', '/LOGIN', '/%6Cogin', '/auth/callback', '/auth/%63allback'])(
+    'matches a router-equivalent authentication path: %s',
+    (pathname) => {
+      expect(isAuthPath(pathname)).toBe(true);
+    }
+  );
+
+  it.each(['/login/foo', '/loginish', '/login%2F', '/auth/callback-other'])(
+    'does not match a non-authentication path: %s',
+    (pathname) => {
+      expect(isAuthPath(pathname)).toBe(false);
+    }
+  );
+});
+
 describe('saveRedirectTo', () => {
   it('stores a safe redirect without changing its encoding', () => {
     const redirectTo = '/settings?next=%2Fapp';
@@ -237,6 +253,33 @@ describe('afterAuth', () => {
     afterAuth();
     expect(window.location.href).toBe('/app');
   });
+
+  it.each([
+    '/login?force=true',
+    'http://localhost/login?force=true',
+    '/LOGIN?force=true',
+    '/%6Cogin?force=true',
+    '/auth/callback#access_token=example',
+    '/auth/%63allback#access_token=example',
+  ])('redirects to /app instead of returning to an authentication route: %s', (redirectTo) => {
+    localStorage.setItem('redirectTo', redirectTo);
+
+    afterAuth();
+
+    expect(window.location.href).toBe('/app');
+    expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+
+  it.each(['/login/foo', '/loginish', '/auth/callback-other'])(
+    'preserves a safe non-authentication destination: %s',
+    (redirectTo) => {
+      localStorage.setItem('redirectTo', redirectTo);
+
+      afterAuth();
+
+      expect(window.location.href).toBe(redirectTo);
+    }
+  );
 
   it('follows a safe relative path', () => {
     localStorage.setItem('redirectTo', '/settings');

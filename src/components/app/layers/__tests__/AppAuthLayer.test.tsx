@@ -73,6 +73,7 @@ describe('AppAuthLayer workspace info loading', () => {
     jest.clearAllMocks();
     mockWorkspaceId = undefined;
     mockPathname = '/login';
+    window.history.replaceState({}, '', '/');
     mockGetServerInfo.mockResolvedValue({
       enable_page_history: true,
       ai_enabled: true,
@@ -99,6 +100,35 @@ describe('AppAuthLayer workspace info loading', () => {
 
     await waitFor(() => expect(mockInvalidToken).toHaveBeenCalledTimes(1));
     expect(mockNavigate).toHaveBeenCalledWith(`/login?redirectTo=${encodeURIComponent(window.location.href)}`);
+    expect(mockGetWorkspaceInfo).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/login?force=true',
+    '/LOGIN?force=true',
+    '/%6Cogin?force=true',
+    '/auth/callback?type=oauth',
+    '/auth/%63allback?type=oauth',
+  ])('does not overwrite an explicit auth navigation when the router location is stale: %s', (liveUrl) => {
+    mockPathname = '/app/workspace-old';
+    window.history.replaceState({}, '', liveUrl);
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: false,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <div />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    expect(mockInvalidToken).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockGetWorkspaceInfo).not.toHaveBeenCalled();
   });
 

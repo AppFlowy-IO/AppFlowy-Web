@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
-import { buildLoginUrl } from '@/application/session/sign_in';
+import { buildLoginUrl, isAuthPath } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
@@ -175,7 +175,11 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   // so this layer does not need timer-based token polling or a second auth source.
   useEffect(() => {
     if (!hasConfigContext || isAuthenticated) return;
-    if (location.pathname === '/login' || location.pathname.startsWith('/auth/callback')) return;
+
+    // An explicit sign-out invalidates the session before React Router commits
+    // its navigation. Read the browser URL as well so this stale render cannot
+    // replace `/login?force=true` with a login URL that redirects back to login.
+    if (isAuthPath(location.pathname) || isAuthPath(window.location.pathname)) return;
 
     logout();
   }, [hasConfigContext, isAuthenticated, location.pathname, logout]);
