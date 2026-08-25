@@ -53,12 +53,16 @@ async function resolveDatabaseTarget(
   link: AppFlowyPageLink,
   getDatabaseId: DatabaseRowMentionResolverDependencies['getDatabaseId']
 ) {
-  const routeDatabaseId = await getDatabaseId(workspaceId, link.viewId);
+  if (!link.databaseViewId || link.databaseViewId === link.viewId) {
+    const databaseId = await getDatabaseId(workspaceId, link.viewId);
 
-  if (!routeDatabaseId) return null;
-  if (!link.databaseViewId) return { databaseId: routeDatabaseId, databaseViewId: link.viewId };
+    return databaseId ? { databaseId, databaseViewId: link.databaseViewId || link.viewId } : null;
+  }
 
-  const selectedDatabaseId = await getDatabaseId(workspaceId, link.databaseViewId);
+  const [routeDatabaseId, selectedDatabaseId] = await Promise.all([
+    getDatabaseId(workspaceId, link.viewId),
+    getDatabaseId(workspaceId, link.databaseViewId),
+  ]);
 
   if (!selectedDatabaseId || selectedDatabaseId !== routeDatabaseId) return null;
 

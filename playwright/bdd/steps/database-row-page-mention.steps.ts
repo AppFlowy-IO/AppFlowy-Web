@@ -1,13 +1,18 @@
-import { expect, Page } from '@playwright/test';
+import { expect, type BrowserContext, type Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
-const { When, Then, Before } = createBdd();
+import { setupPageErrorHandling } from '../../support/test-config';
+
+const { When, Then, Before, After } = createBdd();
 const modKey = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 type DatabaseRowMentionState = {
   rowPageUrl: string;
   rowId: string;
+  routeViewId: string;
   databaseViewId: string;
+  expectedMentionPageId: string;
+  peerContext?: BrowserContext;
 };
 
 type TestMention = {
@@ -31,6 +36,10 @@ type TestSlateNode = {
 
 type TestSlateEditor = {
   children: TestSlateNode[];
+  selection?: {
+    anchor: { path: number[]; offset: number };
+    focus: { path: number[]; offset: number };
+  } | null;
   insertNode?: (node: TestSlateNode) => void;
 };
 
@@ -75,7 +84,31 @@ async function getStoredMention(page: Page, rowId: string): Promise<TestMention 
   }, rowId);
 }
 
+async function flushPendingSync(page: Page): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const flush = (window as typeof window & { __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean> })
+            .__TEST_FLUSH_ALL_SYNC__;
+
+          return flush ? flush() : false;
+        }),
+      {
+        message: 'the document client should flush its collaboration updates',
+        timeout: 30000,
+        intervals: [250, 500, 1000],
+      }
+    )
+    .toBe(true);
+}
+
 Before({ tags: '@database-row-page-mention' }, async ({ page }) => {
+  stateByPage.delete(page);
+});
+
+After({ tags: '@database-row-page-mention' }, async ({ page }) => {
+  await stateByPage.get(page)?.peerContext?.close();
   stateByPage.delete(page);
 });
 
@@ -83,10 +116,20 @@ When('I remember the current database row page link', async ({ page }) => {
   const rowPageUrl = page.url();
   const url = new URL(rowPageUrl);
   const rowId = url.searchParams.get('r');
-  const databaseViewId = url.searchParams.get('v') || url.pathname.split('/').filter(Boolean).at(-1);
+  const routeViewId = url.pathname.split('/').filter(Boolean).at(-1);
+  const databaseViewId = url.searchParams.get('v') || routeViewId;
 
-  if (!rowId || !databaseViewId) throw new Error(`Expected a database row page URL, got ${rowPageUrl}`);
-  stateByPage.set(page, { rowPageUrl, rowId, databaseViewId });
+  if (!rowId || !routeViewId || !databaseViewId) {
+    throw new Error(`Expected a database row page URL, got ${rowPageUrl}`);
+  }
+
+  stateByPage.set(page, {
+    rowPageUrl,
+    rowId,
+    routeViewId,
+    databaseViewId,
+    expectedMentionPageId: databaseViewId,
+  });
 });
 
 When('I paste the remembered database row page link', async ({ page }) => {
@@ -107,11 +150,39 @@ When('I choose Mention from the Paste as menu', async ({ page }) => {
 
 When(
   'the document receives a desktop-authored database row mention labeled {string}',
-  async ({ page }, title: string) => {
-    const { databaseViewId, rowId } = requireState(page);
+  async ({ page, browser }, title: string) => {
+    const state = requireState(page);
+    const { routeViewId, rowId } = state;
 
-    await page.evaluate(
-      ({ databaseViewId, rowId, title }) => {
+    await flushPendingSync(page);
+
+    const peerContext = await browser.newContext({
+      baseURL: new URL(page.url()).origin,
+      storageState: await page.context().storageState({ indexedDB: true }),
+      viewport: { width: 1440, height: 900 },
+    });
+    const peerPage = await peerContext.newPage();
+
+    state.peerContext = peerContext;
+    state.expectedMentionPageId = routeViewId;
+    setupPageErrorHandling(peerPage);
+
+    await peerPage.goto(page.url(), { waitUntil: 'domcontentloaded' });
+    await expect(peerPage.locator('[data-slate-editor="true"]').first()).toBeVisible({ timeout: 30000 });
+    await expect
+      .poll(
+        () =>
+          peerPage.evaluate(() => {
+            const testWindow = window as Window & { __TEST_EDITOR__?: TestSlateEditor };
+
+            return Boolean(testWindow.__TEST_EDITOR__?.insertNode);
+          }),
+        { timeout: 30000 }
+      )
+      .toBe(true);
+
+    await peerPage.evaluate(
+      ({ routeViewId, rowId, title }) => {
         const testWindow = window as Window & {
           __TEST_EDITOR__?: TestSlateEditor;
         };
@@ -121,27 +192,62 @@ When(
           throw new Error('No active test editor with insertNode() found');
         }
 
-        // This is the exact legacy desktop wire shape that exposed the bug:
-        // it identifies the database view through page_id and carries the row
-        // title, but it does not include database_id.
+        const findLastTextPoint = (
+          nodes: TestSlateNode[],
+          parentPath: number[] = []
+        ): { path: number[]; offset: number } | null => {
+          for (let index = nodes.length - 1; index >= 0; index -= 1) {
+            const node = nodes[index];
+            const path = [...parentPath, index];
+
+            if (typeof node.text === 'string') return { path, offset: node.text.length };
+
+            const nested = node.children ? findLastTextPoint(node.children, path) : null;
+
+            if (nested) return nested;
+          }
+
+          return null;
+        };
+        const insertAt = findLastTextPoint(editor.children);
+
+        if (!insertAt) throw new Error('No text position found in the peer editor');
+
+        editor.selection = { anchor: insertAt, focus: insertAt };
+
+        // Match the current desktop producer: row references use the route view
+        // as both page_id and database_view_id and include database_row_id, but
+        // intentionally have no database_id.
         editor.insertNode({
           text: '$',
           mention: {
             type: 'page',
-            page_id: databaseViewId,
+            page_id: routeViewId,
             block_id: rowId,
             row_id: rowId,
+            database_view_id: routeViewId,
+            database_row_id: rowId,
             data: { title },
           },
         });
       },
-      { databaseViewId, rowId, title }
+      { routeViewId, rowId, title }
     );
+
+    await flushPendingSync(peerPage);
+    await expect(page.locator(`.mention-inline[data-mention-id="${rowId}"] .mention-content`)).toHaveText(title, {
+      timeout: 30000,
+    });
+
+    // Recreate the renderer from persisted collaboration state. This prevents
+    // a locally inserted JavaScript object from masquerading as a sync test.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('[data-slate-editor="true"]').first()).toBeVisible({ timeout: 30000 });
   }
 );
 
 Then('the database row mention is styled and labeled {string}', async ({ page }, title: string) => {
-  const { databaseViewId, rowId, rowPageUrl } = requireState(page);
+  const { expectedMentionPageId, rowId, rowPageUrl } = requireState(page);
   const mention = page.locator(`.mention-inline[data-mention-id="${rowId}"]`);
 
   await expect(mention).toBeVisible({ timeout: 15000 });
@@ -154,7 +260,7 @@ Then('the database row mention is styled and labeled {string}', async ({ page },
 
   expect(slateMention).toMatchObject({
     type: 'page',
-    page_id: databaseViewId,
+    page_id: expectedMentionPageId,
     row_id: rowId,
   });
   expect(slateMention?.data?.title).toBe(title);
