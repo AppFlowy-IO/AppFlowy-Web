@@ -173,9 +173,15 @@ When(
       .poll(
         () =>
           peerPage.evaluate(() => {
-            const testWindow = window as Window & { __TEST_EDITOR__?: TestSlateEditor };
+            const testWindow = window as Window & {
+              __TEST_EDITOR__?: TestSlateEditor;
+              __TEST_EDITORS__?: Record<string, TestSlateEditor | undefined>;
+            };
+            const editor =
+              testWindow.__TEST_EDITOR__ ??
+              Object.values(testWindow.__TEST_EDITORS__ ?? {}).find((candidate) => candidate?.insertNode);
 
-            return Boolean(testWindow.__TEST_EDITOR__?.insertNode);
+            return Boolean(editor?.insertNode);
           }),
         { timeout: 30000 }
       )
@@ -185,8 +191,11 @@ When(
       ({ routeViewId, rowId, title }) => {
         const testWindow = window as Window & {
           __TEST_EDITOR__?: TestSlateEditor;
+          __TEST_EDITORS__?: Record<string, TestSlateEditor | undefined>;
         };
-        const editor = testWindow.__TEST_EDITOR__;
+        const editor =
+          testWindow.__TEST_EDITOR__ ??
+          Object.values(testWindow.__TEST_EDITORS__ ?? {}).find((candidate) => candidate?.insertNode);
 
         if (!editor?.insertNode) {
           throw new Error('No active test editor with insertNode() found');

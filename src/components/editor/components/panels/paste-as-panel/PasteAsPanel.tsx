@@ -168,20 +168,38 @@ export function PasteAsPanel() {
         }
 
         const shouldSelectMention = Boolean(editor.selection && Range.equals(editor.selection, pasteRange));
-        const insertAt = Range.start(pasteRange);
+        const liveSelectionRef =
+          !shouldSelectMention && editor.selection
+            ? Editor.rangeRef(editor, editor.selection, { affinity: 'forward' })
+            : null;
 
-        Transforms.delete(editor, { at: pasteRange });
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention,
-          },
-          { at: insertAt, select: shouldSelectMention, voids: false }
-        );
-        if (shouldSelectMention) {
+        // An auto-linked URL can occupy a leaf that disappears when deleted.
+        // Use Slate's transformed selection as the insertion point, then put a
+        // user who moved elsewhere back at their tracked selection. The whole
+        // swap is synchronous and never moves DOM focus.
+        Editor.withoutNormalizing(editor, () => {
+          Transforms.select(editor, pasteRange);
+          Transforms.delete(editor);
+          Transforms.insertNodes(
+            editor,
+            {
+              text: '@',
+              mention,
+            },
+            { select: true, voids: false }
+          );
           Transforms.collapse(editor, { edge: 'end' });
-        }
+
+          if (!shouldSelectMention) {
+            const liveSelection = liveSelectionRef?.unref();
+
+            if (liveSelection) {
+              Transforms.select(editor, liveSelection);
+            } else {
+              Transforms.deselect(editor);
+            }
+          }
+        });
 
         return;
       }
