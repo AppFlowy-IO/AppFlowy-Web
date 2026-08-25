@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { View } from '@/application/types';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
@@ -14,6 +14,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+
+import type { ComponentProps, ReactNode } from 'react';
 
 function PermissionLoadingItem({ testId }: { testId: string }) {
   return (
@@ -38,19 +40,19 @@ function ViewActionsPopover({
     category: 'space' | 'page';
     type: 'more' | 'add';
   };
-  children: React.ReactNode;
+  children: ReactNode;
   // Forwarded to AddPageActions. The dialog itself must live in a persistent
   // ancestor (e.g. Outline) since this popover is unmounted as soon as the
   // dropdown closes.
   onImportClick?: (view: View) => void;
-} & React.ComponentProps<typeof DropdownMenu>) {
+} & ComponentProps<typeof DropdownMenu>) {
   const { canCreateViewActions, canManageViewActions, hasLoadedViewActionPermissions, isLoadingViewActionPermissions } =
     useViewActionPermissions(view, Boolean(open && popoverType));
   const shouldLoadSpaceActionPermissions = Boolean(
     open && popoverType?.category === 'space' && popoverType.type === 'more'
   );
   const { canOpenManageSpace, hasLoadedSpaceActionPermissions, isLoadingSpaceActionPermissions } =
-    useSpaceActionPermissions(view, shouldLoadSpaceActionPermissions, canManageViewActions);
+    useSpaceActionPermissions(view, shouldLoadSpaceActionPermissions);
   const isResolvingViewActionPermissions =
     isLoadingViewActionPermissions ||
     !hasLoadedViewActionPermissions ||
@@ -79,7 +81,6 @@ function ViewActionsPopover({
         <MoreSpaceActions
           onClose={onClose}
           view={view}
-          canDuplicateActions={canCreateViewActions}
           canManageActions={canManageViewActions}
           canOpenManageActions={canOpenManageSpace}
           isLoadingActions={isResolvingViewActionPermissions}

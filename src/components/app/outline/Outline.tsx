@@ -35,6 +35,7 @@ import {
 } from '@/components/app/outline/sidebarRevalidation';
 import SpaceItem from '@/components/app/outline/SpaceItem';
 import { ShareWithMe } from '@/components/app/share-with-me';
+import SpaceSidebarActions from '@/components/app/view-actions/SpaceSidebarActions';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -588,15 +589,20 @@ export function Outline({ width }: { width: number }) {
       // For testing purposes, always show the button if it has a data-testid
       // This is a temporary workaround until we can properly simulate hover in tests
       const isTestEnvironment = typeof window !== 'undefined' && 'Cypress' in window;
+      const actionsVisible = !shouldHidden || isTestEnvironment;
 
-      if (shouldHidden && !isTestEnvironment) return null;
+      if (isSpace) {
+        return <SpaceSidebarActions view={view} visible={actionsVisible} onActionClick={onClick} />;
+      }
+
+      if (!actionsVisible) return null;
 
       return (
         <div onClick={(e) => e.stopPropagation()} className={'flex items-center px-2'}>
           <Tooltip disableHoverableContent delayDuration={500}>
             <TooltipTrigger asChild>
               <Button
-                data-testid={isSpace ? 'inline-more-actions' : 'page-more-actions'}
+                data-testid='page-more-actions'
                 variant={'ghost'}
                 size={'icon-sm'}
                 onClick={(e) => {
@@ -606,7 +612,7 @@ export function Outline({ width }: { width: number }) {
                 <MoreIcon />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{isSpace ? t('space.manage') : t('menuAppHeader.moreButtonToolTip')}</TooltipContent>
+            <TooltipContent>{t('menuAppHeader.moreButtonToolTip')}</TooltipContent>
           </Tooltip>
           {layout === ViewLayout.Document ? (
             <Tooltip disableHoverableContent delayDuration={500}>
@@ -623,7 +629,7 @@ export function Outline({ width }: { width: number }) {
                 </Button>
               </TooltipTrigger>
 
-              <TooltipContent>{isSpace ? t('sideBar.addAPage') : t('menuAppHeader.addPageTooltip')}</TooltipContent>
+              <TooltipContent>{t('menuAppHeader.addPageTooltip')}</TooltipContent>
             </Tooltip>
           ) : null}
         </div>

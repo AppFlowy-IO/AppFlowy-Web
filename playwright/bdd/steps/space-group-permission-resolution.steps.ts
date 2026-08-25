@@ -12,9 +12,13 @@ const ACCESS_LEVEL_READ_ONLY = 10;
 const ACCESS_LEVEL_READ_AND_WRITE = 30;
 const ACCESS_LEVEL_FULL_ACCESS = 50;
 const SPACE_MEMBER_ROLE_MEMBER = 'member';
+const SPACE_VISIBILITY_CUSTOM = 'custom';
 // Seeded space-level grant for group One: an ordinary Member with Can view access.
 const SEEDED_GROUP_ONE_ROLE = SPACE_MEMBER_ROLE_MEMBER;
 const SEEDED_GROUP_ONE_ACCESS = ACCESS_LEVEL_READ_ONLY;
+// Every Member principal in a Custom space resolves through this one collective
+// access level; an individual Member group cannot carry a different level.
+const SEEDED_CUSTOM_MEMBER_ACCESS = ACCESS_LEVEL_READ_ONLY;
 // Seeded page-level share for group Two on Group Page A.
 const SEEDED_GROUP_TWO_PAGE_ACCESS = ACCESS_LEVEL_READ_AND_WRITE;
 // Workspace member uids exceed Number.MAX_SAFE_INTEGER; keep them as strings
@@ -137,9 +141,25 @@ type ViewGroupPermissionsPayload = {
 };
 
 type SpacePermissionResponsePayload = {
+  permission: SpacePermissionSettingsPayload;
   current_user_access_level?: number | null;
   can_manage_space?: boolean;
   can_manage_members?: boolean;
+};
+
+type SpacePermissionSettingsPayload = {
+  visibility: string;
+  owner_access_level: number;
+  member_default_access_level: number | null;
+  everyone_else_access_level?: number | null;
+  invite_policy: string;
+  sidebar_edit_policy: string;
+  invite_link_enabled: boolean;
+  security: {
+    disable_guests: boolean;
+    disable_public_links: boolean;
+    disable_export: boolean;
+  };
 };
 
 // Fixture context resolved through the owner's API token (never hardcoded):
@@ -171,6 +191,9 @@ type ScenarioState = {
   // Set before a group membership mutation starts so the After hook re-adds
   // every seeded membership even when a later live assertion fails.
   restoreGroupMemberships?: boolean;
+  // Set before mutating the Custom collective Member access so teardown can
+  // restore the canonical Can view baseline even after a failed assertion.
+  restoreCustomMemberAccess?: boolean;
   liveSession?: LiveSession;
 };
 
@@ -185,7 +208,7 @@ Before(async ({ page }) => {
 After(async ({ page, request }) => {
   const state = stateByPage.get(page);
 
-  if (!state?.restoreGroupOneGrant && !state?.restoreGroupMemberships) return;
+  if (!state?.restoreGroupOneGrant && !state?.restoreGroupMemberships && !state?.restoreCustomMemberAccess) return;
 
   // Re-authenticate the owner through the API: the browser session may now belong
   // to another seeded account (or be gone entirely) when the scenario ends.
@@ -193,6 +216,10 @@ After(async ({ page, request }) => {
 
   if (state.restoreGroupMemberships) {
     await ensureSeededGroupMemberships(request, fixture);
+  }
+
+  if (state.restoreCustomMemberAccess) {
+    await ensureSeededCustomMemberAccess(request, fixture);
   }
 
   if (state.restoreGroupOneGrant) {
@@ -205,11 +232,12 @@ Given('the seeded stg0822 space group permission fixture exists', async ({ page,
   // cargo test --test space_group_permission_seed seed_space_group_permission_suite -- --ignored --nocapture
   //
   // Resolving the context here also re-asserts the seeded group rosters and the
-  // group One grant, so an interrupted mutating scenario cannot leak into the
-  // read-only scenarios.
+  // Custom Member audience and group One grant, so an interrupted mutating
+  // scenario cannot leak into the read-only scenarios.
   const fixture = await resolveFixtureContext(request);
 
   await ensureSeededGroupMemberships(request, fixture);
+  await ensureSeededCustomMemberAccess(request, fixture);
   await ensureSeededGroupOneGrant(request, fixture);
   requireState(page).fixture = fixture;
 });
@@ -415,37 +443,16 @@ When(
 );
 
 When(
-  'the owner changes the space access of seeded stg0822 {string} on the seeded stg0822 {string} space to {string} via the API',
-  async ({ page, request }, groupAliasValue: string, spaceAliasValue: string, accessLabel: string) => {
+  'the owner changes the Custom member access of the seeded stg0822 {string} space to {string} via the API',
+  async ({ page, request }, spaceAliasValue: string, accessLabel: string) => {
     const state = requireState(page);
     const fixture = requireFixture(page);
     const seededSpace = stgSpace(spaceAliasValue);
-    const groupId = stgGroupId(fixture, groupAliasValue);
-    const current = await findSpaceGroupGrant(request, fixture, groupId);
+    const accessLevel = accessLevelFromLabel(accessLabel);
 
-    if (!current) {
-      throw new Error(`Seeded stg0822 ${groupAliasValue} holds no grant on ${spaceAliasValue}`);
-    }
-
-    if (groupAliasValue === 'group one') {
-      state.restoreGroupOneGrant = true;
-    }
-
-    const payload = { role: current.role, access_level: accessLevelFromLabel(accessLabel) };
-
-    await markLiveSession(page, state, `changing ${groupAliasValue} space access to ${accessLabel}`);
-    await patchApi<SpaceGroupPermission>(
-      request,
-      fixture.ownerToken,
-      spaceGroupApiPath(fixture.workspaceId, seededSpace.viewId, groupId),
-      payload
-    );
-    await expect
-      .poll(async () => (await findSpaceGroupGrant(request, fixture, groupId))?.access_level, {
-        timeout: 15000,
-        message: `expected the ${groupAliasValue} space access to become ${accessLabel}`,
-      })
-      .toBe(payload.access_level);
+    state.restoreCustomMemberAccess = true;
+    await markLiveSession(page, state, `changing ${spaceAliasValue} Custom member access to ${accessLabel}`);
+    await updateCustomMemberAccess(request, fixture, seededSpace.viewId, accessLevel);
   }
 );
 
@@ -598,10 +605,10 @@ async function expectSeededPageAccess(page: Page, seededPage: SeededStgPage, acc
       await selectFirstEditorWord(page, editor);
       await waitForSelectionEffects(page);
       await expect(page.getByTestId('inline-comment-readonly-trigger')).toBeVisible();
-      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAttribute(
-        'aria-disabled',
-        'true'
+      await expect(page.getByTestId('inline-comment-readonly-trigger').getByRole('button')).toHaveAccessibleName(
+        /don't have permission to comment/i
       );
+      await clearEditorSelection(page);
       break;
     case 'denied':
       await expect(page.getByText('No access to this page', { exact: true }).first()).toBeVisible({ timeout });
@@ -657,6 +664,12 @@ async function waitForSelectionEffects(page: Page) {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       })
   );
+}
+
+async function clearEditorSelection(page: Page) {
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString().length ?? 0)).toBe(0);
+  await waitForSelectionEffects(page);
 }
 
 function requireState(page: Page): ScenarioState {
@@ -782,6 +795,70 @@ async function findSeededWorkspaceId(request: APIRequestContext, ownerToken: str
 
   throw new Error(
     `No workspace of ${STG_ACCOUNTS.owner} hosts the seeded stg0822 space; run the seed (see the Given step)`
+  );
+}
+
+async function ensureSeededCustomMemberAccess(request: APIRequestContext, fixture: FixtureContext) {
+  const spaceId = STG_SPACES['group space A'].viewId;
+  const response = await getSpacePermission(request, fixture, spaceId);
+
+  if (response.permission.visibility !== SPACE_VISIBILITY_CUSTOM) {
+    throw new Error(
+      `Seeded stg0822 group space must be Custom, got ${response.permission.visibility}; run the seed (see the Given step)`
+    );
+  }
+
+  if (response.permission.member_default_access_level !== SEEDED_CUSTOM_MEMBER_ACCESS) {
+    await updateCustomMemberAccess(request, fixture, spaceId, SEEDED_CUSTOM_MEMBER_ACCESS);
+  }
+
+  const restored = await getSpacePermission(request, fixture, spaceId);
+
+  if (restored.permission.member_default_access_level !== SEEDED_CUSTOM_MEMBER_ACCESS) {
+    throw new Error(
+      `Seeded stg0822 Custom member access is not Can view after restore: ${restored.permission.member_default_access_level}`
+    );
+  }
+}
+
+async function updateCustomMemberAccess(
+  request: APIRequestContext,
+  fixture: FixtureContext,
+  spaceId: string,
+  accessLevel: number
+) {
+  const current = await getSpacePermission(request, fixture, spaceId);
+
+  if (current.permission.visibility !== SPACE_VISIBILITY_CUSTOM) {
+    throw new Error(`Cannot update Custom member access for a ${current.permission.visibility} space`);
+  }
+
+  await patchApi<SpacePermissionResponsePayload>(
+    request,
+    fixture.ownerToken,
+    spacePermissionApiPath(fixture.workspaceId, spaceId),
+    {
+      ...current.permission,
+      member_default_access_level: accessLevel,
+    }
+  );
+  await expect
+    .poll(async () => (await getSpacePermission(request, fixture, spaceId)).permission.member_default_access_level, {
+      timeout: 15000,
+      message: `expected the Custom member access to become ${accessLevel}`,
+    })
+    .toBe(accessLevel);
+}
+
+async function getSpacePermission(
+  request: APIRequestContext,
+  fixture: FixtureContext,
+  spaceId: string
+): Promise<SpacePermissionResponsePayload> {
+  return getApi<SpacePermissionResponsePayload>(
+    request,
+    fixture.ownerToken,
+    spacePermissionApiPath(fixture.workspaceId, spaceId)
   );
 }
 
@@ -942,6 +1019,10 @@ function spaceGroupApiPath(workspaceId: string, spaceId: string, groupId?: strin
   const base = `/api/workspace/${workspaceId}/spaces/${spaceId}/group`;
 
   return groupId ? `${base}/${groupId}` : base;
+}
+
+function spacePermissionApiPath(workspaceId: string, spaceId: string): string {
+  return `/api/workspace/${workspaceId}/spaces/${spaceId}/permission`;
 }
 
 async function signInSeededOwnerViaApi(request: APIRequestContext): Promise<string> {

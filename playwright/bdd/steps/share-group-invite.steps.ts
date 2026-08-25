@@ -206,7 +206,7 @@ When(
   }
 );
 
-When('I prepare the seeded private page and workspace group for sharing', async ({ page, request }) => {
+When('I prepare the seeded restricted Custom page and workspace group for sharing', async ({ page, request }) => {
   const state = requireState(page);
   const token = await requireAuthToken(page);
   const workspaceId = await getCurrentWorkspaceId(request, token);

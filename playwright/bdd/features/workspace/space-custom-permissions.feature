@@ -2,10 +2,11 @@
 Feature: Seeded Public, Private and Custom space permissions
   Workspace owners manage the three space types from the Manage Space modal. A Public space
   follows the workspace (owners get Full access, every other member shares one editable level),
-  a Private space only lists explicit members, and a Custom space has three audiences: Space
-  owners (Full access), Space members (people and groups, one collective level) and everyone
-  else in the workspace (a separate level, possibly No access). Every scenario restores the
-  seeded shape through the API afterwards.
+  a Private space has no space roster and is accessible only to its original creator, and a
+  Custom space has three audiences: Space owners (Full access), Space members (people and groups,
+  one collective level) and everyone else in the workspace (a separate level, possibly No access).
+  Pages inside a Private space remain independently shareable. Every scenario restores the seeded
+  shape through the API afterwards.
 
   Background:
     Given the seeded scp0822 space permission fixture exists
@@ -18,8 +19,8 @@ Feature: Seeded Public, Private and Custom space permissions
     Then the Manage Space general tab shows the Public access card
     And the Public access card lists "Workspace owners" with "You and other workspace owners" and "Full access"
     And the Public access card lists "Workspace members" with "All other members in the workspace" and "Can edit"
+    And the Manage Space panel has no footer actions
     When I set the Public access workspace members level to "Can view"
-    And I save the Manage Space panel
     Then the seeded scp0822 "public space" members level is "Can view" via the API
     When I open the seeded scp0822 "public space" manage space panel
     Then the Public access card lists "Workspace members" with "All other members in the workspace" and "Can view"
@@ -27,8 +28,8 @@ Feature: Seeded Public, Private and Custom space permissions
     And I directly open the seeded scp0822 "public page"
     Then the directly opened seeded scp0822 page is "read-only"
 
-  # (b) "Switch to Custom" confirms with the PRD copy, reveals the Custom permissions card and,
-  # once saved, materializes the public roster: workspace owners become Space owners and every
+  # (b) "Switch to Custom" confirms with the PRD copy, then immediately materializes the public
+  # roster: workspace owners become Space owners and every
   # other workspace member becomes a Space member.
   Scenario: Switching a Public space to Custom materializes its roster
     Given I sign in as seeded scp0822 "owner"
@@ -39,8 +40,7 @@ Feature: Seeded Public, Private and Custom space permissions
     When I confirm the Manage Space dialog
     Then the Manage Space general tab shows the Custom permissions card
     And the Custom permissions card shows Space members "Can edit" and everyone else "Can view"
-    When I save the Manage Space panel
-    Then the seeded scp0822 "public space" is "custom" via the API
+    And the seeded scp0822 "public space" is "custom" via the API
     When I open the seeded scp0822 "public space" manage space panel
     Then the "Custom" space access card is selected
     And the Manage Space general tab shows the Custom permissions card
@@ -48,6 +48,16 @@ Feature: Seeded Public, Private and Custom space permissions
     Then the Manage Space members list shows seeded scp0822 "owner" as "Space owner" with the subtitle "Workspace owner"
     And the Manage Space members list shows seeded scp0822 "member" as "Space member" with the subtitle "Workspace member"
     And the Manage Space members list shows seeded scp0822 "outsider" as "Space member" with the subtitle "Workspace member"
+
+  # The type confirmation commits before Members opens, so there is no second apply prompt.
+  Scenario: Opening Members after a confirmed switch uses the new Custom roster
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "public space" manage space panel
+    And I click Switch to Custom in the Public access card
+    And I confirm the Manage Space dialog
+    Then the seeded scp0822 "public space" is "custom" via the API
+    When I click the Manage Space members tab
+    And the Manage Space members list shows seeded scp0822 "member" as "Space member" with the subtitle "Workspace member"
 
   # (c) The Custom permissions card shows the design copy; No access on either audience locks
   # that audience out (and hides the space from everyone else entirely).
@@ -59,7 +69,6 @@ Feature: Seeded Public, Private and Custom space permissions
     And the Custom permissions card lists "Space members" with "People and groups added to this space" and "Can edit"
     And the Custom permissions card lists everyone else in the workspace with "Access for other workspace members" and "Can view"
     When I set the Custom permissions everyone else level to "No access"
-    And I save the Manage Space panel
     Then the seeded scp0822 "custom space" everyone else level is "No access" via the API
     When I open the seeded scp0822 "custom space" manage space panel
     Then the Custom permissions card shows Space members "Can edit" and everyone else "No access"
@@ -71,7 +80,6 @@ Feature: Seeded Public, Private and Custom space permissions
     When I sign in as seeded scp0822 "owner"
     And I open the seeded scp0822 "custom space" manage space panel
     And I set the Custom permissions space members level to "No access"
-    And I save the Manage Space panel
     Then the seeded scp0822 "custom space" members level is "No access" via the API
     When I open the seeded scp0822 "custom space" manage space panel
     Then the Custom permissions card shows Space members "No access" and everyone else "No access"
@@ -132,8 +140,7 @@ Feature: Seeded Public, Private and Custom space permissions
     And the Manage Space confirmation explains "Everyone in the Workspace will be able to access this Space. Space members can edit, and the Space creator and Workspace owners have Full access."
     When I confirm the Manage Space dialog
     Then the Manage Space general tab shows the Public access card
-    When I save the Manage Space panel
-    Then the seeded scp0822 "custom space" is "public" via the API
+    And the seeded scp0822 "custom space" is "public" via the API
     When I open the seeded scp0822 "custom space" manage space panel
     Then the "Public" space access card is selected
     And the Manage Space general tab shows the Public access card
@@ -143,25 +150,35 @@ Feature: Seeded Public, Private and Custom space permissions
     And I directly open the seeded scp0822 "custom page"
     Then the directly opened seeded scp0822 page is "editable"
 
-  # (f) Custom → Private keeps only the acting owner; other members lose access.
-  Scenario: Switching a Custom space to Private keeps only the owner
+  # (f) Custom → Private keeps only the original creator, replaces roster controls with a locked owner row, and
+  # revokes inherited space access from every other principal.
+  Scenario: Switching a Custom space to Private keeps only the original creator
     Given I sign in as seeded scp0822 "owner"
     When I open the seeded scp0822 "custom space" manage space panel
     And I choose the "Private" space access card
     Then the Manage Space confirmation asks "Make this Space Private?" with the action "Make Private"
     And the Manage Space confirmation explains "Other Space owners, Space members, and Workspace members will lose access to this Space."
     When I confirm the Manage Space dialog
-    And I save the Manage Space panel
     Then the seeded scp0822 "custom space" is "private" via the API
-    And the seeded scp0822 "custom space" roster does not list seeded scp0822 "member" via the API
-    When I open the seeded scp0822 "custom space" manage space members tab
-    Then the Manage Space members list does not show seeded scp0822 "member"
-    And the Manage Space members list shows seeded scp0822 "owner" as "Space owner" with the subtitle "Workspace owner"
+    And the Private Manage Space panel shows owner-only access and roster
     When I sign in as seeded scp0822 "member"
     And I open the seeded scp0822 workspace
     Then the seeded scp0822 "custom space" space navigation is "hidden"
     When I directly open the seeded scp0822 "custom page"
     Then the directly opened seeded scp0822 page is "denied"
+
+  # A true Private space exposes a locked owner-only Members tab instead of collective access.
+  # Its creator can still share an individual child page through the Share menu.
+  Scenario: The seeded Private space has an owner-only roster and its page remains shareable
+    Given I sign in as seeded scp0822 "owner"
+    When I open the seeded scp0822 "private space" manage space panel
+    Then the "Private" space access card is selected
+    And the Private Manage Space panel shows owner-only access and roster
+    When I close the Manage Space panel
+    And I directly open the seeded scp0822 "private page"
+    Then the directly opened seeded scp0822 page is "editable"
+    When I open the share panel
+    Then the seeded scp0822 Private page sharing controls are enabled
 
   # (g) Live refresh: the owner changes the collective level over the API while the member's
   # browser stays on the custom page; the server push flips the rendered access in place.
@@ -217,7 +234,6 @@ Feature: Seeded Public, Private and Custom space permissions
     Then the Custom permissions "space members" dropdown offers every access level
     And the Custom permissions "everyone else" dropdown offers every access level
     When I set the Custom permissions space members level to "Can view and comment"
-    And I save the Manage Space panel
     Then the seeded scp0822 "custom space" members level is "Can view and comment" via the API
     When I open the seeded scp0822 "custom space" manage space panel
     Then the Custom permissions card shows Space members "Can view and comment" and everyone else "Can view"
@@ -234,13 +250,12 @@ Feature: Seeded Public, Private and Custom space permissions
     Then the last-owner protection error is shown
     And the Manage Space members list shows seeded scp0822 "owner" as "Space owner" with the subtitle "Workspace owner"
 
-  # (l) PRD §36/§39 Safety: permission changes apply only after Save — closing the panel
-  # discards the pending level, and reopening shows the saved state.
-  Scenario: Permission changes apply only after Save
+  # (l) Collective permission choices are explicit mutations and survive closing the panel.
+  Scenario: Permission level changes apply immediately
     Given I sign in as seeded scp0822 "owner"
     When I open the seeded scp0822 "custom space" manage space panel
     And I set the Custom permissions space members level to "Can view"
-    And I close the Manage Space panel without saving
-    Then the seeded scp0822 "custom space" members level is "Can edit" via the API
-    When I open the seeded scp0822 "custom space" manage space panel
-    Then the Custom permissions card shows Space members "Can edit" and everyone else "Can view"
+    Then the seeded scp0822 "custom space" members level is "Can view" via the API
+    When I close the Manage Space panel
+    And I open the seeded scp0822 "custom space" manage space panel
+    Then the Custom permissions card shows Space members "Can view" and everyone else "Can view"

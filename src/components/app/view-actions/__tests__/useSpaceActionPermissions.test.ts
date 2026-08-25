@@ -45,10 +45,10 @@ describe('useSpaceActionPermissions', () => {
     mockEventEmitter.removeAllListeners();
   });
 
-  it('loads the sidebar-edit capability independently from full space management', async () => {
+  it('allows only the canonical space-management authority to open owner actions', async () => {
     mockGetSpacePermission.mockResolvedValue(
       capabilities({
-        can_edit_sidebar: true,
+        can_manage_space: true,
       })
     );
 
@@ -61,32 +61,18 @@ describe('useSpaceActionPermissions', () => {
     expect(result.current.canOpenManageSpace).toBe(true);
   });
 
-  it('allows invite-only members to open Manage Space', async () => {
-    mockGetSpacePermission.mockResolvedValue(
-      capabilities({
-        can_invite_members: true,
-      })
-    );
+  it.each([
+    ['sidebar editors', { can_edit_sidebar: true }],
+    ['invite-only members', { can_invite_members: true }],
+    ['member managers', { can_manage_members: true }],
+  ] as const)('does not expose owner actions to %s', async (_label, delegatedCapability) => {
+    mockGetSpacePermission.mockResolvedValue(capabilities(delegatedCapability));
 
     const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
 
     await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
 
-    expect(result.current.canOpenManageSpace).toBe(true);
-  });
-
-  it('allows member managers to open Manage Space', async () => {
-    mockGetSpacePermission.mockResolvedValue(
-      capabilities({
-        can_manage_members: true,
-      })
-    );
-
-    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
-
-    await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
-
-    expect(result.current.canOpenManageSpace).toBe(true);
+    expect(result.current.canOpenManageSpace).toBe(false);
   });
 
   it('fails closed when structured-space capabilities cannot be loaded', async () => {
@@ -101,13 +87,13 @@ describe('useSpaceActionPermissions', () => {
     consoleError.mockRestore();
   });
 
-  it.each([404, 405])('retains legacy management when the structured route returns HTTP %s', async (status) => {
+  it.each([404, 405])('fails closed when the structured route returns HTTP %s', async (status) => {
     mockGetSpacePermission.mockRejectedValue({ code: status, httpStatus: status, message: 'Unsupported route' });
-    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true, true));
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
 
     await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
 
-    expect(result.current.canOpenManageSpace).toBe(true);
+    expect(result.current.canOpenManageSpace).toBe(false);
   });
 
   it('does not treat a payload-level not-found response as an unsupported route', async () => {
@@ -118,7 +104,7 @@ describe('useSpaceActionPermissions', () => {
       httpStatus: 404,
       message: 'Space not found',
     });
-    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true, true));
+    const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
 
     await waitFor(() => expect(result.current.hasLoadedSpaceActionPermissions).toBe(true));
 
@@ -126,10 +112,10 @@ describe('useSpaceActionPermissions', () => {
     consoleError.mockRestore();
   });
 
-  it('revalidates a group-derived capability while the action menu stays open', async () => {
+  it('revalidates canonical space-management authority while the action menu stays open', async () => {
     mockGetSpacePermission
-      .mockResolvedValueOnce(capabilities({ can_edit_sidebar: true }))
-      .mockResolvedValueOnce(capabilities({ can_edit_sidebar: false }));
+      .mockResolvedValueOnce(capabilities({ can_manage_space: true }))
+      .mockResolvedValueOnce(capabilities({ can_manage_space: false }));
 
     const { result } = renderHook(() => useSpaceActionPermissions(spaceView, true));
 

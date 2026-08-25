@@ -110,6 +110,8 @@ export const SpaceSelectors = {
     page.locator(`[data-testid="space-item"]:has([data-testid="space-name"]:text-is("${spaceName}"))`).first(),
   moreActionsButton: (page: Page) => page.getByTestId('inline-more-actions'),
   createSpaceModal: (page: Page) => page.getByTestId('create-space-modal'),
+  manageSpaceModal: (page: Page) => page.getByTestId('manage-space-modal'),
+  manageSpaceNameInput: (page: Page) => page.getByTestId('manage-space-modal').getByRole('textbox').first(),
   spaceNameInput: (page: Page) => page.getByTestId('space-name-input'),
 };
 

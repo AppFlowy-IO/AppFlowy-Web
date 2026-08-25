@@ -20,11 +20,11 @@ Feature: Seeded space permission management
       | member private | default space | default page | visible    | editable    |
       | guest none     | default space | default page | hidden     | denied      |
 
-    Examples: Private space
+    Examples: Restricted Custom space
       | account        | space         | page         | navigation | page access |
       | owner 2        | private space | private page | visible    | editable    |
       | member default | private space | private page | visible    | read-only   |
-      | member private | private space | private page | visible    | editable    |
+      | member private | private space | private page | visible    | read-only   |
       | member closed  | private space | private page | hidden     | denied      |
       | guest private  | private space | private page | hidden     | editable    |
       | guest none     | private space | private page | hidden     | denied      |
@@ -35,24 +35,24 @@ Feature: Seeded space permission management
       | member open    | group full access space | group full access page | visible    | editable    |
       | member closed  | group full access space | group full access page | hidden     | denied      |
 
-  Scenario: Owner grants and revokes a direct member on a new private space
+  Scenario: Owner grants and revokes a direct member on a new restricted Custom space
     Given I sign in as seeded spm0622 "owner 1"
-    When I create a temporary seeded spm0622 private space
-    Then seeded spm0622 "member closed" cannot see the temporary private space
-    When I sign in as seeded spm0622 "owner 1" and reopen the temporary private space Manage Space members tab
+    When I create a temporary seeded spm0622 restricted Custom space
+    Then seeded spm0622 "member closed" cannot see the temporary restricted Custom space
+    When I sign in as seeded spm0622 "owner 1" and reopen the temporary restricted Custom space Manage Space members tab
     Then the Manage Space members list does not show seeded spm0622 "member closed"
     And the Manage Space member search for seeded spm0622 "member closed" shows an addable workspace member
     When I add seeded spm0622 "member closed" to the current space
     Then the Manage Space members list shows seeded spm0622 "member closed" with role "Member"
-    And seeded spm0622 "member closed" can see the temporary private space
-    And seeded spm0622 "member closed" can use the temporary private page
-    When I sign in as seeded spm0622 "owner 1" and reopen the temporary private space Manage Space members tab
+    And seeded spm0622 "member closed" can see the temporary restricted Custom space
+    And seeded spm0622 "member closed" can use the temporary restricted Custom page
+    When I sign in as seeded spm0622 "owner 1" and reopen the temporary restricted Custom space Manage Space members tab
     And I remove seeded spm0622 "member closed" from the current space
     Then the Manage Space members list does not show seeded spm0622 "member closed"
-    And seeded spm0622 "member closed" cannot see the temporary private space
-    And seeded spm0622 "member closed" receives no access to the temporary private page
+    And seeded spm0622 "member closed" cannot see the temporary restricted Custom space
+    And seeded spm0622 "member closed" receives no access to the temporary restricted Custom page
 
-  Scenario: Owner manages seeded private space members
+  Scenario: Owner manages seeded restricted Custom space members
     Given I sign in as seeded spm0622 "owner 1"
     When I open the seeded spm0622 "private page"
     And I open the seeded spm0622 "private space" manage space panel
@@ -60,7 +60,7 @@ Feature: Seeded space permission management
     Then the Manage Space members list shows seeded spm0622 "owner 2" with role "Owner"
     And the Manage Space members list shows seeded spm0622 "member default" with role "Member"
     And the Manage Space members list shows seeded spm0622 "member private" with role "Member"
-    And the Manage Space members list shows seeded spm0622 "guest private" with role "Member"
+    And the Manage Space members list does not show seeded spm0622 "guest private"
     And the Manage Space members list does not show seeded spm0622 "member closed"
     And the Manage Space member search for seeded spm0622 "member closed" shows an addable workspace member
     When I add seeded spm0622 "member closed" to the current space
@@ -68,9 +68,9 @@ Feature: Seeded space permission management
     When I remove seeded spm0622 "member closed" from the current space
     Then the Manage Space members list does not show seeded spm0622 "member closed"
 
-  # The seeded member has an explicit manual Can edit grant. Space defaults apply
-  # to default/joined membership and must not overwrite that explicit grant.
-  Scenario: Owner changes private space defaults without clobbering explicit member access
+  # Custom spaces have one collective Space members level: every explicit person or group in
+  # that audience follows the same default, regardless of an old per-member stored level.
+  Scenario: Owner changes the collective level for restricted Custom space members
     Given I sign in as seeded spm0622 "owner 1"
     When I open the seeded spm0622 "private page"
     And I open the seeded spm0622 "private space" manage space panel
@@ -81,7 +81,7 @@ Feature: Seeded space permission management
     And I open the seeded spm0622 "private space" manage space panel
     And I change the Manage Space members default access to "Can view"
     When I sign in as seeded spm0622 "member private" and open the seeded spm0622 "private page"
-    Then the seeded spm0622 page title is editable
+    Then the seeded spm0622 page title is read-only
 
   Scenario: Owner can inspect and update the seeded workspace group
     Given I sign in as seeded spm0622 "owner 1"
@@ -97,7 +97,7 @@ Feature: Seeded space permission management
     When I remove workspace member "spm0622-member-restricted@appflowy.local" from the open group
     Then the group detail panel does not show workspace member "spm0622-member-restricted@appflowy.local"
 
-  Scenario: Seeded group membership grants and revokes Full Access to its private space
+  Scenario: Seeded group membership grants and revokes Full Access to its restricted Custom space
     Given I sign in as seeded spm0622 "owner 1"
     Then seeded spm0622 "member closed" cannot open the seeded group Full Access page
     When I return as seeded spm0622 "owner 1" without resetting group membership
@@ -115,7 +115,7 @@ Feature: Seeded space permission management
 
   Scenario: Seeded group Can edit access is enforced and revoked
     Given I sign in as seeded spm0622 "owner 1"
-    When I prepare the seeded private page and workspace group for sharing
+    When I prepare the seeded restricted Custom page and workspace group for sharing
     Then seeded spm0622 "member open" cannot open the seeded group-share page
     When I sign in as seeded spm0622 "owner 1" and open the seeded group-share page as owner
     And I open the share panel

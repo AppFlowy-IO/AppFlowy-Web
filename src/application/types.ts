@@ -2154,6 +2154,13 @@ export interface CreateSpacePayload {
   space_icon?: string;
   space_icon_color?: string;
   view_id?: string;
+  /**
+   * Client-only retry contract. When true, `view_id` (and an explicit
+   * `initial_page.view_id`) are fresh UUIDs owned by this create attempt, so an
+   * AlreadyExists response can be reconciled as the committed result. HTTP
+   * services strip this field before sending payloads.
+   */
+  client_generated_view_id?: boolean;
   permission?: SpacePermissionSettings;
   space_permission?: SpacePermission; // 0 for public space, 1 for private space
 }
