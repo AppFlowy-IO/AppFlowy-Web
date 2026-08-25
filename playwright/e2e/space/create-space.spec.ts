@@ -57,9 +57,11 @@ test.describe('Space Creation Tests', () => {
       await expect(createSpaceModal.getByTestId('manage-space-public-access-card')).toBeVisible();
 
       const nameInput = SpaceSelectors.spaceNameInput(page);
+      const createButton = createSpaceModal.getByTestId('create-space-submit');
 
       await expect(nameInput).toBeEnabled();
-      await expect(nameInput).toHaveValue('General');
+      await expect(nameInput).toHaveValue('');
+      await expect(createButton).toBeDisabled();
 
       // Step 5: Editing the draft does not add it to the sidebar. Only Create
       // persists the space and its initial document.
@@ -67,7 +69,8 @@ test.describe('Space Creation Tests', () => {
       const renamedSpace = SpaceSelectors.itemByName(page, spaceName);
 
       await expect(renamedSpace).toHaveCount(0);
-      await createSpaceModal.getByTestId('create-space-submit').click();
+      await expect(createButton).toBeEnabled();
+      await createButton.click();
 
       // Step 6: Confirmation closes Create Space and opens the initial page.
       await expect(createSpaceModal).toBeHidden({ timeout: 20000 });
