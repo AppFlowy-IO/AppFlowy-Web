@@ -99,11 +99,12 @@ jobs:
           - name: 'gallery-bdd'
             spec: >-
               playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
             shard: ''
-            description: 'Authentication regressions and migrated Gallery behavior scenarios'
+            description: 'Authentication, database-row mention, and migrated Gallery behavior scenarios'
             bdd: true
           - name: 'space-permissions-bdd'
             spec: >-
