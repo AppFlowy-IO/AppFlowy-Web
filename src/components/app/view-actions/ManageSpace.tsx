@@ -58,6 +58,41 @@ import type { KeyboardEvent } from 'react';
 
 type ManageSpaceTab = SpaceSettingsTab;
 
+type SpaceMetadata = {
+  name: string;
+  space_icon: string;
+  space_icon_color: string;
+};
+
+type SpaceMetadataFieldVersions = Record<keyof SpaceMetadata, number>;
+
+type SpaceMetadataMutationCoordinator = {
+  confirmed: SpaceMetadata;
+  tail: Promise<void>;
+};
+
+// A dialog closes by unmounting. Keep each space's write tail outside the
+// component so reopening cannot let a newer PATCH overtake an older request
+// that is still in flight.
+const spaceMetadataMutationCoordinators = new Map<string, SpaceMetadataMutationCoordinator>();
+
+function metadataMutationKey(workspaceId: string, viewId: string): string {
+  return JSON.stringify([workspaceId, viewId]);
+}
+
+function getMetadataMutationCoordinator(
+  key: string,
+  confirmed: SpaceMetadata
+): SpaceMetadataMutationCoordinator {
+  const existing = spaceMetadataMutationCoordinators.get(key);
+
+  if (existing) return existing;
+  const coordinator = { confirmed, tail: Promise.resolve() };
+
+  spaceMetadataMutationCoordinators.set(key, coordinator);
+  return coordinator;
+}
+
 // Compatibility controls for a visibility value this client does not yet understand.
 const INHERITED_MEMBER_SOURCES = new Set(['workspace_default', 'page_share']);
 const LAST_EXPLICIT_OWNER_ERROR = 'space must keep at least one explicit owner';
@@ -367,7 +402,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const [legacyPermissionMode, setLegacyPermissionMode] = useState(false);
   const [permissionRefreshRevision, setPermissionRefreshRevision] = useState(0);
   const [saving, setSaving] = useState(false);
-  const [mutatingMemberUid, setMutatingMemberUid] = useState<string | null>(null);
+  const [mutatingMemberUids, setMutatingMemberUids] = useState<Set<string>>(() => new Set());
   const [mutatingGroupIds, setMutatingGroupIds] = useState<Set<string>>(() => new Set());
   const [addingUid, setAddingUid] = useState<string | null>(null);
   const [addingGroupId, setAddingGroupId] = useState<string | null>(null);
@@ -376,6 +411,13 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const settingsRequestSequenceRef = useRef(0);
   const permissionMutationSequenceRef = useRef(0);
+  const metadataMutationGenerationRef = useRef(0);
+  const metadataFieldVersionsRef = useRef<SpaceMetadataFieldVersions>({
+    name: 0,
+    space_icon: 0,
+    space_icon_color: 0,
+  });
+  const mutatingMemberUidsRef = useRef<Set<string>>(new Set());
   const savingRef = useRef(false);
   const spaceRequestRef = useRef({
     generation: 0,
@@ -395,6 +437,20 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       open,
       workspaceId,
       viewId,
+    };
+
+    return () => {
+      settingsRequestSequenceRef.current += 1;
+      permissionMutationSequenceRef.current += 1;
+      savingRef.current = false;
+      const latestRequestScope = spaceRequestRef.current;
+
+      spaceRequestRef.current = {
+        ...latestRequestScope,
+        generation: latestRequestScope.generation + 1,
+        memberRequestSequence: latestRequestScope.memberRequestSequence + 1,
+        open: false,
+      };
     };
   }, [open, viewId, workspaceId]);
 
@@ -420,11 +476,15 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // is recomputed whenever the outline changes identity (realtime sync, a
   // sibling rename, expand/collapse), and we must not reset the form mid-edit.
   const viewRef = useRef(view);
-  const loadedSpaceMetadataRef = useRef({
+  const loadedSpaceMetadataRef = useRef<SpaceMetadata>({
     name: view?.name || '',
     space_icon: view?.extra?.space_icon || '',
     space_icon_color: view?.extra?.space_icon_color || '',
   });
+  // Keep server-confirmed metadata separate from the latest optimistic form
+  // value. Concurrent edits must never use another unconfirmed edit as their
+  // rollback baseline.
+  const confirmedSpaceMetadataRef = useRef<SpaceMetadata>(loadedSpaceMetadataRef.current);
 
   useEffect(() => {
     viewRef.current = view;
@@ -433,6 +493,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
   // Seed the form only when the modal opens or the target space changes — both
   // primitives — reading the current view snapshot from the ref.
   useEffect(() => {
+    metadataMutationGenerationRef.current += 1;
     if (!open) return;
     const currentView = viewRef.current;
 
@@ -444,8 +505,15 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     };
 
     loadedSpaceMetadataRef.current = loadedMetadata;
+    confirmedSpaceMetadataRef.current = loadedMetadata;
+    metadataFieldVersionsRef.current = {
+      name: 0,
+      space_icon: 0,
+      space_icon_color: 0,
+    };
     permissionMutationSequenceRef.current += 1;
     savingRef.current = false;
+    mutatingMemberUidsRef.current = new Set();
     setTab('general');
     setSpaceName(loadedMetadata.name);
     setSpaceIcon(loadedMetadata.space_icon);
@@ -465,12 +533,21 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
     setSpaceGroups([]);
     setWorkspaceMembers([]);
     setWorkspaceGroups([]);
+    setMutatingMemberUids(new Set());
     setMutatingGroupIds(new Set());
+    setAddingUid(null);
+    setAddingGroupId(null);
     setMemberSearch('');
     setPendingConfirmation(null);
     setSaving(false);
     inputRef.current = null;
-  }, [open, viewId]);
+
+    return () => {
+      // Detach local UI completion from a closed modal or newly selected space;
+      // the per-space coordinator still preserves server request ordering.
+      metadataMutationGenerationRef.current += 1;
+    };
+  }, [open, viewId, workspaceId]);
 
   const refreshSpaceMembers = useCallback(async (): Promise<boolean> => {
     if (!workspaceId || !viewId) return false;
@@ -523,6 +600,12 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
     const handlePermissionChanged = () => {
       settingsRequestSequenceRef.current += 1;
+      // The event starts an authoritative server refresh. Supersede any older
+      // optimistic permission request so a late rejection cannot roll fresh
+      // settings back (and a late completion cannot leave the dialog saving).
+      permissionMutationSequenceRef.current += 1;
+      savingRef.current = false;
+      setSaving(false);
       const requestScope = spaceRequestRef.current;
 
       spaceRequestRef.current = {
@@ -721,46 +804,96 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         return;
       }
 
-      const previous = loadedSpaceMetadataRef.current;
-      const next = { ...previous, ...patch };
-      const changed = Object.entries(patch).some(([key, value]) => previous[key as keyof typeof previous] !== value);
+      const previousDesired = loadedSpaceMetadataRef.current;
+      const nextDesired = { ...previousDesired, ...patch };
+      const changed = Object.entries(patch).some(
+        ([key, value]) => previousDesired[key as keyof SpaceMetadata] !== value
+      );
 
       if (!changed) return;
-      loadedSpaceMetadataRef.current = next;
+      loadedSpaceMetadataRef.current = nextDesired;
+      const mutationGeneration = metadataMutationGenerationRef.current;
+      const fieldVersions = metadataFieldVersionsRef.current;
+      const ownedFieldVersions: Partial<SpaceMetadataFieldVersions> = {};
 
-      try {
-        if (legacyPermissionMode) {
-          await updateLegacySpace?.({
-            view_id: viewId,
-            ...next,
-            space_permission: legacySpacePermission(permissionSettings.visibility),
-          });
-        } else {
-          await WorkspaceService.updateStructuredSpace(workspaceId, viewId, patch);
-        }
-      } catch (error) {
-        // Only roll a field back if no newer edit has replaced this request.
-        const current = loadedSpaceMetadataRef.current;
-        const rolledBack = { ...current };
+      for (const field of Object.keys(patch) as Array<keyof SpaceMetadata>) {
+        if (patch[field] === undefined) continue;
+        const version = fieldVersions[field] + 1;
 
-        if (patch.name !== undefined && current.name === next.name) {
-          rolledBack.name = previous.name;
-          setSpaceName(previous.name);
-        }
-
-        if (patch.space_icon !== undefined && current.space_icon === next.space_icon) {
-          rolledBack.space_icon = previous.space_icon;
-          setSpaceIcon(previous.space_icon);
-        }
-
-        if (patch.space_icon_color !== undefined && current.space_icon_color === next.space_icon_color) {
-          rolledBack.space_icon_color = previous.space_icon_color;
-          setSpaceIconColor(previous.space_icon_color);
-        }
-
-        loadedSpaceMetadataRef.current = rolledBack;
-        toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+        fieldVersions[field] = version;
+        ownedFieldVersions[field] = version;
       }
+
+      const coordinatorKey = metadataMutationKey(workspaceId, viewId);
+      const coordinator = getMetadataMutationCoordinator(coordinatorKey, confirmedSpaceMetadataRef.current);
+      const mutation = coordinator.tail
+        .catch(() => undefined)
+        .then(async () => {
+          const requestMetadata = { ...coordinator.confirmed, ...patch };
+
+          try {
+            if (legacyPermissionMode) {
+              await updateLegacySpace?.({
+                view_id: viewId,
+                ...requestMetadata,
+                space_permission: legacySpacePermission(permissionSettings.visibility),
+              });
+            } else {
+              await WorkspaceService.updateStructuredSpace(workspaceId, viewId, patch);
+            }
+
+            // The coordinator remains authoritative even when this modal was
+            // closed while the request was in flight; a reopened modal queues
+            // behind it and must use the actual server-confirmed baseline.
+            coordinator.confirmed = requestMetadata;
+            if (metadataMutationGenerationRef.current !== mutationGeneration) return;
+            confirmedSpaceMetadataRef.current = coordinator.confirmed;
+          } catch (error) {
+            if (metadataMutationGenerationRef.current !== mutationGeneration) return;
+
+            // Roll back only fields this failed request still owns, and always
+            // use server-confirmed data rather than an earlier optimistic edit.
+            const currentDesired = loadedSpaceMetadataRef.current;
+            const confirmed = coordinator.confirmed;
+            const rolledBack = { ...currentDesired };
+
+            confirmedSpaceMetadataRef.current = confirmed;
+
+            if (patch.name !== undefined && metadataFieldVersionsRef.current.name === ownedFieldVersions.name) {
+              rolledBack.name = confirmed.name;
+              setSpaceName(confirmed.name);
+            }
+
+            if (
+              patch.space_icon !== undefined &&
+              metadataFieldVersionsRef.current.space_icon === ownedFieldVersions.space_icon
+            ) {
+              rolledBack.space_icon = confirmed.space_icon;
+              setSpaceIcon(confirmed.space_icon);
+            }
+
+            if (
+              patch.space_icon_color !== undefined &&
+              metadataFieldVersionsRef.current.space_icon_color === ownedFieldVersions.space_icon_color
+            ) {
+              rolledBack.space_icon_color = confirmed.space_icon_color;
+              setSpaceIconColor(confirmed.space_icon_color);
+            }
+
+            loadedSpaceMetadataRef.current = rolledBack;
+            toast.error(getErrorMessage(error, t('space.error.updateSpace')));
+          }
+        });
+
+      coordinator.tail = mutation;
+      const releaseCoordinator = () => {
+        if (spaceMetadataMutationCoordinators.get(coordinatorKey)?.tail === mutation) {
+          spaceMetadataMutationCoordinators.delete(coordinatorKey);
+        }
+      };
+
+      void mutation.then(releaseCoordinator, releaseCoordinator);
+      await mutation;
     },
     [
       canEditSidebar,
@@ -774,6 +907,23 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       workspaceId,
     ]
   );
+
+  const setMemberMutationPending = useCallback((uid: string, pending: boolean): boolean => {
+    const current = mutatingMemberUidsRef.current;
+
+    if (pending && current.has(uid)) return false;
+    const next = new Set(current);
+
+    if (pending) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+
+    mutatingMemberUidsRef.current = next;
+    setMutatingMemberUids(next);
+    return true;
+  }, []);
 
   const persistPermission = useCallback(
     async (nextPermission: SpacePermissionSettings): Promise<boolean> => {
@@ -939,6 +1089,8 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         return;
       }
 
+      const requestGeneration = spaceRequestRef.current.generation;
+
       setAddingUid(uid);
       try {
         await WorkspaceService.addSpaceMember(workspaceId, viewId, {
@@ -946,12 +1098,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           role: SpaceMemberRole.Member,
           access_level: explicitMemberAccessLevel,
         });
+        if (spaceRequestRef.current.generation !== requestGeneration) return;
         if (canManageMembers) await refreshSpaceMembers();
+        if (spaceRequestRef.current.generation !== requestGeneration) return;
         toast.success(t('space.permissionManager.addSpaceMemberSuccess'));
       } catch (error) {
-        toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          toast.error(getErrorMessage(error, t('space.permissionManager.addSpaceMemberFailed')));
+        }
       } finally {
-        setAddingUid(null);
+        if (spaceRequestRef.current.generation === requestGeneration) setAddingUid(null);
       }
     },
     [
@@ -1032,8 +1188,9 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       }
 
       const accessLevel = role === SpaceMemberRole.Owner ? AccessLevel.FullAccess : explicitMemberAccessLevel;
+      const requestGeneration = spaceRequestRef.current.generation;
 
-      setMutatingMemberUid(member.uid);
+      if (!setMemberMutationPending(member.uid, true)) return;
       try {
         if (isMutableSpaceMember(member)) {
           await WorkspaceService.updateSpaceMember(workspaceId, viewId, member.uid, {
@@ -1048,11 +1205,16 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
           });
         }
 
+        if (spaceRequestRef.current.generation !== requestGeneration) return;
         await refreshSpaceMembers();
       } catch (error) {
-        toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.updateSpaceMemberFailed'), t));
+        }
       } finally {
-        setMutatingMemberUid(null);
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          setMemberMutationPending(member.uid, false);
+        }
       }
     },
     [
@@ -1062,6 +1224,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       permissionLoadFailed,
       permissionLoaded,
       refreshSpaceMembers,
+      setMemberMutationPending,
       t,
       viewId,
       workspaceId,
@@ -1081,15 +1244,23 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
         return;
       }
 
-      setMutatingMemberUid(member.uid);
+      const requestGeneration = spaceRequestRef.current.generation;
+
+      if (!setMemberMutationPending(member.uid, true)) return;
       try {
         await WorkspaceService.removeSpaceMember(workspaceId, viewId, member.uid);
+        if (spaceRequestRef.current.generation !== requestGeneration) return;
         await refreshSpaceMembers();
+        if (spaceRequestRef.current.generation !== requestGeneration) return;
         toast.success(t('space.permissionManager.removeSpaceMemberSuccess'));
       } catch (error) {
-        toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.removeSpaceMemberFailed'), t));
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          toast.error(manageSpaceErrorMessage(error, t('space.permissionManager.removeSpaceMemberFailed'), t));
+        }
       } finally {
-        setMutatingMemberUid(null);
+        if (spaceRequestRef.current.generation === requestGeneration) {
+          setMemberMutationPending(member.uid, false);
+        }
       }
     },
     [
@@ -1098,6 +1269,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       permissionLoadFailed,
       permissionLoaded,
       refreshSpaceMembers,
+      setMemberMutationPending,
       t,
       viewId,
       workspaceId,
@@ -1478,7 +1650,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
                         key={`${member.uid}-${member.source}`}
                         member={member}
                         readOnly={membersReadOnly}
-                        disabled={membersDisabled || mutatingMemberUid === member.uid}
+                        disabled={membersDisabled || mutatingMemberUids.has(member.uid)}
                         canRemove={!membersReadOnly && canManageMembers && isMutableSpaceMember(member)}
                         onChangeRole={handleUpdateMemberRole}
                         onRemove={handleRemoveMember}

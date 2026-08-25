@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 
 import MoreActionsContent from '@/components/app/header/MoreActionsContent';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
+import SpaceSidebarActions from '@/components/app/view-actions/SpaceSidebarActions';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
 
 import type { ReactNode } from 'react';
@@ -202,6 +203,44 @@ describe('view action permission gates', () => {
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
     expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
     expect(screen.queryByTestId('space-action-delete')).toBeNull();
+  });
+
+  it('hides the space more trigger when no menu action is permitted while keeping Add independent', () => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canCreateViewActions: true,
+      canManageViewActions: false,
+      hasLoadedViewActionPermissions: true,
+      isLoadingViewActionPermissions: false,
+    });
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: false,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
+
+    render(<SpaceSidebarActions view={mockSpaceView} visible onActionClick={jest.fn()} />);
+
+    expect(screen.queryByTestId('inline-more-actions')).toBeNull();
+    expect(screen.getByTestId('inline-add-page')).toBeTruthy();
+  });
+
+  it('shows the space more trigger without Add when only management is permitted', () => {
+    mockUseViewActionPermissions.mockReturnValue({
+      canCreateViewActions: false,
+      canManageViewActions: false,
+      hasLoadedViewActionPermissions: true,
+      isLoadingViewActionPermissions: false,
+    });
+    mockUseSpaceActionPermissions.mockReturnValue({
+      canOpenManageSpace: true,
+      hasLoadedSpaceActionPermissions: true,
+      isLoadingSpaceActionPermissions: false,
+    });
+
+    render(<SpaceSidebarActions view={mockSpaceView} visible onActionClick={jest.fn()} />);
+
+    expect(screen.getByTestId('inline-more-actions')).toBeTruthy();
+    expect(screen.queryByTestId('inline-add-page')).toBeNull();
   });
 
   it.each(['sidebar editor', 'invite-only member', 'member manager'])(

@@ -1057,6 +1057,176 @@ describe('ManageSpace ACL management', () => {
     expect(mockUpdateStructuredSpace.mock.calls[0][2]).not.toHaveProperty('permission');
   });
 
+  it('serializes overlapping renames and rolls failed edits back to server-confirmed metadata', async () => {
+    const firstRename = deferred<{ view_id: string }>();
+    const secondRename = deferred<{ view_id: string }>();
+
+    mockUpdateStructuredSpace.mockReturnValueOnce(firstRename.promise).mockReturnValueOnce(secondRename.promise);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(nameInput, { target: { value: 'First optimistic name' } });
+    fireEvent.blur(nameInput);
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(nameInput, { target: { value: 'Second optimistic name' } });
+    fireEvent.blur(nameInput);
+
+    // The second write waits for the first, so requests cannot complete out of
+    // order and overwrite newer metadata on the server.
+    expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstRename.reject(new Error('first rename failed'));
+    });
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenNthCalledWith(2, 'workspace-1', 'space-1', {
+        name: 'Second optimistic name',
+      })
+    );
+    // The first failure must not replace the newer value still being saved.
+    expect((nameInput as HTMLInputElement).value).toBe('Second optimistic name');
+
+    await act(async () => {
+      secondRename.reject(new Error('second rename failed'));
+    });
+    await waitFor(() => expect((nameInput as HTMLInputElement).value).toBe('Space one'));
+  });
+
+  it('uses field versions so an A-B-A rename cannot be rolled back by an older failure', async () => {
+    const firstRename = deferred<{ view_id: string }>();
+    const secondRename = deferred<{ view_id: string }>();
+    const thirdRename = deferred<{ view_id: string }>();
+
+    mockUpdateStructuredSpace
+      .mockReturnValueOnce(firstRename.promise)
+      .mockReturnValueOnce(secondRename.promise)
+      .mockReturnValueOnce(thirdRename.promise);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    for (const name of ['Repeated name', 'Middle name', 'Repeated name']) {
+      fireEvent.change(nameInput, { target: { value: name } });
+      fireEvent.blur(nameInput);
+    }
+
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      firstRename.reject(new Error('first repeated rename failed'));
+    });
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(2));
+    expect(nameInput.value).toBe('Repeated name');
+
+    await act(async () => {
+      secondRename.reject(new Error('middle rename failed'));
+    });
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(3));
+    expect(nameInput.value).toBe('Repeated name');
+
+    await act(async () => {
+      thirdRename.resolve({ view_id: 'space-1' });
+    });
+    expect(nameInput.value).toBe('Repeated name');
+  });
+
+  it('serializes metadata writes across closing and reopening the same space', async () => {
+    const olderRename = deferred<{ view_id: string }>();
+    const newerRename = deferred<{ view_id: string }>();
+
+    mockUpdateStructuredSpace.mockReturnValueOnce(olderRename.promise).mockReturnValueOnce(newerRename.promise);
+    const firstRender = render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    const firstNameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(firstNameInput, { target: { value: 'Older in-flight name' } });
+    fireEvent.blur(firstNameInput);
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+    firstRender.unmount();
+
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+    await waitForSettingsLoaded();
+    const reopenedNameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(reopenedNameInput, { target: { value: 'Newer reopened name' } });
+    fireEvent.blur(reopenedNameInput);
+    expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      olderRename.resolve({ view_id: 'space-1' });
+    });
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenNthCalledWith(2, 'workspace-1', 'space-1', {
+        name: 'Newer reopened name',
+      })
+    );
+
+    await act(async () => {
+      newerRename.resolve({ view_id: 'space-1' });
+    });
+  });
+
+  it('still sends an already-queued metadata edit after the modal unmounts', async () => {
+    const firstRename = deferred<{ view_id: string }>();
+    const queuedRename = deferred<{ view_id: string }>();
+
+    mockUpdateStructuredSpace.mockReturnValueOnce(firstRename.promise).mockReturnValueOnce(queuedRename.promise);
+    const { unmount } = render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    const nameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(nameInput, { target: { value: 'First name' } });
+    fireEvent.blur(nameInput);
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+    fireEvent.change(nameInput, { target: { value: 'Queued final name' } });
+    fireEvent.blur(nameInput);
+    unmount();
+
+    await act(async () => {
+      firstRename.resolve({ view_id: 'space-1' });
+    });
+    await waitFor(() =>
+      expect(mockUpdateStructuredSpace).toHaveBeenNthCalledWith(2, 'workspace-1', 'space-1', {
+        name: 'Queued final name',
+      })
+    );
+
+    await act(async () => {
+      queuedRename.resolve({ view_id: 'space-1' });
+    });
+  });
+
+  it('ignores a metadata failure from the previously selected space', async () => {
+    const staleRename = deferred<{ view_id: string }>();
+
+    mockUpdateStructuredSpace.mockReturnValueOnce(staleRename.promise);
+    const { rerender } = render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    const firstNameInput = screen.getByPlaceholderText('space.spaceNamePlaceholder');
+
+    fireEvent.change(firstNameInput, { target: { value: 'Old space optimistic name' } });
+    fireEvent.blur(firstNameInput);
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+
+    rerender(<ManageSpace open onClose={jest.fn()} viewId='space-2' />);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').value).toBe('Space two')
+    );
+
+    await act(async () => {
+      staleRename.reject(new Error('stale rename failed'));
+    });
+
+    expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').value).toBe('Space two');
+    expect(toast.error).not.toHaveBeenCalledWith('stale rename failed');
+  });
+
   it('lets sidebar editors save metadata without sending a permission update', async () => {
     mockGetSpacePermission.mockResolvedValue(
       permissionResponse({
@@ -1200,6 +1370,34 @@ describe('ManageSpace ACL management', () => {
     expect(screen.getByPlaceholderText('space.spaceNamePlaceholder').hasAttribute('disabled')).toBe(true);
   });
 
+  it('keeps an authoritative permission refresh when an older optimistic mutation later fails', async () => {
+    const staleMutation = deferred<{ view_id: string }>();
+
+    mockGetSpacePermission
+      .mockResolvedValueOnce(permissionResponse({ permission: customPermission }))
+      .mockResolvedValueOnce(permissionResponse({ permission: publicPermission }));
+    mockUpdateStructuredSpace.mockReturnValueOnce(staleMutation.promise);
+    render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+    await waitForSettingsLoaded();
+    fireEvent.click(visibilityOption(SpaceVisibility.Private));
+    confirmPending();
+    await waitFor(() => expect(mockUpdateStructuredSpace).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      mockEventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, { objectId: 'authoritative-refresh' });
+    });
+    await waitFor(() => expect(mockGetSpacePermission).toHaveBeenCalledTimes(2));
+    await waitFor(() => expectSelectedVisibility(SpaceVisibility.Public));
+
+    await act(async () => {
+      staleMutation.reject(new Error('older mutation failed'));
+    });
+
+    expectSelectedVisibility(SpaceVisibility.Public);
+    expect(toast.error).not.toHaveBeenCalledWith('older mutation failed');
+  });
+
   it('changes the member default without overwriting a manual member grant', async () => {
     const member = manualMember();
 
@@ -1309,6 +1507,94 @@ describe('ManageSpace ACL management', () => {
       await waitFor(() => expect(removeButton.disabled).toBe(false));
       fireEvent.click(removeButton);
       await waitFor(() => expect(mockRemoveSpaceMember).toHaveBeenCalledWith('workspace-1', 'space-1', member.uid));
+    });
+
+    it('tracks simultaneous role updates independently for every member row', async () => {
+      const firstMember = manualMember();
+      const secondMember: SpaceMember = {
+        ...manualMember(),
+        uid: '6789012345678901',
+        name: 'Second member',
+        email: 'second-member@appflowy.io',
+      };
+      const firstUpdate = deferred<void>();
+      const secondUpdate = deferred<void>();
+
+      mockGetSpacePermission.mockResolvedValue(permissionResponse({ permission: customPermission }));
+      mockGetSpaceMembers.mockResolvedValue({ members: [firstMember, secondMember], groups: [] });
+      mockUpdateSpaceMember.mockReturnValueOnce(firstUpdate.promise).mockReturnValueOnce(secondUpdate.promise);
+      render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const firstRow = await screen.findByTestId(`space-member-row-${firstMember.uid}`);
+      const secondRow = screen.getByTestId(`space-member-row-${secondMember.uid}`);
+
+      fireEvent.click(
+        within(firstRow).getByRole('button', {
+          name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+        })
+      );
+      fireEvent.click(
+        within(secondRow).getByRole('button', {
+          name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+        })
+      );
+
+      await waitFor(() => expect(mockUpdateSpaceMember).toHaveBeenCalledTimes(2));
+      expect(within(firstRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+        true
+      );
+      expect(
+        within(secondRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')
+      ).toBe(true);
+
+      await act(async () => {
+        firstUpdate.resolve();
+      });
+      await waitFor(() =>
+        expect(within(firstRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')).toBe(
+          false
+        )
+      );
+      expect(
+        within(secondRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')
+      ).toBe(true);
+
+      await act(async () => {
+        secondUpdate.resolve();
+      });
+      await waitFor(() =>
+        expect(
+          within(secondRow).getByRole('button', { name: 'space.permissionManager.member' }).hasAttribute('disabled')
+        ).toBe(false)
+      );
+    });
+
+    it('invalidates a pending member update when the modal unmounts', async () => {
+      const member = manualMember();
+      const pendingUpdate = deferred<void>();
+
+      mockGetSpaceMembers.mockResolvedValue({ members: [member], groups: [] });
+      mockUpdateSpaceMember.mockReturnValueOnce(pendingUpdate.promise);
+      const { unmount } = render(<ManageSpace open onClose={jest.fn()} viewId='space-1' />);
+
+      const row = await screen.findByTestId(`space-member-row-${member.uid}`);
+
+      fireEvent.click(
+        within(row).getByRole('button', {
+          name: 'space.permissionManager.owner space.permissionManager.ownerRoleDescription',
+        })
+      );
+      await waitFor(() => expect(mockUpdateSpaceMember).toHaveBeenCalledTimes(1));
+      unmount();
+
+      await act(async () => {
+        pendingUpdate.resolve();
+      });
+
+      // The initial roster load is the only one; a detached mutation must not
+      // revalidate or emit UI feedback after the dialog has gone away.
+      expect(mockGetSpaceMembers).toHaveBeenCalledTimes(1);
+      expect(toast.error).not.toHaveBeenCalled();
     });
 
     it('explains how to keep an owner when the server rejects a role change', async () => {

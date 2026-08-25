@@ -18,7 +18,7 @@ import {
 } from '@/application/services/js-services/workspace-view-metadata';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
-import { isDatabaseLayout } from '@/application/view-utils';
+import { isDatabaseLayout, isSpaceView } from '@/application/view-utils';
 import {
   addViewToOutline,
   deduplicateOutlineChildren,
@@ -2050,18 +2050,35 @@ export function useWorkspaceData() {
       // This preserves expanded sibling spaces after an ACL edit without
       // weakening the conservative behavior for ambiguous notifications.
       const changedView = payload?.objectId ? findView(stableOutlineRef.current, payload.objectId) : null;
-      const targetSpaceId = changedView?.extra?.is_space ? changedView.view_id : undefined;
+      const targetSpaceId = isSpaceView(changedView) ? changedView?.view_id : undefined;
 
       // Invalidate every affected subtree that could otherwise be grafted onto
       // the depth-limited root response, and supersede lazy-load responses that
       // started before this event.
+      const supersededLoadingViewIds = Array.from(loadingViewIdsRef.current);
+
       permissionRefreshRevisionRef.current += 1;
       const permissionRevision = permissionRefreshRevisionRef.current;
       const workspaceId = currentWorkspaceId;
       const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees(targetSpaceId);
       const staleSubtreeWaves = new Map<number, string[]>();
 
-      for (const viewId of staleSubtreeIds) {
+      // The permission revision above makes every captured request stale. A
+      // targeted eviction clears markers inside the changed space, but must not
+      // leave an in-flight sibling permanently marked as loading. Release all
+      // superseded markers before replacement requests claim them. Stale
+      // request finally handlers are revision-gated, so they cannot clear a
+      // marker owned by one of the replacement requests below.
+      for (const viewId of supersededLoadingViewIds) {
+        loadingViewIdsRef.current.delete(viewId);
+      }
+
+      // Resume both evicted expanded branches and sibling loads that the global
+      // permission revision superseded. Parent depths run first so a nested
+      // request always has an outline node to merge into.
+      const rehydrateViewIds = new Set([...staleSubtreeIds, ...supersededLoadingViewIds]);
+
+      for (const viewId of rehydrateViewIds) {
         const depth = viewDepths.get(viewId) ?? Number.MAX_SAFE_INTEGER;
         const wave = staleSubtreeWaves.get(depth) ?? [];
 

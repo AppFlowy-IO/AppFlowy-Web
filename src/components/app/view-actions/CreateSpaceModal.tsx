@@ -366,7 +366,8 @@ function CreateSpaceModal({
         try {
           await WorkspaceService.getSpacePermission(workspaceId, clientOwnedSpaceId);
           spaceExists = true;
-        } catch {
+        } catch (error) {
+          if (!isMissingOrDeletedResource(error)) throw error;
           await discardClientOwnedDraftSpace(workspaceId, clientOwnedSpaceId);
           resolution = 'discarded';
         }

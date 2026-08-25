@@ -608,11 +608,16 @@ describe('CreateSpaceModal draft controller', () => {
     expect(mockCreateSpace).toHaveBeenCalledTimes(1);
   });
 
-  it('cleans the exact client-owned ID before closing an unconfirmed standalone create', async () => {
+  it('cleans the exact client-owned ID after reconciliation confirms a standalone 404', async () => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
 
     mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
+    mockGetSpacePermission.mockRejectedValueOnce({
+      code: -2,
+      httpStatus: 404,
+      message: 'Space not found',
+    });
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     enterSpaceName();
@@ -623,19 +628,22 @@ describe('CreateSpaceModal draft controller', () => {
     fireEvent.click(screen.getByTestId('create-space-close'));
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(mockGetSpacePermission).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
     expect(mockMoveToTrash).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
     expect(mockDeleteTrash).toHaveBeenCalledWith('workspace-1', clientOwnedSpaceId);
     expect(onCreated).not.toHaveBeenCalled();
   });
 
-  it('keeps the frozen draft ID when close-time reconciliation and cleanup both fail', async () => {
+  it.each([
+    ['a network failure', new Error('reconcile unavailable'), 'reconcile unavailable'],
+    ['a 403', { httpStatus: 403, message: 'forbidden' }, 'forbidden'],
+    ['a transient 503', { httpStatus: 503, message: 'service unavailable' }, 'service unavailable'],
+  ])('preserves the frozen standalone draft when reconciliation returns %s', async (_case, error, message) => {
     const onClose = jest.fn();
     const onCreated = jest.fn();
 
     mockCreateSpace.mockRejectedValueOnce(new Error('response lost'));
-    mockGetSpacePermission.mockRejectedValueOnce(new Error('reconcile unavailable'));
-    mockMoveToTrash.mockRejectedValueOnce(new Error('cleanup unavailable'));
-    mockDeleteTrash.mockRejectedValueOnce(new Error('delete unavailable'));
+    mockGetSpacePermission.mockRejectedValueOnce(error);
     render(<CreateSpaceModal open onClose={onClose} onCreated={onCreated} />);
 
     enterSpaceName();
@@ -645,8 +653,10 @@ describe('CreateSpaceModal draft controller', () => {
 
     fireEvent.click(screen.getByTestId('create-space-close'));
 
-    await waitFor(() => expect(notify.error).toHaveBeenCalledWith('cleanup unavailable'));
+    await waitFor(() => expect(notify.error).toHaveBeenCalledWith(message));
     expect(onClose).not.toHaveBeenCalled();
+    expect(mockMoveToTrash).not.toHaveBeenCalled();
+    expect(mockDeleteTrash).not.toHaveBeenCalled();
     expect(screen.getByTestId('space-name-input').getAttribute('disabled')).not.toBeNull();
 
     mockCreateSpace.mockResolvedValueOnce(clientOwnedSpaceId);

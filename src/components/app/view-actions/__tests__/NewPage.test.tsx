@@ -10,6 +10,9 @@ const mockAddPage = jest.fn();
 const mockCreateSpaceWithInitialPage = jest.fn();
 const mockOpenPageModal = jest.fn();
 const mockEnsureViewVisibleInOutline = jest.fn();
+const mockNotifyError = jest.fn();
+let mockCreateSpaceModuleLoads = 0;
+let mockCreateSpaceModuleError: Error | null = null;
 let mockOutline: Array<{
   view_id: string;
   name: string;
@@ -17,6 +20,8 @@ let mockOutline: Array<{
   is_private: boolean;
   children: never[];
 }> = [];
+let mockCreatedSpaceId = 'space-created';
+let mockCreatedPageId = 'page-created';
 let lastCreateSpaceProps:
   | {
       initialPage?: CreatePagePayload;
@@ -74,7 +79,7 @@ jest.mock('@/components/_shared/modal', () => ({
 }));
 
 jest.mock('@/components/_shared/notify', () => ({
-  notify: { error: jest.fn() },
+  notify: { error: (...args: unknown[]) => mockNotifyError(...args) },
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
@@ -99,56 +104,103 @@ jest.mock('@/components/publish/header/duplicate/SpaceList', () => ({
   ),
 }));
 
-jest.mock('@/components/app/view-actions/CreateSpaceModal', () => ({
-  __esModule: true,
-  default: ({
-    open,
-    initialPage,
-    onClose,
-    onCreated,
-  }: {
-    open: boolean;
-    initialPage?: CreatePagePayload;
-    onClose: () => void;
-    onCreated?: (spaceId: string, pageId?: string) => void;
-  }) => {
-    lastCreateSpaceProps = { initialPage, onClose, onCreated };
+jest.mock('@/components/app/view-actions/CreateSpaceModal', () => {
+  mockCreateSpaceModuleLoads += 1;
+  if (mockCreateSpaceModuleError) throw mockCreateSpaceModuleError;
 
-    return open ? (
-      <div data-testid='create-space-draft-panel'>
-        <button data-testid='create-space-draft-close' onClick={onClose}>
-          close draft
-        </button>
-        <button data-testid='create-space-draft-complete' onClick={() => onCreated?.('space-created', 'page-created')}>
-          complete draft
-        </button>
-      </div>
-    ) : null;
-  },
-}));
+  return {
+    __esModule: true,
+    default: ({
+      open,
+      initialPage,
+      onClose,
+      onCreated,
+    }: {
+      open: boolean;
+      initialPage?: CreatePagePayload;
+      onClose: () => void;
+      onCreated?: (spaceId: string, pageId?: string) => void;
+    }) => {
+      lastCreateSpaceProps = { initialPage, onClose, onCreated };
+
+      return open ? (
+        <div data-testid='create-space-draft-panel'>
+          <button data-testid='create-space-draft-close' onClick={onClose}>
+            close draft
+          </button>
+          <button
+            data-testid='create-space-draft-complete'
+            onClick={() => onCreated?.(mockCreatedSpaceId, mockCreatedPageId)}
+          >
+            complete draft
+          </button>
+        </div>
+      ) : null;
+    },
+  };
+});
 
 describe('NewPage create-space flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockOutline = [];
+    mockCreatedSpaceId = 'space-created';
+    mockCreatedPageId = 'page-created';
+    mockCreateSpaceModuleError = null;
     lastCreateSpaceProps = undefined;
     mockEnsureViewVisibleInOutline.mockResolvedValue([]);
   });
 
-  function openCreateSpaceFlow() {
+  async function openCreateSpaceFlow() {
     fireEvent.click(screen.getByTestId('new-page-button'));
     fireEvent.click(screen.getByTestId('new-page-create-space-button'));
+    await screen.findByTestId('create-space-draft-panel');
   }
 
-  it('opens the draft Create Space panel without creating anything from the chooser link', () => {
+  it('keeps lazy loading dismissible and retries the Create Space import after a failure', async () => {
     render(<NewPage />);
 
-    openCreateSpaceFlow();
+    mockCreateSpaceModuleError = new Error('chunk unavailable');
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    fireEvent.click(screen.getByTestId('new-page-create-space-button'));
+    expect(screen.getByTestId('new-page-create-space-loading')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('new-page-create-space-loading-cancel'));
+    await act(async () => undefined);
+    expect(mockNotifyError).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('new-page-create-space-loading')).toBeNull();
+    expect(screen.queryByTestId('create-space-draft-panel')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    fireEvent.click(screen.getByTestId('new-page-create-space-button'));
+    expect(screen.getByTestId('new-page-create-space-loading')).toBeTruthy();
+    await waitFor(() =>
+      expect(mockNotifyError).toHaveBeenCalledWith('Unable to load the Create Space dialog. Please try again.')
+    );
+    expect(screen.queryByTestId('new-page-create-space-loading')).toBeNull();
+    expect(screen.queryByTestId('create-space-draft-panel')).toBeNull();
+
+    mockCreateSpaceModuleError = null;
+    await openCreateSpaceFlow();
+    expect(mockCreateSpaceModuleLoads).toBe(3);
+    expect(screen.getByTestId('create-space-draft-panel')).toBeTruthy();
+  });
+
+  it('loads and mounts the Create Space draft only while that flow is open', async () => {
+    render(<NewPage />);
+
+    expect(lastCreateSpaceProps).toBeUndefined();
+    fireEvent.click(screen.getByTestId('new-page-button'));
+    expect(lastCreateSpaceProps).toBeUndefined();
+    fireEvent.click(screen.getByTestId('new-page-create-space-button'));
+    await screen.findByTestId('create-space-draft-panel');
 
     expect(screen.getByTestId('create-space-draft-panel')).toBeTruthy();
     expect(screen.queryByTestId('new-page-modal')).toBeNull();
     expect(lastCreateSpaceProps?.initialPage).toEqual({ layout: ViewLayout.Document });
     expect(mockCreateSpaceWithInitialPage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('create-space-draft-close'));
+    expect(screen.queryByTestId('create-space-draft-panel')).toBeNull();
   });
 
   it('hydrates the exact created child before opening it when creation wins the outline race', async () => {
@@ -157,7 +209,7 @@ describe('NewPage create-space flow', () => {
     mockEnsureViewVisibleInOutline.mockReturnValue(hydration.promise);
     render(<NewPage />);
 
-    openCreateSpaceFlow();
+    await openCreateSpaceFlow();
     expect(mockOpenPageModal).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('create-space-draft-complete'));
 
@@ -174,10 +226,45 @@ describe('NewPage create-space flow', () => {
     expect(screen.queryByTestId('create-space-draft-panel')).toBeNull();
   });
 
-  it('discards a draft without opening a page', () => {
+  it('does not let an older hydration open after a newer create-space flow', async () => {
+    const firstHydration = deferred<string[]>();
+    const secondHydration = deferred<string[]>();
+
+    mockEnsureViewVisibleInOutline.mockImplementation((viewId: string) => {
+      return viewId === 'page-first' ? firstHydration.promise : secondHydration.promise;
+    });
     render(<NewPage />);
 
-    openCreateSpaceFlow();
+    mockCreatedSpaceId = 'space-first';
+    mockCreatedPageId = 'page-first';
+    await openCreateSpaceFlow();
+    fireEvent.click(screen.getByTestId('create-space-draft-complete'));
+    expect(mockEnsureViewVisibleInOutline).toHaveBeenCalledWith('page-first');
+
+    mockCreatedSpaceId = 'space-second';
+    mockCreatedPageId = 'page-second';
+    await openCreateSpaceFlow();
+    fireEvent.click(screen.getByTestId('create-space-draft-complete'));
+    expect(mockEnsureViewVisibleInOutline).toHaveBeenCalledWith('page-second');
+
+    await act(async () => {
+      secondHydration.resolve(['space-second']);
+      await secondHydration.promise;
+    });
+    await waitFor(() => expect(mockOpenPageModal).toHaveBeenCalledWith('page-second'));
+
+    await act(async () => {
+      firstHydration.resolve(['space-first']);
+      await firstHydration.promise;
+    });
+    expect(mockOpenPageModal).toHaveBeenCalledTimes(1);
+    expect(mockOpenPageModal).not.toHaveBeenCalledWith('page-first');
+  });
+
+  it('discards a draft without opening a page', async () => {
+    render(<NewPage />);
+
+    await openCreateSpaceFlow();
     fireEvent.click(screen.getByTestId('create-space-draft-close'));
 
     expect(screen.queryByTestId('create-space-draft-panel')).toBeNull();
