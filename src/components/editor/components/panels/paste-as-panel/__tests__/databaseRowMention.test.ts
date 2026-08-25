@@ -15,15 +15,22 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-import {
-  DatabaseRowMentionResolverDependencies,
-  resolveDatabaseRowPageMention,
-} from '../databaseRowMention';
+import { DatabaseRowMentionResolverDependencies, resolveDatabaseRowPageMention } from '../databaseRowMention';
 
 const workspaceId = '3df0c6bb-417f-4f81-939a-c6114f160f9a';
 const databaseId = '1cd808b6-7f36-45e5-b520-42ebd6f620f4';
+const databaseContainerViewId = '72541d40-50d8-41b5-bc29-cb1de45f51c2';
 const databaseViewId = 'b709de16-f480-43cb-a175-03b1808449cf';
 const rowId = '439bd5d7-6b22-4117-8465-539dcc6c55d9';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
 
 function createDatabaseDoc(): YDoc {
   const doc = new Y.Doc({ guid: databaseId }) as YDoc;
@@ -84,12 +91,7 @@ describe('resolveDatabaseRowPageMention', () => {
     const loadView = jest.fn(async () => databaseDoc);
 
     await expect(
-      resolveDatabaseRowPageMention(
-        workspaceId,
-        { workspaceId, viewId: databaseViewId, rowId },
-        loadView,
-        dependencies
-      )
+      resolveDatabaseRowPageMention(workspaceId, { workspaceId, viewId: databaseViewId, rowId }, loadView, dependencies)
     ).resolves.toEqual({
       type: MentionType.PageRef,
       page_id: databaseViewId,
@@ -135,12 +137,50 @@ describe('resolveDatabaseRowPageMention', () => {
     expect(dependencies.getRowCollab).toHaveBeenCalledWith(workspaceId, rowId);
   });
 
+  it('resolves route and selected database views in parallel', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const rowDoc = createRowDoc('PRJ-003');
+    const dependencies = resolverDependencies(rowDoc);
+    const routeLookup = deferred<string | null>();
+    const selectedLookup = deferred<string | null>();
+
+    dependencies.getDatabaseId = jest.fn((_workspaceId, viewId) =>
+      viewId === databaseContainerViewId ? routeLookup.promise : selectedLookup.promise
+    );
+
+    const mentionPromise = resolveDatabaseRowPageMention(
+      workspaceId,
+      {
+        workspaceId,
+        viewId: databaseContainerViewId,
+        databaseViewId,
+        rowId,
+      },
+      async () => databaseDoc,
+      dependencies
+    );
+
+    await Promise.resolve();
+
+    expect(dependencies.getDatabaseId).toHaveBeenCalledTimes(2);
+    expect(dependencies.getDatabaseId).toHaveBeenCalledWith(workspaceId, databaseContainerViewId);
+    expect(dependencies.getDatabaseId).toHaveBeenCalledWith(workspaceId, databaseViewId);
+
+    routeLookup.resolve(databaseId);
+    selectedLookup.resolve(databaseId);
+
+    await expect(mentionPromise).resolves.toMatchObject({
+      database_id: databaseId,
+      database_view_id: databaseViewId,
+      row_id: rowId,
+      data: { title: 'PRJ-003' },
+    });
+  });
+
   it('rejects a cached row that belongs to another database', async () => {
     const databaseDoc = createDatabaseDoc();
     const wrongRowDoc = createRowDoc('Wrong database');
-    const wrongRow = wrongRowDoc
-      .getMap(YjsEditorKey.data_section)
-      .get(YjsEditorKey.database_row) as YDatabaseRow;
+    const wrongRow = wrongRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
     wrongRow.set(YjsDatabaseKey.database_id, 'another-database');
     const dependencies = resolverDependencies(wrongRowDoc);

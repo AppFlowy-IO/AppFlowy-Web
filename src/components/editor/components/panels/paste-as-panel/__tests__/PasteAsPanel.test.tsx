@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { createEditor, Transforms } from 'slate';
+import { createEditor, Editor, Transforms } from 'slate';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { BlockType, Mention, MentionType } from '@/application/types';
@@ -55,8 +55,7 @@ jest.mock('@mui/material', () => ({
 
 jest.mock('@/components/_shared/popover', () => ({
   calculateOptimalOrigins: () => ({ transformOrigin: { horizontal: 'left', vertical: 'top' } }),
-  Popover: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
-    open ? <div>{children}</div> : null,
+  Popover: ({ children, open }: { children: React.ReactNode; open: boolean }) => (open ? <div>{children}</div> : null),
 }));
 
 jest.mock('@/components/editor/EditorContext', () => ({
@@ -144,5 +143,62 @@ describe('PasteAsPanel async mention resolution', () => {
     expect(deleteSpy).not.toHaveBeenCalled();
     expect(insertNodesSpy).not.toHaveBeenCalled();
     expect(mockEditor.string([])).toBe(rowPageUrl);
+  });
+
+  it('replaces the tracked URL without moving a selection the user made while resolving', async () => {
+    const resolution = deferred<Mention | null>();
+    const prefix = 'Inside a Project page (example: ';
+
+    mockEditor.children = [
+      {
+        type: BlockType.Paragraph,
+        blockId: 'paragraph-1',
+        children: [{ text: prefix }, { text: rowPageUrl, href: rowPageUrl }, { text: ' keep editing' }],
+      },
+    ];
+    const pasteRange = {
+      anchor: { path: [0, 1], offset: 0 },
+      focus: { path: [0, 1], offset: rowPageUrl.length },
+    };
+
+    mockEditor.selection = pasteRange;
+    mockGetPasteAsPayload.mockReturnValue({ range: pasteRange, url: rowPageUrl });
+    mockResolveDatabaseRowPageMention.mockReturnValue(resolution.promise);
+
+    render(<PasteAsPanel />);
+
+    fireEvent.click(screen.getByTestId(`paste-as-${PasteAsMenuType.Mention}`));
+
+    const liveSelection = {
+      anchor: { path: [0, 2], offset: 6 },
+      focus: { path: [0, 2], offset: 6 },
+    };
+
+    Transforms.select(mockEditor, liveSelection);
+    const expectedSelectionRef = Editor.rangeRef(mockEditor, liveSelection);
+
+    await act(async () => {
+      resolution.resolve({
+        type: MentionType.PageRef,
+        page_id: databaseViewId,
+        row_id: rowId,
+        data: { title: 'PRJ-001' },
+      });
+      await resolution.promise;
+    });
+
+    expect(mockFocus).toHaveBeenCalledTimes(1);
+    expect(mockEditor.selection).toEqual(expectedSelectionRef.unref());
+    expect(mockEditor.string([])).toBe(`${prefix}@ keep editing`);
+    const mentionNode = Editor.nodes(mockEditor, {
+      at: [],
+      match: (node) => 'mention' in node,
+    }).next().value?.[0] as { mention?: Mention } | undefined;
+
+    expect(mentionNode?.mention).toMatchObject({
+      type: MentionType.PageRef,
+      row_id: rowId,
+      data: { title: 'PRJ-001' },
+    });
   });
 });

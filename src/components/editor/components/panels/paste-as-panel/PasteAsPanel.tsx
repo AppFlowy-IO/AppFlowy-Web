@@ -2,7 +2,7 @@ import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Editor, Transforms } from 'slate';
+import { Editor, Range, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -132,17 +132,17 @@ export function PasteAsPanel() {
       const url = processUrl(payload.url) || payload.url;
 
       if (type === PasteAsMenuType.Mention) {
+        // Keep following the pasted URL while the row metadata resolves. A
+        // plain Range becomes stale when local or remote edits happen before
+        // the URL during the request.
+        const pasteRangeRef = Editor.rangeRef(editor, payload.range, { affinity: 'inward' });
         let mention: Mention = {
           type: MentionType.externalLink,
           url,
         };
         const appFlowyLink = parseAppFlowyPageLink(url, window.location.hostname);
 
-        if (
-          loadView &&
-          appFlowyLink?.rowId &&
-          appFlowyLink.workspaceId.toLowerCase() === workspaceId.toLowerCase()
-        ) {
+        if (loadView && appFlowyLink?.rowId && appFlowyLink.workspaceId.toLowerCase() === workspaceId.toLowerCase()) {
           try {
             mention = (await resolveDatabaseRowPageMention(workspaceId, appFlowyLink, loadView)) ?? mention;
           } catch {
@@ -151,22 +151,56 @@ export function PasteAsPanel() {
           }
         }
 
-        if (!mountedRef.current || operationId !== pasteOperationRef.current) return;
+        const pasteRange = pasteRangeRef.unref();
+
+        if (!mountedRef.current || operationId !== pasteOperationRef.current || !pasteRange) return;
 
         // Resolution is asynchronous. Confirm the original pasted URL still
-        // occupies the tracked range before replacing any user content.
-        if (!selectPasteRange(payload)) return;
+        // occupies the tracked range before replacing any user content. Do not
+        // re-focus or re-select it here: the user may have continued editing
+        // elsewhere while the request was pending.
+        if (
+          !Editor.hasPath(editor, pasteRange.anchor.path) ||
+          !Editor.hasPath(editor, pasteRange.focus.path) ||
+          editor.string(pasteRange) !== payload.url
+        ) {
+          return;
+        }
 
-        Transforms.delete(editor);
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention,
-          },
-          { select: true, voids: false }
-        );
-        Transforms.collapse(editor, { edge: 'end' });
+        const shouldSelectMention = Boolean(editor.selection && Range.equals(editor.selection, pasteRange));
+        const liveSelectionRef =
+          !shouldSelectMention && editor.selection
+            ? Editor.rangeRef(editor, editor.selection, { affinity: 'forward' })
+            : null;
+
+        // An auto-linked URL can occupy a leaf that disappears when deleted.
+        // Use Slate's transformed selection as the insertion point, then put a
+        // user who moved elsewhere back at their tracked selection. The whole
+        // swap is synchronous and never moves DOM focus.
+        Editor.withoutNormalizing(editor, () => {
+          Transforms.select(editor, pasteRange);
+          Transforms.delete(editor);
+          Transforms.insertNodes(
+            editor,
+            {
+              text: '@',
+              mention,
+            },
+            { select: true, voids: false }
+          );
+          Transforms.collapse(editor, { edge: 'end' });
+
+          if (!shouldSelectMention) {
+            const liveSelection = liveSelectionRef?.unref();
+
+            if (liveSelection) {
+              Transforms.select(editor, liveSelection);
+            } else {
+              Transforms.deselect(editor);
+            }
+          }
+        });
+
         return;
       }
 
@@ -269,9 +303,7 @@ export function PasteAsPanel() {
           e.stopPropagation();
 
           const nextIndex =
-            e.key === 'ArrowDown'
-              ? (index + 1) % options.length
-              : (index - 1 + options.length) % options.length;
+            e.key === 'ArrowDown' ? (index + 1) % options.length : (index - 1 + options.length) % options.length;
 
           setSelectedType(options[nextIndex].type);
           break;
