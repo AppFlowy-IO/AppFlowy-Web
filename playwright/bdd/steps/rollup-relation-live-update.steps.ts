@@ -122,7 +122,7 @@ Given('the existing database {string} is the rollup target', async ({ page }, da
   const state = stateFor(page);
 
   state.targetName = databaseName;
-  state.target = await openGridDatabaseByName(page, databaseName);
+  state.target = await openGridDatabaseByName(page, databaseName, 'General');
   state.protectedIds = [
     ...new Set(
       [

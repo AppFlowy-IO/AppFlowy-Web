@@ -4,6 +4,7 @@ import { CalculationType } from '../../src/application/database-yjs/database.typ
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { renameCurrentPage } from './duplicate-test-helpers';
 import { addFieldWithType, typeTextIntoCell } from './field-type-helpers';
+import { expandSpaceByName } from './page-utils';
 import {
   DatabaseFilterSelectors,
   DatabaseGridSelectors,
@@ -224,7 +225,16 @@ export async function renameCurrentDatabasePage(page: Page, pageName: string): P
   await page.waitForTimeout(1000);
 }
 
-export async function openGridDatabaseByName(page: Page, pageName: string): Promise<DatabaseFixtureInfo> {
+export async function openGridDatabaseByName(
+  page: Page,
+  pageName: string,
+  parentSpaceName?: string
+): Promise<DatabaseFixtureInfo> {
+  // Workspace switching may restore the target space with its pages attached
+  // inside MUI's hidden collapse tree. Expand the caller-known parent before
+  // selecting the page row, while keeping this helper usable for other spaces.
+  if (parentSpaceName) await expandSpaceByName(page, parentSpaceName);
+
   const pageItem = PageSelectors.itemByName(page, pageName);
 
   await expect(pageItem).toBeVisible({ timeout: 20000 });
@@ -882,17 +892,38 @@ export async function createRollupCountFieldViaPropertyMenu(
   const calculateTrigger = page.getByTestId('rollup-calculate-trigger').last();
 
   await expect(calculateTrigger).toBeEnabled({ timeout: 20000 });
-  await calculateTrigger.hover({ force: true });
 
-  const countGroup = page.getByTestId('rollup-calculation-group-count').last();
+  // Count all is the new rollup's production default. Avoid reopening the
+  // nested Radix submenu when the visible Calculate field already confirms
+  // that value; under a loaded CI runner, delayed hover-open timers can race
+  // and close the submenu again. When a different default is present, keyboard
+  // navigation gives both submenu levels deterministic focus/open semantics.
+  const countAllSelected = await expect(calculateTrigger)
+    .toContainText('Count all', { timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
 
-  await expect(countGroup).toBeVisible({ timeout: 15000 });
-  await countGroup.hover({ force: true });
+  if (!countAllSelected) {
+    await calculateTrigger.focus();
+    await page.keyboard.press('ArrowRight');
 
-  const countAll = page.getByTestId(`rollup-calculation-${CalculationType.Count}`).last();
+    const countGroup = page.getByTestId('rollup-calculation-group-count').last();
 
-  await expect(countAll).toBeVisible({ timeout: 15000 });
-  await countAll.click({ force: true });
+    await expect(countGroup).toBeVisible({ timeout: 15000 });
+    await countGroup.focus();
+    await page.keyboard.press('ArrowRight');
+
+    const countAll = page.getByTestId(`rollup-calculation-${CalculationType.Count}`).last();
+
+    await expect(countAll).toBeVisible({ timeout: 15000 });
+    await countAll.click({ force: true });
+
+    // Selecting a nested calculation closes the root Radix menu. Reopen it so
+    // the persisted Calculate value can be asserted through production UI.
+    await openPropertyEditor(page, fieldId);
+  }
+
+  await expect(calculateTrigger).toContainText('Count all', { timeout: 15000 });
   await page.keyboard.press('Escape');
 
   await expectFieldHeaderContains(page, fieldId, options.fieldName);
