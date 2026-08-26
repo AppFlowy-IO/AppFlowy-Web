@@ -1,5 +1,5 @@
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { DateTimeCell } from '@/application/database-yjs/cell.type';
+import { DateTimeCell, RollupListItem } from '@/application/database-yjs/cell.type';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import { getDateCellStr, getRowTimeString } from '@/application/database-yjs/fields/date/utils';
@@ -27,6 +27,8 @@ export type RollupCellValue = {
   value: string;
   rawNumeric?: number;
   list?: string[];
+  listItems?: RollupListItem[];
+  targetFieldType?: FieldType;
 };
 
 type RelatedViewLoader = (
@@ -211,6 +213,7 @@ function getPrimaryFieldId(database: YDatabase): string | undefined {
  */
 type RelationTargetResolver = {
   doc: YDoc;
+  viewId: string;
   primaryFieldId: string;
   primaryField: YDatabaseField;
 };
@@ -243,43 +246,41 @@ async function createRelationTargetResolver(
 
   if (!primaryField) return null;
 
-  return { doc, primaryFieldId, primaryField };
+  return { doc, viewId, primaryFieldId, primaryField };
 }
 
 /**
  * Row ids that no longer resolve are dropped rather than shown raw, matching how
  * a Relation cell renders and keeping row ids out of the UI.
  */
-async function resolveRelationTargetText(
+async function resolveRelationTargetItems(
   cell: YDatabaseCell,
   resolver: RelationTargetResolver,
   context: RollupComputeContext
-): Promise<string> {
+): Promise<RollupListItem[]> {
   const nestedRowIds = getRelationRowIdsFromCell(cell);
 
-  if (nestedRowIds.length === 0) return '';
+  if (nestedRowIds.length === 0 || !context.createRow) return [];
 
-  const names: string[] = [];
+  const items = await Promise.all(
+    nestedRowIds.map(async (nestedRowId): Promise<RollupListItem | null> => {
+      const nestedRowDoc = await context.createRow?.(getRowKey(resolver.doc.guid, nestedRowId));
+      const nestedRow = nestedRowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as
+        | YDatabaseRow
+        | undefined;
 
-  for (const nestedRowId of nestedRowIds) {
-    if (!context.createRow) continue;
-    const nestedRowDoc = await context.createRow(getRowKey(resolver.doc.guid, nestedRowId));
-    const nestedRow = nestedRowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as
-      | YDatabaseRow
-      | undefined;
+      if (!nestedRow) return null;
+      const primaryCell = nestedRow.get(YjsDatabaseKey.cells)?.get(resolver.primaryFieldId);
 
-    if (!nestedRow) continue;
-    const primaryCell = nestedRow.get(YjsDatabaseKey.cells)?.get(resolver.primaryFieldId);
+      if (!primaryCell) return null;
+      const label = decodeCellToText(primaryCell, resolver.primaryField);
 
-    if (!primaryCell) continue;
-    const name = decodeCellToText(primaryCell, resolver.primaryField);
+      if (isEmptyValue(label)) return null;
+      return { label, rowId: nestedRowId, viewId: resolver.viewId };
+    })
+  );
 
-    if (!isEmptyValue(name)) {
-      names.push(name);
-    }
-  }
-
-  return names.join(', ');
+  return items.filter((item): item is RollupListItem => item !== null);
 }
 
 function parseNumber(value: unknown): number | null {
@@ -409,26 +410,6 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   const totalRelated = relatedRowIds.length;
   const conditionValue = rollupOption.condition_value ?? '';
 
-  if (totalRelated === 0) {
-    if (showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList) {
-      return { value: '', list: [] };
-    }
-
-    switch (calculationType) {
-      case CalculationType.Count:
-      case CalculationType.CountEmpty:
-      case CalculationType.CountNonEmpty:
-      case CalculationType.CountUnique:
-      case CalculationType.CountChecked:
-      case CalculationType.CountUnchecked:
-        return { value: '0', rawNumeric: 0 };
-      case CalculationType.CountValue:
-        return conditionValue ? { value: '0', rawNumeric: 0 } : { value: '' };
-      default:
-        return { value: '' };
-    }
-  }
-
   if (!rollupOption.target_field_id) {
     if (showAs === RollupDisplayMode.Calculated && calculationType === CalculationType.Count) {
       return { value: String(totalRelated), rawNumeric: totalRelated };
@@ -453,6 +434,28 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   if (!relatedDatabase || !targetField) return { value: '' };
 
   const targetFieldType = Number(targetField.get(YjsDatabaseKey.type)) as FieldType;
+  const withTargetFieldType = (result: RollupCellValue): RollupCellValue => ({ ...result, targetFieldType });
+
+  if (totalRelated === 0) {
+    if (showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList) {
+      return withTargetFieldType({ value: '', list: [], listItems: [] });
+    }
+
+    switch (calculationType) {
+      case CalculationType.Count:
+      case CalculationType.CountEmpty:
+      case CalculationType.CountNonEmpty:
+      case CalculationType.CountUnique:
+      case CalculationType.CountChecked:
+      case CalculationType.CountUnchecked:
+        return withTargetFieldType({ value: '0', rawNumeric: 0 });
+      case CalculationType.CountValue:
+        return withTargetFieldType(conditionValue ? { value: '0', rawNumeric: 0 } : { value: '' });
+      default:
+        return withTargetFieldType({ value: '' });
+    }
+  }
+
   const relationTargetResolver =
     targetFieldType === FieldType.Relation ? await createRelationTargetResolver(targetField, context) : null;
   const values: string[] = [];
@@ -461,6 +464,7 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   const checkboxValues: boolean[] = [];
   const selectValues: string[][] = [];
   const nonEmptyFlags: boolean[] = [];
+  const collectedListItems: RollupListItem[] = [];
 
   for (const relatedRowId of relatedRowIds) {
     if (!context.createRow) continue;
@@ -490,7 +494,12 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
         timestampValues.push(ts);
       }
     } else if (cell && targetFieldType === FieldType.Relation) {
-      text = relationTargetResolver ? await resolveRelationTargetText(cell, relationTargetResolver, context) : '';
+      const relationItems = relationTargetResolver
+        ? await resolveRelationTargetItems(cell, relationTargetResolver, context)
+        : [];
+
+      text = relationItems.map((item) => item.label).join(', ');
+      collectedListItems.push(...relationItems);
     } else if (cell) {
       text = decodeCellToText(cell, targetField);
       if (targetFieldType === FieldType.DateTime) {
@@ -504,6 +513,10 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
 
     values.push(text);
     nonEmptyFlags.push(!isEmptyValue(text));
+
+    if (targetFieldType !== FieldType.Relation && !isEmptyValue(text)) {
+      collectedListItems.push({ label: text, rowId: relatedRowId, viewId });
+    }
 
     if (targetFieldType === FieldType.Number) {
       const numeric = parseNumber(parsedData ?? text);
@@ -536,198 +549,203 @@ async function computeRollupCellValue(context: RollupComputeContext): Promise<Ro
   }
 
   if (showAs === RollupDisplayMode.OriginalList || showAs === RollupDisplayMode.UniqueList) {
-    const list: string[] = [];
+    const listItems: RollupListItem[] = [];
     const seen = new Set<string>();
 
-    values.forEach((value) => {
-      if (isEmptyValue(value)) return;
+    collectedListItems.forEach((item) => {
       if (showAs === RollupDisplayMode.UniqueList) {
-        if (seen.has(value)) return;
-        seen.add(value);
+        if (seen.has(item.label)) return;
+        seen.add(item.label);
       }
 
-      list.push(value);
+      listItems.push(item);
     });
-    return { value: list.join(', '), list };
+    const list = listItems.map((item) => item.label);
+
+    return withTargetFieldType({ value: list.join(', '), list, listItems });
   }
 
   const emptyCount = nonEmptyFlags.filter((isNonEmpty) => !isNonEmpty).length;
   const nonEmptyCount = nonEmptyFlags.filter(Boolean).length;
 
-  switch (calculationType) {
-    case CalculationType.Count:
-      return { value: String(totalRelated), rawNumeric: totalRelated };
-    case CalculationType.CountEmpty:
-      return { value: String(emptyCount), rawNumeric: emptyCount };
-    case CalculationType.CountNonEmpty:
-      return { value: String(nonEmptyCount), rawNumeric: nonEmptyCount };
-    case CalculationType.Sum: {
-      if (numericValues.length === 0) return { value: '' };
-      const sum = numericValues.reduce((acc, v) => acc + v, 0);
+  const calculatedValue = (() => {
+    switch (calculationType) {
+      case CalculationType.Count:
+        return { value: String(totalRelated), rawNumeric: totalRelated };
+      case CalculationType.CountEmpty:
+        return { value: String(emptyCount), rawNumeric: emptyCount };
+      case CalculationType.CountNonEmpty:
+        return { value: String(nonEmptyCount), rawNumeric: nonEmptyCount };
+      case CalculationType.Sum: {
+        if (numericValues.length === 0) return { value: '' };
+        const sum = numericValues.reduce((acc, v) => acc + v, 0);
 
-      return { value: formatNumericResult(targetField, sum), rawNumeric: sum };
-    }
+        return { value: formatNumericResult(targetField, sum), rawNumeric: sum };
+      }
 
-    case CalculationType.Average: {
-      if (numericValues.length === 0) return { value: '' };
-      const avg = numericValues.reduce((acc, v) => acc + v, 0) / numericValues.length;
+      case CalculationType.Average: {
+        if (numericValues.length === 0) return { value: '' };
+        const avg = numericValues.reduce((acc, v) => acc + v, 0) / numericValues.length;
 
-      return { value: formatNumericResult(targetField, avg), rawNumeric: avg };
-    }
+        return { value: formatNumericResult(targetField, avg), rawNumeric: avg };
+      }
 
-    case CalculationType.Min: {
-      if (numericValues.length === 0) return { value: '' };
-      const min = Math.min(...numericValues);
+      case CalculationType.Min: {
+        if (numericValues.length === 0) return { value: '' };
+        const min = Math.min(...numericValues);
 
-      return { value: formatNumericResult(targetField, min), rawNumeric: min };
-    }
+        return { value: formatNumericResult(targetField, min), rawNumeric: min };
+      }
 
-    case CalculationType.Max: {
-      if (numericValues.length === 0) return { value: '' };
-      const max = Math.max(...numericValues);
+      case CalculationType.Max: {
+        if (numericValues.length === 0) return { value: '' };
+        const max = Math.max(...numericValues);
 
-      return { value: formatNumericResult(targetField, max), rawNumeric: max };
-    }
+        return { value: formatNumericResult(targetField, max), rawNumeric: max };
+      }
 
-    case CalculationType.Median: {
-      if (numericValues.length === 0) return { value: '' };
-      const sorted = [...numericValues].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-      const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+      case CalculationType.Median: {
+        if (numericValues.length === 0) return { value: '' };
+        const sorted = [...numericValues].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 
-      return { value: formatNumericResult(targetField, median), rawNumeric: median };
-    }
+        return { value: formatNumericResult(targetField, median), rawNumeric: median };
+      }
 
-    case CalculationType.NumberRange: {
-      if (numericValues.length < 2) return { value: '' };
-      const min = Math.min(...numericValues);
-      const max = Math.max(...numericValues);
-      const range = max - min;
+      case CalculationType.NumberRange: {
+        if (numericValues.length < 2) return { value: '' };
+        const min = Math.min(...numericValues);
+        const max = Math.max(...numericValues);
+        const range = max - min;
 
-      return { value: formatNumericResult(targetField, range), rawNumeric: range };
-    }
+        return { value: formatNumericResult(targetField, range), rawNumeric: range };
+      }
 
-    case CalculationType.NumberMode: {
-      if (numericValues.length === 0) return { value: '' };
-      const frequency = new Map<number, number>();
+      case CalculationType.NumberMode: {
+        if (numericValues.length === 0) return { value: '' };
+        const frequency = new Map<number, number>();
 
-      numericValues.forEach((value) => {
-        const key = Math.round(value * 100) / 100;
+        numericValues.forEach((value) => {
+          const key = Math.round(value * 100) / 100;
 
-        frequency.set(key, (frequency.get(key) ?? 0) + 1);
-      });
-      let mode = numericValues[0];
-      let maxCount = 0;
-
-      frequency.forEach((count, key) => {
-        if (count > maxCount) {
-          maxCount = count;
-          mode = key;
-        }
-      });
-      return { value: formatNumericResult(targetField, mode), rawNumeric: mode };
-    }
-
-    case CalculationType.DateEarliest: {
-      if (timestampValues.length === 0) return { value: '' };
-      const earliest = Math.min(...timestampValues);
-
-      return { value: formatDateValue(targetField, earliest) };
-    }
-
-    case CalculationType.DateLatest: {
-      if (timestampValues.length === 0) return { value: '' };
-      const latest = Math.max(...timestampValues);
-
-      return { value: formatDateValue(targetField, latest) };
-    }
-
-    case CalculationType.DateRange: {
-      if (timestampValues.length < 2) return { value: '' };
-      const min = Math.min(...timestampValues);
-      const max = Math.max(...timestampValues);
-
-      return { value: formatDuration(max - min) };
-    }
-
-    case CalculationType.CountChecked: {
-      if (targetFieldType !== FieldType.Checkbox) return { value: '' };
-      const count = checkboxValues.filter(Boolean).length;
-
-      return { value: String(count), rawNumeric: count };
-    }
-
-    case CalculationType.CountUnchecked: {
-      if (targetFieldType !== FieldType.Checkbox) return { value: '' };
-      const count = checkboxValues.filter((checked) => !checked).length;
-
-      return { value: String(count), rawNumeric: count };
-    }
-
-    case CalculationType.PercentChecked: {
-      if (targetFieldType !== FieldType.Checkbox || totalRelated === 0) return { value: '' };
-      const count = checkboxValues.filter(Boolean).length;
-      const percent = (count / totalRelated) * 100;
-
-      return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
-    }
-
-    case CalculationType.PercentUnchecked: {
-      if (targetFieldType !== FieldType.Checkbox || totalRelated === 0) return { value: '' };
-      const count = checkboxValues.filter((checked) => !checked).length;
-      const percent = (count / totalRelated) * 100;
-
-      return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
-    }
-
-    case CalculationType.PercentEmpty: {
-      if (totalRelated === 0) return { value: '' };
-      const percent = (emptyCount / totalRelated) * 100;
-
-      return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
-    }
-
-    case CalculationType.PercentNotEmpty: {
-      if (totalRelated === 0) return { value: '' };
-      const percent = (nonEmptyCount / totalRelated) * 100;
-
-      return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
-    }
-
-    case CalculationType.CountUnique: {
-      const uniqueValues = new Set<string>();
-
-      if (targetFieldType === FieldType.MultiSelect) {
-        selectValues.forEach((ids) => {
-          if (ids.length === 0) return;
-          uniqueValues.add([...ids].sort().join(','));
+          frequency.set(key, (frequency.get(key) ?? 0) + 1);
         });
-      } else {
-        values.forEach((value) => {
-          if (!isEmptyValue(value)) {
-            uniqueValues.add(value);
+        let mode = numericValues[0];
+        let maxCount = 0;
+
+        frequency.forEach((count, key) => {
+          if (count > maxCount) {
+            maxCount = count;
+            mode = key;
           }
         });
+        return { value: formatNumericResult(targetField, mode), rawNumeric: mode };
       }
 
-      const count = uniqueValues.size;
+      case CalculationType.DateEarliest: {
+        if (timestampValues.length === 0) return { value: '' };
+        const earliest = Math.min(...timestampValues);
 
-      return { value: String(count), rawNumeric: count };
-    }
+        return { value: formatDateValue(targetField, earliest) };
+      }
 
-    case CalculationType.CountValue: {
-      if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) || conditionValue.trim() === '') {
+      case CalculationType.DateLatest: {
+        if (timestampValues.length === 0) return { value: '' };
+        const latest = Math.max(...timestampValues);
+
+        return { value: formatDateValue(targetField, latest) };
+      }
+
+      case CalculationType.DateRange: {
+        if (timestampValues.length < 2) return { value: '' };
+        const min = Math.min(...timestampValues);
+        const max = Math.max(...timestampValues);
+
+        return { value: formatDuration(max - min) };
+      }
+
+      case CalculationType.CountChecked: {
+        if (targetFieldType !== FieldType.Checkbox) return { value: '' };
+        const count = checkboxValues.filter(Boolean).length;
+
+        return { value: String(count), rawNumeric: count };
+      }
+
+      case CalculationType.CountUnchecked: {
+        if (targetFieldType !== FieldType.Checkbox) return { value: '' };
+        const count = checkboxValues.filter((checked) => !checked).length;
+
+        return { value: String(count), rawNumeric: count };
+      }
+
+      case CalculationType.PercentChecked: {
+        if (targetFieldType !== FieldType.Checkbox || totalRelated === 0) return { value: '' };
+        const count = checkboxValues.filter(Boolean).length;
+        const percent = (count / totalRelated) * 100;
+
+        return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
+      }
+
+      case CalculationType.PercentUnchecked: {
+        if (targetFieldType !== FieldType.Checkbox || totalRelated === 0) return { value: '' };
+        const count = checkboxValues.filter((checked) => !checked).length;
+        const percent = (count / totalRelated) * 100;
+
+        return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
+      }
+
+      case CalculationType.PercentEmpty: {
+        if (totalRelated === 0) return { value: '' };
+        const percent = (emptyCount / totalRelated) * 100;
+
+        return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
+      }
+
+      case CalculationType.PercentNotEmpty: {
+        if (totalRelated === 0) return { value: '' };
+        const percent = (nonEmptyCount / totalRelated) * 100;
+
+        return { value: `${percent.toFixed(1)}%`, rawNumeric: percent };
+      }
+
+      case CalculationType.CountUnique: {
+        const uniqueValues = new Set<string>();
+
+        if (targetFieldType === FieldType.MultiSelect) {
+          selectValues.forEach((ids) => {
+            if (ids.length === 0) return;
+            uniqueValues.add([...ids].sort().join(','));
+          });
+        } else {
+          values.forEach((value) => {
+            if (!isEmptyValue(value)) {
+              uniqueValues.add(value);
+            }
+          });
+        }
+
+        const count = uniqueValues.size;
+
+        return { value: String(count), rawNumeric: count };
+      }
+
+      case CalculationType.CountValue: {
+        if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetFieldType) || conditionValue.trim() === '') {
+          return { value: '' };
+        }
+
+        const count = selectValues.filter((ids) => ids.includes(conditionValue)).length;
+
+        return { value: String(count), rawNumeric: count };
+      }
+
+      default:
         return { value: '' };
-      }
-
-      const count = selectValues.filter((ids) => ids.includes(conditionValue)).length;
-
-      return { value: String(count), rawNumeric: count };
     }
+  })();
 
-    default:
-      return { value: '' };
-  }
+  return withTargetFieldType(calculatedValue);
 }
 
 export async function readRollupCell(context: RollupComputeContext): Promise<RollupCellValue> {
@@ -737,7 +755,13 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
   const cached = getCachedValue(cellId);
 
   if (cached && isEntryFresh(cached, generation)) {
-    return { value: cached.value, rawNumeric: cached.rawNumeric, list: cached.list };
+    return {
+      value: cached.value,
+      rawNumeric: cached.rawNumeric,
+      list: cached.list,
+      listItems: cached.listItems,
+      targetFieldType: cached.targetFieldType,
+    };
   }
 
   let promise = inflight.get(cellId);
@@ -755,6 +779,8 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
             value: value.value,
             rawNumeric: value.rawNumeric,
             list: value.list,
+            listItems: value.listItems,
+            targetFieldType: value.targetFieldType,
             generation: currentGen,
             updatedAt: Date.now(),
           });
@@ -776,7 +802,13 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
   const currentCached = getCachedValue(cellId);
 
   if (currentCached && isEntryFresh(currentCached, currentGen)) {
-    return { value: currentCached.value, rawNumeric: currentCached.rawNumeric, list: currentCached.list };
+    return {
+      value: currentCached.value,
+      rawNumeric: currentCached.rawNumeric,
+      list: currentCached.list,
+      listItems: currentCached.listItems,
+      targetFieldType: currentCached.targetFieldType,
+    };
   }
 
   if (currentGen !== generation) {
@@ -793,7 +825,13 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
   const cached = getCachedValue(cellId);
 
   if (cached && isEntryFresh(cached, generation)) {
-    return { value: cached.value, rawNumeric: cached.rawNumeric, list: cached.list };
+    return {
+      value: cached.value,
+      rawNumeric: cached.rawNumeric,
+      list: cached.list,
+      listItems: cached.listItems,
+      targetFieldType: cached.targetFieldType,
+    };
   }
 
   if (!inflight.has(cellId)) {
@@ -809,6 +847,8 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
             value: value.value,
             rawNumeric: value.rawNumeric,
             list: value.list,
+            listItems: value.listItems,
+            targetFieldType: value.targetFieldType,
             generation: currentGen,
             updatedAt: Date.now(),
           });
@@ -825,5 +865,13 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
     inflight.set(cellId, promise);
   }
 
-  return cached ? { value: cached.value, rawNumeric: cached.rawNumeric, list: cached.list } : { value: '' };
+  return cached
+    ? {
+        value: cached.value,
+        rawNumeric: cached.rawNumeric,
+        list: cached.list,
+        listItems: cached.listItems,
+        targetFieldType: cached.targetFieldType,
+      }
+    : { value: '' };
 }

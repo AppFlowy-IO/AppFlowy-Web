@@ -33,6 +33,7 @@ import {
   parsePersonTypeOptions,
   parseRelationTypeOption,
   parseRollupTypeOption,
+  parseRollupVisualizationOption,
   parseSelectOptionTypeOptions,
   SelectOption,
 } from '@/application/database-yjs/fields';
@@ -119,12 +120,14 @@ import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 import { ChartLayoutSettings } from './chart.type';
 import {
   CalendarLayoutSetting,
+  CalculationType,
   DateGroupCondition,
   FieldType,
   FieldVisibility,
   Filter,
   FilterType,
   RowMeta,
+  RollupDisplayMode,
   SortCondition,
 } from './database.type';
 
@@ -2901,6 +2904,11 @@ function useRollupCellValue({
     data: value.value,
     rawNumeric: value.rawNumeric,
     list: value.list,
+    listItems: value.listItems,
+    targetFieldType: value.targetFieldType,
+    calculationType: (rollupOption?.calculation_type ?? CalculationType.Count) as CalculationType,
+    showAs: (rollupOption?.show_as ?? RollupDisplayMode.Calculated) as RollupDisplayMode,
+    visualization: parseRollupVisualizationOption(rollupOption),
   } as RollupCell;
 }
 

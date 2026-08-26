@@ -87,7 +87,11 @@ function createRowDoc(rowId: string, databaseId: string, cellMap: Record<string,
  * which is itself a Relation into `01_opportunities`. The rolled-up value is a
  * row id, so it only reads as a name after the second hop is resolved.
  */
-function createChainFixture(suffix: string, showAs: RollupDisplayMode) {
+function createChainFixture(
+  suffix: string,
+  showAs: RollupDisplayMode,
+  projectOpportunityIndexes: number[][] = [[0], [0]]
+) {
   const opportunityDatabaseId = `opportunity-db-${suffix}`;
   const opportunityViewId = `opportunity-view-${suffix}`;
   const projectDatabaseId = `project-db-${suffix}`;
@@ -159,19 +163,23 @@ function createChainFixture(suffix: string, showAs: RollupDisplayMode) {
       [opportunityNameFieldId]: createCell('OPP-002', FieldType.RichText),
     })
   );
-  // Both projects point at the same opportunity, so UniqueList must collapse them.
+  // Both projects point at the same opportunity by default, so UniqueList must collapse them.
   rowDocs.set(
     projectRowIds[0],
     createRowDoc(projectRowIds[0], projectDatabaseId, {
       [projectNameFieldId]: createCell('PRJ-001', FieldType.RichText),
-      [projectOpportunityFieldId]: createRelationCell([opportunityRowIds[0]]),
+      [projectOpportunityFieldId]: createRelationCell(
+        projectOpportunityIndexes[0].map((index) => opportunityRowIds[index])
+      ),
     })
   );
   rowDocs.set(
     projectRowIds[1],
     createRowDoc(projectRowIds[1], projectDatabaseId, {
       [projectNameFieldId]: createCell('PRJ-002', FieldType.RichText),
-      [projectOpportunityFieldId]: createRelationCell([opportunityRowIds[0]]),
+      [projectOpportunityFieldId]: createRelationCell(
+        projectOpportunityIndexes[1].map((index) => opportunityRowIds[index])
+      ),
     })
   );
 
@@ -202,23 +210,31 @@ function createChainFixture(suffix: string, showAs: RollupDisplayMode) {
       fieldId: rollupFieldId,
       loadView: async (viewId: string) => docsByView[viewId] ?? null,
       createRow: async (rowKey: string) => {
-        const rowId = rowKey.includes('_rows_') ? (rowKey.split('_rows_').pop() ?? '') : rowKey;
+        const rowId = rowKey.includes('_rows_') ? rowKey.split('_rows_').pop() ?? '' : rowKey;
 
         return rowDocs.get(rowId) as YDoc;
       },
       getViewIdFromDatabaseId: async (databaseId: string) => viewIdByDatabaseId[databaseId] ?? null,
     },
     opportunityRowIds,
+    opportunityViewId,
   };
 }
 
 describe('rollup over a Relation target field', () => {
   it('resolves the second hop to related row names instead of raw row ids', async () => {
-    const { context, opportunityRowIds } = createChainFixture('original-list', RollupDisplayMode.OriginalList);
+    const { context, opportunityRowIds, opportunityViewId } = createChainFixture(
+      'original-list',
+      RollupDisplayMode.OriginalList
+    );
 
     const result = await readRollupCell(context);
 
     expect(result.list).toEqual(['OPP-001', 'OPP-001']);
+    expect(result.listItems).toEqual([
+      { label: 'OPP-001', rowId: opportunityRowIds[0], viewId: opportunityViewId },
+      { label: 'OPP-001', rowId: opportunityRowIds[0], viewId: opportunityViewId },
+    ]);
     expect(result.value).toBe('OPP-001, OPP-001');
     opportunityRowIds.forEach((rowId) => {
       expect(result.value).not.toContain(rowId);
@@ -226,12 +242,33 @@ describe('rollup over a Relation target field', () => {
   });
 
   it('deduplicates resolved names for UniqueList', async () => {
-    const { context } = createChainFixture('unique-list', RollupDisplayMode.UniqueList);
+    const { context, opportunityRowIds, opportunityViewId } = createChainFixture(
+      'unique-list',
+      RollupDisplayMode.UniqueList
+    );
 
     const result = await readRollupCell(context);
 
     expect(result.list).toEqual(['OPP-001']);
+    expect(result.listItems).toEqual([{ label: 'OPP-001', rowId: opportunityRowIds[0], viewId: opportunityViewId }]);
     expect(result.value).toBe('OPP-001');
+  });
+
+  it('flattens multiple second-hop rows before applying UniqueList', async () => {
+    const { context, opportunityRowIds, opportunityViewId } = createChainFixture(
+      'unique-multiple',
+      RollupDisplayMode.UniqueList,
+      [[0, 1], [0]]
+    );
+
+    const result = await readRollupCell(context);
+
+    expect(result.list).toEqual(['OPP-001', 'OPP-002']);
+    expect(result.listItems).toEqual([
+      { label: 'OPP-001', rowId: opportunityRowIds[0], viewId: opportunityViewId },
+      { label: 'OPP-002', rowId: opportunityRowIds[1], viewId: opportunityViewId },
+    ]);
+    expect(result.value).toBe('OPP-001, OPP-002');
   });
 
   it('counts related rows whose Relation target resolves to a name', async () => {

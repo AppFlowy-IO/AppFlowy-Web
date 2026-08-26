@@ -47,6 +47,7 @@ import {
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
+import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
@@ -2334,9 +2335,7 @@ export function useDuplicatePropertyDispatch() {
         'insertDuplicateProperty'
       );
 
-      const sourceFieldType = Number(
-        database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type)
-      );
+      const sourceFieldType = Number(database.get(YjsDatabaseKey.fields)?.get(fieldId)?.get(YjsDatabaseKey.type));
 
       // Duplicating an attribution column creates another projection of the
       // same row metadata; it must not create editable per-field cells.
@@ -4326,6 +4325,10 @@ export function useUpdateRollupTypeOption(fieldId: string) {
       calculation_type?: CalculationType;
       show_as?: RollupDisplayMode;
       condition_value?: string;
+      visualization_type?: RollupShowAsType;
+      visualization_color?: string;
+      visualization_divisor?: number;
+      visualization_show_number?: boolean;
     }) => {
       executeOperations(
         sharedRoot,
@@ -4369,6 +4372,22 @@ export function useUpdateRollupTypeOption(fieldId: string) {
 
             if (updates.condition_value !== undefined) {
               typeOption.set(YjsDatabaseKey.condition_value, updates.condition_value);
+            }
+
+            if (updates.visualization_type !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_type, updates.visualization_type);
+            }
+
+            if (updates.visualization_color !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_color, updates.visualization_color);
+            }
+
+            if (updates.visualization_divisor !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_divisor, updates.visualization_divisor);
+            }
+
+            if (updates.visualization_show_number !== undefined) {
+              typeOption.set(YjsDatabaseKey.rollup_show_as_show_number, updates.visualization_show_number);
             }
 
             field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));

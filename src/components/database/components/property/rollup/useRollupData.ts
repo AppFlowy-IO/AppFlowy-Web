@@ -1,17 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import {
-  CalculationType,
-  FieldType,
-  RollupDisplayMode,
-  parseRelationTypeOption,
-  parseRollupTypeOption,
-  parseSelectOptionTypeOptions,
-  useDatabase,
-  useDatabaseContext,
-  useFieldSelector,
-} from '@/application/database-yjs';
+import { useDatabase, useDatabaseContext } from '@/application/database-yjs/context';
+import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { useUpdateRollupTypeOption } from '@/application/database-yjs/dispatch';
+import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { parseRollupTypeOption, parseRollupVisualizationOption } from '@/application/database-yjs/fields/rollup/parse';
+import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
+import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { getAvailableRollupCalculations } from './utils';
@@ -19,6 +15,7 @@ import { getAvailableRollupCalculations } from './utils';
 export type RelationFieldOption = {
   id: string;
   name: string;
+  databaseId: string;
 };
 
 export type TargetFieldOption = {
@@ -27,6 +24,29 @@ export type TargetFieldOption = {
   type: FieldType;
   field: YDatabaseField;
 };
+
+function readTargetFields(doc: YDoc | null): TargetFieldOption[] {
+  if (!doc) return [];
+
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+  const relatedDatabase = sharedRoot?.get(YjsEditorKey.database);
+  const fields = relatedDatabase?.get(YjsDatabaseKey.fields);
+
+  if (!fields) return [];
+
+  const options: TargetFieldOption[] = [];
+
+  fields.forEach((field: YDatabaseField, id: string) => {
+    options.push({
+      id,
+      name: field.get(YjsDatabaseKey.name) || '',
+      type: Number(field.get(YjsDatabaseKey.type)) as FieldType,
+      field,
+    });
+  });
+
+  return options;
+}
 
 export function useRollupData(fieldId: string) {
   const database = useDatabase();
@@ -37,23 +57,24 @@ export function useRollupData(fieldId: string) {
   const rollupOption = useMemo(() => {
     const parsed = field ? parseRollupTypeOption(field) : null;
 
-    // Recompute when the field clock updates even if the field reference is stable.
+    // The Y.Map reference is stable, so the selector clock is part of the snapshot.
     void clock;
 
     return {
       relation_field_id: parsed?.relation_field_id ?? '',
       target_field_id: parsed?.target_field_id ?? '',
-      calculation_type:
-        parsed?.calculation_type === undefined ? CalculationType.Count : parsed?.calculation_type,
-      show_as: parsed?.show_as === undefined ? RollupDisplayMode.Calculated : parsed?.show_as,
+      calculation_type: parsed?.calculation_type === undefined ? CalculationType.Count : parsed.calculation_type,
+      show_as: parsed?.show_as === undefined ? RollupDisplayMode.Calculated : parsed.show_as,
       condition_value: parsed?.condition_value ?? '',
+      visualization: parseRollupVisualizationOption(parsed),
     };
   }, [field, clock]);
 
   const [relationFields, setRelationFields] = useState<RelationFieldOption[]>([]);
   const [relatedFields, setRelatedFields] = useState<TargetFieldOption[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
-  const [relatedDoc, setRelatedDoc] = useState<YDoc | null>(null);
+  const relationSelectionRequest = useRef(0);
+  const relatedDocPromises = useRef(new Map<string, Promise<YDoc | null>>());
 
   useEffect(() => {
     const fields = database?.get(YjsDatabaseKey.fields);
@@ -66,10 +87,14 @@ export function useRollupData(fieldId: string) {
     const updateFields = () => {
       const options: RelationFieldOption[] = [];
 
-      fields.forEach((field, id) => {
-        if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Relation) {
-          options.push({ id, name: field.get(YjsDatabaseKey.name) || '' });
-        }
+      fields.forEach((relationField, id) => {
+        if (Number(relationField.get(YjsDatabaseKey.type)) !== FieldType.Relation) return;
+
+        options.push({
+          id,
+          name: relationField.get(YjsDatabaseKey.name) || '',
+          databaseId: parseRelationTypeOption(relationField)?.database_id ?? '',
+        });
       });
       setRelationFields(options);
     };
@@ -81,132 +106,163 @@ export function useRollupData(fieldId: string) {
     };
   }, [database]);
 
-  const relationField = useMemo(() => {
-    const fields = database?.get(YjsDatabaseKey.fields);
+  const relatedDatabaseId =
+    relationFields.find((relation) => relation.id === rollupOption.relation_field_id)?.databaseId ?? '';
 
-    if (!fields || !rollupOption.relation_field_id) return undefined;
-    return fields.get(rollupOption.relation_field_id);
-  }, [database, rollupOption.relation_field_id]);
+  const loadRelatedDoc = useCallback(
+    (databaseId: string) => {
+      const cached = relatedDocPromises.current.get(databaseId);
 
-  const relatedDatabaseId = useMemo(() => {
-    return relationField ? parseRelationTypeOption(relationField)?.database_id ?? '' : '';
-  }, [relationField]);
+      if (cached) return cached;
+
+      const promise = (async () => {
+        const viewId = await getViewIdFromDatabaseId?.(databaseId);
+
+        return viewId ? (await loadView?.(viewId)) ?? null : null;
+      })();
+
+      relatedDocPromises.current.set(databaseId, promise);
+      void promise.then(
+        (doc) => {
+          if (!doc && relatedDocPromises.current.get(databaseId) === promise) {
+            relatedDocPromises.current.delete(databaseId);
+          }
+        },
+        () => {
+          if (relatedDocPromises.current.get(databaseId) === promise) {
+            relatedDocPromises.current.delete(databaseId);
+          }
+        }
+      );
+      return promise;
+    },
+    [getViewIdFromDatabaseId, loadView]
+  );
 
   useEffect(() => {
     let cancelled = false;
+    let stopObserving: (() => void) | undefined;
 
     if (!relatedDatabaseId) {
-      setRelatedDoc(null);
-      setRelatedFields([]);
+      setRelatedFields((current) => (current.length === 0 ? current : []));
+      setLoadingRelated(false);
       return;
     }
 
-    void (async () => {
-      setLoadingRelated(true);
-      try {
-        const viewId = await getViewIdFromDatabaseId?.(relatedDatabaseId);
+    setRelatedFields((current) => (current.length === 0 ? current : []));
+    setLoadingRelated(true);
+    void loadRelatedDoc(relatedDatabaseId)
+      .then((doc) => {
+        if (cancelled) return;
 
-        if (!viewId) {
-          setRelatedDoc(null);
+        const sharedRoot = doc?.getMap(YjsEditorKey.data_section);
+        const relatedDatabase = sharedRoot?.get(YjsEditorKey.database);
+        const fields = relatedDatabase?.get(YjsDatabaseKey.fields);
+
+        if (!doc || !fields) {
           setRelatedFields([]);
           return;
         }
 
-        const doc = await loadView?.(viewId);
+        const updateRelatedFields = () => setRelatedFields(readTargetFields(doc));
 
-        if (!doc) {
-          setRelatedDoc(null);
-          setRelatedFields([]);
-          return;
-        }
-
+        updateRelatedFields();
+        fields.observeDeep(updateRelatedFields);
+        stopObserving = () => fields.unobserveDeep(updateRelatedFields);
+      })
+      .catch(() => {
         if (!cancelled) {
-          setRelatedDoc(doc);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setRelatedDoc(null);
+          relatedDocPromises.current.delete(relatedDatabaseId);
           setRelatedFields([]);
         }
-      } finally {
-        if (!cancelled) {
-          setLoadingRelated(false);
-        }
-      }
-    })();
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRelated(false);
+      });
 
     return () => {
       cancelled = true;
+      stopObserving?.();
     };
-  }, [relatedDatabaseId, getViewIdFromDatabaseId, loadView]);
+  }, [loadRelatedDoc, relatedDatabaseId]);
 
+  const targetField = relatedFields.find((target) => target.id === rollupOption.target_field_id);
+  const availableCalculations = useMemo(() => getAvailableRollupCalculations(targetField?.type), [targetField?.type]);
+
+  // Keep imported/remote options valid even when another client changes the target.
   useEffect(() => {
-    if (!relatedDoc) {
-      setRelatedFields([]);
-      return;
-    }
+    if (targetField?.type === undefined) return;
+    if (availableCalculations.includes(rollupOption.calculation_type as CalculationType)) return;
 
-    const sharedRoot = relatedDoc.getMap(YjsEditorKey.data_section);
-    const relatedDatabase = sharedRoot?.get(YjsEditorKey.database);
-    const fields = relatedDatabase?.get(YjsDatabaseKey.fields);
-
-    if (!fields) {
-      setRelatedFields([]);
-      return;
-    }
-
-    const updateRelatedFields = () => {
-      const options: TargetFieldOption[] = [];
-
-      fields.forEach((field: YDatabaseField, id: string) => {
-        options.push({
-          id,
-          name: field.get(YjsDatabaseKey.name) || '',
-          type: Number(field.get(YjsDatabaseKey.type)) as FieldType,
-          field,
-        });
-      });
-      setRelatedFields(options);
-    };
-
-    updateRelatedFields();
-    fields.observeDeep(updateRelatedFields);
-    return () => {
-      fields.unobserveDeep(updateRelatedFields);
-    };
-  }, [relatedDoc]);
-
-  const targetField = useMemo(
-    () => relatedFields.find((field) => field.id === rollupOption.target_field_id),
-    [relatedFields, rollupOption.target_field_id]
-  );
-
-  const availableCalculations = useMemo(
-    () => getAvailableRollupCalculations(targetField?.type),
-    [targetField?.type]
-  );
-
-  useEffect(() => {
-    if (!targetField?.type) return;
-    if (!availableCalculations.includes(rollupOption.calculation_type as CalculationType)) {
-      updateRollupTypeOption({
-        calculation_type: CalculationType.Count,
-        condition_value: '',
-      });
-    }
+    updateRollupTypeOption({ calculation_type: CalculationType.Count, condition_value: '' });
   }, [availableCalculations, rollupOption.calculation_type, targetField?.type, updateRollupTypeOption]);
 
   useEffect(() => {
-    if (rollupOption.calculation_type !== CalculationType.CountValue && rollupOption.condition_value) {
-      updateRollupTypeOption({ condition_value: '' });
-    }
+    if (rollupOption.calculation_type === CalculationType.CountValue || !rollupOption.condition_value) return;
+
+    updateRollupTypeOption({ condition_value: '' });
   }, [rollupOption.calculation_type, rollupOption.condition_value, updateRollupTypeOption]);
 
+  const selectRelationField = useCallback(
+    async (relation: RelationFieldOption) => {
+      const request = relationSelectionRequest.current + 1;
+
+      relationSelectionRequest.current = request;
+      updateRollupTypeOption({
+        relation_field_id: relation.id,
+        target_field_id: '',
+        calculation_type: CalculationType.Count,
+        show_as: RollupDisplayMode.Calculated,
+        condition_value: '',
+        visualization_type: RollupShowAsType.Number,
+      });
+
+      if (!relation.databaseId) return;
+
+      try {
+        const doc = await loadRelatedDoc(relation.databaseId);
+        const firstTarget = readTargetFields(doc)[0];
+
+        if (
+          relationSelectionRequest.current !== request ||
+          parseRollupTypeOption(field)?.relation_field_id !== relation.id ||
+          !firstTarget
+        ) {
+          return;
+        }
+
+        updateRollupTypeOption({
+          target_field_id: firstTarget.id,
+          calculation_type: CalculationType.Count,
+          condition_value: '',
+        });
+      } catch {
+        relatedDocPromises.current.delete(relation.databaseId);
+      }
+    },
+    [field, loadRelatedDoc, updateRollupTypeOption]
+  );
+
+  const selectTargetField = useCallback(
+    (target: TargetFieldOption) => {
+      relationSelectionRequest.current += 1;
+      const currentCalculation = rollupOption.calculation_type as CalculationType;
+      const nextCalculation = getAvailableRollupCalculations(target.type).includes(currentCalculation)
+        ? currentCalculation
+        : CalculationType.Count;
+
+      updateRollupTypeOption({
+        target_field_id: target.id,
+        calculation_type: nextCalculation,
+        condition_value: '',
+        ...(target.type === FieldType.Number ? {} : { visualization_type: RollupShowAsType.Number }),
+      });
+    },
+    [rollupOption.calculation_type, updateRollupTypeOption]
+  );
+
   const selectOptions = useMemo(() => {
-    if (!targetField) return [];
-    if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetField.type)) {
-      return [];
-    }
+    if (!targetField || ![FieldType.SingleSelect, FieldType.MultiSelect].includes(targetField.type)) return [];
 
     return parseSelectOptionTypeOptions(targetField.field)?.options || [];
   }, [targetField]);
@@ -218,6 +274,8 @@ export function useRollupData(fieldId: string) {
     targetField,
     selectOptions,
     loadingRelated,
+    selectRelationField,
+    selectTargetField,
     updateRollupTypeOption,
   };
 }
