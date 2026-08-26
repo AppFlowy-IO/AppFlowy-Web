@@ -323,10 +323,10 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 
 export async function createSpaceWithInitialPage(workspaceId: string, payload: CreateSpaceWithInitialPagePayload) {
   if (payload.permission) {
-    // The legacy /v2/space endpoint neither persists the structured ACL nor
-    // records the creator as a space owner, even when the requested settings
-    // have a binary public/private representation. Compose the structured
-    // endpoints for every permission-aware draft. This is compensating, not
+    // The atomic /v2/space endpoint accepts only the binary permission model;
+    // it does not persist a structured ACL or a creator-owner row. Compose the
+    // structured endpoints for every permission-aware draft so the requested
+    // ownership contract is retained. This is compensating, not
     // server-transactional.
     const clientGeneratedViewId = payload.client_generated_view_id === true;
     const ownsSpaceId = payload.view_id === undefined || clientGeneratedViewId;
