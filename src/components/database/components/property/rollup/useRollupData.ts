@@ -8,6 +8,7 @@ import { parseRollupTypeOption, parseRollupVisualizationOption } from '@/applica
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
 import { useFieldSelector } from '@/application/database-yjs/selector';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { YDatabaseField, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 import { getAvailableRollupCalculations } from './utils';
@@ -23,6 +24,12 @@ export type TargetFieldOption = {
   name: string;
   type: FieldType;
   field: YDatabaseField;
+};
+
+type RelatedFieldsState = {
+  databaseId: string;
+  fields: TargetFieldOption[];
+  loading: boolean;
 };
 
 function readTargetFields(doc: YDoc | null): TargetFieldOption[] {
@@ -71,8 +78,11 @@ export function useRollupData(fieldId: string) {
   }, [field, clock]);
 
   const [relationFields, setRelationFields] = useState<RelationFieldOption[]>([]);
-  const [relatedFields, setRelatedFields] = useState<TargetFieldOption[]>([]);
-  const [loadingRelated, setLoadingRelated] = useState(false);
+  const [relatedFieldsState, setRelatedFieldsState] = useState<RelatedFieldsState>({
+    databaseId: '',
+    fields: [],
+    loading: false,
+  });
   const relationSelectionRequest = useRef(0);
   const relatedDocPromises = useRef(new Map<string, Promise<YDoc | null>>());
 
@@ -118,7 +128,9 @@ export function useRollupData(fieldId: string) {
       const promise = (async () => {
         const viewId = await getViewIdFromDatabaseId?.(databaseId);
 
-        return viewId ? (await loadView?.(viewId)) ?? null : null;
+        return viewId
+          ? (await loadView?.(viewId, false, false, { databaseId, databaseMetadataOnly: true })) ?? null
+          : null;
       })();
 
       relatedDocPromises.current.set(databaseId, promise);
@@ -144,40 +156,47 @@ export function useRollupData(fieldId: string) {
     let stopObserving: (() => void) | undefined;
 
     if (!relatedDatabaseId) {
-      setRelatedFields((current) => (current.length === 0 ? current : []));
-      setLoadingRelated(false);
+      setRelatedFieldsState((current) =>
+        current.databaseId || current.fields.length > 0 || current.loading
+          ? { databaseId: '', fields: [], loading: false }
+          : current
+      );
       return;
     }
 
-    setRelatedFields((current) => (current.length === 0 ? current : []));
-    setLoadingRelated(true);
+    setRelatedFieldsState({ databaseId: relatedDatabaseId, fields: [], loading: true });
     void loadRelatedDoc(relatedDatabaseId)
       .then((doc) => {
         if (cancelled) return;
 
-        const sharedRoot = doc?.getMap(YjsEditorKey.data_section);
-        const relatedDatabase = sharedRoot?.get(YjsEditorKey.database);
-        const fields = relatedDatabase?.get(YjsDatabaseKey.fields);
-
-        if (!doc || !fields) {
-          setRelatedFields([]);
+        if (!doc) {
+          setRelatedFieldsState({ databaseId: relatedDatabaseId, fields: [], loading: false });
           return;
         }
 
-        const updateRelatedFields = () => setRelatedFields(readTargetFields(doc));
+        const sharedRoot = doc.getMap(YjsEditorKey.data_section);
 
+        const updateRelatedFields = () => {
+          const fields = sharedRoot.get(YjsEditorKey.database)?.get(YjsDatabaseKey.fields);
+
+          setRelatedFieldsState((current) =>
+            current.databaseId === relatedDatabaseId
+              ? { databaseId: relatedDatabaseId, fields: readTargetFields(doc), loading: !fields }
+              : current
+          );
+        };
+
+        // loadView may resolve before the metadata document has hydrated.
+        // Subscribe to the root first so database/field insertion cannot land
+        // between the initial read and observer attachment.
+        stopObserving = subscribeSharedYjsDeep(sharedRoot, updateRelatedFields);
         updateRelatedFields();
-        fields.observeDeep(updateRelatedFields);
-        stopObserving = () => fields.unobserveDeep(updateRelatedFields);
       })
       .catch(() => {
         if (!cancelled) {
           relatedDocPromises.current.delete(relatedDatabaseId);
-          setRelatedFields([]);
+          setRelatedFieldsState({ databaseId: relatedDatabaseId, fields: [], loading: false });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingRelated(false);
       });
 
     return () => {
@@ -185,6 +204,12 @@ export function useRollupData(fieldId: string) {
       stopObserving?.();
     };
   }, [loadRelatedDoc, relatedDatabaseId]);
+
+  // Effects run after render. Hide the previous relation's schema immediately
+  // when the option changes so stale fields can never be selected or persisted.
+  const relatedFields = relatedFieldsState.databaseId === relatedDatabaseId ? relatedFieldsState.fields : [];
+  const loadingRelated =
+    Boolean(relatedDatabaseId) && (relatedFieldsState.databaseId !== relatedDatabaseId || relatedFieldsState.loading);
 
   const targetField = relatedFields.find((target) => target.id === rollupOption.target_field_id);
   const availableCalculations = useMemo(() => getAvailableRollupCalculations(targetField?.type), [targetField?.type]);

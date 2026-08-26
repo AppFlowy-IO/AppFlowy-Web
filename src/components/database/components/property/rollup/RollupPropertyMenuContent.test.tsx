@@ -216,4 +216,20 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
     fireEvent.click(screen.getByText('Owner'));
     expect(mockSelectTargetField).toHaveBeenCalledWith(expect.objectContaining({ id: 'target-2' }));
   });
+
+  it('disables target property selection when the configured relation was deleted', () => {
+    const data = mockUseRollupData();
+
+    mockUseRollupData.mockReturnValue({
+      ...data,
+      rollupOption: { ...data.rollupOption, relation_field_id: 'deleted-relation' },
+      relationFields: [],
+      relatedFields: [],
+      targetField: undefined,
+    });
+    render(<RollupPropertyMenuContent fieldId={'rollup-field'} />);
+
+    expect(screen.getByTestId('rollup-property-trigger').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('rollup-property-trigger').textContent).toContain('Select a relation first');
+  });
 });

@@ -215,12 +215,12 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
     ? relatedFields.filter((relatedField) => relatedField.name.toLocaleLowerCase().includes(normalizedSearch))
     : relatedFields;
 
+  const selectedRelation = relationFields.find((item) => item.id === rollupOption.relation_field_id);
   const selectedRelationLabel =
-    relationFields.find((item) => item.id === rollupOption.relation_field_id)?.name ||
-    t('grid.rollup.selectRelationField', { defaultValue: 'Select a relation field' });
+    selectedRelation?.name || t('grid.rollup.selectRelationField', { defaultValue: 'Select a relation field' });
   const selectedPropertyLabel =
     targetField?.name ||
-    (rollupOption.relation_field_id
+    (selectedRelation
       ? t('grid.rollup.selectProperty', { defaultValue: 'Select a property' })
       : t('grid.rollup.selectRelationFirst', { defaultValue: 'Select a relation first' }));
   const calculateLabel =
@@ -249,6 +249,7 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
             title={t('grid.rollup.relation', { defaultValue: 'Relation' })}
             value={loadingRelated ? t('grid.rollup.loading', { defaultValue: 'Loading...' }) : selectedRelationLabel}
             icon={<RelationIcon className={'h-5 w-5'} />}
+            testId={'rollup-relation-trigger'}
           />
           <DropdownMenuPortal>
             <DropdownMenuSubContent className={'appflowy-scroller max-h-[360px] w-[240px] overflow-y-auto'}>
@@ -258,7 +259,11 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
                 </DropdownMenuItem>
               ) : (
                 relationFields.map((relation) => (
-                  <DropdownMenuItem key={relation.id} onSelect={() => void selectRelationField(relation)}>
+                  <DropdownMenuItem
+                    key={relation.id}
+                    data-testid={`rollup-relation-option-${relation.id}`}
+                    onSelect={() => void selectRelationField(relation)}
+                  >
                     <RelationIcon className={'h-5 w-5'} />
                     <span className={'truncate'}>{relation.name}</span>
                     {relation.id === rollupOption.relation_field_id ? <DropdownMenuItemTick /> : null}
@@ -279,7 +284,8 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
             variant={variant}
             title={t('grid.rollup.property', { defaultValue: 'Property' })}
             value={selectedPropertyLabel}
-            disabled={!rollupOption.relation_field_id || loadingRelated}
+            disabled={!selectedRelation || loadingRelated}
+            testId={'rollup-property-trigger'}
             icon={
               targetField ? (
                 <FieldTypeIcon type={targetField.type} className={'h-5 w-5'} />
@@ -315,6 +321,7 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
                   filteredRelatedFields.map((relatedField) => (
                     <DropdownMenuItem
                       key={relatedField.id}
+                      data-testid={`rollup-property-option-${relatedField.id}`}
                       onSelect={() => {
                         setPropertySearch('');
                         selectTargetField(relatedField);

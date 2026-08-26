@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType } from '@/application/database-yjs/database.type';
@@ -14,6 +14,7 @@ const mockGetViewIdFromDatabaseId = jest.fn();
 let baseDatabase: YDatabase;
 let rollupField: YDatabaseField;
 let relatedDoc: YDoc;
+let fieldClock = 0;
 
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabase: () => baseDatabase,
@@ -28,7 +29,7 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
 }));
 
 jest.mock('@/application/database-yjs/selector', () => ({
-  useFieldSelector: () => ({ field: rollupField, clock: 0 }),
+  useFieldSelector: () => ({ field: rollupField, clock: fieldClock }),
 }));
 
 function createTargetField(id: string, type: FieldType) {
@@ -78,6 +79,7 @@ function setupDocuments() {
 
 describe('useRollupData Desktop interactions', () => {
   beforeEach(() => {
+    fieldClock = 0;
     mockUpdateRollupTypeOption.mockReset();
     mockLoadView.mockReset();
     mockGetViewIdFromDatabaseId.mockReset();
@@ -120,6 +122,117 @@ describe('useRollupData Desktop interactions', () => {
       target_field_id: 'Amount',
       calculation_type: CalculationType.Count,
       condition_value: '',
+    });
+    expect(mockLoadView).toHaveBeenCalledTimes(1);
+    expect(mockLoadView).toHaveBeenCalledWith('related-view', false, false, {
+      databaseId: 'related-database',
+      databaseMetadataOnly: true,
+    });
+  });
+
+  it('never exposes fields from the previous relation while the next relation loads', async () => {
+    const baseFields = baseDatabase.get(YjsDatabaseKey.fields);
+    const secondRelation = createRelationField('relation-b', {
+      database_id: 'second-database',
+      name: 'Teams',
+    });
+    const secondDoc = new Y.Doc({ guid: 'second-database' }) as YDoc;
+    const secondRoot = secondDoc.getMap(YjsEditorKey.data_section);
+    const secondDatabase = new Y.Map() as YDatabase;
+    const secondFields = new Y.Map() as YDatabaseFields;
+    const secondLoad = createDeferred<YDoc | null>();
+    const typeOption = rollupField.get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup));
+    const snapshots: Array<{ relationId: string; fieldIds: string[]; loading: boolean }> = [];
+
+    secondFields.set('TeamName', createTargetField('TeamName', FieldType.RichText));
+    secondDatabase.set(YjsDatabaseKey.fields, secondFields);
+    secondRoot.set(YjsEditorKey.database, secondDatabase);
+    baseFields.set('relation-b', secondRelation);
+    typeOption.set(YjsDatabaseKey.relation_field_id, 'relation');
+    typeOption.set(YjsDatabaseKey.target_field_id, 'Amount');
+    mockGetViewIdFromDatabaseId.mockImplementation(async (databaseId: string) =>
+      databaseId === 'related-database' ? 'related-view' : 'second-view'
+    );
+    mockLoadView.mockImplementation((viewId: string) =>
+      viewId === 'related-view' ? Promise.resolve(relatedDoc) : secondLoad.promise
+    );
+
+    function Recorder() {
+      const data = useRollupData('rollup');
+
+      snapshots.push({
+        relationId: data.rollupOption.relation_field_id,
+        fieldIds: data.relatedFields.map(({ id }) => id),
+        loading: data.loadingRelated,
+      });
+      return null;
+    }
+
+    const rendered = render(<Recorder />);
+
+    await waitFor(() => {
+      expect(
+        snapshots.some(
+          ({ relationId, fieldIds, loading }) => relationId === 'relation' && fieldIds.includes('Amount') && !loading
+        )
+      ).toBe(true);
+    });
+
+    const switchSnapshotIndex = snapshots.length;
+
+    act(() => {
+      typeOption.set(YjsDatabaseKey.relation_field_id, 'relation-b');
+      typeOption.set(YjsDatabaseKey.target_field_id, 'TeamName');
+      fieldClock += 1;
+      rendered.rerender(<Recorder />);
+    });
+
+    const pendingSnapshots = snapshots
+      .slice(switchSnapshotIndex)
+      .filter(({ relationId }) => relationId === 'relation-b');
+
+    expect(pendingSnapshots.length).toBeGreaterThan(0);
+    expect(pendingSnapshots.every(({ fieldIds, loading }) => fieldIds.length === 0 && loading)).toBe(true);
+
+    await act(async () => {
+      secondLoad.resolve(secondDoc);
+      await secondLoad.promise;
+    });
+    await waitFor(() => {
+      expect(
+        snapshots.some(
+          ({ relationId, fieldIds, loading }) => relationId === 'relation-b' && fieldIds.includes('TeamName') && !loading
+        )
+      ).toBe(true);
+    });
+  });
+
+  it('keeps loading and observes fields when metadata hydrates after loadView resolves', async () => {
+    const coldDoc = new Y.Doc({ guid: 'related-database' }) as YDoc;
+    const typeOption = rollupField.get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup));
+
+    typeOption.set(YjsDatabaseKey.relation_field_id, 'relation');
+    mockLoadView.mockResolvedValue(coldDoc);
+
+    const { result } = renderHook(() => useRollupData('rollup'));
+
+    await waitFor(() => {
+      expect(result.current.loadingRelated).toBe(true);
+      expect(result.current.relatedFields).toEqual([]);
+    });
+
+    act(() => {
+      const database = new Y.Map() as YDatabase;
+      const fields = new Y.Map() as YDatabaseFields;
+
+      fields.set('HydratedName', createTargetField('HydratedName', FieldType.RichText));
+      database.set(YjsDatabaseKey.fields, fields);
+      coldDoc.getMap(YjsEditorKey.data_section).set(YjsEditorKey.database, database);
+    });
+
+    await waitFor(() => {
+      expect(result.current.loadingRelated).toBe(false);
+      expect(result.current.relatedFields.map(({ id }) => id)).toEqual(['HydratedName']);
     });
   });
 
