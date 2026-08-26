@@ -322,10 +322,12 @@ export async function createSpace(workspaceId: string, payload: CreateSpacePaylo
 }
 
 export async function createSpaceWithInitialPage(workspaceId: string, payload: CreateSpaceWithInitialPagePayload) {
-  if (payload.permission && !isLosslessLegacyPermission(payload.permission)) {
-    // The legacy /v2/space endpoint only understands binary public/private
-    // permissions. Compose the structured endpoints instead so richer ACLs are
-    // never silently downgraded. This is compensating, not server-transactional.
+  if (payload.permission) {
+    // The legacy /v2/space endpoint neither persists the structured ACL nor
+    // records the creator as a space owner, even when the requested settings
+    // have a binary public/private representation. Compose the structured
+    // endpoints for every permission-aware draft. This is compensating, not
+    // server-transactional.
     const clientGeneratedViewId = payload.client_generated_view_id === true;
     const ownsSpaceId = payload.view_id === undefined || clientGeneratedViewId;
     const requestedSpaceId = payload.view_id ?? uuidv4();
@@ -381,13 +383,13 @@ export async function createSpaceWithInitialPage(workspaceId: string, payload: C
   const url = `/api/workspace/${workspaceId}/v2/space`;
   const {
     client_generated_view_id: clientGeneratedViewId,
-    permission,
+    permission: _structuredPermission,
     space_permission: requestedLegacyPermission,
     ...legacyPayload
   } = payload;
   const requestPayload = {
     ...legacyPayload,
-    space_permission: permission ? legacySpacePermission(permission.visibility) : requestedLegacyPermission,
+    space_permission: requestedLegacyPermission,
   };
 
   try {
