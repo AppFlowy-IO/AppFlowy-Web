@@ -1,7 +1,8 @@
 import React from 'react';
 import * as Y from 'yjs';
 
-import { FieldType } from '@/application/database-yjs/database.type';
+import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { RollupVisualizationOption } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { DateFormat, FieldId, RowId, TimeFormat } from '@/application/types';
 
 export interface Cell {
@@ -103,11 +104,22 @@ export interface RelationCell extends Cell {
 
 export type RelationCellData = RowId[];
 
+export interface RollupListItem {
+  label: string;
+  rowId: RowId;
+  viewId: string;
+}
+
 export interface RollupCell extends Cell {
   fieldType: FieldType.Rollup;
   data: string;
   rawNumeric?: number;
   list?: string[];
+  listItems?: RollupListItem[];
+  targetFieldType?: FieldType;
+  calculationType?: CalculationType;
+  showAs?: RollupDisplayMode;
+  visualization?: RollupVisualizationOption;
 }
 
 export interface PersonCell extends Cell {
@@ -129,4 +141,5 @@ export interface CellProps<T extends Cell> {
   wrap: boolean;
   onCellUpdated?: (cell: Cell) => void;
   onTextChange?: (text: string) => void;
+  isCardCell?: boolean;
 }

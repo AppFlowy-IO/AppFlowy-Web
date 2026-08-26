@@ -59,6 +59,7 @@ function PropertyProfile({
         </Button>
       </CustomIconPopover>
       <Input
+        data-testid={'property-name-input'}
         ref={(input: HTMLInputElement) => {
           if (!input) return;
           if (!inputRef.current) {

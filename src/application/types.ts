@@ -579,6 +579,10 @@ export enum YjsDatabaseKey {
   calculation_type = 'calculation_type',
   show_as = 'show_as',
   condition_value = 'condition_value',
+  rollup_show_as_type = '__rollup_show_as_type__',
+  rollup_show_as_color = '__rollup_show_as_color__',
+  rollup_show_as_divisor = '__rollup_show_as_divisor__',
+  rollup_show_as_show_number = '__rollup_show_as_show_number__',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
   visibility = 'visibility',
@@ -1115,24 +1119,31 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
       | YjsDatabaseKey.condition_value
   ): string;
 
-  get(key: YjsDatabaseKey.reciprocal_field_id | YjsDatabaseKey.reciprocal_field_name): string | undefined;
-
-  // CreatedTime, LastEditedTime, DateTime
-  // eslint-disable-next-line @typescript-eslint/unified-signatures
-  get(key: YjsDatabaseKey.time_format): string | undefined;
-
-  // CreatedTime, LastEditedTime, DateTime
-  // eslint-disable-next-line @typescript-eslint/unified-signatures
-  get(key: YjsDatabaseKey.date_format): string | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.reciprocal_field_id
+      | YjsDatabaseKey.reciprocal_field_name
+      | YjsDatabaseKey.time_format
+      | YjsDatabaseKey.date_format
+      | YjsDatabaseKey.rollup_show_as_color
+  ): string | undefined;
 
   // Relation
   get(key: YjsDatabaseKey.database_id): DatabaseId;
 
   get(key: YjsDatabaseKey.is_two_way | YjsDatabaseKey.include_time): boolean;
 
-  get(key: YjsDatabaseKey.source_limit | YjsDatabaseKey.target_limit): number | undefined;
+  get(
+    key:
+      | YjsDatabaseKey.source_limit
+      | YjsDatabaseKey.target_limit
+      | YjsDatabaseKey.rollup_show_as_type
+      | YjsDatabaseKey.rollup_show_as_divisor
+  ): number | undefined;
 
   get(key: YjsDatabaseKey.calculation_type | YjsDatabaseKey.show_as): number;
+
+  get(key: YjsDatabaseKey.rollup_show_as_show_number): boolean | undefined;
 
   // Number
   // eslint-disable-next-line @typescript-eslint/unified-signatures

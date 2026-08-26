@@ -33,6 +33,7 @@ import {
   parsePersonTypeOptions,
   parseRelationTypeOption,
   parseRollupTypeOption,
+  parseRollupVisualizationOption,
   parseSelectOptionTypeOptions,
   SelectOption,
 } from '@/application/database-yjs/fields';
@@ -119,12 +120,14 @@ import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 import { ChartLayoutSettings } from './chart.type';
 import {
   CalendarLayoutSetting,
+  CalculationType,
   DateGroupCondition,
   FieldType,
   FieldVisibility,
   Filter,
   FilterType,
   RowMeta,
+  RollupDisplayMode,
   SortCondition,
 } from './database.type';
 
@@ -170,7 +173,37 @@ function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilter
   });
 }
 
+function getComputedConditionFieldIds(sorts?: YDatabaseSorts, filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+  const relationFieldIds = new Set<string>();
+  const rollupFieldIds = new Set<string>();
+  const addFieldId = (fieldId?: string) => {
+    if (!fieldId || !fields) return;
+    const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
+
+    if (fieldType === FieldType.Relation) {
+      relationFieldIds.add(fieldId);
+    } else if (fieldType === FieldType.Rollup) {
+      rollupFieldIds.add(fieldId);
+    }
+  };
+
+  sorts?.forEach((sort) => addFieldId(sort.get(YjsDatabaseKey.field_id)));
+
+  const visitFilter = (filter: ReturnType<typeof getEffectiveFiltersSnapshot>[number]) => {
+    addFieldId(filter.fieldId);
+    filter.children?.forEach(visitFilter);
+  };
+
+  getEffectiveFiltersSnapshot(filters, fields).forEach(visitFilter);
+
+  return {
+    relationFieldIds: [...relationFieldIds],
+    rollupFieldIds: [...rollupFieldIds],
+  };
+}
+
 const CONDITION_ROW_LOAD_BATCH_SIZE = 24;
+const ROLLUP_CELL_OBSERVER_POOL_SIZE = 4;
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
 type ConditionReference = { id: string; fieldId: string };
@@ -2601,23 +2634,14 @@ export function useRowOrdersSelector() {
     let rollupFieldIds: string[] = [];
 
     const refreshConditionFieldIds = () => {
-      relationFieldIds = [];
-      rollupFieldIds = [];
+      const computedFieldIds = getComputedConditionFieldIds(sorts, filters, fields);
 
-      fields?.forEach((field, fieldId) => {
-        const fieldType = Number(field.get(YjsDatabaseKey.type));
-
-        if (fieldType === FieldType.Relation) {
-          relationFieldIds.push(fieldId);
-        }
-
-        if (fieldType === FieldType.Rollup) {
-          rollupFieldIds.push(fieldId);
-        }
-      });
+      relationFieldIds = computedFieldIds.relationFieldIds;
+      rollupFieldIds = computedFieldIds.rollupFieldIds;
     };
 
     const handleSortFilterChange = () => {
+      refreshConditionFieldIds();
       const nextConditionStateKey = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 
       if (conditionSignatureRef.current === nextConditionStateKey) return;
@@ -2664,7 +2688,9 @@ export function useRowOrdersSelector() {
         const observerRowsEvent = () => {
           invalidateRowConditionCache(rowDoc);
 
-          // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
+          // A regular field sort/filter reads row data directly. Invalidating
+          // unrelated computed cells here can supersede their own observer's
+          // in-flight refresh without scheduling a replacement computation.
           for (const fieldId of relationFieldIds) {
             invalidateRelationCell(`${rowId}:${fieldId}`);
           }
@@ -2742,6 +2768,7 @@ function useRollupCellValue({
   const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
   const [value, setValue] = useState<RollupCellValue>({ value: '' });
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
+  const [relatedObserverRevision, setRelatedObserverRevision] = useState(0);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const cellId = `${rowId}:${fieldId}`;
   const rollupOption = useMemo(() => {
@@ -2838,7 +2865,7 @@ function useRollupCellValue({
     let cancelled = false;
     const observerCleanups: Array<() => void> = [];
 
-    void (async () => {
+    const setupObservers = async () => {
       if (!loadView || !createRow) return;
       const viewId = await getViewIdFromDatabaseId?.(relationOption.database_id);
 
@@ -2850,29 +2877,131 @@ function useRollupCellValue({
 
       if (cancelled || !relatedDoc) return;
       const docGuid = relatedDoc.guid;
-      const handleRelatedSchemaChange = () => {
+      const refreshRollup = () => {
         invalidateRollupCell(cellId);
         void readRollupCell(rollupContext);
       };
 
+      const readTargetRelationOption = () => {
+        const relatedDatabase = relatedDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as
+          | YDatabase
+          | undefined;
+        const targetField = relatedDatabase?.get(YjsDatabaseKey.fields)?.get(rollupOption.target_field_id);
+
+        return targetField && Number(targetField.get(YjsDatabaseKey.type)) === FieldType.Relation
+          ? parseRelationTypeOption(targetField)
+          : null;
+      };
+
+      let observedTargetDatabaseId = readTargetRelationOption()?.database_id ?? '';
+      const handleRelatedSchemaChange = () => {
+        refreshRollup();
+        const nextTargetDatabaseId = readTargetRelationOption()?.database_id ?? '';
+
+        if (nextTargetDatabaseId !== observedTargetDatabaseId) {
+          observedTargetDatabaseId = nextTargetDatabaseId;
+          setRelatedObserverRevision((revision) => revision + 1);
+        }
+      };
+
+      // The metadata document may still hydrate after loadView resolves.
+      // Observe it before looking up a nested Relation target so a target that
+      // appears in that gap rebuilds the row observer chain.
       observerCleanups.push(
         subscribeSharedYjsDeep(relatedDoc.getMap(YjsEditorKey.data_section), handleRelatedSchemaChange)
       );
+      const targetRelationOption = readTargetRelationOption();
+      const nestedViewId = targetRelationOption?.database_id
+        ? await getViewIdFromDatabaseId?.(targetRelationOption.database_id)
+        : null;
 
-      for (const relatedRowId of relatedRowIds) {
-        if (cancelled) return;
+      if (cancelled) return;
+      const nestedRelatedDoc =
+        nestedViewId && targetRelationOption?.database_id
+          ? await loadView(nestedViewId, false, false, {
+              databaseId: targetRelationOption.database_id,
+              databaseMetadataOnly: true,
+            })
+          : null;
+
+      if (cancelled) return;
+      if (nestedRelatedDoc) {
+        observerCleanups.push(subscribeSharedYjsDeep(nestedRelatedDoc.getMap(YjsEditorKey.data_section), refreshRollup));
+      }
+
+      const runWithPool = async <T>(items: readonly T[], task: (item: T) => Promise<void>) => {
+        let index = 0;
+        const poolSize = Math.min(ROLLUP_CELL_OBSERVER_POOL_SIZE, items.length);
+
+        await Promise.all(
+          Array.from({ length: poolSize }, async () => {
+            while (!cancelled) {
+              const currentIndex = index;
+
+              if (currentIndex >= items.length) return;
+              index += 1;
+              await task(items[currentIndex]);
+            }
+          })
+        );
+      };
+
+      const nestedRowIds = new Set<string>();
+
+      await runWithPool(relatedRowIds, async (relatedRowId) => {
         const rowDoc = await createRow(getRowKey(docGuid, relatedRowId));
 
-        if (cancelled) return;
-        if (!rowDoc) continue;
-        const handler = () => {
-          invalidateRollupCell(cellId);
-          void readRollupCell(rollupContext);
+        if (cancelled || !rowDoc) return;
+        const readNestedRowIds = () => {
+          const relatedRow = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as
+            | YDatabaseRow
+            | undefined;
+          const targetCell = relatedRow?.get(YjsDatabaseKey.cells)?.get(rollupOption.target_field_id);
+
+          return getRelationRowIdsFromCell(targetCell);
         };
 
-        observerCleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), handler));
+        let observedNestedRowIdsKey = readNestedRowIds().join(',');
+        const handleRelatedRowChange = () => {
+          refreshRollup();
+
+          if (nestedRelatedDoc) {
+            const nextNestedRowIdsKey = readNestedRowIds().join(',');
+
+            if (nextNestedRowIdsKey !== observedNestedRowIdsKey) {
+              observedNestedRowIdsKey = nextNestedRowIdsKey;
+              setRelatedObserverRevision((revision) => revision + 1);
+            }
+          }
+        };
+
+        observerCleanups.push(subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), handleRelatedRowChange));
+
+        if (!nestedRelatedDoc) return;
+        readNestedRowIds().forEach((nestedRowId) => nestedRowIds.add(nestedRowId));
+      });
+
+      if (nestedRelatedDoc) {
+        await runWithPool([...nestedRowIds], async (nestedRowId) => {
+          const nestedRowDoc = await createRow(getRowKey(nestedRelatedDoc.guid, nestedRowId));
+
+          if (cancelled || !nestedRowDoc) return;
+          observerCleanups.push(subscribeSharedYjsDeep(nestedRowDoc.getMap(YjsEditorKey.data_section), refreshRollup));
+        });
       }
-    })();
+
+      // Initial computation can finish while this asynchronous observer chain
+      // is still loading. Once every discovered row is observed, invalidate
+      // that generation and read again so edits from the setup gap are kept.
+      if (!cancelled) {
+        refreshRollup();
+      }
+    };
+
+    void setupObservers().catch((error: unknown) => {
+      if (cancelled) return;
+      console.error('[Database] failed to set up rollup cell observers', error);
+    });
 
     return () => {
       cancelled = true;
@@ -2890,6 +3019,7 @@ function useRollupCellValue({
     getViewIdFromDatabaseId,
     cellId,
     relationRowIdsKey,
+    relatedObserverRevision,
   ]);
 
   if (!rollupContext || fieldType !== FieldType.Rollup) return undefined;
@@ -2901,6 +3031,11 @@ function useRollupCellValue({
     data: value.value,
     rawNumeric: value.rawNumeric,
     list: value.list,
+    listItems: value.listItems,
+    targetFieldType: value.targetFieldType,
+    calculationType: (rollupOption?.calculation_type ?? CalculationType.Count) as CalculationType,
+    showAs: (rollupOption?.show_as ?? RollupDisplayMode.Calculated) as RollupDisplayMode,
+    visualization: parseRollupVisualizationOption(rollupOption),
   } as RollupCell;
 }
 

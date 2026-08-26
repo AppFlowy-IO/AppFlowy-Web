@@ -116,7 +116,7 @@ export function CardField({
     );
   }
 
-  return <Cell style={style} readOnly cell={cell || undefined} rowId={rowId} fieldId={fieldId} wrap />;
+  return <Cell style={style} readOnly cell={cell || undefined} rowId={rowId} fieldId={fieldId} wrap isCardCell />;
 }
 
 export default CardField;
