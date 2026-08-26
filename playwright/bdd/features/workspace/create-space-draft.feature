@@ -5,9 +5,9 @@ Feature: Create Space keeps a local draft until confirmation
 
   Background:
     Given the seeded scp0822 space permission fixture exists
-    And I sign in as seeded scp0822 "owner"
 
   Scenario: Cancelling a renamed Custom draft sends no mutations
+    Given I sign in as seeded scp0822 "owner"
     When I start recording create-space draft mutations
     And I open the create-space draft panel
     And I rename the create-space draft to "Draft that must not persist"
@@ -21,6 +21,7 @@ Feature: Create Space keeps a local draft until confirmation
     Then the create-space draft has sent no mutations
 
   Scenario: Create persists one renamed Custom space before its queued member
+    Given I sign in as seeded scp0822 "owner"
     When I start recording create-space draft mutations
     And I open the create-space draft panel
     And I rename the create-space draft to "BDD Deferred Custom Space"

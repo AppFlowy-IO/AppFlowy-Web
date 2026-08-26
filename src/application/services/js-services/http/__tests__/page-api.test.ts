@@ -489,15 +489,16 @@ describe('createSpaceWithInitialPage', () => {
   });
 
   it.each([
-    [SpaceVisibility.Public, SpacePermission.Public],
-    [SpaceVisibility.Private, SpacePermission.Private],
-  ])('uses the atomic V2 endpoint for a lossless %s permission draft', async (visibility, expectedLegacy) => {
-    const response = {
-      space: { view_id: 'space-id' },
-      page: { view_id: 'page-id' },
-    };
+    [SpaceVisibility.Public, SpacePermission.Private],
+    [SpaceVisibility.Private, SpacePermission.Public],
+  ])('uses structured endpoints for a default %s permission draft', async (visibility, staleLegacyPermission) => {
+    const permission = { ...privatePermission, visibility };
 
-    post.mockResolvedValue(apiResponse(response));
+    post.mockImplementation(async (url: string) => {
+      if (url === '/api/workspace/workspace-id/spaces') return apiResponse({ view_id: 'space-id' });
+      if (url === '/api/workspace/workspace-id/page-view') return apiResponse({ view_id: 'page-id' });
+      throw new Error(`Unexpected URL: ${url}`);
+    });
 
     await expect(
       createSpaceWithInitialPage('workspace-id', {
@@ -506,25 +507,34 @@ describe('createSpaceWithInitialPage', () => {
         space_icon_color: '',
         view_id: 'space-id',
         client_generated_view_id: true,
-        permission: { ...privatePermission, visibility },
+        permission,
         // The structured visibility is authoritative when both forms are
-        // present, so a stale compatibility field cannot select the wrong
-        // binary space type.
-        space_permission:
-          expectedLegacy === SpacePermission.Private ? SpacePermission.Public : SpacePermission.Private,
+        // present, so a stale compatibility field cannot select a legacy path.
+        space_permission: staleLegacyPermission,
         initial_page: { layout: ViewLayout.Document, view_id: 'page-id' },
       })
-    ).resolves.toEqual(response);
+    ).resolves.toEqual({
+      space: { view_id: 'space-id' },
+      page: { view_id: 'page-id' },
+    });
 
-    expect(post).toHaveBeenCalledTimes(1);
-    expect(post).toHaveBeenCalledWith('/api/workspace/workspace-id/v2/space', {
+    expect(post).toHaveBeenNthCalledWith(1, '/api/workspace/workspace-id/spaces', {
       name: 'Default space',
       space_icon: '',
       space_icon_color: '',
       view_id: 'space-id',
-      space_permission: expectedLegacy,
-      initial_page: { layout: ViewLayout.Document, view_id: 'page-id' },
+      permission,
     });
+    expect(post).toHaveBeenNthCalledWith(2, '/api/workspace/workspace-id/page-view', {
+      parent_view_id: 'space-id',
+      layout: ViewLayout.Document,
+      name: undefined,
+      page_data: undefined,
+      view_id: 'page-id',
+      collab_id: 'page-id',
+      prev_view_id: undefined,
+    });
+    expect(post.mock.calls.map(([url]) => url)).not.toContain('/api/workspace/workspace-id/v2/space');
     expect(deleteRequest).not.toHaveBeenCalled();
   });
 });

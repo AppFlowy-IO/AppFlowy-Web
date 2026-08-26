@@ -1,10 +1,15 @@
 import { expect, Page, Request } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { PageSelectors, SpaceSelectors, ModalSelectors } from '../../support/selectors';
 import { TestConfig } from '../../support/test-config';
 
-const { When, Then, After } = createBdd();
+const { Given, When, Then, After } = createBdd();
+
+const EVA_EMAIL = 'eva@appflowy.io';
+const FIXTURE_PASSWORD = 'AppFlowy!@123';
+const NATHAN_WORKSPACE_NAME = /nathan.*workspace/i;
 
 type DraftMutationKind = 'create-space' | 'initial-page' | 'space-update' | 'member' | 'group';
 
@@ -25,7 +30,72 @@ type DraftScenarioState = {
   expectedMemberUid?: string;
 };
 
+type ApiResponse<T> = {
+  code?: number;
+  message?: string;
+  data?: T;
+};
+
+type SpacePermissionResponse = {
+  permission?: { visibility?: string };
+  current_user_access_level?: number | null;
+  explicit_member_count?: number;
+  can_manage_space?: boolean;
+};
+
+type SpaceMember = {
+  email?: string | null;
+  role?: string;
+  access_level?: number;
+  source?: string;
+};
+
+type SpaceMembersResponse = {
+  members?: SpaceMember[];
+};
+
+type WorkspaceSummary = {
+  workspace_id?: string;
+  workspace_name?: string;
+  role?: string;
+};
+
+type UserWorkspaceInfoResponse = {
+  visiting_workspace?: WorkspaceSummary;
+  workspaces?: WorkspaceSummary[];
+};
+
 const stateByPage = new WeakMap<Page, DraftScenarioState>();
+
+Given('I sign in as Eva and open the Nathan workspace for space creation', async ({ page, request }) => {
+  await signInWithPasswordViaUi(page, EVA_EMAIL, FIXTURE_PASSWORD, 2000);
+  const token = await getAuthToken(page);
+
+  if (!token) throw new Error('The Eva session has no auth token');
+  const response = await request.get(`${TestConfig.apiUrl}/api/user/workspace`, {
+    headers: { Authorization: `Bearer ${token}` },
+    failOnStatusCode: false,
+  });
+  const responseText = await response.text();
+  const responseBody = parseJsonObject(responseText) as ApiResponse<UserWorkspaceInfoResponse>;
+  const workspaces = [
+    ...(responseBody.data?.workspaces ?? []),
+    ...(responseBody.data?.visiting_workspace ? [responseBody.data.visiting_workspace] : []),
+  ];
+  const nathanWorkspace = workspaces.find(({ workspace_name }) => NATHAN_WORKSPACE_NAME.test(workspace_name ?? ''));
+
+  if (!response.ok() || responseBody.code !== 0) {
+    throw new Error(`Eva workspace lookup failed: HTTP ${response.status()} ${responseText}`);
+  }
+  if (!nathanWorkspace?.workspace_id) {
+    throw new Error(`Eva cannot find a workspace matching ${NATHAN_WORKSPACE_NAME}`);
+  }
+  expect(nathanWorkspace.role?.toLowerCase()).toBe('member');
+
+  await page.goto(`/app/${nathanWorkspace.workspace_id}`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('current-workspace-name')).toHaveText(NATHAN_WORKSPACE_NAME, { timeout: 30000 });
+  await expect(PageSelectors.newPageButton(page)).toBeVisible({ timeout: 30000 });
+});
 
 After({ tags: '@create-space-draft' }, async ({ page, request }) => {
   const state = stateByPage.get(page);
@@ -216,6 +286,75 @@ Then('one renamed Custom space and initial page are created before the queued me
   state.workspaceId = workspaceIdFromMutation(state.mutations[0].url);
 });
 
+Then('one default Public space and initial page are created through structured APIs', async ({ page }) => {
+  const state = requireState(page);
+
+  await expect
+    .poll(() => state.mutations.length, {
+      message: 'expected structured space and initial-page mutations',
+      timeout: 30000,
+    })
+    .toBe(2);
+
+  expect(state.mutations.map(({ kind }) => kind)).toEqual(['create-space', 'initial-page']);
+  const [createMutation, initialPageMutation] = state.mutations;
+  const createBody = parseJsonObject(createMutation.body);
+  const initialPageBody = parseJsonObject(initialPageMutation.body);
+  const permission = createBody.permission as { visibility?: string } | undefined;
+
+  expect(new URL(createMutation.url).pathname).toMatch(/\/api\/workspace\/[^/]+\/spaces$/);
+  expect(new URL(createMutation.url).pathname).not.toMatch(/\/v2\/space$/);
+  expect(createBody.name).toBe(state.draftName);
+  expect(permission?.visibility).toBe('public');
+  expect(typeof createBody.view_id).toBe('string');
+  expect(initialPageBody.parent_view_id).toBe(createBody.view_id);
+  expect(initialPageBody.view_id).toBeTruthy();
+  expect(initialPageBody.collab_id).toBe(initialPageBody.view_id);
+
+  state.createdSpaceId = String(createBody.view_id);
+  state.createdInitialPageId = String(initialPageBody.view_id);
+  state.workspaceId = workspaceIdFromMutation(createMutation.url);
+});
+
+Then('the created Public space grants Eva creator ownership via the API', async ({ page, request }) => {
+  const state = requireState(page);
+
+  if (!state.workspaceId || !state.createdSpaceId) throw new Error('The created Public space IDs are unavailable');
+  const token = await getAuthToken(page);
+
+  if (!token) throw new Error('The seeded Member session has no auth token');
+  const headers = { Authorization: `Bearer ${token}` };
+  const permissionPath = `/api/workspace/${state.workspaceId}/spaces/${state.createdSpaceId}/permission`;
+  const permissionResponse = await request.get(`${TestConfig.apiUrl}${permissionPath}`, {
+    headers,
+    failOnStatusCode: false,
+  });
+  const permissionBody = (await permissionResponse.json()) as ApiResponse<SpacePermissionResponse>;
+
+  expect(permissionResponse.ok(), await permissionResponse.text()).toBe(true);
+  expect(permissionBody.code).toBe(0);
+  expect(permissionBody.data?.permission?.visibility).toBe('public');
+  expect(permissionBody.data?.current_user_access_level).toBe(ACCESS_LEVEL_FULL_ACCESS);
+  expect(permissionBody.data?.can_manage_space).toBe(true);
+  expect(permissionBody.data?.explicit_member_count).toBeGreaterThanOrEqual(1);
+
+  const membersPath = `/api/workspace/${state.workspaceId}/spaces/${state.createdSpaceId}/members`;
+  const membersResponse = await request.get(`${TestConfig.apiUrl}${membersPath}`, {
+    headers,
+    failOnStatusCode: false,
+  });
+  const membersBody = (await membersResponse.json()) as ApiResponse<SpaceMembersResponse>;
+  const creator = membersBody.data?.members?.find(({ email }) => email === EVA_EMAIL);
+
+  expect(membersResponse.ok(), await membersResponse.text()).toBe(true);
+  expect(membersBody.code).toBe(0);
+  expect(creator).toMatchObject({
+    role: 'owner',
+    access_level: ACCESS_LEVEL_FULL_ACCESS,
+    source: 'creator',
+  });
+});
+
 Then('the created create-space draft is visible as {string}', async ({ page }, _requestedName: string) => {
   const state = requireState(page);
 
@@ -256,6 +395,7 @@ const SpaceMemberRoleValue = {
   Member: 'member',
 } as const;
 const ACCESS_LEVEL_READ_AND_WRITE = 30;
+const ACCESS_LEVEL_FULL_ACCESS = 50;
 
 function classifyDraftMutation(request: Request): DraftMutationKind | null {
   if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(request.method())) return null;
