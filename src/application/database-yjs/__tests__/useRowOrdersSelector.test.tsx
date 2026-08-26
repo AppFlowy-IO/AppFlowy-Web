@@ -8,6 +8,7 @@ import {
   FieldType,
   FilterType,
   NumberFilterCondition,
+  SortCondition,
   TextFilterCondition,
   useFieldCellsByRowsSelector,
   useRowOrdersSelector,
@@ -20,6 +21,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import * as databaseFilter from '@/application/database-yjs/filter';
+import * as rollupCache from '@/application/database-yjs/rollup/cache';
 import * as rowOrderVisibility from '@/application/database-yjs/row-order-visibility';
 import {
   RowId,
@@ -31,6 +33,8 @@ import {
   YDatabaseFilters,
   YDatabaseMetas,
   YDatabaseRowOrders,
+  YDatabaseRow,
+  YDatabaseSort,
   YDatabaseSorts,
   YDatabaseView,
   YDatabaseViews,
@@ -52,6 +56,7 @@ type DatabaseFixture = {
   filters: YDatabaseFilters;
   rowMap: Record<RowId, YDoc>;
   rowOrders: YDatabaseRowOrders;
+  sorts: YDatabaseSorts;
   view: YDatabaseView;
   viewId: string;
   views: YDatabaseViews;
@@ -128,6 +133,7 @@ function createDatabaseFixture(): DatabaseFixture {
       }),
     },
     rowOrders,
+    sorts,
     view,
     viewId,
     views,
@@ -314,6 +320,45 @@ describe('useRowOrdersSelector', () => {
 
     expect(filterBySpy).toHaveBeenCalledTimes(1);
     filterBySpy.mockRestore();
+  });
+
+  it('refreshes computed condition fields when an existing sort switches fields', async () => {
+    const fixture = createDatabaseFixture();
+    const rollupFieldId = 'rollup-field';
+    const rollupField = createRollupField(rollupFieldId);
+    const sort = new Y.Map() as YDatabaseSort;
+
+    rollupField.set(YjsDatabaseKey.type, FieldType.Rollup);
+    fixture.fields.set(rollupFieldId, rollupField);
+    sort.set(YjsDatabaseKey.id, 'sort-id');
+    sort.set(YjsDatabaseKey.field_id, rollupFieldId);
+    sort.set(YjsDatabaseKey.condition, SortCondition.Ascending);
+    fixture.sorts.push([sort]);
+
+    const invalidateRollupSpy = jest.spyOn(rollupCache, 'invalidateRollupCell');
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toHaveLength(3);
+    });
+
+    act(() => {
+      sort.set(YjsDatabaseKey.field_id, fieldId);
+    });
+    invalidateRollupSpy.mockClear();
+
+    act(() => {
+      const row = fixture.rowMap['row-a']
+        .getMap(YjsEditorKey.data_section)
+        .get(YjsEditorKey.database_row) as YDatabaseRow;
+
+      row.get(YjsDatabaseKey.cells).get(fieldId)?.set(YjsDatabaseKey.data, 'changed');
+    });
+
+    expect(invalidateRollupSpy).not.toHaveBeenCalledWith(`row-a:${rollupFieldId}`);
+    invalidateRollupSpy.mockRestore();
   });
 
   it('applies conditions that do not require an input value', async () => {

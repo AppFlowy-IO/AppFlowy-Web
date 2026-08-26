@@ -109,6 +109,12 @@ function bumpGeneration(cellId: string) {
   return next;
 }
 
+function clearInflightIfOwned(cellId: string, promise: Promise<RollupCellValue>) {
+  if (inflight.get(cellId) === promise) {
+    inflight.delete(cellId);
+  }
+}
+
 function isEntryFresh(entry: RollupCacheEntry, generation: number) {
   if (entry.generation !== generation) return false;
   return Date.now() - entry.updatedAt <= ROLLUP_CACHE_TTL_MS;
@@ -767,7 +773,7 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
   let promise = inflight.get(cellId);
 
   if (!promise) {
-    promise = (async () => {
+    const ownedPromise = (async () => {
       const release = await semaphore.acquire();
 
       try {
@@ -790,11 +796,15 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
         return value;
       } finally {
         release();
-        inflight.delete(cellId);
       }
     })();
 
-    inflight.set(cellId, promise);
+    promise = ownedPromise;
+    inflight.set(cellId, ownedPromise);
+    void ownedPromise.then(
+      () => clearInflightIfOwned(cellId, ownedPromise),
+      () => clearInflightIfOwned(cellId, ownedPromise)
+    );
   }
 
   const value = await promise;
@@ -858,11 +868,14 @@ export function readRollupCellSync(context: RollupComputeContext): RollupCellVal
         return value;
       } finally {
         release();
-        inflight.delete(cellId);
       }
     })();
 
     inflight.set(cellId, promise);
+    void promise.then(
+      () => clearInflightIfOwned(cellId, promise),
+      () => clearInflightIfOwned(cellId, promise)
+    );
   }
 
   return cached

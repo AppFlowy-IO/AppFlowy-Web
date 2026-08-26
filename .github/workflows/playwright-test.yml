@@ -104,8 +104,9 @@ jobs:
               playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
               playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/rollup-relation-live-update.feature.spec.js
             shard: ''
-            description: 'Authentication, sidebar, database-row mention, and migrated Gallery behavior scenarios'
+            description: 'Authentication, sidebar, database-row mention, migrated Gallery behavior, and rollup reactivity scenarios'
             bdd: true
           - name: 'space-permissions-bdd'
             spec: >-

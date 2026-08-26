@@ -173,6 +173,35 @@ function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilter
   });
 }
 
+function getComputedConditionFieldIds(sorts?: YDatabaseSorts, filters?: YDatabaseFilters, fields?: YDatabaseFields) {
+  const relationFieldIds = new Set<string>();
+  const rollupFieldIds = new Set<string>();
+  const addFieldId = (fieldId?: string) => {
+    if (!fieldId || !fields) return;
+    const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
+
+    if (fieldType === FieldType.Relation) {
+      relationFieldIds.add(fieldId);
+    } else if (fieldType === FieldType.Rollup) {
+      rollupFieldIds.add(fieldId);
+    }
+  };
+
+  sorts?.forEach((sort) => addFieldId(sort.get(YjsDatabaseKey.field_id)));
+
+  const visitFilter = (filter: ReturnType<typeof getEffectiveFiltersSnapshot>[number]) => {
+    addFieldId(filter.fieldId);
+    filter.children?.forEach(visitFilter);
+  };
+
+  getEffectiveFiltersSnapshot(filters, fields).forEach(visitFilter);
+
+  return {
+    relationFieldIds: [...relationFieldIds],
+    rollupFieldIds: [...rollupFieldIds],
+  };
+}
+
 const CONDITION_ROW_LOAD_BATCH_SIZE = 24;
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
@@ -2604,23 +2633,14 @@ export function useRowOrdersSelector() {
     let rollupFieldIds: string[] = [];
 
     const refreshConditionFieldIds = () => {
-      relationFieldIds = [];
-      rollupFieldIds = [];
+      const computedFieldIds = getComputedConditionFieldIds(sorts, filters, fields);
 
-      fields?.forEach((field, fieldId) => {
-        const fieldType = Number(field.get(YjsDatabaseKey.type));
-
-        if (fieldType === FieldType.Relation) {
-          relationFieldIds.push(fieldId);
-        }
-
-        if (fieldType === FieldType.Rollup) {
-          rollupFieldIds.push(fieldId);
-        }
-      });
+      relationFieldIds = computedFieldIds.relationFieldIds;
+      rollupFieldIds = computedFieldIds.rollupFieldIds;
     };
 
     const handleSortFilterChange = () => {
+      refreshConditionFieldIds();
       const nextConditionStateKey = `${viewId ?? ''}:${getConditionSignature(sorts, filters, fields)}`;
 
       if (conditionSignatureRef.current === nextConditionStateKey) return;
@@ -2667,7 +2687,9 @@ export function useRowOrdersSelector() {
         const observerRowsEvent = () => {
           invalidateRowConditionCache(rowDoc);
 
-          // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
+          // A regular field sort/filter reads row data directly. Invalidating
+          // unrelated computed cells here can supersede their own observer's
+          // in-flight refresh without scheduling a replacement computation.
           for (const fieldId of relationFieldIds) {
             invalidateRelationCell(`${rowId}:${fieldId}`);
           }

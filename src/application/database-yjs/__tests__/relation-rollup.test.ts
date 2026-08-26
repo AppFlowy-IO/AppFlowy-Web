@@ -19,7 +19,12 @@ import {
   subscribeRelationCache,
   subscribeRelationGroupLabels,
 } from '@/application/database-yjs/relation/cache';
-import { readRollupCellSync, subscribeRollupCell } from '@/application/database-yjs/rollup/cache';
+import {
+  invalidateRollupCell,
+  readRollupCell,
+  readRollupCellSync,
+  subscribeRollupCell,
+} from '@/application/database-yjs/rollup/cache';
 import {
   YDatabase,
   YDatabaseCell,
@@ -87,6 +92,15 @@ function createRowDoc(rowId: string, databaseId: string, cellMap: Record<string,
   row.set(YjsDatabaseKey.last_modified, '0');
   sharedRoot.set(YjsEditorKey.database_row, row);
   return doc;
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+
+  return { promise, resolve };
 }
 
 function createFixture({
@@ -590,6 +604,63 @@ describe('relation and rollup basics', () => {
     const value = await resultPromise;
     expect(value.value).toBe('30');
     expect(value.rawNumeric).toBe(30);
+  });
+
+  it('keeps a replacement computation registered when an invalidated computation finishes', async () => {
+    const rollupFieldId = 'rollup-inflight-owner';
+    const fixture = createFixture({
+      suffix: 'rollup-inflight-owner',
+      rollups: [
+        {
+          fieldId: rollupFieldId,
+          targetFieldId: 'name-rollup-inflight-owner',
+          calculationType: CalculationType.CountNonEmpty,
+          showAs: RollupDisplayMode.Calculated,
+        },
+      ],
+    });
+    const relationIds = new Y.Array<string>();
+
+    relationIds.push([fixture.relatedRowIds[0]]);
+    fixture.baseRow.get(YjsDatabaseKey.cells).get(fixture.relationFieldId)?.set(YjsDatabaseKey.data, relationIds);
+
+    const gates: Array<ReturnType<typeof createDeferred<void>>> = [];
+    const createRow = jest.fn((rowKey: string) => {
+      const gate = createDeferred<void>();
+
+      gates.push(gate);
+      return gate.promise.then(() => fixture.createRow(rowKey));
+    });
+    const context = {
+      baseDoc: fixture.baseDoc,
+      database: fixture.baseDatabase,
+      rollupField: fixture.baseDatabase.get(YjsDatabaseKey.fields).get(rollupFieldId) as YDatabaseField,
+      row: fixture.baseRow,
+      rowId: fixture.baseRowId,
+      fieldId: rollupFieldId,
+      loadView: fixture.loadView,
+      createRow,
+      getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
+    };
+    const cellId = `${fixture.baseRowId}:${rollupFieldId}`;
+    const firstRead = readRollupCell(context);
+
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(1));
+    invalidateRollupCell(cellId);
+    const replacementRead = readRollupCell(context);
+
+    await waitFor(() => expect(createRow).toHaveBeenCalledTimes(2));
+    gates[0].resolve();
+    await firstRead;
+
+    const joinedRead = readRollupCell(context);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createRow).toHaveBeenCalledTimes(2);
+
+    gates[1].resolve();
+    await expect(replacementRead).resolves.toMatchObject({ value: '1' });
+    await expect(joinedRead).resolves.toMatchObject({ value: '1' });
   });
 
   it('returns rollup original list values when configured', async () => {
