@@ -60,7 +60,7 @@ import {
 } from '@/application/services/js-services/http';
 import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, saveRedirectTo } from '@/application/session/sign_in';
-import { getTokenParsed } from '@/application/session/token';
+import { getTokenParsed, isTokenValid } from '@/application/session/token';
 import {
   DatabaseRelations,
   DuplicatePublishView,
@@ -635,7 +635,12 @@ async function finishAuthFlow(
     afterAuth();
   } catch (e) {
     Log.error(`[Auth] ${logContext}: failed`, e);
-    emit(EventType.SESSION_INVALID);
+    // A failed account-switch attempt must not hide the still-valid current
+    // session. Lower layers remove invalid credentials before rejecting.
+    if (!isTokenValid()) {
+      emit(EventType.SESSION_INVALID);
+    }
+
     return Promise.reject(e);
   }
 }

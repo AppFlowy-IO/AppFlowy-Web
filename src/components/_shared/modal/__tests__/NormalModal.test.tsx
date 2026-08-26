@@ -37,4 +37,16 @@ describe('NormalModal keyboard submission', () => {
 
     expect(onOk).not.toHaveBeenCalled();
   });
+
+  it('can hide its footer actions while keeping the close control', () => {
+    render(
+      <NormalModal open title='Manage Space' showActions={false}>
+        <div>Space settings</div>
+      </NormalModal>
+    );
+
+    expect(screen.queryByRole('button', { name: 'button.cancel' })).toBeNull();
+    expect(screen.queryByTestId('modal-ok-button')).toBeNull();
+    expect(screen.getByRole('button', { name: 'button.close' })).toBeTruthy();
+  });
 });

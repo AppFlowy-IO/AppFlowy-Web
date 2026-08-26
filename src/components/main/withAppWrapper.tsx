@@ -3,29 +3,27 @@ import { SnackbarProvider } from 'notistack';
 import { Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
+import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
 import CustomSnackbar from '@/components/_shared/notify/CustomSnackbar';
 import AppConfig from '@/components/main/AppConfig';
 import AppTheme from '@/components/main/AppTheme';
 
 import { ErrorHandlerPage } from 'src/components/error/ErrorHandlerPage';
 
-
-
 import { InfoSnackbar } from '../_shared/notify';
 
 const StyledSnackbarProvider = styled(SnackbarProvider)`
-    &.notistack-MuiContent-default {
-        background-color: var(--fill-toolbar);
-    }
+  &.notistack-MuiContent-default {
+    background-color: var(--fill-toolbar);
+  }
 
-    &.notistack-MuiContent-info {
-        background-color: var(--function-info);
-    }
-
+  &.notistack-MuiContent-info {
+    background-color: var(--function-info);
+  }
 `;
 
-export default function withAppWrapper (Component: React.FC): React.FC {
-  return function AppWrapper (): JSX.Element {
+export default function withAppWrapper(Component: React.FC): React.FC {
+  return function AppWrapper(): JSX.Element {
     return (
       <AppTheme>
         <ErrorBoundary FallbackComponent={ErrorHandlerPage}>
@@ -45,7 +43,7 @@ export default function withAppWrapper (Component: React.FC): React.FC {
             }}
           >
             <AppConfig>
-              <Suspense>
+              <Suspense fallback={<FullScreenLoading label='Loading page' />}>
                 <Component />
               </Suspense>
             </AppConfig>

@@ -1,16 +1,34 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { AccessLevel } from '@/application/types';
 import ShareTabs from '@/components/app/share/ShareTabs';
 
 const mockUpdateGroupInAccessList = jest.fn();
 const mockSharePanelProps = jest.fn();
+const mockPublishPanelProps = jest.fn();
+const mockUseViewActionPermissions = jest.fn();
+let mockCanShare = true;
+let mockHasLoadedPermission = true;
+let mockIsLoadingPermission = false;
+let mockOutlineViewAvailable = true;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAppView: () => ({ is_published: false }),
+  useAppView: (viewId: string) => (mockOutlineViewAvailable ? { view_id: viewId, is_published: false } : undefined),
+}));
+
+jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
+  useViewActionPermissions: (...args: unknown[]) => {
+    mockUseViewActionPermissions(...args);
+    return {
+      canManageViewActions: mockCanShare,
+      hasLoadedViewActionPermissions: mockHasLoadedPermission,
+      isLoadingViewActionPermissions: mockIsLoadingPermission,
+    };
+  },
 }));
 
 jest.mock('@/components/main/app.hooks', () => ({
@@ -28,6 +46,7 @@ jest.mock('@/components/app/share/useShareAccessDetails', () => ({
     currentUserAccessLevel: undefined,
     hasFullAccess: true,
     canManageFullAccess: false,
+    generalAccessLevel: AccessLevel.ReadOnly,
     sectionType: undefined,
   }),
 }));
@@ -42,7 +61,10 @@ jest.mock('@/components/app/share/SharePanel', () => ({
 
 jest.mock('@/components/app/share/PublishPanel', () => ({
   __esModule: true,
-  default: () => <div data-testid='publish-panel' />,
+  default: (props: unknown) => {
+    mockPublishPanelProps(props);
+    return <div data-testid='publish-panel' />;
+  },
 }));
 
 jest.mock('@/components/app/share/TemplatePanel', () => ({
@@ -63,6 +85,12 @@ describe('ShareTabs publish availability', () => {
   beforeEach(() => {
     mockSharePanelProps.mockClear();
     mockUpdateGroupInAccessList.mockClear();
+    mockPublishPanelProps.mockClear();
+    mockUseViewActionPermissions.mockClear();
+    mockCanShare = true;
+    mockHasLoadedPermission = true;
+    mockIsLoadingPermission = false;
+    mockOutlineViewAvailable = true;
   });
 
   it('keeps Share available while removing Publish when requested', () => {
@@ -77,6 +105,19 @@ describe('ShareTabs publish availability', () => {
     renderShareTabs(false);
 
     expect(screen.getByTestId('publish-tab')).toBeTruthy();
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(
+      expect.objectContaining({ view_id: 'database-view' }),
+      true,
+      'database-view'
+    );
+  });
+
+  it('passes the known ID when the page is absent from the outline', () => {
+    mockOutlineViewAvailable = false;
+
+    renderShareTabs(false);
+
+    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(undefined, true, 'database-view');
   });
 
   it('falls back to Share when Publish is removed after being selected', () => {
@@ -98,6 +139,39 @@ describe('ShareTabs publish availability', () => {
       expect.objectContaining({
         updateGroupInAccessList: mockUpdateGroupInAccessList,
         canManageFullAccess: false,
+        generalAccessLevel: AccessLevel.ReadOnly,
+      })
+    );
+  });
+
+  it('uses canonical can_share instead of the legacy access-level result', () => {
+    mockCanShare = false;
+
+    renderShareTabs(false);
+
+    expect(mockSharePanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasFullAccess: false,
+        canManageFullAccess: false,
+      })
+    );
+
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+    expect(mockPublishPanelProps).toHaveBeenCalledWith(expect.objectContaining({ canShare: false }));
+  });
+
+  it('keeps publishing in a loading state while object permission resolves', () => {
+    mockCanShare = false;
+    mockHasLoadedPermission = false;
+    mockIsLoadingPermission = true;
+
+    renderShareTabs(false);
+    fireEvent.mouseDown(screen.getByTestId('publish-tab'), { button: 0, ctrlKey: false });
+
+    expect(mockPublishPanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({
+        canShare: false,
+        shareDetailsLoading: true,
       })
     );
   });

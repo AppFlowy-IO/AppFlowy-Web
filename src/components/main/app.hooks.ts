@@ -33,15 +33,17 @@ export const defaultConfig: AFCloudConfig = {
  */
 export const AFConfigContext = createContext<
   | {
-    /** Whether the user is currently authenticated. */
-    isAuthenticated: boolean;
-    /** The logged-in user, or undefined if not yet loaded. */
-    currentUser?: User;
-    /** Update the current user's profile (name, avatar, etc.). */
-    updateCurrentUser: (user: User) => Promise<void>;
-    /** Open the login modal. Pass redirectTo to return to a specific URL after login. */
-    openLoginModal: (redirectTo?: string) => void;
-  }
+      /** Whether the user is currently authenticated. */
+      isAuthenticated: boolean;
+      /** Stable identity used to reset all account-scoped providers on account changes. */
+      authenticatedUserId?: string;
+      /** The logged-in user, or undefined if not yet loaded. */
+      currentUser?: User;
+      /** Update the current user's profile (name, avatar, etc.). */
+      updateCurrentUser: (user: User) => Promise<void>;
+      /** Open the login modal. Pass redirectTo to return to a specific URL after login. */
+      openLoginModal: (redirectTo?: string) => void;
+    }
   | undefined
 >(undefined);
 
@@ -55,6 +57,7 @@ export function useAppConfig() {
 
   return {
     isAuthenticated: context.isAuthenticated,
+    authenticatedUserId: context.authenticatedUserId,
     currentUser: context.currentUser,
     updateCurrentUser: context.updateCurrentUser,
     openLoginModal: context.openLoginModal,

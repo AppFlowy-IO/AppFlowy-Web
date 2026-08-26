@@ -1,5 +1,5 @@
 import { debounce } from 'lodash-es';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createEditor, Descendant, Editor, Element as SlateElement, Node, Operation } from 'slate';
 import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
@@ -19,6 +19,7 @@ import { useInlineCommentEditorRegistration } from '@/components/inline-comment/
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { Log } from '@/utils/log';
+import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 import { getTextCount } from '@/utils/word';
 
 // Patch ReactEditor.hasDOMNode to handle "Cannot resolve a DOM node" errors
@@ -269,6 +270,16 @@ function CollaborativeEditor({
     [viewId, doc]
   );
 
+  // Keep the editor instance stable across capability probes while making its
+  // imperative permission guards follow the latest canonical permission. A
+  // newly mounted cached document may start in the safe read-only fallback and
+  // become writable once the permission request resolves.
+  useLayoutEffect(() => {
+    if (editor) {
+      editor.readOnly = readOnly;
+    }
+  }, [editor, readOnly]);
+
   const handleSlateChange = useCallback(() => {
     ensureValidSelection(editor);
     handleDatabaseBlockLifecycle(editor);
@@ -314,7 +325,7 @@ function CollaborativeEditor({
 
     // Expose editor and doc for E2E testing in development/test mode
     const isE2ETest =
-      import.meta.env.DEV || import.meta.env.MODE === 'test' || (typeof window !== 'undefined' && 'Cypress' in window);
+      isDevelopmentOrTestEnvironment() || (typeof window !== 'undefined' && 'Cypress' in window);
 
     if (isE2ETest) {
       const testWindow = window as Window & {

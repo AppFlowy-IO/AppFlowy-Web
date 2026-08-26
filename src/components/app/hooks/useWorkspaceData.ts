@@ -18,7 +18,7 @@ import {
 } from '@/application/services/js-services/workspace-view-metadata';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
-import { isDatabaseLayout } from '@/application/view-utils';
+import { isDatabaseLayout, isSpaceView } from '@/application/view-utils';
 import {
   addViewToOutline,
   deduplicateOutlineChildren,
@@ -1872,13 +1872,27 @@ export function useWorkspaceData() {
       void loadOutline(currentWorkspaceId, false);
     };
 
-    const evictAccessDerivedSubtrees = () => {
+    const evictAccessDerivedSubtrees = (targetSpaceId?: string) => {
       if (!currentWorkspaceId) return { staleSubtreeIds: [], viewDepths: new Map<string, number>() };
 
       const viewDepths = buildViewDepthIndex(stableOutlineRef.current);
-      const staleSubtreeIds = Array.from(
-        new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current])
-      );
+      const staleSubtreeIdSet = new Set([...loadedViewIdsRef.current, ...loadingViewIdsRef.current]);
+      const targetSpace = targetSpaceId ? findView(stableOutlineRef.current, targetSpaceId) : null;
+      const targetSubtreeIds = targetSpace ? collectOutlineViewIds([targetSpace]) : null;
+
+      if (targetSubtreeIds) {
+        for (const viewId of staleSubtreeIdSet) {
+          if (!targetSubtreeIds.has(viewId)) staleSubtreeIdSet.delete(viewId);
+        }
+
+        // Root responses are shallow. If this space currently has materialized
+        // children without a lazy-load marker, clear and refresh it as well so
+        // a revoke cannot leave those children visible until the root request
+        // finishes.
+        if (targetSpace?.children?.length) staleSubtreeIdSet.add(targetSpace.view_id);
+      }
+
+      const staleSubtreeIds = Array.from(staleSubtreeIdSet);
       let evictedOutline = stableOutlineRef.current;
 
       for (const viewId of staleSubtreeIds) {
@@ -1901,7 +1915,19 @@ export function useWorkspaceData() {
       // Clear both loaded and in-flight markers before any replacement root or
       // subtree request starts. A stale request's finally handler deliberately
       // cannot clear the marker of a newer request.
-      markCachedFolderSubtreesStale(currentWorkspaceId, staleSubtreeIds);
+      if (targetSubtreeIds) {
+        markCachedFolderSubtreesStale(currentWorkspaceId, staleSubtreeIds, false);
+
+        let loadedStateChanged = false;
+
+        for (const viewId of staleSubtreeIds) {
+          loadedStateChanged = loadedViewIdsRef.current.delete(viewId) || loadedStateChanged;
+        }
+
+        if (loadedStateChanged) setLoadedViewIdsRevision((revision) => revision + 1);
+      } else {
+        markCachedFolderSubtreesStale(currentWorkspaceId, staleSubtreeIds);
+      }
 
       return { staleSubtreeIds, viewDepths };
     };
@@ -2009,7 +2035,7 @@ export function useWorkspaceData() {
         });
     };
 
-    const handlePermissionChanged = () => {
+    const handlePermissionChanged = (payload?: notification.IPermissionChanged) => {
       if (!currentWorkspaceId) return;
 
       ViewService.invalidateDatabaseCatalog?.(currentWorkspaceId);
@@ -2018,17 +2044,41 @@ export function useWorkspaceData() {
 
       // AppBusinessLayer handles the same event separately because it owns the
       // active route/modal IDs and can re-probe and purge either rendered view.
-      // `objectId` can identify a workspace group rather than a view, so a
-      // targeted branch refresh is not reliable. Invalidate every subtree
-      // that could otherwise be grafted onto the depth-limited root response,
-      // and supersede lazy-load responses that started before this event.
+      // `objectId` can identify a workspace group rather than a view. Target
+      // the refresh only when the current outline proves it is a space; keep
+      // the workspace-wide fallback for group, page, missing and unknown IDs.
+      // This preserves expanded sibling spaces after an ACL edit without
+      // weakening the conservative behavior for ambiguous notifications.
+      const changedView = payload?.objectId ? findView(stableOutlineRef.current, payload.objectId) : null;
+      const targetSpaceId = isSpaceView(changedView) ? changedView?.view_id : undefined;
+
+      // Invalidate every affected subtree that could otherwise be grafted onto
+      // the depth-limited root response, and supersede lazy-load responses that
+      // started before this event.
+      const supersededLoadingViewIds = Array.from(loadingViewIdsRef.current);
+
       permissionRefreshRevisionRef.current += 1;
       const permissionRevision = permissionRefreshRevisionRef.current;
       const workspaceId = currentWorkspaceId;
-      const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees();
+      const { staleSubtreeIds, viewDepths } = evictAccessDerivedSubtrees(targetSpaceId);
       const staleSubtreeWaves = new Map<number, string[]>();
 
-      for (const viewId of staleSubtreeIds) {
+      // The permission revision above makes every captured request stale. A
+      // targeted eviction clears markers inside the changed space, but must not
+      // leave an in-flight sibling permanently marked as loading. Release all
+      // superseded markers before replacement requests claim them. Stale
+      // request finally handlers are revision-gated, so they cannot clear a
+      // marker owned by one of the replacement requests below.
+      for (const viewId of supersededLoadingViewIds) {
+        loadingViewIdsRef.current.delete(viewId);
+      }
+
+      // Resume both evicted expanded branches and sibling loads that the global
+      // permission revision superseded. Parent depths run first so a nested
+      // request always has an outline node to merge into.
+      const rehydrateViewIds = new Set([...staleSubtreeIds, ...supersededLoadingViewIds]);
+
+      for (const viewId of rehydrateViewIds) {
         const depth = viewDepths.get(viewId) ?? Number.MAX_SAFE_INTEGER;
         const wave = staleSubtreeWaves.get(depth) ?? [];
 

@@ -4,11 +4,15 @@ import { createBdd } from 'playwright-bdd';
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
 import { EditorSelectors, PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
+import {
+  SPM0622_ACCOUNTS as SPM_ACCOUNTS,
+  SPM0622_PASSWORD as PASSWORD,
+  type Spm0622AccountAlias as SpmAccountAlias,
+} from '../../support/spm0622-fixture';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { When, Then, Before, After } = createBdd();
 
-const PASSWORD = 'AppFlowy!@123';
 const TEMPORARY_PAGE_PREFIX = 'bdd share group page';
 const TEMPORARY_PRIVATE_SPACE_PREFIX = 'bdd share group private space';
 const TEMPORARY_PRIVATE_PAGE_PREFIX = 'bdd share group private page';
@@ -19,20 +23,6 @@ const SPM_PRIVATE_PAGE_TITLE = 'spm0622 Private Matrix Page';
 const SPACE_PERMISSION_PRIVATE = 1;
 const VIEW_LAYOUT_DOCUMENT = 0;
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
-
-const SPM_ACCOUNTS = {
-  'owner 1': 'spm0622-owner1@appflowy.local',
-  'owner 2': 'spm0622-owner2@appflowy.local',
-  'member default': 'spm0622-member-default@appflowy.local',
-  'member open': 'spm0622-member-open@appflowy.local',
-  'member closed': 'spm0622-member-closed@appflowy.local',
-  'member private': 'spm0622-member-private@appflowy.local',
-  'guest closed': 'spm0622-guest-closed@appflowy.local',
-  'guest private': 'spm0622-guest-private@appflowy.local',
-  'guest none': 'spm0622-guest-none@appflowy.local',
-} as const;
-
-type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 
 type ApiResponse<T> = {
   code?: number;
@@ -216,7 +206,7 @@ When(
   }
 );
 
-When('I prepare the seeded private page and workspace group for sharing', async ({ page, request }) => {
+When('I prepare the seeded restricted Custom page and workspace group for sharing', async ({ page, request }) => {
   const state = requireState(page);
   const token = await requireAuthToken(page);
   const workspaceId = await getCurrentWorkspaceId(request, token);
@@ -410,6 +400,22 @@ Then(
   }
 );
 
+Then('the share panel does not show shared person {string}', async ({ page }, email: string) => {
+  await expect(ShareSelectors.sharePopover(page).getByText(email, { exact: true })).toHaveCount(0);
+});
+
+Then(
+  'the share panel shows shared group {string} with {string}',
+  async ({ page }, groupName: string, accessText: string) => {
+    const row = shareGroupRow(page, groupName);
+
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.getByText(groupName, { exact: true })).toBeVisible();
+    await expect(row.getByText('Group', { exact: true })).toBeVisible();
+    await expect(row.getByText(accessText, { exact: true })).toBeVisible();
+  }
+);
+
 When('I invite the temporary share-menu group from the share panel', async ({ page }) => {
   const group = requireTemporaryGroup(page);
 
@@ -521,9 +527,8 @@ Then('the seeded group-share page is editable but share controls are read only',
   const titleInput = PageSelectors.titleInput(page).first();
   const editor = EditorSelectors.firstEditor(page);
   const input = inviteInput(page);
-  const groupAccessButton = shareGroupRow(page, group.name)
-    .getByRole('button', { name: /Can view|Can edit|Full access/ })
-    .first();
+  const groupRow = shareGroupRow(page, group.name);
+  const groupAccessButton = groupRow.getByRole('button', { name: /Can view|Can edit|Full access/ }).first();
 
   await expect(titleInput).toBeVisible({ timeout: 15000 });
   await expect(titleInput).toBeEnabled();
@@ -532,8 +537,13 @@ Then('the seeded group-share page is editable but share controls are read only',
   await expect(input).toBeVisible({ timeout: 15000 });
   await expect.poll(async () => input.evaluate((element) => (element as HTMLInputElement).readOnly)).toBe(true);
   await expect(ShareSelectors.inviteButton(page)).toBeDisabled();
-  await expect(groupAccessButton).toBeVisible({ timeout: 15000 });
-  await expect(groupAccessButton).toBeDisabled();
+  // A viewer who cannot manage the share sees the group's access as a plain
+  // label (no dropdown); older builds rendered a disabled button instead.
+  await expect(groupRow).toBeVisible({ timeout: 15000 });
+  await expect(groupRow.getByText('Can edit', { exact: true })).toBeVisible({ timeout: 15000 });
+  if ((await groupAccessButton.count()) > 0) {
+    await expect(groupAccessButton).toBeDisabled();
+  }
 });
 
 function requireState(page: Page): ScenarioState {

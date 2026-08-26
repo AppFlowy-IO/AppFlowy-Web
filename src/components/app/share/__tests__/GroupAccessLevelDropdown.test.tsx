@@ -200,6 +200,23 @@ describe('GroupAccessLevelDropdown', () => {
     expect(onRemoveAccess).not.toHaveBeenCalled();
   });
 
+  it('renders access as plain text when group mutations are not allowed', () => {
+    render(
+      <GroupAccessLevelDropdown
+        group={group}
+        canModify={false}
+        currentUserHasFullAccess
+        canManageFullAccess={false}
+        onAccessLevelChange={jest.fn(async () => AccessLevel.ReadOnly)}
+        onRemoveAccess={jest.fn(async () => null)}
+      />
+    );
+
+    expect(screen.getByText('shareAction.readAndWrite')).toBeTruthy();
+    expect(screen.queryByRole('button')).toBeNull();
+    expect(screen.queryByText('shareAction.removeAccess')).toBeNull();
+  });
+
   it('offers Full Access assignment to an owner-tier manager', () => {
     render(
       <GroupAccessLevelDropdown

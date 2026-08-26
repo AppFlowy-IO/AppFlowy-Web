@@ -58,7 +58,7 @@ function PermissionedMoreActionsContent({
     canUsePageHistory,
     hasLoadedViewActionPermissions,
     isLoadingViewActionPermissions,
-  } = useViewActionPermissions(view, true);
+  } = useViewActionPermissions(view, true, viewId);
   const isResolvingViewActionPermissions = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   return (
@@ -70,6 +70,7 @@ function PermissionedMoreActionsContent({
         onDeleted={onDeleted}
         viewId={viewId}
         canDuplicateActions={canCreateViewActions}
+        canEditActions={canCreateViewActions}
         canManageActions={canManageViewActions}
         canUsePageHistory={canUsePageHistory}
         isLoadingActions={isResolvingViewActionPermissions}

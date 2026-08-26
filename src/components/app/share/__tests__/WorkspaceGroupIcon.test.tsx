@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { WorkspaceGroup } from '@/application/types';
 import { InviteInput } from '@/components/app/share/InviteInput';
 import { PersonSuggestionItem } from '@/components/app/share/PersonSuggestionItem';
+import { WorkspaceGroupIcon } from '@/components/app/share/WorkspaceGroupIcon';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -25,6 +26,17 @@ function getGroupIcon(container: HTMLElement): SVGSVGElement {
 }
 
 describe('page-share workspace group icons', () => {
+  it('matches the medium member avatar footprint in settings rows', () => {
+    render(<WorkspaceGroupIcon variant='settings-row' />);
+
+    const iconContainer = screen.getByTestId('workspace-group-icon-settings-row');
+
+    expect(iconContainer.classList.contains('h-8')).toBe(true);
+    expect(iconContainer.classList.contains('w-8')).toBe(true);
+    expect(iconContainer.classList.contains('h-9')).toBe(false);
+    expect(iconContainer.classList.contains('w-9')).toBe(false);
+  });
+
   it('uses the canonical row icon in group suggestions', () => {
     const { container } = render(
       <PersonSuggestionItem

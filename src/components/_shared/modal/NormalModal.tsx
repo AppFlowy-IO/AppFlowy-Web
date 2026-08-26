@@ -40,6 +40,7 @@ export interface NormalModalProps extends DialogProps {
   okLoading?: boolean;
   closable?: boolean;
   overflowHidden?: boolean;
+  showActions?: boolean;
 }
 
 export function NormalModal({
@@ -56,6 +57,7 @@ export function NormalModal({
   okLoading,
   closable = true,
   overflowHidden = false,
+  showActions = true,
   ...dialogProps
 }: NormalModalProps) {
   const { t } = useTranslation();
@@ -115,40 +117,42 @@ export function NormalModal({
         >
           {children}
         </div>
-        {/* Desktop footers are right-aligned with a spacing.l gap, cancel first. */}
-        <div className={'flex w-full justify-end gap-3'}>
-          <Button
-            // MUI's Button defaulted to type="button"; the design-system one
-            // does not, and a bare button inside a <form> would submit it.
-            type={'button'}
-            variant={'outline'}
-            onClick={() => {
-              if (onCancel) {
-                onCancel();
-              } else {
-                onClose?.();
-              }
-            }}
-            {...cancelButtonProps}
-            className={cn(FOOTER_BUTTON_CLASS, cancelButtonProps?.className)}
-          >
-            {modalCancelText}
-          </Button>
-          <Button
-            type={'button'}
-            data-testid={danger ? 'confirm-delete-button' : 'modal-ok-button'}
-            variant={danger ? 'destructive' : 'default'}
-            onClick={() => {
-              if (okLoading) return;
-              onOk?.();
-            }}
-            disabled={okLoading}
-            {...okButtonProps}
-            className={cn(FOOTER_BUTTON_CLASS, okButtonProps?.className)}
-          >
-            {okLoading ? <CircularProgress color={'inherit'} size={16} /> : modalOkText}
-          </Button>
-        </div>
+        {showActions && (
+          // Desktop footers are right-aligned with a spacing.l gap, cancel first.
+          <div className={'flex w-full justify-end gap-3'}>
+            <Button
+              // MUI's Button defaulted to type="button"; the design-system one
+              // does not, and a bare button inside a <form> would submit it.
+              type={'button'}
+              variant={'outline'}
+              onClick={() => {
+                if (onCancel) {
+                  onCancel();
+                } else {
+                  onClose?.();
+                }
+              }}
+              {...cancelButtonProps}
+              className={cn(FOOTER_BUTTON_CLASS, cancelButtonProps?.className)}
+            >
+              {modalCancelText}
+            </Button>
+            <Button
+              type={'button'}
+              data-testid={danger ? 'confirm-delete-button' : 'modal-ok-button'}
+              variant={danger ? 'destructive' : 'default'}
+              onClick={() => {
+                if (okLoading) return;
+                onOk?.();
+              }}
+              disabled={okLoading}
+              {...okButtonProps}
+              className={cn(FOOTER_BUTTON_CLASS, okButtonProps?.className)}
+            >
+              {okLoading ? <CircularProgress color={'inherit'} size={16} /> : modalOkText}
+            </Button>
+          </div>
+        )}
       </div>
     </Dialog>
   );

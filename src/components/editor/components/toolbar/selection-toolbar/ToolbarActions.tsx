@@ -130,9 +130,9 @@ function ToolbarActions() {
       {aiEnabled && !isCodeBlock && <AIAssistant />}
       {/* Desktop puts the comment item in group 1 — directly after the AI
           group and before the text styles (custom_comment_toolbar_item.dart). */}
-      {inlineCommentEnabled && !isAcrossBlock && !isCodeBlock && (
+      {inlineCommentEnabled && (
         <>
-          <InlineCommentAction />
+          <InlineCommentAction selectionSupported={!isAcrossBlock && !isCodeBlock} />
           <Divider className={'my-1.5 bg-line-on-toolbar'} orientation={'vertical'} flexItem={true} />
         </>
       )}

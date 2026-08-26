@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ChangeEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
@@ -35,12 +35,14 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submittingRef = useRef(false);
 
   const reset = useCallback(() => {
     setUsername('');
     setPassword('');
     setError(null);
     setLoading(false);
+    submittingRef.current = false;
   }, []);
 
   // Cleared once the close transition has finished rather than on open: the
@@ -49,23 +51,24 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
   const transitionProps = useMemo(() => ({ onExited: reset }), [reset]);
 
   const handleClose = useCallback(() => {
-    if (loading) return;
+    if (submittingRef.current) return;
 
     onOpenChange(false);
-  }, [loading, onOpenChange]);
+  }, [onOpenChange]);
 
   const isFormValid = Boolean(username.trim() && password);
 
   const handleSubmit = useCallback(async () => {
     // NormalModal fires `onOk` on Enter regardless of the button's disabled
     // state, so the guard has to live here rather than on the button alone.
-    if (loading) return;
+    if (submittingRef.current) return;
 
     if (!isFormValid) {
       setError(t('web.ldapCredentialsRequired'));
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -81,9 +84,10 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
       // Only the password is cleared: a failed attempt is usually a typo, and
       // retyping the username every time is pure friction.
       setPassword('');
+      submittingRef.current = false;
       setLoading(false);
     }
-  }, [loading, isFormValid, username, password, onSubmit, t]);
+  }, [isFormValid, username, password, onSubmit, t]);
 
   const handleOk = useCallback(() => {
     void handleSubmit();
@@ -125,10 +129,7 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
       PaperProps={PAPER_PROPS}
       TransitionProps={transitionProps}
     >
-      <div
-        data-testid='ldap-login-dialog'
-        className='flex w-full flex-col gap-4'
-      >
+      <div data-testid='ldap-login-dialog' className='flex w-full flex-col gap-4'>
         <div id={DESCRIPTION_ID} className='help-text text-xs text-text-caption'>
           {t('web.ldapLoginDescription')}
         </div>
@@ -167,11 +168,7 @@ function LdapLoginDialog({ open, onOpenChange, onSubmit }: LdapLoginDialogProps)
         </div>
 
         {error && (
-          <div
-            id={ERROR_ID}
-            className='help-text text-xs text-text-error'
-            role='alert'
-          >
+          <div id={ERROR_ID} className='help-text text-xs text-text-error' role='alert'>
             {error}
           </div>
         )}

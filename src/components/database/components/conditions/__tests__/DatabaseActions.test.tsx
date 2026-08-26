@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-import { useDatabaseContext, useDatabaseViewLayout, useReadOnly } from '@/application/database-yjs';
+import { useDatabase, useDatabaseContext, useDatabaseViewLayout, useReadOnly } from '@/application/database-yjs';
 import { DatabaseViewLayout } from '@/application/types';
 import {
   DatabaseSearchProvider,
@@ -10,6 +10,7 @@ import {
 import { DatabaseActions } from '../DatabaseActions';
 
 jest.mock('@/application/database-yjs', () => ({
+  useDatabase: jest.fn(),
   useDatabaseContext: jest.fn(),
   useDatabaseViewLayout: jest.fn(),
   useReadOnly: jest.fn(),
@@ -67,6 +68,7 @@ jest.mock('@/components/ui/tooltip', () => ({
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+const mockUseDatabase = useDatabase as jest.MockedFunction<typeof useDatabase>;
 const mockUseDatabaseContext = useDatabaseContext as jest.MockedFunction<typeof useDatabaseContext>;
 const mockUseDatabaseViewLayout = useDatabaseViewLayout as jest.MockedFunction<typeof useDatabaseViewLayout>;
 const mockUseReadOnly = useReadOnly as jest.MockedFunction<typeof useReadOnly>;
@@ -84,6 +86,7 @@ describe('DatabaseActions template support', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseDatabase.mockReturnValue(undefined);
     mockUseDatabaseContext.mockReturnValue({
       activeViewId: 'view-1',
       isDocumentBlock: false,
@@ -200,6 +203,33 @@ describe('DatabaseActions template support', () => {
     expect(screen.queryByTestId('sorts-button')).toBeNull();
     expect(screen.queryByTestId('database-actions-settings')).toBeNull();
     expect(screen.queryByTestId('database-template-button')).toBeNull();
+  });
+
+  it('resolves the source view before opening a linked database as a page', async () => {
+    const getViewIdFromDatabaseId = jest.fn().mockResolvedValue('source-database-view');
+    const navigateToView = jest.fn().mockResolvedValue(undefined);
+
+    mockUseDatabaseViewLayout.mockReturnValue(DatabaseViewLayout.Grid);
+    mockUseDatabase.mockReturnValue({
+      get: jest.fn().mockReturnValue('source-database-id'),
+    } as ReturnType<typeof useDatabase>);
+    mockUseDatabaseContext.mockReturnValue({
+      activeViewId: 'linked-view',
+      databasePageId: 'embedded-linked-view',
+      getViewIdFromDatabaseId,
+      isDocumentBlock: true,
+      navigateToView,
+    } as ReturnType<typeof useDatabaseContext>);
+
+    render(<DatabaseActions />);
+
+    fireEvent.click(screen.getByTestId('database-actions-open-as-page'));
+
+    await waitFor(() => {
+      expect(getViewIdFromDatabaseId).toHaveBeenCalledWith('source-database-id');
+      expect(navigateToView).toHaveBeenCalledWith('source-database-view');
+    });
+    expect(navigateToView).not.toHaveBeenCalledWith('embedded-linked-view');
   });
 
   it('updates the shared trimmed query after the desktop debounce and clears it with Escape', () => {

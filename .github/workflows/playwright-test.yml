@@ -103,8 +103,14 @@ jobs:
             bdd: 'true'
             shard: ''
           - name: 'gallery-bdd'
-            spec: 'playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js'
-            description: 'Migrated Gallery behavior scenarios'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/auth/auth-regressions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/app/sidebar-drop-indicator.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/editor/database-row-page-mention.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js
+            description: 'Authentication, sidebar, database-row mention, and migrated Gallery behavior scenarios'
             bdd: 'true'
             shard: ''
           - name: 'database-filters'
@@ -112,6 +118,16 @@ jobs:
             description: 'Database filters and field type switching'
             bdd: 'false'
             shard: ''
+          - name: 'space-permissions-bdd'
+            spec: >-
+              playwright/.features-gen/playwright/bdd/features/workspace/create-space-draft.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/workspace/space-custom-permissions.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/workspace/space-group-permission-resolution.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/workspace/space-permission-matrix-management.feature.spec.js
+              playwright/.features-gen/playwright/bdd/features/page/eva-more-actions-permissions.feature.spec.js
+            shard: ''
+            description: 'Create, manage, member, group, and action permission scenarios for spaces'
+            bdd: 'true'
           - name: 'embedded'
             spec: 'playwright/e2e/embeded'
             description: 'Embedded database and image operations'

@@ -2,21 +2,20 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthService } from '@/application/services/domains';
+import { buildLoginUrl } from '@/application/session/sign_in';
 import { AuthProvider, LoginProviderId, LoginProviders } from '@/application/types';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import { LOGIN_ACTION } from '@/components/login/const';
 import EmailLogin from '@/components/login/EmailLogin';
 import LoginProvider from '@/components/login/LoginProvider';
+import { readCachedLoginProviders, writeCachedLoginProviders } from '@/components/login/loginProvidersCache';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { getPlatform } from '@/utils/platform';
 
 /** Providers the email form already covers, so they do not imply an SSO block. */
-const EMAIL_FIRST_PROVIDERS: LoginProviderId[] = [
-  AuthProvider.EMAIL,
-  AuthProvider.PASSWORD,
-  AuthProvider.MAGIC_LINK,
-];
+const EMAIL_FIRST_PROVIDERS: LoginProviderId[] = [AuthProvider.EMAIL, AuthProvider.PASSWORD, AuthProvider.MAGIC_LINK];
 
 /** One server response, so one piece of state — the halves cannot diverge. */
 const NO_LOGIN_PROVIDERS: LoginProviders = {
@@ -27,33 +26,42 @@ const NO_LOGIN_PROVIDERS: LoginProviders = {
 
 export function Login({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
-  const [loginProviders, setLoginProviders] = useState<LoginProviders>(NO_LOGIN_PROVIDERS);
+  const [loginProviders, setLoginProviders] = useState<LoginProviders>(
+    () => readCachedLoginProviders() ?? NO_LOGIN_PROVIDERS
+  );
 
-  // Fetch available auth providers on mount
+  // Render the last server-confirmed configuration immediately, then
+  // revalidate it so deployment changes still become authoritative.
   useEffect(() => {
+    let active = true;
+
     const fetchProviders = async () => {
       try {
         const response = await AuthService.getAuthProviders();
-
-        setLoginProviders({
+        const providers = {
           providers: response.providers || [],
           customProviders: response.customProviders || [],
           ldapProviders: response.ldapProviders || [],
-        });
+        };
+
+        writeCachedLoginProviders(providers);
+        if (active) setLoginProviders(providers);
       } catch (error) {
         console.error('Failed to fetch auth providers:', error);
-        // On error, offer nothing beyond the email form.
-        setLoginProviders(NO_LOGIN_PROVIDERS);
+        // Keep the cached first paint on transient errors. Provider login is
+        // still accepted or rejected by the server when a button is used.
       }
     };
 
     void fetchProviders();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   // Filter to check if there are any OAuth providers (not EMAIL or PASSWORD)
-  const hasOAuthProviders = loginProviders.providers.some(
-    provider => !EMAIL_FIRST_PROVIDERS.includes(provider)
-  );
+  const hasOAuthProviders = loginProviders.providers.some((provider) => !EMAIL_FIRST_PROVIDERS.includes(provider));
 
   const isMobile = getPlatform().isMobile;
 
@@ -118,12 +126,13 @@ export function Login({ redirectTo }: { redirectTo: string }) {
           <Button
             variant={'link'}
             onClick={() => {
-              const encodedRedirect = encodeURIComponent(redirectTo);
-
-              window.location.href = `/login?action=signUpPassword&redirectTo=${encodedRedirect}`;
+              window.location.href = buildLoginUrl({
+                action: LOGIN_ACTION.SIGN_UP_PASSWORD,
+                redirectTo,
+              });
             }}
             className={'px-0 text-text-secondary underline'}
-            data-testid="login-create-account-button"
+            data-testid='login-create-account-button'
           >
             {t('signIn.createAccount')}
           </Button>

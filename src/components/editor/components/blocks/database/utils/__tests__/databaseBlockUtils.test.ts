@@ -56,4 +56,30 @@ describe('database block view ID compatibility', () => {
       view_id: 'duplicated-view',
     });
   });
+
+  it('does not erase durable view IDs when the runtime tab projection is temporarily empty', () => {
+    const initial = createDatabaseNodeData({
+      parentId: 'document-id',
+      viewIds: ['linked-view'],
+      databaseId: 'database-id',
+    });
+
+    expect(replaceViewIds(initial, [])).toBe(initial);
+  });
+
+  it('can backfill a recovered view ID into a previously empty block', () => {
+    expect(
+      replaceViewIds(
+        {
+          parent_id: 'document-id',
+          database_id: 'database-id',
+          view_ids: [],
+        },
+        ['linked-view']
+      )
+    ).toMatchObject({
+      view_ids: ['linked-view'],
+      view_id: 'linked-view',
+    });
+  });
 });

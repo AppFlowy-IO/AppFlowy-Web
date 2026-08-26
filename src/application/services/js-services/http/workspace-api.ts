@@ -1,5 +1,6 @@
 import {
   AccessLevel,
+  AddSpaceGroupPermissionPayload,
   AddSpaceMemberPayload,
   AddWorkspaceGroupMemberPayload,
   CreateWorkspaceGroupPayload,
@@ -36,8 +37,12 @@ import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from 
 
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
 
-function parseResponseWithExactUid(data: unknown) {
-  if (typeof data !== 'string') return data;
+// Runs as an axios `transformResponse`, so it also sees the empty body of a
+// `304 Not Modified` before the ETag replay interceptor can hand back the
+// cached payload. Leave such bodies untouched instead of throwing
+// "Unexpected end of JSON input" and masking the 304.
+export function parseResponseWithExactUid(data: unknown) {
+  if (typeof data !== 'string' || data.trim() === '') return data;
 
   return JSON.parse(data.replace(UID_FIELD_REGEX, '"uid":"$1"')) as unknown;
 }
@@ -286,6 +291,19 @@ export async function removeSpaceMember(workspaceId: string, spaceId: string, ui
   const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
 
   return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function addSpaceGroupPermission(
+  workspaceId: string,
+  spaceId: string,
+  groupId: string,
+  payload: AddSpaceGroupPermissionPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/group/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroupSpacePermission>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroupSpacePermission>>(url, payload)
+  );
 }
 
 export async function updateSpaceGroupPermission(

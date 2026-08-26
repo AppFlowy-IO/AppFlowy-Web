@@ -539,9 +539,10 @@ function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onC
 
   return (
     <div className={'px-4 pb-3 pt-1'}>
-      <div className={'rounded-lg border border-border-primary bg-background-primary px-2 py-1'}>
+      <div className={'relative rounded-lg border border-border-primary bg-background-primary px-2 py-1'}>
         <TextareaAutosize
           autoFocus
+          aria-busy={submitting}
           // The bordered shell around it is the field frame, as on desktop.
           variant={'ghost'}
           data-testid={'inline-comment-reply-input'}
@@ -561,8 +562,17 @@ function ReplyInput({ parentCommentId, onClose }: { parentCommentId: string; onC
               void submit();
             }
           }}
-          className={'w-full bg-transparent py-1 text-sm'}
+          className={cn('w-full bg-transparent py-1 text-sm', submitting && 'pr-7')}
         />
+        {submitting ? (
+          <span
+            aria-hidden={'true'}
+            data-testid={'inline-comment-reply-loading'}
+            className={
+              'absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-current border-t-transparent text-brand-skyline motion-reduce:animate-none'
+            }
+          />
+        ) : null}
       </div>
     </div>
   );

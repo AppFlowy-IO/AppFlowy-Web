@@ -1,33 +1,27 @@
-import { AccessLevel, ObjectPermission } from '@/application/types';
+import { CollabObjectPermission } from '@/application/types';
+
+type ViewActionCapabilities = Pick<CollabObjectPermission, 'can_read' | 'can_write' | 'can_share'>;
 
 export function canUseViewMutationActions({
-  currentUserPermission,
+  objectPermission,
 }: {
-  currentUserPermission?: ObjectPermission | null;
+  objectPermission?: ViewActionCapabilities | null;
 }) {
-  if (currentUserPermission?.access_level !== undefined) {
-    return currentUserPermission.access_level >= AccessLevel.FullAccess;
-  }
-
-  return false;
+  return objectPermission?.can_read === true && objectPermission.can_share;
 }
 
-export function canUsePageHistoryAction({ currentUserPermission }: { currentUserPermission?: ObjectPermission | null }) {
-  if (currentUserPermission?.access_level !== undefined) {
-    return currentUserPermission.access_level >= AccessLevel.ReadAndWrite;
-  }
-
-  return false;
+export function canUsePageHistoryAction({
+  objectPermission,
+}: {
+  objectPermission?: ViewActionCapabilities | null;
+}) {
+  return objectPermission?.can_read === true && objectPermission.can_write;
 }
 
 export function canUseChildViewCreationActions({
-  currentUserPermission,
+  objectPermission,
 }: {
-  currentUserPermission?: ObjectPermission | null;
+  objectPermission?: ViewActionCapabilities | null;
 }) {
-  if (currentUserPermission?.access_level !== undefined) {
-    return currentUserPermission.access_level >= AccessLevel.ReadAndWrite;
-  }
-
-  return false;
+  return objectPermission?.can_read === true && objectPermission.can_write;
 }

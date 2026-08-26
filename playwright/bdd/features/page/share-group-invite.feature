@@ -23,7 +23,7 @@ Feature: Share menu group invite
     And I tag the temporary share-menu group in the share invite input
     And I send the share panel invites
     Then the share panel shows the temporary share-menu group with "Can view"
-    And the share panel shows shared person "spm0622-member-closed@appflowy.local" with "Can view"
+    And the share panel shows shared person "spm0622-member-restricted@appflowy.local" with "Can view"
 
   Scenario: Group member can read a private-space page shared to their group
     Given I sign in as seeded spm0622 "owner 1"

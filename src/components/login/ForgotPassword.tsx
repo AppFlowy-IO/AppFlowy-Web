@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { AuthService } from '@/application/services/domains';
+import { buildLoginUrl } from '@/application/session/sign_in';
 import { LOGIN_ACTION } from '@/components/login/const';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,29 +17,34 @@ export function ForgotPassword({ redirectTo, email: initialEmail }: { redirectTo
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState(initialEmail);
   const [, setSearch] = useSearchParams();
+  const submittingRef = useRef(false);
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    setLoading(true);
-    void (async () => {
-      try {
-        await AuthService.forgotPassword({ email });
-        // eslint-disable-next-line
-      } catch (e: any) {
-        if (e.code === 429 || e.response?.status === 429) {
-          toast.error(t('tooManyRequests'));
-        } else {
-          toast.error(e.message);
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
+    if (submittingRef.current) return;
 
-    setSearch((prev) => {
-      prev.set('email', email);
-      prev.set('action', LOGIN_ACTION.CHECK_EMAIL_RESET_PASSWORD);
-      return prev;
-    });
+    submittingRef.current = true;
+    setLoading(true);
+
+    try {
+      await AuthService.forgotPassword({ email });
+      setSearch((prev) => {
+        const next = new URLSearchParams(prev);
+
+        next.set('email', email);
+        next.set('action', LOGIN_ACTION.CHECK_EMAIL_RESET_PASSWORD);
+        return next;
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      if (e.code === 429 || e.response?.status === 429) {
+        toast.error(t('tooManyRequests'));
+      } else {
+        toast.error(e.message);
+      }
+    } finally {
+      submittingRef.current = false;
+      setLoading(false);
+    }
   };
 
   return (
@@ -67,6 +73,7 @@ export function ForgotPassword({ redirectTo, email: initialEmail }: { redirectTo
             value={email}
             placeholder={t('resetPassword.placeholder')}
             type='email'
+            disabled={loading}
             onKeyDown={(e) => {
               if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                 void handleSubmit(e);
@@ -75,15 +82,22 @@ export function ForgotPassword({ redirectTo, email: initialEmail }: { redirectTo
           />
         </div>
       </div>
-      <Button size={'lg'} className={'w-full'} onMouseDown={handleSubmit}>
+      <Button
+        data-testid='forgot-password-submit-button'
+        loading={loading}
+        size={'lg'}
+        className={'w-full'}
+        onClick={handleSubmit}
+      >
         {loading && <Progress />}
         {t('resetPassword.submit')}
       </Button>
       <Button
         variant={'link'}
         onClick={() => {
-          window.location.href = `/login?redirectTo=${redirectTo}`;
+          window.location.href = buildLoginUrl({ redirectTo });
         }}
+        disabled={loading}
         className={'w-full'}
       >
         {t('backToLogin')}

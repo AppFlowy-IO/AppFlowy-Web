@@ -67,7 +67,7 @@ function BarChartWidgetImpl({ data, onBarClick }: BarChartWidgetProps) {
   };
 
   return (
-    <div className="w-full relative" style={{ height: '400px' }}>
+    <div data-testid='bar-chart-widget' className='relative w-full' style={{ height: '400px' }}>
       <ResponsiveContainer width="100%" height="100%">
         <RechartsBarChart
           data={data}

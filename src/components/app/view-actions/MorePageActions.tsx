@@ -17,12 +17,14 @@ function MorePageActions({
   view,
   onClose,
   canDuplicateActions,
+  canEditActions,
   canManageActions,
   isLoadingActions,
 }: {
   view: View;
   onClose?: () => void;
   canDuplicateActions: boolean;
+  canEditActions: boolean;
   canManageActions: boolean;
   isLoadingActions: boolean;
 }) {
@@ -76,7 +78,7 @@ function MorePageActions({
 
   return (
     <>
-      {canManageActions && (
+      {canEditActions && (
         <DropdownMenuGroup>
           <DropdownMenuItem
             data-testid={'more-page-rename'}
@@ -115,6 +117,7 @@ function MorePageActions({
         itemClicked={onClose}
         viewId={view.view_id}
         canDuplicateActions={canDuplicateActions}
+        canEditActions={canEditActions}
         canManageActions={canManageActions}
         isLoadingActions={isLoadingActions}
       />

@@ -101,7 +101,7 @@ export function GroupAccessLevelDropdown({
     }
   }, [canManageFullAccess, group.access_level, group.group_id, group.name, onRemoveAccess, t]);
 
-  if (group.access_level === AccessLevel.FullAccess && (!canModify || !canManageFullAccess)) {
+  if (!canModify || (group.access_level === AccessLevel.FullAccess && !canManageFullAccess)) {
     return (
       <div className='mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary'>
         {getAccessLevelText(group.access_level)}
@@ -112,7 +112,7 @@ export function GroupAccessLevelDropdown({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant='ghost' className='flex items-center justify-center gap-1.5' disabled={!canModify}>
+        <Button variant='ghost' className='flex items-center justify-center gap-1.5'>
           {getAccessLevelText(group.access_level)}
           <ArrowDownIcon className='text-icon-secondary' />
         </Button>

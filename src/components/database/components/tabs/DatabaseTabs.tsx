@@ -6,13 +6,21 @@ import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
 import { View, YjsDatabaseKey } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import {
+  getDatabaseIdFromExtra,
+  isDatabaseContainer,
+  isEmbeddedDatabaseViewWithoutChildren,
+} from '@/application/view-utils';
+import { ReactComponent as RelationIcon } from '@/assets/icons/relation.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import RenameModal from '@/components/app/view-actions/RenameModal';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { DatabaseViewTabs } from '@/components/database/components/tabs/DatabaseViewTabs';
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
+import { useOpenDatabaseAsPage } from '@/components/database/hooks';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const TAB_BAR_CLASS_NAME =
   '-mb-[0.5px] flex items-center  text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden';
@@ -67,7 +75,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     ref
   ) => {
     const { t } = useTranslation();
-    const views = useDatabase()?.get(YjsDatabaseKey.views);
+    const database = useDatabase();
+    const views = database?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
     const {
       loadViewMeta,
@@ -80,7 +89,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const updateDatabaseView = useUpdateDatabaseView();
     const duplicateView = useDuplicateDatabaseView();
     const [meta, setMeta] = useState<View | null>(null);
-    const [pendingContainerName, setPendingContainerName] = useState<{ viewId: string; name: string } | null>(null);
+    const [pendingEmbeddedName, setPendingEmbeddedName] = useState<{ viewId: string; name: string } | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
     const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
@@ -245,7 +254,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const viewNameById = useMemo(() => {
       if (!meta) return undefined;
 
-      if (isDatabaseContainer(meta)) {
+      if (isDatabaseContainer(meta) && !isEmbeddedDatabaseViewWithoutChildren(meta)) {
         const mapping: Record<string, string> = {};
 
         for (const child of meta.children ?? []) {
@@ -264,16 +273,16 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
     useEffect(() => {
       if (
-        pendingContainerName &&
-        meta?.view_id === pendingContainerName.viewId &&
-        meta.name === pendingContainerName.name
+        pendingEmbeddedName &&
+        meta?.view_id === pendingEmbeddedName.viewId &&
+        meta.name === pendingEmbeddedName.name
       ) {
-        setPendingContainerName(null);
+        setPendingEmbeddedName(null);
       }
-    }, [meta, pendingContainerName]);
+    }, [meta, pendingEmbeddedName]);
 
     useEffect(() => {
-      setPendingContainerName(null);
+      setPendingEmbeddedName(null);
     }, [databasePageId]);
 
     useEffect(() => {
@@ -293,15 +302,35 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [menuViewId]);
 
-    const embeddedDatabaseMeta = context.isDocumentBlock && isDatabaseContainer(meta) ? meta : null;
-    const embeddedDatabaseRawName = embeddedDatabaseMeta
-      ? pendingContainerName?.viewId === embeddedDatabaseMeta.view_id
-        ? pendingContainerName.name
-        : embeddedDatabaseMeta.name
+    // An inline database owns an embedded container with child views. A linked
+    // database is the embedded leaf itself (including legacy Web metadata that
+    // incorrectly marks that leaf as a container).
+    const embeddedReferenceMeta =
+      context.isDocumentBlock && meta?.view_id === databasePageId && isEmbeddedDatabaseViewWithoutChildren(meta)
+        ? meta
+        : null;
+    const embeddedDatabaseMeta =
+      context.isDocumentBlock && isDatabaseContainer(meta) && !embeddedReferenceMeta ? meta : null;
+    const embeddedTitleMeta = embeddedReferenceMeta ?? embeddedDatabaseMeta;
+    const embeddedDatabaseRawName = embeddedTitleMeta
+      ? pendingEmbeddedName?.viewId === embeddedTitleMeta.view_id
+        ? pendingEmbeddedName.name
+        : embeddedTitleMeta.name
       : '';
     const embeddedDatabaseName = embeddedDatabaseRawName.trim() || t('untitled');
-    const embeddedDatabaseViewId = embeddedDatabaseMeta?.view_id;
-    const canRenameEmbeddedTitle = Boolean(embeddedDatabaseMeta && !readOnly && updateContainerPage);
+    const embeddedDatabaseViewId = embeddedTitleMeta?.view_id;
+    const canRenameEmbeddedTitle = Boolean(embeddedTitleMeta && !readOnly && updateContainerPage);
+    const embeddedReferenceDatabaseId = embeddedReferenceMeta
+      ? getDatabaseIdFromExtra(embeddedReferenceMeta) ?? database?.get(YjsDatabaseKey.id)
+      : undefined;
+    const {
+      canOpen: canOpenOriginalDatabase,
+      isOpening: isOpeningOriginalDatabase,
+      openDatabaseAsPage: openOriginalDatabase,
+    } = useOpenDatabaseAsPage({
+      databaseId: embeddedReferenceDatabaseId,
+      fallbackViewId: embeddedReferenceMeta?.view_id,
+    });
 
     const startEditingTitle = useCallback(() => {
       setTitleDraft(embeddedDatabaseRawName);
@@ -326,7 +355,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
       try {
         await updateContainerPage(embeddedDatabaseViewId, { name: nextName });
-        setPendingContainerName({ viewId: embeddedDatabaseViewId, name: nextName });
+        setPendingEmbeddedName({ viewId: embeddedDatabaseViewId, name: nextName });
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e));
       }
@@ -443,49 +472,75 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
-        {embeddedDatabaseMeta ? (
-          <h3 data-testid='embedded-database-title' className='w-full pb-3 text-xl font-semibold text-text-primary'>
-            {canRenameEmbeddedTitle ? (
-              editingTitle ? (
-                <input
-                  ref={titleInputRef}
-                  data-testid='embedded-database-title-input'
-                  className='w-full bg-transparent text-xl font-semibold text-text-primary outline-none'
-                  value={titleDraft}
-                  placeholder={t('untitled')}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={() => void commitTitle()}
-                  // The title lives inside the document editor; keep its keys and
-                  // pointer events from reaching the surrounding Slate editor.
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    e.stopPropagation();
+        {embeddedTitleMeta ? (
+          <h3
+            data-testid='embedded-database-title'
+            className='flex w-full items-center pb-3 text-xl font-semibold text-text-primary'
+          >
+            {embeddedReferenceMeta ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    aria-label={t('tooltip.viewDataBase')}
+                    className='mr-1.5 h-6 w-6'
+                    data-testid='embedded-database-open-original'
+                    disabled={!canOpenOriginalDatabase}
+                    loading={isOpeningOriginalDatabase}
+                    onClick={() => void openOriginalDatabase()}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    size='icon-sm'
+                    type='button'
+                    variant='ghost'
+                  >
+                    <RelationIcon aria-hidden='true' className='h-5 w-5' />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('tooltip.viewDataBase')}</TooltipContent>
+              </Tooltip>
+            ) : null}
+            <div className='min-w-0 flex-1'>
+              {canRenameEmbeddedTitle ? (
+                editingTitle ? (
+                  <input
+                    ref={titleInputRef}
+                    data-testid='embedded-database-title-input'
+                    className='w-full bg-transparent text-xl font-semibold text-text-primary outline-none'
+                    value={titleDraft}
+                    placeholder={t('untitled')}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={() => void commitTitle()}
+                    // The title lives inside the document editor; keep its keys and
+                    // pointer events from reaching the surrounding Slate editor.
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
 
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      void commitTitle();
-                      return;
-                    }
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void commitTitle();
+                        return;
+                      }
 
-                    if (e.key === 'Escape') {
-                      e.preventDefault();
-                      cancelEditingTitle();
-                    }
-                  }}
-                />
+                      if (e.key === 'Escape') {
+                        e.preventDefault();
+                        cancelEditingTitle();
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type='button'
+                    data-testid='embedded-database-title-rename'
+                    className='w-full cursor-text rounded-200 text-left hover:bg-fill-list-hover'
+                    onClick={startEditingTitle}
+                  >
+                    {embeddedDatabaseName}
+                  </button>
+                )
               ) : (
-                <button
-                  type='button'
-                  data-testid='embedded-database-title-rename'
-                  className='w-full cursor-text rounded-200 text-left hover:bg-fill-list-hover'
-                  onClick={startEditingTitle}
-                >
-                  {embeddedDatabaseName}
-                </button>
-              )
-            ) : (
-              embeddedDatabaseName
-            )}
+                embeddedDatabaseName
+              )}
+            </div>
           </h3>
         ) : null}
         <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
@@ -536,7 +591,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
                 await updateContainerPage(viewId, payload);
                 if (payload.name) {
-                  setPendingContainerName({ viewId, name: payload.name });
+                  setPendingEmbeddedName({ viewId, name: payload.name });
                 }
 
                 return;

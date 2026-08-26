@@ -9,31 +9,23 @@ import {
   SpaceSelectors,
   WorkspaceSelectors,
 } from '../../support/selectors';
+import {
+  SPM0622_ACCOUNTS as SPM_ACCOUNTS,
+  SPM0622_PASSWORD as PASSWORD,
+  type Spm0622AccountAlias as SpmAccountAlias,
+} from '../../support/spm0622-fixture';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
 
-const PASSWORD = 'AppFlowy!@123';
 const NATHAN_EMAIL = 'nathan@appflowy.io';
+const EVA_EMAIL = 'eva@appflowy.io';
 const TEMPORARY_GROUP_PREFIX = 'bdd group management';
 const SPM_GROUP_NAME = 'spm0622 Full Access Space Group';
 const SPM_GROUP_SPACE_NAME = 'spm0622 Group Full Access Space';
 const SPM_GROUP_PAGE_ID = 'ff52f801-5960-44d9-850f-8099a8faf4bc';
 const SPM_GROUP_PAGE_TITLE = 'spm0622 Group Full Access Page';
 const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
-
-const SPM_ACCOUNTS = {
-  'owner 1': 'spm0622-owner1@appflowy.local',
-  'owner 2': 'spm0622-owner2@appflowy.local',
-  'member default': 'spm0622-member-default@appflowy.local',
-  'member open': 'spm0622-member-open@appflowy.local',
-  'member closed': 'spm0622-member-closed@appflowy.local',
-  'member private': 'spm0622-member-private@appflowy.local',
-  'guest closed': 'spm0622-guest-closed@appflowy.local',
-  'guest private': 'spm0622-guest-private@appflowy.local',
-  'guest none': 'spm0622-guest-none@appflowy.local',
-} as const;
-type SpmAccountAlias = keyof typeof SPM_ACCOUNTS;
 
 type ApiResponse<T> = {
   code?: number;
@@ -67,6 +59,7 @@ type ScenarioState = {
   groupDeleted: boolean;
   ownerToken?: string;
   workspaceId?: string;
+  workspaceName?: string;
   seededGroupCleanupEmails: Set<string>;
 };
 
@@ -110,7 +103,7 @@ Given('the seeded spm0622 space permission fixture exists', async () => {
 });
 
 Given('I sign in as the Nathan workspace owner', async ({ page, request }) => {
-  await signInAsWorkspaceOwner(page, request, NATHAN_EMAIL);
+  await signInAsNathanWorkspaceOwner(page, request);
 });
 
 Given('I sign in as seeded spm0622 {string}', async ({ page, request }, accountAliasValue: string) => {
@@ -127,18 +120,25 @@ When(
 );
 
 When('I open the People settings groups tab', async ({ page }) => {
-  await expect(WorkspaceSelectors.dropdownTrigger(page)).toBeVisible({ timeout: 30000 });
-  await WorkspaceSelectors.dropdownTrigger(page).click();
-  await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible({ timeout: 15000 });
+  const dialog = await openPeopleSettingsGroupsTab(page);
 
-  await AccountSelectors.settingsButton(page).click();
-
-  const dialog = settingsDialog(page);
-
-  await expect(dialog).toBeVisible({ timeout: 15000 });
-  await dialog.getByTestId('settings-menu-members').click();
-  await dialog.getByRole('tab', { name: /^Groups/ }).click();
   await expect(dialog.getByTestId('people-create-group-button')).toBeVisible({ timeout: 15000 });
+});
+
+When('I sign in as Eva and switch to the Nathan workspace', async ({ page }) => {
+  const workspaceName = requireWorkspaceName(page);
+
+  await resetBrowserSession(page);
+  await signInWithPasswordViaUi(page, EVA_EMAIL, PASSWORD, 2000);
+  await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
+  await expect(WorkspaceSelectors.dropdownTrigger(page)).toBeVisible({ timeout: 30000 });
+  await switchWorkspace(page, workspaceName);
+});
+
+When('I open the People settings groups tab as a workspace member', async ({ page }) => {
+  const dialog = await openPeopleSettingsGroupsTab(page);
+
+  await expect(dialog.getByTestId('people-create-group-button')).toHaveCount(0);
 });
 
 When('I create a temporary workspace group', async ({ page }) => {
@@ -247,6 +247,50 @@ Then('the temporary workspace group is not listed', async ({ page }) => {
   await expect(groupRow(page, requireGroupName(page))).toHaveCount(0, { timeout: 15000 });
 });
 
+Then('the temporary workspace group is listed with {string}', async ({ page, request }, memberCount: string) => {
+  const groupName = requireGroupName(page);
+  const workspaceId = requireWorkspaceId(page);
+  const evaToken = await getAuthToken(page);
+
+  if (!evaToken) {
+    throw new Error(`No auth token found after signing in as ${EVA_EMAIL}`);
+  }
+
+  const visibleGroups = await getApi<WorkspaceGroupsPayload>(request, evaToken, `/api/workspace/${workspaceId}/groups`);
+  const temporaryGroup = visibleGroups.groups.find((group) => group.name === groupName);
+
+  if (!temporaryGroup) {
+    throw new Error(`Eva's group list does not contain the temporary workspace group: ${groupName}`);
+  }
+
+  expect(temporaryGroup.member_count).toBe(1);
+
+  const dialog = settingsDialog(page);
+  const row = dialog.getByTestId(`group-row-${temporaryGroup.group_id}`);
+
+  await expect(dialog.getByRole('tab', { name: `Groups ${visibleGroups.groups.length}`, exact: true })).toBeVisible({
+    timeout: 15000,
+  });
+  await expect(row).toBeVisible({ timeout: 15000 });
+  await expect(row.getByText(groupName, { exact: true })).toBeVisible();
+  await expect(row.getByText(memberCount, { exact: true })).toBeVisible();
+});
+
+Then('workspace members cannot manage or open the temporary workspace group', async ({ page }) => {
+  const groupName = requireGroupName(page);
+  const dialog = settingsDialog(page);
+  const row = groupRow(page, groupName);
+
+  await expect(dialog.getByTestId('people-create-group-button')).toHaveCount(0);
+  await expect(row.locator('[data-testid^="group-edit-"]')).toHaveCount(0);
+  await expect(row.getByRole('button')).toHaveCount(0);
+
+  await row.click();
+  await expect(groupDetailModal(page)).toHaveCount(0);
+  await expect(page.getByTestId('rename-group-modal')).toHaveCount(0);
+  await expect(page.getByTestId('delete-group-confirmation')).toHaveCount(0);
+});
+
 Then(
   'seeded spm0622 {string} cannot open the seeded group Full Access page',
   async ({ page }, accountAliasValue: string) => {
@@ -302,6 +346,26 @@ async function signInAsWorkspaceOwner(page: Page, request: APIRequestContext, em
   state.workspaceId = await getCurrentWorkspaceId(request, ownerToken);
 }
 
+async function signInAsNathanWorkspaceOwner(page: Page, request: APIRequestContext) {
+  await resetBrowserSession(page);
+  await signInWithPasswordViaUi(page, NATHAN_EMAIL, PASSWORD, 2000);
+  await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
+  await expect(WorkspaceSelectors.dropdownTrigger(page)).toBeVisible({ timeout: 30000 });
+
+  const workspaceName = await switchWorkspaceMatching(page, /nathan.*workspace/i);
+  const ownerToken = await getAuthToken(page);
+
+  if (!ownerToken) {
+    throw new Error(`No auth token found after signing in as ${NATHAN_EMAIL}`);
+  }
+
+  const state = requireState(page);
+
+  state.ownerToken = ownerToken;
+  state.workspaceId = await getCurrentWorkspaceId(request, ownerToken);
+  state.workspaceName = workspaceName;
+}
+
 async function signInSeededAccountForAccessCheck(page: Page, accountAliasValue: string) {
   await resetBrowserSession(page);
   await signInWithPasswordViaUi(page, spmAccountEmail(accountAliasValue), PASSWORD, 2000);
@@ -329,6 +393,26 @@ function requireGroupName(page: Page): string {
   return groupName;
 }
 
+function requireWorkspaceName(page: Page): string {
+  const workspaceName = requireState(page).workspaceName;
+
+  if (!workspaceName) {
+    throw new Error("Nathan's workspace name has not been captured for this scenario");
+  }
+
+  return workspaceName;
+}
+
+function requireWorkspaceId(page: Page): string {
+  const workspaceId = requireState(page).workspaceId;
+
+  if (!workspaceId) {
+    throw new Error("Nathan's workspace id has not been captured for this scenario");
+  }
+
+  return workspaceId;
+}
+
 function settingsDialog(page: Page) {
   return AccountSelectors.settingsDialog(page);
 }
@@ -347,6 +431,46 @@ function groupRow(page: Page, groupName: string) {
 
 function groupMemberRow(page: Page, email: string) {
   return groupDetailModal(page).locator('[data-testid^="group-member-row-"]').filter({ hasText: email }).first();
+}
+
+async function openPeopleSettingsGroupsTab(page: Page) {
+  await expect(WorkspaceSelectors.dropdownTrigger(page)).toBeVisible({ timeout: 30000 });
+  await WorkspaceSelectors.dropdownTrigger(page).click();
+  await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible({ timeout: 15000 });
+  await AccountSelectors.settingsButton(page).click();
+
+  const dialog = settingsDialog(page);
+
+  await expect(dialog).toBeVisible({ timeout: 15000 });
+  await dialog.getByTestId('settings-menu-members').click();
+  await dialog.getByRole('tab', { name: /^Groups/ }).click();
+  return dialog;
+}
+
+async function switchWorkspace(page: Page, workspaceName: string): Promise<void> {
+  const currentWorkspaceName = page.getByTestId('current-workspace-name');
+
+  if ((await currentWorkspaceName.textContent())?.trim() === workspaceName) return;
+
+  await WorkspaceSelectors.dropdownTrigger(page).click();
+  await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible({ timeout: 15000 });
+  await WorkspaceSelectors.item(page).filter({ hasText: workspaceName }).first().click();
+  await expect(currentWorkspaceName).toHaveText(workspaceName, { timeout: 30000 });
+}
+
+async function switchWorkspaceMatching(page: Page, workspaceName: RegExp): Promise<string> {
+  const currentWorkspaceName = page.getByTestId('current-workspace-name');
+  const currentName = (await currentWorkspaceName.textContent())?.trim();
+
+  if (currentName && workspaceName.test(currentName)) return currentName;
+
+  await WorkspaceSelectors.dropdownTrigger(page).click();
+  await expect(WorkspaceSelectors.dropdownContent(page)).toBeVisible({ timeout: 15000 });
+  const workspace = WorkspaceSelectors.item(page).filter({ hasText: workspaceName }).first();
+
+  await workspace.click();
+  await expect(currentWorkspaceName).toHaveText(workspaceName, { timeout: 30000 });
+  return (await currentWorkspaceName.textContent())?.trim() || 'Nathan workspace';
 }
 
 async function openWorkspaceGroup(page: Page, groupName: string) {

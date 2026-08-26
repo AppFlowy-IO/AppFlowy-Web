@@ -1,6 +1,7 @@
 import { db } from '@/application/db';
-import { getView } from '@/application/services/js-services/http';
-import { getTokenParsed } from '@/application/session/token';
+import { getView, signInWithPassword } from '@/application/services/js-services/http';
+import { emit, EventType } from '@/application/session';
+import { getTokenParsed, isTokenValid } from '@/application/session/token';
 import { View, ViewLayout } from '@/application/types';
 
 import {
@@ -9,6 +10,7 @@ import {
   getCachedAppViewFromDisk,
   invalidateViewCache,
   invalidateWorkspaceViewMemoryCache,
+  signInWithPasswordWithRedirect,
 } from '../cached-api';
 
 jest.mock('@/application/db', () => ({
@@ -90,6 +92,7 @@ jest.mock('@/application/session/sign_in', () => ({
 
 jest.mock('@/application/session/token', () => ({
   getTokenParsed: jest.fn(),
+  isTokenValid: jest.fn(),
 }));
 
 jest.mock('@/application/ydoc/apply', () => ({
@@ -101,6 +104,13 @@ jest.mock('@/utils/upload-tracker', () => ({
   unregisterUpload: jest.fn(),
 }));
 
+jest.mock('@/utils/log', () => ({
+  Log: {
+    error: jest.fn(),
+    info: jest.fn(),
+  },
+}));
+
 const appViewCacheTable = db.app_view_cache as unknown as {
   delete: jest.Mock;
   get: jest.Mock;
@@ -108,6 +118,9 @@ const appViewCacheTable = db.app_view_cache as unknown as {
 };
 const getTokenParsedMock = getTokenParsed as jest.Mock;
 const getViewMock = getView as jest.Mock;
+const isTokenValidMock = isTokenValid as jest.Mock;
+const signInWithPasswordMock = signInWithPassword as jest.Mock;
+const emitMock = emit as jest.Mock;
 
 function setCurrentUser(userId: string | undefined) {
   getTokenParsedMock.mockReturnValue(
@@ -306,5 +319,45 @@ describe('cached app view cache user scoping', () => {
     await expect(stale).resolves.toBe(staleView);
     expect(getCachedAppView('workspace-a', 'pending-a')).toBeUndefined();
     expect(appViewCacheTable.delete).not.toHaveBeenCalledWith(['user-a', 'workspace-a', 'pending-a']);
+  });
+});
+
+describe('cached authentication state consistency', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('preserves the current session when an account-switch login fails', async () => {
+    const loginError = new Error('Incorrect password');
+
+    isTokenValidMock.mockReturnValue(true);
+    signInWithPasswordMock.mockRejectedValueOnce(loginError);
+
+    await expect(
+      signInWithPasswordWithRedirect({
+        email: 'other-account@example.com',
+        password: 'wrong-password',
+        redirectTo: '/app',
+      })
+    ).rejects.toBe(loginError);
+
+    expect(emitMock).not.toHaveBeenCalledWith(EventType.SESSION_INVALID);
+  });
+
+  it('reports an invalid session when an initial login fails without stored credentials', async () => {
+    const loginError = new Error('Incorrect password');
+
+    isTokenValidMock.mockReturnValue(false);
+    signInWithPasswordMock.mockRejectedValueOnce(loginError);
+
+    await expect(
+      signInWithPasswordWithRedirect({
+        email: 'new-user@example.com',
+        password: 'wrong-password',
+        redirectTo: '/app',
+      })
+    ).rejects.toBe(loginError);
+
+    expect(emitMock).toHaveBeenCalledWith(EventType.SESSION_INVALID);
   });
 });

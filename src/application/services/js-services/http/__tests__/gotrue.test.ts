@@ -25,7 +25,8 @@ jest.mock('axios', () => ({
 
 jest.mock('@/application/session/token', () => ({
   getTokenParsed: jest.fn(),
-  saveGoTrueAuth: jest.fn(),
+  invalidToken: jest.fn(),
+  saveGoTrueAuth: jest.fn(() => true),
 }));
 
 jest.mock('../cloud-auth', () => ({
@@ -44,6 +45,9 @@ jest.mock('@/utils/log', () => ({
 const { signInWithUrl } = require('../auth-api') as typeof import('../auth-api');
 const {
   initGrantService,
+  changePassword,
+  forgotPassword,
+  refreshToken,
   signInDiscord,
   signInGithub,
   signInGoogle,
@@ -51,7 +55,11 @@ const {
   signInWithPassword,
 } = require('../gotrue') as typeof import('../gotrue');
 const { verifyToken } = require('../cloud-auth') as { verifyToken: jest.Mock };
-const { saveGoTrueAuth } = require('@/application/session/token') as { saveGoTrueAuth: jest.Mock };
+const { getTokenParsed, invalidToken, saveGoTrueAuth } = require('@/application/session/token') as {
+  getTokenParsed: jest.Mock;
+  invalidToken: jest.Mock;
+  saveGoTrueAuth: jest.Mock;
+};
 
 type AuthVariant = 'password' | 'oauth' | 'otp';
 
@@ -75,9 +83,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: 'refreshed-refresh-token',
     };
 
-    mockGrantClient.post
-      .mockResolvedValueOnce({ data: loginToken })
-      .mockResolvedValueOnce({ data: refreshedToken });
+    mockGrantClient.post.mockResolvedValueOnce({ data: loginToken }).mockResolvedValueOnce({ data: refreshedToken });
     (verifyToken as jest.Mock).mockResolvedValueOnce({ is_new: false });
 
     await signInWithPassword({
@@ -98,6 +104,20 @@ describe('GoTrue login token completion', () => {
     expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
   });
 
+  it('rejects the refresh when the new token cannot be persisted', async () => {
+    const refreshedToken = {
+      access_token: 'refreshed-access-token',
+      expires_at: 456,
+      refresh_token: 'refreshed-refresh-token',
+    };
+
+    mockGrantClient.post.mockResolvedValueOnce({ data: refreshedToken });
+    saveGoTrueAuth.mockReturnValueOnce(false);
+
+    await expect(refreshToken('stored-refresh-token')).rejects.toThrow('Failed to persist refreshed token');
+    expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
+  });
+
   it('uses the same verify-refresh-save flow for OAuth callback tokens', async () => {
     const refreshedToken = {
       access_token: 'oauth-refreshed-access-token',
@@ -108,7 +128,9 @@ describe('GoTrue login token completion', () => {
     mockGrantClient.post.mockResolvedValueOnce({ data: refreshedToken });
     verifyToken.mockResolvedValueOnce({ is_new: false });
 
-    await signInWithUrl('http://localhost/auth/callback#access_token=oauth-access-token&refresh_token=oauth-refresh-token');
+    await signInWithUrl(
+      'http://localhost/auth/callback#access_token=oauth-access-token&refresh_token=oauth-refresh-token'
+    );
 
     expect(verifyToken).toHaveBeenCalledWith('oauth-access-token');
     expect(mockGrantClient.post).toHaveBeenCalledWith('/token?grant_type=refresh_token', {
@@ -130,9 +152,7 @@ describe('GoTrue login token completion', () => {
       refresh_token: 'otp-refreshed-refresh-token',
     };
 
-    mockGrantClient.post
-      .mockResolvedValueOnce({ data: otpToken })
-      .mockResolvedValueOnce({ data: refreshedToken });
+    mockGrantClient.post.mockResolvedValueOnce({ data: otpToken }).mockResolvedValueOnce({ data: refreshedToken });
     verifyToken.mockResolvedValueOnce({ is_new: false });
 
     await signInOTP({
@@ -188,13 +208,60 @@ describe('GoTrue login token completion', () => {
         const tokenRemoveCallIndex = removeItemSpy.mock.calls.findIndex(([key]) => key === 'token');
 
         expect(tokenRemoveCallIndex).toBeGreaterThanOrEqual(0);
-        expect(removeItemSpy.mock.invocationCallOrder[tokenRemoveCallIndex])
-          .toBeLessThan(verifyToken.mock.invocationCallOrder[0]);
+        expect(removeItemSpy.mock.invocationCallOrder[tokenRemoveCallIndex]).toBeLessThan(
+          verifyToken.mock.invocationCallOrder[0]
+        );
       } finally {
         removeItemSpy.mockRestore();
       }
     }
   );
+});
+
+describe('GoTrue recovery session consistency', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGrantClient.post.mockReset();
+    initGrantService('http://localhost/gotrue');
+  });
+
+  it('does not invalidate an existing session when password recovery fails', async () => {
+    mockGrantClient.post.mockRejectedValueOnce(new Error('Recovery service unavailable'));
+
+    await expect(forgotPassword({ email: 'admin@example.com' })).rejects.toEqual({
+      code: -1,
+      message: 'Recovery service unavailable',
+    });
+    expect(invalidToken).not.toHaveBeenCalled();
+  });
+
+  it('keeps the session after a non-authentication password-change failure', async () => {
+    getTokenParsed.mockReturnValue({ access_token: 'access-token' });
+    mockGrantClient.post.mockRejectedValueOnce({
+      message: 'Server unavailable',
+      response: { status: 503, data: { msg: 'Server unavailable' } },
+    });
+
+    await expect(changePassword({ password: 'new-password' })).rejects.toEqual({
+      code: -1,
+      message: 'Server unavailable',
+    });
+    expect(invalidToken).not.toHaveBeenCalled();
+  });
+
+  it('invalidates storage and UI atomically after an unauthorized password change', async () => {
+    getTokenParsed.mockReturnValue({ access_token: 'expired-access-token' });
+    mockGrantClient.post.mockRejectedValueOnce({
+      message: 'Unauthorized',
+      response: { status: 401, data: { msg: 'Unauthorized' } },
+    });
+
+    await expect(changePassword({ password: 'new-password' })).rejects.toEqual({
+      code: -1,
+      message: 'Unauthorized',
+    });
+    expect(invalidToken).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('GoTrue provider redirects', () => {

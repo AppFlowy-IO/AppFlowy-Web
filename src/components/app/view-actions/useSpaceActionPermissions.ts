@@ -10,18 +10,13 @@ interface LoadedSpaceActionPermissions {
   workspaceId: string;
   viewId: string;
   canOpenManageSpace: boolean;
-  usesLegacyManagement: boolean;
 }
 
 function isSpaceView(view: View | null | undefined): boolean {
   return view?.is_space === true || view?.extra?.is_space === true;
 }
 
-export function useSpaceActionPermissions(
-  view: View | null | undefined,
-  opened: boolean,
-  legacyCanOpenManageSpace = false
-) {
+export function useSpaceActionPermissions(view: View | null | undefined, opened: boolean) {
   const workspaceId = useCurrentWorkspaceId();
   const eventEmitter = useEventEmitter();
   const viewId = view?.view_id;
@@ -67,27 +62,17 @@ export function useSpaceActionPermissions(
         setLoadedPermissions({
           workspaceId,
           viewId,
-          canOpenManageSpace:
-            permission.can_edit_sidebar === true ||
-            permission.can_invite_members === true ||
-            permission.can_manage_members === true ||
-            permission.can_manage_space === true,
-          usesLegacyManagement: false,
+          canOpenManageSpace: permission.can_manage_space === true,
         });
       })
       .catch((error) => {
         if (!isCurrentRequest()) return;
-        const useLegacyManagement = isUnsupportedRouteError(error);
 
-        if (!useLegacyManagement) console.error(error);
+        if (!isUnsupportedRouteError(error)) console.error(error);
         setLoadedPermissions({
           workspaceId,
           viewId,
-          // Old servers expose only the legacy /space/:id mutation. Reuse the
-          // already-loaded legacy Full Access gate only when the structured
-          // route itself is unavailable; all other failures stay fail-closed.
           canOpenManageSpace: false,
-          usesLegacyManagement: useLegacyManagement,
         });
       })
       .finally(() => {
@@ -103,11 +88,7 @@ export function useSpaceActionPermissions(
     !shouldLoad || (loadedPermissions?.workspaceId === workspaceId && loadedPermissions?.viewId === viewId);
 
   return {
-    canOpenManageSpace: hasLoadedSpaceActionPermissions
-      ? loadedPermissions?.usesLegacyManagement
-        ? legacyCanOpenManageSpace
-        : loadedPermissions?.canOpenManageSpace === true
-      : false,
+    canOpenManageSpace: hasLoadedSpaceActionPermissions && loadedPermissions?.canOpenManageSpace === true,
     hasLoadedSpaceActionPermissions,
     isLoadingSpaceActionPermissions,
   };

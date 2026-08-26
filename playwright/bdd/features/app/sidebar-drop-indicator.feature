@@ -27,3 +27,14 @@ Feature: Sidebar drop indicator marks the real landing spot
     And the drop indicator sits at the bottom of the "Solo Target" name row
     When the drag is released
     Then the sidebar lists "Solo Target, Solo Drag" in that order
+
+  Scenario: Dropping on the center of a document makes the page its child
+    Given a page "Drag Me Into Parent" in the sidebar
+    And a page "Drop Parent" in the sidebar with the child "Existing Child"
+    And "Drop Parent" is expanded
+    When "Drag Me Into Parent" is dragged into the center of "Drop Parent" without dropping
+    Then "Drop Parent" is the active child drop target
+    When the drag is released
+    Then "Drag Me Into Parent" is a direct child of "Drop Parent"
+    When the sidebar drag app is reloaded
+    Then "Drag Me Into Parent" is a direct child of "Drop Parent"
