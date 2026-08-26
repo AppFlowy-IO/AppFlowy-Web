@@ -76,7 +76,7 @@ function MoreSpaceActions({
           {t('loading')}
         </DropdownMenuItem>
       )}
-      {canManageActions && (
+      {(canManageActions || canOpenManageActions) && (
         <>
           <DropdownMenuSeparator className={'w-full'} />
           <DropdownMenuItem

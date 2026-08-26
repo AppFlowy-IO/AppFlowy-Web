@@ -189,7 +189,7 @@ describe('view action permission gates', () => {
     expect(screen.queryByTestId('space-action-delete')).toBeNull();
   });
 
-  it('shows Manage and Duplicate together when canonical space-management authority is granted', () => {
+  it('shows Manage, Duplicate, and Delete when canonical space-management authority is granted', () => {
     render(
       <MoreSpaceActions
         view={mockSpaceView}
@@ -202,7 +202,7 @@ describe('view action permission gates', () => {
 
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
     expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
-    expect(screen.queryByTestId('space-action-delete')).toBeNull();
+    expect(screen.getByTestId('space-action-delete')).toBeTruthy();
   });
 
   it('hides the space more trigger when no menu action is permitted while keeping Add independent', () => {
@@ -276,7 +276,7 @@ describe('view action permission gates', () => {
     }
   );
 
-  it('shows Manage and Duplicate for canonical owners even without generic create/delete permission', () => {
+  it('shows owner actions for canonical owners even without generic view-management permission', () => {
     mockUseViewActionPermissions.mockReturnValue({
       canCreateViewActions: false,
       canManageViewActions: false,
@@ -302,7 +302,7 @@ describe('view action permission gates', () => {
 
     expect(screen.getByTestId('space-action-manage')).toBeTruthy();
     expect(screen.getByTestId('space-action-duplicate')).toBeTruthy();
-    expect(screen.queryByTestId('space-action-delete')).toBeNull();
+    expect(screen.getByTestId('space-action-delete')).toBeTruthy();
   });
 
   it('keeps Delete available for delegated Full Access without structured space management', () => {
