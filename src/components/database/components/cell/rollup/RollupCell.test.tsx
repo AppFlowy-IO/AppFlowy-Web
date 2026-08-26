@@ -1,8 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import { RollupCell as RollupCellType } from '@/application/database-yjs/cell.type';
-import { FieldType } from '@/application/database-yjs/database.type';
-import { CalculationType, RollupDisplayMode } from '@/application/database-yjs/database.type';
+import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { RollupCell } from '@/components/database/components/cell/rollup/RollupCell';
 
