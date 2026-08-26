@@ -205,6 +205,11 @@ When('the source relation is expanded to all six targets without refreshing', as
 
   await openRelationCellMenu(page, state.relationFieldId, 0);
   for (const targetRow of targetRows.slice(1)) {
+    const relationMenu = page.locator('[data-radix-popper-content-wrapper]').last();
+
+    if (!(await relationMenu.isVisible().catch(() => false))) {
+      await openRelationCellMenu(page, state.relationFieldId, 0);
+    }
     await selectRelationRowById(page, targetRow.id, targetRow.label);
   }
   await closeRelationMenu(page);
