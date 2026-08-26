@@ -1,8 +1,9 @@
 import { expect, Page } from '@playwright/test';
 
+import { CalculationType } from '../../src/application/database-yjs/database.type';
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { renameCurrentPage } from './duplicate-test-helpers';
-import { typeTextIntoCell } from './field-type-helpers';
+import { addFieldWithType, typeTextIntoCell } from './field-type-helpers';
 import {
   DatabaseFilterSelectors,
   DatabaseGridSelectors,
@@ -145,10 +146,36 @@ export async function getCurrentDatabaseInfo(page: Page): Promise<DatabaseFixtur
 export async function createNamedGridDatabase(
   page: Page,
   pageName: string,
-  rowNames: string[]
+  rowNames: string[],
+  options: {
+    onCreated?: (database: DatabaseFixtureInfo) => Promise<void> | void;
+    protectedIds?: string[];
+  } = {}
 ): Promise<DatabaseFixtureInfo> {
   await createDatabaseView(page, 'Grid', 7000);
   await waitForGridReady(page);
+
+  let createdDatabase: DatabaseFixtureInfo | undefined;
+  const protectedIds = new Set(options.protectedIds?.filter(Boolean) ?? []);
+
+  await expect
+    .poll(
+      async () => {
+        const candidate = await getCurrentDatabaseInfo(page);
+        const candidateIds = [candidate.databaseId, candidate.pageId, candidate.titlePageId, candidate.viewId].filter(
+          (id): id is string => Boolean(id)
+        );
+
+        if (candidateIds.some((id) => protectedIds.has(id))) return false;
+        createdDatabase = candidate;
+        return true;
+      },
+      { timeout: 30000, message: 'Waiting for the newly created database context to replace the previous page' }
+    )
+    .toBe(true);
+
+  if (!createdDatabase) throw new Error('New database context was unavailable after creation');
+  await options.onCreated?.(createdDatabase);
   await renameCurrentDatabasePage(page, pageName);
   await seedPrimaryRows(page, rowNames);
   return getCurrentDatabaseInfo(page);
@@ -711,7 +738,7 @@ export async function getFieldTypeDirect(page: Page, fieldId: string): Promise<n
  */
 export async function createRelationViaCreationDialog(
   page: Page,
-  args: { relatedDatabaseId: string; relatedDatabaseName: string }
+  args: { fieldName?: string; relatedDatabaseId: string; relatedDatabaseName: string }
 ): Promise<string> {
   const before = new Set(await getDatabaseFieldIdsDirect(page));
 
@@ -748,6 +775,15 @@ export async function createRelationViaCreationDialog(
   await expect(candidate).toBeVisible({ timeout: 15000 });
   await candidate.click({ force: true });
 
+  // Selecting a database applies the desktop-derived default relation name,
+  // so set an explicit test name only after choosing the target.
+  if (args.fieldName) {
+    const fieldNameInput = page.getByTestId('relation-field-name-input');
+
+    await expect(fieldNameInput).toBeVisible({ timeout: 10000 });
+    await fieldNameInput.fill(args.fieldName);
+  }
+
   await page.getByTestId('modal-ok-button').last().click({ force: true });
   await expect(dialog).toBeHidden({ timeout: 15000 });
 
@@ -771,6 +807,96 @@ export async function createRelationViaCreationDialog(
     .toBe(true);
 
   return newFieldId;
+}
+
+async function openPropertyEditor(page: Page, fieldId: string): Promise<void> {
+  await page.keyboard.press('Escape');
+
+  const header = GridFieldSelectors.fieldHeader(page, fieldId).last();
+
+  await expect(header).toBeVisible({ timeout: 20000 });
+  await header.scrollIntoViewIfNeeded();
+  await header.click({ force: true });
+
+  const editProperty = PropertyMenuSelectors.editPropertyMenuItem(page).last();
+
+  await expect(editProperty).toBeVisible({ timeout: 10000 });
+  await editProperty.click({ force: true });
+  await expect(page.getByTestId('property-name-input').last()).toBeVisible({ timeout: 15000 });
+}
+
+async function selectRollupSubmenuOption(page: Page, triggerTestId: string, optionTestId: string): Promise<void> {
+  const trigger = page.getByTestId(triggerTestId).last();
+
+  await expect(trigger).toBeVisible({ timeout: 15000 });
+  await expect(trigger).toBeEnabled({ timeout: 20000 });
+  await trigger.hover({ force: true });
+
+  const option = page.getByTestId(optionTestId).last();
+
+  await expect(option).toBeVisible({ timeout: 20000 });
+  await option.click({ force: true });
+}
+
+/**
+ * Drives the production property menus to create and configure a Count-all
+ * rollup. Direct Yjs access is used only to identify the newly added field;
+ * every configuration mutation goes through the same UI as an end user.
+ */
+export async function createRollupCountFieldViaPropertyMenu(
+  page: Page,
+  options: { fieldName: string; relationFieldId: string; targetFieldId: string }
+): Promise<string> {
+  const before = new Set(await getDatabaseFieldIdsDirect(page));
+
+  await addFieldWithType(page, FieldType.Rollup);
+
+  let fieldId = '';
+
+  await expect
+    .poll(
+      async () => {
+        const after = await getDatabaseFieldIdsDirect(page);
+
+        fieldId = after.find((candidate) => !before.has(candidate)) || '';
+        return fieldId;
+      },
+      { timeout: 20000, message: 'Waiting for the new rollup field' }
+    )
+    .not.toBe('');
+
+  await openPropertyEditor(page, fieldId);
+
+  const nameInput = page.getByTestId('property-name-input').last();
+
+  await nameInput.fill(options.fieldName);
+  await expect(nameInput).toHaveValue(options.fieldName);
+  await selectRollupSubmenuOption(page, 'rollup-relation-trigger', `rollup-relation-option-${options.relationFieldId}`);
+
+  // Radix closes the root property menu after selecting a submenu item.
+  await openPropertyEditor(page, fieldId);
+  await selectRollupSubmenuOption(page, 'rollup-property-trigger', `rollup-property-option-${options.targetFieldId}`);
+
+  await openPropertyEditor(page, fieldId);
+
+  const calculateTrigger = page.getByTestId('rollup-calculate-trigger').last();
+
+  await expect(calculateTrigger).toBeEnabled({ timeout: 20000 });
+  await calculateTrigger.hover({ force: true });
+
+  const countGroup = page.getByTestId('rollup-calculation-group-count').last();
+
+  await expect(countGroup).toBeVisible({ timeout: 15000 });
+  await countGroup.hover({ force: true });
+
+  const countAll = page.getByTestId(`rollup-calculation-${CalculationType.Count}`).last();
+
+  await expect(countAll).toBeVisible({ timeout: 15000 });
+  await countAll.click({ force: true });
+  await page.keyboard.press('Escape');
+
+  await expectFieldHeaderContains(page, fieldId, options.fieldName);
+  return fieldId;
 }
 
 /**
@@ -936,7 +1062,15 @@ export async function openRelationCellMenu(page: Page, fieldId: string, rowIndex
 
   await expect(cell).toBeVisible({ timeout: 20000 });
   await cell.scrollIntoViewIfNeeded();
-  await cell.click({ force: true });
+  const bounds = await cell.boundingBox();
+
+  // Linked relation labels navigate to their row and stop click propagation.
+  // Click the cell's empty trailing edge so the grid activates the editor for
+  // both empty and already-populated relation cells.
+  await cell.click({
+    force: true,
+    position: bounds ? { x: Math.max(1, bounds.width - 4), y: Math.max(1, bounds.height / 2) } : undefined,
+  });
   await expect(page.locator('[data-radix-popper-content-wrapper]').last()).toBeVisible({ timeout: 15000 });
 }
 
@@ -951,6 +1085,25 @@ export async function selectRelationRowByName(page: Page, rowName: string): Prom
 
     if (await searchInput.isVisible().catch(() => false)) {
       await searchInput.fill(rowName);
+    }
+  }
+
+  await expect(option).toBeVisible({ timeout: 20000 });
+  await option.click({ force: true });
+  await page.waitForTimeout(800);
+}
+
+export async function selectRelationRowById(page: Page, rowId: string, rowLabel?: string): Promise<void> {
+  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+  const option = popover.locator(`[data-row-id=${JSON.stringify(rowId)}]`);
+
+  await expect(popover).toBeVisible({ timeout: 15000 });
+
+  if (!(await option.isVisible({ timeout: 5000 }).catch(() => false)) && rowLabel) {
+    const searchInput = popover.locator('input').first();
+
+    if (await searchInput.isVisible().catch(() => false)) {
+      await searchInput.fill(rowLabel);
     }
   }
 
@@ -1518,6 +1671,25 @@ export async function getRelationPickerRowLabels(page: Page): Promise<string[]> 
   return popover
     .locator('[data-row-id]')
     .evaluateAll((items) => items.map((item) => item.textContent?.trim() ?? '').filter(Boolean));
+}
+
+export interface RelationPickerRow {
+  id: string;
+  label: string;
+}
+
+/** Stable row ids and their rendered primary-cell labels from the open relation picker. */
+export async function getRelationPickerRows(page: Page): Promise<RelationPickerRow[]> {
+  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+
+  await expect(popover).toBeVisible({ timeout: 15000 });
+  return popover.locator('[data-row-id]').evaluateAll((items) =>
+    items.flatMap((item) => {
+      const id = item.getAttribute('data-row-id')?.trim();
+
+      return id ? [{ id, label: item.textContent?.trim() ?? '' }] : [];
+    })
+  );
 }
 
 /**
