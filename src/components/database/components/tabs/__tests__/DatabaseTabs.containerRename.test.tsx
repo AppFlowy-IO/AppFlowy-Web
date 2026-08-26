@@ -71,6 +71,13 @@ const databaseContainer: View = {
   is_private: false,
 };
 
+const linkedDatabaseView: View = {
+  ...databaseView,
+  view_id: 'linked-database-view-id',
+  parent_view_id: 'document-id',
+  name: 'Project has employee relation',
+};
+
 function setupContext({
   container = databaseContainer,
   updateContainerPage,
@@ -135,6 +142,7 @@ describe('DatabaseTabs embedded database title rename', () => {
 
     expect(input.value).toBe('New Database');
     expect(screen.queryByTestId('rename-modal')).toBeNull();
+    expect(screen.queryByTestId('embedded-database-open-original')).toBeNull();
 
     fireEvent.change(input, { target: { value: 'Renamed Database' } });
     fireEvent.keyDown(input, { key: 'Enter' });
@@ -270,6 +278,106 @@ describe('DatabaseTabs embedded database title rename', () => {
 
     await waitFor(() => {
       expect(updateContainerPage).toHaveBeenCalledWith(untitledContainer.view_id, { name: 'Named At Last' });
+    });
+  });
+
+  it('opens the original database from a linked database header', async () => {
+    const getViewIdFromDatabaseId = jest.fn().mockResolvedValue('original-database-view-id');
+    const navigateToView = jest.fn().mockResolvedValue(undefined);
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      getViewIdFromDatabaseId,
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async (viewId: string) =>
+        viewId === linkedDatabaseView.view_id ? linkedDatabaseView : null
+      ),
+      navigateToView,
+      readOnly: false,
+      showActions: true,
+      updatePage: jest.fn().mockResolvedValue(undefined),
+    } as DatabaseContextState);
+
+    render(
+      <DatabaseTabs
+        databasePageId={linkedDatabaseView.view_id}
+        selectedViewId={linkedDatabaseView.view_id}
+        viewIds={[linkedDatabaseView.view_id]}
+      />
+    );
+
+    const openOriginal = await screen.findByTestId('embedded-database-open-original');
+
+    expect(screen.getByTestId('embedded-database-title').textContent).toContain(linkedDatabaseView.name);
+
+    fireEvent.click(openOriginal);
+
+    await waitFor(() => {
+      expect(getViewIdFromDatabaseId).toHaveBeenCalledWith('database-id');
+      expect(navigateToView).toHaveBeenCalledWith('original-database-view-id');
+    });
+  });
+
+  it('recognizes legacy linked views that were incorrectly marked as containers', async () => {
+    const legacyLinkedDatabaseView: View = {
+      ...linkedDatabaseView,
+      extra: {
+        ...linkedDatabaseView.extra,
+        is_database_container: true,
+      },
+    };
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      getViewIdFromDatabaseId: jest.fn().mockResolvedValue('original-database-view-id'),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => legacyLinkedDatabaseView),
+      navigateToView: jest.fn().mockResolvedValue(undefined),
+      readOnly: true,
+      showActions: true,
+    } as DatabaseContextState);
+
+    render(
+      <DatabaseTabs
+        databasePageId={legacyLinkedDatabaseView.view_id}
+        selectedViewId={legacyLinkedDatabaseView.view_id}
+        viewIds={[legacyLinkedDatabaseView.view_id]}
+      />
+    );
+
+    expect((await screen.findByTestId('embedded-database-open-original')).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByTestId('embedded-database-title').textContent).toContain(legacyLinkedDatabaseView.name);
+  });
+
+  it('renames a linked database title without renaming its source database', async () => {
+    const updatePage = jest.fn().mockResolvedValue(undefined);
+
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      getViewIdFromDatabaseId: jest.fn().mockResolvedValue('original-database-view-id'),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => linkedDatabaseView),
+      navigateToView: jest.fn().mockResolvedValue(undefined),
+      readOnly: false,
+      showActions: true,
+      updatePage,
+    } as DatabaseContextState);
+
+    render(
+      <DatabaseTabs
+        databasePageId={linkedDatabaseView.view_id}
+        selectedViewId={linkedDatabaseView.view_id}
+        viewIds={[linkedDatabaseView.view_id]}
+      />
+    );
+
+    const title = await screen.findByTestId('embedded-database-title-rename');
+
+    fireEvent.click(title);
+    fireEvent.change(screen.getByTestId('embedded-database-title-input'), {
+      target: { value: 'Renamed linked view' },
+    });
+    fireEvent.keyDown(screen.getByTestId('embedded-database-title-input'), { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(updatePage).toHaveBeenCalledWith(linkedDatabaseView.view_id, { name: 'Renamed linked view' });
     });
   });
 });

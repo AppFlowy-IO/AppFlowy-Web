@@ -13,6 +13,7 @@ import FiltersButton from '@/components/database/components/conditions/FiltersBu
 import SortsButton from '@/components/database/components/conditions/SortsButton';
 import Settings from '@/components/database/components/settings/Settings';
 import { DatabaseTemplateButton } from '@/components/database/components/template';
+import { useOpenDatabaseAsPage } from '@/components/database/hooks';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -109,7 +110,8 @@ export function DatabaseActions() {
   const layout = useDatabaseViewLayout() as DatabaseViewLayout;
   const readOnly = useReadOnly();
   const conditionsContext = useConditionsContext();
-  const { activeViewId, isDocumentBlock, navigateToView, databasePageId } = useDatabaseContext();
+  const { activeViewId, isDocumentBlock, databasePageId } = useDatabaseContext();
+  const { canOpen, isOpening, openDatabaseAsPage } = useOpenDatabaseAsPage({ fallbackViewId: databasePageId });
 
   const showSorts = [DatabaseViewLayout.Grid, DatabaseViewLayout.List, DatabaseViewLayout.Gallery].includes(layout);
   const showSearch = layout === DatabaseViewLayout.Gallery;
@@ -148,10 +150,9 @@ export function DatabaseActions() {
             <Button
               aria-label={t('tooltip.openAsPage')}
               data-testid='database-actions-open-as-page'
-              onClick={() => {
-                if (!databasePageId) return;
-                void navigateToView?.(databasePageId);
-              }}
+              disabled={!canOpen}
+              loading={isOpening}
+              onClick={() => void openDatabaseAsPage()}
               size={showSearch ? 'icon-sm' : 'icon'}
               type='button'
               variant='ghost'
