@@ -90,6 +90,9 @@ describe('RollupCell list navigation', () => {
     const bar = screen.getByTestId('rollup-bar-visualization');
 
     expect(bar.textContent).toBe('');
+    expect(screen.getByRole('progressbar', { name: '40' })).toBe(bar);
+    expect(bar.getAttribute('aria-valuenow')).toBe('50');
+    expect(bar.getAttribute('aria-valuetext')).toBe('40');
     expect(bar.querySelector<HTMLElement>('[style]')?.style.width).toBe('50%');
   });
 

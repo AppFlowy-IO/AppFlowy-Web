@@ -20,20 +20,31 @@ jest.mock('react-i18next', () => ({
   }),
 }));
 
-type MenuItemProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onSelect'> & {
-  onSelect?: () => void;
+type MenuItemProps = HTMLAttributes<HTMLDivElement> & {
+  onSelect?: (event: Event) => void;
+};
+
+type MenuRadioItemProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onSelect' | 'value'> & {
+  value: string;
+  onSelect?: (event: Event) => void;
 };
 
 jest.mock('@/components/ui/dropdown-menu', () => ({
   DropdownMenuGroup: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
-  DropdownMenuItem: ({ children, onSelect, ...props }: MenuItemProps) => (
-    <button {...props} onClick={onSelect}>
+  DropdownMenuItem: ({ children, onSelect, role = 'menuitem', ...props }: MenuItemProps) => (
+    <div {...props} role={role} onClick={(event) => onSelect?.(event.nativeEvent)}>
       {children}
-    </button>
+    </div>
   ),
   DropdownMenuItemTick: () => <span data-testid={'selected-item'} />,
   DropdownMenuLabel: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
   DropdownMenuPortal: ({ children }: { children: ReactNode }) => <>{children}</>,
+  DropdownMenuRadioGroup: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
+  DropdownMenuRadioItem: ({ children, onSelect, value: _value, ...props }: MenuRadioItemProps) => (
+    <button {...props} role={'menuitemradio'} onClick={(event) => onSelect?.(event.nativeEvent)}>
+      {children}
+    </button>
+  ),
   DropdownMenuSeparator: () => <hr />,
   DropdownMenuSub: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DropdownMenuSubContent: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => <div {...props}>{children}</div>,
@@ -137,7 +148,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
     expect(screen.queryByText('In progress')).toBeNull();
   });
 
-  it('shows all Desktop visualization choices for number targets and persists the complete option', () => {
+  it('shows all Desktop visualization choices and persists only the changed option', () => {
     setRollupData({ targetFieldType: FieldType.Number });
 
     render(<RollupPropertyMenuContent fieldId={'rollup-field'} />);
@@ -145,12 +156,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
     expect(screen.getByText('Show as')).toBeTruthy();
     fireEvent.click(screen.getByTestId('rollup-visualization-1'));
 
-    expect(mockUpdateRollupTypeOption).toHaveBeenCalledWith({
-      visualization_type: 1,
-      visualization_color: 'fill-default',
-      visualization_divisor: 0,
-      visualization_show_number: false,
-    });
+    expect(mockUpdateRollupTypeOption).toHaveBeenCalledWith({ visualization_type: 1 });
   });
 
   it('keeps visualization settings out of the compact in-cell editor', () => {
@@ -171,28 +177,13 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
     render(<RollupPropertyMenuContent fieldId={'rollup-field'} />);
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Divide by' }), { target: { value: '80' } });
-    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({
-      visualization_type: 1,
-      visualization_color: 'fill-default',
-      visualization_divisor: 80,
-      visualization_show_number: false,
-    });
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({ visualization_divisor: 80 });
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Show number' }));
-    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({
-      visualization_type: 1,
-      visualization_color: 'fill-default',
-      visualization_divisor: 0,
-      visualization_show_number: true,
-    });
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Show number' }));
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({ visualization_show_number: true });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Papaya' }));
-    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({
-      visualization_type: 1,
-      visualization_color: 'text-color-2',
-      visualization_divisor: 0,
-      visualization_show_number: false,
-    });
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Papaya' }));
+    expect(mockUpdateRollupTypeOption).toHaveBeenLastCalledWith({ visualization_color: 'text-color-2' });
   });
 
   it('hides Divide by for percentage calculations', () => {
@@ -205,7 +196,7 @@ describe('RollupPropertyMenuContent Calculate menu', () => {
     render(<RollupPropertyMenuContent fieldId={'rollup-field'} />);
 
     expect(screen.queryByRole('textbox', { name: 'Divide by' })).toBeNull();
-    expect(screen.getByRole('switch', { name: 'Show number' })).toBeTruthy();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Show number' })).toBeTruthy();
   });
 
   it('searches the related database properties before selecting one', () => {

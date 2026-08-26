@@ -396,12 +396,12 @@ function RollupPropertyMenuContent({ fieldId, variant = 'field' }: { fieldId: st
         <RollupVisualizationSettings
           option={visualization}
           calculationType={calculationType}
-          onChange={(option) =>
+          onChange={(updates) =>
             updateRollupTypeOption({
-              visualization_type: option.type,
-              visualization_color: option.color,
-              visualization_divisor: option.divisor,
-              visualization_show_number: option.showNumber,
+              ...(updates.type !== undefined ? { visualization_type: updates.type } : {}),
+              ...(updates.color !== undefined ? { visualization_color: updates.color } : {}),
+              ...(updates.divisor !== undefined ? { visualization_divisor: updates.divisor } : {}),
+              ...(updates.showNumber !== undefined ? { visualization_show_number: updates.showNumber } : {}),
             })
           }
         />

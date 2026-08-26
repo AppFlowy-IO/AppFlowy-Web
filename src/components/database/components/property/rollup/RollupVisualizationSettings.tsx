@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CalculationType } from '@/application/database-yjs/database.type';
@@ -10,15 +10,17 @@ import {
 import { ColorTile, ColorTileIcon } from '@/components/_shared/color-picker/ColorTile';
 import {
   DropdownMenuGroup,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuPortal,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 import { getRollupVisualizationColor } from './visualization';
@@ -43,11 +45,13 @@ const colorOptions = [
   { value: 'text-color-20', labelKey: 'colors.iron', label: 'Iron' },
 ] as const;
 
+const visualizationTypes = [RollupShowAsType.Number, RollupShowAsType.Bar, RollupShowAsType.Ring] as const;
+
 function VisualizationPreview({ type }: { type: RollupShowAsType }) {
   switch (type) {
     case RollupShowAsType.Bar:
       return (
-        <span className={'flex h-7 w-9 items-center'}>
+        <span aria-hidden className={'flex h-7 w-9 items-center'}>
           <span className={'h-1 w-full overflow-hidden rounded-full bg-fill-secondary'}>
             <span className={'block h-full w-2/3 rounded-full bg-current'} />
           </span>
@@ -56,6 +60,7 @@ function VisualizationPreview({ type }: { type: RollupShowAsType }) {
     case RollupShowAsType.Ring:
       return (
         <span
+          aria-hidden
           className={'h-5 w-5 rounded-full'}
           style={{ background: 'conic-gradient(currentColor 0 67%, var(--fill-secondary) 67% 100%)' }}
         >
@@ -63,7 +68,11 @@ function VisualizationPreview({ type }: { type: RollupShowAsType }) {
         </span>
       );
     default:
-      return <span className={'text-base font-semibold'}>99</span>;
+      return (
+        <span aria-hidden className={'text-base font-semibold'}>
+          99
+        </span>
+      );
   }
 }
 
@@ -89,45 +98,62 @@ function RollupDivideByInput({
 }) {
   const [draft, setDraft] = useState(String(divisor || 100));
   const focused = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!focused.current) setDraft(String(divisor || 100));
   }, [divisor]);
 
   return (
-    <Input
-      aria-label={label}
-      inputMode={'numeric'}
-      value={draft}
-      className={'h-8 w-16 text-right'}
-      onFocus={() => {
-        focused.current = true;
+    <DropdownMenuItem
+      className={'h-10 gap-2 px-2'}
+      onSelect={(event) => {
+        event.preventDefault();
+        inputRef.current?.focus();
       }}
-      onBlur={() => {
-        focused.current = false;
-        setDraft(String(divisor || 100));
+      onPointerMove={(event) => {
+        if (event.target === inputRef.current) event.preventDefault();
       }}
-      onMouseDown={(event) => event.stopPropagation()}
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape') event.stopPropagation();
-      }}
-      onChange={(event) => {
-        const digits = event.target.value.replace(/\D/g, '');
+    >
+      <span aria-hidden className={'flex h-5 w-5 items-center justify-center text-xs'}>
+        %
+      </span>
+      <span>{label}</span>
+      <Input
+        ref={inputRef}
+        aria-label={label}
+        inputMode={'numeric'}
+        value={draft}
+        className={'ml-auto h-8 w-16 text-right'}
+        onFocus={() => {
+          focused.current = true;
+        }}
+        onBlur={() => {
+          focused.current = false;
+          setDraft(String(divisor || 100));
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') event.stopPropagation();
+        }}
+        onChange={(event) => {
+          const digits = event.target.value.replace(/\D/g, '');
 
-        if (!digits) {
-          setDraft('');
-          return;
-        }
+          if (!digits) {
+            setDraft('');
+            return;
+          }
 
-        const normalized = digits.replace(/^0+(?=\d)/, '');
-        const value = Number(normalized);
+          const normalized = digits.replace(/^0+(?=\d)/, '');
+          const value = Number(normalized);
 
-        if (!Number.isInteger(value) || value < 1 || value > MAX_ROLLUP_VISUALIZATION_DIVISOR) return;
+          if (!Number.isInteger(value) || value < 1 || value > MAX_ROLLUP_VISUALIZATION_DIVISOR) return;
 
-        setDraft(normalized);
-        onChange(value);
-      }}
-    />
+          setDraft(normalized);
+          onChange(value);
+        }}
+      />
+    </DropdownMenuItem>
   );
 }
 
@@ -138,10 +164,9 @@ export function RollupVisualizationSettings({
 }: {
   option: RollupVisualizationOption;
   calculationType: CalculationType;
-  onChange: (option: RollupVisualizationOption) => void;
+  onChange: (updates: Partial<RollupVisualizationOption>) => void;
 }) {
   const { t } = useTranslation();
-  const showNumberId = useId();
   const selectedColor = colorOptions.find((color) => color.value === option.color);
   const isNumber = option.type === RollupShowAsType.Number;
 
@@ -150,34 +175,32 @@ export function RollupVisualizationSettings({
       <DropdownMenuSeparator className={'my-2'} />
       <DropdownMenuGroup className={'w-[280px] px-2 pb-1'} data-testid={'rollup-visualization-settings'}>
         <DropdownMenuLabel className={'px-2'}>{t('grid.rollup.showAs', { defaultValue: 'Show as' })}</DropdownMenuLabel>
-        <div className={'grid grid-cols-3 gap-2 px-1 pb-2'}>
-          {[RollupShowAsType.Number, RollupShowAsType.Bar, RollupShowAsType.Ring].map((type) => {
+        <DropdownMenuRadioGroup value={String(option.type)} className={'grid grid-cols-3 gap-2 px-1 pb-2'}>
+          {visualizationTypes.map((type) => {
             const selected = option.type === type;
 
             return (
-              <button
+              <DropdownMenuRadioItem
                 key={type}
-                type={'button'}
+                value={String(type)}
                 data-testid={`rollup-visualization-${type}`}
-                aria-pressed={selected}
                 className={cn(
                   'flex min-w-0 flex-col items-center rounded-md border px-2 py-2 text-xs font-medium',
                   selected
                     ? 'border-border-theme-thick text-text-action'
                     : 'border-border-primary text-text-tertiary hover:border-border-primary-hover'
                 )}
-                onClick={(event) => {
+                onSelect={(event) => {
                   event.preventDefault();
-                  event.stopPropagation();
-                  onChange({ ...option, type });
+                  onChange({ type });
                 }}
               >
                 <VisualizationPreview type={type} />
                 <span>{getVisualizationLabel(t, type)}</span>
-              </button>
+              </DropdownMenuRadioItem>
             );
           })}
-        </div>
+        </DropdownMenuRadioGroup>
 
         {!isNumber ? (
           <>
@@ -191,16 +214,16 @@ export function RollupVisualizationSettings({
               </DropdownMenuSubTrigger>
               <DropdownMenuPortal>
                 <DropdownMenuSubContent className={'w-[224px] p-3'}>
-                  <div className={'grid grid-cols-5 gap-2'}>
+                  <DropdownMenuRadioGroup value={option.color} className={'grid grid-cols-5 gap-2'}>
                     {colorOptions.map((color) => (
-                      <button
+                      <DropdownMenuRadioItem
                         key={color.value}
-                        type={'button'}
+                        value={color.value}
                         aria-label={t(color.labelKey, { defaultValue: color.label })}
-                        onClick={(event) => {
+                        className={'h-auto justify-center p-0 data-[state=checked]:bg-transparent'}
+                        onSelect={(event) => {
                           event.preventDefault();
-                          event.stopPropagation();
-                          onChange({ ...option, color: color.value });
+                          onChange({ color: color.value });
                         }}
                       >
                         <ColorTile
@@ -208,38 +231,49 @@ export function RollupVisualizationSettings({
                           active={color.value === option.color}
                           onClick={undefined}
                         />
-                      </button>
+                      </DropdownMenuRadioItem>
                     ))}
-                  </div>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuSubContent>
               </DropdownMenuPortal>
             </DropdownMenuSub>
 
             {!isRollupPercentCalculation(calculationType) ? (
-              <div className={'flex h-10 items-center gap-2 rounded-md px-2 text-sm'}>
-                <span className={'flex h-5 w-5 items-center justify-center text-xs'}>%</span>
-                <span>{t('grid.rollup.divideBy', { defaultValue: 'Divide by' })}</span>
-                <span className={'ml-auto'}>
-                  <RollupDivideByInput
-                    divisor={option.divisor}
-                    label={t('grid.rollup.divideBy', { defaultValue: 'Divide by' })}
-                    onChange={(divisor) => onChange({ ...option, divisor })}
-                  />
-                </span>
-              </div>
+              <RollupDivideByInput
+                divisor={option.divisor}
+                label={t('grid.rollup.divideBy', { defaultValue: 'Divide by' })}
+                onChange={(divisor) => onChange({ divisor })}
+              />
             ) : null}
 
-            <div className={'flex h-10 items-center gap-2 rounded-md px-2 text-sm'}>
-              <span className={'flex h-5 w-5 items-center justify-center text-[10px]'}>123</span>
-              <label htmlFor={showNumberId}>{t('grid.rollup.showNumber', { defaultValue: 'Show number' })}</label>
-              <Switch
-                id={showNumberId}
-                className={'ml-auto'}
-                checked={option.showNumber}
-                onCheckedChange={(showNumber) => onChange({ ...option, showNumber })}
-                onClick={(event) => event.stopPropagation()}
-              />
-            </div>
+            <DropdownMenuItem
+              role={'menuitemcheckbox'}
+              aria-checked={option.showNumber}
+              className={'h-10 gap-2 px-2'}
+              onSelect={(event) => {
+                event.preventDefault();
+                onChange({ showNumber: !option.showNumber });
+              }}
+            >
+              <span aria-hidden className={'flex h-5 w-5 items-center justify-center text-[10px]'}>
+                123
+              </span>
+              <span>{t('grid.rollup.showNumber', { defaultValue: 'Show number' })}</span>
+              <span
+                aria-hidden
+                data-state={option.showNumber ? 'checked' : 'unchecked'}
+                className={
+                  'ml-auto inline-flex h-[18px] w-[30px] shrink-0 items-center rounded-full border border-transparent transition-all data-[state=checked]:bg-fill-theme-thick data-[state=unchecked]:bg-fill-secondary'
+                }
+              >
+                <span
+                  className={
+                    'block h-4 w-4 rounded-full bg-background-primary transition-transform data-[state=checked]:translate-x-[calc(100%-4px)] data-[state=unchecked]:translate-x-[1px]'
+                  }
+                  data-state={option.showNumber ? 'checked' : 'unchecked'}
+                />
+              </span>
+            </DropdownMenuItem>
           </>
         ) : null}
       </DropdownMenuGroup>

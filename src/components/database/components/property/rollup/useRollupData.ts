@@ -222,10 +222,12 @@ export function useRollupData(fieldId: string) {
       try {
         const doc = await loadRelatedDoc(relation.databaseId);
         const firstTarget = readTargetFields(doc)[0];
+        const latestOption = parseRollupTypeOption(field);
 
         if (
           relationSelectionRequest.current !== request ||
-          parseRollupTypeOption(field)?.relation_field_id !== relation.id ||
+          latestOption?.relation_field_id !== relation.id ||
+          latestOption.target_field_id ||
           !firstTarget
         ) {
           return;

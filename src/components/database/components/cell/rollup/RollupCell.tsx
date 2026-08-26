@@ -1,7 +1,7 @@
-import { lazy, Suspense, useCallback } from 'react';
+import { lazy, Suspense, useCallback, useMemo } from 'react';
 
+import { RollupCell as RollupCellType, RollupListItem, CellProps } from '@/application/database-yjs/cell.type';
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
-import { RollupCell as RollupCellType, CellProps } from '@/application/database-yjs/cell.type';
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { RollupShowAsType } from '@/application/database-yjs/fields/rollup/rollup.type';
 import { getRollupVisualizationRatio } from '@/application/database-yjs/fields/rollup/visualization';
@@ -12,6 +12,30 @@ import { cn } from '@/lib/utils';
 const RollupCellMenu = lazy(() =>
   import('./RollupCellMenu').then(({ RollupCellMenu: Component }) => ({ default: Component }))
 );
+
+type RollupDisplayItem = Pick<RollupListItem, 'label'> & Partial<Pick<RollupListItem, 'rowId' | 'viewId'>>;
+
+function normalizeListItems(listItems?: RollupListItem[], legacyList?: string[]) {
+  const normalized: RollupDisplayItem[] = [];
+
+  if (listItems) {
+    for (const item of listItems) {
+      const label = item.label.trim();
+
+      if (label) normalized.push({ ...item, label });
+    }
+
+    return normalized;
+  }
+
+  for (const item of legacyList ?? []) {
+    const label = item.trim();
+
+    if (label) normalized.push({ label });
+  }
+
+  return normalized;
+}
 
 function RollupVisualization({ cell, value }: { cell: RollupCellType; value: string }) {
   const option = cell.visualization;
@@ -28,7 +52,16 @@ function RollupVisualization({ cell, value }: { cell: RollupCellType; value: str
 
   if (option.type === RollupShowAsType.Bar) {
     return (
-      <div className={'flex w-full items-center gap-2'} data-testid={'rollup-bar-visualization'}>
+      <div
+        role={'progressbar'}
+        aria-label={value}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(ratio * 100)}
+        aria-valuetext={value}
+        className={'flex w-full items-center gap-2'}
+        data-testid={'rollup-bar-visualization'}
+      >
         {showValue ? <span className={'shrink-0'}>{value}</span> : null}
         <div className={'h-1 min-w-8 flex-1 overflow-hidden rounded-full bg-fill-secondary'}>
           <div className={'h-full rounded-full'} style={{ background: color, width: `${ratio * 100}%` }} />
@@ -80,11 +113,7 @@ export function RollupCell({
   const context = useDatabaseContextOptional();
   const databasePageId = context?.databasePageId;
   const navigateToRow = context?.navigateToRow;
-  const listItems = (
-    cell?.listItems ?? (cell?.list ?? []).map((label) => ({ label, rowId: undefined, viewId: undefined }))
-  )
-    .map((item) => ({ ...item, label: item.label.trim() }))
-    .filter((item) => Boolean(item.label));
+  const listItems = useMemo(() => normalizeListItems(cell?.listItems, cell?.list), [cell?.listItems, cell?.list]);
   const value = typeof cell?.data === 'string' || typeof cell?.data === 'number' ? String(cell.data) : '';
   const isList = listItems.length > 0;
   const isEmpty = !isList && !value;

@@ -13,6 +13,7 @@ const mockLoadView = jest.fn();
 const mockGetViewIdFromDatabaseId = jest.fn();
 let baseDatabase: YDatabase;
 let rollupField: YDatabaseField;
+let relatedDoc: YDoc;
 
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabase: () => baseDatabase,
@@ -39,6 +40,15 @@ function createTargetField(id: string, type: FieldType) {
   return field;
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+
+  return { promise, resolve };
+}
+
 function setupDocuments() {
   const baseDoc = new Y.Doc();
   const baseRoot = baseDoc.getMap(YjsEditorKey.data_section);
@@ -52,7 +62,7 @@ function setupDocuments() {
   baseDatabase.set(YjsDatabaseKey.fields, fields);
   baseRoot.set(YjsEditorKey.database, baseDatabase);
 
-  const relatedDoc = new Y.Doc({ guid: 'related-database' }) as YDoc;
+  relatedDoc = new Y.Doc({ guid: 'related-database' }) as YDoc;
   const relatedRoot = relatedDoc.getMap(YjsEditorKey.data_section);
   const relatedDatabase = new Y.Map() as YDatabase;
   const relatedFields = new Y.Map() as YDatabaseFields;
@@ -111,6 +121,28 @@ describe('useRollupData Desktop interactions', () => {
       calculation_type: CalculationType.Count,
       condition_value: '',
     });
+  });
+
+  it('does not overwrite a target selected while automatic selection is loading', async () => {
+    const deferredLoad = createDeferred<YDoc | null>();
+
+    mockLoadView.mockReturnValue(deferredLoad.promise);
+    const { result } = renderHook(() => useRollupData('rollup'));
+
+    await waitFor(() => expect(result.current.relationFields).toHaveLength(1));
+    await act(async () => {
+      const selection = result.current.selectRelationField(result.current.relationFields[0]);
+      const typeOption = rollupField.get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup));
+
+      typeOption.set(YjsDatabaseKey.target_field_id, 'Name');
+      deferredLoad.resolve(relatedDoc);
+      await selection;
+    });
+
+    expect(mockUpdateRollupTypeOption).toHaveBeenCalledTimes(1);
+    expect(
+      rollupField.get(YjsDatabaseKey.type_option).get(String(FieldType.Rollup)).get(YjsDatabaseKey.target_field_id)
+    ).toBe('Name');
   });
 
   it('resets an unsupported calculation and visualization when a non-number target is selected', async () => {
