@@ -36,7 +36,7 @@ Feature: Seeded Public, Private and Custom space permissions
     When I open the seeded scp0822 "public space" manage space panel
     And I click Switch to Custom in the Public access card
     Then the Manage Space confirmation asks "Change this Space to Custom?" with the action "Change to Custom"
-    And the Manage Space confirmation explains "All current Workspace members will remain in this Space. Space owners will keep Full access, and other members will remain Space members with Can edit access. You can customize their access after switching."
+    And the Manage Space confirmation explains "All current Workspace members will remain in this Space. Space owners will keep Full access, and other members will remain Space members with Can edit access. You can customize their access after switching. You can change these permissions after switching."
     When I confirm the Manage Space dialog
     Then the Manage Space general tab shows the Custom permissions card
     And the Custom permissions card shows Space members "Can edit" and everyone else "Can view"
