@@ -152,7 +152,10 @@ export function RollupCell({
 
           if (!itemRowId || !itemViewId || !navigateToRow) {
             return (
-              <div key={`${item.label}-${index}`} className={'min-w-fit max-w-[140px]'}>
+              <div
+                key={`${item.label}-${index}`}
+                className={'min-w-fit max-w-[140px] overflow-hidden rounded-[6px] bg-fill-secondary'}
+              >
                 {content}
               </div>
             );
@@ -163,7 +166,9 @@ export function RollupCell({
               key={`${itemViewId}-${itemRowId}-${index}`}
               type={'button'}
               data-testid={`rollup-list-item-${itemRowId}-${fieldId}-${index}`}
-              className={'min-w-fit max-w-[140px] cursor-pointer overflow-hidden underline hover:text-text-action'}
+              className={
+                'min-w-fit max-w-[140px] cursor-pointer overflow-hidden rounded-[6px] bg-fill-secondary'
+              }
               onClick={(event) => {
                 event.stopPropagation();
                 navigateToRow(itemRowId, itemViewId !== databasePageId ? itemViewId : undefined);

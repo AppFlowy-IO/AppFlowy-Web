@@ -50,6 +50,10 @@ describe('RollupCell list navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'EPC-013' }));
     fireEvent.click(screen.getByRole('button', { name: 'EPC-014' }));
 
+    const firstItem = screen.getByRole('button', { name: 'EPC-013' });
+
+    expect(firstItem.className).not.toContain('underline');
+    expect(firstItem.className).toContain('bg-fill-secondary');
     expect(mockNavigateToRow).toHaveBeenNthCalledWith(1, 'epic-row-13', 'epics-view');
     expect(mockNavigateToRow).toHaveBeenNthCalledWith(2, 'epic-row-14', 'epics-view');
     expect(onCellClick).not.toHaveBeenCalled();
