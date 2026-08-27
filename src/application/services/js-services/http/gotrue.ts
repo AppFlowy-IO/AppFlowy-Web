@@ -1,9 +1,9 @@
 import axios, { AxiosInstance } from 'axios';
 
-import { emit, EventType } from '@/application/session';
-import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
-
+import { getTokenParsed, invalidToken, saveGoTrueAuth, type GoTrueAuthUser } from '@/application/session/token';
+import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
+
 import { verifyToken } from './cloud-auth';
 import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 
@@ -47,6 +47,7 @@ interface RefreshedToken {
   access_token: string;
   expires_at: number;
   refresh_token: string;
+  user: GoTrueAuthUser;
 }
 
 // In-flight refreshes shared by concurrent callers with the same refresh token
@@ -75,7 +76,9 @@ export async function refreshToken(refresh_token: string) {
 
     if (newToken) {
       Log.info('[Auth] refreshToken: success, saving token');
-      saveGoTrueAuth(JSON.stringify(newToken));
+      if (!saveGoTrueAuth(JSON.stringify(newToken))) {
+        throw new Error('Failed to persist refreshed token');
+      }
     } else {
       Log.error('[Auth] refreshToken: no token data in response');
       return Promise.reject('Failed to refresh token');
@@ -304,7 +307,6 @@ export async function forgotPassword(params: { email: string }) {
       return;
     } else {
       Log.error('[Auth] forgotPassword: GoTrue returned no data');
-      emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
         message: 'Failed to send recovery email',
@@ -313,7 +315,6 @@ export async function forgotPassword(params: { email: string }) {
     // eslint-disable-next-line
   } catch (e: any) {
     Log.error('[Auth] forgotPassword: failed', { status: e.response?.status, message: e.message });
-    emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: -1,
       message: e.message,
@@ -360,7 +361,12 @@ export async function changePassword(params: { password: string }) {
       status: e.response?.status,
       message: e.response?.data?.msg || e.message,
     });
-    emit(EventType.SESSION_INVALID);
+    // Only an authentication failure invalidates the session. Network, rate
+    // limit, validation, and server errors leave the stored session usable.
+    if (e.response?.status === 401) {
+      invalidToken();
+    }
+
     return Promise.reject({
       code: -1,
       message: e.response?.data?.msg || e.message,
@@ -460,16 +466,18 @@ export async function settings() {
   return res?.data;
 }
 
+function redirectToAuthProvider(url: string) {
+  window.location.assign(url);
+}
+
 export function signInGoogle(authUrl: string) {
   const provider = 'google';
   const redirectTo = encodeURIComponent(authUrl);
-  const accessType = 'offline';
-  const prompt = 'consent';
   const baseURL = axiosInstance?.defaults.baseURL;
-  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}&access_type=${accessType}&prompt=${prompt}`;
+  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}&prompt=consent`;
 
   Log.info('[Auth] signInGoogle: redirecting to Google OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
 }
 
 export function signInApple(authUrl: string) {
@@ -479,7 +487,31 @@ export function signInApple(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInApple: redirecting to Apple OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
+}
+
+/**
+ * Start a login through an admin-registered OIDC/OAuth2 provider.
+ *
+ * Same shape as the built-in providers above; only the identifier is dynamic.
+ * It carries the mandatory `custom:` prefix, added here when the caller passes
+ * the bare identifier, and is percent-encoded because the colon is reserved.
+ */
+export function signInCustomProvider(identifier: string, authUrl: string) {
+  const trimmed = identifier.trim();
+
+  if (!trimmed || trimmed === CUSTOM_PROVIDER_PREFIX) {
+    Log.error('[Auth] signInCustomProvider: empty provider identifier');
+    return;
+  }
+
+  const provider = trimmed.startsWith(CUSTOM_PROVIDER_PREFIX) ? trimmed : `${CUSTOM_PROVIDER_PREFIX}${trimmed}`;
+  const redirectTo = encodeURIComponent(authUrl);
+  const baseURL = axiosInstance?.defaults.baseURL;
+  const url = `${baseURL}/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${redirectTo}`;
+
+  Log.info('[Auth] signInCustomProvider: redirecting to provider', { provider });
+  redirectToAuthProvider(url);
 }
 
 export function signInGithub(authUrl: string) {
@@ -489,7 +521,7 @@ export function signInGithub(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInGithub: redirecting to GitHub OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
 }
 
 export function signInDiscord(authUrl: string) {
@@ -499,7 +531,7 @@ export function signInDiscord(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInDiscord: redirecting to Discord OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
 }
 
 interface AxiosErrorLike {

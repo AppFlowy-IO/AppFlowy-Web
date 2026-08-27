@@ -10,7 +10,7 @@ import { DragContext, useDragContextValue } from '@/components/database/componen
 import { getScrollParent } from '@/components/global-comment/utils';
 import { cn } from '@/lib/utils';
 
-export function DatabaseRowProperties({ rowId }: { rowId: string }) {
+export function DatabaseRowProperties({ rowId, templateStyle = false }: { rowId: string; templateStyle?: boolean }) {
   const primaryFieldId = usePrimaryFieldId();
   const [isFilterHidden, setIsFilterHidden] = useState(true);
   const [activePropertyId, setActivePropertyId] = useState<string | null>(null);
@@ -77,7 +77,8 @@ export function DatabaseRowProperties({ rowId }: { rowId: string }) {
         ref={setDom}
         className={cn(
           'row-properties flex w-full flex-col py-2',
-          readOnly ? 'px-24 max-sm:px-6' : 'px-[70px] max-sm:px-2'
+          readOnly ? 'px-24 max-sm:px-6' : 'px-[70px] max-sm:px-2',
+          templateStyle && 'px-0 py-0'
         )}
       >
         {fields.map((field) => {
@@ -88,6 +89,7 @@ export function DatabaseRowProperties({ rowId }: { rowId: string }) {
               fieldId={field.id}
               isActive={activePropertyId === field.id}
               setActivePropertyId={setActivePropertyId}
+              templateStyle={templateStyle}
             />
           );
         })}
@@ -96,11 +98,12 @@ export function DatabaseRowProperties({ rowId }: { rowId: string }) {
             <RowSwitchFieldsHidden
               hideCount={visibleHiddenProperties.length}
               isFilterHidden={isFilterHidden}
+              templateStyle={templateStyle}
               onToggleSwitchFieldsHidden={() => {
                 setIsFilterHidden((prev) => !prev);
               }}
             />
-            <RowNewProperty setActivePropertyId={setActivePropertyId} />
+            {!templateStyle ? <RowNewProperty setActivePropertyId={setActivePropertyId} /> : null}
           </>
         )}
       </div>

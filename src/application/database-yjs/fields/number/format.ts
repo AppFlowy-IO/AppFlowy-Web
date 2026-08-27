@@ -156,7 +156,7 @@ export const currencyFormaterMap: Record<NumberFormat, (n: bigint | number) => s
     new Intl.NumberFormat('en-US', {
       ...commonProps,
       style: 'decimal',
-    }).format(n) + '%',
+    }).format(typeof n === 'bigint' ? n * 100n : n * 100) + '%',
   [NumberFormat.USD]: (n: bigint | number) =>
     new Intl.NumberFormat('en-US', {
       ...commonProps,

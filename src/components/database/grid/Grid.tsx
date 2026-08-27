@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
 
-import { useDatabaseContext, useDatabaseViewId, useRowOrdersSelector } from '@/application/database-yjs';
+import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
 import { useRenderFields } from '@/components/database/components/grid/grid-column';
 import GridVirtualizer from '@/components/database/components/grid/grid-table/GridVirtualizer';
+import { useGridGrouping } from '@/components/database/grid/GridGroupingContext';
 import { GridProvider } from '@/components/database/grid/GridProvider';
 
 export function Grid() {
   const { fields } = useRenderFields();
   const viewId = useDatabaseViewId();
-  const rowOrders = useRowOrdersSelector();
+  const grouping = useGridGrouping();
+  const { rowOrders } = grouping;
 
   const { onRendered } = useDatabaseContext();
 
@@ -19,10 +21,10 @@ export function Grid() {
   }, [fields, rowOrders, onRendered]);
 
   return (
-    <GridProvider rowOrders={rowOrders}>
+    <GridProvider grouping={grouping}>
       <div
         data-testid='database-grid'
-        className={`database-grid relative grid-table-${viewId} flex w-full min-h-0 flex-1 flex-col`}
+        className={`database-grid relative grid-table-${viewId} flex min-h-0 w-full flex-1 flex-col`}
       >
         <GridVirtualizer columns={fields} />
       </div>

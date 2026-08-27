@@ -1,7 +1,13 @@
 import { Log } from '@/utils/log';
 
 export function saveRedirectTo(redirectTo: string) {
-  localStorage.setItem('redirectTo', redirectTo);
+  const safeRedirectTo = getSafeRedirectUrl(redirectTo);
+
+  if (safeRedirectTo) {
+    localStorage.setItem('redirectTo', safeRedirectTo);
+  } else {
+    clearRedirectTo();
+  }
 }
 
 export function getRedirectTo() {
@@ -15,12 +21,43 @@ export function clearRedirectTo() {
 export const AUTH_CALLBACK_PATH = '/auth/callback';
 export const AUTH_CALLBACK_URL = `${window.location.origin}${AUTH_CALLBACK_PATH}`;
 
+export function isAuthPath(pathname: string): boolean {
+  let decodedPathname: string;
+
+  try {
+    // Match React Router's segment decoding while preserving encoded slashes,
+    // which are data inside a segment rather than route separators.
+    decodedPathname = pathname
+      .split('/')
+      .map((segment) => decodeURIComponent(segment).replace(/\//g, '%2F'))
+      .join('/');
+  } catch {
+    return false;
+  }
+
+  const normalizedPathname = decodedPathname.replace(/\/+$/, '').toLowerCase();
+
+  return normalizedPathname === '/login' || normalizedPathname === AUTH_CALLBACK_PATH;
+}
+
+const MAX_REDIRECT_VALIDATION_DECODES = 5;
+const ABSOLUTE_URL_PATTERN = /^[a-z][a-z\d+.-]*:/i;
+const AUTHORITY_RELATIVE_URL_PATTERN = /^[\\/]{2}/;
+
+export interface LoginUrlParams {
+  action?: string;
+  email?: string;
+  force?: boolean;
+  redirectTo?: string;
+  type?: string;
+}
+
 export function withSignIn() {
   return function (
     // eslint-disable-next-line
     _target: any,
     _propertyKey: string,
-    descriptor: PropertyDescriptor,
+    descriptor: PropertyDescriptor
   ) {
     const originalMethod = descriptor.value;
 
@@ -43,38 +80,72 @@ export function withSignIn() {
 }
 
 /**
- * Decodes a percent-encoded redirect parameter, returning null on malformed input
- * so that bad values are always treated as unsafe rather than crashing.
+ * Returns the original redirect value only when every valid decoding layer
+ * remains a root-relative or same-origin URL. The value itself is deliberately
+ * not decoded: URLSearchParams already decodes query values, and decoding again
+ * can turn data such as "%2F%5Cevil.com" into an external redirect.
  */
-export function safeDecodeRedirectParam(value: string): string | null {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return null;
+export function getSafeRedirectUrl(value: string): string | null {
+  if (!value) return null;
+
+  let candidate = value;
+
+  for (let decodeCount = 0; decodeCount <= MAX_REDIRECT_VALIDATION_DECODES; decodeCount += 1) {
+    const isRootRelative = candidate.startsWith('/') && !AUTHORITY_RELATIVE_URL_PATTERN.test(candidate);
+    const isAbsolute = ABSOLUTE_URL_PATTERN.test(candidate);
+
+    if (!isRootRelative && !isAbsolute) return null;
+
+    try {
+      const parsed = new URL(candidate, window.location.origin);
+
+      if (parsed.origin !== window.location.origin) return null;
+    } catch {
+      return null;
+    }
+
+    let decoded: string;
+
+    try {
+      decoded = decodeURIComponent(candidate);
+    } catch {
+      // The redirect is never decoded for navigation. If another decoding pass
+      // is not valid, the already-parsed same-origin value cannot become an
+      // authority URL through that pass.
+      return value;
+    }
+
+    if (decoded === candidate) return value;
+
+    candidate = decoded;
   }
+
+  // Reject unusually deep encodings instead of guessing how another layer may
+  // interpret them later.
+  return null;
+}
+
+export function isSafeRedirectUrl(url: string): boolean {
+  return getSafeRedirectUrl(url) !== null;
 }
 
 /**
- * Returns true only if the URL is safe to redirect to after authentication.
- * Safe means: a relative path (starts with "/" but NOT "//") OR
- * an absolute URL whose origin matches window.location.origin.
+ * Builds an internal login URL without allowing values to alter the surrounding
+ * query string. Callers must pass raw values; URLSearchParams owns the encoding.
  */
-export function isSafeRedirectUrl(url: string): boolean {
-  if (!url) return false;
+export function buildLoginUrl(params: LoginUrlParams = {}): string {
+  const search = new URLSearchParams();
+  const safeRedirectTo = params.redirectTo ? getSafeRedirectUrl(params.redirectTo) : null;
 
-  // Relative path — safe (but "//evil.com" is protocol-relative, not safe)
-  if (url.startsWith('/') && !url.startsWith('//')) {
-    return true;
-  }
+  if (params.action) search.set('action', params.action);
+  if (params.email) search.set('email', params.email);
+  if (safeRedirectTo) search.set('redirectTo', safeRedirectTo);
+  if (params.type) search.set('type', params.type);
+  if (params.force !== undefined) search.set('force', String(params.force));
 
-  // Absolute URL — only safe if same origin
-  try {
-    const parsed = new URL(url);
+  const query = search.toString();
 
-    return parsed.origin === window.location.origin;
-  } catch {
-    return false;
-  }
+  return query ? `/login?${query}` : '/login';
 }
 
 export function afterAuth() {
@@ -83,21 +154,27 @@ export function afterAuth() {
   clearRedirectTo();
 
   if (redirectTo) {
-    const decoded = safeDecodeRedirectParam(redirectTo);
+    const safeRedirectTo = getSafeRedirectUrl(redirectTo);
 
-    if (!decoded || !isSafeRedirectUrl(decoded)) {
+    if (!safeRedirectTo) {
       window.location.href = '/app';
       return;
     }
 
-    const url = new URL(decoded, window.location.origin);
+    const url = new URL(safeRedirectTo, window.location.origin);
     const pathname = url.pathname;
 
     // Check if URL contains workspace/view UUIDs (user-specific paths)
     // Pattern matches /app/{uuid}/{uuid} or /app/{uuid}
-    const hasUserSpecificIds = /\/app\/[a-f0-9-]{36}/.test(pathname);
+    const hasUserSpecificIds = /\/app\/[a-f0-9-]{36}/i.test(pathname);
 
-    if (hasUserSpecificIds) {
+    if (isAuthPath(pathname)) {
+      // Authentication pages are transitional destinations. Sending a newly
+      // authenticated user back to one can strand them on the login screen and
+      // require a second sign-in attempt.
+      Log.info('[Auth] afterAuth: blocking authentication-route redirect, going to /app', { pathname });
+      window.location.href = '/app';
+    } else if (hasUserSpecificIds) {
       // Don't redirect to user-specific pages from previous sessions
       Log.info('[Auth] afterAuth: blocking user-specific redirect, going to /app', { pathname });
       window.location.href = '/app';
@@ -108,7 +185,7 @@ export function afterAuth() {
       window.location.href = url.toString();
     } else {
       Log.info('[Auth] afterAuth: redirecting to saved destination', { pathname });
-      window.location.href = decoded;
+      window.location.href = safeRedirectTo;
     }
   } else {
     Log.info('[Auth] afterAuth: no redirectTo saved, going to /app');

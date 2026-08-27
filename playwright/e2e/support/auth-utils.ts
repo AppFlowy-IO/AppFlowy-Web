@@ -1,4 +1,5 @@
 import { Page } from '@playwright/test';
+import { assertSuccessfulAppFlowyResponse } from '../../support/appflowy-response';
 
 export interface AuthConfig {
   baseUrl: string;
@@ -66,18 +67,61 @@ export async function signInAndNavigate(page: Page, config?: Partial<AuthConfig>
   const refreshToken = params.get('refresh_token');
   if (!accessToken || !refreshToken) throw new Error('Missing tokens');
 
-  // 5. Verify user (create profile)
+  // 5. Verify user (create profile). Verification consumes this one-time
+  // magic-link session, so create a fresh link below for the browser session.
+  let verifyRes: Response | undefined;
+
   for (let i = 0; i < 3; i++) {
-    const verifyRes = await fetch(`${cfg.baseUrl}/api/user/verify/${accessToken}`);
-    if (verifyRes.ok || (verifyRes.status !== 502 && verifyRes.status !== 503)) break;
-    await new Promise(r => setTimeout(r, 2000));
+    verifyRes = await fetch(`${cfg.baseUrl}/api/user/verify/${accessToken}`);
+    if (verifyRes.status !== 502 && verifyRes.status !== 503) break;
+    await new Promise((r) => setTimeout(r, 2000));
   }
 
-  // 6. Refresh token
+  if (!verifyRes) throw new Error('Verify user did not return a response');
+
+  assertSuccessfulAppFlowyResponse({
+    bodyText: await verifyRes.text(),
+    ok: verifyRes.ok,
+    operation: 'Verify user',
+    status: verifyRes.status,
+  });
+
+  // 6. Generate and consume a second magic link for the durable test session
+  res = await fetch(`${cfg.gotrueUrl}/admin/generate_link`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminData.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, type: 'magiclink', redirect_to: 'http://localhost:3000' }),
+  });
+  if (!res.ok) throw new Error(`Generate session link failed: ${res.status}`);
+  const sessionLinkData = await res.json();
+
+  res = await fetch(sessionLinkData.action_link, { redirect: 'manual' });
+  const sessionLocation = res.headers.get('location');
+  let sessionCallbackLink: string;
+
+  if (sessionLocation) {
+    const redirectUrl = new URL(sessionLocation, sessionLinkData.action_link);
+    sessionCallbackLink = redirectUrl.pathname.substring(1) + redirectUrl.hash;
+  } else {
+    const html = await res.text();
+    const match = html.match(/<a[^>]*href=["']([^"']+)["']/);
+
+    if (!match?.[1]) throw new Error('Could not extract session sign-in URL');
+    sessionCallbackLink = match[1].replace(/&amp;/g, '&');
+  }
+
+  const sessionHashIndex = sessionCallbackLink.indexOf('#');
+
+  if (sessionHashIndex === -1) throw new Error('No hash in session callback link');
+  const sessionParams = new URLSearchParams(sessionCallbackLink.substring(sessionHashIndex + 1));
+  const sessionRefreshToken = sessionParams.get('refresh_token');
+
+  if (!sessionRefreshToken) throw new Error('Missing session refresh token');
+
   res = await fetch(`${cfg.gotrueUrl}/token?grant_type=refresh_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    body: JSON.stringify({ refresh_token: sessionRefreshToken }),
   });
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
   const tokenData = await res.json();
@@ -88,12 +132,15 @@ export async function signInAndNavigate(page: Page, config?: Partial<AuthConfig>
   });
 
   await page.goto('http://localhost:3000');
-  await page.evaluate((data) => {
-    localStorage.setItem('af_auth_token', data.access_token);
-    localStorage.setItem('af_refresh_token', data.refresh_token || data.originalRefresh);
-    if (data.user) localStorage.setItem('af_user_id', data.user.id);
-    localStorage.setItem('token', JSON.stringify(data));
-  }, { ...tokenData, originalRefresh: refreshToken });
+  await page.evaluate(
+    (data) => {
+      localStorage.setItem('af_auth_token', data.access_token);
+      localStorage.setItem('af_refresh_token', data.refresh_token || data.originalRefresh);
+      if (data.user) localStorage.setItem('af_user_id', data.user.id);
+      localStorage.setItem('token', JSON.stringify(data));
+    },
+    { ...tokenData, originalRefresh: sessionRefreshToken }
+  );
 
   await page.goto('http://localhost:3000/app');
   await page.waitForURL(/\/app/, { timeout: 30000 });

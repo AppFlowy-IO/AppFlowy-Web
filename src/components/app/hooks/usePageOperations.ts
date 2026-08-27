@@ -4,30 +4,80 @@ import { toast } from 'sonner';
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
+import { publishCollabs, PublishCollabMetadata } from '@/application/services/js-services/http/publish-api';
 import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
 import {
-  publishCollabs,
-  PublishCollabMetadata,
-} from '@/application/services/js-services/http/publish-api';
-import {
   CreateDatabaseViewPayload,
+  CreateOrphanedViewPayload,
   DuplicatePageOperationOptions,
   CreatePagePayload,
   CreateSpacePayload,
+  CreateSpaceWithInitialPagePayload,
+  PublishViewPayload,
   Role,
   UpdatePagePayload,
   UpdateSpacePayload,
   View,
   ViewIconType,
-  ViewLayout,
 } from '@/application/types';
-import { Log } from '@/utils/log';
+import { isDatabaseLayout } from '@/application/view-utils';
 import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
 const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
+const DOCUMENT_PUBLISH_SERVER_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 6000] as const;
+
+function waitForDocumentPublishRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+}
+
+function refreshDatabaseCatalogAfterMutation(workspaceId: string): void {
+  // Supersede any warm/read request that began before the mutation. The new
+  // authoritative request runs in the background so page creation is not held
+  // behind a workspace-wide catalog response.
+  ViewService.invalidateDatabaseCatalog?.(workspaceId);
+  void ViewService.refreshWorkspaceDatabaseCatalog?.(workspaceId).catch((error) => {
+    Log.warn('[WorkspaceDatabaseCatalog] failed to refresh after a database mutation', error);
+  });
+}
+
+function isDatabaseCatalogView(view: View | null | undefined): boolean {
+  return Boolean(
+    view &&
+      (isDatabaseLayout(view.layout) || view.extra?.is_database_container || typeof view.extra?.database_id === 'string')
+  );
+}
+
+function isPendingDocumentPublishData(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const { code, message } = error as { code?: unknown; message?: unknown };
+
+  return code === -2 && typeof message === 'string' && /record not (?:found|exist)|view .* not found/i.test(message);
+}
+
+async function publishDocumentWhenServerStateIsReady(
+  workspaceId: string,
+  viewId: string,
+  payload: PublishViewPayload,
+  syncServerState?: () => Promise<void>
+): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await PublishService.publish(workspaceId, viewId, payload);
+      return;
+    } catch (error) {
+      const retryDelay = DOCUMENT_PUBLISH_SERVER_RETRY_DELAYS_MS[attempt];
+
+      if (retryDelay === undefined || !isPendingDocumentPublishData(error)) throw error;
+      await syncServerState?.();
+      await waitForDocumentPublishRetry(retryDelay);
+    }
+  }
+}
 
 export function usePageOperations({
   outlineRef,
@@ -36,6 +86,7 @@ export function usePageOperations({
   syncAllToServer,
   loadViewChildren,
   getDatabaseIdForViewId,
+  loadTrash,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
@@ -43,6 +94,7 @@ export function usePageOperations({
   syncAllToServer?: (workspaceId: string) => Promise<void>;
   loadViewChildren?: (viewId: string) => Promise<View[]>;
   getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
+  loadTrash?: (workspaceId: string, options?: { ensureFreshAfterInFlight?: boolean }) => Promise<void>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -64,6 +116,11 @@ export function usePageOperations({
       try {
         const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
 
+        ViewService.invalidateCache(currentWorkspaceId, parentViewId);
+        if (isDatabaseLayout(payload.layout)) {
+          refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        }
+
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
         void loadOutline?.(currentWorkspaceId, false);
@@ -77,7 +134,7 @@ export function usePageOperations({
 
   // Delete a page (move to trash)
   const deletePage = useCallback(
-    async (id: string, loadTrash?: (workspaceId: string) => Promise<void>) => {
+    async (id: string) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
@@ -89,15 +146,29 @@ export function usePageOperations({
       }
 
       try {
+        const parentView = findParentView(outlineRef.current || [], id);
+        const deletedView = findView(outlineRef.current || [], id);
+
         await PageService.moveToTrash(currentWorkspaceId, id);
-        void loadTrash?.(currentWorkspaceId);
+        if (isDatabaseCatalogView(deletedView)) {
+          refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
+        }
+
+        ViewService.invalidateCache(currentWorkspaceId, id);
+        if (parentView) {
+          ViewService.invalidateCache(currentWorkspaceId, parentView.view_id);
+        }
+
+        void loadTrash?.(currentWorkspaceId, { ensureFreshAfterInFlight: true }).catch((error) => {
+          Log.warn('[Trash] Failed to refresh after moving a page to trash', error);
+        });
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outlineRef, role, loadOutline]
+    [currentWorkspaceId, outlineRef, role, loadOutline, loadTrash]
   );
 
   // Update page (rename) - uses WebSocket notification for sidebar refresh
@@ -109,6 +180,9 @@ export function usePageOperations({
 
       try {
         await PageService.update(currentWorkspaceId, viewId, payload);
+        // Drop the cached view metadata (memory + disk) so a stale name/icon
+        // can't be re-served if the WebSocket notification is dropped.
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
         // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
@@ -127,6 +201,7 @@ export function usePageOperations({
 
       try {
         await PageService.updateIcon(currentWorkspaceId, viewId, icon);
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
         return;
       } catch (e) {
         return Promise.reject(e);
@@ -144,6 +219,7 @@ export function usePageOperations({
 
       try {
         await PageService.updateName(currentWorkspaceId, viewId, name);
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
         // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
@@ -179,6 +255,7 @@ export function usePageOperations({
         await afterPreSync?.();
 
         await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
 
         if (duplicateOptions.parentViewId) {
@@ -206,8 +283,15 @@ export function usePageOperations({
       try {
         const lastChild = findView(outlineRef.current || [], parentId)?.children?.slice(-1)[0];
         const prevId = prevViewId || lastChild?.view_id;
+        const oldParentView = findParentView(outlineRef.current || [], viewId);
 
         await PageService.moveTo(currentWorkspaceId, viewId, parentId, prevId);
+        // Both the old and new parents' cached subtrees changed.
+        if (oldParentView) {
+          ViewService.invalidateCache(currentWorkspaceId, oldParentView.view_id);
+        }
+
+        ViewService.invalidateCache(currentWorkspaceId, parentId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
@@ -233,7 +317,7 @@ export function usePageOperations({
         } else {
           // Delete all — fetch trash list first to know which caches to clear
           try {
-            const trashItems = await ViewService.getTrash(currentWorkspaceId);
+            const trashItems = await ViewService.refreshTrash(currentWorkspaceId, 'delete-all-snapshot');
 
             viewIdsToClear = trashItems?.map((item) => item.view_id) || [];
           } catch {
@@ -242,6 +326,7 @@ export function usePageOperations({
         }
 
         await PageService.deleteTrash(currentWorkspaceId, viewId);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
 
         // Clear IndexedDB cache for permanently deleted views (parallel)
         await Promise.allSettled(viewIdsToClear.map((id) => clearViewCache(id)));
@@ -264,6 +349,7 @@ export function usePageOperations({
 
       try {
         await PageService.restore(currentWorkspaceId, viewId);
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
@@ -282,6 +368,24 @@ export function usePageOperations({
 
       try {
         const res = await PageService.createSpace(currentWorkspaceId, payload);
+
+        void loadOutline?.(currentWorkspaceId, false);
+        return res;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, loadOutline]
+  );
+
+  const createSpaceWithInitialPage = useCallback(
+    async (payload: CreateSpaceWithInitialPagePayload) => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      try {
+        const res = await PageService.createSpaceWithInitialPage(currentWorkspaceId, payload);
 
         void loadOutline?.(currentWorkspaceId, false);
         return res;
@@ -321,6 +425,7 @@ export function usePageOperations({
       try {
         const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
 
+        refreshDatabaseCatalogAfterMutation(currentWorkspaceId);
         await loadOutline?.(currentWorkspaceId, false);
         return res;
       } catch (e) {
@@ -368,12 +473,9 @@ export function usePageOperations({
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
-      const isDatabaseLayout =
-        view.layout === ViewLayout.Grid ||
-        view.layout === ViewLayout.Board ||
-        view.layout === ViewLayout.Calendar;
+      const isDatabaseView = isDatabaseLayout(view.layout);
 
-      if (isDatabaseLayout) {
+      if (isDatabaseView) {
         // Database views: gather data client-side and send via binary publish endpoint
         // (same approach as the desktop client — fixes #8464). Kick the WS
         // drain in the background — the binary publish below carries the
@@ -382,7 +484,12 @@ export function usePageOperations({
         // reconnecting).
         void flushAllSync?.();
 
-        const slug = view.name.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'untitled';
+        const slug =
+          view.name
+            .replace(/[^a-zA-Z0-9-]/g, '-')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '')
+            .slice(0, 40) || 'untitled';
 
         const name = publishName || `${slug}-${viewId.slice(0, 8)}`;
 
@@ -392,11 +499,13 @@ export function usePageOperations({
         // tab (Grid, Board, Calendar, etc.) appears on the published page.
         let resolvedVisibleViewIds = visibleViewIds;
 
-        if (outlineRef.current) {
+        if (view.extra?.is_database_container) {
+          resolvedVisibleViewIds = [viewId, ...view.children.map((child) => child.view_id)];
+        } else if (outlineRef.current) {
           const parentView = findParentView(outlineRef.current, viewId);
 
           if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
-            resolvedVisibleViewIds = parentView.children.map(c => c.view_id);
+            resolvedVisibleViewIds = parentView.children.map((c) => c.view_id);
           }
         }
 
@@ -410,23 +519,30 @@ export function usePageOperations({
           return isNaN(t) ? 0 : Math.floor(t / 1000);
         };
 
+        const toPublishViewInfo = (publishView: View): PublishCollabMetadata['metadata']['view'] => ({
+          view_id: publishView.view_id,
+          name: publishView.name,
+          icon: publishView.icon,
+          layout: publishView.layout,
+          extra: publishView.extra
+            ? typeof publishView.extra === 'string'
+              ? publishView.extra
+              : JSON.stringify(publishView.extra)
+            : null,
+          created_by: null,
+          last_edited_by: null,
+          last_edited_time: toTimestamp(publishView.last_edited_time),
+          created_at: toTimestamp(publishView.created_at),
+          child_views: null,
+        });
+        const visibleViewIdSet = new Set(resolvedVisibleViewIds ?? []);
+
         const meta: PublishCollabMetadata = {
           view_id: viewId,
           publish_name: name,
           metadata: {
-            view: {
-              view_id: viewId,
-              name: view.name,
-              icon: view.icon,
-              layout: view.layout,
-              extra: view.extra ? (typeof view.extra === 'string' ? view.extra : JSON.stringify(view.extra)) : null,
-              created_by: null,
-              last_edited_by: null,
-              last_edited_time: toTimestamp(view.last_edited_time),
-              created_at: toTimestamp(view.created_at),
-              child_views: null,
-            },
-            child_views: [],
+            view: toPublishViewInfo(view),
+            child_views: view.children.filter((child) => visibleViewIdSet.has(child.view_id)).map(toPublishViewInfo),
             ancestor_views: [],
           },
         };
@@ -434,16 +550,36 @@ export function usePageOperations({
         await publishCollabs(currentWorkspaceId, [{ meta, data }]);
         clearPublishViewInfoCache(viewId);
       } else {
-        // Document views: use existing server-side gathering
-        await PublishService.publish(currentWorkspaceId, viewId, {
-          publish_name: publishName,
-          visible_database_view_ids: visibleViewIds,
-        });
+        // Document publishing gathers the folder, document, and referenced
+        // dependencies on the server. Push the browser's current state first,
+        // then tolerate the provisioning/projection interval under load.
+        const outboxDrained = await flushAllSync?.();
+        let fullSyncPromise: Promise<void> | undefined;
+        const ensureServerState = syncAllToServer
+          ? () => {
+              fullSyncPromise ??= syncAllToServer(currentWorkspaceId);
+              return fullSyncPromise;
+            }
+          : undefined;
+
+        if (outboxDrained !== true) {
+          await ensureServerState?.();
+        }
+
+        await publishDocumentWhenServerStateIsReady(
+          currentWorkspaceId,
+          viewId,
+          {
+            publish_name: publishName,
+            visible_database_view_ids: visibleViewIds,
+          },
+          ensureServerState
+        );
       }
 
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef, getDatabaseIdForViewId]
+    [currentWorkspaceId, loadOutline, flushAllSync, syncAllToServer, outlineRef, getDatabaseIdForViewId]
   );
 
   // Unpublish view
@@ -458,7 +594,7 @@ export function usePageOperations({
 
   // Create orphaned view
   const createOrphanedViewOp = useCallback(
-    async (payload: { document_id: string }) => {
+    async (payload: CreateOrphanedViewPayload) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
@@ -485,6 +621,7 @@ export function usePageOperations({
     deleteTrash,
     restorePage,
     createSpace,
+    createSpaceWithInitialPage,
     updateSpace,
     createDatabaseView,
     uploadFile,

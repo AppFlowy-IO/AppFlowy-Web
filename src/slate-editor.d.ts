@@ -1,6 +1,8 @@
 import { ReactEditor } from 'slate-react';
 
 interface EditorInlineAttributes {
+  /** Desktop-compatible ids for comments anchored to this exact Delta segment. */
+  'comment-ids'?: string[];
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -23,8 +25,10 @@ interface EditorInlineAttributes {
     // inline page ref id
     page_id?: string;
     block_id?: string;
+    row_id?: string;
     // reminder date ref id
     date?: string;
+    end?: string;
     reminder_id?: string;
     reminder_option?: string;
     include_time?: boolean;
@@ -33,6 +37,12 @@ interface EditorInlineAttributes {
     // mention person
     person_id?: string;
     person_name?: string;
+    // database and database row references
+    database_id?: string;
+    database_view_id?: string;
+    database_row_id?: string;
+    row_document_id?: string;
+    data?: Record<string, unknown>;
   };
   af_text_color?: string;
   af_background_color?: string;

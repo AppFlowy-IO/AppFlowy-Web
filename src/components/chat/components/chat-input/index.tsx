@@ -21,7 +21,6 @@ import { AiPrompt } from '@/components/chat/types/prompt';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-
 import { ModelSelector } from './model-selector';
 import { PromptModal } from './prompt-modal';
 import { RelatedViews } from './related-views';
@@ -36,7 +35,15 @@ export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { submitQuestion, cancelAnswerStream, answerApplying, questionSending, chatSettings, updateChatSettings } = useMessagesHandlerContext();
+  const {
+    submitQuestion,
+    cancelAnswerStream,
+    answerApplying,
+    questionSending,
+    chatSettings,
+    updateChatSettings,
+    ragScopeState,
+  } = useMessagesHandlerContext();
   const { responseFormat, responseMode, setResponseFormat, setResponseMode } = useResponseFormatContext();
   const { openModal, currentPromptId, updateCurrentPromptId, reloadDatabasePrompts } = usePromptModal();
   const { chatId } = useChatContext();
@@ -47,7 +54,7 @@ export function ChatInput() {
     void updateChatSettings({ web_search_enabled: !webSearchEnabled });
   }, [webSearchEnabled, updateChatSettings]);
 
-  const disabled = questionSending;
+  const disabled = questionSending || ragScopeState.status !== 'ready';
 
   useEffect(() => {
     return () => {
@@ -101,7 +108,7 @@ export function ChatInput() {
       return;
     }
 
-    if (questionSending || answerApplying) {
+    if (disabled || answerApplying) {
       toast.error(`${t('chat.errors.wait')}`);
       return;
     }
@@ -201,29 +208,27 @@ export function ChatInput() {
         <div className={'flex items-center justify-between gap-4'}>
           <div className={'flex items-center gap-1'}>
             <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                }}
-                variant={'ghost'}
-                size={'icon'}
-                data-testid='chat-input-format-toggle'
-                onClick={() => {
-                  setResponseMode(
-                    responseMode === ChatInputMode.FormatResponse ? ChatInputMode.Auto : ChatInputMode.FormatResponse
-                  );
-                }}
+              <TooltipTrigger asChild>
+                <Button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                  }}
+                  variant={'ghost'}
+                  size={'icon'}
+                  data-testid='chat-input-format-toggle'
+                  onClick={() => {
+                    setResponseMode(
+                      responseMode === ChatInputMode.FormatResponse ? ChatInputMode.Auto : ChatInputMode.FormatResponse
+                    );
+                  }}
                 >
-                  <FormatIcon className='text-icon-secondary h-5 w-5' />
+                  <FormatIcon className='h-5 w-5 text-icon-secondary' />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                {formatTooltip}
-              </TooltipContent>
+              <TooltipContent>{formatTooltip}</TooltipContent>
             </Tooltip>
 
-            <ModelSelector className={'h-7'} disabled={questionSending || answerApplying} />
+            <ModelSelector className={'h-7'} disabled={disabled || answerApplying} />
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -233,6 +238,7 @@ export function ChatInput() {
                   }}
                   variant={'ghost'}
                   size={'icon'}
+                  disabled={disabled || answerApplying}
                   aria-pressed={webSearchEnabled}
                   data-testid='chat-input-web-search-toggle'
                   onClick={handleToggleWebSearch}
@@ -246,25 +252,23 @@ export function ChatInput() {
             </Tooltip>
 
             <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                }}
-                variant={'ghost'}
-                className={'h-7 text-xs text-text-secondary'}
-                data-testid='chat-input-browse-prompts'
-                onClick={() => {
-                  reloadDatabasePrompts();
-                  openModal();
-                }}
-              >
+              <TooltipTrigger asChild>
+                <Button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                  }}
+                  variant={'ghost'}
+                  className={'h-7 text-xs text-text-secondary'}
+                  data-testid='chat-input-browse-prompts'
+                  onClick={() => {
+                    reloadDatabasePrompts();
+                    openModal();
+                  }}
+                >
                   {t('chat.customPrompt.browsePrompts')}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>
-                {t('chat.customPrompt.browsePrompts')}
-              </TooltipContent>
+              <TooltipContent>{t('chat.customPrompt.browsePrompts')}</TooltipContent>
             </Tooltip>
 
             <PromptModal
@@ -281,7 +285,12 @@ export function ChatInput() {
           <div className={'flex items-center gap-2'}>
             <RelatedViews />
             {answerApplying ? (
-              <Button onClick={cancelAnswerStream} size={'icon'} variant={'link'} className={'text-fill-theme-thick p-0'}>
+              <Button
+                onClick={cancelAnswerStream}
+                size={'icon'}
+                variant={'link'}
+                className={'p-0 text-fill-theme-thick'}
+              >
                 <StopIcon className='h-7 w-7' />
               </Button>
             ) : (
@@ -289,15 +298,11 @@ export function ChatInput() {
                 onClick={handleSubmit}
                 size={'icon'}
                 variant={'link'}
-                className={'text-fill-theme-thick p-0'}
+                className={'p-0 text-fill-theme-thick'}
                 disabled={!message.trim() || disabled}
                 data-testid='chat-input-send'
               >
-                {questionSending ? (
-                  <LoadingDots />
-                ) : (
-                  <SendIcon className='h-7 w-7' />
-                )}
+                {questionSending ? <LoadingDots /> : <SendIcon className='h-7 w-7' />}
               </Button>
             )}
           </div>

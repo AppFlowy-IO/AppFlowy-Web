@@ -73,4 +73,37 @@ describe('DatabaseContent', () => {
       })
     );
   });
+
+  it('shows a no-access message instead of the generic error for permission failures', () => {
+    const context = {
+      readOnly: true,
+      workspaceId: 'workspace-id',
+      variant: UIVariant.App,
+    } as DatabaseContextState;
+
+    const { getByText } = render(
+      <DatabaseContent
+        baseViewId="view-id"
+        selectedViewId={null}
+        hasDatabase={false}
+        notFound={true}
+        noAccess={true}
+        deletionStatus={null}
+        paddingStart={0}
+        paddingEnd={0}
+        width={800}
+        doc={null}
+        workspaceId="workspace-id"
+        onOpenRowPage={jest.fn()}
+        loadViewMeta={jest.fn()}
+        databaseName=""
+        visibleViewIds={[]}
+        onChangeView={jest.fn()}
+        context={context}
+      />
+    );
+
+    expect(getByText("You don't have permission to view this database")).toBeTruthy();
+    expect(Database).not.toHaveBeenCalled();
+  });
 });

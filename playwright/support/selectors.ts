@@ -109,8 +109,9 @@ export const SpaceSelectors = {
   itemByName: (page: Page, spaceName: string) =>
     page.locator(`[data-testid="space-item"]:has([data-testid="space-name"]:text-is("${spaceName}"))`).first(),
   moreActionsButton: (page: Page) => page.getByTestId('inline-more-actions'),
-  createNewSpaceButton: (page: Page) => page.getByTestId('create-new-space-button'),
   createSpaceModal: (page: Page) => page.getByTestId('create-space-modal'),
+  manageSpaceModal: (page: Page) => page.getByTestId('manage-space-modal'),
+  manageSpaceNameInput: (page: Page) => page.getByTestId('manage-space-modal').getByRole('textbox').first(),
   spaceNameInput: (page: Page) => page.getByTestId('space-name-input'),
 };
 
@@ -142,6 +143,7 @@ export const ModalSelectors = {
   confirmDeleteButton: (page: Page) => page.getByTestId('confirm-delete-button'),
   deletePageModal: (page: Page) => page.getByTestId('delete-page-confirm-modal'),
   newPageModal: (page: Page) => page.getByTestId('new-page-modal'),
+  createNewSpaceButton: (page: Page) => page.getByTestId('new-page-create-space-button'),
   spaceItemInModal: (page: Page) => page.getByTestId('space-item'),
   okButton: (page: Page) => page.getByTestId('modal-ok-button'),
   renameInput: (page: Page) => page.getByTestId('rename-modal-input'),
@@ -275,6 +277,47 @@ export const DatabaseGridSelectors = {
 };
 
 /**
+ * Database List selectors
+ */
+export const DatabaseListSelectors = {
+  list: (page: Page) => page.getByTestId('database-list'),
+  rows: (page: Page) => page.locator('[data-testid^="list-row-"][data-row-id]'),
+  rowById: (page: Page, rowId: string) => page.getByTestId(`list-row-${rowId}`),
+  rowActionsById: (page: Page, rowId: string) => page.getByTestId(`list-row-actions-${rowId}`),
+  primaryCells: (page: Page) => page.locator('[data-testid^="list-primary-cell-"]'),
+  fieldsForField: (page: Page, fieldId: string) => page.locator(`[data-testid^="list-field-${fieldId}-"]`),
+  newRowButton: (page: Page) => page.getByTestId('list-new-row'),
+  groupHeaderById: (page: Page, groupId: string) => page.getByTestId(`list-group-header-${groupId}`),
+  groupFooterById: (page: Page, groupId: string) => page.getByTestId(`list-group-footer-${groupId}`),
+  loadMoreButton: (page: Page) => page.getByTestId('list-load-more'),
+};
+
+/**
+ * Database Gallery selectors (kept aligned with Flutter's stable Gallery
+ * finders so migrated scenarios can address the same semantic elements).
+ */
+export const DatabaseGallerySelectors = {
+  gallery: (page: Page) => page.getByTestId('database-gallery'),
+  grid: (page: Page) => page.getByTestId('gallery-grid'),
+  tiles: (page: Page) => page.locator('[data-testid^="gallery-tile-"][data-row-id]'),
+  cards: (page: Page) => page.locator('[data-testid^="gallery-tile-"][data-row-id] > [data-testid^="gallery-card-"]'),
+  tileByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-tile-${rowId}`),
+  cardByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-${rowId}`),
+  titleByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-title-${rowId}`),
+  titles: (page: Page) => page.locator('.gallery-card-title'),
+  previewByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-preview-${rowId}`),
+  previewImageByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-preview-image-${rowId}`),
+  propertiesByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-properties-${rowId}`),
+  fieldsForField: (page: Page, fieldId: string) => page.locator(`[data-testid^="gallery-field-${fieldId}-"]`),
+  editButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-edit-${rowId}`),
+  moreButtonByRowId: (page: Page, rowId: string) => page.getByTestId(`gallery-card-more-${rowId}`),
+  newRowButton: (page: Page) => page.getByTestId('gallery-new-row'),
+  loadMoreButton: (page: Page) => page.getByTestId('gallery-load-more'),
+  settingsTrigger: (page: Page) => page.getByTestId('gallery-layout-settings-trigger'),
+  settingsMenu: (page: Page) => page.getByTestId('gallery-layout-settings-menu'),
+};
+
+/**
  * Database View selectors
  */
 export const DatabaseViewSelectors = {
@@ -282,13 +325,16 @@ export const DatabaseViewSelectors = {
     viewId ? page.getByTestId(`view-tab-${viewId}`) : page.locator('[data-testid^="view-tab-"]'),
   activeViewTab: (page: Page) => page.locator('[data-testid^="view-tab-"][data-state="active"]'),
   tabActionRename: (page: Page) => page.getByTestId('database-view-action-rename'),
+  tabActionDuplicate: (page: Page) => page.getByTestId('database-view-action-duplicate'),
   tabActionDelete: (page: Page) => page.getByTestId('database-view-action-delete'),
   deleteViewConfirmButton: (page: Page) => page.getByTestId('database-view-delete-confirm'),
   viewNameInput: (page: Page) => page.getByTestId('view-name-input'),
   addViewButton: (page: Page) => page.getByTestId('add-view-button'),
-  gridView: (page: Page) => page.getByTestId('grid-view'),
+  gridView: (page: Page) => page.getByTestId('database-grid'),
   boardView: (page: Page) => page.locator('[data-testid*="board"]'),
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
+  listView: (page: Page) => page.getByTestId('database-list'),
+  galleryView: (page: Page) => page.getByTestId('database-gallery'),
   /**
    * Locator for a layout option inside the AddViewButton dropdown
    * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
@@ -518,6 +564,8 @@ export const AddPageSelectors = {
   addBoardButton: (page: Page) => page.getByTestId('add-board-button'),
   addAIChatButton: (page: Page) => page.getByTestId('add-ai-chat-button'),
   addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
+  addListButton: (page: Page) => page.getByTestId('add-list-button'),
+  addGalleryButton: (page: Page) => page.getByTestId('add-gallery-button'),
   addImportButton: (page: Page) => page.getByTestId('add-import-button'),
 };
 
@@ -565,7 +613,7 @@ export const SortSelectors = {
   sortCondition: (page: Page) => page.getByTestId('database-sort-condition'),
   sortItem: (page: Page) => page.getByTestId('sort-condition'),
   addSortButton: (page: Page) => page.getByRole('button', { name: /add.*sort/i }),
-  deleteAllSortsButton: (page: Page) => page.getByRole('button', { name: /delete.*all.*sort/i }),
+  deleteAllSortsButton: (page: Page) => page.getByRole('button', { name: /delete\s+(all\s+)?sorts/i }),
 };
 
 /**
@@ -594,12 +642,32 @@ export const CalendarSelectors = {
  */
 export const BoardSelectors = {
   boardContainer: (page: Page) => page.locator('.database-board'),
+  settingsButton: (page: Page) => page.getByTestId('database-actions-settings'),
+  mainColumns: (page: Page) => page.locator('.database-board .columns'),
   columns: (page: Page) => page.locator('[class*="board-column"], [data-testid*="board-column"]'),
+  columnByName: (page: Page, name: string) =>
+    page
+      .locator('.database-board .columns')
+      .getByTestId('board-column')
+      .filter({
+        has: page.getByTestId('board-column-name').getByText(name, { exact: true }),
+      }),
   cards: (page: Page) => page.locator('.board-card'),
   cardByRowId: (page: Page, rowId: string) => page.locator(`[data-card-id*="${rowId}"]`),
   cardContent: (page: Page) => page.locator('.board-card .truncate'),
   columnHeaders: (page: Page) => page.locator('[class*="column-header"], [data-testid*="column-header"]'),
   newCardButton: (page: Page) => page.getByText('+ New'),
+  addGroupButton: (page: Page) => page.locator('.database-board .columns').getByTestId('board-add-group-button'),
+  addGroupInput: (page: Page) => page.getByTestId('board-add-group-input'),
+  addGroupSubmit: (page: Page) => page.getByTestId('board-add-group-submit'),
+  hiddenGroupsToggle: (page: Page) => page.locator('.database-board .columns').getByTestId('board-hidden-groups-toggle'),
+  hiddenGroupByName: (page: Page, name: string) =>
+    page
+      .locator('.database-board .columns')
+      .getByTestId('board-hidden-group')
+      .filter({
+        has: page.getByTestId('board-hidden-group-name').getByText(name, { exact: true }),
+      }),
 };
 
 /**

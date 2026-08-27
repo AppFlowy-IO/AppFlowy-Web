@@ -16,6 +16,10 @@ import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
+import { cloneDatabaseCell } from '@/application/database-yjs/cell.clone';
+import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   useCreateRow,
   useDatabase,
@@ -26,17 +30,42 @@ import {
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { FieldType, FilterType, isAttributionFieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
-import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
-import { executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
+import {
+  dateFilterFillData,
+  filterFillData,
+  getFilterChildren,
+  normalizeFilterNode,
+  relationFilterFillData,
+} from '@/application/database-yjs/filter';
+import { normalizeGroupIdentifiers } from '@/application/database-yjs/group';
+import {
+  executeDatabaseOperations as executeOperations,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
-import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/database-yjs/selector';
+import { useDatabaseViewLayout, useCalendarLayoutSetting, getPrimaryFieldId } from '@/application/database-yjs/selector';
+import {
+  applyTemplateCellsToRow,
+  DatabaseRowTemplateStore,
+  initializeTemplateSourceRow,
+  mergeTemplateViewDecorations,
+  readDatabaseRowTemplateState,
+  templateDecorationsNeedResolution,
+} from '@/application/database-yjs/template';
 import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
+import {
+  ensureRowDocumentView,
+  rowDocumentExists,
+  rowDocumentIdFromRowId,
+  syncRowDocumentViewName,
+} from '@/application/row-document/lifecycle';
+import { PageService } from '@/application/services/domains';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
 import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
@@ -44,6 +73,8 @@ import {
   DatabaseViewLayout,
   FieldId,
   YDatabaseCell,
+  YDatabaseFilter,
+  YDatabaseFilters,
   YDatabaseRow,
   YDatabaseView,
   YDoc,
@@ -52,9 +83,46 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { Log } from '@/utils/log';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 import { applyRelationReciprocalInserts } from './relation';
+import { removeRowsFromDatabase, softDeleteRowsInDatabase } from './row-lifecycle';
 import { executeOperationWithAllViews } from './utils';
+
+export function collectNewRowPrefillFilters(filters: YDatabaseFilters | undefined): YDatabaseFilter[] {
+  if (!filters) return [];
+
+  const leaves: YDatabaseFilter[] = [];
+  const visit = (rawNode: unknown) => {
+    const node = normalizeFilterNode(rawNode);
+
+    if (!node) return;
+
+    const rawType = node.get(YjsDatabaseKey.filter_type);
+    const parsedType = Number(rawType);
+    const type =
+      rawType === undefined || rawType === null || !Number.isFinite(parsedType) ? FilterType.Data : parsedType;
+
+    if (type === FilterType.Data) {
+      leaves.push(node);
+      return;
+    }
+
+    const children = getFilterChildren(node);
+
+    if (type === FilterType.And) {
+      children.forEach(visit);
+      return;
+    }
+
+    if (type === FilterType.Or && children.length > 0) {
+      visit(children[0]);
+    }
+  };
+
+  filters.toArray().forEach(visit);
+  return leaves;
+}
 
 /**
  * Helper: Reorder a row within a view's row_orders
@@ -86,31 +154,6 @@ function reorderRow(rowId: string, beforeRowId: string | undefined, view: YDatab
   rows.insert(adjustedTargetIndex, [row]);
 }
 
-/**
- * Helper: Clone a cell for row duplication
- */
-function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
-  const cell = new Y.Map() as YDatabaseCell;
-
-  referenceCell?.forEach((value, key) => {
-    let newValue = value;
-
-    if (typeof value === 'bigint') {
-      newValue = value.toString();
-    } else if (value instanceof Y.Array) {
-      newValue = value.clone();
-    }
-
-    cell.set(key, newValue);
-  });
-
-  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-  cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-  cell.set(YjsDatabaseKey.field_type, fieldType);
-
-  return cell;
-}
-
 export function useReorderRowDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
@@ -140,6 +183,8 @@ export function useMoveCardDispatch() {
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
   const database = useDatabase();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     ({
@@ -165,7 +210,21 @@ export function useMoveCardDispatch() {
 
             const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
+            if (!field) {
+              throw new Error(`Field not found`);
+            }
+
             const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+            if (isAttributionFieldType(fieldType)) {
+              // Attribution columns are groupable for display, but moving a
+              // card must never rewrite their read-only row metadata.
+              if (startColumnId === finishColumnId) {
+                reorderRow(rowId, beforeRowId, view);
+              }
+
+              return;
+            }
 
             const rowDoc = rowMap?.[rowId];
 
@@ -177,6 +236,7 @@ export function useMoveCardDispatch() {
 
             const cells = row.get(YjsDatabaseKey.cells);
             const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+            let cellChanged = false;
 
             let cell = cells.get(fieldId);
 
@@ -188,9 +248,12 @@ export function useMoveCardDispatch() {
                 cell = createCheckboxCell(fieldId, finishColumnId);
               }
 
-              cells.set(fieldId, cell);
+              if (cell) {
+                cells.set(fieldId, cell);
+                cellChanged = true;
+              }
             } else {
-              const cellData = cell.get(YjsDatabaseKey.data);
+              const cellData = parseYDatabaseCellToCell(cell, field).data;
               let newCellData = cellData;
 
               if (isSelectOptionField) {
@@ -210,6 +273,13 @@ export function useMoveCardDispatch() {
               }
 
               cell.set(YjsDatabaseKey.data, newCellData);
+              setCellStoredType(cell, fieldType);
+              cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+              cellChanged = newCellData !== cellData;
+            }
+
+            if (cellChanged) {
+              touchRowAttribution(row, actorUid);
             }
 
             reorderRow(rowId, beforeRowId, view);
@@ -218,7 +288,7 @@ export function useMoveCardDispatch() {
         'reorderCard'
       );
     },
-    [database, rowMap, sharedRoot, view]
+    [actorUid, database, rowMap, sharedRoot, view]
   );
 }
 
@@ -295,6 +365,163 @@ export function useBulkDeleteRowDispatch() {
   );
 }
 
+export function useSoftDeleteRowsDispatch() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (rowIds: string[]) => {
+      softDeleteRowsInDatabase(sharedRoot, database, rowIds);
+    },
+    [sharedRoot, database]
+  );
+}
+
+function readPrimaryCellText(rowDoc: Y.Doc, database: ReturnType<typeof useDatabase>): string {
+  const primaryFieldId = getPrimaryFieldId(database);
+
+  if (!primaryFieldId) return '';
+
+  const row = rowDoc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+  const data = row?.get(YjsDatabaseKey.cells)?.get(primaryFieldId)?.get(YjsDatabaseKey.data);
+
+  return typeof data === 'string' ? data : '';
+}
+
+/**
+ * Trash-aware row deletion mirroring desktop semantics:
+ * - rows whose document has content are tombstoned (restorable) and their
+ *   row-document view is moved to trash;
+ * - rows without document content are hard-deleted with no trash entry.
+ *
+ * The tombstone is applied synchronously so the UI updates immediately; the
+ * trash HTTP calls run afterwards and never resurrect the row on failure.
+ */
+export function useTrashAwareDeleteRowsDispatch() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const context = useDatabaseContext();
+  const { rowMap, ensureRow, workspaceId, activeViewId, databasePageId, databaseDoc } = context;
+
+  return useCallback(
+    async (rowIds: string[]) => {
+      const databaseId = (database?.get(YjsDatabaseKey.id) as string | undefined) || databaseDoc.guid;
+      const databaseViewId = activeViewId || databasePageId;
+      const softTargets: { rowId: string; documentId: string; title: string }[] = [];
+      const hardCandidates: { rowId: string; documentId: string; rowDoc?: Y.Doc }[] = [];
+
+      for (const rowId of rowIds) {
+        let rowDoc = rowMap?.[rowId];
+
+        if (!rowDoc && ensureRow) {
+          try {
+            rowDoc = (await ensureRow(rowId)) ?? undefined;
+          } catch (e) {
+            Log.warn('[useTrashAwareDeleteRowsDispatch] ensureRow failed', { rowId, error: e });
+          }
+        }
+
+        const metaMap = rowDoc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+        const meta = metaMap ? getMetaJSON(rowId, metaMap) : null;
+        const documentId = meta?.documentId || rowDocumentIdFromRowId(rowId);
+
+        // Desktop: row_has_document = !is_document_empty.
+        if (meta?.isEmptyDocument === false && rowDoc) {
+          softTargets.push({
+            rowId,
+            documentId,
+            title: readPrimaryCellText(rowDoc, database),
+          });
+        } else {
+          hardCandidates.push({ rowId, documentId, rowDoc });
+        }
+      }
+
+      // Desktop's existing_row_document_metadata_candidates: a row whose meta
+      // says empty is still trashed when its row document was materialized on
+      // the server (e.g. content typed then cleared, or stale meta).
+      if (hardCandidates.length > 0 && workspaceId) {
+        const promoted = await Promise.all(
+          hardCandidates.map(async (candidate) => ({
+            candidate,
+            exists: await rowDocumentExists(workspaceId, candidate.documentId),
+          }))
+        );
+
+        promoted.forEach(({ candidate, exists }) => {
+          if (exists) {
+            softTargets.push({
+              rowId: candidate.rowId,
+              documentId: candidate.documentId,
+              title: candidate.rowDoc ? readPrimaryCellText(candidate.rowDoc, database) : '',
+            });
+          }
+        });
+      }
+
+      const softRowIds = new Set(softTargets.map((target) => target.rowId));
+      const hardTargets = hardCandidates.map(({ rowId }) => rowId).filter((rowId) => !softRowIds.has(rowId));
+
+      if (softTargets.length > 0) {
+        softDeleteRowsInDatabase(
+          sharedRoot,
+          database,
+          softTargets.map((target) => target.rowId)
+        );
+
+        if (workspaceId && databaseId && databaseViewId) {
+          void (async () => {
+            for (const { rowId, documentId, title } of softTargets) {
+              try {
+                await ensureRowDocumentView(workspaceId, documentId, {
+                  database_id: databaseId,
+                  database_view_id: databaseViewId,
+                  row_id: rowId,
+                });
+                const name = title.trim();
+
+                if (name) {
+                  await syncRowDocumentViewName(workspaceId, documentId, name);
+                }
+
+                await PageService.moveToTrash(workspaceId, documentId);
+              } catch (e) {
+                Log.error('[useTrashAwareDeleteRowsDispatch] move row page to trash failed', {
+                  rowId,
+                  documentId,
+                  error: e,
+                });
+              }
+            }
+          })();
+        } else {
+          Log.error('[useTrashAwareDeleteRowsDispatch] missing ids for trash call', {
+            workspaceId,
+            databaseId,
+            databaseViewId,
+          });
+        }
+      }
+
+      if (hardTargets.length > 0) {
+        removeRowsFromDatabase(sharedRoot, database, hardTargets);
+      }
+    },
+    [activeViewId, database, databaseDoc.guid, databasePageId, ensureRow, rowMap, sharedRoot, workspaceId]
+  );
+}
+
+function markRowDocumentEmpty(rowDoc: YDoc, rowId: string) {
+  rowDoc.transact(() => {
+    const fallbackMeta = generateRowMeta(rowId, {
+      [RowMetaKey.IsDocumentEmpty]: true,
+    });
+    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
+
+    Object.entries(fallbackMeta).forEach(([key, value]) => meta.set(key, value));
+  }, 'database-row-template-fallback');
+}
+
 export function useNewRowDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
@@ -306,14 +533,29 @@ export function useNewRowDispatch() {
   const isCalendar = layout === DatabaseViewLayout.Calendar;
   const calendarSetting = useCalendarLayoutSetting();
   const filters = currentView?.get(YjsDatabaseKey.filters);
-  const { navigateToRow, databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync } = useDatabaseContext();
+  const {
+    navigateToRow,
+    databaseDoc,
+    loadView,
+    loadViewMeta,
+    getViewIdFromDatabaseId,
+    bindViewSync,
+    loadRowDocument,
+    createRowDocument,
+    duplicateRowDocument,
+  } = useDatabaseContext();
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async ({
       beforeRowId,
       cellsData,
       tailing = false,
+      templateId,
+      skipDefaultTemplate = false,
+      openAfterCreate = false,
     }: {
       beforeRowId?: string;
       cellsData?: Record<
@@ -328,6 +570,12 @@ export function useNewRowDispatch() {
           }
       >;
       tailing?: boolean;
+      /** Explicit template selection. An unknown id is an error, matching Desktop. */
+      templateId?: string;
+      /** Bypass the configured default while preserving normal row creation. */
+      skipDefaultTemplate?: boolean;
+      /** Open the new row after it and any template document have been materialized. */
+      openAfterCreate?: boolean;
     }) => {
       if (!currentView) {
         throw new Error('Current view not found');
@@ -337,16 +585,52 @@ export function useNewRowDispatch() {
         throw new Error('No createRow function');
       }
 
+      const templateState = readDatabaseRowTemplateState(database);
+      const selectedTemplateId = templateId || (skipDefaultTemplate ? undefined : templateState.defaultTemplateId);
+      const storedTemplate = selectedTemplateId
+        ? templateState.templates.find((template) => template.templateId === selectedTemplateId)
+        : undefined;
+
+      if (templateId && !storedTemplate) {
+        throw new Error('templateId does not match any row template');
+      }
+
+      const templatePromise = (async () => {
+        if (!storedTemplate) return undefined;
+
+        // Desktop stores template decorations on the orphan document view
+        // rather than in RowTemplatePB. Resolve that fallback so templates
+        // authored by either client create the same row metadata.
+        if (templateDecorationsNeedResolution(storedTemplate) && storedTemplate.docViewId && loadViewMeta) {
+          try {
+            const templateView = await loadViewMeta(storedTemplate.docViewId);
+            const resolvedTemplate = mergeTemplateViewDecorations(storedTemplate, templateView);
+
+            return resolvedTemplate === storedTemplate
+              ? storedTemplate
+              : new DatabaseRowTemplateStore(database).upsert(resolvedTemplate);
+          } catch (error) {
+            Log.warn('[useNewRowDispatch] failed to resolve template view decorations', {
+              templateId: storedTemplate.templateId,
+              error,
+            });
+          }
+        }
+
+        return storedTemplate;
+      })();
+
       const rowId = uuidv4();
       const rowKey = getRowKey(guid, rowId);
-      const rowDoc = await createRow(rowKey);
+      const [selectedTemplate, rowDoc] = await Promise.all([templatePromise, createRow(rowKey)]);
       // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
       // JS array on each call, and we read it twice (length check + forEach).
-      const filterArray = filters?.toArray() ?? [];
+      const hasActiveFilters = (filters?.length ?? 0) > 0;
+      const filterArray = collectNewRowPrefillFilters(filters);
       // Open the row detail page whenever filters are active so the user can
       // see and complete the new row (its primary "Name" cell is always empty,
       // and other cells get pre-filled from filters but still need user input).
-      let shouldOpenRowModal = filterArray.length > 0;
+      let shouldOpenRowModal = hasActiveFilters;
       // Relation prefills are written synchronously in the transact below, but
       // their reciprocal/back-link updates must run async after the row exists.
       // Keyed by fieldId so multiple filters on the same relation field don't
@@ -356,12 +640,26 @@ export function useNewRowDispatch() {
       const relationPrefills = new Map<FieldId, string[]>();
 
       rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
+        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
         const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
         const cells = row.get(YjsDatabaseKey.cells);
+
+        if (selectedTemplate) {
+          const appliedCells = applyTemplateCellsToRow(row, database, selectedTemplate.defaultCells);
+
+          // Template relation defaults join the same reciprocal-backfill queue
+          // as filter prefills. A later filter prefill on the same field
+          // overwrites both the cell and this queue entry, so the backfill
+          // always mirrors the final cell state.
+          Object.entries(appliedCells).forEach(([fieldId, value]) => {
+            if (value.type === 'relation' && value.value.length > 0) {
+              relationPrefills.set(fieldId, value.value);
+            }
+          });
+        }
 
         filterArray.forEach((filter) => {
           const cell = new Y.Map() as YDatabaseCell;
@@ -372,11 +670,24 @@ export function useNewRowDispatch() {
             return;
           }
 
+          // Desktop deliberately leaves the primary title empty when a row is
+          // created under an active filter. The filtered-out row is completed
+          // through the row detail page; secondary fields can still inherit
+          // their filter values.
+          if (field.get(YjsDatabaseKey.is_primary)) {
+            return;
+          }
+
           if (isCalendar && calendarSetting?.fieldId === fieldId) {
             shouldOpenRowModal = true;
           }
 
           const type = Number(field.get(YjsDatabaseKey.type));
+
+          if (isAttributionFieldType(type)) {
+            shouldOpenRowModal = true;
+            return;
+          }
 
           if (type === FieldType.DateTime) {
             const { data, endTimestamp, isRange } = dateFilterFillData(filter);
@@ -448,12 +759,38 @@ export function useNewRowDispatch() {
             const cell = new Y.Map() as YDatabaseCell;
             const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
+            if (!field) return;
+
+            // The raw cell payload replaces whatever a template or filter
+            // wrote for this field, so any queued reciprocal backfill for it
+            // would no longer match the final cell state.
+            relationPrefills.delete(fieldId);
+
             const type = Number(field.get(YjsDatabaseKey.type));
+
+            if (isAttributionFieldType(type)) return;
+
+            const rawData = typeof data === 'object' ? data.data : data;
 
             cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
             cell.set(YjsDatabaseKey.field_type, type);
 
-            if (typeof data === 'object') {
+            if (type === FieldType.Relation) {
+              const relationOption = parseRelationTypeOption(field);
+              const identifiers = normalizeGroupIdentifiers(rawData);
+              const rowIds =
+                relationOption.source_limit === RelationLimit.OneOnly && identifiers.length > 1
+                  ? [identifiers[identifiers.length - 1]]
+                  : identifiers;
+              const relationData = new Y.Array<string>();
+
+              if (rowIds.length > 0) {
+                relationData.push(rowIds);
+                relationPrefills.set(fieldId, rowIds);
+              }
+
+              cell.set(YjsDatabaseKey.data, relationData);
+            } else if (typeof data === 'object') {
               cell.set(YjsDatabaseKey.data, data.data);
               cell.set(YjsDatabaseKey.end_timestamp, data.endTimestamp);
               cell.set(YjsDatabaseKey.is_range, data.isRange);
@@ -467,20 +804,19 @@ export function useNewRowDispatch() {
           });
         }
 
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-
         const newMeta = generateRowMeta(rowId, {
-          [RowMetaKey.IsDocumentEmpty]: true,
+          [RowMetaKey.IsDocumentEmpty]: selectedTemplate?.isDocumentEmpty ?? true,
+          [RowMetaKey.IconId]: selectedTemplate?.icon ?? null,
+          [RowMetaKey.CoverId]: selectedTemplate?.cover ?? null,
         });
 
         Object.keys(newMeta).forEach((key) => {
           const value = newMeta[key];
 
-          if (value) {
+          if (value !== undefined && value !== null) {
             meta.set(key, value);
           }
         });
-
       });
 
       executeOperationWithAllViews(
@@ -509,7 +845,65 @@ export function useNewRowDispatch() {
         'newRowDispatch'
       );
 
-      if (shouldOpenRowModal) {
+      if (selectedTemplate && !selectedTemplate.isDocumentEmpty) {
+        if (!duplicateRowDocument) {
+          markRowDocumentEmpty(rowDoc, rowId);
+          Log.warn('[useNewRowDispatch] template document duplication is unavailable', {
+            templateId: selectedTemplate.templateId,
+          });
+        } else {
+          try {
+            // A template is represented as a hidden row collab. It deliberately
+            // never enters row_orders, but gives the existing cloud duplication
+            // pipeline a stable source identity and preserves inline-vs-linked
+            // database semantics.
+            const cachedSourceDocument =
+              getCachedRowSubDoc(selectedTemplate.docViewId) ?? getCachedProviderDoc(selectedTemplate.docViewId);
+            const sourceDocumentPromise = cachedSourceDocument
+              ? Promise.resolve(cachedSourceDocument)
+              : loadRowDocument
+              ? loadRowDocument(selectedTemplate.docViewId)
+              : Promise.resolve(null);
+            const [sourceRowDoc, sourceDocument] = await Promise.all([
+              createRow(getRowKey(guid, selectedTemplate.templateId)),
+              sourceDocumentPromise,
+            ]);
+
+            initializeTemplateSourceRow(sourceRowDoc, database, selectedTemplate);
+
+            let clientDocStateB64: string | undefined;
+
+            if (sourceDocument) {
+              const docState = Y.encodeStateAsUpdate(sourceDocument);
+              const chunks: string[] = [];
+
+              for (let index = 0; index < docState.length; index += 8192) {
+                chunks.push(String.fromCharCode(...docState.subarray(index, index + 8192)));
+              }
+
+              clientDocStateB64 = btoa(chunks.join(''));
+            }
+
+            const databaseId = database.get(YjsDatabaseKey.id);
+            const sourceDocumentId = rowDocumentIdFromRowId(selectedTemplate.templateId);
+
+            await duplicateRowDocument(databaseId, selectedTemplate.templateId, rowId, clientDocStateB64, async () => {
+              await createRowDocument?.(sourceDocumentId, {
+                database_id: databaseId,
+                database_view_id: viewId,
+                row_id: selectedTemplate.templateId,
+              });
+            });
+          } catch (error) {
+            // Cell defaults must remain usable if document materialization is
+            // temporarily unavailable; this is also Desktop's graceful fallback.
+            markRowDocumentEmpty(rowDoc, rowId);
+            Log.error('[useNewRowDispatch] template document duplication failed', error);
+          }
+        }
+      }
+
+      if (shouldOpenRowModal || openAfterCreate) {
         navigateToRow?.(rowId);
       }
 
@@ -529,6 +923,7 @@ export function useNewRowDispatch() {
             loadView,
             getViewIdFromDatabaseId,
             bindViewSync,
+            actorUid,
           })
         )
       );
@@ -542,6 +937,8 @@ export function useNewRowDispatch() {
     [
       bindViewSync,
       calendarSetting,
+      actorUid,
+      createRowDocument,
       createRow,
       currentView,
       database,
@@ -551,9 +948,12 @@ export function useNewRowDispatch() {
       guid,
       isCalendar,
       loadView,
+      loadViewMeta,
+      loadRowDocument,
       navigateToRow,
       rowMap,
       sharedRoot,
+      duplicateRowDocument,
       viewId,
     ]
   );
@@ -566,6 +966,8 @@ export function useDuplicateRowDispatch() {
   const guid = useDocGuid();
   const rowMap = useRowMap();
   const { duplicateRowDocument } = useDatabaseContext();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
     async (referenceRowId: string) => {
@@ -602,7 +1004,7 @@ export function useDuplicateRowDispatch() {
       const rowDoc = await createRow(rowKey);
 
       rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
+        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc, actorUid);
 
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
@@ -631,15 +1033,15 @@ export function useDuplicateRowDispatch() {
 
             const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
 
-            const cell = cloneCell(fieldType, referenceCell);
+            if (isAttributionFieldType(fieldType)) return;
+
+            const cell = cloneDatabaseCell(fieldType, referenceCell);
 
             cells.set(fieldId, cell);
           } catch (e) {
             console.error(e);
           }
         });
-
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
 
       executeOperationWithAllViews(
@@ -771,12 +1173,7 @@ export function useDuplicateRowDispatch() {
           }
 
           if (shouldDuplicateSourceDoc || hasClientDocumentContent) {
-            await duplicateRowDocument(
-              databaseId,
-              referenceRowId,
-              rowId,
-              clientDocStateB64
-            );
+            await duplicateRowDocument(databaseId, referenceRowId, rowId, clientDocStateB64);
           }
         } catch (err) {
           Log.error('[duplicateRowDocument] failed:', err);
@@ -785,12 +1182,14 @@ export function useDuplicateRowDispatch() {
 
       return rowId;
     },
-    [createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
+    [actorUid, createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
   const rowMap = useRowMap();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
 
   // Store rowMap in a ref so the callback always gets the latest value
   // This fixes a bug where rowDoc might not be in the map when the hook is first called,
@@ -832,8 +1231,12 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         } else {
           meta.set(keyId, value);
         }
+
+        const row = rowSharedRoot.get(YjsEditorKey.database_row);
+
+        if (row) touchRowAttribution(row, actorUid);
       });
     },
-    [rowId]
+    [actorUid, rowId]
   );
 }

@@ -14,6 +14,7 @@ message WorkspaceNotification {
         FolderChanged folder_changed = 8;
         FolderViewChanged folder_view_changed = 9;
         InboxNotification inbox_notification = 10;
+        CommentChanged comment_changed = 11;
     }
 }
 
@@ -112,4 +113,9 @@ message InboxNotification {
     string metadata_json = 5;
     // Unix timestamp seconds.
     int64 created_at = 6;
+}
+
+message CommentChanged {
+    string workspace_id = 1;
+    string view_id = 2;
 }

@@ -19,7 +19,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { notify } from '@/components/_shared/notify';
-import { useEventEmitter } from '@/components/app/app.hooks';
+import { useEventEmitterOptional } from '@/components/app/app.hooks';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
@@ -125,7 +125,7 @@ export function useFindReplaceDecorations() {
 export function FindReplaceProvider({ children }: { children: ReactNode }) {
   const editor = useSlate() as YjsEditor;
   const { viewId, readOnly } = useEditorContext();
-  const eventEmitter = useEventEmitter();
+  const eventEmitter = useEventEmitterOptional();
   const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);

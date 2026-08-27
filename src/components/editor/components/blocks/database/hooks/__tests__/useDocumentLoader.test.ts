@@ -4,9 +4,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
+import { deleteCollabDB } from '@/application/db';
 import { YDoc } from '@/application/types';
 
 import { useDocumentLoader } from '../useDocumentLoader';
+
+jest.mock('@/application/db', () => ({
+  deleteCollabDB: jest.fn().mockResolvedValue(undefined),
+}));
+
+const mockDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 
 function createDoc(guid: string): YDoc {
   return new Y.Doc({ guid }) as YDoc;
@@ -35,6 +42,59 @@ describe('useDocumentLoader', () => {
     await waitFor(() => {
       expect(loadView).toHaveBeenCalledWith('view-id', false, false, { databaseId: 'database-id' });
     });
+  });
+
+  it('reports noAccess without retrying when loadView fails with a permission error', async () => {
+    const loadView = jest.fn(async () => {
+      return Promise.reject({ code: 1012, message: 'user is not allowed to access this view' });
+    });
+
+    const { result } = renderHook(() => useDocumentLoader({
+      viewId: 'view-id',
+      loadView,
+    }));
+
+    await waitFor(() => {
+      expect(result.current.noAccess).toBe(true);
+    });
+
+    expect(result.current.notFound).toBe(true);
+    expect(loadView).toHaveBeenCalledTimes(1);
+  });
+
+  it('evicts the cached collab when loadView fails with a permission error', async () => {
+    mockDeleteCollabDB.mockClear();
+    const loadView = jest.fn(async () => {
+      return Promise.reject({ code: 1012, message: 'user is not allowed to access this view' });
+    });
+
+    renderHook(() => useDocumentLoader({
+      viewId: 'view-id',
+      databaseId: 'database-id',
+      loadView,
+    }));
+
+    await waitFor(() => {
+      expect(mockDeleteCollabDB).toHaveBeenCalledWith('database-id', { destroyDoc: true });
+    });
+  });
+
+  it('reports notFound but not noAccess for non-permission errors', async () => {
+    const loadView = jest.fn(async () => {
+      return Promise.reject(new Error('network down'));
+    });
+
+    const { result } = renderHook(() => useDocumentLoader({
+      viewId: 'view-id',
+      loadView,
+    }));
+
+    await waitFor(() => {
+      expect(result.current.notFound).toBe(true);
+    });
+
+    expect(result.current.noAccess).toBe(false);
+    expect(loadView).toHaveBeenCalledTimes(3);
   });
 
   it('shares one reset event listener across loader instances for the same emitter', async () => {

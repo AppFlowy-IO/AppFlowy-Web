@@ -9,10 +9,7 @@
  * Migrated from: cypress/e2e/database/row-operations.cy.ts
  */
 import { test, expect, Page } from '@playwright/test';
-import {
-  DatabaseGridSelectors,
-  RowControlsSelectors,
-} from '../../support/selectors';
+import { DatabaseGridSelectors, RowControlsSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndCreateDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 
@@ -30,42 +27,21 @@ async function addContentToCell(page: Page, cellIndex: number, content: string) 
 /**
  * Helper: Open the row context menu for a specific data row.
  *
- * Uses dataRows (excludes grid-row-undefined) to target actual rows.
- * HoverControls use opacity:0 + pointer-events:none when not hovered.
- * We use page.evaluate to dispatch mouseover on the row's parent (which has
- * the onMouseMove handler), then click the accessory button natively.
+ * Uses dataRows (excludes grid-row-undefined) to target actual rows and real
+ * pointer input so Radix receives the pointer-down event that opens its menu.
  */
 async function openRowContextMenu(page: Page, rowIndex: number = 0) {
-  // Dispatch mouseover on the data row's parent to trigger React's setHoverRowId.
-  // The parent div has onMouseMove handler; the data-testid div is a child.
-  await page.evaluate((idx) => {
-    const rows = document.querySelectorAll('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])');
-    const row = rows[idx];
+  const row = DatabaseGridSelectors.dataRows(page).nth(rowIndex);
+  const rowContainer = row.locator('..');
+  const menuTrigger = rowContainer.getByTestId('row-accessory-button');
 
-    if (row && row.parentElement) {
-      // Trigger mouseover on the parent container (which has onMouseMove)
-      row.parentElement.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
-      row.parentElement.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-      row.parentElement.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-    }
-  }, rowIndex);
-
-  await page.waitForTimeout(1000);
-
-  // Click the accessory button via native JS click to bypass pointer-events: none
-  await page.evaluate((idx) => {
-    const buttons = document.querySelectorAll('[data-testid="row-accessory-button"]');
-    if (buttons[idx]) {
-      (buttons[idx] as HTMLElement).click();
-    }
-  }, rowIndex);
-
-  await page.waitForTimeout(1000);
+  await row.hover();
+  await menuTrigger.click();
 
   // Wait for the context menu to appear
-  await expect(
-    page.locator('[role="menu"], [data-slot="dropdown-menu-content"]').first()
-  ).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('[role="menu"], [data-slot="dropdown-menu-content"]').first()).toBeVisible({
+    timeout: 5000,
+  });
 }
 
 test.describe('Database Row Operations', () => {
@@ -319,7 +295,10 @@ test.describe('Database Row Operations', () => {
       if (deleteCount > 0) {
         await deleteButton.click({ force: true });
       } else {
-        await page.locator('[role="menuitem"]').filter({ hasText: /delete/i }).click({ force: true });
+        await page
+          .locator('[role="menuitem"]')
+          .filter({ hasText: /delete/i })
+          .click({ force: true });
       }
 
       await page.waitForTimeout(1000);

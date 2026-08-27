@@ -15,8 +15,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
-
-function Properties () {
+function Properties() {
   const { t } = useTranslation();
   const { properties } = usePropertiesSelector();
 
@@ -25,28 +24,24 @@ function Properties () {
 
   return (
     <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <Checklist />
-        {t('grid.settings.properties')}
+      <DropdownMenuSubTrigger data-testid='database-properties-settings-trigger'>
+        <Checklist aria-hidden='true' />
+        <span>{t('grid.settings.properties')}</span>
+        <span className='ml-auto text-xs text-text-tertiary'>{properties.length}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
         <DropdownMenuSubContent
-          className={'max-h-[450px] max-w-[240px] appflowy-scroller overflow-y-auto'}
+          className={'appflowy-scroller max-h-[450px] max-w-[240px] overflow-y-auto'}
           ref={setContainer}
         >
           <PropertyDragContext.Provider value={contextValue}>
-            {properties.map(property => (
-              <Property
-                key={property.id}
-                property={property}
-              />
+            {properties.map((property) => (
+              <Property key={property.id} property={property} />
             ))}
           </PropertyDragContext.Provider>
         </DropdownMenuSubContent>
-
       </DropdownMenuPortal>
     </DropdownMenuSub>
-
   );
 }
 

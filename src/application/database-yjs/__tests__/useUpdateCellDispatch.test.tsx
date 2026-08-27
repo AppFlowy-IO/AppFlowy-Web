@@ -22,6 +22,10 @@ jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
 
+jest.mock('@/components/main/app.hooks', () => ({
+  useCurrentUserOptional: () => ({ uid: '42', attributionUid: '42' }),
+}));
+
 const databaseId = 'database-id';
 const viewId = 'view-id';
 const rowId = 'row-id';
@@ -100,6 +104,38 @@ describe('useUpdateCellDispatch', () => {
     });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
   });
+
+  it('makes an edited lazy cell native to the current field type', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [fieldId]: { fieldType: FieldType.MultiSelect, data: 'opt-a,opt-b' },
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: { [rowId]: rowDoc },
+      workspaceId: 'workspace-id',
+    };
+    const { result } = renderHook(() => useUpdateCellDispatch(rowId, fieldId), {
+      wrapper: createWrapper(contextValue),
+    });
+
+    result.current('Edited value');
+
+    await waitFor(() => {
+      const cell = getCell(rowDoc);
+
+      expect(cell?.get(YjsDatabaseKey.data)).toBe('Edited value');
+      expect(cell?.get(YjsDatabaseKey.field_type)).toBe(FieldType.RichText);
+      expect(cell?.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+      const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+
+      expect(row?.get(YjsDatabaseKey.last_edited_by)).toBe('42');
+      expect(row?.get(YjsDatabaseKey.created_by)).toBeUndefined();
+    });
+  });
 });
 
 describe('useUpdateStartEndTimeCell', () => {
@@ -152,6 +188,36 @@ describe('useUpdateStartEndTimeCell', () => {
 
     await waitFor(() => {
       expect(ensureRow).toHaveBeenCalledWith(rowId);
+    });
+  });
+
+  it('makes an updated converted cell native DateTime data', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [fieldId]: { fieldType: FieldType.RichText, data: 'old text' },
+    });
+    const cell = getCell(rowDoc);
+
+    cell?.set(YjsDatabaseKey.source_field_type, String(FieldType.MultiSelect));
+
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: { [rowId]: rowDoc },
+      workspaceId: 'workspace-id',
+    };
+    const { result } = renderHook(() => useUpdateStartEndTimeCell(), {
+      wrapper: createWrapper(contextValue),
+    });
+
+    result.current(rowId, fieldId, '100', '200', false);
+
+    await waitFor(() => {
+      expect(cell?.get(YjsDatabaseKey.data)).toBe('100');
+      expect(cell?.get(YjsDatabaseKey.field_type)).toBe(FieldType.DateTime);
+      expect(cell?.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
     });
   });
 });

@@ -1,6 +1,7 @@
-import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import { decodeCellForSort, decodeCellToText } from '@/application/database-yjs/decode';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import {
   FieldId,
   YDatabaseCell,
@@ -129,19 +130,23 @@ export function invalidateRowConditionCache(rowDoc?: YDoc | null) {
   rowConditionCache.delete(rowDoc);
 }
 
-export function getConditionCellData(snapshot: RowConditionSnapshot, fieldId: FieldId) {
+export function getConditionCellData(snapshot: RowConditionSnapshot, fieldId: FieldId, field: YDatabaseField) {
   const cell = getSnapshotCell(snapshot, fieldId);
-  const revision = getCellRevision(cell);
+  const revision = `${getFieldCacheKey(fieldId, field)}:${getCellRevision(cell)}`;
   const cached = snapshot.cellDataByField.get(fieldId);
 
   if (cached?.revision === revision) {
     return cached.value;
   }
 
-  const data = cell?.get(YjsDatabaseKey.data);
+  const data = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
 
   snapshot.cellDataByField.set(fieldId, { revision, value: data });
   return data;
+}
+
+export function getConditionRelationRowIds(snapshot: RowConditionSnapshot, fieldId: FieldId) {
+  return getRelationRowIdsFromCell(getSnapshotCell(snapshot, fieldId));
 }
 
 export function getConditionCellText(snapshot: RowConditionSnapshot, fieldId: FieldId, field: YDatabaseField) {
@@ -172,16 +177,16 @@ export function getConditionSortValue(snapshot: RowConditionSnapshot, fieldId: F
   return value;
 }
 
-export function getConditionDateCell(snapshot: RowConditionSnapshot, fieldId: FieldId) {
+export function getConditionDateCell(snapshot: RowConditionSnapshot, fieldId: FieldId, field: YDatabaseField) {
   const cell = getSnapshotCell(snapshot, fieldId);
-  const revision = getCellRevision(cell);
+  const revision = `${getFieldCacheKey(fieldId, field)}:${getCellRevision(cell)}`;
   const cached = snapshot.dateCellByField.get(fieldId);
 
   if (cached?.revision === revision) {
     return cached.value;
   }
 
-  const value = cell ? parseYDatabaseDateTimeCellToCell(cell) : null;
+  const value = cell ? (parseYDatabaseCellToCell(cell, field) as DateTimeCell) : null;
 
   snapshot.dateCellByField.set(fieldId, { revision, value });
   return value;

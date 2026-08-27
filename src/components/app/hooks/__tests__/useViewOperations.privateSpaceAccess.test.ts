@@ -1,7 +1,7 @@
 import { AccessLevel, View, ViewExtra, ViewLayout } from '@/application/types';
 import { getPlatform } from '@/utils/platform';
 
-import { getViewReadOnlyStatus } from '../useViewOperations';
+import { getViewCanCommentStatus, getViewCanWriteStatus, getViewReadOnlyStatus } from '../useViewOperations';
 
 // useViewOperations pulls in service/loader modules at import time; stub the
 // heavy ones so the pure getViewReadOnlyStatus function can be tested in isolation.
@@ -118,5 +118,89 @@ describe('getViewReadOnlyStatus (private space inherited access)', () => {
     );
 
     expect(getViewReadOnlyStatus('child-page', outline)).toBe(false);
+  });
+});
+
+describe('getViewCanCommentStatus', () => {
+  it('rejects inherited View-only access', () => {
+    const outline = shareWithMePrivateSpaceOutline(AccessLevel.ReadOnly, createView({ view_id: 'child-page' }));
+
+    expect(getViewCanCommentStatus('child-page', outline)).toBe(false);
+  });
+
+  it('allows inherited Read-and-comment access while the editor remains read-only', () => {
+    const outline = shareWithMePrivateSpaceOutline(AccessLevel.ReadAndComment, createView({ view_id: 'child-page' }));
+
+    expect(getViewReadOnlyStatus('child-page', outline)).toBe(true);
+    expect(getViewCanCommentStatus('child-page', outline)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', outline)).toBe(false);
+  });
+
+  it('allows comments on an owned locked page', () => {
+    const view = createView({ view_id: 'owned-page', is_locked: true });
+
+    expect(getViewReadOnlyStatus('owned-page', [view], view)).toBe(true);
+    expect(getViewCanCommentStatus('owned-page', [view], view)).toBe(true);
+    expect(getViewCanWriteStatus('owned-page', [view], view)).toBe(true);
+  });
+
+  it('keeps canonical write access for a locked writable shared page', () => {
+    const outline = shareWithMePrivateSpaceOutline(
+      AccessLevel.ReadAndWrite,
+      createView({ view_id: 'child-page', is_locked: true })
+    );
+
+    expect(getViewReadOnlyStatus('child-page', outline)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', outline)).toBe(true);
+  });
+});
+
+describe('canonical object-permission capabilities', () => {
+  const fullAccessOutline = shareWithMePrivateSpaceOutline(
+    AccessLevel.FullAccess,
+    createView({ view_id: 'child-page' })
+  );
+
+  it('uses can_write and can_comment instead of re-deriving them from access_level', () => {
+    const permission = {
+      can_read: true,
+      can_write: false,
+      can_comment: true,
+      can_share: false,
+    };
+
+    expect(getViewReadOnlyStatus('child-page', fullAccessOutline, null, permission)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', fullAccessOutline, null, permission)).toBe(false);
+    expect(getViewCanCommentStatus('child-page', fullAccessOutline, null, permission)).toBe(true);
+  });
+
+  it('lets a canonical writable verdict override stale read-only outline metadata', () => {
+    const readOnlyOutline = shareWithMePrivateSpaceOutline(
+      AccessLevel.ReadOnly,
+      createView({ view_id: 'child-page' })
+    );
+    const permission = {
+      can_read: true,
+      can_write: true,
+      can_comment: false,
+      can_share: false,
+    };
+
+    expect(getViewReadOnlyStatus('child-page', readOnlyOutline, null, permission)).toBe(false);
+    expect(getViewCanWriteStatus('child-page', readOnlyOutline, null, permission)).toBe(true);
+    expect(getViewCanCommentStatus('child-page', readOnlyOutline, null, permission)).toBe(false);
+  });
+
+  it('requires can_read even when write and comment are unexpectedly true', () => {
+    const permission = {
+      can_read: false,
+      can_write: true,
+      can_comment: true,
+      can_share: true,
+    };
+
+    expect(getViewReadOnlyStatus('child-page', fullAccessOutline, null, permission)).toBe(true);
+    expect(getViewCanWriteStatus('child-page', fullAccessOutline, null, permission)).toBe(false);
+    expect(getViewCanCommentStatus('child-page', fullAccessOutline, null, permission)).toBe(false);
   });
 });

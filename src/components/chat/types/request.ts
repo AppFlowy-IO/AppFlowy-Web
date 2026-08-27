@@ -83,6 +83,14 @@ export interface ChatMessageMetadata {
   // The name for the metadata. For example, @xxx, @xx.txt
   name: string;
   source: string;
+  // Human-readable label for web results. Older servers may omit it.
+  title?: string;
+  // Stable request-scoped identifier used for inline citations such as [W1].
+  citation_id?: string;
+  // Optional database routing metadata for opening cited row search results.
+  database_id?: string;
+  database_view_id?: string;
+  database_row_id?: string;
 }
 
 export interface SendQuestionPayload {
@@ -153,6 +161,8 @@ export enum ViewLayout {
   Board = 2,
   Calendar = 3,
   AIChat = 4,
+  List = 6,
+  Gallery = 7,
 }
 
 export interface View {
@@ -162,6 +172,9 @@ export interface View {
   layout: ViewLayout;
   extra: ViewExtra | null;
   children: View[];
+  has_children?: boolean;
+  is_space?: boolean;
+  parent_view_id?: string;
   is_private: boolean;
 }
 

@@ -2,15 +2,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getPrimaryFieldId, useDatabaseContext } from '@/application/database-yjs';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { resolveUserAttributionUid } from '@/application/database-yjs/attribution';
+import { decodeCellToText } from '@/application/database-yjs/decode';
 import { createRowInRelatedDatabase } from '@/application/database-yjs/dispatch/relation';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
 import { View, YDatabase, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as AddIcon } from '@/assets/icons/add_new_page.svg';
 import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import RelationRowItem from '@/components/database/components/cell/relation/RelationRowItem';
+import {
+  getLiveRelationRowIds,
+  getRelationRowOrders,
+} from '@/components/database/components/cell/relation/relationRowOrders';
 import { useNavigationKey } from '@/components/database/components/cell/relation/useNavigationKey';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { dropdownMenuItemVariants, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -20,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 
 const recentRelationRowsByView = new Map<string, string[]>();
+const ROW_LOAD_CONCURRENCY = 8;
 
 function rememberRecentRelationRow(viewId: string | undefined, rowId: string) {
   if (!viewId) return;
@@ -50,14 +58,7 @@ function sortByRecentRows(rowIds: string[], viewId: string | undefined) {
   });
 }
 
-function RelationCellMenuContent({
-  relationRowIds,
-  selectedView,
-  onAddRelationRowId,
-  onRemoveRelationRowId,
-  loading,
-  onClose,
-}: {
+interface RelationCellMenuContentProps {
   loading?: boolean;
   relationRowIds?: string[];
   selectedView?: View;
@@ -65,13 +66,23 @@ function RelationCellMenuContent({
   onRemoveRelationRowId: (rowId: string) => void;
   relatedDatabaseId: string;
   onClose?: () => void;
-}) {
+}
+
+function RelationCellMenuContentForTarget({
+  relationRowIds,
+  selectedView,
+  relatedDatabaseId,
+  onAddRelationRowId,
+  onRemoveRelationRowId,
+  loading,
+  onClose,
+}: RelationCellMenuContentProps) {
   const { t } = useTranslation();
+  const currentUser = useCurrentUserOptional();
+  const actorUid = resolveUserAttributionUid(currentUser);
   const { navigateToView, loadView, navigateToRow, createRow, bindViewSync } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
-  const selectedViewId = useMemo(() => {
-    return selectedView?.view_id;
-  }, [selectedView]);
+  const selectedViewId = selectedView?.view_id;
   const openRelatedRow = useCallback(
     (rowId: string) => {
       onClose?.();
@@ -96,10 +107,16 @@ function RelationCellMenuContent({
   const [searchInput, setSearchInput] = useState<string>('');
   const [primaryFieldId, setPrimaryFieldId] = useState<string | null>(null);
   const [primaryField, setPrimaryField] = useState<YDatabaseField | null>(null);
+  const [primaryFieldClock, setPrimaryFieldClock] = useState(0);
   const [guid, setGuid] = useState<string | null>(null);
+  const [targetDoc, setTargetDoc] = useState<YDoc | null>(null);
   const [noAccess, setNoAccess] = useState(false);
   const [rowIds, setRowIds] = useState<string[]>([]);
-  const [rowContents, setRowContents] = useState<Map<string, string>>(new Map());
+  // An empty `rowIds` is indistinguishable from a database that genuinely has no rows, and the
+  // picker would announce "no result" on the strength of it. Nothing may be concluded from an
+  // empty list until this flips.
+  const [rowIdsLoaded, setRowIdsLoaded] = useState(false);
+  const [rowContents, setRowContents] = useState<Map<string, string>>(() => new Map());
   const rowDocsRef = useRef<Map<string, YDoc>>(new Map());
   const targetDocRef = useRef<YDoc | null>(null);
   const [isCreatingAndLinking, setIsCreatingAndLinking] = useState(false);
@@ -115,6 +132,23 @@ function RelationCellMenuContent({
   });
 
   useEffect(() => {
+    const rowDocs = rowDocsRef.current;
+
+    // Switching target database starts the wait over — the previous database's rows say nothing
+    // about this one.
+    setRowIdsLoaded(false);
+    setTargetDoc(null);
+    setGuid(null);
+    setPrimaryFieldId(null);
+    setPrimaryField(null);
+    setNoAccess(false);
+    setRowIds([]);
+    setRowContents(new Map());
+    targetDocRef.current = null;
+    rowDocs.clear();
+
+    let cancelled = false;
+
     void (async () => {
       if (!loadView) {
         return;
@@ -125,38 +159,92 @@ function RelationCellMenuContent({
       }
 
       try {
-        const doc = await loadView(selectedViewId);
+        const doc = await loadView(selectedViewId, false, false, {
+          databaseId: relatedDatabaseId,
+          databaseMetadataOnly: true,
+        });
+
+        if (cancelled) return;
 
         targetDocRef.current = doc;
-        const guid = doc.guid;
-
-        setGuid(guid);
-        const database = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database) as YDatabase;
-        const fieldId = getPrimaryFieldId(database);
-
-        if (!fieldId) {
-          setNoAccess(true);
-          return;
-        }
-
-        setNoAccess(false);
-        setPrimaryFieldId(fieldId);
-        setPrimaryField(database.get(YjsDatabaseKey.fields)?.get(fieldId) || null);
-
-        const views = database.get(YjsDatabaseKey.views);
-        const view = views.get(selectedViewId);
-        const rows = view.get(YjsDatabaseKey.row_orders);
-        const ids = rows.toArray().map((row) => row.id);
-
-        setRowIds(ids);
+        setGuid(doc.guid);
+        setTargetDoc(doc);
       } catch (e) {
-        //
+        if (cancelled) return;
+        // The list will not arrive; stop waiting on it so the picker can settle on "no result"
+        // rather than holding placeholders that never resolve.
+        setRowIdsLoaded(true);
       }
     })();
-  }, [loadView, selectedViewId]);
+
+    return () => {
+      cancelled = true;
+      rowDocs.clear();
+    };
+  }, [loadView, relatedDatabaseId, selectedViewId]);
+
+  // `loadView` hands back the target database doc as soon as it exists locally — its fields and
+  // row_orders may still be empty while the first server sync lands. Reading it once left the
+  // picker permanently showing "no result" until it was closed and reopened, so keep re-reading
+  // it as the doc fills in.
+  useEffect(() => {
+    if (!targetDoc || !selectedViewId) return;
+
+    const sharedRoot = targetDoc.getMap(YjsEditorKey.data_section);
+
+    const readTargetDatabase = () => {
+      const database = sharedRoot.get(YjsEditorKey.database) as YDatabase | undefined;
+
+      // Nothing has synced yet: neither "no access" nor "no rows" may be concluded, so stay in
+      // the loading state until the database map appears.
+      if (!database) return;
+
+      const fieldId = getPrimaryFieldId(database);
+
+      if (!fieldId) {
+        setNoAccess(true);
+        setRowIdsLoaded(true);
+        return;
+      }
+
+      setNoAccess(false);
+      setPrimaryFieldId(fieldId);
+      setPrimaryField(database.get(YjsDatabaseKey.fields)?.get(fieldId) || null);
+
+      const rowOrders = getRelationRowOrders(database, selectedViewId);
+
+      if (!rowOrders) return;
+
+      const ids = getLiveRelationRowIds(rowOrders.toArray());
+
+      setRowIds((previous) =>
+        previous.length === ids.length && previous.every((id, index) => id === ids[index]) ? previous : ids
+      );
+      setRowIdsLoaded(true);
+    };
+
+    readTargetDatabase();
+
+    return subscribeSharedYjsDeep(sharedRoot, readTargetDatabase);
+  }, [selectedViewId, targetDoc]);
+
+  useEffect(() => {
+    if (!primaryField) return;
+
+    const onPrimaryFieldChange = () => {
+      setPrimaryFieldClock((clock) => clock + 1);
+    };
+
+    primaryField.observeDeep(onPrimaryFieldChange);
+    return () => {
+      primaryField.unobserveDeep(onPrimaryFieldChange);
+    };
+  }, [primaryField]);
 
   const getContent = useCallback(
     (rowId: string) => {
+      void primaryFieldClock;
+
       const rowDoc = rowDocsRef.current.get(rowId);
 
       if (!rowDoc || !primaryFieldId) {
@@ -168,85 +256,161 @@ function RelationCellMenuContent({
       const cell = row?.get(YjsDatabaseKey.cells)?.get(primaryFieldId);
 
       if (!cell) return '';
-      const cellValue = parseYDatabaseCellToCell(cell, primaryField || undefined);
-
-      return (cellValue?.data as string) || '';
+      return primaryField ? decodeCellToText(cell, primaryField) : '';
     },
-    [primaryFieldId, primaryField]
+    [primaryFieldId, primaryField, primaryFieldClock]
   );
+
+  // `getContent` changes identity whenever the primary field (or its clock) does. Keeping it in a
+  // ref keeps that out of the row-loading effect's dependencies: otherwise a single field edit
+  // would tear down every row-doc observer and re-await `createRow` for the whole list.
+  const getContentRef = useRef(getContent);
+
+  useEffect(() => {
+    getContentRef.current = getContent;
+  }, [getContent]);
+
+  const recordContent = useCallback((rowId: string) => {
+    setRowContents((prev) => {
+      const next = getContentRef.current(rowId);
+
+      if (prev.get(rowId) === next) return prev;
+
+      const newContents = new Map(prev);
+
+      newContents.set(rowId, next);
+      return newContents;
+    });
+  }, []);
+
+  // A primary-field change (rename, type switch, …) only changes how existing row docs decode, so
+  // re-read them in place rather than reloading anything. `getContent` is the trigger here, not a
+  // call — `recordContent` reads the fresh one off the ref synced above.
+  useEffect(() => {
+    void getContent;
+    rowDocsRef.current.forEach((_doc, rowId) => recordContent(rowId));
+  }, [recordContent, getContent]);
 
   useEffect(() => {
     if (!guid || !rowIds || rowIds.length === 0 || !createRow) {
       return;
     }
 
+    let cancelled = false;
+    const cleanups: Array<() => void> = [];
+
     void (async () => {
-      for (const rowId of rowIds) {
-        if (rowDocsRef.current.has(rowId)) {
+      let nextRowIndex = 0;
+      const loadNextRows = async () => {
+        while (!cancelled) {
+          const rowIndex = nextRowIndex;
+
+          nextRowIndex += 1;
+          if (rowIndex >= rowIds.length) return;
+
+          const rowId = rowIds[rowIndex];
+
           // If the row document already exists, skip creating it
-          setRowContents((prev) => {
-            const newContents = new Map(prev);
+          if (!rowDocsRef.current.has(rowId)) {
+            try {
+              const rowDoc = await createRow(getRowKey(guid, rowId));
 
-            newContents.set(rowId, getContent(rowId));
-            return newContents;
-          });
-          continue;
+              if (cancelled) return;
+
+              rowDocsRef.current.set(rowId, rowDoc);
+            } catch (e) {
+              // Leave the doc missing, but still record the row below. Presence in `rowContents` is
+              // what ends the row's loading placeholder, so bailing out here — or skipping the
+              // write — would leave this row, and with a `continue` every row after it, pulsing
+              // forever. An unreadable row falls back to the "Untitled" wording instead.
+              // Deliberate: a failed row is retried only when `rowIds` or `guid` change (it stays
+              // absent from `rowDocsRef`, so the next run re-attempts createRow) — not on
+              // primary-field ticks, which no longer re-run this effect.
+            }
+          }
+
+          if (cancelled) return;
+
+          // Store the content in the ref
+          recordContent(rowId);
+
+          // A row doc can resolve before its primary cell has synced; without an observer the row
+          // would stay on the "Untitled" fallback (and stay unmatchable by the search box) until
+          // the picker is closed and reopened.
+          const rowDoc = rowDocsRef.current.get(rowId);
+
+          if (rowDoc) {
+            cleanups.push(
+              subscribeSharedYjsDeep(rowDoc.getMap(YjsEditorKey.data_section), () => recordContent(rowId))
+            );
+          }
         }
+      };
 
-        const rowKey = getRowKey(guid, rowId);
-        const rowDoc = await createRow(rowKey);
+      const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowIds.length);
 
-        rowDocsRef.current.set(rowId, rowDoc);
-
-        // Store the content in the ref
-        setRowContents((prev) => {
-          const newContents = new Map(prev);
-
-          newContents.set(rowId, getContent(rowId));
-          return newContents;
-        });
-      }
+      await Promise.all(Array.from({ length: workerCount }, loadNextRows));
     })();
-  }, [createRow, getContent, guid, rowIds]);
+
+    return () => {
+      cancelled = true;
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  }, [createRow, guid, recordContent, rowIds]);
+
+  // Membership sets, not `Array.includes`: both lists are scanned once per candidate row here and
+  // again per rendered row, which is quadratic on a target database of any size.
+  const relatedRowIdSet = useMemo(() => new Set(relationRowIds ?? []), [relationRowIds]);
+  const liveRowIdSet = useMemo(() => new Set(rowIds), [rowIds]);
+
+  // The recent-first ordering depends only on the row list, not the query, so keep it out of the
+  // search memo — otherwise every keystroke re-sorts the whole target database. Recents recorded
+  // while the picker is open take effect on the next open, same as before this split: picking a
+  // row never changed this memo's inputs either.
+  const sortedRowIds = useMemo(() => sortByRecentRows(rowIds, selectedViewId), [rowIds, selectedViewId]);
 
   const filteredRowIds = useMemo(() => {
-    const liveRowIds = sortByRecentRows(rowIds, selectedViewId);
-
     if (!searchInput) {
-      return liveRowIds;
+      return sortedRowIds;
     }
 
-    return liveRowIds.filter((id) => {
-      const content = rowContents.get(id) || '';
+    const query = searchInput.toLowerCase();
 
-      return content.toLowerCase().includes(searchInput.toLowerCase());
-    });
-  }, [rowContents, rowIds, searchInput, selectedViewId]);
+    return sortedRowIds.filter((id) => (rowContents.get(id) || '').toLowerCase().includes(query));
+  }, [rowContents, searchInput, sortedRowIds]);
 
   const unRelatedRowIds = useMemo(() => {
-    return filteredRowIds.filter((id) => !relationRowIds?.includes(id));
-  }, [filteredRowIds, relationRowIds]);
+    return filteredRowIds.filter((id) => !relatedRowIdSet.has(id));
+  }, [filteredRowIds, relatedRowIdSet]);
 
   const filteredRelatedRowIds = useMemo(() => {
-    return (
-      relationRowIds?.filter((id) => {
-        const content = rowContents.get(id) || (rowIds.includes(id) ? '' : t('document.mention.deletedPage'));
+    if (!relationRowIds) return [];
 
-        return content.toLowerCase().includes(searchInput.toLowerCase());
-      }) || []
-    );
-  }, [relationRowIds, rowContents, rowIds, searchInput, t]);
+    const query = searchInput.toLowerCase();
+
+    return relationRowIds.filter((id) => {
+      const content = rowContents.get(id) || (liveRowIdSet.has(id) ? '' : t('document.mention.deletedPage'));
+
+      return content.toLowerCase().includes(query);
+    });
+  }, [liveRowIdSet, relationRowIds, rowContents, searchInput, t]);
 
   // filteredRowIds covers live target rows (for adding); filteredRelatedRowIds
   // covers the cell's already-related ids (including stale/deleted ones).
   // Treating "no result" as both empty avoids hiding deleted relations the user
   // may want to remove.
-  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !loading;
+  // `rowIdsLoaded` keeps an empty list from reading as "nothing matched" while it is really
+  // "nothing has arrived yet".
+  const isLoadingRows = loading || !rowIdsLoaded;
+  const noResult = filteredRowIds.length === 0 && filteredRelatedRowIds.length === 0 && !isLoadingRows;
 
   const renderItem = useCallback(
     (id: string) => {
-      const isRelated = relationRowIds?.includes(id);
-      const isDeleted = isRelated && !rowIds.includes(id);
+      const isRelated = relatedRowIdSet.has(id);
+      const isDeleted = isRelated && !liveRowIdSet.has(id);
+      // A row we know exists but whose primary cell has not landed yet. Deleted rows are excluded:
+      // their wording is final, and their doc is never going to arrive.
+      const isResolving = !isDeleted && !rowContents.has(id);
       const content = isDeleted ? t('document.mention.deletedPage') : rowContents.get(id) || '';
 
       return (
@@ -272,7 +436,7 @@ function RelationCellMenuContent({
           key={id}
           onMouseEnter={() => setSelectedId(id)}
         >
-          <RelationRowItem rowId={id} content={content} />
+          <RelationRowItem rowId={id} content={content} loading={isResolving} />
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -290,7 +454,7 @@ function RelationCellMenuContent({
                 size={'icon'}
                 className={cn(
                   'shrink-0 opacity-0 transition-opacity',
-                  (selectedId === id) && 'opacity-100',
+                  selectedId === id && 'opacity-100',
                   'group-hover:opacity-100'
                 )}
               >
@@ -305,9 +469,9 @@ function RelationCellMenuContent({
       );
     },
     [
-      relationRowIds,
+      relatedRowIdSet,
+      liveRowIdSet,
       rowContents,
-      rowIds,
       selectedId,
       openRelatedRow,
       onAddRelationRowId,
@@ -323,7 +487,7 @@ function RelationCellMenuContent({
   // any non-empty query exposes the create affordance, even when the live
   // results already match. The user shouldn't have to clear partial matches
   // to create a new row that happens to share a substring.
-  const showCreateAndLink = trimmedSearch.length > 0 && !loading && !noAccess && primaryFieldId !== null;
+  const showCreateAndLink = trimmedSearch.length > 0 && !isLoadingRows && !noAccess && primaryFieldId !== null;
 
   const handleCreateAndLink = useCallback(async () => {
     const targetDoc = targetDocRef.current;
@@ -339,6 +503,7 @@ function RelationCellMenuContent({
         primaryText: trimmedSearch,
         createRow,
         bindViewSync,
+        actorUid,
       });
 
       if (!newRowId) return;
@@ -357,7 +522,7 @@ function RelationCellMenuContent({
       isCreatingRef.current = false;
       setIsCreatingAndLinking(false);
     }
-  }, [bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, trimmedSearch]);
+  }, [actorUid, bindViewSync, createRow, onAddRelationRowId, primaryFieldId, selectedViewId, trimmedSearch]);
 
   const renderCreateAndLink = useMemo(() => {
     if (!showCreateAndLink) return null;
@@ -466,7 +631,15 @@ function RelationCellMenuContent({
           <Separator className={'mt-2'} />
         </div>
         <div className={'relative flex-1 p-2 pt-0'}>
-          {noResult ? (
+          {isLoadingRows ? (
+            <div
+              aria-label={t('grid.row.loading', 'Loading rows')}
+              className={'flex min-h-[160px] items-center justify-center'}
+              role={'status'}
+            >
+              <Progress aria-hidden variant={'primary'} />
+            </div>
+          ) : noResult ? (
             <div className={'flex items-center py-2 text-sm text-text-secondary'}>{t('findAndReplace.noResult')}</div>
           ) : (
             !noAccess &&
@@ -482,6 +655,15 @@ function RelationCellMenuContent({
       </TooltipProvider>
     </div>
   );
+}
+
+function RelationCellMenuContent(props: RelationCellMenuContentProps) {
+  // All local docs, observers, and row state belong to one immutable target.
+  // Remounting the implementation prevents a passive-effect frame from
+  // combining database A's state with database B's identity.
+  const targetKey = `${props.relatedDatabaseId}:${props.selectedView?.view_id ?? ''}`;
+
+  return <RelationCellMenuContentForTarget key={targetKey} {...props} />;
 }
 
 export default RelationCellMenuContent;

@@ -44,6 +44,7 @@
     "test:e2e:page": "playwright test playwright/e2e/page --headed",
     "test:e2e:chat": "playwright test playwright/e2e/chat --headed",
     "test:e2e:bdd": "bddgen test -c playwright.bdd.config.ts && playwright test -c playwright.bdd.config.ts",
+    "test:e2e:bdd:gallery": "bddgen test -c playwright.bdd.config.ts && playwright test -c playwright.bdd.config.ts playwright/.features-gen/playwright/bdd/features/database/gallery-readonly.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-relation-prefill.feature.spec.js playwright/.features-gen/playwright/bdd/features/database/gallery-row-detail-no-stacking.feature.spec.js",
     "test:e2e:bdd:headed": "bddgen test -c playwright.bdd.config.ts && playwright test -c playwright.bdd.config.ts --headed",
     "coverage": "cross-env COVERAGE=true pnpm run test:unit",
     "generate-tokens": "node scripts/system-token/convert-tokens.cjs",

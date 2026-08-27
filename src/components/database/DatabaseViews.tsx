@@ -1,22 +1,28 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { toast } from 'sonner';
 
 import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
-import { FilterType } from '@/application/database-yjs/database.type';
+import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import { Board } from '@/components/database/board';
+import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { Chart } from '@/components/database/chart';
-import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
+import {
+  DatabaseConditionsActionsContext,
+  DatabaseConditionsContext,
+} from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
-import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
+import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
+import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import {
   getDatabaseViewportStyle,
   shouldAutoShrinkDatabaseViewport,
+  shouldScrollEmbeddedDatabaseViewport,
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
@@ -32,6 +38,9 @@ import {
 import { Log } from '@/utils/log';
 
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
+
+const List = lazy(() => import('@/components/database/list/List'));
+const Gallery = lazy(() => import('@/components/database/gallery'));
 
 function DatabaseViews({
   onChangeView,
@@ -89,10 +98,6 @@ function DatabaseViews({
   const pendingViewAppendBaseRef = useRef<string[] | null>(null);
   const tabReorderRequestSeqRef = useRef(0);
   const hasAuthoritativeVisibleOrder = Boolean(visibleViewIds && visibleViewIds.length > 0);
-
-  const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
-  // Track the previous valid layout to prevent flash when switching to a new view
-  const prevLayoutRef = useRef<DatabaseViewLayout | null>(null);
 
   const fallbackViewIds = useMemo(() => {
     if (hasAuthoritativeVisibleOrder) {
@@ -185,6 +190,8 @@ function DatabaseViews({
 
   // Advanced filter mode state
   const [isAdvancedMode, setAdvancedMode] = useState(false);
+  const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   // Auto-detect advanced mode on mount/view change and auto-expand when filters exist
   useEffect(() => {
@@ -204,24 +211,7 @@ function DatabaseViews({
     // Auto-expand when filters exist (from desktop sync or any source)
     setConditionsExpanded(true);
 
-    const rootFilter = filters.get(0);
-
-    if (!rootFilter) {
-      setAdvancedMode(false);
-      return;
-    }
-
-    // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
-    const isYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
-    const filterType = isYjsMap
-      ? Number((rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.filter_type))
-      : Number((rootFilter as unknown as Record<string, unknown>)[YjsDatabaseKey.filter_type]);
-
-    if (filterType === FilterType.And || filterType === FilterType.Or) {
-      setAdvancedMode(true);
-    } else {
-      setAdvancedMode(false);
-    }
+    setAdvancedMode(hasAdvancedFilterRoot(filters));
   }, [activeViewId, views]);
 
   // Get active view from selector state, or directly from Yjs if not yet in state
@@ -240,25 +230,6 @@ function DatabaseViews({
     // This handles newly created views before useDatabaseViewsSelector updates
     return views?.get(activeViewId);
   }, [activeViewId, childViews, viewIds, views]);
-
-  // Update layout when active view changes
-  useEffect(() => {
-    if (!activeView) return;
-
-    const observerEvent = () => {
-      const newLayout = Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-
-      setLayout(newLayout);
-      prevLayoutRef.current = newLayout;
-    };
-
-    observerEvent();
-    activeView.observe(observerEvent);
-
-    return () => {
-      activeView.unobserve(observerEvent);
-    };
-  }, [activeView]);
 
   const handleViewChange = useCallback(
     (newViewId: string) => {
@@ -314,7 +285,17 @@ function DatabaseViews({
   const handleReorderTabs = useCallback(
     ({ nextIds, movedId, prevId }: ReorderResult) => {
       const previousIds = orderedViewIdsRef.current.length > 0 ? orderedViewIdsRef.current : viewIds;
+      const previousPendingExpectedViewIds = pendingExpectedViewIdsRef.current;
+      const pendingCreatedViewId = previousPendingExpectedViewIds?.[previousPendingExpectedViewIds.length - 1];
+      const isPendingCreationReorder = pendingCreatedViewId === movedId;
       const requestSeq = ++tabReorderRequestSeqRef.current;
+
+      // A newly created duplicate is first appended, then moved next to its
+      // source. Keep the pending creation order aligned so the next Yjs
+      // reconciliation cannot restore the temporary appended order.
+      if (isPendingCreationReorder) {
+        pendingExpectedViewIdsRef.current = nextIds;
+      }
 
       // Optimistically apply the new tab order and persist it locally.
       orderedViewIdsRef.current = nextIds;
@@ -331,6 +312,10 @@ function DatabaseViews({
         } catch (error) {
           if (tabReorderRequestSeqRef.current !== requestSeq) return;
 
+          if (isPendingCreationReorder) {
+            pendingExpectedViewIdsRef.current = previousPendingExpectedViewIds;
+          }
+
           orderedViewIdsRef.current = previousIds;
           setOrderedViewIds(previousIds);
           writeStoredViewOrder(databaseId, previousIds);
@@ -344,9 +329,10 @@ function DatabaseViews({
 
   const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;
 
-  // Render the appropriate view component based on layout
-  // Use previous layout as fallback to prevent flash during view transitions
-  const effectiveLayout = layout ?? prevLayoutRef.current;
+  // The database store already observes view metadata. Derive the layout from
+  // the current view during render so a tab switch cannot commit the previous
+  // view's component tree or providers against the next view's context.
+  const effectiveLayout = activeView ? (Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout) : undefined;
 
   const view = useMemo(() => {
     switch (effectiveLayout) {
@@ -359,12 +345,13 @@ function DatabaseViews({
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.List:
+        return <List />;
       case DatabaseViewLayout.Gallery:
-        return <UnsupportedView />;
+        return <Gallery key={activeViewId} />;
       default:
         return null;
     }
-  }, [effectiveLayout]);
+  }, [activeViewId, effectiveLayout]);
   const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
     embeddedHeight: fixedHeight,
     isDocumentBlock,
@@ -380,6 +367,11 @@ function DatabaseViews({
     isDocumentBlock,
     layout: effectiveLayout,
   });
+  const shouldScrollEmbeddedViewport = shouldScrollEmbeddedDatabaseViewport({
+    embeddedHeight: fixedHeight,
+    isDocumentBlock,
+    layout: effectiveLayout,
+  });
   const databaseConditionsValue = useMemo(
     () => ({
       expanded: conditionsExpanded,
@@ -389,13 +381,44 @@ function DatabaseViews({
       setOpenFilterId,
       isAdvancedMode,
       setAdvancedMode,
+      advancedPanelOpen,
+      setAdvancedPanelOpen,
+      sortMenuOpen,
+      setSortMenuOpen,
     }),
-    [conditionsExpanded, toggleExpanded, setExpanded, openFilterId, setOpenFilterId, isAdvancedMode, setAdvancedMode]
+    [
+      conditionsExpanded,
+      toggleExpanded,
+      setExpanded,
+      openFilterId,
+      setOpenFilterId,
+      isAdvancedMode,
+      setAdvancedMode,
+      advancedPanelOpen,
+      setAdvancedPanelOpen,
+      sortMenuOpen,
+      setSortMenuOpen,
+    ]
   );
 
-  return (
-    <>
+  // Stable identity: every entry is a useState setter or an empty-deps
+  // useCallback, so action-only consumers (e.g. grid column header menus)
+  // never re-render on conditions state churn.
+  const databaseConditionsActions = useMemo(
+    () => ({
+      setExpanded,
+      setOpenFilterId,
+      setAdvancedMode,
+      setAdvancedPanelOpen,
+      setSortMenuOpen,
+    }),
+    [setExpanded, setOpenFilterId, setAdvancedMode, setAdvancedPanelOpen, setSortMenuOpen]
+  );
+
+  const content = (
+    <DatabaseSearchProvider activeViewId={activeViewId}>
       <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
+        <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
         <DatabaseTabs
           viewName={viewName}
           databasePageId={databasePageId}
@@ -416,7 +439,9 @@ function DatabaseViews({
             'relative flex w-full flex-col',
             shouldUseFixedViewport
               ? shouldAutoShrinkViewport
-                ? 'min-h-0 overflow-hidden'
+                ? shouldScrollEmbeddedViewport
+                  ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+                  : 'min-h-0 overflow-hidden'
                 : 'h-full min-h-0 flex-1 overflow-hidden'
               : 'overflow-visible'
           )}
@@ -435,9 +460,19 @@ function DatabaseViews({
             </Suspense>
           </div>
         </div>
+        </DatabaseConditionsActionsContext.Provider>
       </DatabaseConditionsContext.Provider>
-    </>
+    </DatabaseSearchProvider>
   );
+
+  switch (effectiveLayout) {
+    case DatabaseViewLayout.Grid:
+      return <GridGroupingProvider>{content}</GridGroupingProvider>;
+    case DatabaseViewLayout.List:
+      return <ListGroupingProvider>{content}</ListGroupingProvider>;
+    default:
+      return content;
+  }
 }
 
 export default DatabaseViews;

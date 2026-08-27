@@ -8,8 +8,17 @@ import FilterConditionsSelect from '@/components/database/components/filters/fil
 function TextFilterConditionsSelect ({ filter }: { filter: TextFilter }) {
   const { t } = useTranslation();
 
+  // Desktop parity: conditions listed in protobuf ordinal order.
   const conditions = useMemo(() => {
     return [
+      {
+        value: TextFilterCondition.TextIs,
+        text: t('grid.textFilter.is'),
+      },
+      {
+        value: TextFilterCondition.TextIsNot,
+        text: t('grid.textFilter.isNot'),
+      },
       {
         value: TextFilterCondition.TextContains,
         text: t('grid.textFilter.contains'),
@@ -25,14 +34,6 @@ function TextFilterConditionsSelect ({ filter }: { filter: TextFilter }) {
       {
         value: TextFilterCondition.TextEndsWith,
         text: t('grid.textFilter.endsWith'),
-      },
-      {
-        value: TextFilterCondition.TextIs,
-        text: t('grid.textFilter.is'),
-      },
-      {
-        value: TextFilterCondition.TextIsNot,
-        text: t('grid.textFilter.isNot'),
       },
       {
         value: TextFilterCondition.TextIsEmpty,

@@ -2,7 +2,7 @@ import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Editor, Transforms } from 'slate';
+import { Editor, Range, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -14,6 +14,7 @@ import {
   BlockType,
   LinkPreviewBlockData,
   LinkPreviewType,
+  Mention,
   MentionType,
   VideoBlockData,
   VideoType,
@@ -25,10 +26,13 @@ import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
-import { processUrl } from '@/utils/url';
+import { useEditorContext } from '@/components/editor/EditorContext';
+import { parseAppFlowyPageLink, processUrl } from '@/utils/url';
 import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 import { PasteAsMenuType } from './constants';
+import { resolveDatabaseRowPageMention } from './databaseRowMention';
+
 import type { PasteAsMenuPayload } from './constants';
 
 const PASTE_AS_PANEL_WIDTH = 260;
@@ -60,10 +64,13 @@ function isValidPasteRange(editor: YjsEditor, payload: PasteAsMenuPayload) {
 export function PasteAsPanel() {
   const { closePanel, getPasteAsPayload, isPanelOpen, panelPosition } = usePanelContext();
   const editor = useSlateStatic() as YjsEditor;
+  const { loadView, workspaceId } = useEditorContext();
   const { t } = useTranslation();
   const open = isPanelOpen(PanelType.PasteAs);
   const [selectedType, setSelectedType] = useState<PasteAsMenuType>(PasteAsMenuType.Mention);
   const selectedTypeRef = useRef<PasteAsMenuType>(PasteAsMenuType.Mention);
+  const pasteOperationRef = useRef(0);
+  const mountedRef = useRef(true);
   const [transformOrigin, setTransformOrigin] = useState<PopoverOrigin | undefined>(undefined);
 
   const turnIntoBlock = useCallback(
@@ -109,7 +116,8 @@ export function PasteAsPanel() {
   );
 
   const handleSelect = useCallback(
-    (type: PasteAsMenuType) => {
+    async (type: PasteAsMenuType) => {
+      const operationId = ++pasteOperationRef.current;
       const payload = getPasteAsPayload();
 
       closePanel();
@@ -123,23 +131,80 @@ export function PasteAsPanel() {
 
       const url = processUrl(payload.url) || payload.url;
 
-      Transforms.delete(editor);
-
       if (type === PasteAsMenuType.Mention) {
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention: {
-              type: MentionType.externalLink,
-              url,
+        // Keep following the pasted URL while the row metadata resolves. A
+        // plain Range becomes stale when local or remote edits happen before
+        // the URL during the request.
+        const pasteRangeRef = Editor.rangeRef(editor, payload.range, { affinity: 'inward' });
+        let mention: Mention = {
+          type: MentionType.externalLink,
+          url,
+        };
+        const appFlowyLink = parseAppFlowyPageLink(url, window.location.hostname);
+
+        if (loadView && appFlowyLink?.rowId && appFlowyLink.workspaceId.toLowerCase() === workspaceId.toLowerCase()) {
+          try {
+            mention = (await resolveDatabaseRowPageMention(workspaceId, appFlowyLink, loadView)) ?? mention;
+          } catch {
+            // Preserve the existing external-link mention fallback when the
+            // database or row cannot be resolved with the current permission.
+          }
+        }
+
+        const pasteRange = pasteRangeRef.unref();
+
+        if (!mountedRef.current || operationId !== pasteOperationRef.current || !pasteRange) return;
+
+        // Resolution is asynchronous. Confirm the original pasted URL still
+        // occupies the tracked range before replacing any user content. Do not
+        // re-focus or re-select it here: the user may have continued editing
+        // elsewhere while the request was pending.
+        if (
+          !Editor.hasPath(editor, pasteRange.anchor.path) ||
+          !Editor.hasPath(editor, pasteRange.focus.path) ||
+          editor.string(pasteRange) !== payload.url
+        ) {
+          return;
+        }
+
+        const shouldSelectMention = Boolean(editor.selection && Range.equals(editor.selection, pasteRange));
+        const liveSelectionRef =
+          !shouldSelectMention && editor.selection
+            ? Editor.rangeRef(editor, editor.selection, { affinity: 'forward' })
+            : null;
+
+        // An auto-linked URL can occupy a leaf that disappears when deleted.
+        // Use Slate's transformed selection as the insertion point, then put a
+        // user who moved elsewhere back at their tracked selection. The whole
+        // swap is synchronous and never moves DOM focus.
+        Editor.withoutNormalizing(editor, () => {
+          Transforms.select(editor, pasteRange);
+          Transforms.delete(editor);
+          Transforms.insertNodes(
+            editor,
+            {
+              text: '@',
+              mention,
             },
-          },
-          { select: true, voids: false }
-        );
-        Transforms.collapse(editor, { edge: 'end' });
+            { select: true, voids: false }
+          );
+          Transforms.collapse(editor, { edge: 'end' });
+
+          if (!shouldSelectMention) {
+            const liveSelection = liveSelectionRef?.unref();
+
+            if (liveSelection) {
+              Transforms.select(editor, liveSelection);
+            } else {
+              Transforms.deselect(editor);
+            }
+          }
+        });
+
         return;
       }
+
+      Transforms.delete(editor);
 
       if (type === PasteAsMenuType.Embed && isValidVideoUrl(url)) {
         turnIntoBlock(BlockType.VideoBlock, {
@@ -155,7 +220,7 @@ export function PasteAsPanel() {
         preview_type: type === PasteAsMenuType.Embed ? LinkPreviewType.Embed : LinkPreviewType.Bookmark,
       } as LinkPreviewBlockData);
     },
-    [closePanel, editor, getPasteAsPayload, selectPasteRange, turnIntoBlock]
+    [closePanel, editor, getPasteAsPayload, loadView, selectPasteRange, turnIntoBlock, workspaceId]
   );
 
   const options = useMemo(
@@ -189,7 +254,19 @@ export function PasteAsPanel() {
   }, [selectedType]);
 
   useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      pasteOperationRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
     if (open) {
+      // Reopening the panel means a newer URL was pasted. Invalidate any row
+      // lookup still running for the previous paste operation.
+      pasteOperationRef.current += 1;
       setSelectedType(PasteAsMenuType.Mention);
     }
   }, [open]);
@@ -218,7 +295,7 @@ export function PasteAsPanel() {
         case 'Enter':
           e.preventDefault();
           e.stopPropagation();
-          handleSelect(selectedTypeRef.current);
+          void handleSelect(selectedTypeRef.current);
           break;
         case 'ArrowUp':
         case 'ArrowDown': {
@@ -226,9 +303,7 @@ export function PasteAsPanel() {
           e.stopPropagation();
 
           const nextIndex =
-            e.key === 'ArrowDown'
-              ? (index + 1) % options.length
-              : (index - 1 + options.length) % options.length;
+            e.key === 'ArrowDown' ? (index + 1) % options.length : (index - 1 + options.length) % options.length;
 
           setSelectedType(options[nextIndex].type);
           break;
@@ -270,7 +345,7 @@ export function PasteAsPanel() {
             color={'inherit'}
             data-testid={`paste-as-${option.type}`}
             key={option.type}
-            onClick={() => handleSelect(option.type)}
+            onClick={() => void handleSelect(option.type)}
             onMouseEnter={() => setSelectedType(option.type)}
             size={'small'}
             startIcon={option.icon}

@@ -17,7 +17,7 @@ jest.mock('@/utils/runtime-config', () => ({
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
 import { NumberFilterCondition, TextFilterCondition } from '@/application/database-yjs/fields';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
-import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
+import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { YDatabaseField, YDatabaseFields, YjsDatabaseKey } from '@/application/types';
 
@@ -207,5 +207,28 @@ describe('isNumericRollupField', () => {
     const field = fields.get('rollup-defaults') as YDatabaseField;
 
     expect(isNumericRollupField(field)).toBe(true);
+  });
+});
+
+describe('resolveRollupFilterTargetFieldType', () => {
+  it('persists Number for calculated numeric Rollups', () => {
+    const field = makeRollupField({ calculationType: CalculationType.Sum });
+
+    expect(resolveRollupFilterTargetFieldType(FieldType.Rollup, field)).toBe(FieldType.Number);
+  });
+
+  it('persists RichText for list-style Rollups', () => {
+    const field = makeRollupField({
+      calculationType: CalculationType.Sum,
+      showAs: RollupDisplayMode.OriginalList,
+    });
+
+    expect(resolveRollupFilterTargetFieldType(FieldType.Rollup, field)).toBe(FieldType.RichText);
+  });
+
+  it('does not add Rollup metadata to ordinary fields', () => {
+    const field = createField('number', FieldType.Number);
+
+    expect(resolveRollupFilterTargetFieldType(FieldType.Number, field)).toBeUndefined();
   });
 });

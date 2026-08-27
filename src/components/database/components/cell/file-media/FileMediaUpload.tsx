@@ -11,6 +11,7 @@ import {
   FileMediaUploadType,
 } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import { toFileMediaCellData } from '@/application/database-yjs/fields/media/parse';
 import { getFileMediaType } from '@/application/database-yjs/fields/media/utils';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
@@ -57,9 +58,9 @@ function FileMediaUpload({
   const addItems = useCallback(
     (items: FileMediaCellDataItem[]) => {
       const newData = new Y.Array<string>();
-      const data = cell?.data;
+      const data = toFileMediaCellData(cell?.data);
 
-      if (data) {
+      if (data.length > 0) {
         newData.push(data.map((item) => JSON.stringify(item)));
       }
 

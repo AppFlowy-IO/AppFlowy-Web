@@ -33,6 +33,8 @@ describe('slash-menu-options', () => {
       option({ key: 'simpleTable' }),
       option({ key: 'grid' }),
       option({ key: 'linkedGrid' }),
+      option({ key: 'list' }),
+      option({ key: 'linkedList' }),
       option({ key: 'chart' }),
       option({ key: 'linkedChart' }),
       option({ key: 'outline' }),

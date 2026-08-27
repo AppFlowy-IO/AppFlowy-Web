@@ -1,14 +1,10 @@
-import { Button, CircularProgress, Divider, Tooltip, Typography } from '@mui/material';
+import { Button, CircularProgress, Tooltip, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { AccessLevel, ViewLayout } from '@/application/types';
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { notify } from '@/components/_shared/notify';
 import { Switch } from '@/components/_shared/switch';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { usePublishing } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
@@ -18,14 +14,14 @@ function PublishPanel({
   opened,
   onClose,
   onOpenPublishManage,
-  currentUserAccessLevel,
+  canShare,
   shareDetailsLoading,
 }: {
   viewId: string;
   onClose: () => void;
   opened: boolean;
   onOpenPublishManage?: () => void;
-  currentUserAccessLevel?: AccessLevel;
+  canShare: boolean;
   shareDetailsLoading?: boolean;
 }) {
   const { t } = useTranslation();
@@ -46,7 +42,6 @@ function PublishPanel({
   // Track publish/unpublish actions locally so the panel updates immediately,
   // even when the view object (e.g. server fallback) has a stale is_published flag.
   const [publishedOverride, setPublishedOverride] = React.useState<boolean | undefined>(undefined);
-  const [visibleViewId, setVisibleViewId] = React.useState<string[] | undefined>(undefined);
   const [commentEnabled, setCommentEnabled] = React.useState<boolean | undefined>(undefined);
   const [duplicateEnabled, setDuplicateEnabled] = React.useState<boolean | undefined>(undefined);
 
@@ -76,7 +71,7 @@ function PublishPanel({
       const newPublishName = publishName || publishInfo?.publishName || undefined;
 
       try {
-        await publish(view, newPublishName, visibleViewId);
+        await publish(view, newPublishName);
         setPublishedOverride(true);
         await loadPublishInfo();
         notify.success(t('publish.publishSuccessfully'));
@@ -87,7 +82,7 @@ function PublishPanel({
         setPublishLoading(false);
       }
     },
-    [loadPublishInfo, publish, t, view, publishInfo, visibleViewId]
+    [loadPublishInfo, publish, t, view, publishInfo]
   );
 
   const handleUnpublish = useCallback(async () => {
@@ -197,9 +192,6 @@ function PublishPanel({
     onOpenPublishManage,
   ]);
 
-  const layout = view?.layout;
-  const isDatabase =
-    layout !== undefined ? [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar].includes(layout) : false;
   // Use the publish API (scopedPublishInfo) as the authoritative source.
   // view.is_published from the outline can be stale after unpublish.
   const serverPublishedState = Boolean(scopedPublishInfo);
@@ -208,25 +200,13 @@ function PublishPanel({
   // - fallback to server-derived state when no local override exists
   const hasPublished = publishedOverride ?? serverPublishedState;
 
-  useEffect(() => {
-    if (!hasPublished && isDatabase && view) {
-      const childIds = [view.view_id, ...view.children.map((child) => child.view_id)];
-
-      setVisibleViewId(childIds);
-    } else {
-      setVisibleViewId(undefined);
-    }
-  }, [hasPublished, isDatabase, view]);
-
   const renderUnpublished = useCallback(() => {
     if (!view) return null;
-    const list = [view, ...view.children];
-    const isReadOnlyUser = currentUserAccessLevel === AccessLevel.ReadOnly;
-    const publishDisabled = isReadOnlyUser || shareDetailsLoading || publishLoading;
+    const publishDisabled = !canShare || shareDetailsLoading || publishLoading;
     const publishButton = (
       <Button
         onClick={() => {
-          if (isReadOnlyUser) return;
+          if (!canShare) return;
           void handlePublish();
         }}
         variant={'contained'}
@@ -242,66 +222,15 @@ function PublishPanel({
 
     return (
       <div className={'flex w-full flex-col gap-4'}>
-        {isDatabase && (
-          <div className={'mt-2 flex flex-col gap-3 rounded-[16px] border border-border-primary px-4 py-3 text-sm'}>
-            <div className={'text-text-secondary'}>
-              {t('publishSelectedViews', {
-                count: visibleViewId?.length || 0,
-              })}
-            </div>
-            <Divider />
-            <div className={'appflowy-scroller flex max-h-[300px] flex-col gap-1 overflow-y-auto overflow-x-hidden'}>
-              {list.map((item) => {
-                const id = item.view_id;
-                const isCurrentView = view.view_id === item.view_id;
-
-                const selected = visibleViewId?.includes(item.view_id);
-
-                return (
-                  <Button
-                    disabled={isCurrentView}
-                    onClick={() => {
-                      setVisibleViewId((prev) => {
-                        const checked = prev?.includes(id);
-
-                        if (checked) {
-                          return prev?.filter((i) => i !== id);
-                        } else {
-                          return [...(prev || []), id];
-                        }
-                      });
-                    }}
-                    key={id}
-                    className={'flex items-center justify-start'}
-                    size={'small'}
-                    startIcon={
-                      selected ? (
-                        <CheckboxCheckSvg />
-                      ) : (
-                        <CheckboxUncheckSvg className={'text-border-primary hover:text-border-primary-hover'} />
-                      )
-                    }
-                    color={'inherit'}
-                  >
-                    <div className={'flex items-center gap-2'}>
-                      <PageIcon view={item} className={'h-5 w-5'} />
-                      {item.name || t('untitled')}
-                    </div>
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
-        )}
         <Tooltip
-          disableHoverListener={!isReadOnlyUser}
-          title={isReadOnlyUser ? t('shareAction.readOnlyPublishTooltip') : ''}
+          disableHoverListener={canShare}
+          title={!canShare ? t('shareAction.readOnlyPublishTooltip') : ''}
         >
           <span className={'w-full'}>{publishButton}</span>
         </Tooltip>
       </div>
     );
-  }, [currentUserAccessLevel, handlePublish, isDatabase, publishLoading, shareDetailsLoading, t, view, visibleViewId]);
+  }, [canShare, handlePublish, publishLoading, shareDetailsLoading, t, view]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch px-3 py-4'>

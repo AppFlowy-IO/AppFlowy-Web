@@ -6,6 +6,8 @@ export {
   signInGithubWithRedirect as signInGithub,
   signInDiscordWithRedirect as signInDiscord,
   signInSamlWithRedirect as signInSaml,
+  signInCustomProviderWithRedirect as signInCustomProvider,
+  signInWithLdapWithRedirect as signInLdap,
   signInWithPasswordWithRedirect as signInWithPassword,
   signUpWithPasswordWithRedirect as signUpWithPassword,
   forgotPassword,

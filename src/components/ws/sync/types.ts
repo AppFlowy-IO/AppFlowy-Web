@@ -1,7 +1,7 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, YDoc } from '@/application/types';
+import { Types, User, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 
 const UUID_REGEX =
@@ -34,8 +34,52 @@ export interface RegisterSyncContext {
   emit?: (reply: messages.IMessage) => void;
 }
 
+export interface ApplyCollabMessageOptions {
+  allowVersionReset?: boolean;
+  user?: User;
+  isCancelled?: () => boolean;
+  /**
+   * Lets an HTTP slow-sync result leave the per-object queue immediately when
+   * its outbox lifecycle ends (for example, while a version reset is active).
+   */
+  signal?: AbortSignal;
+  /**
+   * HTTP full-sync callers must know that an authoritative response actually
+   * reached a live document before they retire its persisted outbox records.
+   * Ordinary WS/BC delivery remains best-effort when a collab is not open.
+   */
+  requireActiveContext?: boolean;
+  /**
+   * HTTP slow-sync applies its result from inside the active outbox drain.
+   * A version reset must not await that same drain promise.
+   */
+  skipActiveDrainOnDiscard?: boolean;
+}
+
+export interface HttpFullSyncResult {
+  objectId: string;
+  collabType: Types;
+  missingUpdate: Uint8Array;
+  serverStateVector: Uint8Array;
+  collabVersion?: string;
+  messageId?: collab.IRid;
+}
+
+export interface QueuedCollabMessage {
+  message: collab.ICollabMessage;
+  options?: ApplyCollabMessageOptions;
+  resolve?: (applied: boolean) => void;
+  reject?: (error: unknown) => void;
+  dispose?: () => void;
+}
+
 export type SyncContextType = {
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
+  /**
+   * Return the canonical live document and, while online, re-send its
+   * state-vector exchange without changing context ownership.
+   */
+  rebindSyncContext: (objectId: string) => YDoc | undefined;
   /**
    * Wait until all pending updates for every registered sync context have
    * been drained to the WebSocket from the persistent sync_outbox. Resolves
@@ -51,6 +95,15 @@ export type SyncContextType = {
    * @returns Promise that resolves when all syncs are complete
    */
   syncAllToServer: (workspaceId: string) => Promise<void>;
+  /**
+   * Applies one HTTP full-sync response through the same per-object,
+   * version-aware queue used by WebSocket messages.
+   */
+  applyHttpFullSyncResult: (
+    result: HttpFullSyncResult,
+    fallbackVersion?: string | null,
+    signal?: AbortSignal
+  ) => Promise<void>;
   /**
    * Schedule deferred cleanup of a sync context after a delay.
    * If the same objectId is re-registered before the timer fires,

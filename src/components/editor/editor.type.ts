@@ -1,6 +1,7 @@
 import { HTMLAttributes } from 'react';
 import { Element } from 'slate';
 
+import type { DatabaseBlockType } from '@/application/database-block';
 import {
   AIMeetingBlockData,
   AIMeetingSpeakerBlockData,
@@ -185,7 +186,7 @@ export interface TableCellNode extends BlockNode {
 }
 
 export interface DatabaseNode extends BlockNode {
-  type: BlockType.GridBlock | BlockType.BoardBlock | BlockType.CalendarBlock | BlockType.ChartBlock;
+  type: DatabaseBlockType;
   blockId: string;
   data: DatabaseNodeData;
 }

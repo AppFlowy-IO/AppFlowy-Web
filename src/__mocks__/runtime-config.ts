@@ -11,3 +11,7 @@ export function getConfigValue(key: string, defaultValue: string): string {
 
   return testDefaults[key] ?? defaultValue;
 }
+
+export function isDevelopmentOrTestEnvironment(): boolean {
+  return true;
+}

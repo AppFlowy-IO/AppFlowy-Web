@@ -37,6 +37,10 @@ export function getFieldName (fieldType: FieldType) {
       return 'Last modified';
     case FieldType.CreatedTime:
       return 'Created at';
+    case FieldType.CreatedBy:
+      return 'Created by';
+    case FieldType.LastEditedBy:
+      return 'Last edited by';
     case FieldType.Summary:
       return 'AI Summary';
     case FieldType.Translate:

@@ -1,13 +1,65 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useRowMap } from '@/application/database-yjs/context';
-import { ensureCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
+import { ensureCommentsMap, getCommentsMap, getRowComments } from '@/application/database-yjs/row_comment';
 import { RowComment } from '@/application/row-comment.type';
 import { YjsEditorKey } from '@/application/types';
 
 interface CommentsState {
   comments: RowComment[];
   loading: boolean;
+}
+
+/**
+ * Observe a row's comment count without materializing the comments map.
+ *
+ * List and other summary surfaces must remain read-only when they render. The
+ * full comments hook intentionally creates the map because its consumers are
+ * comment editors; a count-only surface should only observe data that already
+ * exists.
+ */
+export function useRowCommentCount(rowId: string) {
+  const [commentCount, setCommentCount] = useState(0);
+  const rowDoc = useRowMap()?.[rowId];
+
+  useEffect(() => {
+    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) {
+      setCommentCount(0);
+      return;
+    }
+
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    let commentsMap = getCommentsMap(rowDoc);
+
+    const updateCount = () => {
+      const nextCount = commentsMap?.size ?? 0;
+
+      setCommentCount((currentCount) => (currentCount === nextCount ? currentCount : nextCount));
+    };
+
+    const syncCommentsMap = () => {
+      const nextCommentsMap = getCommentsMap(rowDoc);
+
+      if (nextCommentsMap !== commentsMap) {
+        commentsMap?.unobserveDeep(updateCount);
+        commentsMap = nextCommentsMap;
+        commentsMap?.observeDeep(updateCount);
+      }
+
+      updateCount();
+    };
+
+    rowSharedRoot.observe(syncCommentsMap);
+    commentsMap?.observeDeep(updateCount);
+    updateCount();
+
+    return () => {
+      rowSharedRoot.unobserve(syncCommentsMap);
+      commentsMap?.unobserveDeep(updateCount);
+    };
+  }, [rowDoc]);
+
+  return commentCount;
 }
 
 export function useRowComments(rowId: string) {
@@ -55,9 +107,7 @@ export function useRowComments(rowId: string) {
   }, [rowId, rowMap]);
 
   const { sortedComments, parentMap } = useMemo(() => {
-    const parents = state.comments
-      .filter((c) => !c.parentCommentId)
-      .sort((a, b) => a.createdAt - b.createdAt);
+    const parents = state.comments.filter((c) => !c.parentCommentId).sort((a, b) => a.createdAt - b.createdAt);
 
     const childrenMap = new Map<string, RowComment[]>();
 
@@ -71,7 +121,10 @@ export function useRowComments(rowId: string) {
     }
 
     for (const [key, children] of childrenMap) {
-      childrenMap.set(key, children.sort((a, b) => a.createdAt - b.createdAt));
+      childrenMap.set(
+        key,
+        children.sort((a, b) => a.createdAt - b.createdAt)
+      );
     }
 
     const result: RowComment[] = [];

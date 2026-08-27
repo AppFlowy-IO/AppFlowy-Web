@@ -74,7 +74,7 @@ function RelationCellMenu ({
       <PopoverContent
         side="bottom"
         align="start"
-        className="w-80 p-2"
+        className="w-80 p-0"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onMouseDown={(e) => e.preventDefault()}
       >

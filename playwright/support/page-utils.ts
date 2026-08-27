@@ -145,16 +145,21 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
   const pageEl = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first();
   await expect(pageEl).toBeVisible({ timeout: 10000 });
 
-  const collapseToggle = pageEl.locator('[data-testid="outline-toggle-collapse"]');
-  const isExpanded = (await collapseToggle.count()) > 0;
+  // Scope toggles to this page's row. Descendant rows stay mounted inside the
+  // MUI Collapse even while hidden and can have their own expand toggles.
+  const pageRow = pageEl.locator(`:scope > [data-testid="page-${viewId}"]`);
+  const collapseToggle = pageRow.locator('[data-testid="outline-toggle-collapse"]');
 
-  if (!isExpanded) {
-    const expandToggle = pageEl.locator('[data-testid="outline-toggle-expand"]');
-    if ((await expandToggle.count()) > 0) {
-      await expandToggle.first().click({ force: true });
-      await page.waitForTimeout(500);
-    }
-  }
+  if (await collapseToggle.isVisible().catch(() => false)) return;
+
+  const expandToggle = pageRow.locator('[data-testid="outline-toggle-expand"]');
+
+  // A newly created document has no toggle until it receives children.
+  // Preserve the helper's no-op behavior for those childless pages.
+  if (!(await expandToggle.isVisible().catch(() => false))) return;
+
+  await expandToggle.click();
+  await expect(collapseToggle).toBeVisible({ timeout: 5000 });
 }
 
 /**
@@ -181,10 +186,16 @@ export async function createDocumentPageAndNavigate(page: Page): Promise<string>
 /**
  * Inserts a linked database into the current document editor via the slash menu.
  */
-export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string, dbName: string): Promise<void> {
+export async function insertLinkedDatabaseViaSlash(
+  page: Page,
+  docViewId: string,
+  dbName: string,
+  layout: 'Gallery' | 'Grid' | 'List' = 'Grid'
+): Promise<void> {
   const editor = page.locator(`#editor-${docViewId}`);
   await expect(editor).toBeVisible({ timeout: 15000 });
-  const initialBlockCount = await editor.locator(BlockSelectors.blockSelector('grid')).count();
+  const blockType = layout === 'List' ? 'list' : layout === 'Gallery' ? 'gallery' : 'grid';
+  const initialBlockCount = await editor.locator(BlockSelectors.blockSelector(blockType)).count();
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -195,7 +206,9 @@ export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string
 
       const slashPanel = SlashCommandSelectors.slashPanel(page);
       await expect(slashPanel).toBeVisible({ timeout: 10000 });
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+      const slashMenuKey = layout === 'List' ? 'linkedList' : layout === 'Gallery' ? 'linkedGallery' : 'linkedGrid';
+
+      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName(slashMenuKey)).first().click({ force: true });
       await page.waitForTimeout(1000);
 
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
@@ -224,7 +237,7 @@ export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string
       lastError = e;
     }
 
-    if ((await editor.locator(BlockSelectors.blockSelector('grid')).count()) > initialBlockCount) {
+    if ((await editor.locator(BlockSelectors.blockSelector(blockType)).count()) > initialBlockCount) {
       return;
     }
 

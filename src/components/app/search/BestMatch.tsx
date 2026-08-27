@@ -1,17 +1,19 @@
 import { debounce } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { View } from '@/application/types';
-import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { SearchService, ViewService } from '@/application/services/domains';
 import type {
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
   SearchSummary,
 } from '@/application/services/domains/search';
+import { View } from '@/application/types';
+import { getDatabaseIdFromExtra } from '@/application/view-utils';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
+import { isSpaceView } from '@/components/ai-chat/rag-scope';
+import type { AIChatRagSource } from '@/components/ai-chat/rag-scope';
 import { useAIEnabled, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { SearchAIOverview, SearchOverviewSource } from '@/components/app/search/SearchAIOverview';
 import ViewList, { SearchViewListItem } from '@/components/app/search/ViewList';
@@ -57,6 +59,30 @@ async function loadSearchResultView(
   }
 }
 
+async function loadSummarySourceViews(
+  outline: View[],
+  currentWorkspaceId: string,
+  sourceIds: string[],
+  searchResults: SearchDocumentResponseItem[]
+): Promise<Map<string, View>> {
+  const resultSourceIds = new Set(
+    searchResults.flatMap((item) => [item.object_id, item.database_row_id].filter(Boolean) as string[])
+  );
+  const unresolvedSourceIds = Array.from(
+    new Set(sourceIds.filter((sourceId) => !resultSourceIds.has(sourceId) && !findView(outline, sourceId)))
+  );
+
+  if (unresolvedSourceIds.length === 0) return new Map();
+
+  try {
+    const views = await ViewService.getMultiple(currentWorkspaceId, unresolvedSourceIds, 0);
+
+    return new Map(views.filter((view) => !isSpaceView(view)).map((view) => [view.view_id, view]));
+  } catch {
+    return new Map();
+  }
+}
+
 function previewLines(text?: string | null, limit = 2): string | undefined {
   const lines = text
     ?.split('\n')
@@ -94,6 +120,15 @@ function canLoadMoreSearchResults(page: SearchDocumentPageResponse, requestedOff
   return Boolean(page.has_more && typeof page.next_offset === 'number' && page.next_offset !== requestedOffset);
 }
 
+function createSearchStreamId(prefix: string): string {
+  const id =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  return `${prefix}:${id}`;
+}
+
 function BestMatch({
   onClose,
   searchValue,
@@ -103,21 +138,23 @@ function BestMatch({
   onClose: () => void;
   searchValue: string;
   askingAI: boolean;
-  onAskAI: (query: string, sourceIds?: string[]) => void;
+  onAskAI: (query: string, sources?: AIChatRagSource[]) => void;
 }) {
-  const [items, setItems] = React.useState<SearchViewListItem[] | undefined>(undefined);
-  const [searchResults, setSearchResults] = React.useState<SearchDocumentResponseItem[]>([]);
-  const [summary, setSummary] = React.useState<SearchSummary | null>(null);
-  const [hasMore, setHasMore] = React.useState(false);
-  const [nextOffset, setNextOffset] = React.useState<number | null>(null);
+  const [items, setItems] = useState<SearchViewListItem[] | undefined>(undefined);
+  const [searchResults, setSearchResults] = useState<SearchDocumentResponseItem[]>([]);
+  const [summary, setSummary] = useState<SearchSummary | null>(null);
+  const [summarySourceViews, setSummarySourceViews] = useState<Map<string, View>>(() => new Map());
+  const [hasMore, setHasMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const { t } = useTranslation();
   const outline = useAppOutline();
-  const [loading, setLoading] = React.useState<boolean>(false);
-  const [summaryLoading, setSummaryLoading] = React.useState(false);
-  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const aiEnabled = useAIEnabled();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const searchSeqRef = useRef(0);
+  const [keywordSearchStreamId] = useState(() => createSearchStreamId('best-match-keyword'));
 
   const buildSearchItems = useCallback(
     async (results: SearchDocumentResponseItem[]) => {
@@ -135,7 +172,7 @@ function BestMatch({
         const view = resolvedViews[index];
         const rowId = item.database_row_id || undefined;
 
-        if (!view || view.extra?.is_space) continue;
+        if (!view || isSpaceView(view)) continue;
 
         const viewName = view.name.trim() || t('menuAppHeader.defaultNewPageName');
         const contentPreview = previewLines(item.content || item.preview);
@@ -168,6 +205,7 @@ function BestMatch({
 
       searchSeqRef.current = searchSeq;
       setSummary(null);
+      setSummarySourceViews(new Map());
       setSummaryLoading(false);
       if (!searchTerm) {
         setItems([]);
@@ -186,13 +224,22 @@ function BestMatch({
       setHasMore(false);
       setNextOffset(null);
 
+      const summaryRequest = aiEnabled
+        ? SearchService.generateSearchSummary(currentWorkspaceId, searchTerm).catch(() => null)
+        : null;
+
       try {
-        const page = await SearchService.searchWorkspaceDocumentPage(currentWorkspaceId, searchTerm, 0);
+        const page = await SearchService.searchWorkspaceDocumentPage(
+          currentWorkspaceId,
+          searchTerm,
+          0,
+          keywordSearchStreamId
+        );
 
         if (searchSeqRef.current !== searchSeq) return;
 
         const res = mergeSearchResults([], page.items || []);
-        const shouldGenerateSummary = aiEnabled && res.some((item) => item.content);
+        const shouldGenerateSummary = summaryRequest !== null;
         const searchItems = await buildSearchItems(res);
 
         if (searchSeqRef.current !== searchSeq) return;
@@ -205,21 +252,20 @@ function BestMatch({
         setLoading(false);
 
         if (shouldGenerateSummary) {
-          try {
-            const summaryResult = await SearchService.generateSearchSummary(currentWorkspaceId, searchTerm, res);
+          const summaryResult = await summaryRequest;
 
-            if (searchSeqRef.current === searchSeq) {
-              setSummary(summaryResult.summaries[0] || null);
-            }
-          } catch {
-            if (searchSeqRef.current === searchSeq) {
-              setSummary(null);
-            }
-          } finally {
-            if (searchSeqRef.current === searchSeq) {
-              setSummaryLoading(false);
-            }
-          }
+          if (searchSeqRef.current !== searchSeq) return;
+
+          const nextSummary = summaryResult?.summaries[0] || null;
+          const sourceViews = nextSummary
+            ? await loadSummarySourceViews(outline, currentWorkspaceId, nextSummary.sources, res)
+            : new Map<string, View>();
+
+          if (searchSeqRef.current !== searchSeq) return;
+
+          setSummarySourceViews(sourceViews);
+          setSummary(nextSummary);
+          setSummaryLoading(false);
         }
         // eslint-disable-next-line
       } catch (e: any) {
@@ -238,7 +284,7 @@ function BestMatch({
         }
       }
     },
-    [aiEnabled, buildSearchItems, currentWorkspaceId, outline]
+    [aiEnabled, buildSearchItems, currentWorkspaceId, keywordSearchStreamId, outline]
   );
 
   const handleLoadMore = useCallback(async () => {
@@ -249,7 +295,12 @@ function BestMatch({
     setLoadingMore(true);
 
     try {
-      const page = await SearchService.searchWorkspaceDocumentPage(currentWorkspaceId, searchValue, nextOffset);
+      const page = await SearchService.searchWorkspaceDocumentPage(
+        currentWorkspaceId,
+        searchValue,
+        nextOffset,
+        keywordSearchStreamId
+      );
 
       if (searchSeqRef.current !== searchSeq) return;
 
@@ -271,7 +322,17 @@ function BestMatch({
         setLoadingMore(false);
       }
     }
-  }, [buildSearchItems, currentWorkspaceId, hasMore, loading, loadingMore, nextOffset, searchResults, searchValue]);
+  }, [
+    buildSearchItems,
+    currentWorkspaceId,
+    hasMore,
+    keywordSearchStreamId,
+    loading,
+    loadingMore,
+    nextOffset,
+    searchResults,
+    searchValue,
+  ]);
 
   const debounceSearch = useMemo(() => {
     return debounce(handleSearch, 300);
@@ -296,9 +357,18 @@ function BestMatch({
 
     return summary.sources.reduce<SearchOverviewSource[]>((sources, sourceId) => {
       const result = resultByObjectId.get(sourceId) || resultByRowId.get(sourceId);
-      const view = findView(outline, sourceId) || (result ? resolveSearchResultView(outline, result) : undefined);
-      const targetViewId = view?.view_id || result?.database_view_id || sourceId;
+      const view =
+        findView(outline, sourceId) ||
+        summarySourceViews.get(sourceId) ||
+        (result ? resolveSearchResultView(outline, result) : undefined);
+
+      if (!result && !view) return sources;
+
       const targetRowId = result?.database_row_id;
+      const targetViewId = view?.view_id || result?.database_view_id || (!targetRowId ? sourceId : undefined);
+
+      if (!targetViewId) return sources;
+
       const targetKey = `${targetViewId}:${targetRowId || ''}:${sourceId}`;
 
       if (seen.has(targetKey)) return sources;
@@ -309,13 +379,18 @@ function BestMatch({
         targetViewId,
         targetRowId,
         ragId: sourceId,
+        ownerViewId: view?.view_id || result?.database_view_id || (!targetRowId ? targetViewId : undefined),
+        ownerDatabaseId: result?.database_id || undefined,
         view,
         name: view?.name?.trim() || t('menuAppHeader.defaultNewPageName'),
       });
 
       return sources;
     }, []);
-  }, [outline, searchResults, summary, t]);
+  }, [outline, searchResults, summary, summarySourceViews, t]);
+
+  const summarySourceCount = new Set(summary?.sources || []).size;
+  const canAskFollowUp = summarySourceCount > 0 && overviewSources.length === summarySourceCount;
 
   return (
     <ViewList
@@ -335,8 +410,9 @@ function BestMatch({
             query={searchValue}
             sources={overviewSources}
             summary={summary}
+            canAskFollowUp={canAskFollowUp}
             onClose={onClose}
-            onAskAI={(sourceIds) => onAskAI(searchValue, sourceIds)}
+            onAskAI={(sources) => onAskAI(searchValue, sources)}
           />
         ) : undefined
       }

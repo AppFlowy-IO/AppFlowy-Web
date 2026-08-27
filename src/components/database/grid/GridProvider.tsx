@@ -1,19 +1,31 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { Row, useDatabaseContext } from '@/application/database-yjs';
+import { useDatabaseContext } from '@/application/database-yjs';
+import type { GridGrouping } from '@/application/database-yjs';
 import {
   EMBEDDED_GRID_INITIAL_ROW_LIMIT,
   EMBEDDED_GRID_LOAD_MORE_INCREMENT,
-  RenderRow,
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
-import { GridContext } from '@/components/database/grid/useGridContext';
+import type { RenderRow } from '@/components/database/components/grid/grid-row';
+import {
+  createGridInteractionStore,
+  createGridRowResizeStore,
+  GridContext,
+  GridInteractionContext,
+} from '@/components/database/grid/useGridContext';
 import { useDatabaseRowHistoryHotkeys } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
 
-export const GridProvider = ({ children, rowOrders }: { children: React.ReactNode; rowOrders?: Row[] }) => {
-  const [hoverRowId, setHoverRowId] = useState<string | undefined>();
+export const GridProvider = ({ children, grouping }: { children: ReactNode; grouping: GridGrouping }) => {
+  const { rowOrders } = grouping;
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
   const { isDocumentBlock, activeViewId, readOnly } = useDatabaseContext();
+  // Each database view owns independent transient interaction state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const interactionStore = useMemo(() => createGridInteractionStore(), [activeViewId]);
+  // Discard buffered measurements when switching views.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rowResizeStore = useMemo(() => createGridRowResizeStore(), [activeViewId]);
   const [visibleRowLimit, setVisibleRowLimit] = useState(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
   const embeddedVisibleRowLimit = isDocumentBlock ? visibleRowLimit : undefined;
   const {
@@ -21,62 +33,77 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
     remainingRowCount,
     lastVisibleRowId,
   } = useRenderRows(rowOrders, {
+    grouping,
     visibleRowLimit: embeddedVisibleRowLimit,
   });
-  const [rows, setRows] = useState<RenderRow[]>(initialRows);
-  const [resizeRows, setResizeRows] = useState<Map<string, number>>(new Map());
+  const initialRowsRef = useRef(initialRows);
 
+  // Publish the latest committed render rows for DnD callbacks. Updating this
+  // ref during render would expose data from an interrupted concurrent render.
+  useLayoutEffect(() => {
+    initialRowsRef.current = initialRows;
+  }, [initialRows]);
+  const [optimisticRows, setOptimisticRows] = useState<{ base: RenderRow[]; value: RenderRow[] } | null>(null);
+  const rows = grouping.isGrouped || optimisticRows?.base !== initialRows ? initialRows : optimisticRows.value;
+  const setRows = useCallback((value: RenderRow[]) => {
+    setOptimisticRows({ base: initialRowsRef.current, value });
+  }, []);
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const [hasGridFocus, setHasGridFocus] = useState(false);
 
   useEffect(() => {
     setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
+    setHasGridFocus(false);
   }, [activeViewId, isDocumentBlock]);
 
   useEffect(() => {
-    setRows(initialRows);
-  }, [initialRows]);
+    const element = ref.current;
 
-  useEffect(() => {
+    if (!element) return;
+
     let timeoutId: NodeJS.Timeout | null = null;
 
     const onWheel = () => {
       timeoutId && clearTimeout(timeoutId);
       isWheelingRef.current = true;
-      setHoverRowId(undefined);
+      interactionStore.setHoverRowKey(undefined);
 
       timeoutId = setTimeout(() => {
         isWheelingRef.current = false;
       }, 300);
     };
 
-    window.addEventListener('wheel', onWheel);
+    const listenerOptions: AddEventListenerOptions = { passive: true };
 
-    return () => window.removeEventListener('wheel', onWheel);
-  }, []);
+    element.addEventListener('wheel', onWheel, listenerOptions);
 
-  const handleHoverRowStart = useCallback((rowId?: string) => {
-    if (isWheelingRef.current) {
-      return;
-    }
+    return () => {
+      element.removeEventListener('wheel', onWheel, listenerOptions);
+      if (timeoutId) clearTimeout(timeoutId);
+      isWheelingRef.current = false;
+    };
+  }, [interactionStore]);
 
-    setHoverRowId(rowId);
-  }, []);
-  const [activeCell, setActiveCell] = useState<{ rowId: string; fieldId: string } | undefined>(undefined);
-  const [hasGridFocus, setHasGridFocus] = useState(false);
+  const handleHoverRowStart = useCallback(
+    (rowKey?: string) => {
+      if (isWheelingRef.current) {
+        return;
+      }
 
-  const handleSetActiveCell = useCallback((nextActiveCell?: { rowId: string; fieldId: string }) => {
-    setActiveCell(nextActiveCell);
+      interactionStore.setHoverRowKey(rowKey);
+    },
+    [interactionStore]
+  );
 
-    if (nextActiveCell) {
-      setHasGridFocus(true);
-    }
-  }, []);
+  const handleSetActiveCell = useCallback(
+    (nextActiveCell: ReturnType<typeof interactionStore.getActiveCell>) => {
+      interactionStore.setActiveCell(nextActiveCell);
 
-  useEffect(() => {
-    setActiveCell(undefined);
-    setHasGridFocus(false);
-  }, [activeViewId]);
+      if (nextActiveCell) setHasGridFocus(true);
+    },
+    [interactionStore]
+  );
 
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
@@ -98,25 +125,6 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
     useLatest: true,
   });
 
-  const onResizeRow = useCallback(({ rowId, maxCellHeight }: { rowId: string; maxCellHeight: number }) => {
-    setResizeRows((prev) => {
-      const newMap = new Map(prev);
-
-      newMap.set(rowId, maxCellHeight);
-
-      return newMap;
-    });
-  }, []);
-
-  const onResizeRowEnd = useCallback((id: string) => {
-    setResizeRows((prev) => {
-      const newMap = new Map(prev);
-
-      newMap.delete(id);
-      return newMap;
-    });
-  }, []);
-
   const loadMoreRows = useCallback(() => {
     setVisibleRowLimit((prev) => prev + EMBEDDED_GRID_LOAD_MORE_INCREMENT);
   }, []);
@@ -130,47 +138,50 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
   const [showStickyHeader, setShowStickyHeader] = useState(false);
   const contextValue = useMemo(
     () => ({
-      hoverRowId,
-      setHoverRowId: handleHoverRowStart,
+      rowOrders,
       rows,
       setRows,
       activePropertyId,
       setActivePropertyId,
-      activeCell,
-      setActiveCell: handleSetActiveCell,
-      resizeRows,
-      setResizeRow: onResizeRow,
-      onResizeRowEnd,
+      rowResizeStore,
       remainingRowCount,
       lastVisibleRowId,
       loadMoreRows,
       revealCreatedRow,
       showStickyHeader,
       setShowStickyHeader,
+      isGrouped: grouping.isGrouped,
     }),
     [
-      hoverRowId,
-      handleHoverRowStart,
+      rowOrders,
       rows,
+      setRows,
       activePropertyId,
-      activeCell,
-      handleSetActiveCell,
-      resizeRows,
-      onResizeRow,
-      onResizeRowEnd,
+      rowResizeStore,
       remainingRowCount,
       lastVisibleRowId,
       loadMoreRows,
       revealCreatedRow,
       showStickyHeader,
+      grouping.isGrouped,
     ]
+  );
+  const interactionContextValue = useMemo(
+    () => ({
+      setActiveCell: handleSetActiveCell,
+      setHoverRowKey: handleHoverRowStart,
+      store: interactionStore,
+    }),
+    [handleHoverRowStart, handleSetActiveCell, interactionStore]
   );
 
   return (
     <GridContext.Provider value={contextValue}>
-      <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
-        {children}
-      </div>
+      <GridInteractionContext.Provider value={interactionContextValue}>
+        <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
+          {children}
+        </div>
+      </GridInteractionContext.Provider>
     </GridContext.Provider>
   );
 };

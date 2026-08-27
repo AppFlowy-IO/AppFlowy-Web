@@ -11,8 +11,12 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useConditionsContext } from './context';
 import { useRollupSortableIds } from '../sorts/utils';
 
-
-function SortsButton ({ toggleExpanded, expanded }: {
+function SortsButton({
+  compact = false,
+  toggleExpanded,
+  expanded,
+}: {
+  compact?: boolean;
   toggleExpanded?: () => void;
   expanded?: boolean;
 }) {
@@ -52,11 +56,14 @@ function SortsButton ({ toggleExpanded, expanded }: {
       open={open}
       onOpenChange={setOpen}
       searchPlaceholder={t('grid.settings.sortBy')}
-      onSelect={fieldId => {
+      onSelect={(fieldId) => {
         addSort(fieldId);
         if (!expanded) {
           toggleExpanded?.();
         }
+
+        // Desktop parity: adding a sort from the toolbar opens the sort editor.
+        conditionsContext?.setSortMenuOpen?.(true);
       }}
       excludedTypes={excludedTypes}
       propertyFilter={propertyFilter}
@@ -66,8 +73,9 @@ function SortsButton ({ toggleExpanded, expanded }: {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              aria-label={t('grid.settings.sort')}
               variant={'ghost'}
-              size={'icon'}
+              size={compact ? 'icon-sm' : 'icon'}
               data-testid={'database-actions-sort'}
               className={'relative'}
               onClick={(e) => {
@@ -79,17 +87,14 @@ function SortsButton ({ toggleExpanded, expanded }: {
                 }
               }}
               style={{
-                color: sorts.length > 0 ? 'var(--text-action)' : undefined,
+                color: sorts.length > 0 ? 'var(--icon-info-thick)' : undefined,
               }}
-
+              type='button'
             >
-              <SortIcon className={'w-5 h-5'} />
-
+              <SortIcon aria-hidden='true' className={'h-5 w-5'} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            {t('grid.settings.sort')}
-          </TooltipContent>
+          <TooltipContent>{t('grid.settings.sort')}</TooltipContent>
         </Tooltip>
       </div>
     </PropertiesMenu>

@@ -1,10 +1,5 @@
 import { test, expect } from '@playwright/test';
-import {
-  PageSelectors,
-  SpaceSelectors,
-  SidebarSelectors,
-  ModalSelectors,
-} from '../../support/selectors';
+import { PageSelectors, SpaceSelectors, SidebarSelectors, ModalSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 
@@ -24,10 +19,7 @@ test.describe('Space Creation Tests', () => {
   test.describe('Create New Space', () => {
     test('should create a new space successfully', async ({ page, request }) => {
       page.on('pageerror', (err) => {
-        if (
-          err.message.includes('No workspace or service found') ||
-          err.message.includes('View not found')
-        ) {
+        if (err.message.includes('No workspace or service found') || err.message.includes('View not found')) {
           return;
         }
       });
@@ -45,55 +37,56 @@ test.describe('Space Creation Tests', () => {
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
       await page.waitForTimeout(2000);
 
-      // Step 2: Find the first space and open its more actions menu
-      const firstSpace = SpaceSelectors.items(page).first();
-      await expect(firstSpace).toBeVisible({ timeout: 10000 });
+      // Step 2: Open the global new page flow
+      await expect(PageSelectors.newPageButton(page)).toBeVisible({ timeout: 20000 });
+      await PageSelectors.newPageButton(page).click();
+      await expect(ModalSelectors.newPageModal(page)).toBeVisible({ timeout: 5000 });
 
-      // Click the more actions button for spaces (always visible in test environment)
-      await expect(SpaceSelectors.moreActionsButton(page).first()).toBeVisible({ timeout: 5000 });
-      await SpaceSelectors.moreActionsButton(page).first().click();
-      await page.waitForTimeout(1000);
+      // Step 3: Create a space from the new page modal
+      await expect(ModalSelectors.createNewSpaceButton(page)).toBeVisible({ timeout: 5000 });
+      await ModalSelectors.createNewSpaceButton(page).click();
 
-      // Step 3: Click on "Create New Space" option
-      await expect(SpaceSelectors.createNewSpaceButton(page)).toBeVisible({ timeout: 5000 });
-      await SpaceSelectors.createNewSpaceButton(page).click();
-      await page.waitForTimeout(1000);
+      // Step 4: Creation uses the same full settings panel as Manage Space,
+      // but remains a local draft until the explicit Create action.
+      const createSpaceModal = SpaceSelectors.createSpaceModal(page);
 
-      // Step 4: Fill in the space details
-      await expect(SpaceSelectors.createSpaceModal(page)).toBeVisible({ timeout: 5000 });
-      const nameInputContainer = SpaceSelectors.spaceNameInput(page);
-      await expect(nameInputContainer).toBeVisible();
-      const nameInput = nameInputContainer.locator('input');
-      await nameInput.clear();
+      await expect(createSpaceModal).toBeVisible({ timeout: 20000 });
+      await expect(SpaceSelectors.manageSpaceModal(page)).toHaveCount(0);
+      await expect(createSpaceModal.getByTestId('space-settings-panel')).toBeVisible();
+      await expect(createSpaceModal.getByText('Create space', { exact: true })).toBeVisible();
+      await expect(createSpaceModal.getByTestId('manage-space-public-access-card')).toBeVisible();
+
+      const nameInput = SpaceSelectors.spaceNameInput(page);
+      const createButton = createSpaceModal.getByTestId('create-space-submit');
+
+      await expect(nameInput).toBeEnabled();
+      await expect(nameInput).toHaveValue('');
+      await expect(createButton).toBeDisabled();
+
+      // Step 5: Editing the draft does not add it to the sidebar. Only Create
+      // persists the space and its initial document.
       await nameInput.fill(spaceName);
+      const renamedSpace = SpaceSelectors.itemByName(page, spaceName);
 
-      // Step 5: Save the new space
-      await expect(ModalSelectors.okButton(page)).toBeVisible();
-      await ModalSelectors.okButton(page).click();
-      await page.waitForTimeout(3000);
+      await expect(renamedSpace).toHaveCount(0);
+      await expect(createButton).toBeEnabled();
+      await createButton.click();
 
-      // Step 6: Verify the new space appears in the sidebar
-      // Check that the new space exists — retry with wait if not immediately visible
-      const spaceNames = SpaceSelectors.names(page);
-      const spaceFilter = spaceNames.filter({ hasText: spaceName });
+      // Step 6: Confirmation closes Create Space and opens the initial page.
+      await expect(createSpaceModal).toBeHidden({ timeout: 20000 });
+      await expect(renamedSpace).toBeVisible({ timeout: 20000 });
+      const viewModal = page.getByRole('dialog').filter({ has: page.getByTestId('view-modal-close') });
 
-      const spaceCount = await spaceFilter.count();
-      if (spaceCount === 0) {
-        // Sometimes the space might be created but not immediately visible
-        await page.waitForTimeout(2000);
-      }
+      await expect(viewModal.getByTestId('view-modal-close')).toBeVisible({ timeout: 20000 });
+      await expect(viewModal.getByTestId('page-title-input')).toBeVisible({ timeout: 20000 });
 
-      // Verify space exists (either exact name or contains 'Test Space')
-      const allSpaceTexts = await spaceNames.allTextContents();
-      const trimmedNames = allSpaceTexts.map((t) => t.trim());
-      const spaceExists = trimmedNames.some(
-        (name) => name === spaceName || name.includes('Test Space')
-      );
-      expect(spaceExists).toBe(true);
+      // Step 7: The created space remains present and interactive.
+      await viewModal.getByTestId('view-modal-close').click();
+      const expandedMarker = renamedSpace.getByTestId('space-expanded');
+      const wasExpanded = (await expandedMarker.getAttribute('data-expanded')) === 'true';
 
-      // Step 7: Verify the new space is clickable
-      await spaceNames.filter({ hasText: spaceName }).first().click({ force: true });
-      await page.waitForTimeout(1000);
+      await renamedSpace.getByTestId('space-name').click();
+      await expect(expandedMarker).toHaveAttribute('data-expanded', String(!wasExpanded));
     });
   });
 });

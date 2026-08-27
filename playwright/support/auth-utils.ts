@@ -1,5 +1,6 @@
 import { Page, APIRequestContext } from '@playwright/test';
 import { TestConfig } from './test-config';
+import { assertSuccessfulAppFlowyResponse } from './appflowy-response';
 
 /**
  * E2E test utility for authentication with GoTrue admin
@@ -110,7 +111,8 @@ export class AuthTestUtils {
         // don't duplicate it.
         const proxyPrefix = gotrueUrlObj.pathname.replace(/\/+$/, ''); // e.g. "/gotrue"
         const pathAlreadyPrefixed = proxyPrefix && actionUrl.pathname.startsWith(proxyPrefix);
-        normalizedLink = gotrueUrlObj.origin + (pathAlreadyPrefixed ? '' : proxyPrefix) + actionUrl.pathname + actionUrl.search;
+        normalizedLink =
+          gotrueUrlObj.origin + (pathAlreadyPrefixed ? '' : proxyPrefix) + actionUrl.pathname + actionUrl.search;
       }
     } catch {
       // If URL parsing fails, use as-is
@@ -147,7 +149,9 @@ export class AuthTestUtils {
 
     if (!hrefMatch || !hrefMatch[1]) {
       throw new Error(
-        `Could not extract sign-in URL from action link. Status: ${status}, URL: ${responseUrl}, Body length: ${html.length}, Body preview: ${html.substring(0, 200)}`
+        `Could not extract sign-in URL from action link. Status: ${status}, URL: ${responseUrl}, Body length: ${
+          html.length
+        }, Body preview: ${html.substring(0, 200)}`
       );
     }
 
@@ -183,10 +187,12 @@ export class AuthTestUtils {
       throw new Error('No access token or refresh token found');
     }
 
-    // Call the verify endpoint to create the user profile
+    // Call the verify endpoint to create the user profile. The endpoint
+    // consumes this one-time magic-link session, so a fresh link is generated
+    // below for the browser session.
     console.log('Calling verify endpoint to create user profile');
 
-    let verifyResponse: any;
+    let verifyResponse;
     for (let retries = 3; retries > 0; retries--) {
       verifyResponse = await request.get(`${this.config.baseUrl}/api/user/verify/${accessToken}`, {
         failOnStatusCode: false,
@@ -205,15 +211,39 @@ export class AuthTestUtils {
       }
     }
 
-    // Refresh the token to get session data
+    if (!verifyResponse) {
+      throw new Error('Verify user did not return a response');
+    }
+
+    assertSuccessfulAppFlowyResponse({
+      bodyText: await verifyResponse.text(),
+      ok: verifyResponse.ok(),
+      operation: 'Verify user',
+      status: verifyResponse.status(),
+    });
+
+    const sessionCallbackLink = await this.generateSignInUrl(request, email);
+    const sessionHashIndex = sessionCallbackLink.indexOf('#');
+
+    if (sessionHashIndex === -1) {
+      throw new Error('No hash found in session callback link');
+    }
+
+    const sessionParams = new URLSearchParams(sessionCallbackLink.substring(sessionHashIndex + 1));
+    const sessionRefreshToken = sessionParams.get('refresh_token');
+
+    if (!sessionRefreshToken) {
+      throw new Error('No refresh token found in session callback link');
+    }
+
     const tokenResponse = await request.post(`${this.config.gotrueUrl}/token?grant_type=refresh_token`, {
-      data: { refresh_token: refreshToken },
+      data: { refresh_token: sessionRefreshToken },
       headers: { 'Content-Type': 'application/json' },
       failOnStatusCode: false,
     });
 
     if (!tokenResponse.ok()) {
-      throw new Error(`Failed to refresh token: ${tokenResponse.status()}`);
+      throw new Error(`Failed to refresh token: ${tokenResponse.status()} - ${await tokenResponse.text()}`);
     }
 
     const tokenData = await tokenResponse.json();
@@ -228,7 +258,7 @@ export class AuthTestUtils {
         }
         localStorage.setItem('token', JSON.stringify(tokenData));
       },
-      { tokenData, refreshToken }
+      { tokenData, refreshToken: sessionRefreshToken }
     );
 
     // Navigate to the app
@@ -259,10 +289,7 @@ export async function signInTestUser(
  * Uses GoTrue admin generate_link to create the user, then calls
  * the verify endpoint to ensure the user profile exists.
  */
-export async function createUserAccount(
-  request: APIRequestContext,
-  email: string
-): Promise<void> {
+export async function createUserAccount(request: APIRequestContext, email: string): Promise<void> {
   const authUtils = new AuthTestUtils();
   const callbackLink = await authUtils.generateSignInUrl(request, email);
 
@@ -276,9 +303,16 @@ export async function createUserAccount(
   if (!accessToken) return;
 
   // Call verify endpoint to create the user profile in the backend
-  await request.get(`${TestConfig.apiUrl}/api/user/verify/${accessToken}`, {
+  const verifyResponse = await request.get(`${TestConfig.apiUrl}/api/user/verify/${accessToken}`, {
     failOnStatusCode: false,
     timeout: 30000,
+  });
+
+  assertSuccessfulAppFlowyResponse({
+    bodyText: await verifyResponse.text(),
+    ok: verifyResponse.ok(),
+    operation: 'Create user profile',
+    status: verifyResponse.status(),
   });
 }
 

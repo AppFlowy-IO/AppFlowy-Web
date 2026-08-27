@@ -14,6 +14,7 @@ export const ERROR_CODE = {
   RECORD_NOT_FOUND: -2,
   RECORD_ALREADY_EXISTS: -3,
   RECORD_DELETED: -4,
+  RETRY_LATER: -5,
 
   // Auth & permissions
   NOT_LOGGED_IN: 1011,
@@ -60,6 +61,7 @@ export const ERROR_CODE = {
 export const APP_EVENTS = {
   // App lifecycle events
   OUTLINE_LOADED: 'outline-loaded',
+  TRASH_UPDATED: 'trash-updated',                     // Fresh workspace trash payload accepted by app state
   RECONNECT_WEBSOCKET: 'reconnect-websocket',
   WEBSOCKET_STATUS: 'websocket-status',
   
@@ -68,12 +70,16 @@ export const APP_EVENTS = {
   PERMISSION_CHANGED: 'permission-changed',               // Object access permissions changed  
   SECTION_CHANGED: 'section-changed',                     // Workspace sections updated (recent views, etc.)
   SHARE_VIEWS_CHANGED: 'share-views-changed',             // View sharing settings changed
+  VIEW_ACCESS_REVOKED: 'view-access-revoked',             // Current user lost access to a view; local cache evicted
+  VIEW_ACCESS_RESTORED: 'view-access-restored',           // Current user regained access to a view; permission gate reset
   MENTIONABLE_PERSON_LIST_CHANGED: 'mentionable-person-list-changed', // Team member changes
   SERVER_LIMIT_CHANGED: 'server-limit-changed',           // Billing/feature limits updated
   WORKSPACE_MEMBER_PROFILE_CHANGED: 'workspace-member-profile-changed', // Workspace member profile updated
   FOLDER_OUTLINE_CHANGED: 'folder-outline-changed',       // Workspace folder outline diff (sidebar refresh)
   FOLDER_VIEW_CHANGED: 'folder-view-changed',             // Granular folder view change (sidebar update)
+  VIEW_META_CHANGED: 'view-meta-changed',                 // Parsed view metadata update for loaded views outside the outline
   INBOX_NOTIFICATION: 'inbox-notification',               // Inbox notification push for notification center refresh
+  INLINE_COMMENT_CHANGED: 'inline-comment-changed',       // Document inline comment created, resolved, or deleted
   COLLAB_DOC_RESET: 'collab-doc-reset',                   // Collab version reset replaced active Y.Doc instance
 
   // Editor events

@@ -5,8 +5,24 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import { stripInlineCommentIds } from '@/components/editor/clipboard/inline-comment-metadata';
 
 export const clipboardFormatKey = 'x-appflowy-fragment';
+
+function setFragmentDataWithoutCommentIds(
+  editor: ReactEditor,
+  setFragmentData: ReactEditor['setFragmentData'],
+  data: Pick<DataTransfer, 'getData' | 'setData'>
+) {
+  const getFragment = editor.getFragment;
+
+  editor.getFragment = () => stripInlineCommentIds(getFragment.call(editor));
+  try {
+    setFragmentData(data as DataTransfer);
+  } finally {
+    editor.getFragment = getFragment;
+  }
+}
 
 export const withCopy = (editor: ReactEditor) => {
   const { setFragmentData } = editor;
@@ -26,7 +42,7 @@ export const withCopy = (editor: ReactEditor) => {
       const [node] = entry;
 
       if (node && isEmbedBlockTypes(node.type as BlockType)) {
-        const fragment = editor.getFragment();
+        const fragment = stripInlineCommentIds(editor.getFragment());
         const string = JSON.stringify(fragment);
         const encoded = window.btoa(encodeURIComponent(string));
 
@@ -42,14 +58,14 @@ export const withCopy = (editor: ReactEditor) => {
 
     if (tsvText !== null) {
       // Override the default copy with TSV-formatted text
-      setFragmentData(data as DataTransfer);
+      setFragmentDataWithoutCommentIds(editor, setFragmentData, data);
 
       // Override the plain text with tab-separated values
       (data as DataTransfer).setData('text/plain', tsvText);
       return;
     }
 
-    setFragmentData(data as DataTransfer);
+    setFragmentDataWithoutCommentIds(editor, setFragmentData, data);
   };
 
   return editor;

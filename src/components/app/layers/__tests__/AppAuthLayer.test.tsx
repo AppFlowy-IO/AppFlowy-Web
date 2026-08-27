@@ -2,22 +2,25 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { useContext } from 'react';
 
 import { UserService, WorkspaceService, AuthService } from '@/application/services/domains';
+import { invalidToken } from '@/application/session/token';
 import { type UserWorkspaceInfo } from '@/application/types';
+import { AppProvider } from '@/components/app/app.hooks';
 import { AuthInternalContext, type AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { AppAuthLayer } from '@/components/app/layers/AppAuthLayer';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 const mockNavigate = jest.fn();
+let mockWorkspaceId: string | undefined;
+let mockPathname = '/login';
 
 jest.mock('react-router-dom', () => ({
-  useLocation: () => ({ pathname: '/login' }),
+  useLocation: () => ({ pathname: mockPathname }),
   useNavigate: () => mockNavigate,
-  useParams: () => ({}),
+  useParams: () => ({ workspaceId: mockWorkspaceId }),
 }));
 
 jest.mock('@/application/session/token', () => ({
   invalidToken: jest.fn(),
-  isTokenValid: jest.fn(() => true),
 }));
 
 jest.mock('@/application/services/domains', () => ({
@@ -30,6 +33,16 @@ jest.mock('@/application/services/domains', () => ({
   WorkspaceService: {
     open: jest.fn(),
   },
+}));
+
+// AppProvider composes the workspace layers under AppAuthLayer; they are
+// irrelevant to these tests, so render their children directly.
+jest.mock('@/components/app/layers/AppSyncLayer', () => ({
+  AppSyncLayer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+jest.mock('@/components/app/layers/AppBusinessLayer', () => ({
+  AppBusinessLayer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 function createDeferred<T>() {
@@ -54,14 +67,114 @@ describe('AppAuthLayer workspace info loading', () => {
   const mockGetWorkspaceInfo = UserService.getWorkspaceInfo as jest.MockedFunction<typeof UserService.getWorkspaceInfo>;
   const mockOpenWorkspace = WorkspaceService.open as jest.MockedFunction<typeof WorkspaceService.open>;
   const mockGetServerInfo = AuthService.getServerInfo as jest.MockedFunction<typeof AuthService.getServerInfo>;
+  const mockInvalidToken = invalidToken as jest.MockedFunction<typeof invalidToken>;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockWorkspaceId = undefined;
+    mockPathname = '/login';
+    window.history.replaceState({}, '', '/');
     mockGetServerInfo.mockResolvedValue({
       enable_page_history: true,
       ai_enabled: true,
     } as never);
     mockOpenWorkspace.mockResolvedValue(undefined as never);
+  });
+
+  it('redirects an unauthenticated app route without timer-based polling', async () => {
+    mockPathname = '/app/workspace-old';
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: false,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <div />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(mockInvalidToken).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).toHaveBeenCalledWith(`/login?redirectTo=${encodeURIComponent(window.location.href)}`);
+    expect(mockGetWorkspaceInfo).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/login?force=true',
+    '/LOGIN?force=true',
+    '/%6Cogin?force=true',
+    '/auth/callback?type=oauth',
+    '/auth/%63allback?type=oauth',
+  ])('does not overwrite an explicit auth navigation when the router location is stale: %s', (liveUrl) => {
+    mockPathname = '/app/workspace-old';
+    window.history.replaceState({}, '', liveUrl);
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: false,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <div />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    expect(mockInvalidToken).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockGetWorkspaceInfo).not.toHaveBeenCalled();
+  });
+
+  it('remounts the account-scoped layers when authentication is invalidated or the account changes', async () => {
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
+
+    function CaptureAuthContext() {
+      const authContext = useContext(AuthInternalContext);
+
+      return (
+        <div data-testid='selected-workspace'>{authContext?.userWorkspaceInfo?.selectedWorkspace.id ?? 'none'}</div>
+      );
+    }
+
+    const renderApp = (config: { isAuthenticated: boolean; authenticatedUserId?: string }) => (
+      <AFConfigContext.Provider
+        value={{
+          ...config,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppProvider>
+          <CaptureAuthContext />
+        </AppProvider>
+      </AFConfigContext.Provider>
+    );
+
+    const view = render(renderApp({ isAuthenticated: true, authenticatedUserId: 'user-1' }));
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+    expect(mockGetWorkspaceInfo).toHaveBeenCalledTimes(1);
+
+    // Sign-out: the workspace-scoped subtree unmounts in the same commit and
+    // the fresh, unauthenticated layer does not load workspace info.
+    view.rerender(renderApp({ isAuthenticated: false }));
+
+    expect(screen.queryByTestId('selected-workspace')).toBeNull();
+    expect(screen.getByRole('status', { name: 'Loading workspace' })).toBeTruthy();
+    expect(mockGetWorkspaceInfo).toHaveBeenCalledTimes(1);
+
+    // Sign-in as another account: a new layer instance loads from scratch.
+    view.rerender(renderApp({ isAuthenticated: true, authenticatedUserId: 'user-2' }));
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+    expect(mockGetWorkspaceInfo).toHaveBeenCalledTimes(2);
   });
 
   it('forces a fresh workspace-info request after switching workspace and ignores stale responses', async () => {
@@ -122,5 +235,148 @@ describe('AppAuthLayer workspace info loading', () => {
     });
 
     expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-new');
+  });
+
+  it('does not reopen the previous URL workspace while a manual switch settles', async () => {
+    const callOrder: string[] = [];
+    let latestAuthContext: AuthInternalContextType | null = null;
+
+    mockWorkspaceId = 'workspace-old';
+    mockNavigate.mockImplementation((path: string) => {
+      callOrder.push(`navigate:${path}`);
+      mockWorkspaceId = path.split('/')[2];
+    });
+    mockOpenWorkspace.mockImplementation(async (workspaceId: string) => {
+      callOrder.push(`open:${workspaceId}`);
+      return undefined as never;
+    });
+    mockGetWorkspaceInfo
+      .mockResolvedValueOnce(createWorkspaceInfo('workspace-old') as never)
+      .mockImplementationOnce(async () => {
+        callOrder.push('refresh-workspace-info');
+        return createWorkspaceInfo('workspace-new') as never;
+      });
+
+    function CaptureAuthContext() {
+      latestAuthContext = useContext(AuthInternalContext);
+
+      return (
+        <div data-testid='selected-workspace'>
+          {latestAuthContext?.userWorkspaceInfo?.selectedWorkspace.id ?? 'none'}
+        </div>
+      );
+    }
+
+    render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <CaptureAuthContext />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-old'));
+
+    await act(async () => {
+      await latestAuthContext!.onChangeWorkspace('workspace-new');
+    });
+
+    expect(callOrder).toEqual(['open:workspace-new', 'refresh-workspace-info', 'navigate:/app/workspace-new']);
+    expect(mockOpenWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('selected-workspace').textContent).toBe('workspace-new');
+  });
+
+  it('keeps sync limits unresolved and retries after a transient server-info failure', async () => {
+    jest.useFakeTimers();
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    let latestAuthContext: AuthInternalContextType | null = null;
+
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
+    mockGetServerInfo
+      .mockReset()
+      .mockRejectedValueOnce(new Error('server unavailable'))
+      .mockResolvedValueOnce({
+        enable_page_history: true,
+        ai_enabled: true,
+        max_update_bytes: 8_000_000,
+        max_slow_sync_update_bytes: 64_000_000,
+      } as never);
+
+    function CaptureAuthContext() {
+      latestAuthContext = useContext(AuthInternalContext);
+      return null;
+    }
+
+    const view = render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <CaptureAuthContext />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockGetServerInfo).toHaveBeenCalledTimes(1);
+      expect(latestAuthContext?.syncLimitsLoaded).toBe(false);
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_000);
+      });
+
+      expect(mockGetServerInfo).toHaveBeenCalledTimes(2);
+      expect(latestAuthContext?.syncLimitsLoaded).toBe(true);
+      expect(latestAuthContext?.maxUpdateBytes).toBe(8_000_000);
+      expect(latestAuthContext?.maxSlowSyncUpdateBytes).toBe(64_000_000);
+    } finally {
+      view.unmount();
+      errorSpy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('aborts an in-flight server-info request when the auth layer unmounts', async () => {
+    const serverInfo = createDeferred<Awaited<ReturnType<typeof AuthService.getServerInfo>>>();
+
+    mockGetWorkspaceInfo.mockResolvedValue(createWorkspaceInfo('workspace-old') as never);
+    mockGetServerInfo.mockReset().mockReturnValue(serverInfo.promise);
+
+    const view = render(
+      <AFConfigContext.Provider
+        value={{
+          isAuthenticated: true,
+          updateCurrentUser: jest.fn(),
+          openLoginModal: jest.fn(),
+        }}
+      >
+        <AppAuthLayer>
+          <div />
+        </AppAuthLayer>
+      </AFConfigContext.Provider>
+    );
+
+    await waitFor(() => expect(mockGetServerInfo).toHaveBeenCalledTimes(1));
+
+    const signal = mockGetServerInfo.mock.calls[0][0];
+
+    expect(signal?.aborted).toBe(false);
+    view.unmount();
+    expect(signal?.aborted).toBe(true);
   });
 });

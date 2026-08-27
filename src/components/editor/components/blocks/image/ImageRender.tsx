@@ -30,7 +30,7 @@ function ImageRender({
   const [rendered, setRendered] = useState(false);
 
   const { width: imageWidth } = useMemo(() => node.data || {}, [node.data]);
-  const url = node.data.url || localUrl;
+  const url = localUrl || node.data.url;
 
   Log.debug('[ImageRender] url', { url, localUrl, node: node.data });
   const [initialWidth, setInitialWidth] = useState<number | null>(null);

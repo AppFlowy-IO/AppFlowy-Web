@@ -10,6 +10,7 @@ export {
   movePageTo as moveTo,
   deleteTrash,
   createSpace,
+  createSpaceWithInitialPage,
   updateSpace,
   createDatabaseView,
 } from '../js-services/http/page-api';

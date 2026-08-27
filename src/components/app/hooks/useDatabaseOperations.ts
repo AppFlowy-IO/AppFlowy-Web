@@ -11,6 +11,8 @@ import {
   DatabasePromptRow,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  LoadRowDocumentOptions,
+  RowDocumentSourcePayload,
   Types,
   YDatabase,
   YDoc,
@@ -18,12 +20,30 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { openRowSubDocument } from '@/application/view-loader';
-import { Log } from '@/utils/log';
+import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { PromptDatabaseConfiguration } from '@/components/chat';
+import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 const DUPLICATE_ROW_DOCUMENT_PRE_SYNC_TIMEOUT_MS = 15000;
+
+async function waitForSyncOrTimeout(sync: Promise<void>): Promise<void> {
+  let timeoutId: number | undefined;
+
+  try {
+    await Promise.race([
+      sync,
+      new Promise<void>((resolve) => {
+        timeoutId = window.setTimeout(resolve, DUPLICATE_ROW_DOCUMENT_PRE_SYNC_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
 
 // Hook for managing database-related operations
 export function useDatabaseOperations(
@@ -296,14 +316,14 @@ export function useDatabaseOperations(
 
   // Load a row sub-document (document content inside a database row)
   const loadRowDocument = useCallback(
-    async (documentId: string): Promise<YDoc | null> => {
+    async (documentId: string, options?: LoadRowDocumentOptions): Promise<YDoc | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[loadRowDocument] workspaceId not available');
         return null;
       }
 
       try {
-        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId);
+        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId, options);
 
         // Set metadata for sync binding
         const docWithMeta = doc as YDoc & {
@@ -324,6 +344,7 @@ export function useDatabaseOperations(
         return doc;
       } catch (e) {
         Log.error('[loadRowDocument] failed to load', e);
+        if (isPermissionDeniedError(e)) throw e;
         return null;
       }
     },
@@ -332,19 +353,23 @@ export function useDatabaseOperations(
 
   // Create a row document on the server (orphaned view)
   const createRowDocument = useCallback(
-    async (documentId: string): Promise<Uint8Array | null> => {
+    async (documentId: string, source?: RowDocumentSourcePayload): Promise<Uint8Array | null> => {
       if (!currentWorkspaceId) {
         Log.warn('[createRowDocument] service or workspaceId not available');
         return null;
       }
 
       try {
-        Log.debug('[createRowDocument] creating', { documentId });
-        const docState = await ViewService.createOrphaned(currentWorkspaceId, { document_id: documentId });
+        Log.debug('[createRowDocument] creating', { documentId, source });
+        const docState = await ViewService.createOrphaned(currentWorkspaceId, {
+          document_id: documentId,
+          row_document_source: source,
+        });
 
         return docState;
       } catch (e) {
         Log.error('[createRowDocument] failed', e);
+        if (isPermissionDeniedError(e)) throw e;
         return null;
       }
     },
@@ -352,21 +377,28 @@ export function useDatabaseOperations(
   );
 
   const duplicateRowDocument = useCallback(
-    async (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => {
+    async (
+      databaseId: string,
+      sourceRowId: string,
+      newRowId: string,
+      clientDocStateB64?: string,
+      prepareSource?: () => Promise<void>
+    ) => {
       if (!currentWorkspaceId) return;
       try {
         if (syncAllToServer) {
-          await Promise.race([
-            syncAllToServer(currentWorkspaceId),
-            new Promise<void>((resolve) => {
-              window.setTimeout(resolve, DUPLICATE_ROW_DOCUMENT_PRE_SYNC_TIMEOUT_MS);
-            }),
-          ]);
+          await waitForSyncOrTimeout(syncAllToServer(currentWorkspaceId));
         }
+
+        // Template sources are intentionally absent from every view's
+        // row_orders. Register their orphan document only after the database
+        // collab (including that hidden row) has reached the server.
+        await prepareSource?.();
 
         await duplicateRowDocumentAPI(currentWorkspaceId, databaseId, sourceRowId, newRowId, clientDocStateB64);
       } catch (e) {
         Log.error('[duplicateRowDocument] failed', e);
+        throw e;
       }
     },
     [currentWorkspaceId, syncAllToServer]

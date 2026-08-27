@@ -11,16 +11,14 @@ import {
   toStartDateCondition,
   useFieldType,
 } from '@/application/database-yjs';
-import { useRemoveFilter, useUpdateFilter } from '@/application/database-yjs/dispatch';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import DateTimeFilterDatePicker from '@/components/database/components/filters/filter-menu/DateTimeFilterDatePicker';
 import DateTimeFilterStartEndDateSelect
   from '@/components/database/components/filters/filter-menu/DateTimeFilterStartEndDateSelect';
+import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
-import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-function TextFilterMenu ({ filter }: { filter: DateFilter }) {
+function DateTimeFilterMenu ({ filter }: { filter: DateFilter }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateFilter();
   const fieldType = useFieldType(filter.fieldId);
@@ -41,15 +39,17 @@ function TextFilterMenu ({ filter }: { filter: DateFilter }) {
       { value: pick(DateFilterCondition.DateStartsOnOrBefore), text: t('grid.dateFilter.onOrBefore') },
       { value: pick(DateFilterCondition.DateStartsOnOrAfter), text: t('grid.dateFilter.onOrAfter') },
       { value: pick(DateFilterCondition.DateStartsBetween), text: t('grid.dateFilter.between') },
+      { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty'), hidden: isRowTime },
+      { value: pick(DateFilterCondition.DateStartIsNotEmpty), text: t('grid.dateFilter.notEmpty'), hidden: isRowTime },
       { value: pick(DateFilterCondition.DateStartsToday), text: t('relativeDates.today') },
       { value: pick(DateFilterCondition.DateStartsYesterday), text: t('relativeDates.yesterday') },
       { value: pick(DateFilterCondition.DateStartsTomorrow), text: t('relativeDates.tomorrow') },
       { value: pick(DateFilterCondition.DateStartsThisWeek), text: t('relativeDates.thisWeek') },
       { value: pick(DateFilterCondition.DateStartsLastWeek), text: t('relativeDates.lastWeek') },
       { value: pick(DateFilterCondition.DateStartsNextWeek), text: t('relativeDates.nextWeek') },
-      !isRowTime && { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty') },
-      !isRowTime && { value: pick(DateFilterCondition.DateStartIsNotEmpty), text: t('grid.dateFilter.notEmpty') },
-    ].filter(Boolean) as { value: DateFilterCondition; text: string }[];
+    ]
+      .filter((condition) => !condition.hidden)
+      .map(({ value, text }) => ({ value, text }));
   }, [fieldType, selectedStart, t]);
 
   const displayTextField =
@@ -60,8 +60,6 @@ function TextFilterMenu ({ filter }: { filter: DateFilter }) {
       DateFilterCondition.DateStartIsEmpty,
       DateFilterCondition.DateStartIsNotEmpty,
     ].includes(filter.condition);
-
-  const deleteFilter = useRemoveFilter();
 
   const handleSelectStartOrEnd = useCallback(
     (isStart: boolean) => {
@@ -84,42 +82,26 @@ function TextFilterMenu ({ filter }: { filter: DateFilter }) {
 
   return (
     <div
-      className={'flex flex-col gap-2'}
+      className={'flex flex-col gap-1'}
       data-testid="date-filter"
     >
-      <div className={'flex text-text-primary text-sm items-center justify-between gap-2'}>
-        {fieldType === FieldType.CreatedTime ? t('grid.field.createdAtFieldName') : fieldType === FieldType.LastEditedTime ? t('grid.field.updatedAtFieldName') :
-          <DateTimeFilterStartEndDateSelect
-            isStart={selectedStart}
-            onSelect={handleSelectStartOrEnd}
-          />}
-
-        <div className={'flex flex-1 items-center justify-end'}>
-          <FilterConditionsSelect
-            filter={filter}
-            conditions={conditions}
-          />
-        </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size={'icon-sm'}
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteFilter(filter.id);
-              }}
-              variant={'ghost'}
-              danger
-              data-testid="delete-filter-button"
-            >
-              <DeleteIcon className={'w-5 h-5'} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('grid.settings.deleteFilter')}
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      <FieldMenuTitle
+        fieldId={filter.fieldId}
+        filterId={filter.id}
+        nameMaxWidthClassName={'max-w-[120px]'}
+        renderConditionSelect={
+          <>
+            <DateTimeFilterStartEndDateSelect
+              isStart={selectedStart}
+              onSelect={handleSelectStartOrEnd}
+            />
+            <FilterConditionsSelect
+              filter={filter}
+              conditions={conditions}
+            />
+          </>
+        }
+      />
       {displayTextField && (
         <DateTimeFilterDatePicker filter={filter} />
       )}
@@ -127,4 +109,4 @@ function TextFilterMenu ({ filter }: { filter: DateFilter }) {
   );
 }
 
-export default TextFilterMenu;
+export default DateTimeFilterMenu;

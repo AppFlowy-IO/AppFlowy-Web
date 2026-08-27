@@ -32,6 +32,9 @@ function DragItem({
   className,
   dragHandleVisibility = 'always',
   dragIcon,
+  dragHandleLabel,
+  onMoveUp,
+  onMoveDown,
 }: {
   id: string;
   children: React.ReactNode;
@@ -39,6 +42,9 @@ function DragItem({
   className?: string;
   dragHandleVisibility?: 'always' | 'hover' | 'never';
   dragIcon?: React.ReactNode;
+  dragHandleLabel?: string;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const dragHandleRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -125,11 +131,27 @@ function DragItem({
       )}
     >
       <div
+        aria-keyshortcuts={dragHandleLabel ? 'ArrowUp ArrowDown' : undefined}
+        aria-label={dragHandleLabel}
+        role={dragHandleLabel ? 'button' : undefined}
+        tabIndex={dragHandleLabel ? 0 : undefined}
         onMouseDown={(e) => {
           e.stopPropagation();
         }}
+        onKeyDown={(event) => {
+          if (!dragHandleLabel) return;
+          if (event.key === 'ArrowUp' && onMoveUp) {
+            event.preventDefault();
+            event.stopPropagation();
+            onMoveUp();
+          } else if (event.key === 'ArrowDown' && onMoveDown) {
+            event.preventDefault();
+            event.stopPropagation();
+            onMoveDown();
+          }
+        }}
         className={cn(
-          'drag-handle flex cursor-pointer items-center justify-center',
+          'drag-handle flex cursor-pointer items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-theme-thick',
           shouldShowDragHandle ? 'opacity-100' : 'opacity-0'
         )}
         ref={dragHandleRef}

@@ -4,12 +4,19 @@ jest.mock('@/utils/runtime-config', () => ({
 
 import * as Y from 'yjs';
 
-import { applyRelationCellChangeset } from '@/application/database-yjs/dispatch/relation';
+import { applyRelationCellChangeset, getRelationRowIdsFromCell } from '@/application/database-yjs/dispatch/relation';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
-import { YDatabase, YDatabaseField, YDatabaseFields, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import {
+  YDatabase,
+  YDatabaseCell,
+  YDatabaseField,
+  YDatabaseFields,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 
 function createAttachedRelationField(fieldId = 'relation-field') {
   const doc = new Y.Doc();
@@ -24,7 +31,49 @@ function createAttachedRelationField(fieldId = 'relation-field') {
   return fields.get(fieldId) as YDatabaseField;
 }
 
+function createAttachedCell() {
+  return new Y.Doc().getMap('cell') as YDatabaseCell;
+}
+
 describe('relation desktop parity helpers', () => {
+  it('reads only native relation payloads as row IDs', () => {
+    const convertedText = createAttachedCell();
+
+    convertedText.set(YjsDatabaseKey.field_type, FieldType.RichText);
+    convertedText.set(YjsDatabaseKey.data, 'row-a,row-b');
+    expect(getRelationRowIdsFromCell(convertedText)).toEqual([]);
+
+    const convertedMedia = createAttachedCell();
+    const mediaData = new Y.Array<string>();
+
+    mediaData.push(['{"id":"file-a"}']);
+    convertedMedia.set(YjsDatabaseKey.field_type, FieldType.Media);
+    convertedMedia.set(YjsDatabaseKey.data, mediaData);
+    expect(getRelationRowIdsFromCell(convertedMedia)).toEqual([]);
+
+    const legacyWebCell = createAttachedCell();
+
+    legacyWebCell.set(YjsDatabaseKey.field_type, FieldType.Relation);
+    legacyWebCell.set(YjsDatabaseKey.source_field_type, String(FieldType.RichText));
+    legacyWebCell.set(YjsDatabaseKey.data, 'row-a,row-b');
+    expect(getRelationRowIdsFromCell(legacyWebCell)).toEqual([]);
+
+    const nativeRelation = createAttachedCell();
+    const relationData = new Y.Array<string>();
+
+    relationData.push(['row-a', 'row-b']);
+    nativeRelation.set(YjsDatabaseKey.field_type, FieldType.Relation);
+    nativeRelation.set(YjsDatabaseKey.data, relationData);
+    expect(getRelationRowIdsFromCell(nativeRelation)).toEqual(['row-a', 'row-b']);
+
+    const legacyRelationWithoutType = createAttachedCell();
+    const legacyRelationData = new Y.Array<string>();
+
+    legacyRelationData.push(['row-c']);
+    legacyRelationWithoutType.set(YjsDatabaseKey.data, legacyRelationData);
+    expect(getRelationRowIdsFromCell(legacyRelationWithoutType)).toEqual(['row-c']);
+  });
+
   it('creates relation fields with desktop-compatible type option defaults', () => {
     const field = createAttachedRelationField();
     const option = parseRelationTypeOption(field);

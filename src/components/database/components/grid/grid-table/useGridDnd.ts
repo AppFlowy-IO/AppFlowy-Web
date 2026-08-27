@@ -4,9 +4,7 @@ import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { triggerPostMoveFlash } from '@atlaskit/pragmatic-drag-and-drop-flourish/trigger-post-move-flash';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import {
-  getReorderDestinationIndex,
-} from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
+import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
 import { Virtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -22,7 +20,11 @@ import { RenderColumn } from '@/components/database/components/grid/grid-column'
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
-export function useGridDnd (columns: RenderColumn[], virtualizer: Virtualizer<Element, Element>, columnVirtualizer: Virtualizer<HTMLDivElement, Element>) {
+export function useGridDnd(
+  columns: RenderColumn[],
+  virtualizer: Virtualizer<Element, Element>,
+  columnVirtualizer: Virtualizer<HTMLDivElement, Element>
+) {
   const rowContextValue = useGridDndRow(virtualizer);
   const columnContextValue = useGridDndColumn(columns, columnVirtualizer);
 
@@ -34,13 +36,10 @@ export function useGridDnd (columns: RenderColumn[], virtualizer: Virtualizer<El
   }, [columnContextValue, rowContextValue]);
 }
 
-export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
+export function useGridDndRow(virtualizer: Virtualizer<Element, Element>) {
   const viewId = useDatabaseViewId();
   const readOnly = useReadOnly();
-  const {
-    rows: data,
-    setRows,
-  } = useGridContext();
+  const { isGrouped, rows: data, setRows } = useGridContext();
   const [registry] = useState(getRowRegistry);
   const [instanceId] = useState(() => Symbol(`grid-row-dnd-${viewId}`));
   const [lastRowMoved, setLastRowMoved] = useState<{
@@ -56,54 +55,50 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
   }, [data]);
   const reorderRowDispatch = useReorderRowDispatch();
 
-  const reorderRow = useCallback(({
-    startIndex,
-    indexOfTarget,
-    closestEdgeOfTarget,
-  }: ReorderPayload) => {
-    const finishIndex = getReorderDestinationIndex({
-      startIndex,
-      closestEdgeOfTarget,
-      indexOfTarget,
-      axis: 'vertical',
-    });
+  const reorderRow = useCallback(
+    ({ startIndex, indexOfTarget, closestEdgeOfTarget }: ReorderPayload) => {
+      const finishIndex = getReorderDestinationIndex({
+        startIndex,
+        closestEdgeOfTarget,
+        indexOfTarget,
+        axis: 'vertical',
+      });
 
-    if (finishIndex === startIndex) {
-      return;
-    }
+      if (finishIndex === startIndex) {
+        return;
+      }
 
-    const newRows = reorder({
-      list: stableData.current,
-      startIndex,
-      finishIndex,
-    });
+      const newRows = reorder({
+        list: stableData.current,
+        startIndex,
+        finishIndex,
+      });
 
-    if (!newRows) {
-      throw new Error('No newRowIds provided');
-    }
+      if (!newRows) {
+        throw new Error('No newRowIds provided');
+      }
 
-    setRows(newRows);
+      setRows(newRows);
 
-    const rowId = stableData.current[startIndex].rowId;
+      const rowId = stableData.current[startIndex].rowId;
 
-    if (!rowId) {
-      throw new Error('No rowId provided');
-    }
+      if (!rowId) {
+        throw new Error('No rowId provided');
+      }
 
-    const beforeId = newRows[finishIndex - 1]?.rowId;
+      const beforeId = newRows[finishIndex - 1]?.rowId;
 
-    reorderRowDispatch(rowId, beforeId);
-
-  }, [reorderRowDispatch, setRows]);
+      reorderRowDispatch(rowId, beforeId);
+    },
+    [reorderRowDispatch, setRows]
+  );
 
   useEffect(() => {
     if (!lastRowMoved) return;
 
     const { rowId, previousIndex, currentIndex } = lastRowMoved;
 
-    liveRegion.announce(
-      `Row moved from position ${previousIndex + 1} to position ${currentIndex + 1}.`,
-    );
+    liveRegion.announce(`Row moved from position ${previousIndex + 1} to position ${currentIndex + 1}.`);
 
     setTimeout(() => {
       virtualizer.scrollToIndex(currentIndex);
@@ -123,7 +118,7 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
   useEffect(() => {
     const scrollContainer = virtualizer.scrollElement;
 
-    if (!scrollContainer || readOnly) return;
+    if (!scrollContainer || readOnly || isGrouped) return;
 
     // Clean up previous registration to prevent duplicate autoScroll warnings
     if (cleanupRef.current) {
@@ -132,7 +127,7 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
     }
 
     // eslint-disable-next-line
-    function canRespond ({ source }: Record<string, any>) {
+    function canRespond({ source }: Record<string, any>) {
       return source.data && source.data.instanceId === instanceId;
     }
 
@@ -140,7 +135,7 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
       monitorForElements({
         canMonitor: canRespond,
         // eslint-disable-next-line
-        onDrop ({ location, source }) {
+        onDrop({ location, source }) {
           const target = location.current.dropTargets[0];
 
           if (!target) {
@@ -150,9 +145,7 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
           const sourceData = source.data;
           const targetData = target.data;
 
-          const indexOfTarget = data.findIndex(
-            (item) => item.rowId === targetData.rowId,
-          );
+          const indexOfTarget = data.findIndex((item) => item.rowId === targetData.rowId);
 
           if (indexOfTarget < 0) {
             return;
@@ -170,13 +163,13 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
       autoScrollForElements({
         canScroll: canRespond,
         element: scrollContainer,
-      }),
+      })
     );
 
     cleanupRef.current = cleanup;
 
     return cleanup;
-  }, [readOnly, instanceId, data, reorderRow, virtualizer.scrollElement]);
+  }, [readOnly, isGrouped, instanceId, data, reorderRow, virtualizer.scrollElement]);
 
   useEffect(() => {
     return () => {
@@ -184,16 +177,18 @@ export function useGridDndRow (virtualizer: Virtualizer<Element, Element>) {
     };
   }, []);
 
-  return useMemo(() => ({
-    getRows: () => data,
-    registerRow: registry.register,
-    reorderRow,
-    rowInstanceId: instanceId,
-  }), [data, registry.register, reorderRow, instanceId]);
-
+  return useMemo(
+    () => ({
+      getRows: () => data,
+      registerRow: registry.register,
+      reorderRow,
+      rowInstanceId: instanceId,
+    }),
+    [data, registry.register, reorderRow, instanceId]
+  );
 }
 
-export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer<HTMLDivElement, Element>) {
+export function useGridDndColumn(data: RenderColumn[], virtualizer: Virtualizer<HTMLDivElement, Element>) {
   const viewId = useDatabaseViewId();
   const reorderColumnDispatch = useReorderColumnDispatch();
   const stableData = useRef<RenderColumn[]>(data);
@@ -212,48 +207,44 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
     currentIndex: number;
   } | null>(null);
 
-  const reorderColumn = useCallback(({
-    startIndex,
-    indexOfTarget,
-    closestEdgeOfTarget,
-  }: ReorderPayload) => {
-    const finishIndex = getReorderDestinationIndex({
-      startIndex,
-      closestEdgeOfTarget,
-      indexOfTarget,
-      axis: 'horizontal',
-    });
+  const reorderColumn = useCallback(
+    ({ startIndex, indexOfTarget, closestEdgeOfTarget }: ReorderPayload) => {
+      const finishIndex = getReorderDestinationIndex({
+        startIndex,
+        closestEdgeOfTarget,
+        indexOfTarget,
+        axis: 'horizontal',
+      });
 
-    if (finishIndex === startIndex) {
-      return;
-    }
+      if (finishIndex === startIndex) {
+        return;
+      }
 
-    const newColumns = reorder({
-      list: stableData.current,
-      startIndex,
-      finishIndex,
-    });
+      const newColumns = reorder({
+        list: stableData.current,
+        startIndex,
+        finishIndex,
+      });
 
-    const columnId = stableData.current[startIndex].fieldId;
+      const columnId = stableData.current[startIndex].fieldId;
 
-    if (!columnId) {
-      throw new Error('No fieldId provided');
-    }
+      if (!columnId) {
+        throw new Error('No fieldId provided');
+      }
 
-    const beforeColumnId = newColumns[finishIndex - 1]?.fieldId;
+      const beforeColumnId = newColumns[finishIndex - 1]?.fieldId;
 
-    reorderColumnDispatch(columnId, beforeColumnId);
-
-  }, [reorderColumnDispatch]);
+      reorderColumnDispatch(columnId, beforeColumnId);
+    },
+    [reorderColumnDispatch]
+  );
 
   useEffect(() => {
     if (!lastColumnMoved) return;
 
     const { fieldId, previousIndex, currentIndex } = lastColumnMoved;
 
-    liveRegion.announce(
-      `Column moved from position ${previousIndex + 1} to position ${currentIndex + 1}.`,
-    );
+    liveRegion.announce(`Column moved from position ${previousIndex + 1} to position ${currentIndex + 1}.`);
 
     setTimeout(() => {
       virtualizer.scrollToIndex(currentIndex);
@@ -282,7 +273,7 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
     }
 
     // eslint-disable-next-line
-    function canRespond ({ source }: Record<string, any>) {
+    function canRespond({ source }: Record<string, any>) {
       return source.data && source.data.instanceId === instanceId;
     }
 
@@ -290,7 +281,7 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
       monitorForElements({
         canMonitor: canRespond,
         // eslint-disable-next-line
-        onDrop ({ location, source }) {
+        onDrop({ location, source }) {
           const target = location.current.dropTargets[0];
 
           if (!target) {
@@ -300,9 +291,7 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
           const sourceData = source.data;
           const targetData = target.data;
 
-          const indexOfTarget = data.findIndex(
-            (item) => item.fieldId === targetData.fieldId,
-          );
+          const indexOfTarget = data.findIndex((item) => item.fieldId === targetData.fieldId);
 
           if (indexOfTarget < 0) {
             return;
@@ -320,7 +309,7 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
       autoScrollForElements({
         canScroll: canRespond,
         element: scrollContainer,
-      }),
+      })
     );
 
     cleanupRef.current = cleanup;
@@ -334,10 +323,13 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
     };
   }, []);
 
-  return useMemo(() => ({
-    getColumns: () => data,
-    registerColumn: registry.register,
-    reorderColumn,
-    columnInstanceId: instanceId,
-  }), [data, registry.register, reorderColumn, instanceId]);
+  return useMemo(
+    () => ({
+      getColumns: () => data,
+      registerColumn: registry.register,
+      reorderColumn,
+      columnInstanceId: instanceId,
+    }),
+    [data, registry.register, reorderColumn, instanceId]
+  );
 }

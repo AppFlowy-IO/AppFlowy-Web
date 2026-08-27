@@ -8,6 +8,7 @@ import PublishPanel from '@/components/app/share/PublishPanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
 import { useShareAccessDetails } from '@/components/app/share/useShareAccessDetails';
+import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,20 +26,40 @@ enum TabKey {
 function ShareTabs({
   opened,
   viewId,
+  hidePublish = false,
   onClose,
   onOpenPublishManage,
 }: {
   opened: boolean;
   viewId: string;
+  hidePublish?: boolean;
   onClose: () => void;
   onOpenPublishManage?: () => void;
 }) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
+  const activeValue = hidePublish && value === TabKey.PUBLISH ? TabKey.SHARE : value;
   const currentUser = useCurrentUser();
-  const { people, isLoadingPeople, loadPeople, currentUserAccessLevel, hasFullAccess, sectionType } =
-    useShareAccessDetails(viewId, opened);
+  const {
+    people,
+    groups,
+    editableGroupIds,
+    isLoadingPeople,
+    loadPeople,
+    removePersonFromAccessList,
+    updateGroupInAccessList,
+    currentUserAccessLevel,
+    canManageFullAccess,
+    generalAccessLevel,
+    sectionType,
+  } = useShareAccessDetails(viewId, opened);
+  const {
+    canManageViewActions: canShare,
+    hasLoadedViewActionPermissions,
+    isLoadingViewActionPermissions,
+  } = useViewActionPermissions(view, opened, viewId);
+  const isResolvingSharePermission = isLoadingViewActionPermissions || !hasLoadedViewActionPermissions;
 
   const options = useMemo(() => {
     return [
@@ -47,12 +68,14 @@ function ShareTabs({
         label: t('shareAction.shareTab'),
         Panel: SharePanel,
       },
-      {
-        value: TabKey.PUBLISH,
-        label: t('shareAction.publish'),
-        icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
-        Panel: PublishPanel,
-      },
+      hidePublish
+        ? false
+        : {
+            value: TabKey.PUBLISH,
+            label: t('shareAction.publish'),
+            icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
+            Panel: PublishPanel,
+          },
       {
         value: TabKey.EXPORT_AS,
         label: t('shareAction.exportAsTab'),
@@ -76,7 +99,7 @@ function ShareTabs({
         onOpenPublishManage?: () => void;
       }>;
     }>;
-  }, [currentUser?.email, t, view?.is_published]);
+  }, [currentUser?.email, hidePublish, t, view?.is_published]);
 
   useEffect(() => {
     if (opened) {
@@ -85,7 +108,7 @@ function ShareTabs({
   }, [opened]);
 
   return (
-    <Tabs value={value} className='gap-0' onValueChange={(newValue) => setValue(newValue as TabKey)}>
+    <Tabs value={activeValue} className='gap-0' onValueChange={(newValue) => setValue(newValue as TabKey)}>
       <TabsList className={'flex w-full items-center justify-start px-3 pt-3'}>
         {opened &&
           options.map((option) => (
@@ -108,9 +131,16 @@ function ShareTabs({
               <SharePanel
                 viewId={viewId}
                 people={people}
+                groups={groups}
+                editableGroupIds={editableGroupIds}
                 isLoadingPeople={isLoadingPeople}
                 onPeopleChange={loadPeople}
-                hasFullAccess={hasFullAccess}
+                onPersonRemoved={removePersonFromAccessList}
+                updateGroupInAccessList={updateGroupInAccessList}
+                hasFullAccess={canShare}
+                canManageFullAccess={canShare && canManageFullAccess}
+                currentUserAccessLevel={currentUserAccessLevel}
+                generalAccessLevel={generalAccessLevel}
                 sectionType={sectionType}
               />
             ) : option.value === TabKey.PUBLISH ? (
@@ -119,8 +149,8 @@ function ShareTabs({
                 onClose={onClose}
                 opened={opened}
                 onOpenPublishManage={onOpenPublishManage}
-                currentUserAccessLevel={currentUserAccessLevel}
-                shareDetailsLoading={isLoadingPeople}
+                canShare={canShare}
+                shareDetailsLoading={isLoadingPeople || isResolvingSharePermission}
               />
             ) : (
               <option.Panel

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ExportService, FileService } from '@/application/services/domains';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as HelpIcon } from '@/assets/icons/help.svg';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -29,15 +30,18 @@ export function ManageDataPanel() {
   const isOwner = useMemo(() => {
     const workspace = userWorkspaceInfo?.workspaces.find((w) => w.id === currentWorkspaceId);
 
-    return workspace?.owner?.uid.toString() === currentUser?.uid.toString();
+    return isSameUserUid(workspace?.owner?.uid, currentUser?.uid);
   }, [userWorkspaceInfo?.workspaces, currentWorkspaceId, currentUser?.uid]);
 
   const handleImport = useCallback(
     async (file: File) => {
       setImporting(true);
       try {
-        await FileService.importFile(file, () => {
-          /* progress is surfaced via the in-progress state */
+        await FileService.importFile(file, {
+          taskType: FileService.CreateImportTaskType.Workspace,
+          onProgress: () => {
+            /* progress is surfaced via the in-progress state */
+          },
         });
         toast.success(t('settings.manageData.importWorkspace.success'));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

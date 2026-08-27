@@ -1,23 +1,100 @@
+import { getStoredCellFieldType } from '@/application/database-yjs/cell.field-type';
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { getRowConditionSnapshot, hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getCell } from '@/application/database-yjs/const';
-import { FieldType } from '@/application/database-yjs/database.type';
+import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import {
   CheckboxFilterCondition,
+  parsePersonTypeOptions,
   parseSelectOptionTypeOptions,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields';
-import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
-import { Row } from '@/application/database-yjs/selector';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
+import type { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
+
+const NUMBER_GROUP_INTERVAL = 100;
+
+export const DATABASE_GROUPABLE_FIELD_TYPES: readonly FieldType[] = [
+  FieldType.RichText,
+  FieldType.Number,
+  FieldType.URL,
+  FieldType.Checkbox,
+  FieldType.SingleSelect,
+  FieldType.MultiSelect,
+  FieldType.DateTime,
+  FieldType.Relation,
+  FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
+];
+
+export const DATABASE_DYNAMIC_GROUP_FIELD_TYPES: readonly FieldType[] = [
+  FieldType.RichText,
+  FieldType.Number,
+  FieldType.URL,
+  FieldType.DateTime,
+  FieldType.Relation,
+  FieldType.Person,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
+];
+
+export interface DateGroupConfiguration {
+  condition: DateGroupCondition;
+  hide_empty: boolean;
+}
+
+export function isDatabaseGroupableFieldType(fieldType: FieldType): boolean {
+  return DATABASE_GROUPABLE_FIELD_TYPES.includes(fieldType);
+}
+
+export function isDynamicDatabaseGroupFieldType(fieldType: FieldType): boolean {
+  return DATABASE_DYNAMIC_GROUP_FIELD_TYPES.includes(fieldType);
+}
+
+export function parseDateGroupConfiguration(content?: string): DateGroupConfiguration {
+  if (!content) {
+    return {
+      condition: DateGroupCondition.Relative,
+      hide_empty: false,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(content) as Partial<DateGroupConfiguration>;
+    const condition = Number(parsed.condition);
+
+    return {
+      condition:
+        condition >= DateGroupCondition.Relative && condition <= DateGroupCondition.Year
+          ? (condition as DateGroupCondition)
+          : DateGroupCondition.Relative,
+      hide_empty: Boolean(parsed.hide_empty),
+    };
+  } catch {
+    return {
+      condition: DateGroupCondition.Relative,
+      hide_empty: false,
+    };
+  }
+}
+
+export function areGroupRowsHydrated(rows: Row[], rowMetas: Record<RowId, YDoc>) {
+  return rows.every((row) => hasRowConditionData(rowMetas[row.id]));
+}
 
 export function groupByField(
   rows: Row[],
   rowMetas: Record<RowId, YDoc>,
   field: YDatabaseField,
-  filter?: YDatabaseFilter
+  filter?: YDatabaseFilter,
+  groupContent?: string
 ) {
-  const fieldType = Number(field.get(YjsDatabaseKey.type));
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
   const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
 
   if (isSelectOptionField) {
@@ -26,6 +103,22 @@ export function groupByField(
 
   if (fieldType === FieldType.Checkbox) {
     return groupByCheckbox(rows, rowMetas, field, filter);
+  }
+
+  if ([FieldType.RichText, FieldType.URL].includes(fieldType)) {
+    return groupByText(rows, rowMetas, field);
+  }
+
+  if (fieldType === FieldType.Number) {
+    return groupByNumber(rows, rowMetas, field);
+  }
+
+  if (fieldType === FieldType.DateTime) {
+    return groupByDate(rows, rowMetas, field, groupContent);
+  }
+
+  if ([FieldType.Relation, FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
+    return groupByIdentifier(rows, rowMetas, field);
   }
 
   return;
@@ -54,6 +147,421 @@ export function getGroupColumns(field: YDatabaseField) {
   if (fieldType === FieldType.Checkbox) {
     return [{ id: 'Yes' }, { id: 'No' }];
   }
+
+  if (isDatabaseGroupableFieldType(fieldType)) {
+    return [{ id: field.get(YjsDatabaseKey.id) }];
+  }
+}
+
+function getGroupingCellData(rowId: RowId, rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const cell = getCell(rowId, fieldId, rowMetas);
+
+  return cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
+}
+
+/**
+ * Person and relation cells both model an ordered set of stable identifiers.
+ * Keep this normalization independent of their storage format so imported and
+ * lazily converted data cannot create duplicate or whitespace-only groups.
+ */
+export function normalizeGroupIdentifiers(value: unknown): string[] {
+  let identifiers: unknown[] = [];
+
+  if (Array.isArray(value)) {
+    identifiers = value;
+  } else if (value && typeof value === 'object' && 'toArray' in value) {
+    identifiers = (value as { toArray: () => unknown[] }).toArray();
+  } else if (value && typeof value === 'object' && 'toJSON' in value) {
+    const json = (value as { toJSON: () => unknown }).toJSON();
+
+    identifiers = Array.isArray(json) ? json : [];
+  } else if (typeof value === 'string') {
+    try {
+      const json = JSON.parse(value) as unknown;
+
+      identifiers = Array.isArray(json) ? json : [];
+    } catch {
+      identifiers = value.split(',');
+    }
+  }
+
+  const seen = new Set<string>();
+
+  return identifiers.reduce<string[]>((result, identifier) => {
+    const normalized = String(identifier ?? '').trim();
+
+    if (!normalized || seen.has(normalized)) return result;
+    seen.add(normalized);
+    result.push(normalized);
+    return result;
+  }, []);
+}
+
+function getIdentifierGroupIds(rowId: RowId, rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const cell = getCell(rowId, fieldId, rowMetas);
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+    const snapshot = getRowConditionSnapshot(rowMetas[rowId]);
+    const attribute = fieldType === FieldType.CreatedBy ? YjsDatabaseKey.created_by : YjsDatabaseKey.last_edited_by;
+    const uid = snapshot?.row.get(attribute);
+    const normalized = canonicalizeUserUid(uid);
+
+    return normalized ? [normalized] : [];
+  }
+
+  if (fieldType === FieldType.Relation) {
+    return normalizeGroupIdentifiers(getRelationRowIdsFromCell(cell));
+  }
+
+  if (!cell || getStoredCellFieldType(cell, FieldType.Person) !== FieldType.Person) {
+    return [];
+  }
+
+  const data = cell?.get(YjsDatabaseKey.data);
+
+  return normalizeGroupIdentifiers(data);
+}
+
+export function groupByIdentifier(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const result = new Map<string, Row[]>([[fieldId, []]]);
+
+  rows.forEach((row) => {
+    if (!hasRowConditionData(rowMetas[row.id])) return;
+
+    const identifiers = getIdentifierGroupIds(row.id, rowMetas, field);
+
+    if (identifiers.length === 0) {
+      result.get(fieldId)?.push(row);
+      return;
+    }
+
+    identifiers.forEach((identifier) => {
+      const groupRows = result.get(identifier) ?? [];
+
+      groupRows.push(row);
+      result.set(identifier, groupRows);
+    });
+  });
+
+  return result;
+}
+
+export function groupByText(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const result = new Map<string, Row[]>([[fieldId, []]]);
+
+  rows.forEach((row) => {
+    if (!hasRowConditionData(rowMetas[row.id])) return;
+
+    const rawValue = getGroupingCellData(row.id, rowMetas, field);
+    const value = typeof rawValue === 'string' || typeof rawValue === 'number' ? String(rawValue) : '';
+    const groupId = value.trim() ? value : fieldId;
+    const groupRows = result.get(groupId) ?? [];
+
+    groupRows.push(row);
+    result.set(groupId, groupRows);
+  });
+
+  return result;
+}
+
+export function getNumberGroupId(value: unknown): string | null {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+
+  const parsed = Number(String(value).replaceAll(',', ''));
+
+  if (!Number.isFinite(parsed)) return null;
+
+  const start = Math.floor(parsed / NUMBER_GROUP_INTERVAL) * NUMBER_GROUP_INTERVAL;
+
+  return `number_range_${start}_${start + NUMBER_GROUP_INTERVAL}`;
+}
+
+function getNumberGroupStart(groupId: string): number {
+  if (!groupId.startsWith('number_range_')) return Number.NEGATIVE_INFINITY;
+
+  const match = /^number_range_(-?\d+(?:\.\d+)?)_/.exec(groupId);
+
+  return match ? Number(match[1]) : Number.NEGATIVE_INFINITY;
+}
+
+export function groupByNumber(rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const dynamicGroups = new Map<string, Row[]>();
+  const ungroupedRows: Row[] = [];
+
+  rows.forEach((row) => {
+    if (!hasRowConditionData(rowMetas[row.id])) return;
+
+    const groupId = getNumberGroupId(getGroupingCellData(row.id, rowMetas, field));
+
+    if (!groupId) {
+      ungroupedRows.push(row);
+      return;
+    }
+
+    const groupRows = dynamicGroups.get(groupId) ?? [];
+
+    groupRows.push(row);
+    dynamicGroups.set(groupId, groupRows);
+  });
+
+  const result = new Map<string, Row[]>([[fieldId, ungroupedRows]]);
+
+  [...dynamicGroups.entries()]
+    .sort(([left], [right]) => getNumberGroupStart(left) - getNumberGroupStart(right))
+    .forEach(([groupId, groupRows]) => result.set(groupId, groupRows));
+
+  return result;
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addLocalDays(date: Date, days: number): Date {
+  const result = new Date(date);
+
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function formatDateGroupId(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+
+  return `${year}/${month}/${day}`;
+}
+
+function dateFromCellValue(value: unknown): Date | null {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+
+  const timestamp = Number(value);
+
+  if (!Number.isFinite(timestamp)) return null;
+
+  const date = new Date(Math.abs(timestamp) < 1_000_000_000_000 ? timestamp * 1000 : timestamp);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function getDateGroupId(value: unknown, condition: DateGroupCondition, now: Date = new Date()): string | null {
+  const date = dateFromCellValue(value);
+
+  if (!date) return null;
+
+  const localDate = startOfLocalDay(date);
+  let groupDate = localDate;
+
+  switch (condition) {
+    case DateGroupCondition.Day:
+      break;
+    case DateGroupCondition.Week: {
+      const mondayOffset = (localDate.getDay() + 6) % 7;
+
+      groupDate = addLocalDays(localDate, -mondayOffset);
+      break;
+    }
+
+    case DateGroupCondition.Month:
+      groupDate = new Date(localDate.getFullYear(), localDate.getMonth(), 1);
+      break;
+    case DateGroupCondition.Year:
+      groupDate = new Date(localDate.getFullYear(), 0, 1);
+      break;
+    case DateGroupCondition.Relative: {
+      const today = startOfLocalDay(now);
+      const diff = Math.round((localDate.getTime() - today.getTime()) / 86_400_000);
+
+      if (diff === 0) groupDate = today;
+      else if (diff === -1) groupDate = addLocalDays(today, -1);
+      else if (diff === 1) groupDate = addLocalDays(today, 1);
+      else if (diff >= -7 && diff < -1) groupDate = addLocalDays(today, -7);
+      else if (diff > 1 && diff <= 7) groupDate = addLocalDays(today, 2);
+      else if (diff >= -30 && diff < -7) groupDate = addLocalDays(today, -30);
+      else if (diff > 7 && diff <= 30) groupDate = addLocalDays(today, 8);
+      else {
+        groupDate = new Date(localDate.getFullYear(), localDate.getMonth(), 1);
+        const monthStartDiff = Math.round((groupDate.getTime() - today.getTime()) / 86_400_000);
+
+        if (monthStartDiff > 7 && monthStartDiff <= 30) {
+          groupDate = addLocalDays(groupDate, 31 - monthStartDiff);
+        }
+      }
+
+      break;
+    }
+  }
+
+  return formatDateGroupId(groupDate);
+}
+
+export function groupByDate(
+  rows: Row[],
+  rowMetas: Record<RowId, YDoc>,
+  field: YDatabaseField,
+  groupContent?: string,
+  now: Date = new Date()
+) {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const configuration = parseDateGroupConfiguration(groupContent);
+  const dynamicGroups = new Map<string, Row[]>();
+  const ungroupedRows: Row[] = [];
+
+  rows.forEach((row) => {
+    if (!hasRowConditionData(rowMetas[row.id])) return;
+
+    const groupId = getDateGroupId(getGroupingCellData(row.id, rowMetas, field), configuration.condition, now);
+
+    if (!groupId) {
+      ungroupedRows.push(row);
+      return;
+    }
+
+    const groupRows = dynamicGroups.get(groupId) ?? [];
+
+    groupRows.push(row);
+    dynamicGroups.set(groupId, groupRows);
+  });
+
+  const result = new Map<string, Row[]>([[fieldId, ungroupedRows]]);
+
+  [...dynamicGroups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([groupId, groupRows]) => result.set(groupId, groupRows));
+
+  return result;
+}
+
+function parseDateGroupId(groupId: string): Date | null {
+  const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(groupId);
+
+  if (!match) return null;
+
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatMonthDay(date: Date, includeYear = true) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: '2-digit',
+    ...(includeYear ? { year: 'numeric' as const } : {}),
+  }).format(date);
+}
+
+export function getGroupLabel(
+  groupId: string,
+  field: YDatabaseField,
+  groupContent?: string,
+  now: Date = new Date(),
+  identifierLabels?: ReadonlyMap<string, string>
+): string {
+  const fieldId = field.get(YjsDatabaseKey.id);
+  const fieldName = field.get(YjsDatabaseKey.name) || '';
+
+  if (groupId === fieldId) return `No ${fieldName}`.trim();
+
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if ([FieldType.Relation, FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
+    const resolved = identifierLabels?.get(groupId)?.trim();
+
+    if (resolved) return resolved;
+
+    if (fieldType === FieldType.Person) {
+      const person = parsePersonTypeOptions(field).persons.find((person) => person.id === groupId);
+
+      return person?.name?.trim() || 'Unknown person';
+    }
+
+    if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) return 'Unknown user';
+
+    return 'Untitled relation';
+  }
+
+  if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
+    return parseSelectOptionTypeOptions(field)?.options.find((option) => option.id === groupId)?.name ?? groupId;
+  }
+
+  if (fieldType === FieldType.Number) {
+    const match = /^number_range_(-?\d+(?:\.\d+)?)_(-?\d+(?:\.\d+)?)$/.exec(groupId);
+
+    return match ? `${match[1]} to ${match[2]}` : groupId;
+  }
+
+  if (fieldType === FieldType.DateTime) {
+    const date = parseDateGroupId(groupId);
+
+    if (!date) return groupId;
+
+    const configuration = parseDateGroupConfiguration(groupContent);
+
+    if (configuration.condition === DateGroupCondition.Year) return String(date.getFullYear());
+    if (configuration.condition === DateGroupCondition.Month) {
+      return new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' }).format(date);
+    }
+
+    if (configuration.condition === DateGroupCondition.Week) {
+      return `Week of ${formatMonthDay(date, false)} - ${formatMonthDay(addLocalDays(date, 6))}`;
+    }
+
+    if (configuration.condition === DateGroupCondition.Relative) {
+      const today = startOfLocalDay(now);
+      const relativeLabels = new Map<string, string>([
+        [formatDateGroupId(today), 'Today'],
+        [formatDateGroupId(addLocalDays(today, -1)), 'Yesterday'],
+        [formatDateGroupId(addLocalDays(today, 1)), 'Tomorrow'],
+        [formatDateGroupId(addLocalDays(today, -7)), 'Last 7 days'],
+        [formatDateGroupId(addLocalDays(today, 2)), 'Next 7 days'],
+        [formatDateGroupId(addLocalDays(today, -30)), 'Last 30 days'],
+        [formatDateGroupId(addLocalDays(today, 8)), 'Next 30 days'],
+      ]);
+
+      return (
+        relativeLabels.get(groupId) ??
+        new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric' }).format(date)
+      );
+    }
+
+    return formatMonthDay(date);
+  }
+
+  return groupId;
+}
+
+export function getGroupCellData(groupId: string, field: YDatabaseField): string | undefined {
+  const fieldId = field.get(YjsDatabaseKey.id);
+
+  if (groupId === fieldId) return undefined;
+
+  const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+  if (fieldType === FieldType.Number) {
+    const match = /^number_range_(-?\d+(?:\.\d+)?)_/.exec(groupId);
+
+    return match?.[1];
+  }
+
+  if (fieldType === FieldType.DateTime) {
+    const date = parseDateGroupId(groupId);
+
+    return date ? String(Math.floor(date.getTime() / 1000)) : undefined;
+  }
+
+  if ([FieldType.Relation, FieldType.Person].includes(fieldType)) {
+    return JSON.stringify([groupId]);
+  }
+
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) return undefined;
+
+  return groupId;
 }
 
 export function groupByCheckbox(
@@ -79,23 +587,14 @@ export function groupByCheckbox(
   });
 
   rows.forEach((row) => {
-    // If row document isn't loaded yet, default to 'No' group
-    // The card component will trigger loading via ensureRow
-    if (!rowMetas[row.id]) {
-      const defaultGroupName = 'No';
-
-      if (result.has(defaultGroupName)) {
-        const group = result.get(defaultGroupName) ?? [];
-
-        group.push(row);
-        result.set(defaultGroupName, group);
-      }
-
-      return;
-    }
+    // Rendering an unloaded row in a guessed group lets hydration move its
+    // card between columns during a pointer gesture. The board hydrates group
+    // rows in the background, so only expose a row once its real value is
+    // available.
+    if (!hasRowConditionData(rowMetas[row.id])) return;
 
     const cell = getCell(row.id, fieldId, rowMetas);
-    const cellData = cell?.get(YjsDatabaseKey.data);
+    const cellData = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
     const checked = parseCheckboxValue(cellData as string);
     const groupName = checked ? 'Yes' : 'No';
 
@@ -122,7 +621,10 @@ export function groupBySelectOption(
   const typeOption = parseSelectOptionTypeOptions(field);
 
   if (!typeOption || typeOption.options.length === 0) {
-    result.set(fieldId, rows);
+    result.set(
+      fieldId,
+      rows.filter((row) => hasRowConditionData(rowMetas[row.id]))
+    );
     return result;
   }
 
@@ -157,35 +659,16 @@ export function groupBySelectOption(
   });
 
   rows.forEach((row) => {
-    // If row document isn't loaded yet, put in "No Status" group (fieldId)
-    // The card component will trigger loading via ensureRow
-    if (!rowMetas[row.id]) {
-      if (result.has(fieldId)) {
-        const group = result.get(fieldId) ?? [];
-
-        group.push(row);
-        result.set(fieldId, group);
-      }
-
-      return;
-    }
+    // Do not guess "No Status" for an unloaded row. Moving that row after
+    // hydration can unmount a card between pointer-down and click.
+    if (!hasRowConditionData(rowMetas[row.id])) return;
 
     const cell = getCell(row.id, fieldId, rowMetas);
-    const cellData = cell?.get(YjsDatabaseKey.data);
-    const sourceType = Number(
-      cell?.get(YjsDatabaseKey.source_field_type) ?? cell?.get(YjsDatabaseKey.field_type)
-    ) as FieldType;
+    const cellData = cell ? parseYDatabaseCellToCell(cell, field).data : undefined;
 
     let selectedIds: string[] = [];
 
-    if (sourceType === FieldType.Checklist && typeof cellData === 'string') {
-      const checklist = parseChecklistFlexible(cellData);
-
-      selectedIds =
-        checklist?.selectedOptionIds
-          ?.map((idOrName) => typeOption.options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
-          .filter((id): id is string => Boolean(id)) ?? [];
-    } else if (typeof cellData === 'string') {
+    if (typeof cellData === 'string') {
       selectedIds =
         cellData
           .split(',')

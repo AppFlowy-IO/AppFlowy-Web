@@ -1,24 +1,47 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   RowMeta,
   RowMetaKey,
   useCellSelector,
+  useDatabase,
   useDatabaseContext,
   usePrimaryFieldId,
   useReadOnly,
   useRowMetaSelector,
 } from '@/application/database-yjs';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
-import { AppendBreadcrumb, CoverType, RowCoverType, ViewIconType, ViewLayout, ViewMetaCover } from '@/application/types';
+import { viewCoverToTemplateCover } from '@/application/database-yjs/template';
+import { rowDocumentIdFromRowId, syncRowDocumentViewName } from '@/application/row-document/lifecycle';
+import { setActiveRowPage } from '@/application/row-document/row-page-state';
+import {
+  AppendBreadcrumb,
+  RowCoverType,
+  ViewIconType,
+  ViewLayout,
+  ViewMetaCover,
+  YjsDatabaseKey,
+} from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
+import {
+  normalizeRowDocumentViewName,
+  shouldSyncRowDocumentViewName,
+} from '@/components/database/components/header/rowDocumentViewName';
 import Title from '@/components/database/components/header/Title';
 import { getScrollParent } from '@/components/global-comment/utils';
 import ViewCoverActions from '@/components/view-meta/ViewCoverActions';
 import { renderColor } from '@/utils/color';
-import { clampCoverOffset, coverOffsetToObjectPosition } from '@/utils/cover';
+import { coverOffsetToObjectPosition } from '@/utils/cover';
 
-function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendBreadcrumb?: AppendBreadcrumb }) {
+function DatabaseRowHeader({
+  rowId,
+  appendBreadcrumb,
+  templateStyle = false,
+}: {
+  rowId: string;
+  appendBreadcrumb?: AppendBreadcrumb;
+  templateStyle?: boolean;
+}) {
   const fieldId = usePrimaryFieldId() || '';
 
   const ref = React.useRef<HTMLDivElement>(null);
@@ -28,7 +51,12 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
   const cover = meta?.cover;
   const readOnly = useReadOnly();
   const [hoveredCover, setShowAction] = useState(false);
-  const isDatabaseRowPage = useDatabaseContext()?.isDatabaseRowPage;
+  const context = useDatabaseContext();
+  const isDatabaseRowPage = context?.isDatabaseRowPage;
+  const workspaceId = context?.workspaceId;
+  const database = useDatabase();
+  const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
+  const databaseViewId = context?.activeViewId || context?.databasePageId;
 
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
 
@@ -36,26 +64,7 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
     (cover: ViewMetaCover) => {
       if (readOnly) return;
 
-      // eslint-disable-next-line
-      // @ts-ignore
-      const coverTypeMap: Record<CoverType, RowCoverType> = {
-        [CoverType.GradientColor]: RowCoverType.GradientCover,
-        [CoverType.NormalColor]: RowCoverType.ColorCover,
-        [CoverType.BuildInImage]: RowCoverType.AssetCover,
-        [CoverType.CustomImage]: RowCoverType.FileCover,
-        [CoverType.UpsplashImage]: RowCoverType.FileCover,
-      };
-      const coverType = coverTypeMap[cover.type];
-      const offset = clampCoverOffset(cover.offset);
-
-      updateRowMeta(
-        RowMetaKey.CoverId,
-        JSON.stringify({
-          cover_type: coverType,
-          data: cover.value,
-          offset,
-        })
-      );
+      updateRowMeta(RowMetaKey.CoverId, viewCoverToTemplateCover(cover) ?? '');
     },
     [readOnly, updateRowMeta]
   );
@@ -142,6 +151,64 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
     };
   }, [appendBreadcrumb]);
 
+  const title = (cell?.data as string) || '';
+  const documentId = meta?.documentId || rowDocumentIdFromRowId(rowId);
+  const hasDocument = meta?.isEmptyDocument === false;
+
+  // Publish the active row page so app chrome outside the database context
+  // (header favorite button) can target the row document instead of the database.
+  useEffect(() => {
+    if (!isDatabaseRowPage) return;
+
+    setActiveRowPage({
+      rowId,
+      documentId,
+      title,
+      source:
+        databaseId && databaseViewId
+          ? { database_id: databaseId, database_view_id: databaseViewId, row_id: rowId }
+          : null,
+      hasDocument,
+    });
+
+    return () => {
+      setActiveRowPage(null);
+    };
+  }, [isDatabaseRowPage, rowId, documentId, title, hasDocument, databaseId, databaseViewId]);
+
+  // Keep the row-document view name in sync with the primary cell so
+  // favorites/trash entries show the row title. Sync only from title edits
+  // made in this header: observing cell state cannot distinguish a user edit
+  // from the loading sequence (empty placeholder doc → loaded title), which
+  // used to push a spurious update-name on every row page open. Loads and
+  // remote renames never sync — the editing client pushes its own rename, and
+  // explicit actions (favorite/delete) push the current title themselves.
+  const titleSyncTimerRef = useRef<number | undefined>(undefined);
+  const lastSyncedTitleRef = useRef<string>('');
+
+  const onTitleEdited = useCallback(
+    (editedTitle: string) => {
+      if (readOnly || !hasDocument || !documentId || !workspaceId) return;
+
+      const name = normalizeRowDocumentViewName(editedTitle);
+
+      if (!shouldSyncRowDocumentViewName(lastSyncedTitleRef.current, name)) return;
+
+      window.clearTimeout(titleSyncTimerRef.current);
+      titleSyncTimerRef.current = window.setTimeout(() => {
+        lastSyncedTitleRef.current = name;
+        void syncRowDocumentViewName(workspaceId, documentId, name);
+      }, 500);
+    },
+    [readOnly, hasDocument, documentId, workspaceId]
+  );
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(titleSyncTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     const el = ref.current;
 
@@ -172,8 +239,8 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
         {cover && cover.data && (
           <div
             style={{
-              height: isDatabaseRowPage ? '40vh' : '25vh',
-              maxHeight: isDatabaseRowPage ? '288px' : '200px',
+              height: templateStyle ? '280px' : isDatabaseRowPage ? '40vh' : '25vh',
+              maxHeight: templateStyle ? '280px' : isDatabaseRowPage ? '288px' : '200px',
             }}
             onMouseEnter={() => setShowAction(true)}
             onMouseLeave={() => setShowAction(false)}
@@ -191,7 +258,15 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
           </div>
         )}
       </div>
-      <Title rowId={rowId} fieldId={fieldId} icon={meta?.icon} name={cell?.data as string} hasCover={!!cover} />
+      <Title
+        rowId={rowId}
+        fieldId={fieldId}
+        icon={meta?.icon}
+        name={cell?.data as string}
+        hasCover={!!cover}
+        onEdited={onTitleEdited}
+        templateStyle={templateStyle}
+      />
     </div>
   );
 }

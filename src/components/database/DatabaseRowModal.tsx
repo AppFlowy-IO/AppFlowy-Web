@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { useDatabaseContextOptional } from '@/application/database-yjs';
-import { useDeleteRowDispatch, useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
+import { useDatabaseContextOptional, useReadOnly } from '@/application/database-yjs';
+import { useDuplicateRowDispatch, useTrashAwareDeleteRowsDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ArrowLeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
@@ -36,9 +36,10 @@ function DatabaseRowModal({
 }) {
   const context = useDatabaseContextOptional();
   const openPageModalViewId = context?.openPageModalViewId;
+  const readOnly = useReadOnly();
   const { t } = useTranslation();
   const duplicateRow = useDuplicateRowDispatch();
-  const deleteRow = useDeleteRowDispatch();
+  const deleteRows = useTrashAwareDeleteRowsDispatch();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
 
   return (
@@ -78,70 +79,77 @@ function DatabaseRowModal({
             )}
           </div>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size={'icon'}
-                variant='ghost'
-                onClick={() => {
-                  openPage?.(rowId);
-                  onOpenChange(false);
-                }}
-              >
-                <ExpandIcon />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('grid.rowPage.openAsFullPage')}</TooltipContent>
-          </Tooltip>
-          <DropdownMenu>
+          {openPage ? (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className={'h-7 w-7'}>
-                  <DropdownMenuTrigger asChild>
-                    <Button size={'icon'} variant='ghost' data-testid='row-detail-more-actions'>
-                      <MoreIcon />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>{t('grid.rowPage.moreRowActions')}</TooltipContent>
-            </Tooltip>
-            <DropdownMenuContent className={' w-fit min-w-fit'}>
-              <DropdownMenuGroup>
-                <DropdownMenuItem
-                  data-testid='row-detail-duplicate'
-                  onSelect={async () => {
-                    if (duplicateLoading) return;
-                    setDuplicateLoading(true);
-                    try {
-                      await duplicateRow?.(rowId);
-                      onOpenChange(false);
-                      // eslint-disable-next-line
-                    } catch (e: any) {
-                      toast.error(e.message);
-                    } finally {
-                      setDuplicateLoading(false);
-                    }
-                  }}
-                >
-                  {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon className={'h-5 w-5'} />}
-
-                  {t('grid.row.duplicate')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant={'destructive'}
-                  data-testid='row-detail-delete'
-                  onSelect={() => {
-                    deleteRow?.(rowId);
+                <Button
+                  data-testid='row-detail-open-full-page'
+                  size={'icon'}
+                  variant='ghost'
+                  onClick={() => {
+                    openPage?.(rowId);
                     onOpenChange(false);
                   }}
                 >
-                  <DeleteIcon className={'h-5 w-5'} />
-                  {t('grid.row.delete')}
-                </DropdownMenuItem>
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  <ExpandIcon />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('grid.rowPage.openAsFullPage')}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          {!readOnly ? (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className={'h-7 w-7'}>
+                    <DropdownMenuTrigger asChild>
+                      <Button size={'icon'} variant='ghost' data-testid='row-detail-more-actions'>
+                        <MoreIcon />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>{t('grid.rowPage.moreRowActions')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent className={' w-fit min-w-fit'}>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    data-testid='row-detail-duplicate'
+                    onSelect={async () => {
+                      if (duplicateLoading) return;
+                      setDuplicateLoading(true);
+                      try {
+                        await duplicateRow?.(rowId);
+                        onOpenChange(false);
+                        // eslint-disable-next-line
+                      } catch (e: any) {
+                        toast.error(e.message);
+                      } finally {
+                        setDuplicateLoading(false);
+                      }
+                    }}
+                  >
+                    {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon className={'h-5 w-5'} />}
+
+                    {t('grid.row.duplicate')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    variant={'destructive'}
+                    data-testid='row-detail-delete'
+                    onSelect={() => {
+                      void deleteRows([rowId]).catch((e: Error) => {
+                        toast.error(e.message);
+                      });
+                      onOpenChange(false);
+                    }}
+                  >
+                    <DeleteIcon className={'h-5 w-5'} />
+                    {t('grid.row.delete')}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </DialogTitle>
 
         <AFScroller overflowXHidden className={'appflowy-scroll-container w-full flex-1'}>
