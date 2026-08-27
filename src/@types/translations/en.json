@@ -223,6 +223,7 @@
     "invite": "Invite",
     "inviteSuccess": "Invite sent successfully",
     "changeAccessSuccess": "Access level changed successfully for {{email}}",
+    "databaseRowPagePermissionChangeDisabled": "Unable to change database row page permission.",
     "changeGroupAccessSuccess": "Access level changed successfully for {{group}}",
     "groupAccessInheritedStronger": "{{group}} still has stronger access inherited from a parent page",
     "changeAccessError": "Failed to change access level",

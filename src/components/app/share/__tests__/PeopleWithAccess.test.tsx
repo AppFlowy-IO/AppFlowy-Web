@@ -44,10 +44,19 @@ jest.mock('@/components/app/share/PersonItem', () => ({
   PersonItem: ({
     person,
     onRemoveAccess,
+    permissionChangeDisabledReason,
   }: {
     person: IPeopleWithAccessType;
     onRemoveAccess: (email: string) => Promise<void>;
-  }) => <button onClick={() => void onRemoveAccess(person.email)}>{person.email}</button>,
+    permissionChangeDisabledReason?: string;
+  }) => (
+    <button
+      data-permission-change-disabled-reason={permissionChangeDisabledReason}
+      onClick={() => void onRemoveAccess(person.email)}
+    >
+      {person.email}
+    </button>
+  ),
 }));
 
 jest.mock('@/components/app/share/GroupAccessLevelDropdown', () => ({
@@ -108,6 +117,31 @@ describe('PeopleWithAccess', () => {
     mockRevokeGroupAccess.mockResolvedValue(undefined);
     mockNavigate.mockReset();
     mockGroupMutationResult.mockReset();
+  });
+
+  it('disables person access changes for a database row page', () => {
+    render(
+      <PeopleWithAccess
+        viewId='view-1'
+        people={[removedPerson]}
+        groups={[]}
+        editableGroupIds={new Set()}
+        isLoading={false}
+        onPeopleChange={async () => undefined}
+        onPersonRemoved={jest.fn()}
+        updateGroupInAccessList={jest.fn()}
+        hasFullAccess
+        canManageGroupAccess
+        canManageFullAccess
+        canGrantFullAccess
+        disablePersonAccessChanges
+        sectionType={ShareSectionType.Shared}
+      />
+    );
+
+    expect(screen.getByText(removedPerson.email).dataset.permissionChangeDisabledReason).toBe(
+      'shareAction.databaseRowPagePermissionChangeDisabled'
+    );
   });
 
   it('optimistically removes a successfully revoked row before revalidation', async () => {

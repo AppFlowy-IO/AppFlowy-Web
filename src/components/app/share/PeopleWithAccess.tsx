@@ -30,6 +30,7 @@ interface PeopleWithAccessProps {
   canManageGroupAccess: boolean;
   canManageFullAccess: boolean;
   canGrantFullAccess: boolean;
+  disablePersonAccessChanges?: boolean;
   sectionType: ShareSectionType;
 }
 
@@ -46,6 +47,7 @@ export function PeopleWithAccess({
   canManageGroupAccess,
   canManageFullAccess,
   canGrantFullAccess,
+  disablePersonAccessChanges = false,
   sectionType,
 }: PeopleWithAccessProps) {
   const { t } = useTranslation();
@@ -150,6 +152,9 @@ export function PeopleWithAccess({
 
   const currentUserRole = people.find((p) => p.email === currentUser?.email)?.role;
   const currentUserIsOwner = currentUserRole === Role.Owner;
+  const permissionChangeDisabledReason = disablePersonAccessChanges
+    ? t('shareAction.databaseRowPagePermissionChangeDisabled')
+    : undefined;
 
   return (
     <div className='w-full px-2 pt-4'>
@@ -170,6 +175,7 @@ export function PeopleWithAccess({
               currentUserHasFullAccess={hasFullAccess}
               currentUserIsOwner={currentUserIsOwner}
               currentUserCanGrantFullAccess={canGrantFullAccess}
+              permissionChangeDisabledReason={permissionChangeDisabledReason}
               onAccessLevelChange={handleAccessLevelChange}
               onRemoveAccess={handleRemoveAccess}
               onTurnIntoMember={handleTurnIntoMember}

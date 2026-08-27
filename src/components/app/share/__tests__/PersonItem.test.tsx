@@ -31,15 +31,18 @@ jest.mock('../AccessLevelDropdown', () => ({
     person,
     canModify,
     currentUserCanGrantFullAccess,
+    disabledReason,
   }: {
     person: IPeopleWithAccessType;
     canModify: boolean;
     currentUserCanGrantFullAccess: boolean;
+    disabledReason?: string;
   }) => (
     <div
       data-testid={`access-level-${person.email}`}
       data-can-grant-full-access={String(currentUserCanGrantFullAccess)}
       data-can-modify={String(canModify)}
+      data-disabled-reason={disabledReason}
     >
       {person.access_level}
     </div>
@@ -96,6 +99,25 @@ describe('PersonItem', () => {
 
     expect(memberAccess.dataset.canGrantFullAccess).toBe('true');
     expect(memberAccess.dataset.canModify).toBe('true');
+  });
+
+  it('keeps database row-page person permissions disabled with a reason', () => {
+    const disabledReason = 'Unable to change database row page permission.';
+
+    renderPersonItem({
+      permissionChangeDisabledReason: disabledReason,
+      person: createPerson({
+        access_level: AccessLevel.ReadAndWrite,
+        email: 'member@appflowy.local',
+        name: 'Member',
+        role: Role.Member,
+      }),
+    });
+
+    const memberAccess = screen.getByTestId('access-level-member@appflowy.local');
+
+    expect(memberAccess.dataset.canModify).toBe('false');
+    expect(memberAccess.dataset.disabledReason).toBe(disabledReason);
   });
 
   it('keeps Full Access recipients immutable for delegated share managers', () => {
