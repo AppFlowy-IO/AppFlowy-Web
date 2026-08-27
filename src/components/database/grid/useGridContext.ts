@@ -70,6 +70,8 @@ export function createGridInteractionStore(initial?: {
 const subscribeToNothing = () => () => undefined;
 
 type GridInteractionContextType = {
+  historyScopeId: string;
+  restoreHistoryFocus: () => void;
   setActiveCell: GridInteractionStore['setActiveCell'];
   setHoverRowKey: GridInteractionStore['setHoverRowKey'];
   store: GridInteractionStore;
@@ -89,6 +91,14 @@ export function useGridInteractionActions() {
   const { setActiveCell, setHoverRowKey } = useGridInteractionContext();
 
   return { setActiveCell, setHoverRowKey };
+}
+
+export function useGridHistoryScopeId() {
+  return useContext(GridInteractionContext)?.historyScopeId;
+}
+
+export function useRestoreGridHistoryFocus() {
+  return useContext(GridInteractionContext)?.restoreHistoryFocus;
 }
 
 export function useIsGridRowHovered(rowKey: string, enabled = true) {

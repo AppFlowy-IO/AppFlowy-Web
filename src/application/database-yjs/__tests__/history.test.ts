@@ -6,6 +6,9 @@ import {
   executeDatabaseOperations,
   getDatabaseHistoryPolicy,
   getOrCreateDatabaseHistoryManager,
+  registerDatabaseHistoryRowDoc,
+  registerDatabaseHistoryRowDocs,
+  useDatabaseHistoryManager,
   useDatabaseRowHistory,
   useDatabaseHistory,
   getDatabaseRowHistoryPolicy,
@@ -294,6 +297,8 @@ describe('database row history', () => {
       'first-row-id': firstRowDoc,
       'second-row-id': secondRowDoc,
     });
+
+    registerDatabaseHistoryRowDocs(databaseDoc, contextValue.rowMap ?? {});
     const { result } = renderHook(() => useDatabaseHistory(), {
       wrapper: createWrapper(contextValue),
     });
@@ -342,6 +347,37 @@ describe('database row history', () => {
 
     manager.redo();
     expect(rowOrders.toJSON()).toEqual([{ id: rowId, height: 36 }]);
+  });
+
+  it('incrementally attaches row documents registered before and after manager creation', () => {
+    const { databaseDoc } = createDatabaseDoc();
+    const firstRowDoc = createRowDoc('first-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const secondRowDoc = createRowDoc('second-row-id', databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+
+    registerDatabaseHistoryRowDoc(databaseDoc, 'first-row-id', firstRowDoc);
+    const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    registerDatabaseHistoryRowDoc(databaseDoc, 'second-row-id', secondRowDoc);
+    registerDatabaseHistoryRowDoc(databaseDoc, 'second-row-id', secondRowDoc);
+
+    runDatabaseRowAction(firstRowDoc, { type: 'cell.update', rowId: 'first-row-id', fieldId: textFieldId }, () => {
+      setCellData(firstRowDoc, textFieldId, 'first');
+    });
+    runDatabaseRowAction(secondRowDoc, { type: 'cell.update', rowId: 'second-row-id', fieldId: textFieldId }, () => {
+      setCellData(secondRowDoc, textFieldId, 'second');
+    });
+
+    manager.undo();
+    expect(getCell(secondRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('');
+    expect(getCell(firstRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('first');
+
+    manager.undo();
+    expect(getCell(firstRowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('');
+    expect(manager.canUndo()).toBe(false);
   });
 
   it('undoes and redoes row and database document actions in global order', () => {
@@ -640,6 +676,8 @@ describe('database row history', () => {
       },
     });
     const contextValue = createContextValue(databaseDoc, { [rowId]: rowDoc });
+
+    registerDatabaseHistoryRowDoc(databaseDoc, rowId, rowDoc);
     const { result } = renderHook(() => useDatabaseHistory(), {
       wrapper: createWrapper(contextValue),
     });
@@ -669,6 +707,31 @@ describe('database row history', () => {
     });
 
     expect(getCell(rowDoc, textFieldId)?.get(YjsDatabaseKey.data)).toBe('');
+  });
+
+  it('does not rerender command-only consumers when history changes', () => {
+    const { databaseDoc } = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {
+      [textFieldId]: { fieldType: FieldType.RichText, data: '' },
+    });
+    const contextValue = createContextValue(databaseDoc, { [rowId]: rowDoc });
+    let renderCount = 0;
+    const { result } = renderHook(
+      () => {
+        renderCount += 1;
+        return useDatabaseHistoryManager(rowId);
+      },
+      { wrapper: createWrapper(contextValue) }
+    );
+
+    act(() => {
+      runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId: textFieldId }, () => {
+        setCellData(rowDoc, textFieldId, 'after');
+      });
+    });
+
+    expect(renderCount).toBe(1);
+    expect(result.current.canUndo()).toBe(true);
   });
 
   it('keeps relation policy shared between row and database actions', () => {

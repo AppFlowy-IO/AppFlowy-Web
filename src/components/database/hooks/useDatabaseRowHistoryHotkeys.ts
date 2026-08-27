@@ -1,11 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
-import { useDatabaseHistory } from '@/application/database-yjs';
+import { useDatabaseHistoryManager } from '@/application/database-yjs';
 import { RowId } from '@/application/types';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 const isUndoHotkey = createHotkey(HOT_KEY_NAME.UNDO);
 const isRedoHotkey = createHotkey(HOT_KEY_NAME.REDO);
+
+export function isDatabaseHistoryHotkey(event: KeyboardEvent): boolean {
+  return isUndoHotkey(event) || isRedoHotkey(event);
+}
 
 function getEventTargetElement(event: KeyboardEvent): Element | null {
   const target = event.target;
@@ -39,6 +43,7 @@ function isEditableEventTarget(event: KeyboardEvent): boolean {
   const element = getEventTargetElement(event);
 
   if (!element) return false;
+  if (element.closest('[data-database-history-hotkeys="true"]')) return false;
 
   const formControl = element.closest('input, textarea, select');
 
@@ -62,14 +67,16 @@ export function useDatabaseRowHistoryHotkeys(
   } = {}
 ) {
   const { enabled = true, ignoreInput = true, useLatest = false } = options;
-  const { canRedo, canUndo, redo, undo } = useDatabaseHistory(useLatest ? undefined : rowId);
+  const manager = useDatabaseHistoryManager(useLatest ? undefined : rowId);
 
-  // Keep the live undo/redo state in a ref so the keydown listener is attached
-  // once and always reads fresh values, instead of re-subscribing whenever
-  // canUndo/canRedo flip (which also avoids a stale-closure fall-through bug).
-  const latest = useRef({ canRedo, canUndo, redo, undo });
+  // A document listener outlives the render that created it. Publish a new
+  // manager only after that render commits so an interrupted render cannot
+  // expose callbacks from UI that never became active.
+  const latestManager = useRef(manager);
 
-  latest.current = { canRedo, canUndo, redo, undo };
+  useLayoutEffect(() => {
+    latestManager.current = manager;
+  }, [manager]);
 
   useEffect(() => {
     if (!enabled || (!useLatest && !rowId)) return;
@@ -78,21 +85,21 @@ export function useDatabaseRowHistoryHotkeys(
       if (event.defaultPrevented) return;
       if (ignoreInput && isEditableEventTarget(event)) return;
 
-      const { canRedo, canUndo, redo, undo } = latest.current;
+      const history = latestManager.current;
 
       if (isRedoHotkey(event)) {
-        if (!canRedo) return;
+        if (!history.canRedo()) return;
 
         event.preventDefault();
-        redo();
+        history.redo();
         return;
       }
 
       if (isUndoHotkey(event)) {
-        if (!canUndo) return;
+        if (!history.canUndo()) return;
 
         event.preventDefault();
-        undo();
+        history.undo();
       }
     };
 

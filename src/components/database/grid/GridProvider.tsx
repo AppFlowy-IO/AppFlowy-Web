@@ -8,13 +8,13 @@ import {
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
+import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScope';
 import {
   createGridInteractionStore,
   createGridRowResizeStore,
   GridContext,
   GridInteractionContext,
 } from '@/components/database/grid/useGridContext';
-import { useDatabaseRowHistoryHotkeys } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
 
 export const GridProvider = ({ children, grouping }: { children: ReactNode; grouping: GridGrouping }) => {
   const { rowOrders } = grouping;
@@ -50,12 +50,12 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
   }, []);
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const [hasGridFocus, setHasGridFocus] = useState(false);
+  const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly });
 
   useEffect(() => {
     setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
-    setHasGridFocus(false);
-  }, [activeViewId, isDocumentBlock]);
+    clearHistoryScope();
+  }, [activeViewId, clearHistoryScope, isDocumentBlock]);
 
   useEffect(() => {
     const element = ref.current;
@@ -100,30 +100,11 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
     (nextActiveCell: ReturnType<typeof interactionStore.getActiveCell>) => {
       interactionStore.setActiveCell(nextActiveCell);
 
-      if (nextActiveCell) setHasGridFocus(true);
+      if (nextActiveCell) activateHistoryScope();
     },
-    [interactionStore]
+    [activateHistoryScope, interactionStore]
   );
-
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-
-      setHasGridFocus(Boolean(ref.current && target instanceof Node && ref.current.contains(target)));
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown, true);
-
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-    };
-  }, []);
-
-  useDatabaseRowHistoryHotkeys(undefined, {
-    enabled: hasGridFocus && !readOnly,
-    ignoreInput: true,
-    useLatest: true,
-  });
+  const restoreHistoryFocus = activateHistoryScope;
 
   const loadMoreRows = useCallback(() => {
     setVisibleRowLimit((prev) => prev + EMBEDDED_GRID_LOAD_MORE_INCREMENT);
@@ -168,17 +149,19 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
   );
   const interactionContextValue = useMemo(
     () => ({
+      historyScopeId,
+      restoreHistoryFocus,
       setActiveCell: handleSetActiveCell,
       setHoverRowKey: handleHoverRowStart,
       store: interactionStore,
     }),
-    [handleHoverRowStart, handleSetActiveCell, interactionStore]
+    [handleHoverRowStart, handleSetActiveCell, historyScopeId, interactionStore, restoreHistoryFocus]
   );
 
   return (
     <GridContext.Provider value={contextValue}>
       <GridInteractionContext.Provider value={interactionContextValue}>
-        <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
+        <div ref={ref} data-database-history-scope={historyScopeId} className={'flex min-h-0 flex-1 flex-col'}>
           {children}
         </div>
       </GridInteractionContext.Provider>

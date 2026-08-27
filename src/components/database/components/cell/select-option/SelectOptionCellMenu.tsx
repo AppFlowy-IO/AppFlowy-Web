@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -15,6 +15,8 @@ import { YjsDatabaseKey } from '@/application/types';
 import { Tag } from '@/components/_shared/tag';
 import { TagsInput, Tag as TagType } from '@/components/database/components/cell/select-option/TagsInput';
 import Options from '@/components/database/components/property/select/Options';
+import { useGridHistoryScopeId, useRestoreGridHistoryFocus } from '@/components/database/grid/useGridContext';
+import { isDatabaseHistoryHotkey } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
 import { Label } from '@/components/ui/label';
 import {
   Popover,
@@ -32,6 +34,8 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
   fieldId: string;
   rowId: string;
 }) {
+  const historyScopeId = useGridHistoryScopeId();
+  const restoreGridHistoryFocus = useRestoreGridHistoryFocus();
   const { field, clock } = useFieldSelector(fieldId);
   const onCreateOption = useAddSelectOption(fieldId);
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
@@ -212,8 +216,11 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
     setHoveredId(nextHoveredId);
   }, [createdShow, options]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    e.stopPropagation();
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!isDatabaseHistoryHotkey(e.nativeEvent) || searchValue !== '') {
+      e.stopPropagation();
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       handleEnter();
@@ -224,19 +231,25 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
       e.preventDefault();
       handleArrowUp();
     }
-  }, [handleArrowDown, handleArrowUp, handleEnter]);
+  }, [handleArrowDown, handleArrowUp, handleEnter, searchValue]);
+
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) restoreGridHistoryFocus?.();
+    onOpenChange(nextOpen);
+  }, [onOpenChange, restoreGridHistoryFocus]);
 
   return (
     <Popover
       modal
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={handleOpenChange}
     >
       <PopoverTrigger
         className={'absolute left-0 top-0 w-full h-full z-[-1]'}
       />
       <PopoverContent
         data-testid="select-option-menu"
+        data-database-history-scope={historyScopeId}
         side={'bottom'}
         align={'start'}
         onMouseDown={(e) => {
@@ -255,6 +268,7 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
             multiple={isMultiple}
             tags={tags}
             onKeyDown={handleKeyDown}
+            data-database-history-hotkeys={searchValue === '' ? 'true' : undefined}
             onTagsChange={handleTagsChange}
             inputValue={searchValue}
             onInputChange={setSearchValue}

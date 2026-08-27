@@ -383,6 +383,7 @@ export class DatabaseHistoryManager {
 
 const rowHistoryControllers = new WeakMap<YDoc, DatabaseHistorySourceController>();
 const databaseHistoryManagers = new WeakMap<YDoc, DatabaseHistoryManager>();
+const databaseHistoryRowDocs = new WeakMap<YDoc, Map<YDoc, RowId>>();
 const rowDocManagers = new WeakMap<YDoc, Set<DatabaseHistoryManager>>();
 let activeDatabaseHistoryGroup: DatabaseHistoryGroup | null = null;
 
@@ -467,7 +468,39 @@ export function getOrCreateDatabaseHistoryManager(databaseDoc: YDoc) {
   const manager = new DatabaseHistoryManager(databaseDoc);
 
   databaseHistoryManagers.set(databaseDoc, manager);
+  databaseHistoryRowDocs.get(databaseDoc)?.forEach((rowId, rowDoc) => {
+    manager.registerRowDoc(rowId, rowDoc);
+  });
   return manager;
+}
+
+/**
+ * Incrementally associates a row document with its database history. Database
+ * views share the same row pipeline, so registration belongs at that boundary
+ * instead of inside a Grid-specific component or a hook that rescans rowMap.
+ *
+ * Keep every Y.Doc instance seen for a row. A collab reset can replace the
+ * canonical document while older undo stack entries still reference the
+ * previous instance.
+ */
+export function registerDatabaseHistoryRowDoc(databaseDoc: YDoc, rowId: RowId, rowDoc: YDoc) {
+  let rowDocs = databaseHistoryRowDocs.get(databaseDoc);
+
+  if (!rowDocs) {
+    rowDocs = new Map();
+    databaseHistoryRowDocs.set(databaseDoc, rowDocs);
+  }
+
+  if (rowDocs.has(rowDoc)) return;
+
+  rowDocs.set(rowDoc, rowId);
+  databaseHistoryManagers.get(databaseDoc)?.registerRowDoc(rowId, rowDoc);
+}
+
+export function registerDatabaseHistoryRowDocs(databaseDoc: YDoc, rowMap: Record<RowId, YDoc>) {
+  Object.entries(rowMap).forEach(([rowId, rowDoc]) => {
+    registerDatabaseHistoryRowDoc(databaseDoc, rowId, rowDoc);
+  });
 }
 
 export function getOrCreateDatabaseRowHistoryController(rowDoc: YDoc, rowId?: RowId) {
@@ -523,10 +556,7 @@ export function executeDatabaseOperations(
 }
 
 export function useDatabaseHistory(rowId?: RowId) {
-  const { databaseDoc, rowMap } = useDatabaseContext();
-  const manager = useMemo(() => getOrCreateDatabaseHistoryManager(databaseDoc), [databaseDoc]);
-  const rowSharedRoot = useRow(rowId ?? '');
-  const rowDoc = rowId ? (rowSharedRoot?.doc as YDoc | undefined) ?? rowMap?.[rowId] : undefined;
+  const manager = useDatabaseHistoryManager(rowId);
   const [, forceUpdate] = useState(0);
 
   useEffect(() => {
@@ -534,18 +564,6 @@ export function useDatabaseHistory(rowId?: RowId) {
       forceUpdate((value) => value + 1);
     });
   }, [manager]);
-
-  useEffect(() => {
-    Object.entries(rowMap ?? {}).forEach(([id, doc]) => {
-      manager.registerRowDoc(id, doc);
-    });
-  }, [manager, rowMap]);
-
-  useEffect(() => {
-    if (!rowId || !rowDoc) return;
-
-    manager.registerRowDoc(rowId, rowDoc);
-  }, [manager, rowDoc, rowId]);
 
   const undo = useCallback(() => {
     manager.undo();
@@ -567,6 +585,25 @@ export function useDatabaseHistory(rowId?: RowId) {
     undo,
     manager,
   };
+}
+
+/**
+ * Returns the database history command object without subscribing the caller
+ * to undo-stack notifications or deeply observing a row document. This is the
+ * appropriate API for deferred reads such as document-level keyboard events.
+ */
+export function useDatabaseHistoryManager(rowId?: RowId) {
+  const { databaseDoc, rowMap } = useDatabaseContext();
+  const manager = useMemo(() => getOrCreateDatabaseHistoryManager(databaseDoc), [databaseDoc]);
+  const rowDoc = rowId ? rowMap?.[rowId] : undefined;
+
+  useEffect(() => {
+    if (!rowId || !rowDoc) return;
+
+    registerDatabaseHistoryRowDoc(databaseDoc, rowId, rowDoc);
+  }, [databaseDoc, rowDoc, rowId]);
+
+  return manager;
 }
 
 export function useDatabaseRowHistory(rowId?: RowId) {

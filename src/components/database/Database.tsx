@@ -12,6 +12,7 @@ import {
 } from '@/application/database-blob';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { hasEffectiveFilters } from '@/application/database-yjs/filter';
+import { registerDatabaseHistoryRowDoc, registerDatabaseHistoryRowDocs } from '@/application/database-yjs/history';
 import { ROW_SYNC_RETRY_DELAYS_MS } from '@/application/database-yjs/row-sync';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
@@ -297,6 +298,12 @@ function Database(props: Database2Props) {
   const seedsGateRef = useRef(createDeferredGate());
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
   const [seedsReady, setSeedsReady] = useState(false);
+  const registerRowDocWithHistory = useCallback(
+    (rowId: RowId, rowDoc: YDoc) => {
+      registerDatabaseHistoryRowDoc(doc, rowId, rowDoc);
+    },
+    [doc]
+  );
 
   const publishCellLocalMutationChange = useCallback((fieldId?: string) => {
     const store = cellLocalMutationStoreRef.current;
@@ -630,6 +637,7 @@ function Database(props: Database2Props) {
             continue;
           }
 
+          registerRowDocWithHistory(rowId, canonicalDoc);
           setRowMap((prev) => (prev[rowId] === canonicalDoc ? prev : { ...prev, [rowId]: canonicalDoc }));
         }
       })();
@@ -644,7 +652,7 @@ function Database(props: Database2Props) {
 
       void reconciliationPromise.then(clearReconciliationPromise, clearReconciliationPromise);
     },
-    [databaseLifecycleIdentity, getDatabaseId, registerRowSync]
+    [databaseLifecycleIdentity, getDatabaseId, registerRowDocWithHistory, registerRowSync]
   );
 
   useEffect(() => {
@@ -656,7 +664,9 @@ function Database(props: Database2Props) {
       const { objectId, doc: canonicalDoc } = payload;
 
       if (!objectId || !canonicalDoc) return;
+      if (!rowMapRef.current[objectId]) return;
 
+      registerRowDocWithHistory(objectId, canonicalDoc);
       setRowMap((prev) => {
         // This Database owns only the row ids already present in its map. The
         // same app-wide event also carries resets for pages and databases.
@@ -680,7 +690,7 @@ function Database(props: Database2Props) {
     return () => {
       eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
     };
-  }, [getDatabaseId, props.eventEmitter]);
+  }, [getDatabaseId, props.eventEmitter, registerRowDocWithHistory]);
 
   const bindRowSync = useCallback(
     (rowId: string) => {
@@ -724,6 +734,7 @@ function Database(props: Database2Props) {
       const seed = peekDatabaseRowDocSeed(rowKey);
 
       if (hasRowConditionData(cachedRowDoc)) {
+        registerRowDocWithHistory(rowId, cachedRowDoc);
         setRowMap((prev) => {
           if (prev[rowId]) return prev;
           return { ...prev, [rowId]: cachedRowDoc };
@@ -745,6 +756,7 @@ function Database(props: Database2Props) {
         const rowDoc = await promise;
 
         if (rowDoc && isCurrentLoad()) {
+          registerRowDocWithHistory(rowId, rowDoc);
           setRowMap((prev) => {
             if (prev[rowId]) return prev;
             return { ...prev, [rowId]: rowDoc };
@@ -758,7 +770,7 @@ function Database(props: Database2Props) {
         }
       }
     },
-    [databaseLifecycleIdentity, getDatabaseId]
+    [databaseLifecycleIdentity, getDatabaseId, registerRowDocWithHistory]
   );
 
   // Synchronous shared read-only doc for filter/sort. Reuses an existing row
@@ -843,6 +855,9 @@ function Database(props: Database2Props) {
           if (count > 0) {
             // Keep seed-only rows local. ensureRow attaches realtime only when a
             // row is actually rendered, preserving the viewport boundary.
+            Object.entries(newEntries).forEach(([rowId, rowDoc]) => {
+              registerRowDocWithHistory(rowId, rowDoc);
+            });
             setRowMap((prev) => ({ ...prev, ...newEntries }));
           }
 
@@ -857,7 +872,7 @@ function Database(props: Database2Props) {
           gate.resolve();
         });
     },
-    [getDatabaseId, getPriorityRowIds]
+    [getDatabaseId, getPriorityRowIds, registerRowDocWithHistory]
   );
 
   const ensureBlobPrefetch = useCallback(() => {
@@ -972,6 +987,7 @@ function Database(props: Database2Props) {
       // Add the new row doc to rowMap so grouping logic can see it immediately
       if (belongsToCurrentDatabase && rowId && rowDoc) {
         markLocallyCreatedRow(rowId);
+        registerRowDocWithHistory(rowId, rowDoc);
         setRowMap((prev) => {
           if (prev[rowId]) return prev;
           return { ...prev, [rowId]: rowDoc };
@@ -985,7 +1001,15 @@ function Database(props: Database2Props) {
 
       return rowDoc;
     },
-    [createRow, databaseLifecycleIdentity, getDatabaseId, ensureBlobPrefetch, markLocallyCreatedRow, registerRowSync]
+    [
+      createRow,
+      databaseLifecycleIdentity,
+      getDatabaseId,
+      ensureBlobPrefetch,
+      markLocallyCreatedRow,
+      registerRowDocWithHistory,
+      registerRowSync,
+    ]
   );
 
   // Self-healing for a lying delta watermark: the RID cursor lives in
@@ -1086,6 +1110,7 @@ function Database(props: Database2Props) {
         const canonicalRowDoc = syncedRowDoc ?? existing;
 
         if (canonicalRowDoc !== existing) {
+          registerRowDocWithHistory(rowId, canonicalRowDoc);
           setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
         }
 
@@ -1111,6 +1136,7 @@ function Database(props: Database2Props) {
         const canonicalRowDoc = syncedRowDoc ?? existingAfterGate;
 
         if (canonicalRowDoc !== existingAfterGate) {
+          registerRowDocWithHistory(rowId, canonicalRowDoc);
           setRowMap((prev) => (prev[rowId] === canonicalRowDoc ? prev : { ...prev, [rowId]: canonicalRowDoc }));
         }
 
@@ -1170,6 +1196,7 @@ function Database(props: Database2Props) {
         const rowDoc = await promise;
 
         if (rowDoc && isCurrentEnsure()) {
+          registerRowDocWithHistory(rowId, rowDoc);
           setRowMap((prev) => {
             // A version reset may replace the sync context's Y.Doc while the
             // row map still points at the old instance. The canonical doc must
@@ -1195,6 +1222,7 @@ function Database(props: Database2Props) {
       getDatabaseId,
       ensureBlobPrefetch,
       readOnly,
+      registerRowDocWithHistory,
       registerRowSync,
       scheduleRowSyncReconciliation,
       scheduleMissingRowRecovery,
@@ -1292,6 +1320,7 @@ function Database(props: Database2Props) {
 
     seedsGateRef.current = lifecycleGate;
     rowMapRef.current = initialRowMap;
+    registerDatabaseHistoryRowDocs(doc, initialRowMap);
     setRowMap(initialRowMap);
     setBlobPrefetchComplete(false);
     setSeedsReady(false);
@@ -1309,7 +1338,7 @@ function Database(props: Database2Props) {
       lifecycleRowSyncRegistrations.clear();
       lifecycleGate.resolve();
     };
-  }, [databaseLifecycleIdentity, props.initialRowMap, publishCellLocalMutationChange]);
+  }, [databaseLifecycleIdentity, doc, props.initialRowMap, publishCellLocalMutationChange]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {

@@ -1,13 +1,33 @@
 import { act, renderHook } from '@testing-library/react';
 
-import { useDatabaseHistory } from '@/application/database-yjs';
+import { useDatabaseHistoryManager } from '@/application/database-yjs';
 import { useDatabaseRowHistoryHotkeys } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
 
 jest.mock('@/application/database-yjs', () => ({
-  useDatabaseHistory: jest.fn(),
+  useDatabaseHistoryManager: jest.fn(),
 }));
 
-const mockUseDatabaseHistory = jest.mocked(useDatabaseHistory);
+const mockUseDatabaseHistoryManager = jest.mocked(useDatabaseHistoryManager);
+
+function createHistoryManager({
+  canRedo = true,
+  canUndo = true,
+  redo = jest.fn(),
+  undo = jest.fn(),
+}: {
+  canRedo?: boolean;
+  canUndo?: boolean;
+  redo?: jest.Mock;
+  undo?: jest.Mock;
+} = {}) {
+  return {
+    canRedo: jest.fn(() => canRedo),
+    canUndo: jest.fn(() => canUndo),
+    redo,
+    subscribe: jest.fn(),
+    undo,
+  } as unknown as ReturnType<typeof useDatabaseHistoryManager>;
+}
 
 function dispatchHistory(target: EventTarget, redoHistory = false): KeyboardEvent {
   const modifier = /Mac|iPod|iPhone|iPad/.test(window.navigator.platform) ? { metaKey: true } : { ctrlKey: true };
@@ -39,14 +59,11 @@ function dispatchRedo(target: EventTarget): KeyboardEvent {
 describe('useDatabaseRowHistoryHotkeys', () => {
   const undo = jest.fn();
   const redo = jest.fn();
+  let manager: ReturnType<typeof useDatabaseHistoryManager>;
 
   beforeEach(() => {
-    mockUseDatabaseHistory.mockReturnValue({
-      canRedo: true,
-      canUndo: true,
-      redo,
-      undo,
-    } as ReturnType<typeof useDatabaseHistory>);
+    manager = createHistoryManager({ redo, undo });
+    mockUseDatabaseHistoryManager.mockReturnValue(manager);
   });
 
   afterEach(() => {
@@ -71,7 +88,57 @@ describe('useDatabaseRowHistoryHotkeys', () => {
     const event = dispatchUndo(target);
 
     expect(undo).toHaveBeenCalledTimes(1);
+    expect(manager.canUndo).toHaveBeenCalledTimes(1);
+    expect(manager.subscribe).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('reads availability when the key is pressed without subscribing the owner to history state', () => {
+    const unavailableManager = createHistoryManager({ canUndo: false, undo });
+    const target = document.createElement('div');
+
+    mockUseDatabaseHistoryManager.mockReturnValue(unavailableManager);
+    document.body.append(target);
+
+    renderHook(() =>
+      useDatabaseRowHistoryHotkeys(undefined, {
+        ignoreInput: true,
+        useLatest: true,
+      })
+    );
+
+    const event = dispatchUndo(target);
+
+    expect(unavailableManager.canUndo).toHaveBeenCalledTimes(1);
+    expect(unavailableManager.subscribe).not.toHaveBeenCalled();
+    expect(undo).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('switches the document listener to a replacement manager after commit', () => {
+    const firstUndo = jest.fn();
+    const secondUndo = jest.fn();
+    const firstManager = createHistoryManager({ undo: firstUndo });
+    const secondManager = createHistoryManager({ undo: secondUndo });
+    const target = document.createElement('div');
+
+    mockUseDatabaseHistoryManager.mockReturnValue(firstManager);
+    document.body.append(target);
+
+    const { rerender } = renderHook(() =>
+      useDatabaseRowHistoryHotkeys(undefined, {
+        ignoreInput: true,
+        useLatest: true,
+      })
+    );
+
+    dispatchUndo(target);
+    mockUseDatabaseHistoryManager.mockReturnValue(secondManager);
+    rerender();
+    dispatchUndo(target);
+
+    expect(firstUndo).toHaveBeenCalledTimes(1);
+    expect(secondUndo).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -95,6 +162,29 @@ describe('useDatabaseRowHistoryHotkeys', () => {
 
     expect(undo).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('uses database history for an input that explicitly yields history hotkeys', () => {
+    const target = document.createElement('input');
+
+    target.setAttribute('data-database-history-hotkeys', 'true');
+    document.body.append(target);
+    target.focus();
+
+    renderHook(() =>
+      useDatabaseRowHistoryHotkeys(undefined, {
+        ignoreInput: true,
+        useLatest: true,
+      })
+    );
+
+    const undoEvent = dispatchUndo(target);
+    const redoEvent = dispatchRedo(target);
+
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(redo).toHaveBeenCalledTimes(1);
+    expect(undoEvent.defaultPrevented).toBe(true);
+    expect(redoEvent.defaultPrevented).toBe(true);
   });
 
   it('applies the same ownership rules to redo', () => {
