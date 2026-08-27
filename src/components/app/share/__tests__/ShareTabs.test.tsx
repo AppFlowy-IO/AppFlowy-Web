@@ -99,6 +99,9 @@ describe('ShareTabs publish availability', () => {
     expect(screen.getByRole('tab', { name: 'shareAction.shareTab' })).toBeTruthy();
     expect(screen.queryByTestId('publish-tab')).toBeNull();
     expect(screen.getByTestId('share-panel')).toBeTruthy();
+    expect(mockSharePanelProps).toHaveBeenCalledWith(
+      expect.objectContaining({ disablePersonAccessChanges: true })
+    );
   });
 
   it('keeps Publish available by default', () => {

@@ -19,6 +19,7 @@ interface PersonItemProps {
   currentUserHasFullAccess: boolean;
   currentUserIsOwner: boolean;
   currentUserCanGrantFullAccess: boolean;
+  permissionChangeDisabledReason?: string;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
   onRemoveAccess: (email: string) => Promise<void>;
   onTurnIntoMember?: (email: string) => Promise<void>;
@@ -31,12 +32,14 @@ export function PersonItem({
   currentUserHasFullAccess,
   currentUserIsOwner,
   currentUserCanGrantFullAccess,
+  permissionChangeDisabledReason,
   onAccessLevelChange,
   onRemoveAccess,
   onTurnIntoMember,
 }: PersonItemProps) {
   const { t } = useTranslation();
   const canModifyThisPerson =
+    !permissionChangeDisabledReason &&
     !isInheritedWorkspaceAccess &&
     currentUserHasFullAccess &&
     !isYou &&
@@ -126,6 +129,7 @@ export function PersonItem({
         canModify={canModifyThisPerson}
         currentUserHasFullAccess={currentUserHasFullAccess}
         currentUserCanGrantFullAccess={currentUserCanGrantFullAccess}
+        disabledReason={permissionChangeDisabledReason}
         isYou={isYou}
         onAccessLevelChange={onAccessLevelChange}
         onRemoveAccess={onRemoveAccess}

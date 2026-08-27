@@ -18,12 +18,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface AccessLevelDropdownProps {
   person: IPeopleWithAccessType;
   canModify: boolean;
   currentUserHasFullAccess: boolean;
   currentUserCanGrantFullAccess?: boolean;
+  disabledReason?: string;
   isYou: boolean;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
   onRemoveAccess: (email: string) => Promise<void>;
@@ -34,6 +37,7 @@ export function AccessLevelDropdown({
   canModify,
   currentUserHasFullAccess,
   currentUserCanGrantFullAccess = false,
+  disabledReason,
   isYou,
   onAccessLevelChange,
   onRemoveAccess,
@@ -92,11 +96,28 @@ export function AccessLevelDropdown({
     );
   }, [loading, isYou, handleRemoveAccess, t]);
 
-  if (!canModify) {
-    return (
-      <div className='mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary'>
+  if (!canModify || disabledReason) {
+    const accessLabel = (
+      <div
+        aria-disabled={disabledReason ? true : undefined}
+        className={cn(
+          'mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary',
+          disabledReason && 'cursor-not-allowed'
+        )}
+        data-testid={disabledReason ? 'access-level-change-disabled' : undefined}
+        tabIndex={disabledReason ? 0 : undefined}
+      >
         {getAccessLevelText(person.access_level)}
       </div>
+    );
+
+    if (!disabledReason) return accessLabel;
+
+    return (
+      <Tooltip disableHoverableContent>
+        <TooltipTrigger asChild>{accessLabel}</TooltipTrigger>
+        <TooltipContent side='top'>{disabledReason}</TooltipContent>
+      </Tooltip>
     );
   }
 

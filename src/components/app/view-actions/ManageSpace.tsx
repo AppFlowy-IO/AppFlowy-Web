@@ -1091,6 +1091,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
       const requestGeneration = spaceRequestRef.current.generation;
 
+      setMemberSearch('');
       setAddingUid(uid);
       try {
         await WorkspaceService.addSpaceMember(workspaceId, viewId, {
@@ -1129,6 +1130,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
       if (membersReadOnly || !permissionLoaded || permissionLoadFailed || !canManageMembers || !workspaceId) return;
       const requestGeneration = spaceRequestRef.current.generation;
 
+      setMemberSearch('');
       setAddingGroupId(group.group_id);
       try {
         const granted = await WorkspaceService.addSpaceGroupPermission(workspaceId, viewId, group.group_id, {

@@ -1,5 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { AccessLevel, IPeopleWithAccessType, Role } from '@/application/types';
 
@@ -149,5 +149,23 @@ describe('AccessLevelDropdown', () => {
     expect(screen.queryByRole('button', { name: 'Can view' })).toBeNull();
     expect(screen.getByText('Can view')).toBeTruthy();
     expect(screen.queryByText('Remove access')).toBeNull();
+  });
+
+  it('shows why database row-page permission changes are disabled', async () => {
+    const disabledReason = 'Unable to change database row page permission.';
+
+    renderAccessLevelDropdown({
+      disabledReason,
+      person: createPerson({ access_level: AccessLevel.ReadAndWrite }),
+    });
+
+    const disabledAccess = screen.getByTestId('access-level-change-disabled');
+
+    expect(disabledAccess.getAttribute('aria-disabled')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Can edit' })).toBeNull();
+    expect(screen.queryByText('Remove access')).toBeNull();
+
+    fireEvent.pointerMove(disabledAccess, { pointerType: 'mouse' });
+    await waitFor(() => expect(screen.getByRole('tooltip').textContent).toBe(disabledReason));
   });
 });
