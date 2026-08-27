@@ -39,6 +39,7 @@ function isEditableEventTarget(event: KeyboardEvent): boolean {
   const element = getEventTargetElement(event);
 
   if (!element) return false;
+  if (element.closest('[data-database-history-hotkeys="true"]')) return false;
 
   const formControl = element.closest('input, textarea, select');
 

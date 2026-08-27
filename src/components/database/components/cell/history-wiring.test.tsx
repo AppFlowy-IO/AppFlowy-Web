@@ -22,6 +22,7 @@ import {
 } from '@/application/types';
 import AITextCellActions from '@/components/database/components/cell/ai-text/AITextCellActions';
 import SelectOptionCellMenu from '@/components/database/components/cell/select-option/SelectOptionCellMenu';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import type { ReactNode } from 'react';
@@ -174,6 +175,20 @@ function getSelectOptions(field: YDatabaseField): Array<{ id: string; name: stri
   return (JSON.parse(content) as { options: Array<{ id: string; name: string }> }).options;
 }
 
+function dispatchUndo(target: HTMLElement) {
+  const modifier = /Mac|iPod|iPhone|iPad/.test(window.navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+
+  fireEvent.keyDown(target, {
+    bubbles: true,
+    cancelable: true,
+    code: 'KeyZ',
+    key: 'z',
+    keyCode: 90,
+    which: 90,
+    ...modifier,
+  });
+}
+
 function renderWithDatabase(
   children: ReactNode,
   fixture: Fixture,
@@ -212,6 +227,51 @@ function renderWithDatabase(
 }
 
 describe('database cell component history wiring', () => {
+  it('routes undo to database history after creating a select option from an empty search input', async () => {
+    const selectField = createSelectField();
+    const fixture = createFixture([[fieldId, selectField]]);
+    const columns = addSelectGroup(fixture.view);
+    const rowDoc = createRowDoc();
+
+    renderWithDatabase(
+      <DatabaseHistoryScope>
+        <SelectOptionCellMenu
+          fieldId={fieldId}
+          onOpenChange={jest.fn()}
+          open
+          rowId={rowId}
+          selectOptionIds={[]}
+        />
+      </DatabaseHistoryScope>,
+      fixture,
+      rowDoc
+    );
+
+    const searchInput = screen.getByRole('textbox');
+
+    fireEvent.pointerDown(searchInput);
+    expect(searchInput.getAttribute('data-database-history-hotkeys')).toBe('true');
+
+    fireEvent.change(searchInput, { target: { value: 'Keyboard option' } });
+    expect(searchInput.hasAttribute('data-database-history-hotkeys')).toBe(false);
+    fireEvent.click(await screen.findByText('button.create'));
+
+    await waitFor(() => {
+      expect(getSelectOptions(selectField).map(({ id }) => id)).toEqual(['Keyboard option']);
+      expect(columns.toJSON().map(({ id }) => id)).toEqual(['Keyboard option']);
+      expect(getCellData(rowDoc)).toBe('Keyboard option');
+      expect(searchInput.getAttribute('data-database-history-hotkeys')).toBe('true');
+    });
+
+    dispatchUndo(searchInput);
+
+    await waitFor(() => {
+      expect(getSelectOptions(selectField)).toEqual([]);
+      expect(columns.toJSON()).toEqual([]);
+      expect(getCellData(rowDoc)).toBeUndefined();
+    });
+  });
+
   it('creates and selects a new option as one undoable menu action', async () => {
     const selectField = createSelectField();
     const fixture = createFixture([[fieldId, selectField]]);

@@ -48,6 +48,13 @@ export function DatabaseHistoryScope({
       ref={scopeRef}
       className={className}
       style={style}
+      onPointerDownCapture={() => {
+        // React events from portals still follow the component tree. Reclaim
+        // ownership after the native document listener sees the portaled DOM
+        // node as outside this scope.
+        pointerOwnershipRef.current = true;
+        setHasDatabaseFocus(true);
+      }}
       onFocusCapture={() => setHasDatabaseFocus(true)}
       onBlurCapture={(event) => {
         const nextTarget = event.relatedTarget;

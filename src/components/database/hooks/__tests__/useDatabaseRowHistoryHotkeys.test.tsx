@@ -97,6 +97,26 @@ describe('useDatabaseRowHistoryHotkeys', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('uses database history for an opted-in empty search input', () => {
+    const target = document.createElement('input');
+
+    target.setAttribute('data-database-history-hotkeys', 'true');
+    document.body.append(target);
+    target.focus();
+
+    renderHook(() =>
+      useDatabaseRowHistoryHotkeys(undefined, {
+        ignoreInput: true,
+        useLatest: true,
+      })
+    );
+
+    const event = dispatchUndo(target);
+
+    expect(undo).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('applies the same ownership rules to redo', () => {
     const gridTarget = document.createElement('div');
     const editor = document.createElement('textarea');

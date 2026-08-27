@@ -216,14 +216,16 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
   }, [createdShow, options]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    e.stopPropagation();
     if (e.key === 'Enter') {
+      e.stopPropagation();
       e.preventDefault();
       handleEnter();
     } else if (e.key === 'ArrowDown') {
+      e.stopPropagation();
       e.preventDefault();
       handleArrowDown();
     } else if (e.key === 'ArrowUp') {
+      e.stopPropagation();
       e.preventDefault();
       handleArrowUp();
     }
@@ -262,6 +264,7 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
             inputValue={searchValue}
             onInputChange={setSearchValue}
             inputRef={inputRef}
+            data-database-history-hotkeys={searchValue === '' ? 'true' : undefined}
           />
 
         </div>
