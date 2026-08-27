@@ -5,15 +5,17 @@ import type {
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
 
+export type DatabaseTestHistory = {
+  getOrCreateDatabaseHistoryManager: typeof getOrCreateDatabaseHistoryManager;
+  runDatabaseAction: typeof runDatabaseAction;
+  runDatabaseRowAction: typeof runDatabaseRowAction;
+};
+
 export type DatabaseTestWindow = Window & {
   __TEST_DATABASE_DOC__?: unknown;
   __TEST_DATABASE_VIEW_ID__?: string;
   __TEST_DATABASE_CONTEXT__?: DatabaseContextState;
-  __TEST_DATABASE_HISTORY__?: {
-    getOrCreateDatabaseHistoryManager: typeof getOrCreateDatabaseHistoryManager;
-    runDatabaseAction: typeof runDatabaseAction;
-    runDatabaseRowAction: typeof runDatabaseRowAction;
-  };
+  __TEST_DATABASE_HISTORY__?: DatabaseTestHistory;
 };
 
 const activeTestContexts = new WeakMap<DatabaseTestWindow, Map<symbol, DatabaseContextState>>();
@@ -21,7 +23,8 @@ const activeTestContexts = new WeakMap<DatabaseTestWindow, Map<symbol, DatabaseC
 export function exposeDatabaseTestContext(
   testWindow: DatabaseTestWindow,
   owner: symbol,
-  value: DatabaseContextState
+  value: DatabaseContextState,
+  history?: DatabaseTestHistory
 ): () => void {
   const contexts = activeTestContexts.get(testWindow) ?? new Map<symbol, DatabaseContextState>();
 
@@ -32,6 +35,7 @@ export function exposeDatabaseTestContext(
   testWindow.__TEST_DATABASE_DOC__ = value.databaseDoc;
   testWindow.__TEST_DATABASE_VIEW_ID__ = value.activeViewId;
   testWindow.__TEST_DATABASE_CONTEXT__ = value;
+  if (history) testWindow.__TEST_DATABASE_HISTORY__ = history;
 
   return () => {
     contexts.delete(owner);
@@ -50,6 +54,9 @@ export function exposeDatabaseTestContext(
       }
     }
 
-    if (contexts.size === 0) activeTestContexts.delete(testWindow);
+    if (contexts.size === 0) {
+      delete testWindow.__TEST_DATABASE_HISTORY__;
+      activeTestContexts.delete(testWindow);
+    }
   };
 }

@@ -14,7 +14,8 @@ import { AttributionUid, resolveUserAttributionUid, touchRowAttribution } from '
 import { setCellStoredType } from '@/application/database-yjs/cell.field-type';
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { runDatabaseRowAction } from '@/application/database-yjs/history';
+import { getOrCreateDatabaseHistoryManager, runDatabaseRowAction } from '@/application/database-yjs/history';
+import type { DatabaseHistoryPolicy } from '@/application/database-yjs/history';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import {
   YDatabaseCell,
@@ -25,8 +26,8 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { Log } from '@/utils/log';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 const ROW_DATA_WAIT_MS = 3000;
 
@@ -37,6 +38,11 @@ type DateCellOptions = {
   includeTime?: boolean;
   isRange?: boolean;
   reminderId?: string;
+};
+
+type CellHistoryOptions = {
+  historyGroup?: object;
+  policy?: DatabaseHistoryPolicy;
 };
 
 type WritableRowTarget = {
@@ -160,6 +166,7 @@ function writeCellToRow({
   rowId,
   data,
   dateOpts,
+  historyOptions,
   actorUid,
 }: {
   rowDoc: YDoc;
@@ -170,11 +177,12 @@ function writeCellToRow({
   rowId: string;
   data: CellUpdateData;
   dateOpts?: DateCellOptions;
+  historyOptions?: CellHistoryOptions;
   actorUid?: AttributionUid;
 }) {
   const cell = cells.get(fieldId);
 
-  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType }, () => {
+  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType, ...historyOptions }, () => {
     if (!cell) {
       const newCell = new Y.Map() as YDatabaseCell;
 
@@ -210,13 +218,13 @@ function writeCellToRow({
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
-  const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
+  const { databaseDoc, rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const { field } = useFieldSelector(fieldId);
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
 
   return useCallback(
-    (data: CellUpdateData, dateOpts?: DateCellOptions) => {
+    (data: CellUpdateData, dateOpts?: DateCellOptions, historyOptions?: CellHistoryOptions) => {
       void (async () => {
         if (!field) {
           Log.warn('[useUpdateCellDispatch] Field not found', { rowId, fieldId });
@@ -236,6 +244,11 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           return;
         }
 
+        // A lazily loaded row can be edited before the rowMap registration
+        // effect runs. Attach it synchronously so its first edit reaches the
+        // database-wide history stack.
+        getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
+
         writeCellToRow({
           rowDoc,
           row: target.row,
@@ -245,6 +258,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           rowId,
           data,
           dateOpts,
+          historyOptions,
           actorUid,
         });
         markCellLocalMutation?.(rowId, fieldId);
@@ -252,12 +266,12 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         Log.error('[useUpdateCellDispatch] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [actorUid, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
+    [actorUid, databaseDoc, ensureRow, field, fieldId, markCellLocalMutation, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
-  const { rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
+  const { databaseDoc, rowMap, ensureRow, markCellLocalMutation } = useDatabaseContext();
   const currentUser = useCurrentUserOptional();
   const actorUid = resolveUserAttributionUid(currentUser);
 
@@ -278,6 +292,8 @@ export function useUpdateStartEndTimeCell() {
         }
 
         const writableTarget = target;
+
+        getOrCreateDatabaseHistoryManager(databaseDoc).registerRowDoc(rowId, rowDoc);
 
         runDatabaseRowAction(
           rowDoc,
@@ -311,6 +327,6 @@ export function useUpdateStartEndTimeCell() {
         Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
       });
     },
-    [actorUid, ensureRow, markCellLocalMutation, rowMap]
+    [actorUid, databaseDoc, ensureRow, markCellLocalMutation, rowMap]
   );
 }

@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 import { DatabaseContext } from '@/application/database-yjs';
 import type { DatabaseContextState, GridGrouping } from '@/application/database-yjs';
 import type { YDoc } from '@/application/types';
-import { useIsDatabaseHistoryScopeActive } from '@/components/database/databaseHistoryScope';
+import { useIsDatabaseHistoryScopeActive } from '@/components/database/databaseHistoryScopeCoordinator';
 import { GridProvider } from '@/components/database/grid/GridProvider';
 import {
   createGridInteractionStore,

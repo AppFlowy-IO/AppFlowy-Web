@@ -36,21 +36,12 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
     const testWindow = window as DatabaseTestWindow & { Y?: typeof Y };
     const owner = testContextOwner.current;
 
-    testWindow.__TEST_DATABASE_HISTORY__ = {
+    testWindow.Y = Y;
+    return exposeDatabaseTestContext(testWindow, owner, value, {
       getOrCreateDatabaseHistoryManager,
       runDatabaseAction,
       runDatabaseRowAction,
-    };
-    testWindow.Y = Y;
-    const cleanupTestContext = exposeDatabaseTestContext(testWindow, owner, value);
-
-    return () => {
-      cleanupTestContext();
-
-      if (!testWindow.__TEST_DATABASE_CONTEXT__) delete testWindow.__TEST_DATABASE_HISTORY__;
-
-      // Keep Y exposed — it may be needed by other editors
-    };
+    });
   }, [value]);
 
   return <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>;

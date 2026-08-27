@@ -8,7 +8,7 @@ import {
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
-import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScope';
+import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScopeCoordinator';
 import {
   createGridInteractionStore,
   createGridRowResizeStore,

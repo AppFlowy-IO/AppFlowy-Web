@@ -173,6 +173,38 @@ describe('Bug B (fixed) — field-type conversion preserves select values', () =
     expect(getCellDataText(cell, field)).toBe('0,60,82');
   });
 
+  it('undoes and redoes the field schema while preserving the source-typed row cell', () => {
+    const { databaseDoc, rowDoc, switchType } = setup();
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    history.registerRowDoc(rowId, rowDoc);
+
+    act(() => {
+      void switchType(fieldId, FieldType.RichText);
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.data)).toBe(CELL_DATA);
+
+    act(() => {
+      history.undo();
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+    expect(history.canUndo()).toBe(false);
+
+    act(() => {
+      history.redo();
+    });
+
+    expect(getField(databaseDoc).get(YjsDatabaseKey.type)).toBe(FieldType.RichText);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(getCell(rowDoc).get(YjsDatabaseKey.data)).toBe(CELL_DATA);
+  });
+
   it('schema-only switching immediately refreshes the subscribed cell value', async () => {
     const { result, switchType } = setup();
 

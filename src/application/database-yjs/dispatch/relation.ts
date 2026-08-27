@@ -17,10 +17,10 @@ import {
   runDatabaseAction,
   runDatabaseRowAction,
 } from '@/application/database-yjs/history';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import {
   FieldId,
   RowId,
@@ -837,7 +837,13 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
             setRelationTypeOption(currentField, nextOption);
           },
         ],
-        'updateRelationTypeOption'
+        'updateRelationTypeOption',
+        {
+          type: 'relation.update-type-option',
+          fieldId,
+          fieldType: FieldType.Relation,
+          policy: 'skip',
+        }
       );
 
       if (nextOption.is_two_way && nextOption.reciprocal_field_id && nextOption.database_id) {
