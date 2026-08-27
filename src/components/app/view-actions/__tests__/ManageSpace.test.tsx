@@ -1633,7 +1633,10 @@ describe('ManageSpace ACL management', () => {
 
       expect(mockGetMembers).toHaveBeenCalledWith('workspace-1');
       expect(mockUseAddableWorkspaceMembers).toHaveBeenLastCalledWith(expect.objectContaining({ excludePending: true }));
+      fireEvent.change(screen.getByTestId('inline-member-search'), { target: { value: 'Candidate' } });
       fireEvent.click(screen.getByTestId('inline-member-add'));
+
+      expect(screen.getByTestId('inline-member-search').value).toBe('');
 
       await waitFor(() =>
         expect(mockAddSpaceMember).toHaveBeenCalledWith(
@@ -1668,6 +1671,8 @@ describe('ManageSpace ACL management', () => {
 
       expect(result.textContent).toContain('space.permissionManager.groupInfo:{"count":12}');
       fireEvent.click(within(result).getByTestId('space-group-inline-search-result-add'));
+
+      expect(screen.getByTestId('inline-member-search').value).toBe('');
 
       await waitFor(() =>
         expect(mockAddSpaceGroupPermission).toHaveBeenCalledWith('workspace-1', 'space-1', 'group-engineering', {

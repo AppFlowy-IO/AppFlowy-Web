@@ -711,6 +711,16 @@ function CreateSpaceModal({
       primaryActionLoading={loading}
       primaryActionDisabled={loading || !spaceName.trim()}
       onPrimaryAction={() => void handleCreate()}
+      overlay={
+        loading ? (
+          <div
+            className='bg-surface-primary/80 absolute inset-0 z-10 flex items-center justify-center rounded-400 backdrop-blur-sm'
+            data-testid='create-space-loading-indicator'
+          >
+            <Progress aria-label={t('loading')} role='status' variant='primary' />
+          </div>
+        ) : null
+      }
     />
   );
 }
