@@ -33,6 +33,7 @@ function SharePanel({
   updateGroupInAccessList,
   hasFullAccess,
   canManageFullAccess,
+  disablePersonAccessChanges,
   currentUserAccessLevel,
   generalAccessLevel,
   sectionType,
@@ -47,6 +48,7 @@ function SharePanel({
   updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
   hasFullAccess: boolean;
   canManageFullAccess: boolean;
+  disablePersonAccessChanges: boolean;
   currentUserAccessLevel?: AccessLevel;
   generalAccessLevel?: AccessLevel | null;
   sectionType: ShareSectionType;
@@ -177,6 +179,7 @@ function SharePanel({
           canManageGroupAccess={canManageGroupAccess}
           canManageFullAccess={canManageFullAccess}
           canGrantFullAccess={canManageFullAccess}
+          disablePersonAccessChanges={disablePersonAccessChanges}
           sectionType={sectionType}
         />
         <GeneralAccess sectionType={sectionType} accessLevel={generalAccessLevel} />

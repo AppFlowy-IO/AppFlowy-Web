@@ -72,7 +72,8 @@ function renderSharePanel(
   updateGroupInAccessList = jest.fn(),
   canManageFullAccess = false,
   hasFullAccess = currentUserAccessLevel === AccessLevel.FullAccess,
-  generalAccessLevel: AccessLevel | null = null
+  generalAccessLevel: AccessLevel | null = null,
+  disablePersonAccessChanges = false
 ) {
   return render(
     <SharePanel
@@ -86,6 +87,7 @@ function renderSharePanel(
       updateGroupInAccessList={updateGroupInAccessList}
       hasFullAccess={hasFullAccess}
       canManageFullAccess={canManageFullAccess}
+      disablePersonAccessChanges={disablePersonAccessChanges}
       currentUserAccessLevel={currentUserAccessLevel}
       generalAccessLevel={generalAccessLevel}
       sectionType={ShareSectionType.Private}
@@ -148,6 +150,14 @@ describe('SharePanel', () => {
 
     expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
       expect.objectContaining({ updateGroupInAccessList, canManageFullAccess: true })
+    );
+  });
+
+  it('forwards the database row-page person access restriction', () => {
+    renderSharePanel(AccessLevel.ReadOnly, jest.fn(), true, true, null, true);
+
+    expect(mockPeopleWithAccessProps).toHaveBeenCalledWith(
+      expect.objectContaining({ disablePersonAccessChanges: true })
     );
   });
 

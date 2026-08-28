@@ -40,6 +40,9 @@ function ShareTabs({
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
   const activeValue = hidePublish && value === TabKey.PUBLISH ? TabKey.SHARE : value;
+  // RightMenu uses hidePublish for full-page database rows. Their access list
+  // comes from the containing database and must not be mutated from the row.
+  const disablePersonAccessChanges = hidePublish;
   const currentUser = useCurrentUser();
   const {
     people,
@@ -139,6 +142,7 @@ function ShareTabs({
                 updateGroupInAccessList={updateGroupInAccessList}
                 hasFullAccess={canShare}
                 canManageFullAccess={canShare && canManageFullAccess}
+                disablePersonAccessChanges={disablePersonAccessChanges}
                 currentUserAccessLevel={currentUserAccessLevel}
                 generalAccessLevel={generalAccessLevel}
                 sectionType={sectionType}

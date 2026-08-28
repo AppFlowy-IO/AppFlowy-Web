@@ -239,7 +239,9 @@ jest.mock('@/components/ui/dropdown-menu', () => ({
 }));
 
 jest.mock('@/components/ui/progress', () => ({
-  Progress: () => <span data-testid='progress' />,
+  Progress: ({ variant: _variant, ...props }: { variant?: string; role?: string; 'aria-label'?: string }) => (
+    <span data-testid='progress' {...props} />
+  ),
 }));
 
 jest.mock('@/components/ui/tabs', () => {
@@ -259,7 +261,7 @@ jest.mock('@/components/ui/tabs', () => {
       'data-testid'?: string;
     }) => (
       <TabsContext.Provider value={{ value, onValueChange: onValueChange ?? (() => undefined) }}>
-        <div data-testid={props['data-testid']}>{children}</div>
+        <div {...props}>{children}</div>
       </TabsContext.Provider>
     ),
     TabsContent: ({ children, value }: { children: ReactNode; value: string }) => {
@@ -536,6 +538,27 @@ describe('CreateSpaceModal draft controller', () => {
     creation.resolve('space-id');
     await waitFor(() => expect(submit.getAttribute('disabled')).not.toBeNull());
     expect(screen.getByTestId('space-name-input').value).toBe('');
+  });
+
+  it('shows an in-panel loading indicator while creation is in flight', async () => {
+    const creation = deferred<string>();
+
+    mockCreateSpace.mockReturnValue(creation.promise);
+    render(<CreateSpaceModal open onClose={jest.fn()} />);
+    enterSpaceName();
+
+    fireEvent.click(screen.getByTestId('create-space-submit'));
+
+    const panel = screen.getByTestId('space-settings-panel');
+    const loadingIndicator = within(screen.getByTestId('create-space-modal')).getByTestId(
+      'create-space-loading-indicator'
+    );
+
+    expect(panel.getAttribute('aria-busy')).toBe('true');
+    expect(within(loadingIndicator).getByRole('status').getAttribute('aria-label')).toBe('loading');
+
+    creation.resolve('space-id');
+    await waitFor(() => expect(screen.queryByTestId('create-space-loading-indicator')).toBeNull());
   });
 
   it('keeps an ambiguous create draft open, frozen, and retries with the same client-owned ID', async () => {

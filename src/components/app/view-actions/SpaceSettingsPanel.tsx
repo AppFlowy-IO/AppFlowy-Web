@@ -561,6 +561,7 @@ function SpaceSettingsPanel({
       <Tabs
         value={activeTab}
         onValueChange={(value) => onTabChange(value as SpaceSettingsTab)}
+        aria-busy={primaryActionLoading || undefined}
         className='min-h-0 max-w-full'
         style={{ width: CONTENT_WIDTH }}
         data-testid='space-settings-panel'
