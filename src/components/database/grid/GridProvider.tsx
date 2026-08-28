@@ -9,6 +9,7 @@ import {
 } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
 import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScopeCoordinator';
+import { useDatabaseHistoryScopeContext } from '@/components/database/DatabaseHistoryScope';
 import {
   createGridInteractionStore,
   createGridRowResizeStore,
@@ -16,10 +17,61 @@ import {
   GridInteractionContext,
 } from '@/components/database/grid/useGridContext';
 
-export const GridProvider = ({ children, grouping }: { children: ReactNode; grouping: GridGrouping }) => {
+type GridProviderProps = {
+  children: ReactNode;
+  grouping: GridGrouping;
+};
+
+type GridProviderContentProps = GridProviderProps & {
+  activateHistoryScope: () => void;
+  clearHistoryScope?: () => void;
+  historyScopeId: string;
+  ownsHistoryScope: boolean;
+};
+
+export const GridProvider = (props: GridProviderProps) => {
+  const inheritedHistoryScope = useDatabaseHistoryScopeContext();
+
+  if (inheritedHistoryScope) {
+    return (
+      <GridProviderContent
+        {...props}
+        activateHistoryScope={inheritedHistoryScope.activateHistoryScope}
+        historyScopeId={inheritedHistoryScope.historyScopeId}
+        ownsHistoryScope={false}
+      />
+    );
+  }
+
+  return <StandaloneGridProvider {...props} />;
+};
+
+function StandaloneGridProvider(props: GridProviderProps) {
+  const { readOnly } = useDatabaseContext();
+  const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly });
+
+  return (
+    <GridProviderContent
+      {...props}
+      activateHistoryScope={activateHistoryScope}
+      clearHistoryScope={clearHistoryScope}
+      historyScopeId={historyScopeId}
+      ownsHistoryScope
+    />
+  );
+}
+
+function GridProviderContent({
+  activateHistoryScope,
+  children,
+  clearHistoryScope,
+  grouping,
+  historyScopeId,
+  ownsHistoryScope,
+}: GridProviderContentProps) {
   const { rowOrders } = grouping;
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
-  const { isDocumentBlock, activeViewId, readOnly } = useDatabaseContext();
+  const { isDocumentBlock, activeViewId } = useDatabaseContext();
   // Each database view owns independent transient interaction state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const interactionStore = useMemo(() => createGridInteractionStore(), [activeViewId]);
@@ -50,11 +102,10 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
   }, []);
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly });
 
   useEffect(() => {
     setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
-    clearHistoryScope();
+    clearHistoryScope?.();
   }, [activeViewId, clearHistoryScope, isDocumentBlock]);
 
   useEffect(() => {
@@ -161,10 +212,14 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
   return (
     <GridContext.Provider value={contextValue}>
       <GridInteractionContext.Provider value={interactionContextValue}>
-        <div ref={ref} data-database-history-scope={historyScopeId} className={'flex min-h-0 flex-1 flex-col'}>
+        <div
+          ref={ref}
+          data-database-history-scope={ownsHistoryScope ? historyScopeId : undefined}
+          className={'flex min-h-0 flex-1 flex-col'}
+        >
           {children}
         </div>
       </GridInteractionContext.Provider>
     </GridContext.Provider>
   );
-};
+}

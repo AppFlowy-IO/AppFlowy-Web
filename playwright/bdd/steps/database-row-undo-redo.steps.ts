@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 
-import { expect, Page } from '@playwright/test';
+import { expect, Locator, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { loginAndCreateGrid, getPrimaryFieldId, typeTextIntoCell } from '../../support/filter-test-helpers';
@@ -15,13 +15,24 @@ import {
   openRelationCellMenu,
   selectRelationRowByName,
 } from '../../support/relation-test-helpers';
-import { DatabaseGridSelectors, FieldType, GridFieldSelectors, RowDetailSelectors } from '../../support/selectors';
+import {
+  BoardSelectors,
+  DatabaseGallerySelectors,
+  DatabaseGridSelectors,
+  DatabaseListSelectors,
+  FieldType,
+  GridFieldSelectors,
+  RowDetailSelectors,
+} from '../../support/selectors';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then } = createBdd();
 
+type UndoRedoDatabaseLayout = 'Grid' | 'Board' | 'Calendar' | 'List' | 'Gallery';
+
 interface RowUndoRedoState {
+  activeLayout?: UndoRedoDatabaseLayout;
   primaryFieldId?: string;
   relationFieldId?: string;
   sourceRowId?: string;
@@ -122,6 +133,15 @@ Given('a seeded grid database is ready for complex undo redo', async ({ page, re
   await expect.poll(() => getRowCellText(page, rowIds[2], primaryFieldId), { timeout: 15000 }).toBe('Gamma');
 });
 
+Given('the undo redo database uses the {string} layout', async ({ page }, layoutName: string) => {
+  const state = getState(page);
+  const layout = parseUndoRedoDatabaseLayout(layoutName);
+
+  await changeUndoRedoDatabaseLayout(page, layout);
+  state.activeLayout = layout;
+  await clearDatabaseHistory(page);
+});
+
 Given('a text field named {string} exists for undo redo', async ({ page }, fieldName: string) => {
   const state = getState(page);
   const fieldId = await createDatabaseField(page, fieldName, FieldType.RichText, false);
@@ -194,6 +214,14 @@ When('I trigger database row undo', async ({ page }) => {
 });
 
 When('I trigger database row redo', async ({ page }) => {
+  await triggerDatabaseRowHotkey(page, 'redo');
+});
+
+When('I trigger database layout undo', async ({ page }) => {
+  await triggerDatabaseRowHotkey(page, 'undo');
+});
+
+When('I trigger database layout redo', async ({ page }) => {
   await triggerDatabaseRowHotkey(page, 'redo');
 });
 
@@ -608,7 +636,11 @@ async function triggerDatabaseRowHotkey(page: Page, action: 'undo' | 'redo') {
   });
 
   if (!hasRowDetailModal) {
-    await DatabaseGridSelectors.grid(page).dispatchEvent('pointerdown', { bubbles: true });
+    const layout = stateByPage.get(page)?.activeLayout ?? 'Grid';
+    const surface = databaseLayoutSurface(page, layout);
+
+    await expect(surface).toBeVisible({ timeout: 30000 });
+    await surface.dispatchEvent('pointerdown', { bubbles: true });
     await page.waitForTimeout(100);
   }
 
@@ -623,6 +655,46 @@ async function triggerDatabaseRowHotkey(page: Page, action: 'undo' | 'redo') {
 
   await page.keyboard.press(shortcut);
   await page.waitForTimeout(500);
+}
+
+async function changeUndoRedoDatabaseLayout(page: Page, layout: UndoRedoDatabaseLayout) {
+  if (layout === 'Grid') return;
+
+  await page.getByTestId('database-actions-settings').click();
+  const layoutTrigger = page.getByRole('menuitem', { name: /^Layout$/i });
+
+  await expect(layoutTrigger).toBeVisible();
+  await layoutTrigger.hover();
+
+  const layoutMenu = page.locator('[data-slot="dropdown-menu-sub-content"]:visible').last();
+  const layoutOption = layoutMenu.getByRole('menuitem', { name: new RegExp(`^${layout}$`, 'i') });
+
+  await expect(layoutOption).toBeVisible();
+  await layoutOption.click();
+  await expect(databaseLayoutSurface(page, layout)).toBeVisible({ timeout: 30000 });
+}
+
+function databaseLayoutSurface(page: Page, layout: UndoRedoDatabaseLayout): Locator {
+  switch (layout) {
+    case 'Board':
+      return BoardSelectors.boardContainer(page);
+    case 'Calendar':
+      return page.locator('.database-calendar:not(.sticky-header-wrapper)').first();
+    case 'Gallery':
+      return DatabaseGallerySelectors.gallery(page);
+    case 'List':
+      return DatabaseListSelectors.list(page);
+    case 'Grid':
+      return DatabaseGridSelectors.grid(page);
+  }
+}
+
+function parseUndoRedoDatabaseLayout(layoutName: string): UndoRedoDatabaseLayout {
+  if (['Grid', 'Board', 'Calendar', 'List', 'Gallery'].includes(layoutName)) {
+    return layoutName as UndoRedoDatabaseLayout;
+  }
+
+  throw new Error(`Unsupported undo redo database layout: ${layoutName}`);
 }
 
 async function getRowCellText(page: Page, rowId: string, fieldId: string): Promise<string> {
