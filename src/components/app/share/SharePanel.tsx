@@ -1,89 +1,75 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
-import { notify } from '@/components/_shared/notify';
-import { findAncestors } from '@/components/_shared/outline/utils';
 import {
-  useLoadMentionableUsers,
-  useGetSubscriptions,
-  useAppOutline,
-  useCurrentWorkspaceId,
-  useUserWorkspaceInfo,
-} from '@/components/app/app.hooks';
+  AccessLevel,
+  IPeopleWithAccessType,
+  MentionablePerson,
+  Role,
+  SubscriptionPlan,
+  WorkspaceGroupViewPermission,
+} from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
+import { notify } from '@/components/_shared/notify';
+import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
+import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
-import { AccessService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
-function SharePanel({ viewId }: { viewId: string }) {
-  const currentUser = useCurrentUser();
-  const currentWorkspaceId = useCurrentWorkspaceId();
+import type { ShareAccessRefreshResult } from './useShareAccessDetails';
+
+function SharePanel({
+  viewId,
+  people,
+  groups,
+  editableGroupIds,
+  isLoadingPeople,
+  onPeopleChange,
+  onPersonRemoved,
+  updateGroupInAccessList,
+  hasFullAccess,
+  canManageFullAccess,
+  disablePersonAccessChanges,
+  currentUserAccessLevel,
+  generalAccessLevel,
+  sectionType,
+}: {
+  viewId: string;
+  people: IPeopleWithAccessType[];
+  groups: WorkspaceGroupViewPermission[];
+  editableGroupIds: ReadonlySet<string>;
+  isLoadingPeople: boolean;
+  onPeopleChange: () => Promise<ShareAccessRefreshResult | void>;
+  onPersonRemoved: (email: string) => void;
+  updateGroupInAccessList: (groupId: string, accessLevel: AccessLevel | null) => void;
+  hasFullAccess: boolean;
+  canManageFullAccess: boolean;
+  disablePersonAccessChanges: boolean;
+  currentUserAccessLevel?: AccessLevel;
+  generalAccessLevel?: AccessLevel | null;
+  sectionType: ShareSectionType;
+}) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
+  const currentUser = useCurrentUser();
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
   const role = selectedWorkspace?.role;
   const loadMentionableUsers = useLoadMentionableUsers();
-  const [people, setPeople] = useState<IPeopleWithAccessType[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [mentionable, setMentionable] = useState<MentionablePerson[]>([]);
   const [isLoadingMentionable, setIsLoadingMentionable] = useState(false);
   const [mentionableError, setMentionableError] = useState<string | null>(null);
-  const loadPeopleRequestSeq = useRef(0);
-  const outline = useAppOutline();
-  const hasFullAccess = useMemo(() => {
-    return people.find((p) => p.email === currentUser?.email)?.access_level === AccessLevel.FullAccess;
-  }, [people, currentUser?.email]);
-
-  const isOwner = useMemo(() => {
-    return role === Role.Owner;
-  }, [role]);
-
-  const isMember = useMemo(() => {
-    return role === Role.Member;
-  }, [role]);
-
-  const loadPeople = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!currentWorkspaceId || !viewId || !currentUser) {
-        return;
-      }
-
-      const ancestorViewIds = findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [];
-
-      const requestSeq = ++loadPeopleRequestSeq.current;
-
-      setIsLoading(true);
-      try {
-        const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
-
-        if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
-        setPeople(detail.shared_with);
-      } catch (error) {
-        if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
-        console.error(error);
-        setPeople([]);
-      } finally {
-        if (!signal?.aborted && requestSeq === loadPeopleRequestSeq.current) {
-          setIsLoading(false);
-        }
-      }
-    },
-    [currentUser, currentWorkspaceId, viewId, outline]
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void loadPeople(controller.signal);
-    return () => controller.abort();
-  }, [loadPeople]);
+  const isOwner = role === Role.Owner || isSameUserUid(selectedWorkspace?.owner?.uid, currentUser?.uid);
+  const isMember = role === Role.Member;
+  const showInviteControls = currentUserAccessLevel !== undefined && currentUserAccessLevel !== AccessLevel.ReadOnly;
+  // Page Full Access does not make a Guest part of the workspace group boundary.
+  const canManageGroupAccess = hasFullAccess && (isOwner || isMember);
 
   // Load mentionable users
   const loadMentionableData = useCallback(async () => {
-    if (!loadMentionableUsers) return;
+    if (!showInviteControls || !loadMentionableUsers) return;
 
     setIsLoadingMentionable(true);
     setMentionableError(null);
@@ -100,23 +86,28 @@ function SharePanel({ viewId }: { viewId: string }) {
     } finally {
       setIsLoadingMentionable(false);
     }
-  }, [loadMentionableUsers]);
+  }, [loadMentionableUsers, showInviteControls]);
 
   // Load mentionable data on component mount
   useEffect(() => {
+    if (!showInviteControls) return;
+
     void loadMentionableData();
-  }, [loadMentionableData]);
+  }, [loadMentionableData, showInviteControls]);
 
   // Refresh people list after invite or other changes
   const refreshPeople = useCallback(async () => {
-    try {
-      await loadMentionableData();
-      await loadPeople();
-      // eslint-disable-next-line
-    } catch (error: any) {
-      notify.error(error.message);
+    const [, accessResult] = await Promise.allSettled([loadMentionableData(), onPeopleChange()]);
+
+    if (accessResult.status === 'rejected') {
+      const error = accessResult.reason;
+
+      notify.error(error instanceof Error ? error.message : String(error));
+      return undefined;
     }
-  }, [loadPeople, loadMentionableData]);
+
+    return accessResult.value;
+  }, [onPeopleChange, loadMentionableData]);
 
   const getSubscriptions = useGetSubscriptions();
 
@@ -141,7 +132,7 @@ function SharePanel({ viewId }: { viewId: string }) {
   }, [getSubscriptions]);
 
   useEffect(() => {
-    if (!isHosted) {
+    if (!showInviteControls || !isHosted) {
       setActiveSubscriptionPlan(null);
       return;
     }
@@ -149,24 +140,49 @@ function SharePanel({ viewId }: { viewId: string }) {
     if (isOwner || isMember) {
       void loadSubscription();
     }
-  }, [isHosted, isMember, isOwner, loadSubscription]);
+  }, [isHosted, isMember, isOwner, loadSubscription, showInviteControls]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch py-4'>
       <div className='flex flex-col items-start self-stretch px-2'>
-        <InviteGuest
+        {showInviteControls && (
+          <>
+            <InviteGuest
+              viewId={viewId}
+              sharedPeople={people}
+              sharedGroups={groups}
+              isLoadingPeople={isLoadingPeople}
+              mentionable={mentionable}
+              isLoadingMentionable={isLoadingMentionable}
+              mentionableError={mentionableError}
+              onInviteSuccess={async () => {
+                await refreshPeople();
+              }}
+              hasFullAccess={hasFullAccess}
+              canGrantFullAccess={canManageFullAccess}
+              canManageGroupAccess={canManageGroupAccess}
+              isWorkspaceOwner={isOwner}
+            />
+            {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
+          </>
+        )}
+        <PeopleWithAccess
           viewId={viewId}
-          sharedPeople={people}
-          isLoadingPeople={isLoading}
-          mentionable={mentionable}
-          isLoadingMentionable={isLoadingMentionable}
-          mentionableError={mentionableError}
-          onInviteSuccess={refreshPeople}
+          people={people}
+          groups={groups}
+          editableGroupIds={editableGroupIds}
+          isLoading={isLoadingPeople}
+          onPeopleChange={refreshPeople}
+          onPersonRemoved={onPersonRemoved}
+          updateGroupInAccessList={updateGroupInAccessList}
           hasFullAccess={hasFullAccess}
+          canManageGroupAccess={canManageGroupAccess}
+          canManageFullAccess={canManageFullAccess}
+          canGrantFullAccess={canManageFullAccess}
+          disablePersonAccessChanges={disablePersonAccessChanges}
+          sectionType={sectionType}
         />
-        {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
-        <PeopleWithAccess viewId={viewId} people={people} isLoading={isLoading} onPeopleChange={refreshPeople} />
-        <GeneralAccess viewId={viewId} />
+        <GeneralAccess sectionType={sectionType} accessLevel={generalAccessLevel} />
         <CopyLink />
       </div>
     </div>

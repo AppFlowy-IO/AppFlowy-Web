@@ -1,11 +1,13 @@
 import react from '@vitejs/plugin-react';
+import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
 import { stripTestIdPlugin } from './vite-plugin-strip-testid';
+import { VITE_DEDUPED_DEPENDENCIES, VITE_OPTIMIZED_DEPENDENCIES } from './vite.dependencies';
 
 const resourcesPath = path.resolve(__dirname, '../resources');
 const isDev = process.env.NODE_ENV ? process.env.NODE_ENV === 'development' : true;
@@ -73,11 +75,47 @@ function namespaceRedirectPlugin() {
   };
 }
 
+// Runs the /api/link-preview serverless function in dev. Vite does not execute
+// the Vercel functions under `api/`, so without this the link-preview unfurler
+// only works in production and every pasted URL degrades to its raw text
+// locally (no favicon / title / image). The handler uses Node's IncomingMessage
+// / ServerResponse, which is exactly what the connect dev-server middleware
+// passes, so we can invoke it directly.
+function linkPreviewApiPlugin() {
+  return {
+    name: 'link-preview-api',
+    apply: 'serve' as const,
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api/link-preview')) {
+          return next();
+        }
+
+        server
+          .ssrLoadModule('/api/link-preview.ts')
+          .then((mod) =>
+            (mod.default as (req: IncomingMessage, res: ServerResponse) => Promise<void>)(
+              req as IncomingMessage,
+              res as ServerResponse
+            )
+          )
+          .catch((error: unknown) => {
+            server.config.logger.error(`[link-preview] ${error instanceof Error ? error.message : String(error)}`);
+            res.statusCode = 502;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: 'Failed to fetch link preview' }));
+          });
+      });
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     isDev ? namespaceRedirectPlugin() : undefined,
+    isDev ? linkPreviewApiPlugin() : undefined,
     // Strip data-testid attributes in production builds
     isProd ? stripTestIdPlugin() : undefined,
     svgr({
@@ -158,6 +196,24 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/gotrue/, ''),
       },
+      // Optional same-origin proxy for the AppFlowy Cloud API and WebSocket,
+      // for local servers that send no CORS headers (e.g. a build without the
+      // `cors-af` feature). Set APPFLOWY_DEV_API_PROXY_TARGET=http://localhost:8001
+      // together with APPFLOWY_BASE_URL=http://localhost:<vite port> and
+      // APPFLOWY_WS_BASE_URL=ws://localhost:<vite port>/ws/v2.
+      ...(process.env.APPFLOWY_DEV_API_PROXY_TARGET
+        ? {
+            '/api': {
+              target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
+              changeOrigin: true,
+            },
+            '/ws': {
+              target: process.env.APPFLOWY_DEV_API_PROXY_TARGET,
+              changeOrigin: true,
+              ws: true,
+            },
+          }
+        : {}),
     },
     cors: false,
     sourcemapIgnoreList: false,
@@ -208,6 +264,7 @@ export default defineConfig({
       : {},
   },
   resolve: {
+    dedupe: [...VITE_DEDUPED_DEPENDENCIES],
     alias: [
       { find: '@protobufjs/inquire', replacement: path.resolve(__dirname, 'src/shims/protobufjs-inquire.cjs') },
       { find: 'src/', replacement: `${__dirname}/src/` },
@@ -216,17 +273,7 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    include: [
-      'react',
-      'react-dom',
-      'react-katex',
-      '@appflowyinc/editor',
-      'react-colorful',
-      'i18next',
-      'i18next-browser-languagedetector',
-      'i18next-resources-to-backend',
-      'react-i18next'
-    ],
+    include: [...VITE_OPTIMIZED_DEPENDENCIES],
   },
   css: {
     preprocessorOptions: {

@@ -772,7 +772,14 @@
         "copiedToPasteBoard": "Le lien de l'image a été copié dans le presse-papiers"
       },
       "urlPreview": {
-        "copiedToPasteBoard": "Le lien a été copié dans le presse-papier"
+        "copiedToPasteBoard": "Le lien a été copié dans le presse-papier",
+        "pasteAs": {
+          "title": "Coller comme",
+          "mention": "Mention",
+          "url": "URL",
+          "bookmark": "Signet",
+          "embed": "Intégrer"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Ajoutez des titres pour créer une table des matières."

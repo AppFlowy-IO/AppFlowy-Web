@@ -1,61 +1,143 @@
 import { useEffect, useState } from 'react';
+import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { FieldId, YDatabaseCell, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { decodeCellToText } from '@/application/database-yjs/decode';
+import { subscribeSharedYjsDeep } from '@/application/database-yjs/shared-yjs-observer';
+import {
+  FieldId,
+  YDatabaseCell,
+  YDatabaseCells,
+  YDatabaseField,
+  YDatabaseRow,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 
-
-export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; fieldId?: FieldId }) {
+export function RelationPrimaryValue({
+  rowDoc,
+  fieldId,
+  field,
+  onTextChange,
+}: {
+  rowDoc: YDoc;
+  fieldId?: FieldId;
+  field?: YDatabaseField;
+  onTextChange?: (text: string) => void;
+}) {
   const [text, setText] = useState<string | null>(null);
-  const [row, setRow] = useState<YDatabaseRow | null>(null);
 
   useEffect(() => {
     const data = rowDoc.getMap(YjsEditorKey.data_section);
+    let observedRow: YDatabaseRow | undefined;
+    let observedCells: YDatabaseCells | undefined;
+    let observedPrimaryCell: YDatabaseCell | undefined;
+    let cleanupPrimaryCell: (() => void) | undefined;
+    let cleanupStructuralHydration: (() => void) | undefined;
 
-    const onRowChange = () => {
-      setRow(data?.get(YjsEditorKey.database_row) as YDatabaseRow);
+    const decodePrimaryCell = () => {
+      if (!observedPrimaryCell) {
+        setText('');
+        return;
+      }
+
+      const nextText = field
+        ? decodeCellToText(observedPrimaryCell, field)
+        : String(parseYDatabaseCellToCell(observedPrimaryCell).data ?? '');
+
+      setText((current) => (current === nextText ? current : nextText));
     };
 
-    onRowChange();
-    data?.observeDeep(onRowChange);
-    return () => {
-      data?.unobserveDeep(onRowChange);
-    };
-  }, [rowDoc]);
+    const resolvePrimaryCell = (): YDatabaseCell | undefined => {
+      if (fieldId) return observedCells?.get(fieldId);
 
-  useEffect(() => {
-    if (!row) return;
-    const cells = row.get(YjsDatabaseKey.cells);
+      const richTextFieldId = Array.from(observedCells?.keys() ?? []).find((key) => {
+        const fieldType = observedCells?.get(key)?.get(YjsDatabaseKey.field_type);
 
-    let primaryCell: YDatabaseCell | undefined;
-
-    if (fieldId) {
-      primaryCell = cells?.get(fieldId);
-    } else {
-      const fieldId = Array.from(cells.keys()).find((key) => {
-        const fieldType = cells.get(key)?.get(YjsDatabaseKey.field_type);
-
-        if (!fieldType) return false;
+        if (fieldType === undefined || fieldType === null) return false;
         return Number(fieldType) === FieldType.RichText;
       });
 
-      if (fieldId) {
-        primaryCell = cells?.get(fieldId);
+      return richTextFieldId ? observedCells?.get(richTextFieldId) : undefined;
+    };
+
+    const syncPrimaryCell = () => {
+      const nextPrimaryCell = resolvePrimaryCell();
+
+      if (nextPrimaryCell !== observedPrimaryCell) {
+        cleanupPrimaryCell?.();
+        cleanupPrimaryCell = undefined;
+        observedPrimaryCell = nextPrimaryCell;
+
+        if (observedPrimaryCell) {
+          cleanupPrimaryCell = subscribeSharedYjsDeep(observedPrimaryCell, decodePrimaryCell);
+        }
       }
+
+      // Keep the broad observer only while the row structure is incomplete.
+      // Once the primary cell exists, shallow map observers detect structural
+      // replacement and the cell observer handles value changes.
+      if (observedPrimaryCell) {
+        cleanupStructuralHydration?.();
+        cleanupStructuralHydration = undefined;
+      } else if (!cleanupStructuralHydration) {
+        cleanupStructuralHydration = subscribeSharedYjsDeep(data, syncStructure);
+      }
+
+      decodePrimaryCell();
+    };
+
+    const handleCellsChange = (event: Y.YMapEvent<unknown>) => {
+      if (!fieldId || event.keysChanged.has(fieldId)) syncPrimaryCell();
+    };
+
+    const handleRowChange = (event: Y.YMapEvent<unknown>) => {
+      if (event.keysChanged.has(YjsDatabaseKey.cells)) syncStructure();
+    };
+
+    function syncStructure() {
+      const nextRow = data.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+      const nextCells = nextRow?.get(YjsDatabaseKey.cells);
+
+      if (nextRow !== observedRow) {
+        observedRow?.unobserve(handleRowChange);
+        observedRow = nextRow;
+        observedRow?.observe(handleRowChange);
+      }
+
+      if (nextCells !== observedCells) {
+        observedCells?.unobserve(handleCellsChange);
+        observedCells = nextCells;
+        observedCells?.observe(handleCellsChange);
+      }
+
+      syncPrimaryCell();
     }
 
-    const observeHandler = () => {
-      if (!primaryCell) return;
-      setText(parseYDatabaseCellToCell(primaryCell).data as string);
+    const handleDataChange = (event: Y.YMapEvent<unknown>) => {
+      if (event.keysChanged.has(YjsEditorKey.database_row)) syncStructure();
     };
 
-    observeHandler();
+    data.observe(handleDataChange);
+    syncStructure();
 
-    primaryCell?.observe(observeHandler);
+    const cleanupField = field ? subscribeSharedYjsDeep(field, decodePrimaryCell) : undefined;
+
     return () => {
-      primaryCell?.unobserve(observeHandler);
+      cleanupStructuralHydration?.();
+      cleanupPrimaryCell?.();
+      cleanupField?.();
+      observedCells?.unobserve(handleCellsChange);
+      observedRow?.unobserve(handleRowChange);
+      data.unobserve(handleDataChange);
     };
-  }, [row, fieldId]);
+  }, [field, fieldId, rowDoc]);
+
+  useEffect(() => {
+    onTextChange?.(text ?? '');
+  }, [onTextChange, text]);
 
   return <div>{text}</div>;
 }

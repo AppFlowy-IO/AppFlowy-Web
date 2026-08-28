@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { AuthService } from '@/application/services/domains';
+import { buildLoginUrl } from '@/application/session/sign_in';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { LOGIN_ACTION } from '@/components/login/const';
 import { Button } from '@/components/ui/button';
@@ -17,13 +18,24 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
   const [error, setError] = useState<string>('');
   const [isEnter, setEnter] = useState<boolean>(false);
   const [code, setCode] = useState<string>('');
+  const submittingRef = useRef(false);
   const handleSubmit = async () => {
-    if (loading) return;
+    if (submittingRef.current) return;
     if (!code) {
       setError(t('requireCode'));
       return;
     }
 
+    const changePasswordUrl = new URL(
+      buildLoginUrl({
+        action: LOGIN_ACTION.CHANGE_PASSWORD,
+        email,
+        redirectTo,
+      }),
+      window.location.origin
+    ).toString();
+
+    submittingRef.current = true;
     setLoading(true);
 
     try {
@@ -31,9 +43,7 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
         email,
         code,
         type: 'recovery',
-        redirectTo: encodeURIComponent(
-          `${window.location.origin}/login?action=${LOGIN_ACTION.CHANGE_PASSWORD}&email=${email}&redirectTo=${redirectTo}`
-        ),
+        redirectTo: changePasswordUrl,
       });
 
       // eslint-disable-next-line
@@ -44,6 +54,7 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
         setError(e.message);
       }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -81,6 +92,7 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
               value={code}
               placeholder={t('resetPassword.enterCode')}
               variant={error ? 'destructive' : 'default'}
+              disabled={loading}
               onKeyDown={(e) => {
                 if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                   void handleSubmit();
@@ -110,8 +122,9 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
       <Button
         variant={'link'}
         onClick={() => {
-          window.location.href = `/login?redirectTo=${redirectTo}`;
+          window.location.href = buildLoginUrl({ redirectTo });
         }}
+        disabled={loading}
         className={'w-full'}
       >
         {t('backToLogin')}

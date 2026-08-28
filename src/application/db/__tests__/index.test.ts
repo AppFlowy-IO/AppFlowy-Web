@@ -27,8 +27,19 @@ class FakeProvider {
 }
 
 describe('collab IndexedDB persistence internals', () => {
+  const originalIndexedDB = globalThis.indexedDB;
+
+  beforeEach(() => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
   afterEach(() => {
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      value: originalIndexedDB,
+    });
     jest.restoreAllMocks();
+    jest.useRealTimers();
     localStorage.clear();
   });
 
@@ -81,6 +92,15 @@ describe('collab IndexedDB persistence internals', () => {
     expect(result).toEqual({ snapshot, updates: [updateRecord] });
   });
 
+  it('registers user-scoped workspace database catalog indexes', () => {
+    const schema = db.workspace_database_catalog.schema;
+
+    expect(schema.primKey.src).toBe('[user_id+workspace_id+view_id]');
+    expect(schema.indexes.map((index) => index.src)).toEqual(
+      expect.arrayContaining(['[user_id+workspace_id]', '[user_id+workspace_id+database_id]'])
+    );
+  });
+
   it('clears all blob RID checkpoints when the shared collab cache database is deleted', () => {
     localStorage.setItem('af_database_blob_rid:database-1', JSON.stringify({ timestamp: 1, seqNo: 2 }));
     localStorage.setItem('af_database_blob_rid:database-2', JSON.stringify({ timestamp: 3, seqNo: 4 }));
@@ -91,5 +111,41 @@ describe('collab IndexedDB persistence internals', () => {
     expect(localStorage.getItem('af_database_blob_rid:database-1')).toBeNull();
     expect(localStorage.getItem('af_database_blob_rid:database-2')).toBeNull();
     expect(localStorage.getItem('unrelated-key')).toBe('keep');
+  });
+
+  it('waits for a blocked IndexedDB delete to succeed', async () => {
+    const request = {} as IDBOpenDBRequest;
+    const deleteDatabase = jest.fn(() => request);
+
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      value: { deleteDatabase },
+    });
+
+    const deleted = __dbTestUtils.deleteIndexedDBDatabase('blocked-then-deleted');
+
+    request.onblocked?.({} as Event);
+    request.onsuccess?.({} as Event);
+
+    await expect(deleted).resolves.toBe(true);
+    expect(deleteDatabase).toHaveBeenCalledWith('blocked-then-deleted');
+  });
+
+  it('fails a blocked IndexedDB delete after the unblock timeout', async () => {
+    jest.useFakeTimers();
+    const request = {} as IDBOpenDBRequest;
+    const deleteDatabase = jest.fn(() => request);
+
+    Object.defineProperty(globalThis, 'indexedDB', {
+      configurable: true,
+      value: { deleteDatabase },
+    });
+
+    const deleted = __dbTestUtils.deleteIndexedDBDatabase('blocked-forever', { blockedTimeoutMs: 10 });
+
+    request.onblocked?.({} as Event);
+    jest.advanceTimersByTime(10);
+
+    await expect(deleted).resolves.toBe(false);
   });
 });

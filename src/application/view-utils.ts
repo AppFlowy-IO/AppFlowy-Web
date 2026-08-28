@@ -15,13 +15,28 @@
 import { View, ViewLayout } from './types';
 
 /**
- * Check if a layout is a database layout (Grid, Board, or Calendar)
+ * Check whether a view represents a space.
+ *
+ * Newer folder-view APIs expose the authoritative marker at the top level,
+ * while older responses only include it in `extra`.
+ */
+export function isSpaceView(
+  view: { is_space?: boolean; extra?: { is_space?: boolean } | null } | null | undefined
+): boolean {
+  return view?.is_space ?? Boolean(view?.extra?.is_space);
+}
+
+/**
+ * Check if a layout is supported as a database layout in Web.
  */
 export function isDatabaseLayout(layout: ViewLayout): boolean {
   return (
     layout === ViewLayout.Grid ||
     layout === ViewLayout.Board ||
-    layout === ViewLayout.Calendar
+    layout === ViewLayout.Calendar ||
+    layout === ViewLayout.Chart ||
+    layout === ViewLayout.List ||
+    layout === ViewLayout.Gallery
   );
 }
 
@@ -44,8 +59,26 @@ export function isEmbeddedView(view: View | null | undefined): boolean {
  * @param view The view to check
  * @returns true if this view is a database container
  */
-export function isDatabaseContainer(view: View | null | undefined): boolean {
+export function isDatabaseContainer(
+  view: View | null | undefined
+): view is View & { extra: { is_database_container: true } } {
   return view?.extra?.is_database_container === true;
+}
+
+/**
+ * Detect the documented web shape for a linked database view.
+ *
+ * Web currently marks every embedded database view as a container. A linked
+ * view is still distinguishable because it is embedded and owns no child
+ * views. `has_children` takes precedence over an empty, lazily loaded children
+ * array so an actual container is not mistaken for a linked view.
+ */
+export function isEmbeddedDatabaseViewWithoutChildren(view: View | null | undefined): boolean {
+  if (!view || !isDatabaseLayout(view.layout) || !isEmbeddedView(view)) return false;
+
+  const hasLoadedChildren = Boolean(view.children?.length) || view.has_children === true;
+
+  return !hasLoadedChildren;
 }
 
 /**
@@ -75,10 +108,7 @@ export function getDatabaseIdFromExtra(view: View | null | undefined): string | 
  * @param parentView The parent view (optional)
  * @returns true if this is a referenced database view
  */
-export function isReferencedDatabaseView(
-  view: View | null | undefined,
-  parentView: View | null | undefined
-): boolean {
+export function isReferencedDatabaseView(view: View | null | undefined, parentView: View | null | undefined): boolean {
   if (!parentView || !view) {
     return false;
   }
@@ -136,8 +166,7 @@ export function isLinkedDatabaseViewUnderDocument(
   //    a. Not marked as a container (desktop behavior), OR
   //    b. Embedded with no children (web workaround for incorrect is_database_container flag)
   const isNonContainerView = !isDatabaseContainer(view);
-  const hasLoadedChildren = (view.children && view.children.length > 0) || view.has_children === true;
-  const isEmbeddedWithNoChildren = isEmbeddedView(view) && !hasLoadedChildren;
+  const isEmbeddedWithNoChildren = isEmbeddedDatabaseViewWithoutChildren(view);
 
   return (
     isDatabaseLayout(view.layout) &&
@@ -160,10 +189,7 @@ export function isLinkedDatabaseViewUnderDocument(
  * @param parentView The parent view
  * @returns true if the view can be moved
  */
-export function canBeMoved(
-  view: View | null | undefined,
-  parentView: View | null | undefined
-): boolean {
+export function canBeMoved(view: View | null | undefined, parentView: View | null | undefined): boolean {
   // Case 1: Referenced database views
   if (isReferencedDatabaseView(view, parentView)) {
     return false;
@@ -175,6 +201,53 @@ export function canBeMoved(
   }
 
   // Case 3: Linked database views under documents
+  if (isLinkedDatabaseViewUnderDocument(view, parentView)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check if a view can be reordered within its current parent (sidebar drag).
+ *
+ * Unlike `canBeMoved`, which governs moving a view to a *different* parent,
+ * reordering keeps the view inside its existing parent and only changes its
+ * position among its siblings. This is intentionally more permissive than the
+ * desktop `canBeDragged` rule (which blocks database-container children from
+ * being dragged at all): on web we allow reordering database views *within*
+ * their container while still preventing them from escaping it (escaping is
+ * impossible because a reorder never leaves the sibling group).
+ *
+ * Returns true for:
+ * - Database container children (reorder database views within the container),
+ * - Regular pages within a space or document.
+ *
+ * Returns false for views that are managed elsewhere and should not be picked
+ * up, even though they remain valid drop neighbours:
+ * - Referenced database views (database inside another database view),
+ * - Linked database views embedded under a document.
+ *
+ * @param view The view being dragged
+ * @param parentView The parent the view currently lives under
+ * @returns true if the view can be reordered among its siblings
+ */
+export function canReorderWithinParent(view: View | null | undefined, parentView: View | null | undefined): boolean {
+  if (!view || !parentView) {
+    return false;
+  }
+
+  // Database container children are reorderable within the container.
+  if (isDatabaseContainer(parentView)) {
+    return true;
+  }
+
+  // Referenced/linked database views are managed by another view; don't allow
+  // picking them up (they can still be drop neighbours for sibling pages).
+  if (isReferencedDatabaseView(view, parentView)) {
+    return false;
+  }
+
   if (isLinkedDatabaseViewUnderDocument(view, parentView)) {
     return false;
   }
@@ -198,9 +271,7 @@ export function getDatabaseTabViewIds(currentViewId: string, containerView: View
     return [currentViewId];
   }
 
-  const nonEmbeddedChildIds = children
-    .filter((child) => !isEmbeddedView(child))
-    .map((child) => child.view_id);
+  const nonEmbeddedChildIds = children.filter((child) => !isEmbeddedView(child)).map((child) => child.view_id);
 
   const displayViewIds = nonEmbeddedChildIds.length > 0 ? nonEmbeddedChildIds : childViewIds;
 
@@ -217,6 +288,43 @@ export function getDatabaseTabViewIds(currentViewId: string, containerView: View
 
   // Otherwise, treat it as opening the container (or a stale route param).
   return displayViewIds;
+}
+
+export function resolveActiveDatabaseViewId({
+  databasePageId,
+  tabViewId,
+  visibleViewIds,
+  existingViewIds,
+}: {
+  databasePageId?: string;
+  tabViewId?: string | null;
+  visibleViewIds?: string[];
+  /**
+   * View ids that actually exist in the database collab. Published pages can
+   * carry a `visibleViewIds` list that includes the folder container id, which
+   * is not a database view; when this list is provided, a resolved id that is
+   * not a real database view falls back to the first visible id that is.
+   */
+  existingViewIds?: string[];
+}): string | undefined {
+  const hasAuthoritativeVisibleViews = Boolean(visibleViewIds && visibleViewIds.length > 0);
+
+  let resolved: string | undefined;
+
+  if (tabViewId && (!hasAuthoritativeVisibleViews || visibleViewIds?.includes(tabViewId))) {
+    resolved = tabViewId;
+  } else if (!databasePageId) {
+    resolved = visibleViewIds?.[0];
+  } else if (hasAuthoritativeVisibleViews && !visibleViewIds?.includes(databasePageId)) {
+    resolved = visibleViewIds?.[0] ?? databasePageId;
+  } else {
+    resolved = databasePageId;
+  }
+
+  if (!existingViewIds || existingViewIds.length === 0) return resolved;
+  if (resolved && existingViewIds.includes(resolved)) return resolved;
+
+  return visibleViewIds?.find((id) => existingViewIds.includes(id)) ?? resolved;
 }
 
 /**

@@ -5,6 +5,8 @@ import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { User } from '@/application/types';
 import { collab } from '@/proto/messages';
 
+import { QueuedCollabMessage } from './types';
+
 import ICollabMessage = collab.ICollabMessage;
 
 /**
@@ -165,7 +167,7 @@ export type SyncRefs = {
    * own queue and processing flag), so a slow reset on one doc never blocks
    * updates to another.
    */
-  incomingMessageQueuesRef: React.MutableRefObject<Map<string, ICollabMessage[]>>;
+  incomingMessageQueuesRef: React.MutableRefObject<Map<string, QueuedCollabMessage[]>>;
 
   /**
    * Set of objectIds whose message queues are currently being drained.
@@ -214,7 +216,7 @@ export function useSyncRefs(): SyncRefs {
   const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
 
   // ── 4. Message queue & lifecycle ─────────────────────────────────────
-  const incomingMessageQueuesRef = useRef<Map<string, ICollabMessage[]>>(new Map());
+  const incomingMessageQueuesRef = useRef<Map<string, QueuedCollabMessage[]>>(new Map());
   const processingObjectIdsRef = useRef<Set<string>>(new Set());
   const latestUserRef = useRef<User | undefined>(undefined);
   const isDisposedRef = useRef(false);

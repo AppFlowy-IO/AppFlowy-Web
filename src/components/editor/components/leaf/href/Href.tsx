@@ -65,7 +65,7 @@ export const Href = memo(({ text, children, leaf, textColor }: { leaf: Text; chi
           backgroundColor: selected ? 'var(--content-blue-100)' : undefined,
           color: textColor || 'var(--text-action)',
         }}
-        className={`cursor-pointer select-auto py-0.5 underline`}
+        className={'href-link cursor-pointer select-auto py-0.5 underline'}
       >
         {children}
         {hovered && (

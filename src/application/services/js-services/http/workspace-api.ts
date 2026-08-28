@@ -1,18 +1,67 @@
 import {
   AccessLevel,
+  AddSpaceGroupPermissionPayload,
+  AddSpaceMemberPayload,
+  AddWorkspaceGroupMemberPayload,
+  CreateWorkspaceGroupPayload,
   CreateWorkspacePayload,
   FolderView,
   GuestConversionCodeInfo,
   GuestInvitation,
   MentionablePerson,
+  MentionSearchRequest,
+  MentionSearchResponse,
   Role,
+  SpaceMember,
+  SpaceMembers,
+  Spaces,
+  SpacePermissionResponse,
+  SpacePermissionSettings,
+  StructuredSpace,
+  UpdateSpaceMemberPayload,
+  UpdateStructuredSpacePayload,
+  UpdateWorkspaceGroupPayload,
   UpdateWorkspacePayload,
   UploadPublishNamespacePayload,
   Workspace,
+  WorkspaceGroup,
+  WorkspaceGroupMember,
+  WorkspaceGroupMembers,
+  WorkspaceGroupSpacePermission,
+  WorkspaceGroups,
   WorkspaceMember,
 } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+
+const UID_FIELD_REGEX = /"uid"\s*:\s*(\d{16,})/g;
+
+// Runs as an axios `transformResponse`, so it also sees the empty body of a
+// `304 Not Modified` before the ETag replay interceptor can hand back the
+// cached payload. Leave such bodies untouched instead of throwing
+// "Unexpected end of JSON input" and masking the 304.
+export function parseResponseWithExactUid(data: unknown) {
+  if (typeof data !== 'string' || data.trim() === '') return data;
+
+  return JSON.parse(data.replace(UID_FIELD_REGEX, '"uid":"$1"')) as unknown;
+}
+
+function stringifyAddSpaceMemberPayload(payload: AddSpaceMemberPayload) {
+  if (!/^\d+$/.test(payload.uid)) {
+    throw new Error('Space member uid must be a numeric string');
+  }
+
+  return `{"uid":${payload.uid},"role":${JSON.stringify(payload.role)},"access_level":${payload.access_level}}`;
+}
+
+function stringifyAddWorkspaceGroupMemberPayload(payload: AddWorkspaceGroupMemberPayload) {
+  if (!/^\d+$/.test(payload.uid)) {
+    throw new Error('Workspace group member uid must be a numeric string');
+  }
+
+  return `{"uid":${payload.uid}}`;
+}
 
 interface AFWorkspace {
   workspace_id: string;
@@ -118,8 +167,8 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
   };
 }
 
-export async function getWorkspaceFolder(workspaceId: string): Promise<FolderView> {
-  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
+export async function getWorkspaceFolder(workspaceId: string, depth = 50): Promise<FolderView> {
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=${depth}`;
   const payload = await executeAPIRequest<WorkspaceFolder>(() =>
     getAxios()?.get<APIResponse<WorkspaceFolder>>(url)
   );
@@ -152,11 +201,238 @@ export async function inviteMembers(workspaceId: string, emails: string[]) {
   );
 }
 
-export async function getMembers(workspaceId: string) {
+export async function getMembers(workspaceId: string, includePending = false) {
   const url = `/api/workspace/${workspaceId}/member`;
 
   return executeAPIRequest<WorkspaceMember[]>(() =>
-    getAxios()?.get<APIResponse<WorkspaceMember[]>>(url)
+    getAxios()?.get<APIResponse<WorkspaceMember[]>>(url, {
+      params: includePending ? { include_pending: true } : undefined,
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function getSpacePermission(workspaceId: string, spaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/permission`;
+
+  return executeAPIRequest<SpacePermissionResponse>(() =>
+    getAxios()?.get<APIResponse<SpacePermissionResponse>>(url)
+  );
+}
+
+export async function getSpaces(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces`;
+
+  return executeAPIRequest<Spaces>(() => getAxios()?.get<APIResponse<Spaces>>(url));
+}
+
+export async function updateSpacePermission(
+  workspaceId: string,
+  spaceId: string,
+  permission: SpacePermissionSettings
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/permission`;
+
+  return executeAPIRequest<SpacePermissionResponse>(() =>
+    getAxios()?.patch<APIResponse<SpacePermissionResponse>>(url, permission)
+  );
+}
+
+export async function updateStructuredSpace(
+  workspaceId: string,
+  spaceId: string,
+  payload: UpdateStructuredSpacePayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}`;
+
+  return executeAPIRequest<StructuredSpace>(() => getAxios()?.patch<APIResponse<StructuredSpace>>(url, payload));
+}
+
+export async function getSpaceMembers(workspaceId: string, spaceId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members`;
+
+  return executeAPIRequest<SpaceMembers>(() =>
+    getAxios()?.get<APIResponse<SpaceMembers>>(url, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function addSpaceMember(
+  workspaceId: string,
+  spaceId: string,
+  payload: AddSpaceMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members`;
+
+  return executeAPIRequest<SpaceMember>(() =>
+    getAxios()?.post<APIResponse<SpaceMember>>(url, stringifyAddSpaceMemberPayload(payload), {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function updateSpaceMember(
+  workspaceId: string,
+  spaceId: string,
+  uid: string,
+  payload: UpdateSpaceMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIRequest<SpaceMember>(() =>
+    getAxios()?.patch<APIResponse<SpaceMember>>(url, payload, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function removeSpaceMember(workspaceId: string, spaceId: string, uid: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function addSpaceGroupPermission(
+  workspaceId: string,
+  spaceId: string,
+  groupId: string,
+  payload: AddSpaceGroupPermissionPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/group/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroupSpacePermission>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroupSpacePermission>>(url, payload)
+  );
+}
+
+export async function updateSpaceGroupPermission(
+  workspaceId: string,
+  spaceId: string,
+  groupId: string,
+  payload: UpdateSpaceMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/group/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroupSpacePermission>(() =>
+    getAxios()?.patch<APIResponse<WorkspaceGroupSpacePermission>>(url, payload)
+  );
+}
+
+export async function removeSpaceGroupPermission(workspaceId: string, spaceId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/spaces/${spaceId}/group/${groupId}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function getWorkspaceGroups(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/groups`;
+
+  return executeAPIRequest<WorkspaceGroups>(() =>
+    getAxios()?.get<APIResponse<WorkspaceGroups>>(url)
+  );
+}
+
+export async function createWorkspaceGroup(
+  workspaceId: string,
+  payload: CreateWorkspaceGroupPayload
+) {
+  const url = `/api/workspace/${workspaceId}/groups`;
+
+  return executeAPIRequest<WorkspaceGroup>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroup>>(url, payload)
+  );
+}
+
+export async function updateWorkspaceGroup(
+  workspaceId: string,
+  groupId: string,
+  payload: UpdateWorkspaceGroupPayload
+) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}`;
+
+  return executeAPIRequest<WorkspaceGroup>(() =>
+    getAxios()?.patch<APIResponse<WorkspaceGroup>>(url, payload)
+  );
+}
+
+export async function removeWorkspaceGroup(workspaceId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function getWorkspaceGroupMembers(workspaceId: string, groupId: string) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}/members`;
+
+  return executeAPIRequest<WorkspaceGroupMembers>(() =>
+    getAxios()?.get<APIResponse<WorkspaceGroupMembers>>(url, {
+      transformResponse: [parseResponseWithExactUid],
+    })
+  );
+}
+
+export async function addWorkspaceGroupMember(
+  workspaceId: string,
+  groupId: string,
+  payload: AddWorkspaceGroupMemberPayload
+) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}/members`;
+
+  return executeAPIRequest<WorkspaceGroupMember>(() =>
+    getAxios()?.post<APIResponse<WorkspaceGroupMember>>(
+      url,
+      stringifyAddWorkspaceGroupMemberPayload(payload),
+      {
+        transformResponse: [parseResponseWithExactUid],
+      }
+    )
+  );
+}
+
+export async function removeWorkspaceGroupMember(
+  workspaceId: string,
+  groupId: string,
+  uid: string
+) {
+  const url = `/api/workspace/${workspaceId}/groups/${groupId}/members/${uid}`;
+
+  return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
+}
+
+export async function removeMembers(workspaceId: string, emails: string[]) {
+  const url = `/api/workspace/${workspaceId}/member`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.delete<APIResponse>(url, {
+      data: emails,
+    })
+  );
+}
+
+export async function getWorkspaceInviteCode(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/invite-code`;
+
+  return executeAPIRequest<{ code: string | null }>(() =>
+    getAxios()?.get<APIResponse<{ code: string | null }>>(url)
+  );
+}
+
+export async function createWorkspaceInviteCode(workspaceId: string, validityPeriodHours?: number | null) {
+  const url = `/api/workspace/${workspaceId}/invite-code`;
+
+  return executeAPIRequest<{ code: string | null }>(() =>
+    getAxios()?.post<APIResponse<{ code: string | null }>>(url, {
+      validity_period_hours: validityPeriodHours ?? null,
+    })
+  );
+}
+
+export async function deleteWorkspaceInviteCode(workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/invite-code`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.delete<APIResponse>(url)
   );
 }
 
@@ -236,7 +512,18 @@ export async function getMentionableUsers(workspaceId: string) {
     getAxios()?.get<APIResponse<{ persons: MentionablePerson[] }>>(url)
   );
 
-  return payload.persons;
+  return payload.persons.map((person) => ({
+    ...person,
+    uid: canonicalizeUserUid(person.uid) ?? person.uid,
+  }));
+}
+
+export async function searchMentions(workspaceId: string, payload: MentionSearchRequest): Promise<MentionSearchResponse> {
+  const url = `/api/workspace/${workspaceId}/mentions/search`;
+
+  return executeAPIRequest<MentionSearchResponse>(() =>
+    getAxios()?.post<APIResponse<MentionSearchResponse>>(url, payload)
+  );
 }
 
 export interface PageMentionUpdate {
@@ -273,5 +560,15 @@ export async function updatePublishNamespace(workspaceId: string, payload: Uploa
 
   return executeAPIVoidRequest(() =>
     getAxios()?.put<APIResponse>(url, payload)
+  );
+}
+
+export async function reorderWorkspaces(workspaceIds: string[]) {
+  const url = `/api/workspace/reorder`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.put<APIResponse>(url, {
+      workspace_ids: workspaceIds,
+    })
   );
 }

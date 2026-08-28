@@ -1,32 +1,99 @@
 import EventEmitter from 'events';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type FC, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { APP_EVENTS } from '@/application/constants';
 import { db } from '@/application/db';
 import { CollabService, UserService } from '@/application/services/domains';
+import {
+  collabFullSyncBatch,
+  getSlowSyncUploadTimeoutMs,
+  SLOW_SYNC_PROBE_TIMEOUT_MS,
+  type CollabFullSyncBatchResult,
+} from '@/application/services/js-services/http/collab-api';
 import { getTokenParsed } from '@/application/session/token';
-import { clearDrainConfig, configureDrain, setCurrentSession, startDrainAll } from '@/application/sync-outbox';
-import { useAppflowyWebSocket, useBroadcastChannel, useSync } from '@/components/ws';
+import {
+  clearDrainConfig,
+  configureDrain,
+  resumePermissionBlockedSync,
+  setCurrentSession,
+  type SlowSyncBlockedReason,
+  type SlowSyncOutboxItem,
+  startDrainAll,
+} from '@/application/sync-outbox';
+import type { AppEventEmitter } from '@/components/app/contexts/AppEventEmitterContext';
+import { useSync, useWorkspaceRealtimeTransport } from '@/components/ws';
 import { notification } from '@/proto/messages';
+import { isDevelopmentOrTestEnvironment } from '@/utils/runtime-config';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '../contexts/SyncInternalContext';
 
 interface AppSyncLayerProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 const WS_READY_STATE_OPEN = 1;
 
+function exactSlowSyncResult(item: SlowSyncOutboxItem, results: CollabFullSyncBatchResult[]): CollabFullSyncBatchResult {
+  if (results.length !== 1 || results[0].objectId !== item.objectId || results[0].collabType !== item.collabType) {
+    throw new Error(`Slow-sync response did not exactly match collab ${item.objectId}`);
+  }
+
+  return results[0];
+}
+
+function blockedSlowSyncReason(error: string | undefined): SlowSyncBlockedReason | undefined {
+  const normalized = error?.trim().toLowerCase();
+
+  if (normalized?.includes('permission_denied')) return 'permission_denied';
+  if (normalized?.includes('update_too_large')) return 'update_too_large';
+  return undefined;
+}
+
+function hasDurableMessageId(result: CollabFullSyncBatchResult): boolean {
+  return Boolean(result.messageId && Number(result.messageId.timestamp ?? 0) > 0);
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (!signal.aborted) return;
+  if (signal.reason !== undefined) throw signal.reason;
+
+  const error = new Error('The operation was aborted');
+
+  error.name = 'AbortError';
+  throw error;
+}
+
+function isAuthoritativeVersionChange(
+  result: CollabFullSyncBatchResult,
+  requestedVersion: string | null | undefined
+): boolean {
+  return Boolean(result.collabVersion && result.collabVersion !== requestedVersion);
+}
+
 // Second layer: WebSocket connection and synchronization
 // Handles WebSocket connection, broadcast channel, sync context, and event management
 // Depends on workspace ID and service from auth layer
-export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
-  const { currentWorkspaceId, isAuthenticated } = useAuthInternal();
+export const AppSyncLayer: FC<AppSyncLayerProps> = ({ children }) => {
+  const {
+    currentWorkspaceId,
+    isAuthenticated,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded = false,
+  } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
-  const eventEmitterRef = useRef<EventEmitter>(new EventEmitter());
+  // Lazy-init so a throwaway EventEmitter isn't constructed on every render
+  // (useRef keeps only the first value but still evaluates its argument each time).
+  const eventEmitterRef = useRef<AppEventEmitter | null>(null);
+
+  if (eventEmitterRef.current === null) {
+    eventEmitterRef.current = new EventEmitter() as AppEventEmitter;
+  }
+
+  const eventEmitter = eventEmitterRef.current;
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -38,61 +105,87 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
 
     if (globalWindow.Cypress) {
       // Expose event emitter for Cypress so tests can simulate workspace notifications
-      globalWindow.__APPFLOWY_EVENT_EMITTER__ = eventEmitterRef.current;
+      globalWindow.__APPFLOWY_EVENT_EMITTER__ = eventEmitter;
     }
-  }, []);
+  }, [eventEmitter]);
 
-  // Initialize WebSocket connection - currentWorkspaceId and service are guaranteed to exist when this component renders
-  const webSocket = useAppflowyWebSocket({
+  // The auth layer mounts this component only after selecting a workspace.
+  // Transport ownership, failover, and cross-tab relaying stay encapsulated in
+  // one hook so this layer only coordinates application sync concerns.
+  const { webSocket, broadcastChannel, canSendToServer, sendBestEffort } = useWorkspaceRealtimeTransport({
     workspaceId: currentWorkspaceId!,
     clientId: CollabService.getClientId(),
     deviceId: CollabService.getDeviceId(),
   });
 
-  // Initialize broadcast channel for multi-tab communication
-  const broadcastChannel = useBroadcastChannel(`workspace:${currentWorkspaceId!}`);
-
   // Initialize sync context for collaborative editing
-  const { registerSyncContext, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
-    webSocket,
-    broadcastChannel,
-    eventEmitterRef.current,
-    currentWorkspaceId!
-  );
+  const {
+    registerSyncContext,
+    rebindSyncContext,
+    flushAllSync,
+    syncAllToServer,
+    applyHttpFullSyncResult,
+    revertCollabVersion,
+    scheduleDeferredCleanup,
+  } = useSync(webSocket, broadcastChannel, eventEmitter, currentWorkspaceId!);
 
-  // Handle WebSocket reconnection
-  const reconnectWebSocket = useCallback(() => {
-    webSocket.reconnect();
-  }, [webSocket]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const isE2ETest = isDevelopmentOrTestEnvironment() || navigator.webdriver || 'Cypress' in window;
+
+    if (!isE2ETest) return;
+
+    const testWindow = window as typeof window & {
+      __TEST_FLUSH_ALL_SYNC__?: () => Promise<boolean>;
+    };
+
+    testWindow.__TEST_FLUSH_ALL_SYNC__ = flushAllSync;
+    return () => {
+      if (testWindow.__TEST_FLUSH_ALL_SYNC__ === flushAllSync) {
+        delete testWindow.__TEST_FLUSH_ALL_SYNC__;
+      }
+    };
+  }, [flushAllSync]);
+
+  // Handle WebSocket reconnection. Depend on the stable `reconnect` function,
+  // not the webSocket container whose identity changes per incoming message.
+  const webSocketReconnect = webSocket.reconnect;
 
   // Set up WebSocket reconnection event listener
   useEffect(() => {
-    const currentEventEmitter = eventEmitterRef.current;
+    const currentEventEmitter = eventEmitter;
 
-    currentEventEmitter.on(APP_EVENTS.RECONNECT_WEBSOCKET, reconnectWebSocket);
+    currentEventEmitter.on(APP_EVENTS.RECONNECT_WEBSOCKET, webSocketReconnect);
 
     return () => {
-      currentEventEmitter.off(APP_EVENTS.RECONNECT_WEBSOCKET, reconnectWebSocket);
+      currentEventEmitter.off(APP_EVENTS.RECONNECT_WEBSOCKET, webSocketReconnect);
     };
-  }, [reconnectWebSocket]);
+  }, [eventEmitter, webSocketReconnect]);
 
-  // Emit WebSocket status changes
-  useEffect(() => {
-    const currentEventEmitter = eventEmitterRef.current;
+  // Emit WebSocket status on actual readyState transitions only — not on every
+  // webSocket identity change (which happens for each incoming message).
+  const webSocketReadyState = webSocket.readyState;
 
-    currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocket.readyState);
-  }, [webSocket]);
+  useLayoutEffect(() => {
+    const currentEventEmitter = eventEmitter;
 
-  // Wire the persistent sync_outbox drain to this WebSocket. The drain loop
-  // runs whenever a record is enqueued AND the socket is OPEN. The drain is
-  // scoped to `currentWorkspaceId` so pending rows from one workspace are not
-  // accidentally replayed on a different workspace's WebSocket after switch.
+    currentEventEmitter.webSocketReadyState = webSocketReadyState;
+    currentEventEmitter.emit(APP_EVENTS.WEBSOCKET_STATUS, webSocketReadyState);
+  }, [eventEmitter, webSocketReadyState]);
+
+  // Wire the persistent sync_outbox drain to the active transport owner. Fast
+  // records still wait for an OPEN WebSocket, while oversized records may use
+  // the HTTP slow lane during reconnects. The drain is scoped to
+  // `currentWorkspaceId` so pending rows from one workspace are not
+  // accidentally replayed on a different workspace's transport after switch.
   // The drain also fans out to BroadcastChannel so sibling tabs in the same
   // workspace receive local edits immediately, without waiting for a server
   // round-trip (matches the behaviour of the pre-outbox `emit` callback).
   const wsSendMessage = webSocket.sendMessage;
   const wsReadyState = webSocket.readyState;
-  const bcPostMessage = broadcastChannel.postMessage;
+  const bcPostDurableMessage = broadcastChannel.postDurableMessage;
+  const bcPostOutboxReady = broadcastChannel.postOutboxReady;
 
   // Live readyState for the drain send callback. The closure capture
   // `wsReadyState` reflects the value at render time, but a drain can run
@@ -109,12 +202,111 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   // unrelated re-render (e.g. WS status, BC message, child remount) just
   // burns a localStorage read + JSON.parse. Token-refresh still flows in
   // because `isAuthenticated` gates AppSyncLayer's mount via the auth layer.
-  const currentUserId = useMemo(
-    () => (isAuthenticated ? getTokenParsed()?.user?.id ?? null : null),
-    [isAuthenticated]
+  const currentUserId = useMemo(() => (isAuthenticated ? getTokenParsed()?.user?.id ?? null : null), [isAuthenticated]);
+  const slowSync = useCallback(
+    async (item: SlowSyncOutboxItem, signal: AbortSignal) => {
+      if (!currentWorkspaceId) {
+        throw new Error('Cannot slow-sync without an active workspace');
+      }
+
+      const request = async (docState: Uint8Array, syncLane?: 'slow') =>
+        exactSlowSyncResult(
+          item,
+          await collabFullSyncBatch(
+            currentWorkspaceId,
+            [
+              {
+                objectId: item.objectId,
+                collabType: item.collabType,
+                stateVector: item.stateVector,
+                docState,
+                collabVersion: item.version,
+              },
+            ],
+            {
+              syncLane,
+              signal,
+              timeoutMs:
+                syncLane === 'slow'
+                  ? getSlowSyncUploadTimeoutMs(item.stateVector.byteLength + docState.byteLength)
+                  : SLOW_SYNC_PROBE_TIMEOUT_MS,
+            }
+          )
+        );
+      const applyResult = async (result: CollabFullSyncBatchResult) => {
+        // Axios cannot cancel a response that has already resolved. Recheck
+        // the outbox lifecycle at the last possible point before enqueueing,
+        // then carry the same signal through the per-object apply queue.
+        throwIfAborted(signal);
+        await applyHttpFullSyncResult(
+          {
+            objectId: result.objectId,
+            collabType: result.collabType,
+            missingUpdate: result.missingUpdate,
+            serverStateVector: result.serverStateVector,
+            collabVersion: result.collabVersion,
+            messageId: result.messageId,
+          },
+          item.version,
+          signal
+        );
+        throwIfAborted(signal);
+      };
+
+      // Pull server-side changes through the ordinary lightweight lane before
+      // attempting the oversized upload. A state-vector match is not proof
+      // that the queued update is durable: Yjs deletions do not advance state
+      // vectors. Only an authoritative collab-version change can supersede it.
+      const probe = await request(new Uint8Array());
+      const probeBlocked = blockedSlowSyncReason(probe.error);
+
+      if (probeBlocked) return { outcome: 'blocked' as const, reason: probeBlocked };
+      if (probe.error) throw new Error(`Slow-sync probe failed for ${item.objectId}: ${probe.error}`);
+
+      const probeSuperseded = isAuthoritativeVersionChange(probe, item.version);
+
+      await applyResult(probe);
+      if (probeSuperseded) {
+        return { outcome: 'confirmed' as const, messageId: probe.messageId };
+      }
+
+      const uploaded = await request(item.docState, 'slow');
+      const uploadBlocked = blockedSlowSyncReason(uploaded.error);
+
+      if (uploadBlocked) return { outcome: 'blocked' as const, reason: uploadBlocked };
+      if (uploaded.error) throw new Error(`Slow-sync upload failed for ${item.objectId}: ${uploaded.error}`);
+
+      const uploadSuperseded = isAuthoritativeVersionChange(uploaded, item.version);
+
+      await applyResult(uploaded);
+      if (!uploadSuperseded && !hasDurableMessageId(uploaded)) {
+        throw new Error(`Slow-sync response for ${item.objectId} did not include a durable message id`);
+      }
+
+      return { outcome: 'confirmed' as const, messageId: uploaded.messageId };
+    },
+    [applyHttpFullSyncResult, currentWorkspaceId]
   );
 
-  useEffect(() => {
+  // `clearDrainConfig` aborts in-flight oversized uploads, so anything in the
+  // configuration effect's dep array can kill a multi-MB request mid-flight.
+  // `slowSync`'s identity is derived through five useCallback hops
+  // (applyHttpFullSyncResult -> enqueueIncomingCollabMessage -> ... ->
+  // registerSyncContext), all stable today but not enforced by anything. Route
+  // it through a latest-ref so the drain rebuilds only when ownership actually
+  // changes (user, workspace, leadership, advertised limits).
+  const slowSyncRef = useRef(slowSync);
+
+  useLayoutEffect(() => {
+    slowSyncRef.current = slowSync;
+  }, [slowSync]);
+
+  const stableSlowSync = useCallback(
+    (item: SlowSyncOutboxItem, signal: AbortSignal) => slowSyncRef.current(item, signal),
+    []
+  );
+
+  useLayoutEffect(() => {
     if (currentUserId && currentWorkspaceId) {
       setCurrentSession({ userId: currentUserId, workspaceId: currentWorkspaceId });
     } else {
@@ -140,7 +332,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       // refresh). The drain catches send failures and leaves outbox records
       // in place for retry.
       send: (message) => {
-        if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) {
+        if (!canSendToServer || wsReadyStateRef.current !== WS_READY_STATE_OPEN) {
           throw new Error('[outbox] WS not OPEN at send time');
         }
 
@@ -149,23 +341,81 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       // Sibling-tab fan-out — runs synchronously on every enqueue, regardless
       // of WS readiness, so local edits propagate across tabs even during a
       // reconnect.
-      broadcast: bcPostMessage,
-      // Best-effort fallback when the durable IDB enqueue fails. Uses
-      // `keep=true` so react-use-websocket buffers in-memory until reconnect;
-      // lost on refresh/crash, but better than silently dropping edits in
-      // the quota/private-mode/blocked-IDB failure mode.
-      sendBestEffort: (message) => wsSendMessage(message, true),
-      isReady: () => wsReadyStateRef.current === WS_READY_STATE_OPEN,
+      broadcast: bcPostDurableMessage,
+      // Best-effort fallback when the durable IDB enqueue fails. The transport
+      // buffers on the leader socket or forwards a follower update to the
+      // leader over BroadcastChannel.
+      sendBestEffort,
+      // The conservative realtime fallback remains usable while server-info
+      // loads; only the opt-in HTTP slow lane depends on advertised limits.
+      isReady: () => canSendToServer && wsReadyStateRef.current === WS_READY_STATE_OPEN,
+      onPersisted: bcPostOutboxReady,
+      maxUpdateBytes,
+      maxSlowSyncUpdateBytes,
+      syncLimitsLoaded,
+      // IndexedDB is shared by sibling tabs. Only the elected socket owner
+      // may run the global low-concurrency HTTP lane; followers persist and
+      // wake that owner through onPersisted.
+      slowSync: syncLimitsLoaded && canSendToServer ? stableSlowSync : undefined,
     });
-
-    if (wsReadyState === WS_READY_STATE_OPEN) {
-      startDrainAll();
-    }
 
     return () => {
       clearDrainConfig();
     };
-  }, [currentUserId, currentWorkspaceId, wsSendMessage, wsReadyState, bcPostMessage]);
+  }, [
+    currentUserId,
+    currentWorkspaceId,
+    wsSendMessage,
+    bcPostDurableMessage,
+    bcPostOutboxReady,
+    canSendToServer,
+    sendBestEffort,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded,
+    stableSlowSync,
+  ]);
+
+  // Transport readiness only wakes the already-configured drain. Keeping it
+  // out of the configuration effect avoids aborting slow HTTP work and
+  // resetting retry state on every CONNECTING/OPEN/CLOSED transition.
+  //
+  // The wake key is a dep the effect body does not read: every value in it can
+  // make a previously undrainable record drainable, so the drain must be poked
+  // when any of them changes. Keeping them in one named key stops
+  // `react-hooks/exhaustive-deps` autofix from silently stripping them as
+  // unused.
+  const drainWakeKey = [
+    currentUserId,
+    currentWorkspaceId,
+    maxUpdateBytes,
+    maxSlowSyncUpdateBytes,
+    syncLimitsLoaded,
+    wsReadyState,
+  ].join('|');
+
+  useEffect(() => {
+    if (canSendToServer) {
+      startDrainAll();
+    }
+  }, [canSendToServer, drainWakeKey]);
+
+  // Access changes do not rebuild the transport configuration. Wake only a
+  // permission-blocked object so a restored grant can retry immediately,
+  // while update-too-large blocks remain terminal until limits change.
+  useEffect(() => {
+    const handlePermissionChange = (permissionChange: notification.IPermissionChanged) => {
+      if (permissionChange.objectId) {
+        resumePermissionBlockedSync(permissionChange.objectId);
+      }
+    };
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChange);
+    };
+  }, [eventEmitter]);
 
   // Handle user profile change notifications
   // This provides automatic UI updates when user profile changes occur via WebSocket.
@@ -179,7 +429,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   // 6. All components using currentUser automatically re-render with new data
   //
   // Multi-tab Support:
-  // - Active tab: WebSocket → useSync → this handler → database update
+  // - Leader tab: WebSocket → useSync → this handler → database update
   // - Other tabs: BroadcastChannel → useSync → this handler → database update
   // - Result: All tabs show updated profile simultaneously
   //
@@ -190,7 +440,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   useEffect(() => {
     if (!isAuthenticated || !currentWorkspaceId) return;
 
-    const currentEventEmitter = eventEmitterRef.current;
+    const currentEventEmitter = eventEmitter;
 
     const handleUserProfileChange = async (profileChange: notification.IUserProfileChange) => {
       try {
@@ -227,9 +477,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       }
     };
 
-    const handleWorkspaceMemberProfileChange = async (
-      profileChange: notification.IWorkspaceMemberProfileChanged
-    ) => {
+    const handleWorkspaceMemberProfileChange = async (profileChange: notification.IWorkspaceMemberProfileChanged) => {
       if (!currentWorkspaceId) {
         console.warn('No current workspace ID available');
         return;
@@ -278,6 +526,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
                   workspace_id: currentWorkspaceId,
                   user_uuid: userUuid,
                   person_id: fetchedProfile.person_id ?? userUuid,
+                  uid: fetchedProfile.uid,
                   name: profileChange.name ?? fetchedProfile.name ?? '',
                   email: fetchedProfile.email ?? '',
                   role: fetchedProfile.role ?? 0,
@@ -298,9 +547,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
                   ...baseProfile,
                   name: profileChange.name ?? baseProfile.name,
                   avatar_url:
-                    profileChange.avatarUrl !== undefined
-                      ? profileChange.avatarUrl || null
-                      : baseProfile.avatar_url,
+                    profileChange.avatarUrl !== undefined ? profileChange.avatarUrl || null : baseProfile.avatar_url,
                   cover_image_url:
                     profileChange.coverImageUrl !== undefined
                       ? profileChange.coverImageUrl || null
@@ -331,6 +578,10 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
           workspace_id: currentWorkspaceId,
           user_uuid: userUuid,
           person_id: existingProfile?.person_id ?? userUuid,
+          // Profile-change notifications identify users by UUID only. Keep a
+          // zero sentinel until the next mentionable-user API refresh supplies
+          // the numeric uid used by attribution row metadata.
+          uid: existingProfile?.uid ?? 0,
           name: profileChange.name ?? existingProfile?.name ?? '',
           email: existingProfile?.email ?? '',
           role: existingProfile?.role ?? 0,
@@ -376,22 +627,33 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       currentEventEmitter.off(APP_EVENTS.USER_PROFILE_CHANGED, handleUserProfileChange);
       currentEventEmitter.off(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, handleWorkspaceMemberProfileChange);
     };
-  }, [isAuthenticated, currentWorkspaceId]);
+  }, [eventEmitter, isAuthenticated, currentWorkspaceId]);
 
-  // Context value for synchronization layer
+  // Context value for synchronization layer. The webSocket/broadcastChannel
+  // transports are intentionally excluded: their identity changes on every
+  // incoming message and would re-render all consumers per message. Everything
+  // exposed here is referentially stable across messages.
   const syncContextValue: SyncInternalContextType = useMemo(
     () => ({
-      webSocket,
-      broadcastChannel,
       registerSyncContext,
+      rebindSyncContext,
       revertCollabVersion,
-      eventEmitter: eventEmitterRef.current,
+      eventEmitter,
       awarenessMap,
       flushAllSync,
       syncAllToServer,
       scheduleDeferredCleanup,
     }),
-    [webSocket, broadcastChannel, registerSyncContext, revertCollabVersion, awarenessMap, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
+    [
+      eventEmitter,
+      registerSyncContext,
+      rebindSyncContext,
+      revertCollabVersion,
+      awarenessMap,
+      flushAllSync,
+      syncAllToServer,
+      scheduleDeferredCleanup,
+    ]
   );
 
   return <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>;

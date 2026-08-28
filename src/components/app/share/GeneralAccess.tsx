@@ -1,23 +1,43 @@
-import { useMemo } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 
+import { AccessLevel } from '@/application/types';
 import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
-import { findView } from '@/components/_shared/outline/utils';
-import { useAppOutline, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export function GeneralAccess({ viewId }: { viewId: string }) {
+function accessLevelLabel(accessLevel: AccessLevel, t: TFunction) {
+  switch (accessLevel) {
+    case AccessLevel.FullAccess:
+      return t('shareAction.fullAccess');
+    case AccessLevel.ReadAndWrite:
+      return t('shareAction.canEdit');
+    case AccessLevel.ReadAndComment:
+      return t('shareAction.canViewAndComment');
+    case AccessLevel.ReadOnly:
+      return t('shareAction.canView');
+  }
+}
+
+export function GeneralAccess({
+  sectionType,
+  accessLevel,
+}: {
+  sectionType: ShareSectionType;
+  accessLevel?: AccessLevel | null;
+}) {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
 
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
-  const outline = useAppOutline();
-
-  const isPrivateView = useMemo(() => {
-    return findView(outline || [], viewId)?.is_private;
-  }, [outline, viewId]);
+  // Structured-space policy is authoritative when available. Legacy servers do not return it,
+  // so retain the old section-based fallback until their route can be upgraded.
+  const resolvedAccessLevel =
+    accessLevel === undefined ? (sectionType === ShareSectionType.Public ? AccessLevel.FullAccess : null) : accessLevel;
+  const isRestricted = resolvedAccessLevel === null;
 
   if (!selectedWorkspace) {
     return null;
@@ -32,7 +52,7 @@ export function GeneralAccess({ viewId }: { viewId: string }) {
         <TooltipTrigger asChild>
           <div className='flex w-full items-center rounded-300 px-2 py-1.5 hover:bg-fill-content-hover'>
             <div className='flex w-full flex-row items-center justify-between gap-2'>
-              {isPrivateView ? (
+              {isRestricted ? (
                 <Avatar shape={'square'}>
                   <AvatarFallback
                     style={{
@@ -58,7 +78,7 @@ export function GeneralAccess({ viewId }: { viewId: string }) {
               )}
 
               <div className='flex w-full flex-1 flex-col gap-0.5 overflow-hidden'>
-                {isPrivateView ? (
+                {isRestricted ? (
                   <>
                     <div className='truncate text-sm text-text-primary'>{t('shareAction.restricted')}</div>
                     <div className='text-xs text-text-secondary'>{t('shareAction.restrictedDescription')}</div>
@@ -70,14 +90,16 @@ export function GeneralAccess({ viewId }: { viewId: string }) {
                       {selectedWorkspace.name}
                     </div>
                     <div className='text-xs text-text-secondary'>
-                      {t('shareAction.anyoneInThisGroupWithTheLinkHasFullAccess')}
+                      {t('shareAction.anyoneInThisGroupWithTheLinkCanAccess')}
                     </div>
                   </>
                 )}
               </div>
 
-              {!isPrivateView && (
-                <div className='mr-2 px-3 py-1.5 text-sm text-text-secondary'>{t('shareAction.fullAccess')}</div>
+              {!isRestricted && (
+                <div className='mr-2 px-3 py-1.5 text-sm text-text-secondary'>
+                  {accessLevelLabel(resolvedAccessLevel, t)}
+                </div>
               )}
             </div>
           </div>

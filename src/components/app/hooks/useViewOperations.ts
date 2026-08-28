@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
+  DatabaseRelations,
   LoadViewOptions,
   Types,
   View,
@@ -15,8 +16,13 @@ import {
   YDocWithMeta,
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
-import { getDatabaseIdFromExtra, getFirstChildView, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
-import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import {
+  getDatabaseIdFromExtra,
+  getFirstChildView,
+  isDatabaseContainer,
+  isDatabaseLayout,
+} from '@/application/view-utils';
+import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
@@ -25,32 +31,136 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
+import type { ViewObjectCapabilities } from './useViewObjectPermission';
 
-export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
+/**
+ * Determine whether the editor should be read-only for the given view.
+ *
+ * `fallbackView` is the resolved view object the page hosts already have
+ * (e.g. AppPage's `outlineView ?? fallbackView`, ViewModal's `resolvedView`).
+ * It's checked first so that locked pages remain read-only even when the page
+ * is opened before the outline branch loads — in that case `findView(outline)`
+ * misses the view and a lock check against the outline alone would let edits
+ * through.
+ */
+export function getViewReadOnlyStatus(
+  viewId: string,
+  outline?: View[],
+  fallbackView?: View | null,
+  permission?: ViewObjectCapabilities
+) {
   const isMobile = getPlatform().isMobile;
 
   if (isMobile) return true; // Mobile has highest priority - always readonly
 
-  if (!outline) return false;
+  // Lock check uses the resolved view first, falling back to the outline so
+  // direct-URL loads (before outline arrives) still honor the lock.
+  if (fallbackView?.view_id === viewId && fallbackView.is_locked) return true;
 
-  // Check if view exists in shareWithMe
-  const shareWithMeView = findViewInShareWithMe(outline, viewId);
+  if (outline) {
+    // A locked page is read-only for everyone until it is unlocked. The outline
+    // includes the hidden "Shared with me" space, so findView also resolves views
+    // shared with the current user.
+    const view = findView(outline, viewId);
 
-  if (shareWithMeView?.access_level !== undefined) {
-    // If found in shareWithMe, check access level
-    return shareWithMeView.access_level <= AccessLevel.ReadAndComment;
+    if (view?.is_locked) return true;
+
+    if (permission) return !permission.can_read || !permission.can_write;
+
+    // Resolve the effective shared access level, inheriting from the nearest
+    // ancestor inside the "Shared with me" space. This makes pages inside a
+    // View-only private space read-only even though the page itself carries no
+    // explicit access level.
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel <= AccessLevel.ReadAndComment;
+    }
   }
 
-  // If not found in shareWithMe, default is false (editable)
+  if (permission) return !permission.can_read || !permission.can_write;
+
+  // Structured-space members can receive a normal-outline view whose effective
+  // access is available only on the direct-URL fallback. Keep the title and
+  // editor presentation aligned with the same fallback used by canWrite.
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level <= AccessLevel.ReadAndComment;
+  }
+
+  // If no permission-bearing view is available, default is false (editable).
   return false;
 }
 
+/**
+ * Comment permission is independent from editor writeability: a locked page
+ * and Read-and-comment access both use a read-only Slate editor but still
+ * permit inline comments.
+ */
+export function getViewCanCommentStatus(
+  viewId: string,
+  outline?: View[],
+  fallbackView?: View | null,
+  permission?: ViewObjectCapabilities
+) {
+  if (permission) return permission.can_read && permission.can_comment;
+
+  if (outline) {
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel >= AccessLevel.ReadAndComment;
+    }
+  }
+
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level >= AccessLevel.ReadAndComment;
+  }
+
+  // Views outside "Shared with me" belong to the current workspace user.
+  return true;
+}
+
+/**
+ * Return the canonical document-write capability for a view.
+ *
+ * This deliberately ignores presentation-only read-only states such as a
+ * locked page or the mobile layout. Those states prevent editing in the UI,
+ * but they do not require comment anchors to use the narrow
+ * Read-and-comment persistence lane.
+ */
+export function getViewCanWriteStatus(
+  viewId: string,
+  outline?: View[],
+  fallbackView?: View | null,
+  permission?: ViewObjectCapabilities
+) {
+  if (permission) return permission.can_read && permission.can_write;
+
+  if (outline) {
+    const sharedAccessLevel = findSharedAccessLevel(outline, viewId);
+
+    if (sharedAccessLevel !== undefined) {
+      return sharedAccessLevel >= AccessLevel.ReadAndWrite;
+    }
+  }
+
+  if (fallbackView?.view_id === viewId && fallbackView.access_level !== undefined) {
+    return fallbackView.access_level >= AccessLevel.ReadAndWrite;
+  }
+
+  // Views outside "Shared with me" belong to a writable workspace context.
+  return true;
+}
+
 // Hook for managing view-related operations
-export function useViewOperations() {
-  const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
+export function useViewOperations({
+  loadDatabaseRelations,
+}: {
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+} = {}) {
+  const { currentWorkspaceId } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
-  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace?.databaseStorageId;
 
   const [awarenessMap, setAwarenessMap] = useState<Record<string, Awareness>>({});
   // Ref for stable access to awarenessMap in callbacks (prevents bindViewSync recreation)
@@ -84,14 +194,16 @@ export function useViewOperations() {
 
   const { resolveCollabObjectId, getDatabaseIdForViewId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
-    databaseStorageId,
-    registerSyncContext,
+    loadDatabaseRelations,
   });
 
   // Check if view should be readonly based on access permissions
-  const getViewReadOnlyStatusFromOutline = useCallback((viewId: string, outline?: View[]) => {
-    return getViewReadOnlyStatus(viewId, outline);
-  }, []);
+  const getViewReadOnlyStatusFromOutline = useCallback(
+    (viewId: string, outline?: View[], fallbackView?: View | null, permission?: ViewObjectCapabilities) => {
+      return getViewReadOnlyStatus(viewId, outline, fallbackView, permission);
+    },
+    []
+  );
 
   /**
    * Load view document WITHOUT binding sync.
@@ -148,20 +260,15 @@ export function useViewOperations() {
         const layout = isSubDocument ? ViewLayout.Document : view?.layout;
         const databaseIdHint = !isSubDocument
           ? options?.databaseId ??
-            (
-              layout !== undefined && isDatabaseLayout(layout)
-                ? getDatabaseIdFromExtra(view)
-                : undefined
-            )
+            (layout !== undefined && isDatabaseLayout(layout) ? getDatabaseIdFromExtra(view) : undefined)
           : undefined;
 
         // Use view-loader to open document (handles cache vs fetch)
-        let { doc, collabType: detectedCollabType } = await openView(
-          currentWorkspaceId,
-          viewId,
-          layout,
-          { databaseId: databaseIdHint }
-        );
+        let { doc, collabType: detectedCollabType } = await openView(currentWorkspaceId, viewId, layout, {
+          databaseId: databaseIdHint,
+          databaseMetadataOnly: options?.databaseMetadataOnly,
+          forceFetch: options?.forceFetch,
+        });
 
         // Use detected collab type, or override for sub-documents
         let collabType = isSubDocument ? Types.Document : detectedCollabType;
@@ -180,7 +287,11 @@ export function useViewOperations() {
         });
 
         if (collabType === Types.Database && !databaseIdHint && collabObjectId !== viewId) {
-          const canonical = await openView(currentWorkspaceId, viewId, layout, { databaseId: collabObjectId });
+          const canonical = await openView(currentWorkspaceId, viewId, layout, {
+            databaseId: collabObjectId,
+            databaseMetadataOnly: options?.databaseMetadataOnly,
+            forceFetch: options?.forceFetch,
+          });
 
           doc = canonical.doc;
           detectedCollabType = canonical.collabType;
@@ -372,6 +483,8 @@ export function useViewOperations() {
           case ViewLayout.Board:
           case ViewLayout.Calendar:
           case ViewLayout.Chart:
+          case ViewLayout.List:
+          case ViewLayout.Gallery:
             searchParams.set('r', blockId);
             break;
           default:
@@ -432,17 +545,14 @@ export function useViewOperations() {
 
           doc.version = versionId;
 
-          Y.transact(
-            doc,
-            () => {
-              try {
-                Y.applyUpdate(doc, docState);
-              } catch (e) {
-                Log.error('Error applying Yjs update for document version preview', e);
-                throw e;
-              }
+          Y.transact(doc, () => {
+            try {
+              Y.applyUpdate(doc, docState);
+            } catch (e) {
+              Log.error('Error applying Yjs update for document version preview', e);
+              throw e;
             }
-          );
+          });
 
           return doc;
         }

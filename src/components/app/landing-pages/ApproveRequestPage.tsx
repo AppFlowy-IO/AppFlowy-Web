@@ -14,6 +14,7 @@ import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
 import { AccessService, BillingService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
+import { LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
 import { NormalModal } from '@/components/_shared/modal';
@@ -33,13 +34,16 @@ function ApproveRequestPage() {
   const [alreadyProModalOpen, setAlreadyProModalOpen] = useState(false);
   const [hasSend, setHasSend] = useState(false);
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<LandingPageError>();
   const [notInvitee, setNotInvitee] = useState(false);
 
   const loadRequestInfo = useCallback(async () => {
     if (!requestId) return;
     try {
+      setError(undefined);
       const requestInfo = await AccessService.getRequestAccessInfo(requestId);
 
+      setIsError(false);
       setRequestInfo(requestInfo);
 
       if (requestInfo.status === RequestAccessInfoStatus.Accepted) {
@@ -66,10 +70,12 @@ function ApproveRequestPage() {
       }
 
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setError(e);
         setIsError(true);
         return;
       }
 
+      setError(e);
       setIsError(true);
     }
   }, [requestId]);
@@ -77,7 +83,9 @@ function ApproveRequestPage() {
   const handleApprove = useCallback(async () => {
     if (!requestId) return;
     try {
+      setError(undefined);
       await AccessService.approveRequestAccess(requestId);
+      setIsError(false);
       toast.success(t('approveAccess.approveSuccess'));
 
       void loadRequestInfo();
@@ -89,6 +97,7 @@ function ApproveRequestPage() {
           setUpgradeModalOpen(true);
         } else {
           toast.error(e.message);
+          setError(e);
           setIsError(true);
         }
 
@@ -100,6 +109,7 @@ function ApproveRequestPage() {
         return;
       }
 
+      setError(e);
       setIsError(true);
     }
   }, [requestId, t, loadRequestInfo]);
@@ -154,7 +164,7 @@ function ApproveRequestPage() {
   }, [handleApprove]);
 
   if (isError) {
-    return <ErrorPage onRetry={handleApprove} />;
+    return <ErrorPage onRetry={handleApprove} error={error} />;
   }
 
   if (notInvitee) {

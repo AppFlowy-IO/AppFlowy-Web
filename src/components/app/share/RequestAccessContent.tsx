@@ -8,6 +8,7 @@ import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import { AccessService } from '@/application/services/domains';
+import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -20,7 +21,11 @@ interface RequestAccessContentProps {
   error?: RequestAccessError;
 }
 
-export function RequestAccessContent({ viewId: propViewId, workspaceId: propWorkspaceId, error: _error }: RequestAccessContentProps) {
+export function RequestAccessContent({
+  viewId: propViewId,
+  workspaceId: propWorkspaceId,
+  error: _error,
+}: RequestAccessContentProps) {
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const appViewId = useAppViewId();
@@ -29,6 +34,7 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
   const [hasSend, setHasSend] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<LandingPageError>();
   const currentUser = useCurrentUser();
 
   // Use props if provided, otherwise fall back to hooks
@@ -38,11 +44,18 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
   const handleSendRequest = async () => {
     try {
       if (!workspaceId || !viewId) {
+        setError({
+          message: t(
+            'landingPage.error.missingAccessRequestContext',
+            'This access request is missing required page information. Please reopen the shared page and try again.'
+          ),
+        });
         setIsError(true);
         return;
       }
 
       setLoading(true);
+      setError(undefined);
       await AccessService.sendRequestAccess(workspaceId, viewId);
 
       toast.success(t('landingPage.noAccess.requestAccessSuccess'));
@@ -53,6 +66,7 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
         toast.error(t('requestAccess.repeatRequestError'));
       } else {
         toast.error(e.message);
+        setError(e);
         setIsError(true);
       }
     } finally {
@@ -62,6 +76,7 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
 
   const handleRetry = () => {
     setIsError(false);
+    setError(undefined);
     void handleSendRequest();
   };
 
@@ -108,15 +123,17 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
   }
 
   if (isError) {
+    const errorContent = getLandingPageErrorContent(error, t);
+
     return (
       <div className='flex h-full w-full flex-col items-center justify-center px-4'>
         <div className='flex w-[400px] flex-col items-center justify-center gap-10'>
           <div className='flex w-full flex-col items-center justify-center gap-6'>
             <div className='w-full whitespace-pre-wrap break-words text-center text-xl font-bold text-text-primary'>
-              {t('landingPage.error.title')}
+              {errorContent.title}
             </div>
             <div className='w-[320px] whitespace-pre-wrap break-words text-center text-sm text-text-primary'>
-              {t('landingPage.error.description')}
+              {errorContent.description}
             </div>
             <div className='flex w-[320px] flex-col gap-[10px]'>
               <Button onClick={handleRetry} size='lg' className='w-full min-w-full' variant='default'>
@@ -144,7 +161,13 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
             {description}
           </div>
           <div className='flex w-[320px] flex-col gap-[10px]'>
-            <Button onClick={handleSendRequest} disabled={loading} size='lg' className='w-full min-w-full' variant='default'>
+            <Button
+              onClick={handleSendRequest}
+              disabled={loading}
+              size='lg'
+              className='w-full min-w-full'
+              variant='default'
+            >
               {loading ? (
                 <span className='flex items-center gap-2'>
                   <Progress />

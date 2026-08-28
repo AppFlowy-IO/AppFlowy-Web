@@ -2,7 +2,9 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import { View, ViewLayout } from '@/application/types';
+import { APP_EVENTS } from '@/application/constants';
+import { Role, View, ViewLayout } from '@/application/types';
+import { isSpaceView } from '@/application/view-utils';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
@@ -15,10 +17,26 @@ import {
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
+  useEnsureViewVisibleInOutline,
+  useEventEmitter,
+  useRevalidateSidebarOutline,
+  useSidebarSelectedViewId,
+  useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
+import { useSidebarTreeMonitor } from '@/components/app/outline/reorder/useSidebarTreeMonitor';
+import {
+  createSidebarOutlineRevalidationScheduleState,
+  floorSidebarOutlineRevalidationStateForOpenWebSocket,
+  getSidebarOutlineRevalidationDelayMs,
+  limitSidebarOutlineExpandedViewIds,
+  nextSidebarOutlineRevalidationStateAfterFailure,
+  nextSidebarOutlineRevalidationStateAfterResult,
+} from '@/components/app/outline/sidebarRevalidation';
 import SpaceItem from '@/components/app/outline/SpaceItem';
 import { ShareWithMe } from '@/components/app/share-with-me';
+import SpaceSidebarActions from '@/components/app/view-actions/SpaceSidebarActions';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,6 +46,10 @@ import { Log } from '@/utils/log';
 const ImportDialog = lazy(() => import('@/components/app/import/ImportDialog'));
 
 const AUTO_LOAD_RETRY_DELAY_MS = 15000;
+const NAVIGATION_HYDRATION_RETRY_DELAY_MS = 15000;
+
+const WS_READY_STATE_OPEN = 1;
+const WS_READY_STATE_CLOSED = 3;
 
 function collectSubtreeViewIds(rootView: View): string[] {
   const ids: string[] = [];
@@ -54,6 +76,30 @@ export function Outline({ width }: { width: number }) {
   const loadViewChildren = useLoadViewChildren();
   const loadViewChildrenBatch = useLoadViewChildrenBatch();
   const markViewChildrenStale = useMarkViewChildrenStale();
+  const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
+  const revalidateSidebarOutline = useRevalidateSidebarOutline();
+  const eventEmitter = useEventEmitter();
+  const selectedViewId = useSidebarSelectedViewId();
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
+  const spaceListRef = useRef<HTMLDivElement>(null);
+  const [pageTreeScopeId] = useState(() => Symbol('sidebar-page-tree-scope'));
+
+  useSidebarTreeMonitor({ scopeId: pageTreeScopeId, workspaceId: currentWorkspaceId });
+
+  const visibleSpacesFromOutline = useMemo(
+    () => outline?.filter((view) => isSpaceView(view) && !view.extra?.is_hidden_space) ?? [],
+    [outline]
+  );
+  const { orderedItems: visibleSpaces, instanceId: spaceDragInstanceId } = useReorderableSidebarList({
+    items: visibleSpacesFromOutline,
+    parentId: currentWorkspaceId,
+    workspaceId: currentWorkspaceId,
+    dragType: 'space',
+    enabled: canReorderSpaces && visibleSpacesFromOutline.length > 1,
+    autoScrollElementRef: spaceListRef,
+    errorMessage: 'Failed to reorder spaces',
+  });
 
   const [menuProps, setMenuProps] = useState<
     | {
@@ -81,14 +127,79 @@ export function Outline({ width }: { width: number }) {
   }, []);
 
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
+  const navigationHydrationInFlightRef = useRef<Set<string>>(new Set());
+  // Selected views that navigation hydration could not place in the outline
+  // (not found server-side, or access denied), mapped to a retry-after
+  // timestamp. Throttles re-fetching navigation on every `outline` change for
+  // an unresolvable id, while still retrying later — a freshly duplicated view
+  // can race the folder projection and become resolvable seconds after the
+  // first attempt fails.
+  const navigationHydrationRetryAfterRef = useRef<Map<string, number>>(new Map());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
   const validatedExistingRestoreIdsRef = useRef<Set<string>>(new Set());
   const [loadingRevision, setLoadingRevision] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const loadingViewIds = useMemo(() => loadingViewIdsRef.current, [loadingRevision]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(Object.keys(getOutlineExpands()));
-  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(Object.keys(getOutlineExpands()));
+  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(() => Object.keys(getOutlineExpands()));
+  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(() => Object.keys(getOutlineExpands()));
+  const expandViewIdsRef = useRef(expandViewIds);
+  const sidebarRevalidationStateRef = useRef(createSidebarOutlineRevalidationScheduleState());
+  const rescheduleSidebarRevalidationRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    expandViewIdsRef.current = expandViewIds;
+  }, [expandViewIds]);
+
+  useEffect(() => {
+    if (!selectedViewId || !outline || !ensureViewVisibleInOutline) return;
+    if (findView(outline, selectedViewId)) return;
+    if (navigationHydrationInFlightRef.current.has(selectedViewId)) return;
+    if ((navigationHydrationRetryAfterRef.current.get(selectedViewId) ?? 0) > Date.now()) return;
+
+    navigationHydrationInFlightRef.current.add(selectedViewId);
+
+    void ensureViewVisibleInOutline(selectedViewId)
+      .then((ancestorIds) => {
+        if (ancestorIds.length === 0) {
+          // Either the view resolved at the sidebar root (it's now in the
+          // outline, so findView short-circuits on the next run) or it could
+          // not be resolved. Throttle so we don't re-fetch on every outline
+          // change while it stays selected.
+          navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
+          return;
+        }
+
+        navigationHydrationRetryAfterRef.current.delete(selectedViewId);
+        ancestorIds.forEach((id) => setOutlineExpands(id, true));
+        setExpandViewIds((prev) => {
+          const next = new Set(prev);
+
+          ancestorIds.forEach((id) => next.add(id));
+          return next.size === prev.length ? prev : Array.from(next);
+        });
+        setPendingAutoLoadIds((prev) => {
+          const filtered = prev.filter((id) => !ancestorIds.includes(id));
+
+          return filtered.length === prev.length ? prev : filtered;
+        });
+      })
+      .catch((error) => {
+        navigationHydrationRetryAfterRef.current.set(selectedViewId, Date.now() + NAVIGATION_HYDRATION_RETRY_DELAY_MS);
+        Log.warn('[Outline] [navigation-context] failed to hydrate selected view', {
+          viewId: selectedViewId,
+          error,
+        });
+      })
+      .finally(() => {
+        navigationHydrationInFlightRef.current.delete(selectedViewId);
+      });
+  }, [ensureViewVisibleInOutline, outline, selectedViewId]);
+
+  useEffect(() => {
+    sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
+    rescheduleSidebarRevalidationRef.current();
+  }, [outline]);
 
   useEffect(() => {
     const restoredExpandedIds = Object.keys(getOutlineExpands());
@@ -96,11 +207,146 @@ export function Outline({ width }: { width: number }) {
     setExpandViewIds(restoredExpandedIds);
     setPendingAutoLoadIds(restoredExpandedIds);
     loadingViewIdsRef.current = new Set();
+    navigationHydrationInFlightRef.current = new Set();
+    navigationHydrationRetryAfterRef.current = new Map();
     autoLoadRetryAfterRef.current = new Map();
     validatingRestoreIdsRef.current = new Set();
     validatedExistingRestoreIdsRef.current = new Set();
     setLoadingRevision((r) => r + 1);
   }, [currentWorkspaceId]);
+
+  useEffect(() => {
+    if (!currentWorkspaceId || !revalidateSidebarOutline) return;
+
+    let stopped = false;
+    let timer: number | undefined;
+    let inFlight = false;
+
+    const clearPendingTimer = () => {
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+      }
+    };
+
+    const getWebSocketReadyState = () =>
+      typeof eventEmitter.webSocketReadyState === 'number' ? eventEmitter.webSocketReadyState : undefined;
+
+    const scheduleNextTick = () => {
+      clearPendingTimer();
+
+      // While the socket is open, folder notifications keep the outline fresh
+      // and this poll is only a dropped-notification safety net — floor it to
+      // the slow cadence. Disconnected tabs keep the full fast→slow schedule.
+      const scheduleState =
+        getWebSocketReadyState() === WS_READY_STATE_OPEN
+          ? floorSidebarOutlineRevalidationStateForOpenWebSocket(sidebarRevalidationStateRef.current)
+          : sidebarRevalidationStateRef.current;
+
+      timer = window.setTimeout(() => {
+        void tick();
+      }, getSidebarOutlineRevalidationDelayMs(scheduleState));
+    };
+
+    const tick = async () => {
+      if (stopped || inFlight) return;
+
+      inFlight = true;
+      try {
+        const result = await revalidateSidebarOutline(limitSidebarOutlineExpandedViewIds(expandViewIdsRef.current));
+
+        sidebarRevalidationStateRef.current = nextSidebarOutlineRevalidationStateAfterResult(
+          sidebarRevalidationStateRef.current,
+          result
+        );
+      } catch (error) {
+        sidebarRevalidationStateRef.current = nextSidebarOutlineRevalidationStateAfterFailure(
+          sidebarRevalidationStateRef.current
+        );
+        Log.warn('[Outline] [periodic-revalidate] failed', {
+          workspaceId: currentWorkspaceId,
+          error,
+        });
+      } finally {
+        inFlight = false;
+        if (!stopped) {
+          scheduleNextTick();
+        }
+      }
+    };
+
+    const resetSchedule = () => {
+      sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
+    };
+
+    const rescheduleFromFastInterval = () => {
+      if (stopped) return;
+
+      resetSchedule();
+      scheduleNextTick();
+    };
+
+    const runNow = () => {
+      if (stopped) return;
+
+      resetSchedule();
+      clearPendingTimer();
+      if (!inFlight) {
+        void tick();
+      }
+    };
+
+    const runNowWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        runNow();
+      }
+    };
+
+    let lastReadyState = getWebSocketReadyState();
+    let disconnectedSinceLastOpen = lastReadyState === WS_READY_STATE_CLOSED;
+
+    const handleWebSocketStatus = () => {
+      const readyState = getWebSocketReadyState();
+
+      if (readyState === undefined || readyState === lastReadyState) return;
+      lastReadyState = readyState;
+
+      if (readyState === WS_READY_STATE_CLOSED) {
+        if (!disconnectedSinceLastOpen) {
+          disconnectedSinceLastOpen = true;
+          // The notification channel is gone; reschedule so the poll takes
+          // over at the fast cadence instead of waiting out a slow-tier delay.
+          scheduleNextTick();
+        }
+
+        return;
+      }
+
+      if (readyState === WS_READY_STATE_OPEN && disconnectedSinceLastOpen) {
+        disconnectedSinceLastOpen = false;
+        // Notifications sent while disconnected are not replayed; catch up.
+        runNow();
+      }
+    };
+
+    rescheduleSidebarRevalidationRef.current = rescheduleFromFastInterval;
+    document.addEventListener('visibilitychange', runNowWhenVisible);
+    window.addEventListener('online', runNow);
+    eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+
+    scheduleNextTick();
+
+    return () => {
+      stopped = true;
+      clearPendingTimer();
+      document.removeEventListener('visibilitychange', runNowWhenVisible);
+      window.removeEventListener('online', runNow);
+      eventEmitter.off(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
+      if (rescheduleSidebarRevalidationRef.current === rescheduleFromFastInterval) {
+        rescheduleSidebarRevalidationRef.current = () => undefined;
+      }
+    };
+  }, [currentWorkspaceId, eventEmitter, revalidateSidebarOutline]);
 
   // Validate restored expanded IDs that are not in the current tree and prune only truly stale IDs.
   // This avoids keeping deleted/moved IDs forever, while preserving valid deep IDs.
@@ -167,7 +413,7 @@ export function Outline({ width }: { width: number }) {
   // Auto-load only the restored expanded ids from startup state.
   // Manual expand clicks should use single-view loading path only.
   const autoLoadState = useMemo(() => {
-    if (!outline || outline.length === 0 || !loadViewChildren) {
+    if (!outline || outline.length === 0 || (!loadViewChildrenBatch && !loadViewChildren)) {
       return {
         fetchableAutoLoadIds: [] as string[],
         nextRetryAt: null as number | null,
@@ -197,7 +443,7 @@ export function Outline({ width }: { width: number }) {
       fetchableAutoLoadIds,
       nextRetryAt,
     };
-  }, [pendingAutoLoadIds, outline, loadViewChildren, loadedViewIds, nowMs]);
+  }, [pendingAutoLoadIds, outline, loadViewChildren, loadViewChildrenBatch, loadedViewIds, nowMs]);
   const { fetchableAutoLoadIds, nextRetryAt } = autoLoadState;
 
   // Schedule a wake-up at nearest retry time so blocked ids can refetch.
@@ -217,7 +463,7 @@ export function Outline({ width }: { width: number }) {
   // Startup/outline restore: fetch expanded nodes that are currently in tree.
   // As deeper expanded nodes appear after parent fetches, this effect runs again.
   useEffect(() => {
-    if (fetchableAutoLoadIds.length === 0 || !loadViewChildren) return;
+    if (fetchableAutoLoadIds.length === 0) return;
 
     for (const id of fetchableAutoLoadIds) {
       loadingViewIdsRef.current.add(id);
@@ -226,7 +472,7 @@ export function Outline({ width }: { width: number }) {
 
     setLoadingRevision((r) => r + 1);
 
-    if (loadViewChildrenBatch && fetchableAutoLoadIds.length > 1) {
+    if (loadViewChildrenBatch) {
       void loadViewChildrenBatch(fetchableAutoLoadIds)
         .catch(() => {
           // No-op: retry scheduling is driven by retryAfter timestamps.
@@ -241,6 +487,8 @@ export function Outline({ width }: { width: number }) {
       return;
     }
 
+    if (!loadViewChildren) return;
+
     void Promise.allSettled(fetchableAutoLoadIds.map((id) => loadViewChildren(id))).then(() => {
       for (const id of fetchableAutoLoadIds) {
         loadingViewIdsRef.current.delete(id);
@@ -250,73 +498,78 @@ export function Outline({ width }: { width: number }) {
     });
   }, [fetchableAutoLoadIds, loadViewChildren, loadViewChildrenBatch]);
 
-  const toggleExpandView = useCallback((id: string, isExpanded: boolean) => {
-    const collapsedSubtreeIds = !isExpanded
-      ? (() => {
-          const rootView = findView(outline ?? [], id);
+  const toggleExpandView = useCallback(
+    (id: string, isExpanded: boolean) => {
+      const collapsedSubtreeIds = !isExpanded
+        ? (() => {
+            const rootView = findView(outline ?? [], id);
 
-          return rootView ? collectSubtreeViewIds(rootView) : [id];
-        })()
-      : [id];
-    const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
+            return rootView ? collectSubtreeViewIds(rootView) : [id];
+          })()
+        : [id];
+      const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
 
-    // Manual interaction should not be handled by startup auto-load path.
-    setPendingAutoLoadIds((prev) => {
-      const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
-
-      return next.length === prev.length ? prev : next;
-    });
-
-    if (isExpanded) {
-      setOutlineExpands(id, true);
-      setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-    } else {
-      collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
-      setExpandViewIds((prev) => {
+      // Manual interaction should not be handled by startup auto-load path.
+      setPendingAutoLoadIds((prev) => {
         const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
         return next.length === prev.length ? prev : next;
       });
-      Log.debug('[Outline] [manual-expand] collapse node', {
-        viewId: id,
-        collapsedSubtreeIds,
-      });
-      markViewChildrenStale?.(id);
-    }
 
-    // Lazy load children when expanding a view that hasn't been loaded yet
-    if (isExpanded && loadViewChildren) {
-      const alreadyLoaded = loadedViewIds?.has(id) ?? false;
+      if (isExpanded) {
+        sidebarRevalidationStateRef.current = createSidebarOutlineRevalidationScheduleState();
+        rescheduleSidebarRevalidationRef.current();
+        setOutlineExpands(id, true);
+        setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      } else {
+        collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
+        setExpandViewIds((prev) => {
+          const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
-      Log.debug('[Outline] [manual-expand] expand node', {
-        viewId: id,
-        alreadyLoaded,
-      });
+          return next.length === prev.length ? prev : next;
+        });
+        Log.debug('[Outline] [manual-expand] collapse node', {
+          viewId: id,
+          collapsedSubtreeIds,
+        });
+        markViewChildrenStale?.(id);
+      }
 
-      if (alreadyLoaded) return;
+      // Lazy load children when expanding a view that hasn't been loaded yet
+      if (isExpanded && loadViewChildren) {
+        const alreadyLoaded = loadedViewIds?.has(id) ?? false;
 
-      Log.debug('[Outline] [manual-expand] requesting single subtree', {
-        viewId: id,
-        depth: 1,
-      });
+        Log.debug('[Outline] [manual-expand] expand node', {
+          viewId: id,
+          alreadyLoaded,
+        });
 
-      // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
-      // before the first await. Adding here *before* the call would trip its
-      // in-flight dedup guard and silently skip the API request.
-      void loadViewChildren(id).finally(() => {
-        loadingViewIdsRef.current.delete(id);
+        if (alreadyLoaded) return;
+
+        Log.debug('[Outline] [manual-expand] requesting single subtree', {
+          viewId: id,
+          depth: 1,
+        });
+
+        // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
+        // before the first await. Adding here *before* the call would trip its
+        // in-flight dedup guard and silently skip the API request.
+        void loadViewChildren(id).finally(() => {
+          loadingViewIdsRef.current.delete(id);
+          setLoadingRevision((r) => r + 1);
+        });
+
+        // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
         setLoadingRevision((r) => r + 1);
-      });
-
-      // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
-      setLoadingRevision((r) => r + 1);
-    }
-  }, [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]);
+      }
+    },
+    [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]
+  );
   const { t } = useTranslation();
 
   const renderActions = useCallback(
     ({ hovered, view }: { hovered: boolean; view: View }) => {
-      const isSpace = view?.extra?.is_space;
+      const isSpace = isSpaceView(view);
       const layout = view?.layout;
 
       const onClick = (e: React.MouseEvent<HTMLButtonElement>, type: 'more' | 'add') => {
@@ -341,15 +594,20 @@ export function Outline({ width }: { width: number }) {
       // For testing purposes, always show the button if it has a data-testid
       // This is a temporary workaround until we can properly simulate hover in tests
       const isTestEnvironment = typeof window !== 'undefined' && 'Cypress' in window;
+      const actionsVisible = !shouldHidden || isTestEnvironment;
 
-      if (shouldHidden && !isTestEnvironment) return null;
+      if (isSpace) {
+        return <SpaceSidebarActions view={view} visible={actionsVisible} onActionClick={onClick} />;
+      }
+
+      if (!actionsVisible) return null;
 
       return (
         <div onClick={(e) => e.stopPropagation()} className={'flex items-center px-2'}>
           <Tooltip disableHoverableContent delayDuration={500}>
             <TooltipTrigger asChild>
               <Button
-                data-testid={isSpace ? 'inline-more-actions' : 'page-more-actions'}
+                data-testid='page-more-actions'
                 variant={'ghost'}
                 size={'icon-sm'}
                 onClick={(e) => {
@@ -359,7 +617,7 @@ export function Outline({ width }: { width: number }) {
                 <MoreIcon />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{isSpace ? t('space.manage') : t('menuAppHeader.moreButtonToolTip')}</TooltipContent>
+            <TooltipContent>{t('menuAppHeader.moreButtonToolTip')}</TooltipContent>
           </Tooltip>
           {layout === ViewLayout.Document ? (
             <Tooltip disableHoverableContent delayDuration={500}>
@@ -376,7 +634,7 @@ export function Outline({ width }: { width: number }) {
                 </Button>
               </TooltipTrigger>
 
-              <TooltipContent>{isSpace ? t('sideBar.addAPage') : t('menuAppHeader.addPageTooltip')}</TooltipContent>
+              <TooltipContent>{t('menuAppHeader.addPageTooltip')}</TooltipContent>
             </Tooltip>
           ) : null}
         </div>
@@ -396,7 +654,7 @@ export function Outline({ width }: { width: number }) {
 
   return (
     <>
-      <div className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
+      <div ref={spaceListRef} className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
         <Favorite />
         <ShareWithMe width={width - 20} />
         {!outline || outline.length === 0 ? (
@@ -408,21 +666,22 @@ export function Outline({ width }: { width: number }) {
             <DirectoryStructure />
           </div>
         ) : (
-          outline
-            .filter((view) => !view.extra?.is_hidden_space)
-            .map((view) => (
-              <SpaceItem
-                view={view}
-                key={view.view_id}
-                width={width - 20}
-                renderExtra={renderActions}
-                expandIds={expandViewIds}
-                toggleExpand={toggleExpandView}
-                onClickView={onClickView}
-                loadingViewIds={loadingViewIds}
-                loadedViewIds={loadedViewIds}
-              />
-            ))
+          visibleSpaces.map((view) => (
+            <SpaceItem
+              view={view}
+              key={view.view_id}
+              width={width - 20}
+              renderExtra={renderActions}
+              expandIds={expandViewIds}
+              toggleExpand={toggleExpandView}
+              onClickView={onClickView}
+              loadingViewIds={loadingViewIds}
+              loadedViewIds={loadedViewIds}
+              canReorder={canReorderSpaces && visibleSpaces.length > 1}
+              dragInstanceId={spaceDragInstanceId}
+              pageTreeScopeId={pageTreeScopeId}
+            />
+          ))
         )}
       </div>
       {menuProps &&

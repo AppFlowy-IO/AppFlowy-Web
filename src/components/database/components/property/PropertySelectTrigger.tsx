@@ -16,6 +16,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 const properties = [
   FieldType.RichText,
@@ -29,6 +30,8 @@ const properties = [
   FieldType.Checklist,
   FieldType.LastEditedTime,
   FieldType.CreatedTime,
+  FieldType.CreatedBy,
+  FieldType.LastEditedBy,
   FieldType.Relation,
   FieldType.Rollup,
   FieldType.Summary,
@@ -59,10 +62,15 @@ export function PropertySelectTrigger({
     [aiEnabled]
   );
 
-  const handleSelect = (property: FieldType) => {
+  const handleSelect = async (property: FieldType) => {
     if (disabled) return;
     if (!aiEnabled && isAIFieldType(property)) return;
-    switchType(fieldId, property);
+
+    try {
+      await switchType(fieldId, property);
+    } catch (error) {
+      Log.warn('[PropertySelectTrigger] Failed to switch field type', { fieldId, property, error });
+    }
   };
 
   const propertyTooltip: {
@@ -79,6 +87,8 @@ export function PropertySelectTrigger({
       [FieldType.Checklist]: t('tooltip.checklistField'),
       [FieldType.LastEditedTime]: t('tooltip.updatedAtField'),
       [FieldType.CreatedTime]: t('tooltip.createdAtField'),
+      [FieldType.CreatedBy]: t('tooltip.createdByField'),
+      [FieldType.LastEditedBy]: t('tooltip.lastEditedByField'),
       [FieldType.Relation]: t('tooltip.relationField'),
       [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
       [FieldType.Summary]: t('tooltip.AISummaryField'),
@@ -124,7 +134,7 @@ export function PropertySelectTrigger({
                             return;
                           }
 
-                          handleSelect(property);
+                          void handleSelect(property);
                           if ([FieldType.Translate].includes(property)) {
                             e.preventDefault();
                             setOpen(false);

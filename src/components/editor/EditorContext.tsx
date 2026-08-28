@@ -5,8 +5,11 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { BaseRange, Range } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateRow,
+  CreateRowDocument,
+  DuplicateRowDocument,
   FontLayout,
   LineHeightLayout,
   LoadView,
@@ -17,22 +20,27 @@ import {
   CreatePageResponse,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  DuplicatePageOptions,
+  DuplicatePageOperationOptions,
   TextCount,
   LoadDatabasePrompts,
+  LoadRowDocument,
   TestDatabasePromptConfig,
   Subscription,
   MentionablePerson,
+  MentionSearchContext,
+  SearchMentions,
   DatabaseRelations,
+  UpdatePagePayload,
   YDoc,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 export interface EditorLayoutStyle {
   fontLayout: FontLayout;
   font: string;
   lineHeightLayout: LineHeightLayout;
 }
+
+export type EditorContentPadding = 'page' | 'template';
 
 export const defaultLayoutStyle: EditorLayoutStyle = {
   fontLayout: FontLayout.normal,
@@ -66,26 +74,35 @@ export interface EditorLocalState {
  */
 export interface EditorContextState {
   fullWidth?: boolean;
+  contentPadding?: EditorContentPadding;
   workspaceId: string;
   viewId: string;
   readOnly: boolean;
+  canComment?: boolean;
+  /** Canonical server write permission, independent from editor UI state. */
+  canWrite?: boolean;
   layoutStyle?: EditorLayoutStyle;
   codeGrammars?: Record<string, string>;
   addCodeGrammars?: (blockId: string, grammar: string) => void;
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  createRowDocument?: CreateRowDocument;
+  duplicateRowDocument?: DuplicateRowDocument;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   readSummary?: boolean;
   jumpBlockId?: string;
   onJumpedBlockId?: () => void;
   variant?: UIVariant;
   onRendered?: () => void;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
+  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;
-  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
@@ -98,6 +115,8 @@ export interface EditorContextState {
   getSubscriptions?: (() => Promise<Subscription[]>) | undefined;
   eventEmitter?: EventEmitter;
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  searchMentions?: SearchMentions;
+  mentionContext?: MentionSearchContext;
   awareness?: Awareness;
   getDeviceId?: () => string;
   databaseRelations?: DatabaseRelations;
@@ -111,9 +130,12 @@ export const EditorLocalStateContext = createContext<EditorLocalState | undefine
 export const EditorContextProvider = ({
   children,
   fullWidth,
+  contentPadding,
   workspaceId,
   viewId,
   readOnly,
+  canComment,
+  canWrite,
   layoutStyle,
   codeGrammars,
   addCodeGrammars,
@@ -121,14 +143,19 @@ export const EditorContextProvider = ({
   loadViewMeta,
   loadView,
   loadRowDocument,
+  checkIfRowDocumentExists,
+  createRowDocument,
+  duplicateRowDocument,
   createRow,
   bindViewSync,
+  scheduleDeferredCleanup,
   readSummary,
   jumpBlockId,
   onJumpedBlockId,
   variant,
   onRendered,
   addPage,
+  updatePage,
   deletePage,
   duplicatePage,
   openPageModal,
@@ -143,6 +170,8 @@ export const EditorContextProvider = ({
   getSubscriptions,
   eventEmitter,
   getMentionUser,
+  searchMentions,
+  mentionContext,
   awareness,
   getDeviceId,
   databaseRelations,
@@ -194,9 +223,12 @@ export const EditorContextProvider = ({
   const configValue = useMemo(
     () => ({
       fullWidth,
+      contentPadding,
       workspaceId,
       viewId,
       readOnly,
+      canComment,
+      canWrite,
       layoutStyle,
       codeGrammars,
       addCodeGrammars,
@@ -204,14 +236,19 @@ export const EditorContextProvider = ({
       loadViewMeta,
       loadView,
       loadRowDocument,
+      checkIfRowDocumentExists,
+      createRowDocument,
+      duplicateRowDocument,
       createRow,
       bindViewSync,
+      scheduleDeferredCleanup,
       readSummary,
       jumpBlockId,
       onJumpedBlockId,
       variant,
       onRendered,
       addPage,
+      updatePage,
       deletePage,
       duplicatePage,
       openPageModal,
@@ -226,6 +263,8 @@ export const EditorContextProvider = ({
       getSubscriptions,
       eventEmitter,
       getMentionUser,
+      searchMentions,
+      mentionContext,
       awareness,
       getDeviceId,
       databaseRelations,
@@ -234,9 +273,12 @@ export const EditorContextProvider = ({
     }),
     [
       fullWidth,
+      contentPadding,
       workspaceId,
       viewId,
       readOnly,
+      canComment,
+      canWrite,
       layoutStyle,
       codeGrammars,
       addCodeGrammars,
@@ -244,14 +286,19 @@ export const EditorContextProvider = ({
       loadViewMeta,
       loadView,
       loadRowDocument,
+      checkIfRowDocumentExists,
+      createRowDocument,
+      duplicateRowDocument,
       createRow,
       bindViewSync,
+      scheduleDeferredCleanup,
       readSummary,
       jumpBlockId,
       onJumpedBlockId,
       variant,
       onRendered,
       addPage,
+      updatePage,
       deletePage,
       duplicatePage,
       openPageModal,
@@ -266,6 +313,8 @@ export const EditorContextProvider = ({
       getSubscriptions,
       eventEmitter,
       getMentionUser,
+      searchMentions,
+      mentionContext,
       awareness,
       getDeviceId,
       databaseRelations,
@@ -289,9 +338,7 @@ export const EditorContextProvider = ({
 
   return (
     <EditorContext.Provider value={configValue}>
-      <EditorLocalStateContext.Provider value={localStateValue}>
-        {children}
-      </EditorLocalStateContext.Provider>
+      <EditorLocalStateContext.Provider value={localStateValue}>{children}</EditorLocalStateContext.Provider>
     </EditorContext.Provider>
   );
 };

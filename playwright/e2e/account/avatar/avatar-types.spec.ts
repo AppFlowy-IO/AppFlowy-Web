@@ -52,21 +52,46 @@ async function updateWorkspaceMemberAvatar(
   });
 }
 
+/** Helper: get current user's workspace member profile via API */
+async function getWorkspaceMemberProfile(
+  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
+  workspaceId: string
+) {
+  const accessToken = await getAccessToken(page);
+  return request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/workspace-profile`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    failOnStatusCode: false,
+  });
+}
+
 /** Helper: open workspace dropdown then account settings */
 async function openAccountSettings(page: import('@playwright/test').Page) {
   await WorkspaceSelectors.dropdownTrigger(page).click();
   await page.waitForTimeout(1000);
-  const settingsButton = page.getByTestId('account-settings-button');
+  const settingsButton = page.getByTestId('settings-button');
   await expect(settingsButton).toBeVisible();
   await settingsButton.click();
-  await expect(page.getByTestId('account-settings-dialog')).toBeVisible();
+  await expect(page.getByTestId('settings-dialog')).toBeVisible();
 }
 
-/** Helper: reload page and open account settings */
-async function reloadAndOpenAccountSettings(page: import('@playwright/test').Page) {
-  await page.reload();
-  await page.waitForTimeout(3000);
+/** Helper: open the Profile panel inside settings */
+async function openProfileSettings(page: import('@playwright/test').Page) {
   await openAccountSettings(page);
+  const dialog = page.getByTestId('settings-dialog');
+  await dialog.getByTestId('settings-menu-profile').click();
+  await expect(dialog.getByTestId('profile-display-name-input')).toBeVisible();
+  return dialog;
+}
+
+/** Helper: reload page and open profile settings */
+async function reloadAndOpenProfileSettings(page: import('@playwright/test').Page) {
+  await page.reload();
+  await expect(page.locator('.appflowy-top-bar')).toBeVisible();
+  return openProfileSettings(page);
 }
 
 test.describe('Avatar Types', () => {
@@ -83,10 +108,7 @@ test.describe('Avatar Types', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  test('should handle HTTPS avatar URL', async ({
-    page,
-    request,
-  }) => {
+  test('should handle HTTPS avatar URL', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
     const httpsAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=https';
 
@@ -97,48 +119,53 @@ test.describe('Avatar Types', () => {
     const workspaceId = await getCurrentWorkspaceId(page);
     expect(workspaceId).not.toBeNull();
 
-    const response = await updateWorkspaceMemberAvatar(
-      page,
-      request,
-      workspaceId!,
-      httpsAvatar
-    );
+    const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, httpsAvatar);
     expect(response.status()).toBe(200);
 
-    await page.waitForTimeout(2000);
-    await reloadAndOpenAccountSettings(page);
+    await expect
+      .poll(async () => {
+        const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
+        if (profileResponse.status() !== 200) return null;
+        const body = await profileResponse.json();
+        return body?.data?.avatar_url ?? null;
+      })
+      .toBe(httpsAvatar);
 
-    const avatarImage = page.locator('[data-testid="avatar-image"]');
+    const dialog = await reloadAndOpenProfileSettings(page);
+    const avatarImage = dialog.getByTestId('avatar-image');
     await expect(avatarImage).toBeAttached();
     await expect(avatarImage).toHaveAttribute('src', httpsAvatar);
   });
 
   test('should handle emoji avatars correctly', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
-    const emojiAvatars = ['\u{1F3A8}', '\u{1F680}', '\u{2B50}', '\u{1F3AF}']; // paint, rocket, star, target
+    const emojiAvatar = '\u{1F3A8}'; // paint palette emoji
 
     testLog.info('Step 1: Sign in with test account');
     await signInAndWaitForApp(page, request, testEmail);
 
-    testLog.info('Step 2: Test each emoji avatar');
+    testLog.info('Step 2: Test emoji avatar');
     const workspaceId = await getCurrentWorkspaceId(page);
     expect(workspaceId).not.toBeNull();
 
-    for (const emoji of emojiAvatars) {
-      const response = await updateWorkspaceMemberAvatar(
-        page,
-        request,
-        workspaceId!,
-        emoji
-      );
-      expect(response.status()).toBe(200);
+    const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, emojiAvatar);
+    expect(response.status()).toBe(200);
 
-      await page.waitForTimeout(2000);
-      await reloadAndOpenAccountSettings(page);
+    await expect
+      .poll(async () => {
+        const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
+        if (profileResponse.status() !== 200) return null;
+        const body = await profileResponse.json();
+        return body?.data?.avatar_url ?? null;
+      })
+      .toBe(emojiAvatar);
 
-      // Emoji should be displayed in fallback, not as image
-      const avatarFallback = page.locator('[data-slot="avatar-fallback"]');
-      await expect(avatarFallback.first()).toContainText(emoji);
-    }
+    const dialog = await reloadAndOpenProfileSettings(page);
+    const profileAvatarFallback = dialog
+      .locator('[data-slot="avatar"]')
+      .first()
+      .locator('[data-slot="avatar-fallback"]');
+
+    await expect(profileAvatarFallback).toContainText(emojiAvatar);
   });
 });

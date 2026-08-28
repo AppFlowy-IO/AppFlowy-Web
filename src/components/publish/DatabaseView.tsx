@@ -2,10 +2,12 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { usePublishContext } from '@/application/publish';
-import { UIVariant, ViewLayout, YjsEditorKey } from '@/application/types';
+import { UIVariant, ViewLayout, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { resolveActiveDatabaseViewId } from '@/application/view-utils';
 import type {
   AppendBreadcrumb,
   CreateRow,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   RowId,
@@ -20,7 +22,8 @@ import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { Database } from '@/components/database';
-import { findParentView } from '@/components/_shared/outline/utils';
+import { useContainerVisibleViewIds } from '@/components/database/hooks/visibleViewIds/useContainerVisibleViewIds';
+import { findParentView, findView } from '@/components/_shared/outline/utils';
 import { cn } from '@/lib/utils';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
@@ -34,7 +37,7 @@ export interface DatabaseProps {
   /**
    * Load a row sub-document from published cache.
    */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   viewMeta: ViewMetaProps;
@@ -46,10 +49,38 @@ export interface DatabaseProps {
 
 function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   const [search, setSearch] = useSearchParams();
-  const visibleViewIds = useMemo(() => viewMeta.visibleViewIds || [], [viewMeta]);
 
   const isTemplateThumb = usePublishContext()?.isTemplateThumb;
   const outline = usePublishContext()?.outline;
+  const outlineView = useMemo(() => {
+    if (!outline || !viewMeta.viewId) return;
+    return findView(outline, viewMeta.viewId) || undefined;
+  }, [outline, viewMeta.viewId]);
+  const { containerView } = useContainerVisibleViewIds({
+    view: outlineView,
+    outline,
+    parentViewId: viewMeta.parentViewId,
+    databaseId: viewMeta.extra?.database_id,
+    embedded: viewMeta.extra?.embedded,
+  });
+  const pageView = containerView || outlineView;
+  const pageMeta = useMemo<ViewMetaProps>(() => {
+    if (!pageView) return viewMeta;
+
+    return {
+      ...viewMeta,
+      viewId: pageView.view_id,
+      name: pageView.name,
+      icon: pageView.icon || undefined,
+      extra: pageView.extra,
+      cover: pageView.extra?.cover,
+      layout: pageView.layout,
+    };
+  }, [pageView, viewMeta]);
+  const visibleViewIds = useMemo(() => {
+    if (viewMeta.visibleViewIds?.length) return viewMeta.visibleViewIds;
+    return containerView?.children.map((child) => child.view_id) || [];
+  }, [containerView, viewMeta.visibleViewIds]);
 
   // Build a loadViewMeta that returns the database container from the outline
   // with correct folder names for all sibling views (used by DatabaseTabs).
@@ -61,36 +92,57 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
     return async (viewId: string, callback?: (meta: View | null) => void) => {
       // Try to find the container in the outline for this database view
       const parent = findParentView(outline, viewId);
+      const resolvedContainer = containerView?.view_id === viewId ? containerView : parent;
 
-      if (parent?.extra?.is_database_container && parent.children?.length > 0) {
-        const containerView: View = {
-          ...parent,
+      if (resolvedContainer?.extra?.is_database_container && resolvedContainer.children?.length > 0) {
+        const containerMeta: View = {
+          ...resolvedContainer,
           is_published: false,
           is_private: false,
         };
 
-        callback?.(containerView);
-        return containerView;
+        callback?.(containerMeta);
+        return containerMeta;
       }
 
       // Fall back to original loadViewMeta
       return originalLoadViewMeta(viewId, callback);
     };
-  }, [outline, props.loadViewMeta]);
+  }, [containerView, outline, props.loadViewMeta]);
 
   /**
    * The database's page ID in the folder/outline structure.
    * This is the main entry point for the database and remains constant.
    */
-  const databasePageId = viewMeta.viewId;
+  const databasePageId = containerView?.view_id || viewMeta.viewId;
+
+  const doc = props.doc;
+  const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
+
+  // View ids that actually exist in the database collab. Published pages may
+  // list the folder container id among visibleViewIds even though it is not a
+  // database view; resolution below must never land on such an id.
+  const existingViewIds = useMemo(() => {
+    const views = database?.get(YjsDatabaseKey.views);
+
+    return views ? Array.from(views.keys()) : [];
+  }, [database]);
+  const tabViewId = search.get('v');
 
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
-   * Comes from URL param 'v', defaults to databasePageId when not specified.
+   * Comes from URL param 'v', defaults to the route id for direct child-view
+   * routes, or the first visible child when the route points at a database
+   * container.
    */
   const activeViewId = useMemo(() => {
-    return search.get('v') || databasePageId;
-  }, [search, databasePageId]);
+    return resolveActiveDatabaseViewId({
+      databasePageId,
+      tabViewId,
+      visibleViewIds,
+      existingViewIds,
+    });
+  }, [databasePageId, existingViewIds, tabViewId, visibleViewIds]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
@@ -137,8 +189,6 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   );
 
   const rowId = search.get('r') || undefined;
-  const doc = props.doc;
-  const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
   const isPublishVariant = props.variant === UIVariant.Publish;
 
   const skeleton = useMemo(() => {
@@ -148,6 +198,8 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
 
     switch (viewMeta.layout) {
       case ViewLayout.Grid:
+      case ViewLayout.List:
+      case ViewLayout.Gallery:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;
@@ -168,11 +220,11 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
       }}
       className={cn('relative flex w-full flex-col', !isPublishVariant && 'h-full')}
     >
-      {rowId ? null : <ViewMetaPreview {...viewMeta} readOnly={true} />}
+      {rowId ? null : <ViewMetaPreview {...pageMeta} readOnly={true} />}
 
       <Suspense fallback={skeleton}>
         <Database
-          databaseName={viewMeta.name || ''}
+          databaseName={pageMeta.name || ''}
           databasePageId={databasePageId || ''}
           {...props}
           loadViewMeta={publishLoadViewMeta}

@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { Row } from '@/application/database-yjs';
-import { useToggleHiddenGroupColumnDispatch } from '@/application/database-yjs/dispatch';
+import { useSetBoardColumnRenderedDispatch } from '@/application/database-yjs/dispatch';
+import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
 import DragItem from '@/components/database/components/drag-and-drop/DragItem';
@@ -16,12 +18,17 @@ function HiddenColumnItem({
   fieldId,
   getRows: getRowsProp,
   groupId,
+  isShownOnBoard,
+  automaticallyHidden,
 }: {
   id: string;
   fieldId: string;
   getRows: (id: string) => Row[];
   groupId: string;
+  isShownOnBoard: boolean;
+  automaticallyHidden: boolean;
 }) {
+  const { t } = useTranslation();
   const { header } = useRenderColumn(id, fieldId);
   const getRows = useCallback(() => {
     return getRowsProp(id);
@@ -31,10 +38,12 @@ function HiddenColumnItem({
   }, [getRows]);
 
   const [hover, setHover] = useState(false);
-  const toggleHidden = useToggleHiddenGroupColumnDispatch(groupId, fieldId);
+  const setColumnRendered = useSetBoardColumnRenderedDispatch(groupId, fieldId);
 
   return (
     <div
+      data-testid={'board-hidden-group'}
+      data-hidden-column-id={id}
       onMouseEnter={() => {
         setHover(true);
       }}
@@ -46,19 +55,25 @@ function HiddenColumnItem({
       <DragItem id={id}>
         <HiddenItemMenu getRows={getRows}>
           <div className={'flex w-full items-center gap-1.5'}>
-            <div className={'w-auto max-w-[150px] overflow-hidden'}>{header}</div>
+            <div data-testid={'board-hidden-group-name'} className={'w-auto max-w-[150px] overflow-hidden'}>
+              {header}
+            </div>
             <span className={'text-xs text-text-secondary'}>{count}</span>
 
             <Button
+              data-testid={isShownOnBoard ? 'board-hidden-group-hide' : 'board-hidden-group-show'}
+              aria-label={isShownOnBoard ? t('board.column.hideColumn') : t('board.mobile.showGroup')}
               className={cn('ml-auto', hover ? 'opacity-100' : 'opacity-0')}
               size={'icon'}
               variant={'ghost'}
               onClick={(e) => {
                 e.stopPropagation();
-                toggleHidden(id, false);
+                const shouldShow = !isShownOnBoard;
+
+                setColumnRendered(id, shouldShow, automaticallyHidden);
               }}
             >
-              <ShowIcon className={'h-5 w-5'} />
+              {isShownOnBoard ? <HideIcon className={'h-5 w-5'} /> : <ShowIcon className={'h-5 w-5'} />}
             </Button>
           </div>
         </HiddenItemMenu>

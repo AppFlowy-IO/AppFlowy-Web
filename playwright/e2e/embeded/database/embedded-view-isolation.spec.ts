@@ -39,10 +39,7 @@ test.describe('Embedded Database View Isolation', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  test('embedded views appear under document, not under original database', async ({
-    page,
-    request,
-  }) => {
+  test('embedded views appear under document, not under original database', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
     await signInAndWaitForApp(page, request, testEmail);
@@ -58,7 +55,7 @@ test.describe('Embedded Database View Isolation', () => {
     // Step 2: Create a document page
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
-    await page.locator('[role="menuitem"]').first().click({ force: true });
+    await AddPageSelectors.addDocumentButton(page).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Handle new page modal
@@ -110,7 +107,9 @@ test.describe('Embedded Database View Isolation', () => {
 
     // Check standalone DB doesn't have unexpected expand toggles for embedded views
     // (It may have its own default Grid child, but no "View of" children)
-    const dbExpandToggle = standaloneDb.locator('[data-testid="outline-toggle-expand"], [data-testid="outline-toggle-collapse"]');
+    const dbExpandToggle = standaloneDb.locator(
+      '[data-testid="outline-toggle-expand"], [data-testid="outline-toggle-collapse"]'
+    );
     const hasToggle = (await dbExpandToggle.count()) > 0;
 
     if (hasToggle) {

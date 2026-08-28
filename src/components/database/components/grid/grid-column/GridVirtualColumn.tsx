@@ -6,11 +6,14 @@ import { YjsDatabaseKey } from '@/application/types';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
 import GridCell from '@/components/database/components/grid/grid-cell/GridCell';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
-import { useGridContext } from '@/components/database/grid/useGridContext';
+import { getRenderRowKey, RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
+import {
+  useGridInteractionActions,
+  useIsGridCellActive,
+  useIsGridRowHovered,
+} from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
-
 
 function GridVirtualColumn({
   data,
@@ -27,10 +30,10 @@ function GridVirtualColumn({
 }) {
   const rowIndex = row.index;
   const rowData = useMemo(() => data[rowIndex], [data, rowIndex]);
-  const { setActiveCell, activeCell } = useGridContext();
+  const rowKey = getRenderRowKey(rowData);
+  const { setActiveCell } = useGridInteractionActions();
   const readOnly = useReadOnly();
   const columnData = useMemo(() => columns[column.index], [columns, column.index]);
-  const { hoverRowId } = useGridContext();
   const { field } = useFieldSelector(columnData.fieldId || '');
   const fieldType = field ? (Number(field?.get(YjsDatabaseKey.type)) as FieldType) : undefined;
   const disableRelationRollupEdit = isFieldEditingDisabled(fieldType);
@@ -45,13 +48,10 @@ function GridVirtualColumn({
       ].includes(fieldType as FieldType) || disableRelationRollupEdit,
     [disableRelationRollupEdit, fieldType]
   );
-  const isActiveCell =
-    !notNeedSelected &&
-    activeCell &&
-    fieldType !== undefined &&
-    activeCell.rowId === rowData.rowId &&
-    activeCell.fieldId === columnData.fieldId;
-  const isHoverRow = hoverRowId === rowData.rowId && !isActiveCell;
+  const active = useIsGridCellActive(rowKey, columnData.fieldId || '');
+  const hovered = useIsGridRowHovered(rowKey, Boolean(columnData.isPrimary));
+  const isActiveCell = !notNeedSelected && active && fieldType !== undefined && columnData.fieldId !== undefined;
+  const isHoverRow = hovered && !isActiveCell;
 
   const showActions = Boolean(isHoverRow && columnData.isPrimary && rowData.rowId);
   const rowType = rowData.type;
@@ -59,6 +59,9 @@ function GridVirtualColumn({
   return (
     <div
       data-column-id={columnData.fieldId}
+      data-row-key={rowKey}
+      data-active-cell={isActiveCell || undefined}
+      data-hover-row={isHoverRow || undefined}
       key={column.key}
       data-is-primary={columnData.isPrimary}
       onClick={(e) => {
@@ -73,6 +76,7 @@ function GridVirtualColumn({
           e.stopPropagation();
           setActiveCell({
             rowId: rowData.rowId,
+            rowKey,
             fieldId: columnData.fieldId,
           });
         }

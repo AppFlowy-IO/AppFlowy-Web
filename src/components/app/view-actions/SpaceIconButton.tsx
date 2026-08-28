@@ -11,28 +11,37 @@ function SpaceIconButton({
   spaceName,
   onSelectSpaceIcon,
   onSelectSpaceIconColor,
+  onChange,
   size,
   container,
+  disabled = false,
 }: {
   spaceIconColor?: string;
   spaceIcon?: string;
   spaceName: string;
-  onSelectSpaceIcon: (icon: string) => void;
-  onSelectSpaceIconColor: (color: string) => void;
+  onSelectSpaceIcon?: (icon: string) => void;
+  onSelectSpaceIconColor?: (color: string) => void;
+  onChange?: (icon: string, color: string) => void;
   size?: number;
   container: HTMLDivElement;
+  disabled?: boolean;
 }) {
   const [spaceIconEditing, setSpaceIconEditing] = React.useState<boolean>(false);
 
   return (
     <CustomIconPopover
+      enable={!disabled}
       onSelectIcon={({ value, color }) => {
-        onSelectSpaceIcon(value);
-        onSelectSpaceIconColor(color || '');
+        const nextColor = color || '';
+
+        onChange?.(value, nextColor);
+        onSelectSpaceIcon?.(value);
+        onSelectSpaceIconColor?.(nextColor);
       }}
       removeIcon={() => {
-        onSelectSpaceIcon('');
-        onSelectSpaceIconColor('');
+        onChange?.('', '');
+        onSelectSpaceIcon?.('');
+        onSelectSpaceIconColor?.('');
       }}
       defaultActiveTab={'icon'}
       tabs={['icon']}
@@ -41,7 +50,9 @@ function SpaceIconButton({
       <Avatar
         variant={'rounded'}
         className={`aspect-square h-10 w-10 rounded-[30%] bg-transparent`}
-        onMouseEnter={() => setSpaceIconEditing(true)}
+        onMouseEnter={() => {
+          if (!disabled) setSpaceIconEditing(true);
+        }}
         onMouseLeave={() => setSpaceIconEditing(false)}
         onClick={() => {
           setSpaceIconEditing(false);
@@ -57,7 +68,7 @@ function SpaceIconButton({
           className={'h-full w-full !p-2'}
           char={spaceIcon ? undefined : spaceName.slice(0, 1)}
         />
-        {spaceIconEditing && (
+        {!disabled && spaceIconEditing && (
           <div className={'absolute inset-0 cursor-pointer rounded-[8px] bg-black bg-opacity-30'}>
             <div className={'flex h-full w-full items-center justify-center text-white'}>
               <EditIcon />

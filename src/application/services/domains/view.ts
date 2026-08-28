@@ -1,5 +1,6 @@
 export {
   getAppOutline as getOutline,
+  getViewNavigation as getNavigation,
   getViews as getMultiple,
   getAppFavorites as getFavorites,
   getAppRecent as getRecent,
@@ -9,6 +10,37 @@ export {
 } from '../js-services/http/view-api';
 export {
   getAppViewCached as get,
+  getCachedAppView as getCached,
+  getCachedAppViewFromDisk as getCachedFromDisk,
   invalidateViewCache as invalidateCache,
+  invalidateWorkspaceViewMemoryCache as invalidateWorkspaceMemoryCache,
+  refreshAppViewCache as refresh,
+  getAppTrashCached as getTrashCached,
+  refreshAppTrashCache as refreshTrash,
   getAppDatabaseViewRelationsFromCollab as getDatabaseRelations,
 } from '../js-services/cached-api';
+export {
+  databaseCatalogViewToView,
+  type DatabaseContainerCatalogEntry,
+  getDatabaseContainerEntries,
+  getDatabaseContainerView,
+  getDatabaseIdFromWorkspaceCatalog,
+  getDatabasePrimaryView,
+  getCachedWorkspaceDatabaseCatalog,
+  getWorkspaceDatabaseCatalogRevision,
+  getWorkspaceDatabaseCatalog as getDatabaseCatalog,
+  getWorkspaceDatabaseCatalog,
+  getViewIdFromWorkspaceCatalog,
+  invalidateWorkspaceDatabaseCatalog as invalidateDatabaseCatalog,
+  invalidateWorkspaceDatabaseCatalog,
+  refreshWorkspaceDatabaseCatalog,
+  subscribeWorkspaceDatabaseCatalog,
+} from '../js-services/workspace-database-catalog';
+export {
+  clearWorkspaceViewMetadataCache as clearMetadataCache,
+  getCachedWorkspaceViewMetadata as getCachedMetadata,
+  invalidateWorkspaceViewMetadata as invalidateMetadata,
+  primeWorkspaceViewMetadata as primeMetadata,
+  primeWorkspaceViewMetadataFields as primeMetadataFields,
+  resolveWorkspaceViewMetadata as resolveMetadata,
+} from '../js-services/workspace-view-metadata';

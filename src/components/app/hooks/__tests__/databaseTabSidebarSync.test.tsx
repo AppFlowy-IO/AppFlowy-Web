@@ -43,6 +43,8 @@ jest.mock('@/components/app/app.hooks', () => {
       updatePage: jest.fn(),
       uploadFile: jest.fn(),
     }),
+    useCurrentWorkspaceIdOptional: () => 'test-workspace',
+    useRefreshOutline: () => jest.fn(),
   };
 });
 
@@ -188,20 +190,14 @@ describe('Database tab ↔ sidebar selection sync', () => {
       const activeViewId = tabViewId || routeViewId;
       const viewIds = useMemo(() => [gridId, boardId, calendarId], []);
 
-      const handleSidebarClick = useCallback(
-        (viewId: string) => {
-          setRouteViewId(viewId);
-          setTabViewId(null);
-        },
-        []
-      );
+      const handleSidebarClick = useCallback((viewId: string) => {
+        setRouteViewId(viewId);
+        setTabViewId(null);
+      }, []);
 
-      const handleTabClick = useCallback(
-        (viewId: string) => {
-          setTabViewId(viewId);
-        },
-        []
-      );
+      const handleTabClick = useCallback((viewId: string) => {
+        setTabViewId(viewId);
+      }, []);
 
       return (
         <>

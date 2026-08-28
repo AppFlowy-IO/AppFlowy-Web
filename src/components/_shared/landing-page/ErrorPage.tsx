@@ -1,30 +1,29 @@
-import { useCallback, useState } from 'react';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ReactComponent as ErrorLogo } from '@/assets/icons/warning_logo.svg';
+import { getLandingPageErrorContent, LandingPageError } from '@/components/_shared/landing-page/errorContent';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { Progress } from '@/components/ui/progress';
 
 interface ErrorPageProps {
   onRetry?: () => Promise<void>;
-  error?: {
-    code?: number;
-    message?: string;
-  };
+  error?: LandingPageError;
+  title?: ReactNode;
+  description?: ReactNode;
 }
 
-export function ErrorPage({ onRetry, error }: ErrorPageProps) {
+export function ErrorPage({ onRetry, error, title, description }: ErrorPageProps) {
   const { t } = useTranslation();
 
   const [loading, setLoading] = useState(false);
+  const errorContent = useMemo(() => getLandingPageErrorContent(error, t), [error, t]);
 
   const handleCopyError = useCallback(async () => {
     if (!error) return;
 
-    const errorText = error.code
-      ? `Error: ${error.message}\nCode: ${error.code}`
-      : `Error: ${error.message}`;
+    const errorText = error.code ? `Error: ${error.message}\nCode: ${error.code}` : `Error: ${error.message}`;
 
     try {
       await navigator.clipboard.writeText(errorText);
@@ -38,20 +37,15 @@ export function ErrorPage({ onRetry, error }: ErrorPageProps) {
   return (
     <LandingPage
       Logo={ErrorLogo}
-      title={t('landingPage.error.title')}
+      title={title ?? errorContent.title}
       description={
         <>
-          <div>
-            {t('landingPage.error.descriptionShort', 'This might be due to a network issue or a temporary server error. Please check your internet connection or try again later.')}
-          </div>
+          <div>{description ?? errorContent.description}</div>
           <div className='mt-4'>
             {t('landingPage.error.contactSupport', 'If the problem persists, ')}
             {error?.message && (
               <>
-                <span
-                  onClick={handleCopyError}
-                  className='cursor-pointer text-text-action hover:underline'
-                >
+                <span onClick={handleCopyError} className='cursor-pointer text-text-action hover:underline'>
                   {t('landingPage.error.copyError', 'copy error')}
                 </span>
                 {' and '}

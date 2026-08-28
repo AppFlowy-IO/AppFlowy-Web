@@ -6,7 +6,9 @@ import { ViewLayout } from '@/application/types';
 import { canBeMoved } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
+import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { ViewService, PageService } from '@/application/services/domains';
 import { findView } from '@/components/_shared/outline/utils';
@@ -20,7 +22,9 @@ import {
 } from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
-import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
 
 const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
 
@@ -28,11 +32,23 @@ function MoreActionsContent({
   itemClicked,
   viewId,
   onOpenHistory,
+  onFindAndReplace,
+  canDuplicateActions = true,
+  canEditActions = canDuplicateActions,
+  canManageActions = true,
+  canUsePageHistory = true,
+  isLoadingActions = false,
 }: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
   onOpenHistory?: () => void;
+  onFindAndReplace?: () => void;
+  canDuplicateActions?: boolean;
+  canEditActions?: boolean;
+  canManageActions?: boolean;
+  canUsePageHistory?: boolean;
+  isLoadingActions?: boolean;
 }) {
   const { t } = useTranslation();
   const { openDeleteModal, showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
@@ -75,7 +91,7 @@ function MoreActionsContent({
         source: 0,
       });
       void refreshOutline?.();
-      // The shallow outline (depth=2) doesn't include children beyond space level.
+      // The bounded outline (depth=6) may not include deeply nested children.
       // Reload the parent view's children so the new duplicate appears in the sidebar.
       if (parentViewId) {
         ViewService.invalidateCache(workspaceId, parentViewId);
@@ -109,19 +125,62 @@ function MoreActionsContent({
   }, []);
 
   const isDocument = layout === ViewLayout.Document;
+  const isLocked = !!view?.is_locked;
+
+  const handleToggleLock = useCallback(async () => {
+    if (!workspaceId || !view) return;
+    const next = !view.is_locked;
+
+    try {
+      await PageService.update(workspaceId, viewId, {
+        name: view.name,
+        icon: view.icon ?? undefined,
+        is_locked: next,
+      });
+      void refreshOutline?.();
+      toast.success(next ? t('lockPage.pageLockedToast') : t('lockPage.pageUnlockedToast'));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }, [workspaceId, view, viewId, refreshOutline, t]);
 
   return (
     <DropdownMenuGroup>
       <div ref={containerRef} />
-      <DropdownMenuItem
-        data-testid={'more-page-duplicate'}
-        className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
-        onSelect={handleDuplicateClick}
-      >
-        <DuplicateIcon />
-        {t('button.duplicate')}
-      </DropdownMenuItem>
-      {container && (
+      {canEditActions && isDocument && (
+        <>
+          <DropdownMenuItem
+            data-testid={'more-page-lock'}
+            onSelect={(event) => {
+              event.preventDefault();
+              void handleToggleLock();
+            }}
+          >
+            <LockIcon />
+            <span className={'flex-1'}>{t('disclosureAction.lockPage')}</span>
+            <Switch checked={isLocked} tabIndex={-1} aria-hidden className={'pointer-events-none'} />
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+        </>
+      )}
+      {canDuplicateActions && (
+        <DropdownMenuItem
+          data-testid={'more-page-duplicate'}
+          className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
+          onSelect={handleDuplicateClick}
+        >
+          <DuplicateIcon />
+          {t('button.duplicate')}
+        </DropdownMenuItem>
+      )}
+      {isLoadingActions && (
+        <DropdownMenuItem data-testid='more-actions-permission-loading' disabled>
+          <Progress variant='primary' />
+          {t('loading')}
+        </DropdownMenuItem>
+      )}
+      {canManageActions && container && (
         <MovePagePopover
           viewId={viewId}
           onMoved={itemClicked}
@@ -144,18 +203,33 @@ function MoreActionsContent({
         </MovePagePopover>
       )}
 
-      <DropdownMenuItem
-        data-testid='view-action-delete'
-        variant={'destructive'}
-        onSelect={() => {
-          openDeleteModal(viewId);
-        }}
-      >
-        <DeleteIcon />
-        {t('button.delete')}
-      </DropdownMenuItem>
+      {isDocument && onFindAndReplace && (
+        <DropdownMenuItem
+          data-testid={'more-page-find-and-replace'}
+          onSelect={(event) => {
+            event.preventDefault();
+            onFindAndReplace();
+          }}
+        >
+          <SearchIcon />
+          {t('shareAction.findAndReplace')}
+        </DropdownMenuItem>
+      )}
 
-      {isDocument && onOpenHistory && (
+      {canManageActions && (
+        <DropdownMenuItem
+          data-testid='view-action-delete'
+          variant={'destructive'}
+          onSelect={() => {
+            openDeleteModal(viewId);
+          }}
+        >
+          <DeleteIcon />
+          {t('button.delete')}
+        </DropdownMenuItem>
+      )}
+
+      {canUsePageHistory && isDocument && onOpenHistory && (
         <DropdownMenuItem
           data-testid='more-page-version-history'
           onSelect={(event) => {

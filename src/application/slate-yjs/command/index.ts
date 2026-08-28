@@ -2,6 +2,7 @@ import isEqual from 'lodash-es/isEqual';
 import { BasePoint, BaseRange, Editor, Element, Node, NodeEntry, Path, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
+import { isDatabaseBlockType } from '@/application/database-block';
 import { LIST_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -43,7 +44,11 @@ import {
   reorderRow,
   updateTableData,
 } from '@/application/slate-yjs/utils/simple-table-operations';
-import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
+import {
+  ensureValidSelection,
+  findNearestValidSelection,
+  isValidSelection,
+} from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
   deepCopyBlock,
@@ -71,6 +76,45 @@ import { EditorInlineAttributes } from '@/slate-editor';
 import { Log } from '@/utils/log';
 import { renderDate } from '@/utils/time';
 
+type MentionTextContent = NonNullable<EditorInlineAttributes['mention']>;
+
+function getMentionDataTitle(mention: MentionTextContent) {
+  const title = mention.data?.title;
+
+  return typeof title === 'string' && title.length > 0 ? title : undefined;
+}
+
+function getMentionTextContent(mention: MentionTextContent): string {
+  if (mention.type === MentionType.Date) {
+    const date = mention.date || '';
+    const isUnix = date?.length === 10;
+
+    return renderDate(date, 'MMM DD, YYYY', isUnix);
+  }
+
+  if (mention.type === MentionType.Person) {
+    const title = getMentionDataTitle(mention);
+
+    return mention.person_name || title || mention.person_id || '';
+  }
+
+  if (mention.type === MentionType.externalLink) {
+    return mention.url || getMentionDataTitle(mention) || '';
+  }
+
+  if (mention.type === MentionType.PageRef && mention.database_id && (mention.row_id || mention.database_row_id)) {
+    const title = getMentionDataTitle(mention);
+
+    if (title) return title;
+
+    return mention.row_id || mention.database_row_id || '';
+  }
+
+  const name = document.querySelector('[data-mention-id="' + mention.page_id + '"]')?.textContent || '';
+
+  return name || getMentionDataTitle(mention) || '';
+}
+
 export const CustomEditor = {
   getEditorContent(editor: YjsEditor) {
     const allNodes = editor.children ?? [];
@@ -97,16 +141,7 @@ export const CustomEditor = {
       }
 
       if (node.mention) {
-        if (node.mention.type === MentionType.Date) {
-          const date = node.mention.date || '';
-          const isUnix = date?.length === 10;
-
-          return renderDate(date, 'MMM DD, YYYY', isUnix);
-        } else {
-          const name = document.querySelector('[data-mention-id="' + node.mention.page_id + '"]')?.textContent || '';
-
-          return name;
-        }
+        return getMentionTextContent(node.mention);
       }
 
       return node.text || '';
@@ -470,6 +505,26 @@ export const CustomEditor = {
   },
 
   toggleToggleList(editor: YjsEditor, blockId: string) {
+    ensureValidSelection(editor);
+
+    // The published view renders with a static Slate editor that has no Yjs
+    // shared root. Toggle the collapsed state directly on the Slate node so the
+    // block can still be expanded/collapsed in read-only mode.
+    if (!editor.sharedRoot) {
+      const entry = findSlateEntryByBlockId(editor, blockId);
+
+      if (!entry) {
+        Log.warn('Toggle list block not found', blockId);
+        return;
+      }
+
+      const [node, path] = entry;
+      const data = (node.data || {}) as ToggleListBlockData;
+
+      Transforms.setNodes(editor, { data: { ...data, collapsed: !data.collapsed } } as Partial<Element>, { at: path });
+      return;
+    }
+
     const sharedRoot = getSharedRoot(editor);
     const data = dataStringTOJson(getBlock(blockId, sharedRoot).get(YjsEditorKey.block_data)) as ToggleListBlockData;
     const { selection } = editor;
@@ -786,16 +841,9 @@ export const CustomEditor = {
       return;
     }
 
-    // Skip focus and selection for database blocks (Grid, Board, Calendar, Chart)
-    // as they open in a modal and don't need cursor positioning
-    const isDatabaseBlock = [
-      BlockType.GridBlock,
-      BlockType.BoardBlock,
-      BlockType.CalendarBlock,
-      BlockType.ChartBlock,
-    ].includes(type);
-
-    if (isDatabaseBlock) {
+    // Skip focus and selection for database blocks as they open in a modal and
+    // don't need cursor positioning.
+    if (isDatabaseBlockType(type)) {
       return newBlockId;
     }
 
@@ -900,9 +948,14 @@ export const CustomEditor = {
     ReactEditor.focus(editor);
   },
 
-  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string) {
+  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string, options?: { data?: BlockData }) {
     const sharedRoot = getSharedRoot(editor);
     const block = getBlock(blockId, sharedRoot);
+
+    if (!block) {
+      Log.warn('Block not found');
+      return;
+    }
 
     const parent = getParent(blockId, sharedRoot);
     const prevIndex = getBlockIndex(prevId || blockId, sharedRoot);
@@ -918,7 +971,7 @@ export const CustomEditor = {
       sharedRoot,
       [
         () => {
-          newBlockId = deepCopyBlock(sharedRoot, block);
+          newBlockId = deepCopyBlock(sharedRoot, block, options?.data, true);
 
           if (!newBlockId) {
             Log.warn('Copied block not found');

@@ -9,6 +9,7 @@ export enum TAB_KEY {
   UPLOAD = 'upload',
   EMBED_LINK = 'embed_link',
   UNSPLASH = 'unsplash',
+  EMOJI = 'emoji',
 }
 
 export type TabOption = {

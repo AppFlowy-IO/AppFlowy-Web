@@ -1,43 +1,59 @@
+import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
   ChecklistCellData,
   SelectOption,
+  SelectOptionColor,
   generateOptionId,
   getDateCellStr,
+  parseChecklistData,
+  parseDesktopChecklistText,
+  parseDesktopDateToUnixSeconds,
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
   stringifyChecklist,
 } from '@/application/database-yjs/fields';
-import { parseCheckboxValue, parseTimeStringToMs } from '@/application/database-yjs/fields/text/utils';
+import {
+  parseDesktopNumberValue,
+  parseNumberTypeOptions,
+  stringifyDesktopNumberValue,
+} from '@/application/database-yjs/fields/number/parse';
+import { isFileMediaItem } from '@/application/database-yjs/fields/media/parse';
+import {
+  parseCheckboxValue,
+  parseDesktopCheckboxValue,
+  parseDesktopI64,
+  parseTimeStringToMs,
+} from '@/application/database-yjs/fields/text/utils';
 import { User, YDatabaseCell, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
+import { getCellFieldTypeContext } from './cell.field-type';
 import { Cell, DateTimeCell, FileMediaCell, FileMediaCellData } from './cell.type';
 
-export function parseYDatabaseCommonCellToCell(cell: YDatabaseCell): Cell {
+export function parseYDatabaseCommonCellToCell(cell: YDatabaseCell, fieldType?: FieldType): Cell {
   return {
     createdAt: Number(cell.get(YjsDatabaseKey.created_at)),
     lastModified: Number(cell.get(YjsDatabaseKey.last_modified)),
-    fieldType: parseInt(cell.get(YjsDatabaseKey.field_type)) as FieldType,
+    fieldType: fieldType ?? getCellFieldTypeContext(cell).targetType,
     data: cell.get(YjsDatabaseKey.data),
   };
 }
 
 export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseField): Cell {
-  const cellType = parseInt(cell.get(YjsDatabaseKey.field_type));
-  const sourceType = Number(
-    cell.get(YjsDatabaseKey.source_field_type) ?? cellType
-  ) as FieldType;
+  const { storedType, targetType } = getCellFieldTypeContext(cell, field);
 
-  let value = parseYDatabaseCommonCellToCell(cell);
+  let value = parseYDatabaseCommonCellToCell(cell, targetType);
 
-  if (sourceType !== cellType) {
-    value.data = transformCellData(cell, sourceType, cellType, field);
+  if (storedType !== targetType) {
+    value.data = isCellDataTransformable(storedType, targetType)
+      ? transformCellData(cell, storedType, targetType, field)
+      : '';
   }
 
-  if (cellType === FieldType.DateTime) {
-    if (sourceType !== FieldType.DateTime) {
+  if (targetType === FieldType.DateTime) {
+    if (storedType !== FieldType.DateTime) {
       value = {
         ...value,
         fieldType: FieldType.DateTime,
@@ -52,15 +68,58 @@ export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseF
     }
   }
 
-  if (cellType === FieldType.Media) {
-    value = parseYDatabaseFileMediaCellToCell(cell);
+  if (targetType === FieldType.Media) {
+    value =
+      storedType === FieldType.Media
+        ? parseYDatabaseFileMediaCellToCell(cell)
+        : ({ ...value, fieldType: FieldType.Media, data: [] } as FileMediaCell);
   }
 
-  if (cellType === FieldType.Relation) {
-    value = parseYDatabaseRelationCellToCell(cell);
+  if (targetType === FieldType.Relation) {
+    value =
+      storedType === FieldType.Relation
+        ? parseYDatabaseRelationCellToCell(cell)
+        : { ...value, fieldType: FieldType.Relation, data: null };
   }
 
   return value;
+}
+
+/** Direct lazy conversions supported by Desktop's type-option decoder. */
+export function isCellDataTransformable(sourceType: FieldType, targetType: FieldType): boolean {
+  if (sourceType === targetType || targetType === FieldType.RichText) return true;
+
+  if (sourceType === FieldType.RichText) {
+    return [
+      FieldType.SingleSelect,
+      FieldType.MultiSelect,
+      FieldType.URL,
+      FieldType.Number,
+      FieldType.DateTime,
+      FieldType.Time,
+      FieldType.Checklist,
+      FieldType.Checkbox,
+    ].includes(targetType);
+  }
+
+  if (sourceType === FieldType.Checkbox) {
+    return targetType === FieldType.SingleSelect || targetType === FieldType.MultiSelect;
+  }
+
+  if (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) {
+    return (
+      targetType === FieldType.SingleSelect || targetType === FieldType.MultiSelect || targetType === FieldType.Checklist
+    );
+  }
+
+  if (sourceType === FieldType.Checklist) {
+    return targetType === FieldType.SingleSelect || targetType === FieldType.MultiSelect;
+  }
+
+  return (
+    (sourceType === FieldType.CreatedTime || sourceType === FieldType.LastEditedTime) &&
+    targetType === FieldType.DateTime
+  );
 }
 
 function transformCellData(
@@ -80,31 +139,45 @@ function transformCellData(
     case FieldType.Checklist: {
       if (typeof data !== 'string') return '';
       if (sourceType === FieldType.RichText) {
-        const parsed = parseChecklistFlexible(data);
-
-        if (!parsed) return '';
+        const parsed = parseDesktopChecklistText(data);
 
         return stringifyChecklistStruct(parsed);
       }
 
-      if (
-        (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) &&
-        field
-      ) {
-        const typeOption = parseSelectOptionTypeOptions(field);
+      if ((sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) && field) {
+        // Resolve options by the source select type — the field's current type
+        // is Checklist here, so its own type-option holds no select options.
+        const typeOption = parseSelectOptionTypeOptions(field, sourceType);
         const options = typeOption?.options || [];
-        const selectedIds = data.split(',');
+        const selectedIds = new Set(data.split(',').filter(Boolean));
         const checklistOptions: SelectOption[] = [];
         const checklistSelectedIds: string[] = [];
 
         options.forEach((opt) => {
-          const newOpt = { ...opt, id: generateOptionId() };
+          const newOpt = {
+            id: generateOptionId(),
+            name: opt.name,
+            color: SelectOptionColor.OptionColor1,
+          };
 
           checklistOptions.push(newOpt);
-          if (selectedIds.includes(opt.id)) {
+          if (selectedIds.has(opt.id)) {
             checklistSelectedIds.push(newOpt.id);
           }
         });
+
+        if (options.length === 0) {
+          selectedIds.forEach((id) => {
+            const option: SelectOption = {
+              id: generateOptionId(),
+              name: id,
+              color: SelectOptionColor.OptionColor1,
+            };
+
+            checklistOptions.push(option);
+            checklistSelectedIds.push(option.id);
+          });
+        }
 
         return JSON.stringify({
           options: checklistOptions,
@@ -118,11 +191,20 @@ function transformCellData(
     case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
       if (!field) return '';
+
+      // SingleSelect <-> MultiSelect: the switch copies the options 1:1, so the
+      // stored option IDs stay valid — keep them (desktop parity:
+      // SelectOptionIds::from(cell)). Without this the data would be dropped.
+      // Early-return before parsing options (which this path does not need).
+      if (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) {
+        return typeof data === 'string' ? data : '';
+      }
+
       const typeOption = parseSelectOptionTypeOptions(field);
       const options = typeOption?.options || [];
 
       if (sourceType === FieldType.Checklist && typeof data === 'string') {
-        const checklist = parseChecklistFlexible(data);
+        const checklist = parseChecklistData(data);
 
         if (!checklist) return '';
         const selectedIds: string[] = [];
@@ -139,16 +221,23 @@ function transformCellData(
 
       if (sourceType === FieldType.RichText && typeof data === 'string') {
         const names = data.split(',').map((s) => s.trim());
-        const ids = names
-          .map((name) => options.find((o) => o.name === name)?.id)
-          .filter(Boolean);
+        const ids = names.map((name) => options.find((o) => o.name === name)?.id).filter(Boolean);
+
+        if (ids.length === 0) {
+          const exactMatch = options.find((option) => option.name === data);
+
+          if (exactMatch) ids.push(exactMatch.id);
+        }
 
         return ids.join(',');
       }
 
       // Checkbox → SingleSelect/MultiSelect: map "Yes"/"No" to option IDs
-      if (sourceType === FieldType.Checkbox && (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean')) {
-        const isChecked = parseCheckboxValue(data);
+      if (
+        sourceType === FieldType.Checkbox &&
+        (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean')
+      ) {
+        const isChecked = parseDesktopCheckboxValue(data);
         const targetName = isChecked ? 'Yes' : 'No';
         const matchingOption = options.find((o) => o.name === targetName);
 
@@ -160,15 +249,31 @@ function transformCellData(
 
     case FieldType.Number:
       if (typeof data === 'string' || typeof data === 'number') {
-        return String(data);
+        return parseDesktopNumberValue(data, field ? parseNumberTypeOptions(field).format : 0);
       }
 
       return '';
 
+    case FieldType.DateTime: {
+      // text -> DateTime: parse a free-text date into a unix timestamp in
+      // SECONDS (desktop parity: cast_string_to_timestamp). A materialized
+      // Created/LastEditedTime timestamp keeps Desktop's direct i64 value.
+      if (typeof data !== 'string' && typeof data !== 'number') return '';
+      const raw = String(data);
+
+      if (!raw) return '';
+      const parsed =
+        sourceType === FieldType.CreatedTime || sourceType === FieldType.LastEditedTime
+          ? parseDesktopI64(raw)
+          : parseDesktopDateToUnixSeconds(raw);
+
+      return parsed ?? '';
+    }
+
     case FieldType.Checkbox:
       if (sourceType === FieldType.RichText) {
         if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
-          return parseCheckboxValue(data) ? 'Yes' : 'No';
+          return parseDesktopCheckboxValue(data) ? 'Yes' : 'No';
         }
 
         return '';
@@ -178,8 +283,9 @@ function transformCellData(
       if (sourceType === FieldType.SingleSelect || sourceType === FieldType.MultiSelect) {
         if (typeof data === 'string' && data) {
           const selectedIds = data.split(',');
-          // First, try to look up option names from field type_option (if still available)
-          const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
+          // First, try to look up option names from field type_option (if still available).
+          // Resolve by the source select type: the field's current type is Checkbox here.
+          const typeOption = field ? parseSelectOptionTypeOptions(field, sourceType) : null;
           const options = typeOption?.options || [];
           // Check if any selected option has name "Yes" (either by option lookup or direct ID match)
           const hasYes = selectedIds.some((id) => {
@@ -243,8 +349,23 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
     } as FileMediaCell;
   }
 
-  // Convert YArray<string> to FileMediaCellData
-  const dataJson = data.toJSON().map((item: string) => JSON.parse(item)) as FileMediaCellData;
+  // Convert YArray<string> to FileMediaCellData. A cell that was lazily
+  // converted from another list-shaped type still holds that type's entries,
+  // so drop anything that is not a media item rather than throwing.
+  const entries = data.toJSON() as string[];
+  const dataJson: FileMediaCellData = [];
+
+  entries.forEach((item) => {
+    try {
+      const parsed = JSON.parse(item);
+
+      if (isFileMediaItem(parsed)) {
+        dataJson.push(parsed);
+      }
+    } catch (e) {
+      // Not a media entry; skip it.
+    }
+  });
 
   return {
     ...parseYDatabaseCommonCellToCell(cell),
@@ -272,31 +393,16 @@ export function parseYDatabaseRelationCellToCell(cell: YDatabaseCell): Cell {
 }
 
 export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, currentUser?: User): string {
-  const type = parseInt(field.get(YjsDatabaseKey.type));
-  const sourceType = Number(
-    cell.get(YjsDatabaseKey.source_field_type) ?? cell.get(YjsDatabaseKey.field_type)
-  ) as FieldType;
+  const { targetType: type } = getCellFieldTypeContext(cell, field);
+  const parsedCell = parseYDatabaseCellToCell(cell, field);
+  const data = parsedCell.data;
 
   switch (type) {
     case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
-      const data = cell.get(YjsDatabaseKey.data);
       const options = parseSelectOptionTypeOptions(field)?.options || [];
 
       if (typeof data === 'string') {
-        // If the data came from a checklist, map checked items to option names
-        const checklist = parseChecklistFlexible(data);
-
-        if (checklist && sourceType === FieldType.Checklist) {
-          const selectedNames = checklist.selectedOptionIds
-            ?.map((id) => options.find((opt) => opt.id === id || opt.name === id)?.name)
-            .filter(Boolean);
-
-          if (selectedNames?.length) {
-            return selectedNames.join(',');
-          }
-        }
-
         return (
           data
             .split(',')
@@ -314,10 +420,8 @@ export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, curr
     }
 
     case FieldType.Checklist: {
-      const cellData = cell.get(YjsDatabaseKey.data);
-
-      if (typeof cellData === 'string') {
-        const parsed = parseChecklistFlexible(cellData);
+      if (typeof data === 'string') {
+        const parsed = parseChecklistFlexible(data);
 
         if (!parsed) return '';
         return stringifyChecklist(parsed.options || [], parsed.selectedOptionIds || []);
@@ -327,8 +431,6 @@ export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, curr
     }
 
     case FieldType.Checkbox: {
-      const data = cell.get(YjsDatabaseKey.data);
-
       if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
         const isChecked = parseCheckboxValue(data);
 
@@ -339,8 +441,6 @@ export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, curr
     }
 
     case FieldType.Time: {
-      const data = cell.get(YjsDatabaseKey.data);
-
       if (data === undefined || data === null) return '';
 
       if (typeof data === 'number') {
@@ -357,8 +457,6 @@ export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, curr
     }
 
     case FieldType.URL: {
-      const data = cell.get(YjsDatabaseKey.data);
-
       if (typeof data === 'string' || typeof data === 'number') {
         return String(data).trim();
       }
@@ -367,9 +465,7 @@ export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, curr
     }
 
     case FieldType.DateTime: {
-      const dateCell = parseYDatabaseDateTimeCellToCell(cell);
-
-      return getDateCellStr({ cell: dateCell, field, currentUser });
+      return getDateCellStr({ cell: parsedCell as DateTimeCell, field, currentUser });
     }
 
     case FieldType.CreatedTime:
@@ -378,14 +474,7 @@ export function getCellDataText(cell: YDatabaseCell, field: YDatabaseField, curr
       return '';
 
     default: {
-      const data = cell.get(YjsDatabaseKey.data);
-
       if (typeof data === 'string' || typeof data === 'number') {
-        // When displaying as RichText but source is another type, fall back to source-aware stringify
-        if (type === FieldType.RichText && sourceType !== type) {
-          return stringifyFromSource(cell, field, sourceType, currentUser);
-        }
-
         return String(data);
       }
 
@@ -404,7 +493,8 @@ function stringifyFromSource(
 
   switch (sourceType) {
     case FieldType.Number:
-      return typeof data === 'number' || typeof data === 'string' ? String(data) : '';
+      if (typeof data !== 'number' && typeof data !== 'string') return '';
+      return stringifyDesktopNumberValue(data, field ? parseNumberTypeOptions(field, FieldType.Number).format : 0);
     case FieldType.DateTime: {
       const dateCell = parseYDatabaseDateTimeCellToCell(cell);
 
@@ -415,7 +505,9 @@ function stringifyFromSource(
     case FieldType.SingleSelect:
     case FieldType.MultiSelect: {
       if (!field) return '';
-      const options = parseSelectOptionTypeOptions(field)?.options || [];
+      // The field's current type is no longer a select (we are stringifying a
+      // converted-to-text cell), so resolve options by the source select type.
+      const options = parseSelectOptionTypeOptions(field, sourceType)?.options || [];
 
       if (typeof data === 'string') {
         return data
@@ -430,23 +522,22 @@ function stringifyFromSource(
 
     case FieldType.Checkbox:
       if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
-        return parseCheckboxValue(data) ? 'Yes' : 'No';
+        return parseDesktopCheckboxValue(data) ? 'Yes' : 'No';
       }
 
       return '';
     case FieldType.Time:
-      if (typeof data === 'number') return String(data);
-      if (typeof data === 'string') return parseTimeStringToMs(data) ?? data;
+      if (typeof data === 'number' || typeof data === 'string') return parseDesktopI64(data) ?? '';
       return '';
     case FieldType.URL:
       if (typeof data === 'string' || typeof data === 'number') {
-        return String(data).trim();
+        return String(data);
       }
 
       return '';
     case FieldType.Checklist: {
       if (typeof data === 'string') {
-        const parsed = parseChecklistFlexible(data);
+        const parsed = parseChecklistData(data);
 
         if (!parsed) return '';
 
@@ -455,6 +546,38 @@ function stringifyFromSource(
 
       return '';
     }
+
+    case FieldType.CreatedTime:
+    case FieldType.LastEditedTime: {
+      if (typeof data !== 'string' && typeof data !== 'number') return '';
+      const parsedTimestamp = parseDesktopI64(data);
+
+      if (parsedTimestamp === null) return '';
+      return dayjs.unix(Number(parsedTimestamp)).format('MMM DD, YYYY HH:mm');
+    }
+
+    case FieldType.Media: {
+      if (!(data instanceof Y.Array)) return '';
+
+      return data
+        .toArray()
+        .map((item) => {
+          if (typeof item !== 'string') return '';
+          try {
+            const file = JSON.parse(item) as { name?: unknown };
+
+            return typeof file.name === 'string' ? file.name : '';
+          } catch {
+            return '';
+          }
+        })
+        .join(', ');
+    }
+
+    case FieldType.Relation:
+    case FieldType.Person:
+    case FieldType.Rollup:
+      return '';
 
     default:
       return typeof data === 'string' || typeof data === 'number' ? String(data) : '';

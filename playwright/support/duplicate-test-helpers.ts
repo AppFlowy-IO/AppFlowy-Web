@@ -1,8 +1,10 @@
 import { expect, Locator, Page } from '@playwright/test';
+import * as Y from 'yjs';
 import {
   AddPageSelectors,
   BlockSelectors,
   HeaderSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   SlashCommandSelectors,
@@ -11,7 +13,6 @@ import {
 } from './selectors';
 import { createDatabaseView, waitForGridReady } from './database-ui-helpers';
 import { createDocumentPageAndNavigate, currentViewIdFromUrl, ensurePageExpandedByViewId } from './page-utils';
-import { getSlashMenuItemName } from './i18n-constants';
 import {
   changeCheckboxFilterCondition,
   changeFilterCondition,
@@ -45,9 +46,7 @@ export function pageItemByExactText(page: Page, pageName: string, last: boolean 
 }
 
 export function directChildPageItems(page: Page, pageName: string, last: boolean = false): Locator {
-  return pageItemByExactText(page, pageName, last).locator(
-    ':scope > div:nth-child(2) > [data-testid="page-item"]:visible'
-  );
+  return pageItemByExactText(page, pageName, last).locator(itemDirectChildPageItems(true));
 }
 
 async function navigateToSidebarPageItem(
@@ -257,7 +256,7 @@ export async function createChildDocumentUnder(
   await parentItem.locator('> div').first().getByTestId('inline-add-page').first().click({ force: true });
   const popover = page.getByTestId('view-actions-popover');
   await expect(popover).toBeVisible({ timeout: 10000 });
-  await popover.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // The ViewModal dialog opens for the newly created child document.
@@ -281,14 +280,126 @@ export function databaseBlocks(editor: Locator): Locator {
   return editor.locator(BlockSelectors.blockSelector('grid'));
 }
 
+/**
+ * Result of probing the server for a document's persisted database-block count.
+ *
+ * This is deliberately a discriminated union rather than a numeric sentinel: the
+ * probe can fail for six unrelated reasons, and collapsing them all into `-1`
+ * makes a failing `expect.poll` indistinguishable from a genuine count mismatch.
+ * Playwright prints the received value on timeout, so the `error` string lands
+ * directly in the CI log.
+ */
+type ServerDatabaseBlockProbe = { count: number } | { error: string };
+
+/**
+ * Read the auth token the way the app stores it.
+ *
+ * The app persists its session under `token` as a JSON blob
+ * (src/application/session/token.ts). `af_auth_token` is a test-only mirror
+ * written solely by the magic-link helpers in `auth-utils.ts`, so specs that log
+ * in through the real password form never have it. Prefer the app's own key and
+ * keep the mirror as a fallback.
+ */
+async function getAccessToken(page: Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const raw = localStorage.getItem('token');
+
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { access_token?: string };
+
+        if (parsed?.access_token) return parsed.access_token;
+      } catch {
+        // Fall through to the test-only mirror below.
+      }
+    }
+
+    return localStorage.getItem('af_auth_token');
+  });
+}
+
+async function getServerDocumentDatabaseBlockCount(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string
+): Promise<ServerDatabaseBlockProbe> {
+  const pageUrl = page.url();
+  const [, workspaceId] = new URL(pageUrl).pathname.split('/').filter(Boolean);
+
+  if (!workspaceId) return { error: `could not parse workspaceId from URL ${pageUrl}` };
+
+  const token = await getAccessToken(page);
+
+  if (!token) return { error: 'no auth token in localStorage (checked "token" and "af_auth_token")' };
+
+  let encodedCollab: number[] | null = null;
+
+  try {
+    const url = new URL(`/api/workspace/${workspaceId}/page-view/${docViewId}`, apiOrigin);
+
+    url.searchParams.set('_t', Date.now().toString());
+    const response = await page.request.get(url.toString(), {
+      failOnStatusCode: false,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Cache-Control': 'no-cache',
+      },
+    });
+
+    if (!response.ok()) return { error: `GET page-view returned HTTP ${response.status()}` };
+
+    const payload = (await response.json()) as {
+      data?: { data?: { encoded_collab?: number[] } };
+    };
+
+    encodedCollab = payload.data?.data?.encoded_collab ?? null;
+  } catch (e) {
+    return { error: `page-view request failed: ${e instanceof Error ? e.message : String(e)}` };
+  }
+
+  if (!encodedCollab) return { error: 'page-view response contained no encoded_collab' };
+
+  const doc = new Y.Doc();
+
+  try {
+    Y.applyUpdate(doc, new Uint8Array(encodedCollab));
+    const document = doc.getMap('data').get('document') as Y.Map<unknown> | undefined;
+    const blocks = document?.get('blocks') as Y.Map<Y.Map<unknown>> | undefined;
+    let count = 0;
+
+    blocks?.forEach((block) => {
+      if (block.get('ty') === 'grid') {
+        count++;
+      }
+    });
+
+    return { count };
+  } catch (e) {
+    return { error: `failed to decode collab update: ${e instanceof Error ? e.message : String(e)}` };
+  } finally {
+    doc.destroy();
+  }
+}
+
+async function waitForDocumentDatabaseBlocksOnServer(
+  page: Page,
+  apiOrigin: string,
+  docViewId: string,
+  expectedCount: number
+): Promise<void> {
+  await expect
+    .poll(() => getServerDocumentDatabaseBlockCount(page, apiOrigin, docViewId), {
+      timeout: 30000,
+      intervals: [250, 500, 1000],
+      message: `Expected document ${docViewId} to persist ${expectedCount} database block(s) before duplication`,
+    })
+    .toEqual({ count: expectedCount });
+}
+
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
   let slateEditor = editor.locator('[data-slate-editor="true"]').first();
 
-  if (
-    !(await slateEditor
-      .isVisible({ timeout: 3000 })
-      .catch(() => false))
-  ) {
+  if (!(await slateEditor.isVisible({ timeout: 3000 }).catch(() => false))) {
     slateEditor = page.locator('[data-slate-editor="true"]').first();
   }
 
@@ -313,6 +424,30 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
   const blockCount = await blocks.count();
   const slashPanel = SlashCommandSelectors.slashPanel(page);
 
+  // Type "/" and wait for the slash panel, retrying the keystroke on slow CI
+  // where the first "/" can race editor focus and silently fail to open the
+  // menu. Each retry strips the stray "/" and re-focuses before trying again.
+  const typeSlashUntilPanel = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.keyboard.type('/', { delay: 50 });
+
+      if (
+        await slashPanel
+          .first()
+          .isVisible({ timeout: 2500 })
+          .catch(() => false)
+      ) {
+        return;
+      }
+
+      await page.keyboard.press('Backspace').catch(() => undefined);
+      await page.waitForTimeout(300);
+      await focusEditorForSlash(page, editor);
+    }
+
+    await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  };
+
   if (line > 0 && blockCount > 0) {
     // Position cursor after the last database block by clicking below it,
     // pressing End to go to the end of the line, then Enter to create a
@@ -332,41 +467,12 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
-    await page.keyboard.type('/', { delay: 50 });
-
-    if (
-      !(await slashPanel
-        .first()
-        .isVisible()
-        .catch(() => false))
-    ) {
-      await page.waitForTimeout(300);
-      await page.keyboard.type('/', { delay: 50 });
-    }
-
-    await expect(slashPanel).toBeVisible({ timeout: 10000 });
-    return;
   } else {
     await focusEditorForSlash(page, editor);
+    await page.waitForTimeout(300);
   }
 
-  await page.waitForTimeout(300);
-  await page.keyboard.type('/', { delay: 50 });
-
-  if (
-    (await slashPanel.count()) === 0 ||
-    !(await slashPanel
-      .first()
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-    await focusEditorForSlash(page, editor);
-    await page.keyboard.type('/', { delay: 50 });
-  }
-
-  await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  await typeSlashUntilPanel();
 }
 
 export async function insertInlineGridViaSlash(page: Page, docViewId: string, line: number = 0): Promise<void> {
@@ -378,17 +484,22 @@ export async function insertInlineGridViaSlash(page: Page, docViewId: string, li
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await openSlashMenuInEditor(page, editor, line);
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
+      const gridOption = BlockSelectors.slashMenuGrid(page);
 
-      const dialog = page.locator('[role="dialog"]');
-      if (await dialog.isVisible().catch(() => false)) {
-        await page.keyboard.press('Escape');
-        await expect(dialog)
-          .not.toBeVisible({ timeout: 5000 })
-          .catch(() => undefined);
-      }
+      await expect(gridOption).toBeVisible({ timeout: 10000 });
+      await gridOption.click();
 
       await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
+
+      // The database ViewModal can mount shortly after the embedded grid. Close
+      // that modal specifically; the editor itself may also live in a dialog.
+      const viewModalClose = page.getByTestId('view-modal-close').last();
+      await viewModalClose.waitFor({ state: 'visible', timeout: 3000 }).catch(() => undefined);
+      if (await viewModalClose.isVisible().catch(() => false)) {
+        await viewModalClose.click();
+        await expect(viewModalClose).toBeHidden({ timeout: 5000 });
+      }
+
       await page.waitForTimeout(1500);
       return;
     } catch (e) {
@@ -412,15 +523,31 @@ export async function insertLinkedGridViaSlash(
 ): Promise<void> {
   const editor = editorForView(page, docViewId);
   await expect(editor).toBeVisible({ timeout: 15000 });
+  const initialBlockCount = await databaseBlocks(editor).count();
+  let lastError: unknown;
 
   // The database picker loads its list from the cached outline at open time.
   // If the outline hasn't propagated the renamed database yet, the picker will
   // show "No databases found". We also retry if the picker itself fails to
   // appear — on slow CI the slash-menu click → picker-open chain is racy.
   for (let attempt = 0; attempt < 3; attempt++) {
+    // Reset per attempt so a stale attempt-0 error is never reported as the
+    // reason a later attempt failed.
+    lastError = undefined;
+    // Flips once the server has confirmed the linked view exists. After that
+    // point the insert has succeeded and must never be retried.
+    let viewCreated = false;
+
     try {
       await openSlashMenuInEditor(page, editor, line);
-      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+      const linkedGridOption = page.getByTestId('slash-menu-linkedGrid');
+
+      await expect(linkedGridOption).toBeVisible({ timeout: 10000 });
+      await linkedGridOption.scrollIntoViewIfNeeded();
+      // Do not force this click. The slash menu scrolls the selected option into
+      // view, and a forced pointer click can land on the adjacent inline-grid
+      // option while that animation is still settling.
+      await linkedGridOption.click();
       await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
 
       const loadingText = page.getByText('Loading...');
@@ -440,13 +567,58 @@ export async function insertLinkedGridViaSlash(
 
       const matchCount = await popover.getByText(databaseName, { exact: false }).count();
       if (matchCount > 0) {
-        await popover.getByText(databaseName, { exact: false }).first().click({ force: true });
-        await page.waitForTimeout(2000);
+        const databaseOption = popover.getByText(databaseName, { exact: false }).first();
+
+        await databaseOption.scrollIntoViewIfNeeded();
+        const [response] = await Promise.all([
+          page.waitForResponse(
+            (candidate) =>
+              candidate.request().method() === 'POST' &&
+              new URL(candidate.url()).pathname.endsWith(`/page-view/${docViewId}/database-view`),
+            { timeout: 30000 }
+          ),
+          databaseOption.click(),
+        ]);
+
+        if (!response.ok()) {
+          throw new Error(`Linked database view creation failed with HTTP ${response.status()}`);
+        }
+
+        // The POST succeeded, so the linked view now exists server-side and the
+        // block will follow. Everything below only *verifies* that; a failure
+        // there is not a failed insert and retrying would create a second view.
+        viewCreated = true;
+
+        const expectedBlockCount = initialBlockCount + 1;
+        const apiOrigin = new URL(response.url()).origin;
+
+        await expect(databaseBlocks(editor)).toHaveCount(expectedBlockCount, { timeout: 30000 });
+        await waitForDocumentDatabaseBlocksOnServer(page, apiOrigin, docViewId, expectedBlockCount);
         return;
       }
     } catch (e) {
-      if (attempt === 2) throw e;
-      // Fall through to cleanup + retry below
+      lastError = e;
+      // A verification failure after a confirmed insert is fatal. Rethrow it
+      // unwrapped so the real cause survives instead of being relabelled as a
+      // block-count corruption by the guard below.
+      if (viewCreated) throw e;
+      // Otherwise the insert itself never landed — fall through to state
+      // validation + cleanup and retry.
+    }
+
+    const currentBlockCount = await databaseBlocks(editor).count();
+
+    if (currentBlockCount !== initialBlockCount) {
+      const cause = lastError instanceof Error ? `: ${lastError.message}` : '';
+
+      throw new Error(
+        `Linked grid insertion changed the database block count before a linked view was confirmed${cause}`
+      );
+    }
+
+    if (attempt === 2) {
+      if (lastError) throw lastError;
+      break;
     }
 
     // Picker didn't appear or database not found — close any open popovers and
@@ -463,6 +635,46 @@ export async function insertLinkedGridViaSlash(
   }
 
   throw new Error(`Database "${databaseName}" not found in linked database picker after multiple retries`);
+}
+
+export async function insertPageReferenceViaSlash(
+  page: Page,
+  docViewId: string,
+  pageName: string,
+  line: number = 0
+): Promise<void> {
+  const editor = editorForView(page, docViewId);
+
+  await expect(editor).toBeVisible({ timeout: 15000 });
+  await openSlashMenuInEditor(page, editor, line);
+  const linkedPageOption = page.getByTestId('slash-menu-linkedDoc');
+
+  await expect(linkedPageOption).toBeVisible({ timeout: 10000 });
+  await linkedPageOption.click();
+  const panel = page.getByTestId('mention-panel');
+
+  await expect(panel).toBeVisible({ timeout: 15000 });
+  const result = panel
+    .locator('[data-option-kind="page"], [data-option-kind="database"]')
+    .filter({ hasText: new RegExp(escapeRegExp(pageName)) })
+    .first();
+
+  // The initial, unfiltered response often already contains the exact page.
+  // Prefer it because the server's full-text endpoint can briefly return no
+  // matches for a database that was renamed only moments ago.
+  if (
+    !(await result.waitFor({ state: 'visible', timeout: 5000 }).then(
+      () => true,
+      () => false
+    ))
+  ) {
+    await page.keyboard.type(pageName, { delay: 30 });
+  }
+
+  await expect(result).toBeVisible({ timeout: 30000 });
+  await result.click();
+  await expect(panel).toBeHidden({ timeout: 10000 });
+  await expect(editor).toContainText(pageName, { timeout: 15000 });
 }
 
 export async function editFirstGridCell(page: Page, gridBlock: Locator, text: string): Promise<void> {
@@ -552,16 +764,37 @@ export async function firstGridCellText(gridBlock: Locator): Promise<string> {
   return (await gridBlock.locator('[data-testid^="grid-cell-"]').first().innerText()).trim();
 }
 
-export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+async function selectFilterFieldForBlock(page: Page, gridBlock: Locator, fieldName: string): Promise<void> {
+  const fieldPattern = new RegExp(`^\\s*${escapeRegExp(fieldName)}\\s*$`);
 
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Name$/ })
-    .first()
-    .click({ force: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(gridBlock.getByTestId('database-grid')).toBeVisible({ timeout: 30000 });
+    await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+
+    const popoverContent = page.locator('[data-slot="popover-content"]').last();
+    await expect(popoverContent).toBeVisible({ timeout: 10000 });
+
+    const fieldItem = popoverContent.locator('[data-item-id]').filter({ hasText: fieldPattern }).first();
+
+    if (
+      await expect(fieldItem)
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      await fieldItem.click({ force: true });
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  throw new Error(`Filter field "${fieldName}" did not appear in the property picker`);
+}
+
+export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
+  await selectFilterFieldForBlock(page, gridBlock, 'Name');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
@@ -572,15 +805,7 @@ export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Loca
 }
 
 export async function addDoneCheckedFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
-
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Done$/ })
-    .first()
-    .click({ force: true });
+  await selectFilterFieldForBlock(page, gridBlock, 'Done');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });

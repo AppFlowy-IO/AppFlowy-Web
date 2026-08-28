@@ -194,13 +194,10 @@ test.describe('Row Document Test', () => {
   });
 
   /**
-   * Repro: pasting a URL as a bookmark in a row's document, then closing
-   * the card immediately, used to lose the bookmark. The LinkPreview block
-   * was inserted via Slate's Transforms.insertNodes, but the slate-yjs
-   * binding's applyInsertNode bails out for non-text nodes — so the block
-   * rendered in Slate's local state but never persisted to the Y.Doc, and
-   * was discarded as soon as the editor unmounted. The fix writes the
-   * block directly to Yjs (matching the markdown-paste path).
+   * Repro: converting a pasted URL to a bookmark in a row's document, then
+   * closing the card immediately, used to lose the bookmark. The first local
+   * update could be enqueued before the row document's server collab existed,
+   * so a fast reopen loaded an empty server document over the local cache.
    */
   test('persists pasted bookmark when card is closed immediately after paste', async ({
     page,
@@ -238,6 +235,8 @@ test.describe('Row Document Test', () => {
 
     const dialog = page.locator('[role="dialog"]');
 
+    await expect(page.getByTestId('paste-as-panel')).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('paste-as-bookmark').click({ force: true });
     await expect(dialog.locator('.link-preview-block')).toBeVisible({ timeout: 5000 });
 
     // When: closing the modal IMMEDIATELY after paste — no debounce window.

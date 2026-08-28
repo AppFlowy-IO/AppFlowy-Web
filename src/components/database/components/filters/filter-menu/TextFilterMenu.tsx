@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { TextFilter, TextFilterCondition, useReadOnly } from '@/application/database-yjs';
@@ -6,20 +6,21 @@ import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
 import TextFilterConditionsSelect
   from '@/components/database/components/filters/filter-menu/TextFilterConditionsSelect';
+import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { Input } from '@/components/ui/input';
 
 function TextFilterMenu ({ filter }: { filter: TextFilter }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const updateFilter = useUpdateFilter();
-  const [value, setValue] = useState<string>(filter.content);
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: filter.content,
+    filterId: filter.id,
+    fieldId: filter.fieldId,
+    updateFilter,
+  });
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setValue(e.target.value);
-    updateFilter({
-      filterId: filter.id,
-      fieldId: filter.fieldId,
-      content: e.target.value,
-    });
+    updateValue(e.target.value);
   };
 
   const displayTextField = useMemo(() => {
@@ -28,7 +29,7 @@ function TextFilterMenu ({ filter }: { filter: TextFilter }) {
 
   return (
     <div
-      className={'flex flex-col gap-2'}
+      className={'flex flex-col gap-1'}
       data-testid="text-filter"
     >
 

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 
 import { CellProps, PersonCell as PersonCellType } from '@/application/database-yjs/cell.type';
 import { MentionablePerson } from '@/application/types';
@@ -20,9 +20,7 @@ import { useMentionableUsersWithAutoFetch } from './useMentionableUsers';
  */
 const ANONYMOUS_RESPONDENT_ID = '00000000-0000-0000-0000-000000000000';
 
-type PersonCellEntry =
-  | { kind: 'member'; user: MentionablePerson }
-  | { kind: 'anonymous'; key: string };
+type PersonCellEntry = { kind: 'member'; user: MentionablePerson } | { kind: 'anonymous'; key: string };
 
 export function PersonCell({
   cell,
@@ -33,6 +31,7 @@ export function PersonCell({
   wrap,
   editing,
   setEditing,
+  onTextChange,
 }: CellProps<PersonCellType>) {
   const selectedUserIds = useMemo(() => {
     if (!cell?.data) return [];
@@ -48,10 +47,7 @@ export function PersonCell({
   // the server about a sentinel that never appears in the directory).
   // The edit menu still receives the full persisted id list so its
   // write path preserves the sentinel when toggling real members.
-  const realUserIds = useMemo(
-    () => selectedUserIds.filter((id) => id !== ANONYMOUS_RESPONDENT_ID),
-    [selectedUserIds],
-  );
+  const realUserIds = useMemo(() => selectedUserIds.filter((id) => id !== ANONYMOUS_RESPONDENT_ID), [selectedUserIds]);
 
   // Skip the network round-trip when the cell contains only the
   // anonymous sentinel — the directory lookup would never match it
@@ -60,7 +56,7 @@ export function PersonCell({
   const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(shouldFetch);
   const userById = useMemo(
     () => new Map(mentionableUsers.map((user) => [user.person_id, user] as const)),
-    [mentionableUsers],
+    [mentionableUsers]
   );
 
   const entries = useMemo<PersonCellEntry[]>(() => {
@@ -84,6 +80,13 @@ export function PersonCell({
   }, [selectedUserIds, userById]);
 
   const isEmpty = entries.length === 0;
+  const searchText = entries
+    .map((entry) => (entry.kind === 'anonymous' ? 'Anonymous' : entry.user.name || entry.user.email || '?'))
+    .join(' ');
+
+  useEffect(() => {
+    onTextChange?.(searchText);
+  }, [onTextChange, searchText]);
 
   const handleOpenChange = useCallback(
     (status: boolean) => {
@@ -102,13 +105,13 @@ export function PersonCell({
       const displayName = user.name || user.email || '?';
 
       return (
-        <div key={user.person_id} className="min-w-fit max-w-[120px]">
-          <div className="flex items-center gap-1">
-            <Avatar className="h-5 w-5">
+        <div key={user.person_id} className='min-w-fit max-w-[120px]'>
+          <div className='flex items-center gap-1'>
+            <Avatar className='h-5 w-5'>
               <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
-              <AvatarFallback className="text-xs">{displayName}</AvatarFallback>
+              <AvatarFallback className='text-xs'>{displayName}</AvatarFallback>
             </Avatar>
-            <span className="truncate text-sm">{displayName}</span>
+            <span className='truncate text-sm'>{displayName}</span>
           </div>
         </div>
       );
@@ -149,12 +152,12 @@ export function PersonCell({
  */
 function AnonymousPersonChip() {
   return (
-    <div className="min-w-fit max-w-[120px]">
-      <div className="flex items-center gap-1">
-        <Avatar className="h-5 w-5 bg-fill-content">
-          <AvatarFallback className="text-xs text-text-tertiary">·</AvatarFallback>
+    <div className='min-w-fit max-w-[120px]'>
+      <div className='flex items-center gap-1'>
+        <Avatar className='h-5 w-5 bg-fill-content'>
+          <AvatarFallback className='text-xs text-text-tertiary'>·</AvatarFallback>
         </Avatar>
-        <span className="truncate text-sm text-text-tertiary">Anonymous</span>
+        <span className='truncate text-sm text-text-tertiary'>Anonymous</span>
       </div>
     </div>
   );

@@ -1,20 +1,29 @@
-import { BasePoint, Element, Text, Transforms } from 'slate';
+import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
-import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import { getBlockEntry, getSharedRoot, getParentSimpleTableCellBlockId, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
+import {
+  getBlockEntry,
+  getSharedRoot,
+  getParentSimpleTableCellBlockId,
+  isInsideSimpleTableCell,
+} from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray, getText } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
+import { BlockType, MentionType, YjsEditorKey } from '@/application/types';
+import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
+import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
+import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
 import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
+import { insertBlocksAtCaret } from '@/components/editor/utils/insert-blocks-at-caret';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
-import { processUrl } from '@/utils/url';
-import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
+import { isSingleURLText, parseAppFlowyPageLink, processUrl, workspaceIdFromAppPathname } from '@/utils/url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -68,10 +77,14 @@ export const withPasted = (editor: ReactEditor) => {
           const cellTexts = extractCellTextsFromHTML(html);
 
           if (cellTexts.length > 0) {
-            const tsvText = cellTexts.map(row => row.join('\t')).join('\n');
+            const tsvText = cellTexts.map((row) => row.join('\t')).join('\n');
 
             return handlePasteIntoTableCells(editor as YjsEditor, blockId, tsvText);
           }
+        }
+
+        if (plainText && isSingleURLText(plainText)) {
+          return handleURLPaste(editor, plainText);
         }
       }
     }
@@ -108,11 +121,11 @@ function extractCellTextsFromHTML(html: string): string[][] {
 
     const result: string[][] = [];
 
-    rows.forEach(row => {
+    rows.forEach((row) => {
       const cells = row.querySelectorAll('td, th');
       const rowTexts: string[] = [];
 
-      cells.forEach(cell => {
+      cells.forEach((cell) => {
         rowTexts.push(cell.textContent?.trim() ?? '');
       });
 
@@ -161,7 +174,7 @@ function handlePasteIntoTableCells(editor: YjsEditor, blockId: string, text: str
     if (cellIndex === -1) return false;
 
     // Parse TSV: split by tabs for columns, newlines for rows
-    const rows = text.split('\n').filter(line => line.length > 0);
+    const rows = text.split('\n').filter((line) => line.length > 0);
 
     if (rows.length === 0) return false;
 
@@ -292,10 +305,11 @@ function handlePlainTextPaste(editor: ReactEditor, text: string): boolean {
 
   // Special case: Single line
   if (lineLength === 1) {
-    const isUrl = !!processUrl(text);
+    const pastedText = text.trim();
+    const isUrl = !!processUrl(pastedText);
 
     if (isUrl) {
-      return handleURLPaste(editor, text);
+      return handleURLPaste(editor, pastedText);
     }
 
     // Check if it's Markdown (even for single line)
@@ -312,6 +326,12 @@ function handlePlainTextPaste(editor: ReactEditor, text: string): boolean {
     }
 
     return false;
+  }
+
+  const fragmentBlocks = parsePlainTextFragments(text);
+
+  if (fragmentBlocks) {
+    return insertParsedBlocks(editor, fragmentBlocks);
   }
 
   // Multi-line text: Check if it's Markdown
@@ -367,56 +387,155 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
 }
 
 /**
- * Handles URL paste (link previews, videos, page references)
+ * Handles URL paste.
+ *
+ * Page links into the current workspace are inserted as page-reference
+ * mentions so they retain the exact view identity and follow live metadata
+ * updates. Every other URL — external sites, other workspaces (whose views a
+ * mention could not resolve here), or database-row links that need their row
+ * title resolved — is pasted as an inline link and the "Paste as" menu
+ * (Mention / URL / Bookmark / Embed) is shown so the user can choose how to
+ * render it.
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
-  // Check for AppFlowy internal links
-  const isAppFlowyLinkUrl = isURL(url, {
-    host_whitelist: [window.location.hostname],
-  });
+  const appFlowyPageLink = parseAppFlowyPageLink(url, window.location.hostname);
+  const currentWorkspaceId = workspaceIdFromAppPathname(window.location.pathname);
 
-  if (isAppFlowyLinkUrl) {
-    const urlObj = new URL(url);
-    const blockId = urlObj.searchParams.get('blockId');
+  if (
+    appFlowyPageLink &&
+    !appFlowyPageLink.rowId &&
+    currentWorkspaceId &&
+    appFlowyPageLink.workspaceId.toLowerCase() === currentWorkspaceId.toLowerCase()
+  ) {
+    const point = editor.selection?.anchor as BasePoint;
 
-    if (blockId) {
-      const pageId = urlObj.pathname.split('/').pop();
-      const point = editor.selection?.anchor as BasePoint;
-
-      if (point) {
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention: {
-              type: MentionType.PageRef,
-              page_id: pageId,
-              block_id: blockId,
-            },
+    if (point) {
+      Transforms.insertNodes(
+        editor,
+        {
+          text: '@',
+          mention: {
+            type: MentionType.PageRef,
+            page_id: appFlowyPageLink.viewId,
+            ...(appFlowyPageLink.blockId ? { block_id: appFlowyPageLink.blockId } : {}),
           },
-          { at: point, select: true, voids: false }
-        );
+        },
+        { at: point, select: true, voids: false }
+      );
 
-        return true;
-      }
+      return true;
     }
   }
 
-  // Check for video URLs
-  const isVideoUrl = isValidVideoUrl(url);
+  // Insert the URL as an inline link and show the "Paste as" menu so the user
+  // can convert it to a Mention / Bookmark / Embed (matches desktop behavior).
+  return insertLinkedURLTextAndShowPasteAsMenu(editor, url);
+}
 
-  if (isVideoUrl) {
-    return insertBlock(editor, {
-      type: BlockType.VideoBlock,
-      data: { url: processUrl(url) || url, ...videoTypeData(VideoType.External) } as VideoBlockData,
-    });
+function cloneRange(range: Range): Range {
+  return {
+    anchor: {
+      path: [...range.anchor.path],
+      offset: range.anchor.offset,
+    },
+    focus: {
+      path: [...range.focus.path],
+      offset: range.focus.offset,
+    },
+  };
+}
+
+function getInsertedURLRange(editor: ReactEditor, url: string, insertionPoint: BasePoint): Range | undefined {
+  const selection = editor.selection;
+
+  if (selection && editor.string(selection) === url) {
+    return cloneRange(selection);
   }
 
-  // Default: Link preview
-  return insertBlock(editor, {
-    type: BlockType.LinkPreview,
-    data: { url } as LinkPreviewBlockData,
+  const end = selection
+    ? Range.end(selection)
+    : { path: insertionPoint.path, offset: insertionPoint.offset + url.length };
+  const start = {
+    path: [...end.path],
+    offset: Math.max(0, end.offset - url.length),
+  };
+  const fallbackRange: Range = {
+    anchor: start,
+    focus: {
+      path: [...end.path],
+      offset: end.offset,
+    },
+  };
+
+  if (Editor.hasPath(editor, start.path) && editor.string(fallbackRange) === url) {
+    return fallbackRange;
+  }
+
+  return undefined;
+}
+
+function dispatchPasteAsMenuEvent(editor: ReactEditor, payload: Omit<PasteAsMenuPayload, 'position'>) {
+  window.setTimeout(() => {
+    try {
+      const rect = getRangeRect();
+      const position = rect
+        ? {
+            top: rect.bottom + 4,
+            left: rect.left,
+          }
+        : undefined;
+      const editorDom = ReactEditor.toDOMNode(editor, editor);
+
+      editorDom.dispatchEvent(
+        new CustomEvent<PasteAsMenuPayload>(PASTE_AS_MENU_EVENT, {
+          detail: {
+            ...payload,
+            position,
+          },
+        })
+      );
+    } catch (error) {
+      console.error('Error showing paste-as menu:', error);
+    }
   });
+}
+
+function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string): boolean {
+  const href = processUrl(url) || url;
+
+  if (!editor.selection) return false;
+
+  if (Range.isExpanded(editor.selection)) {
+    Transforms.delete(editor);
+  }
+
+  const point = editor.selection?.anchor as BasePoint | undefined;
+
+  if (!point) return false;
+
+  editor.insertText(url);
+
+  const insertedRange = getInsertedURLRange(editor, url, point);
+
+  if (insertedRange) {
+    // Adding the href mark splits a URL pasted after existing text into a new
+    // Slate leaf. Track the range through that split so Paste as actions still
+    // target the URL instead of silently failing validation against a stale
+    // path.
+    const insertedRangeRef = Editor.rangeRef(editor, insertedRange, { affinity: 'inward' });
+
+    Transforms.select(editor, insertedRange);
+    editor.addMark(EditorMarkFormat.Href, href);
+    const linkedRange = insertedRangeRef.unref();
+
+    if (linkedRange) {
+      Transforms.select(editor, linkedRange);
+      Transforms.collapse(editor, { edge: 'end' });
+      dispatchPasteAsMenuEvent(editor, { url, range: linkedRange });
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -424,7 +543,8 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
  */
 function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean {
   const blocks = lines
-    .filter(Boolean)
+    .map((line) => line.replace(/\uFEFF/g, ''))
+    .filter((line) => line.trim().length > 0)
     .map((line) => ({
       type: BlockType.Paragraph,
       data: {},
@@ -437,62 +557,18 @@ function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean
 }
 
 /**
- * Helper to insert a single block (for URL handlers).
- *
- * Writes directly to Yjs via slateContentInsertToYData rather than going
- * through Transforms.insertNodes — Slate's applyInsertNode binding short-
- * circuits for non-text nodes (see applyToYjs.ts), so embed blocks like
- * LinkPreview/VideoBlock would render in Slate's local state but never
- * persist to the Y.Doc. The block was lost as soon as the editor unmounted
- * (e.g. closing a database row card right after pasting a URL).
- */
-function insertBlock(editor: ReactEditor, block: { type: BlockType; data: object }): boolean {
-  const point = editor.selection?.anchor;
-
-  if (!point) return false;
-
-  try {
-    const entry = getBlockEntry(editor as YjsEditor, point);
-
-    if (!entry) return false;
-
-    const [node] = entry;
-    const blockId = (node as { blockId?: string }).blockId;
-
-    if (!blockId) return false;
-
-    const sharedRoot = getSharedRoot(editor as YjsEditor);
-    const currentBlock = getBlock(blockId, sharedRoot);
-    const parentId = currentBlock.get(YjsEditorKey.block_parent);
-    const parent = getBlock(parentId, sharedRoot);
-    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-    const index = parentChildren.toArray().findIndex((id) => id === blockId);
-    const doc = assertDocExists(sharedRoot);
-
-    // slateContentInsertToYData expects Slate Element shape; the data
-    // payload becomes the Yjs block's `data` field as-is.
-    const slateNode: Element = {
-      type: block.type,
-      data: block.data,
-      children: [{ text: '' }],
-    } as unknown as Element;
-
-    doc.transact(() => {
-      slateContentInsertToYData(parentId, index + 1, [slateNode], doc);
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Error inserting block:', error);
-    return false;
-  }
-}
-
-/**
  * Converts ParsedBlock to Slate Element with proper text wrapper
  */
 function parsedBlockToSlateElement(block: ParsedBlock): Element {
   const { type, data, children } = block;
+
+  if (SIMPLE_TABLE_CONTAINER_BLOCK_TYPES.includes(type)) {
+    return {
+      type,
+      data,
+      children: children.map(parsedBlockToSlateElement),
+    } as Element;
+  }
 
   // Convert text + formats to Slate text nodes
   const textNodes = parsedBlockToTextNodes(block);
@@ -509,6 +585,12 @@ function parsedBlockToSlateElement(block: ParsedBlock): Element {
     children: slateChildren,
   } as Element;
 }
+
+const SIMPLE_TABLE_CONTAINER_BLOCK_TYPES = [
+  BlockType.SimpleTableBlock,
+  BlockType.SimpleTableRowBlock,
+  BlockType.SimpleTableCellBlock,
+];
 
 /**
  * Converts ParsedBlock text to Slate text nodes with formats
@@ -588,6 +670,15 @@ function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
  */
 const TABLE_BLOCK_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
 
+/**
+ * A first pasted paragraph merges inline at the caret. Headings, lists,
+ * quotes, etc. keep their block identity and insert as new blocks, so
+ * pasting "# Title" markdown or an HTML heading never degrades to plain text.
+ */
+function shouldMergeFirstParsedBlockInline(block: ParsedBlock): boolean {
+  return block.type === BlockType.Paragraph && block.children.length === 0 && block.text.length > 0;
+}
+
 function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
   if (blocks.length === 0) return false;
 
@@ -605,27 +696,20 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
 
     if (!blockId) return false;
 
-    const sharedRoot = getSharedRoot(editor as YjsEditor);
-    const block = getBlock(blockId, sharedRoot);
-
     // Check if we're pasting inside a table cell
     const insideTable = isInsideSimpleTableCell(editor as YjsEditor, blockId);
 
     if (insideTable) {
+      const sharedRoot = getSharedRoot(editor as YjsEditor);
+
       // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
-      const cellBlocks = blocks.filter(b => !TABLE_BLOCK_TYPES.includes(b.type));
-      const tableBlocks = blocks.filter(b => TABLE_BLOCK_TYPES.includes(b.type));
+      const cellBlocks = blocks.filter((b) => !TABLE_BLOCK_TYPES.includes(b.type));
+      const tableBlocks = blocks.filter((b) => TABLE_BLOCK_TYPES.includes(b.type));
 
       // Insert text blocks inside the cell
       if (cellBlocks.length > 0) {
-        const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-        const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-        const index = parentChildren.toArray().findIndex((id) => id === blockId);
-        const doc = assertDocExists(sharedRoot);
-        const slateNodes = cellBlocks.map(parsedBlockToSlateElement);
-
-        doc.transact(() => {
-          slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+        insertBlocksAtCaret(editor as YjsEditor, cellBlocks.map(parsedBlockToSlateElement), {
+          mergeFirstBlockInline: shouldMergeFirstParsedBlockInline(cellBlocks[0]),
         });
       }
 
@@ -665,21 +749,12 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
       return true;
     }
 
-    // Normal paste (not inside table cell)
-    const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
-    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-    const index = parentChildren.toArray().findIndex((id) => id === blockId);
-    const doc = assertDocExists(sharedRoot);
-
-    // Convert parsed blocks to Slate elements with proper text wrapper
-    const slateNodes = blocks.map(parsedBlockToSlateElement);
-
-    // Insert into YJS document
-    doc.transact(() => {
-      slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+    // Normal paste (not inside table cell): insert relative to the caret —
+    // a leading paragraph merges inline at the cursor, everything else lands
+    // as sibling blocks below.
+    return insertBlocksAtCaret(editor as YjsEditor, blocks.map(parsedBlockToSlateElement), {
+      mergeFirstBlockInline: shouldMergeFirstParsedBlockInline(blocks[0]),
     });
-
-    return true;
   } catch (error) {
     console.error('Error inserting parsed blocks:', error);
     return false;

@@ -10,6 +10,7 @@ module.exports = {
   modulePaths: [compilerOptions.baseUrl],
   moduleNameMapper: {
     '^.+\\.svg$': '<rootDir>/src/__mocks__/svgrMock.tsx',
+    '^.+\\.(png|jpe?g|gif|webp|avif|ttf|woff2?)$': '<rootDir>/src/__mocks__/fileMock.ts',
     '^@/utils/runtime-config$': '<rootDir>/src/__mocks__/runtime-config.ts',
     ...pathsToModuleNameMapper(compilerOptions.paths),
     '^lodash-es(/(.*)|$)': 'lodash$1',
@@ -29,7 +30,8 @@ module.exports = {
     `node_modules/(?!.pnpm|${esModules})`,
   ],
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
-  testPathIgnorePatterns: ['/node_modules/', '\\.integration\\.test\\.ts$'],
+  testPathIgnorePatterns: ['/node_modules/', '/\\.claude/', '\\.integration\\.test\\.ts$'],
+  modulePathIgnorePatterns: ['<rootDir>/\\.claude/'],
   coverageDirectory: '<rootDir>/coverage/jest',
   collectCoverage: true,
   coverageProvider: 'v8',

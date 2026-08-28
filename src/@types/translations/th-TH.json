@@ -1824,7 +1824,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "คัดลอกลิงก์ไปยังคลิปบอร์ดแล้ว",
-        "convertToLink": "แปลงเป็นลิงค์ฝัง"
+        "convertToLink": "แปลงเป็นลิงค์ฝัง",
+        "pasteAs": {
+          "title": "วางเป็น",
+          "mention": "การกล่าวถึง",
+          "url": "URL",
+          "bookmark": "บุ๊กมาร์ก",
+          "embed": "ฝัง"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "เพิ่มหัวข้อเพื่อสร้างสารบัญ",

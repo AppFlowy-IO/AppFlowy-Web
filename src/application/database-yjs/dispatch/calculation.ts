@@ -14,8 +14,8 @@ import * as Y from 'yjs';
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import { useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { CalculationType } from '@/application/database-yjs/database.type';
+import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { useFieldType } from '@/application/database-yjs/selector';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import { YDatabaseCalculation, YDatabaseCalculations, YjsDatabaseKey } from '@/application/types';
 
 export function useCalculateFieldDispatch(fieldId: string) {
@@ -54,7 +54,8 @@ export function useCalculateFieldDispatch(fieldId: string) {
               item.set(YjsDatabaseKey.calculation_value, newValue);
             },
           ],
-          'calculateFieldDispatch'
+          'calculateFieldDispatch',
+          { type: 'database.calculate-field-value', policy: 'skip' }
         );
       }
     },

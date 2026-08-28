@@ -1,9 +1,11 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { View, ViewIconType, ViewLayout } from '@/application/types';
 import {
+  canBeMoved,
+  canReorderWithinParent,
   getFirstChildView,
   isDatabaseContainer,
   isDatabaseLayout,
@@ -15,9 +17,18 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import {
   useAIEnabled,
   useAppOperations,
+  useCurrentWorkspaceIdOptional,
   useSidebarHighlightedViewIds,
   useSidebarSelectedViewId,
 } from '@/components/app/app.hooks';
+import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
+import AnimatedCollapse from '@/components/app/outline/AnimatedCollapse';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
+import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
+import { cn } from '@/lib/utils';
+
+const EMPTY_ANCESTOR_IDS: readonly string[] = [];
+const SIDEBAR_INDENT_PER_LEVEL = 16;
 
 function ViewItem({
   view,
@@ -30,6 +41,12 @@ function ViewItem({
   parentView,
   loadingViewIds,
   loadedViewIds,
+  reorderInstanceId,
+  canReorder,
+  reorderChildren,
+  pageTreeScopeId,
+  ancestorIds = EMPTY_ANCESTOR_IDS,
+  siblingIds = EMPTY_ANCESTOR_IDS,
 }: {
   view: View;
   width: number;
@@ -41,6 +58,23 @@ function ViewItem({
   parentView?: View;
   loadingViewIds?: Set<string>;
   loadedViewIds?: Set<string>;
+  /** Drag instance of the sibling group this row belongs to (from the parent owner). */
+  reorderInstanceId?: symbol;
+  /** Whether this row can be picked up to reorder within its parent. */
+  canReorder?: boolean;
+  /**
+   * Whether this view lives in a reorderable outline tree (the workspace
+   * sidebar). When true, this view enables drag-to-reorder for its own children
+   * and propagates the flag down. Left false for trees that should not be
+   * reordered (e.g. the Shared-with-me section).
+   */
+  reorderChildren?: boolean;
+  /** Shared scope for moving pages between parents in the real sidebar tree. */
+  pageTreeScopeId?: symbol;
+  /** IDs above this view, used to reject drops that would create a cycle. */
+  ancestorIds?: readonly string[];
+  /** Current display order of the sibling list containing this view. */
+  siblingIds?: readonly string[];
 }) {
   const { t } = useTranslation();
   const selectedViewId = useSidebarSelectedViewId();
@@ -58,6 +92,50 @@ function ViewItem({
     if (aiEnabled) return view.children;
     return view.children?.filter((child) => child.layout !== ViewLayout.AIChat);
   }, [aiEnabled, view.children]);
+
+  const rowRef = useRef<HTMLDivElement>(null);
+  const workspaceId = useCurrentWorkspaceIdOptional();
+  const childIds = useMemo(() => view.children?.map((child) => child.view_id) ?? [], [view.children]);
+  const treeItem = useMemo(() => {
+    if (!pageTreeScopeId || !parentView) return undefined;
+
+    return {
+      scopeId: pageTreeScopeId,
+      parentId: parentView.view_id,
+      currentLevel: level,
+      indentPerLevel: SIDEBAR_INDENT_PER_LEVEL,
+      canMoveAcrossParents: canBeMoved(view, parentView),
+      canAcceptChildren: view.layout === ViewLayout.Document,
+      canAcceptMovedSiblings: parentView.layout === ViewLayout.Document && !isDatabaseContainer(parentView),
+      ancestorIds,
+      siblingIds,
+      childIds,
+    };
+  }, [ancestorIds, childIds, level, pageTreeScopeId, parentView, siblingIds, view]);
+
+  // This row can be dragged to reorder within the group its parent owns.
+  const { dragState, shouldSuppressClick } = useReorderableItem({
+    elementRef: rowRef,
+    id: viewId,
+    dragType: 'sidebar-view',
+    instanceId: reorderInstanceId,
+    canDrag: Boolean(canReorder),
+    treeItem,
+  });
+
+  // This view's own children form a reorderable sibling group (database-container
+  // views or nested pages), reordered within this view as their parent.
+  const childReorderEnabled =
+    Boolean(reorderChildren) &&
+    (pageTreeScopeId ? (visibleChildren?.length ?? 0) > 0 : (visibleChildren?.length ?? 0) > 1);
+  const { orderedItems: orderedChildren, instanceId: childReorderInstanceId } = useReorderableSidebarList({
+    items: visibleChildren ?? [],
+    parentId: viewId,
+    workspaceId,
+    dragType: 'sidebar-view',
+    enabled: childReorderEnabled,
+    errorMessage: 'Failed to reorder pages',
+  });
 
   const handleChangeIcon = useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
@@ -97,7 +175,7 @@ function ViewItem({
   // Dot icon for referenced database views (like desktop)
   const getDotIcon = useCallback(() => {
     return (
-      <span className={'flex h-full w-5 items-center justify-end'}>
+      <span className={'flex h-full w-5 items-center justify-end'} data-testid='database-view-dot'>
         <span className={'p-1.5'}>
           <span className={'block h-1 w-1 rounded-full bg-text-secondary'} />
         </span>
@@ -113,22 +191,27 @@ function ViewItem({
     [uploadFile, viewId]
   );
 
+  // Determine which left icon to show
+  // Use the utility function which properly handles database containers
+  const isRefDatabaseView = isRefDbView(view, parentView);
+  const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
+  const hasConfirmedChildren = Boolean(visibleChildren?.length);
+  // Use server-provided has_children when available; fall back to heuristic for old servers
+  const hasChildren = hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
+
+  // Calculate left padding based on icon presence
+  const showLeftIcon = isRefDatabaseView || hasChildren;
+  const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
+  const dropInstruction =
+    dragState.type === 'over' && dragState.instruction?.type !== 'instruction-blocked'
+      ? dragState.instruction?.type
+      : undefined;
+  const isMakeChildTarget = dropInstruction === 'make-child';
+
   const renderItem = useMemo(() => {
     if (!view) return null;
     if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 
-    // Determine which left icon to show
-    // Use the utility function which properly handles database containers
-    const isRefDatabaseView = isRefDbView(view, parentView);
-    const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
-    const hasConfirmedChildren = Boolean(visibleChildren?.length);
-    // Use server-provided has_children when available; fall back to heuristic for old servers
-    const hasChildren =
-      hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
-
-    // Calculate left padding based on icon presence
-    const showLeftIcon = isRefDatabaseView || hasChildren;
-    const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
     const showPageIcon = !isRefDatabaseView;
 
     // Render left icon: dot for referenced database views, expand icon for views with children
@@ -146,8 +229,10 @@ function ViewItem({
 
     return (
       <div
+        ref={rowRef}
         data-testid={`page-${view.view_id}`}
         data-selected={selected}
+        data-drop-instruction={dropInstruction}
         style={{
           backgroundColor: selected ? 'var(--fill-content-hover)' : undefined,
           cursor: 'pointer',
@@ -158,13 +243,17 @@ function ViewItem({
           setHovered(false);
         }}
         onClick={() => {
+          if (shouldSuppressClick()) return;
+
           const firstChild = getFirstChildView(view);
 
           onClickView?.(firstChild?.view_id ?? viewId);
         }}
-        className={
-          'my-[1px] flex min-h-[30px] w-full cursor-pointer select-none items-center gap-1 overflow-hidden rounded-[8px] px-0.5 py-0.5 text-sm hover:bg-fill-content-hover focus:outline-none'
-        }
+        className={cn(
+          'relative my-[1px] flex min-h-[30px] w-full cursor-pointer select-none items-center gap-1 rounded-[8px] px-0.5 py-0.5 text-sm hover:bg-fill-content-hover focus:outline-none',
+          dragState.type === 'dragging' && 'opacity-40',
+          isMakeChildTarget && 'bg-fill-content-hover ring-1 ring-inset ring-border-theme-thick'
+        )}
       >
         {renderLeftIcon()}
 
@@ -215,12 +304,12 @@ function ViewItem({
   }, [
     aiEnabled,
     view,
-    visibleChildren,
     selected,
-    level,
+    leftPadding,
+    hasChildren,
+    isRefDatabaseView,
     getIcon,
     getDotIcon,
-    parentView,
     onUploadFile,
     handleRemoveIcon,
     t,
@@ -229,10 +318,18 @@ function ViewItem({
     onClickView,
     viewId,
     handleChangeIcon,
-    loadedViewIds,
+    dragState.type,
+    dropInstruction,
+    isMakeChildTarget,
+    shouldSuppressClick,
   ]);
 
-  const isLoadingChildren = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
+  // Children are present in the DOM only once the lazy load has populated them.
+  // Gate the open animation on actual presence (not a loading flag) so the
+  // Collapse opens against real content and animates on the first expand.
+  const childrenPresent = orderedChildren.length > 0;
+  const childAncestorIds = useMemo(() => [...ancestorIds, viewId], [ancestorIds, viewId]);
+  const orderedChildIds = useMemo(() => orderedChildren.map((child) => child.view_id), [orderedChildren]);
 
   const renderChildren = useMemo(() => {
     if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
@@ -243,28 +340,13 @@ function ViewItem({
     const parentIsContainer = isDatabaseContainer(view);
     const childRenderExtra = parentIsDatabaseLayout || parentIsContainer ? undefined : renderExtra;
 
+    // No loading shimmer here: lazy child loads are fast, and a fixed-height
+    // placeholder spikes then collapses (a visible flicker). The content just
+    // slides in via AnimatedCollapse once it's ready.
     return (
-      <div
-        className={'flex w-full transform flex-col overflow-hidden transition-all'}
-        style={{
-          display: isExpanded ? 'block' : 'none',
-        }}
-      >
-        {isLoadingChildren ? (
-          <div className={'flex flex-col'}>
-            {[96, 72, 88].map((w, i) => (
-              <div
-                key={i}
-                className={'flex min-h-[30px] items-center gap-1.5 px-0.5 py-1'}
-                style={{ paddingLeft: `${(level + 1) * 16}px` }}
-              >
-                <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
-                <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          visibleChildren?.map((child) => (
+      <AnimatedCollapse expanded={isExpanded && childrenPresent} className={'w-full'}>
+        <div className={'flex w-full flex-col'}>
+          {orderedChildren.map((child) => (
             <ViewItem
               level={level + 1}
               key={child.view_id}
@@ -277,22 +359,33 @@ function ViewItem({
               parentView={view}
               loadingViewIds={loadingViewIds}
               loadedViewIds={loadedViewIds}
+              reorderChildren={reorderChildren}
+              reorderInstanceId={childReorderInstanceId}
+              canReorder={canReorderWithinParent(child, view)}
+              pageTreeScopeId={pageTreeScopeId}
+              ancestorIds={childAncestorIds}
+              siblingIds={orderedChildIds}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      </AnimatedCollapse>
     );
   }, [
     aiEnabled,
     toggleExpand,
     onClickView,
     isExpanded,
-    isLoadingChildren,
+    childrenPresent,
     expandIds,
     level,
     renderExtra,
     view,
-    visibleChildren,
+    orderedChildren,
+    reorderChildren,
+    childReorderInstanceId,
+    pageTreeScopeId,
+    childAncestorIds,
+    orderedChildIds,
     width,
     loadingViewIds,
     loadedViewIds,
@@ -305,11 +398,18 @@ function ViewItem({
       style={{
         width,
       }}
-      className={'flex h-fit flex-col overflow-hidden'}
+      className={'relative flex h-fit flex-col overflow-hidden'}
       data-testid='page-item'
     >
       {renderItem}
       {renderChildren}
+      {/* Outside the row so a `bottom` edge sits under this view's expanded children — dropping
+          "after this view" lands after its whole subtree, and the line has to say so. The style is
+          built here rather than memoized: it is only needed mid-drag, and `DropRowLine` is not
+          memoized, so a stable identity would buy nothing on the renders that do not draw it. */}
+      {dragState.type === 'over' ? (
+        <DropRowLine edge={dragState.closestEdge} style={{ left: `${leftPadding}px` }} />
+      ) : null}
     </div>
   );
 }

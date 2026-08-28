@@ -105,6 +105,7 @@ function MobileWorkspaces({ onClose }: { onClose: () => void }) {
               changeLoading={changeLoading || undefined}
               showActions={false}
               useDropdownItem={false}
+              autoScrollContainerRef={ref}
             />
           )}
         </div>

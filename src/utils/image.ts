@@ -125,7 +125,10 @@ const validateImageLoad = (imageUrl: string): Promise<CheckImageResult> => {
 
     // Set a timeout to handle very slow loads
     const timeoutId = setTimeout(() => {
-      resolve(errorResult(408, 'Request Timeout', 'not-ready', 'Image loading timed out'));
+      // External images are never AppFlowy uploads, so a slow load is a network
+      // timeout — not 'not-ready'. Classifying it as 'network' keeps it out of
+      // the "Waiting for upload to finish…" upload-pending state.
+      resolve(errorResult(408, 'Request Timeout', 'network', 'Image loading timed out'));
     }, 10000); // 10 second timeout
 
     img.onload = () => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -11,20 +11,25 @@ import {
 import { SelectOptionCell as SelectOptionCellType } from '@/application/database-yjs/cell.type';
 import { useAddSelectOption, useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
+import { createDatabaseHistoryGroup } from '@/application/database-yjs/history';
 import { YjsDatabaseKey } from '@/application/types';
 import { Tag } from '@/components/_shared/tag';
 import { TagsInput, Tag as TagType } from '@/components/database/components/cell/select-option/TagsInput';
 import Options from '@/components/database/components/property/select/Options';
+import { useGridHistoryScopeId, useRestoreGridHistoryFocus } from '@/components/database/grid/useGridContext';
+import { isDatabaseHistoryHotkey } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
 import { Label } from '@/components/ui/label';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
-function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptionIds }: {
+function SelectOptionCellMenu({
+  open,
+  onOpenChange,
+  fieldId,
+  rowId,
+  selectOptionIds,
+}: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   selectOptionIds: string[];
@@ -32,6 +37,8 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
   fieldId: string;
   rowId: string;
 }) {
+  const historyScopeId = useGridHistoryScopeId();
+  const restoreGridHistoryFocus = useRestoreGridHistoryFocus();
   const { field, clock } = useFieldSelector(fieldId);
   const onCreateOption = useAddSelectOption(fieldId);
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
@@ -52,7 +59,7 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
   const searchValueRef = useRef<string | null>(null);
   const createdShow = useMemo(() => {
     if (!searchValue) return false;
-    return !options.some((option => option.name === searchValue));
+    return !options.some((option) => option.name === searchValue);
   }, [options, searchValue]);
 
   useEffect(() => {
@@ -75,43 +82,50 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
   }, [createdShow, options]);
 
   const tags = useMemo(() => {
-
     if (!typeOption) return [];
 
-    return selectOptionIds.map((id) => {
-      const option = typeOption.options?.find((option) => option?.id === id);
+    return selectOptionIds
+      .map((id) => {
+        const option = typeOption.options?.find((option) => option?.id === id);
 
-      if (!option) return null;
-      return {
-        id: option.id,
-        text: option.name,
-        color: option.color,
-      };
-    }).filter(Boolean) as TagType[];
+        if (!option) return null;
+        return {
+          id: option.id,
+          text: option.name,
+          color: option.color,
+        };
+      })
+      .filter(Boolean) as TagType[];
   }, [selectOptionIds, typeOption]);
 
-  const handleTagsChange = useCallback((newTags: TagType[]) => {
-    const selectedIds = newTags.map((tag) => tag.id);
-    const newData = selectedIds.join(',');
+  const handleTagsChange = useCallback(
+    (newTags: TagType[]) => {
+      const selectedIds = newTags.map((tag) => tag.id);
+      const newData = selectedIds.join(',');
 
-    onUpdateCell(newData);
-  }, [onUpdateCell]);
+      onUpdateCell(newData);
+    },
+    [onUpdateCell]
+  );
 
-  const handleSelectOption = useCallback((optionId: string) => {
-    const isSelected = selectOptionIds.includes(optionId);
+  const handleSelectOption = useCallback(
+    (optionId: string, historyGroup?: object) => {
+      const isSelected = selectOptionIds.includes(optionId);
 
-    if (isSelected) {
-      const newSelectOptionIds = selectOptionIds.filter((id) => id !== optionId);
+      if (isSelected) {
+        const newSelectOptionIds = selectOptionIds.filter((id) => id !== optionId);
 
-      onUpdateCell(newSelectOptionIds.join(','));
-    } else {
-      const newSelectOptionIds = isMultiple ? [...selectOptionIds, optionId] : [optionId];
+        onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
+      } else {
+        const newSelectOptionIds = isMultiple ? [...selectOptionIds, optionId] : [optionId];
 
-      onUpdateCell(newSelectOptionIds.join(','));
-    }
+        onUpdateCell(newSelectOptionIds.join(','), undefined, { historyGroup });
+      }
 
-    setSearchValue('');
-  }, [isMultiple, onUpdateCell, selectOptionIds]);
+      setSearchValue('');
+    },
+    [isMultiple, onUpdateCell, selectOptionIds]
+  );
 
   const handleCreateOption = useCallback(() => {
     const searchValue = searchValueRef.current;
@@ -124,9 +138,11 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
       color: getColorByOption(typeOption?.options || []),
     };
 
-    onCreateOption(newOption);
+    const historyGroup = createDatabaseHistoryGroup();
+
+    onCreateOption(newOption, historyGroup);
     setSearchValue('');
-    handleSelectOption(newOption.id);
+    handleSelectOption(newOption.id, historyGroup);
   }, [handleSelectOption, onCreateOption, typeOption]);
 
   const handleEnter = useCallback(() => {
@@ -140,7 +156,6 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
     }
 
     handleSelectOption(hoveredId);
-
   }, [handleCreateOption, handleSelectOption]);
 
   const handleArrowUp = useCallback(() => {
@@ -175,7 +190,6 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
     const nextHoveredId = previousOption.id;
 
     setHoveredId(nextHoveredId);
-
   }, [createdShow, options]);
 
   const handleArrowDown = useCallback(() => {
@@ -212,31 +226,43 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
     setHoveredId(nextHoveredId);
   }, [createdShow, options]);
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    e.stopPropagation();
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleEnter();
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      handleArrowDown();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      handleArrowUp();
-    }
-  }, [handleArrowDown, handleArrowUp, handleEnter]);
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (!isDatabaseHistoryHotkey(e.nativeEvent) || searchValue !== '') {
+        e.stopPropagation();
+      }
+
+      if (e.key === 'Enter') {
+        e.stopPropagation();
+        e.preventDefault();
+        handleEnter();
+      } else if (e.key === 'ArrowDown') {
+        e.stopPropagation();
+        e.preventDefault();
+        handleArrowDown();
+      } else if (e.key === 'ArrowUp') {
+        e.stopPropagation();
+        e.preventDefault();
+        handleArrowUp();
+      }
+    },
+    [handleArrowDown, handleArrowUp, handleEnter, searchValue]
+  );
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) restoreGridHistoryFocus?.();
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange, restoreGridHistoryFocus]
+  );
 
   return (
-    <Popover
-      modal
-      open={open}
-      onOpenChange={onOpenChange}
-    >
-      <PopoverTrigger
-        className={'absolute left-0 top-0 w-full h-full z-[-1]'}
-      />
+    <Popover modal open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger className={'absolute left-0 top-0 z-[-1] h-full w-full'} />
       <PopoverContent
-        data-testid="select-option-menu"
+        data-testid='select-option-menu'
+        data-database-history-scope={historyScopeId}
         side={'bottom'}
         align={'start'}
         onMouseDown={(e) => {
@@ -246,21 +272,21 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
       >
         <div className={'p-2'}>
           <TagsInput
-            onWheel={e => e.stopPropagation()}
+            onWheel={(e) => e.stopPropagation()}
             autoFocus
-            onMouseDown={e => {
+            onMouseDown={(e) => {
               e.stopPropagation();
             }}
             className={'w-full'}
             multiple={isMultiple}
             tags={tags}
             onKeyDown={handleKeyDown}
+            data-database-history-hotkeys={searchValue === '' ? 'true' : undefined}
             onTagsChange={handleTagsChange}
             inputValue={searchValue}
             onInputChange={setSearchValue}
             inputRef={inputRef}
           />
-
         </div>
 
         <Separator />
@@ -274,27 +300,25 @@ function SelectOptionCellMenu ({ open, onOpenChange, fieldId, rowId, selectOptio
             options={options}
             onHover={setHoveredId}
           />
-          {createdShow ? <div
-            className={cn(
-              'relative flex cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1 min-h-[32px]',
-              'text-sm text-text-secondary outline-hidden select-none',
-              'hover:bg-fill-content-hover hover:text-text-primary',
-              hoveredId === 'create' && 'bg-fill-content-hover text-text-primary',
-            )}
-            onMouseEnter={() => setHoveredId('create')}
-            onClick={(e) => {
-              e.preventDefault();
-              handleCreateOption();
-            }}
-          >
-            {t('button.create')}
-            <Tag
-              label={searchValue}
-            />
-          </div> : null}
-
+          {createdShow ? (
+            <div
+              className={cn(
+                'relative flex min-h-[32px] cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1',
+                'outline-hidden select-none text-sm text-text-secondary',
+                'hover:bg-fill-content-hover hover:text-text-primary',
+                hoveredId === 'create' && 'bg-fill-content-hover text-text-primary'
+              )}
+              onMouseEnter={() => setHoveredId('create')}
+              onClick={(e) => {
+                e.preventDefault();
+                handleCreateOption();
+              }}
+            >
+              {t('button.create')}
+              <Tag label={searchValue} />
+            </div>
+          ) : null}
         </div>
-
       </PopoverContent>
     </Popover>
   );

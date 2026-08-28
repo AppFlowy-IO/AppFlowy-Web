@@ -2,11 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Editor, Range, Text } from 'slate';
 import { ReactEditor } from 'slate-react';
 
-import { useRemoteSelectionsSelector } from '@/application/awareness';
+import { useRemoteSelectionsSelector } from '@/application/awareness/selector';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
-
 
 interface SelectionRect {
   x: number;

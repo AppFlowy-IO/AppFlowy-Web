@@ -968,7 +968,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "El enlace ha sido copiado al portapapeles.",
-        "convertToLink": "Convertir en enlace incrustado"
+        "convertToLink": "Convertir en enlace incrustado",
+        "pasteAs": {
+          "title": "Pegar como",
+          "mention": "Mención",
+          "url": "URL",
+          "bookmark": "Marcador",
+          "embed": "Insertar"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Agregue encabezados para crear una tabla de contenido.",

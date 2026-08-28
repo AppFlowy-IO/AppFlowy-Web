@@ -80,6 +80,7 @@ test.describe('OTP Login Flow', () => {
             access_token: mockAccessToken,
             refresh_token: mockRefreshToken,
             expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: { id: mockUserId, email: testEmail },
           }),
         })
       );
@@ -166,6 +167,7 @@ test.describe('OTP Login Flow', () => {
             access_token: mockAccessToken,
             refresh_token: mockRefreshToken,
             expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: { id: mockUserId, email: testEmail },
           }),
         })
       );
@@ -190,6 +192,7 @@ test.describe('OTP Login Flow', () => {
             access_token: mockAccessToken,
             refresh_token: mockRefreshToken,
             expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: { id: mockUserId, email: testEmail },
           }),
         })
       );
@@ -367,6 +370,7 @@ test.describe('OTP Login Flow', () => {
             access_token: mockAccessToken,
             refresh_token: mockRefreshToken,
             expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: { id: mockUserId, email: testEmail },
           }),
         })
       );

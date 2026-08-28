@@ -9,7 +9,7 @@ import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
-import { isSafeRedirectUrl, safeDecodeRedirectParam } from '@/application/session/sign_in';
+import { getSafeRedirectUrl } from '@/application/session/sign_in';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 function LoginPage() {
@@ -20,15 +20,13 @@ function LoginPage() {
   const redirectTo = search.get('redirectTo') || '';
   const type = search.get('type') || '';
   const isAuthenticated = useIsAuthenticatedOptional();
-
+  const safeRedirectTo = useMemo(() => getSafeRedirectUrl(redirectTo) || '', [redirectTo]);
 
   // Strip unsafe redirectTo from URL immediately, preserving all other params
   useEffect(() => {
     if (!redirectTo) return;
 
-    const decodedRedirect = safeDecodeRedirectParam(redirectTo);
-
-    if (!decodedRedirect || !isSafeRedirectUrl(decodedRedirect)) {
+    if (!safeRedirectTo) {
       setSearch((prev) => {
         const next = new URLSearchParams(prev);
 
@@ -36,40 +34,38 @@ function LoginPage() {
         return next;
       });
     }
-  }, [redirectTo, setSearch]);
+  }, [redirectTo, safeRedirectTo, setSearch]);
 
   useEffect(() => {
     if (action === LOGIN_ACTION.CHANGE_PASSWORD || force) {
       return;
     }
 
-    if (isAuthenticated && redirectTo) {
-      const decodedRedirect = safeDecodeRedirectParam(redirectTo);
-
-      if (decodedRedirect && isSafeRedirectUrl(decodedRedirect) && decodedRedirect !== window.location.href) {
-        window.location.href = decodedRedirect;
-      }
+    if (isAuthenticated && safeRedirectTo && safeRedirectTo !== window.location.href) {
+      window.location.href = safeRedirectTo;
     }
-  }, [action, force, isAuthenticated, redirectTo]);
+  }, [action, force, isAuthenticated, safeRedirectTo]);
 
   const renderContent = useMemo(() => {
     switch (action) {
       case LOGIN_ACTION.CHECK_EMAIL:
-        return <CheckEmail email={email} redirectTo={redirectTo} otpType={type === 'signup' ? 'signup' : undefined} />;
+        return (
+          <CheckEmail email={email} redirectTo={safeRedirectTo} otpType={type === 'signup' ? 'signup' : undefined} />
+        );
       case LOGIN_ACTION.ENTER_PASSWORD:
-        return <EnterPassword email={email} redirectTo={redirectTo} />;
+        return <EnterPassword email={email} redirectTo={safeRedirectTo} />;
       case LOGIN_ACTION.RESET_PASSWORD:
-        return <ForgotPassword email={email} redirectTo={redirectTo} />;
+        return <ForgotPassword email={email} redirectTo={safeRedirectTo} />;
       case LOGIN_ACTION.CHECK_EMAIL_RESET_PASSWORD:
-        return <CheckEmailResetPassword email={email} redirectTo={redirectTo} />;
+        return <CheckEmailResetPassword email={email} redirectTo={safeRedirectTo} />;
       case LOGIN_ACTION.CHANGE_PASSWORD:
-        return <ChangePassword email={email} redirectTo={redirectTo} />;
+        return <ChangePassword email={email} redirectTo={safeRedirectTo} />;
       case LOGIN_ACTION.SIGN_UP_PASSWORD:
-        return <SignUpPassword redirectTo={redirectTo} />;
+        return <SignUpPassword redirectTo={safeRedirectTo} />;
       default:
-        return <Login redirectTo={redirectTo} />;
+        return <Login redirectTo={safeRedirectTo} />;
     }
-  }, [action, email, redirectTo, type]);
+  }, [action, email, safeRedirectTo, type]);
 
   return (
     <div className={'flex h-screen w-screen items-center justify-center bg-background-primary'}>{renderContent}</div>

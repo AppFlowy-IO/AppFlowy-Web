@@ -1,7 +1,9 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
-import { ReactComponent as FilterFunnelSvg } from '@/assets/icons/filter-funnel.svg';
+import { ReactComponent as FilterSvg } from '@/assets/icons/filter.svg';
+import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 import { AdvancedFilterPanel } from './AdvancedFilterPanel';
@@ -12,24 +14,36 @@ interface AdvancedFiltersBadgeProps {
 
 export function AdvancedFiltersBadge({ count }: AdvancedFiltersBadgeProps) {
   const { t } = useTranslation();
+  const context = useConditionsContext();
+  const open = context?.advancedPanelOpen ?? false;
+  const setAdvancedPanelOpen = context?.setAdvancedPanelOpen;
+
+  const onOpenChange = useCallback(
+    (open: boolean) => {
+      setAdvancedPanelOpen?.(open);
+    },
+    [setAdvancedPanelOpen]
+  );
 
   const label = count === 1 ? t('grid.filter.oneRule') : t('grid.filter.nRules', { count });
 
   return (
-    <Popover>
+    <Popover modal open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button
-          className='flex h-7 items-center gap-1 rounded-md bg-fill-primary/10 px-2 text-text-link-default hover:bg-fill-primary/15'
+          className={
+            'flex h-7 items-center rounded-full border border-border-theme-thick bg-fill-theme-select px-2 py-1 outline-none'
+          }
           data-testid='advanced-filters-badge'
         >
-          <FilterFunnelSvg className='h-4 w-4' />
-          <span className='text-xs font-medium leading-none'>{label}</span>
-          <ArrowDownSvg className='h-3 w-3' />
+          <FilterSvg className='h-4 w-4 text-other-colors-text-event' />
+          <span className='ml-1 whitespace-nowrap text-sm font-medium text-other-colors-text-event'>{label}</span>
+          <ArrowDownSvg className='ml-1 h-5 w-5 text-icon-info-thick' />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align='start'
-        className='w-auto min-w-[500px] bg-surface-layer-02 p-0'
+        className='w-[520px] max-w-[520px] rounded-xl border border-border-primary bg-surface-layer-04 p-0 shadow-[0px_2px_16px_rgba(0,0,0,0.12)]'
         onCloseAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => {
           // Prevent closing when clicking inside nested floating elements

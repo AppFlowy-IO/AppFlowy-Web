@@ -1,5 +1,6 @@
 export {
   cancelImportTask,
+  CreateImportTaskType,
   createImportTask,
   uploadImportFile,
   createDatabaseCsvImportTask as createCsvImportTask,

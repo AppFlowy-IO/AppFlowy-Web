@@ -1,4 +1,6 @@
-import { APIError, getAxios, handleAPIError } from './core';
+import { getConfigValue } from '@/utils/runtime-config';
+
+import { APIError, APIResponse, executeAPIRequest, getAxios, handleAPIError } from './core';
 
 export interface ExportPdfOptions {
   includeNested?: boolean;
@@ -18,6 +20,35 @@ const DEFAULT_OPTIONS: Required<ExportPdfOptions> = {
   includeImages: true,
   maxDepth: 2,
 };
+
+interface CreateExportTaskRaw {
+  task_id: string;
+}
+
+/**
+ * Kick off a server-side backup of the whole workspace into a ZIP archive.
+ *
+ * This is asynchronous: the server builds the archive and emails the owner a
+ * download link once it's ready. Only the workspace owner may call it. The
+ * returned `taskId` identifies the export task.
+ */
+export async function exportWorkspace(workspaceId: string, includeFileAttachments = true): Promise<string> {
+  const url = `/api/export/workspace/${encodeURIComponent(workspaceId)}`;
+
+  const data = await executeAPIRequest<CreateExportTaskRaw>(() =>
+    getAxios()?.post<APIResponse<CreateExportTaskRaw>>(
+      url,
+      { include_file_attachments: includeFileAttachments },
+      {
+        headers: {
+          'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
+        },
+      }
+    )
+  );
+
+  return data.task_id;
+}
 
 export async function getViewPdfBlob(
   workspaceId: string,

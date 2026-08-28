@@ -8,10 +8,12 @@
 import { Page, expect } from '@playwright/test';
 import {
   AddPageSelectors,
+  BlockSelectors,
   PageSelectors,
   SpaceSelectors,
   ModalSelectors,
   SlashCommandSelectors,
+  ViewActionSelectors,
 } from './selectors';
 import { getSlashMenuItemName } from './i18n-constants';
 
@@ -57,6 +59,43 @@ export async function expandDatabaseInSidebar(page: Page, dbName: string = 'New 
 }
 
 /**
+ * Renames a sidebar page item and waits until the outline reflects the new name.
+ */
+export async function renamePageByName(page: Page, currentName: string, newName: string): Promise<void> {
+  const pageItem = PageSelectors.itemByName(page, currentName);
+  await expect(pageItem).toBeVisible({ timeout: 30000 });
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await pageItem.hover({ force: true });
+    await page.waitForTimeout(500);
+    await PageSelectors.moreActionsButton(page, currentName).click({ force: true });
+    await expect(ViewActionSelectors.renameButton(page)).toBeVisible({ timeout: 10000 });
+    await ViewActionSelectors.renameButton(page).click({ force: true });
+
+    const renameInput = ModalSelectors.renameInput(page);
+    await expect(renameInput).toBeVisible({ timeout: 10000 });
+    await renameInput.clear();
+    await renameInput.fill(newName);
+    await expect(renameInput).toHaveValue(newName, { timeout: 5000 });
+    await ModalSelectors.renameSaveButton(page).click({ force: true });
+
+    if (
+      await expect(PageSelectors.itemByName(page, newName))
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  await expect(PageSelectors.itemByName(page, newName)).toBeVisible({ timeout: 30000 });
+}
+
+/**
  * Extracts the current view ID from the URL pathname.
  * The view ID is the last segment of the pathname.
  */
@@ -85,7 +124,7 @@ export async function navigateAwayToNewPage(page: Page): Promise<void> {
   await closeModalsIfOpen(page);
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Handle new page modal if it appears
@@ -106,16 +145,21 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
   const pageEl = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first();
   await expect(pageEl).toBeVisible({ timeout: 10000 });
 
-  const collapseToggle = pageEl.locator('[data-testid="outline-toggle-collapse"]');
-  const isExpanded = (await collapseToggle.count()) > 0;
+  // Scope toggles to this page's row. Descendant rows stay mounted inside the
+  // MUI Collapse even while hidden and can have their own expand toggles.
+  const pageRow = pageEl.locator(`:scope > [data-testid="page-${viewId}"]`);
+  const collapseToggle = pageRow.locator('[data-testid="outline-toggle-collapse"]');
 
-  if (!isExpanded) {
-    const expandToggle = pageEl.locator('[data-testid="outline-toggle-expand"]');
-    if ((await expandToggle.count()) > 0) {
-      await expandToggle.first().click({ force: true });
-      await page.waitForTimeout(500);
-    }
-  }
+  if (await collapseToggle.isVisible().catch(() => false)) return;
+
+  const expandToggle = pageRow.locator('[data-testid="outline-toggle-expand"]');
+
+  // A newly created document has no toggle until it receives children.
+  // Preserve the helper's no-op behavior for those childless pages.
+  if (!(await expandToggle.isVisible().catch(() => false))) return;
+
+  await expandToggle.click();
+  await expect(collapseToggle).toBeVisible({ timeout: 5000 });
 }
 
 /**
@@ -125,7 +169,7 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
 export async function createDocumentPageAndNavigate(page: Page): Promise<string> {
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Expand the ViewModal to full page view
@@ -145,41 +189,74 @@ export async function createDocumentPageAndNavigate(page: Page): Promise<string>
 export async function insertLinkedDatabaseViaSlash(
   page: Page,
   docViewId: string,
-  dbName: string
+  dbName: string,
+  layout: 'Gallery' | 'Grid' | 'List' = 'Grid'
 ): Promise<void> {
   const editor = page.locator(`#editor-${docViewId}`);
-  await expect(editor).toBeVisible();
-  await editor.click({ position: { x: 200, y: 100 }, force: true });
-  await editor.pressSequentially('/', { delay: 50 });
-  await page.waitForTimeout(500);
+  await expect(editor).toBeVisible({ timeout: 15000 });
+  const blockType = layout === 'List' ? 'list' : layout === 'Gallery' ? 'gallery' : 'grid';
+  const initialBlockCount = await editor.locator(BlockSelectors.blockSelector(blockType)).count();
+  let lastError: unknown;
 
-  // Click linked grid from slash menu
-  const slashPanel = SlashCommandSelectors.slashPanel(page);
-  await expect(slashPanel).toBeVisible();
-  await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
-  await page.waitForTimeout(1000);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await editor.click({ position: { x: 200, y: 100 }, force: true });
+      await editor.pressSequentially('/', { delay: 50 });
+      await page.waitForTimeout(500);
 
-  // Select database from picker
-  await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
+      const slashPanel = SlashCommandSelectors.slashPanel(page);
+      await expect(slashPanel).toBeVisible({ timeout: 10000 });
+      const slashMenuKey = layout === 'List' ? 'linkedList' : layout === 'Gallery' ? 'linkedGallery' : 'linkedGrid';
 
-  // Wait for loading to complete
-  const loadingText = page.getByText('Loading...');
-  if ((await loadingText.count()) > 0) {
-    await expect(loadingText).not.toBeVisible({ timeout: 15000 });
+      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName(slashMenuKey)).first().click({ force: true });
+      await page.waitForTimeout(1000);
+
+      await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
+
+      const loadingText = page.getByText('Loading...');
+      if ((await loadingText.count()) > 0) {
+        await expect(loadingText).not.toBeVisible({ timeout: 15000 });
+      }
+
+      const popover = page.locator('.MuiPopover-paper').last();
+      await expect(popover).toBeVisible({ timeout: 10000 });
+      const searchInput = popover.locator('input[placeholder*="Search"]');
+      if ((await searchInput.count()) > 0) {
+        await searchInput.clear();
+        await searchInput.fill(dbName);
+        await page.waitForTimeout(2000);
+      }
+
+      const databaseOption = popover.getByText(dbName, { exact: false }).first();
+      if ((await databaseOption.count()) > 0) {
+        await databaseOption.click({ force: true });
+        await page.waitForTimeout(2000);
+        return;
+      }
+    } catch (e) {
+      lastError = e;
+    }
+
+    if ((await editor.locator(BlockSelectors.blockSelector(blockType)).count()) > initialBlockCount) {
+      return;
+    }
+
+    if (attempt === 2) {
+      if (lastError) throw lastError;
+      break;
+    }
+
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Home').catch(() => undefined);
+    await page.keyboard.press('Shift+End').catch(() => undefined);
+    await page.keyboard.press('Backspace').catch(() => undefined);
+    await page.waitForTimeout(3000);
   }
 
-  // Search for and select the database
-  const popover = page.locator('.MuiPopover-paper').last();
-  await expect(popover).toBeVisible();
-  const searchInput = popover.locator('input[placeholder*="Search"]');
-  if ((await searchInput.count()) > 0) {
-    await searchInput.clear();
-    await searchInput.fill(dbName);
-    await page.waitForTimeout(2000);
-  }
-
-  await popover.getByText(dbName, { exact: false }).first().click({ force: true });
-  await page.waitForTimeout(2000);
+  throw new Error(`Database "${dbName}" not found in linked database picker after multiple retries`);
 }
 
 /**
@@ -190,7 +267,7 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
   // Create a new page and expand to full-page view (same pattern as createDocumentPageAndNavigate)
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Expand ViewModal to full-page view
@@ -218,7 +295,10 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
   await page.keyboard.type('image', { delay: 50 });
   await page.waitForTimeout(1000);
 
-  await page.locator('[data-testid^="slash-menu-"]').filter({ hasText: /^Image$/ }).click({ force: true });
+  await page
+    .locator('[data-testid^="slash-menu-"]')
+    .filter({ hasText: /^Image$/ })
+    .click({ force: true });
   await page.waitForTimeout(1000);
 
   // Upload image

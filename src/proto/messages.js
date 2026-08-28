@@ -1057,6 +1057,8 @@ export const collab = $root.collab = (() => {
          * @property {number|null} [flags] Update flags
          * @property {Uint8Array|null} [payload] Update payload
          * @property {string|null} [version] Update version
+         * @property {Uint8Array|null} [beforeStateVector] Update beforeStateVector
+         * @property {Uint8Array|null} [afterStateVector] Update afterStateVector
          */
 
         /**
@@ -1109,6 +1111,22 @@ export const collab = $root.collab = (() => {
         Update.prototype.version = "";
 
         /**
+         * Update beforeStateVector.
+         * @member {Uint8Array} beforeStateVector
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.beforeStateVector = $util.newBuffer([]);
+
+        /**
+         * Update afterStateVector.
+         * @member {Uint8Array} afterStateVector
+         * @memberof collab.Update
+         * @instance
+         */
+        Update.prototype.afterStateVector = $util.newBuffer([]);
+
+        /**
          * Creates a new Update instance using the specified properties.
          * @function create
          * @memberof collab.Update
@@ -1140,6 +1158,10 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.payload);
             if (message.version != null && Object.hasOwnProperty.call(message, "version"))
                 writer.uint32(/* id 4, wireType 2 =*/34).string(message.version);
+            if (message.beforeStateVector != null && Object.hasOwnProperty.call(message, "beforeStateVector"))
+                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.beforeStateVector);
+            if (message.afterStateVector != null && Object.hasOwnProperty.call(message, "afterStateVector"))
+                writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.afterStateVector);
             return writer;
         };
 
@@ -1192,6 +1214,14 @@ export const collab = $root.collab = (() => {
                         message.version = reader.string();
                         break;
                     }
+                case 5: {
+                        message.beforeStateVector = reader.bytes();
+                        break;
+                    }
+                case 6: {
+                        message.afterStateVector = reader.bytes();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -1241,6 +1271,12 @@ export const collab = $root.collab = (() => {
             if (message.version != null && message.hasOwnProperty("version"))
                 if (!$util.isString(message.version))
                     return "version: string expected";
+            if (message.beforeStateVector != null && message.hasOwnProperty("beforeStateVector"))
+                if (!(message.beforeStateVector && typeof message.beforeStateVector.length === "number" || $util.isString(message.beforeStateVector)))
+                    return "beforeStateVector: buffer expected";
+            if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
+                if (!(message.afterStateVector && typeof message.afterStateVector.length === "number" || $util.isString(message.afterStateVector)))
+                    return "afterStateVector: buffer expected";
             return null;
         };
 
@@ -1270,6 +1306,16 @@ export const collab = $root.collab = (() => {
                     message.payload = object.payload;
             if (object.version != null)
                 message.version = String(object.version);
+            if (object.beforeStateVector != null)
+                if (typeof object.beforeStateVector === "string")
+                    $util.base64.decode(object.beforeStateVector, message.beforeStateVector = $util.newBuffer($util.base64.length(object.beforeStateVector)), 0);
+                else if (object.beforeStateVector.length >= 0)
+                    message.beforeStateVector = object.beforeStateVector;
+            if (object.afterStateVector != null)
+                if (typeof object.afterStateVector === "string")
+                    $util.base64.decode(object.afterStateVector, message.afterStateVector = $util.newBuffer($util.base64.length(object.afterStateVector)), 0);
+                else if (object.afterStateVector.length >= 0)
+                    message.afterStateVector = object.afterStateVector;
             return message;
         };
 
@@ -1297,6 +1343,20 @@ export const collab = $root.collab = (() => {
                         object.payload = $util.newBuffer(object.payload);
                 }
                 object.version = "";
+                if (options.bytes === String)
+                    object.beforeStateVector = "";
+                else {
+                    object.beforeStateVector = [];
+                    if (options.bytes !== Array)
+                        object.beforeStateVector = $util.newBuffer(object.beforeStateVector);
+                }
+                if (options.bytes === String)
+                    object.afterStateVector = "";
+                else {
+                    object.afterStateVector = [];
+                    if (options.bytes !== Array)
+                        object.afterStateVector = $util.newBuffer(object.afterStateVector);
+                }
             }
             if (message.messageId != null && message.hasOwnProperty("messageId"))
                 object.messageId = $root.collab.Rid.toObject(message.messageId, options);
@@ -1306,6 +1366,10 @@ export const collab = $root.collab = (() => {
                 object.payload = options.bytes === String ? $util.base64.encode(message.payload, 0, message.payload.length) : options.bytes === Array ? Array.prototype.slice.call(message.payload) : message.payload;
             if (message.version != null && message.hasOwnProperty("version"))
                 object.version = message.version;
+            if (message.beforeStateVector != null && message.hasOwnProperty("beforeStateVector"))
+                object.beforeStateVector = options.bytes === String ? $util.base64.encode(message.beforeStateVector, 0, message.beforeStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.beforeStateVector) : message.beforeStateVector;
+            if (message.afterStateVector != null && message.hasOwnProperty("afterStateVector"))
+                object.afterStateVector = options.bytes === String ? $util.base64.encode(message.afterStateVector, 0, message.afterStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.afterStateVector) : message.afterStateVector;
             return object;
         };
 
@@ -2215,6 +2279,7 @@ export const collab = $root.collab = (() => {
          * @property {collab.PayloadCompressionType|null} [compression] CollabDocStateParams compression
          * @property {Uint8Array|null} [sv] CollabDocStateParams sv
          * @property {Uint8Array|null} [docState] CollabDocStateParams docState
+         * @property {string|null} [collabVersion] CollabDocStateParams collabVersion
          */
 
         /**
@@ -2273,6 +2338,14 @@ export const collab = $root.collab = (() => {
         CollabDocStateParams.prototype.docState = $util.newBuffer([]);
 
         /**
+         * CollabDocStateParams collabVersion.
+         * @member {string} collabVersion
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.collabVersion = "";
+
+        /**
          * Creates a new CollabDocStateParams instance using the specified properties.
          * @function create
          * @memberof collab.CollabDocStateParams
@@ -2306,6 +2379,8 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.sv);
             if (message.docState != null && Object.hasOwnProperty.call(message, "docState"))
                 writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
+            if (message.collabVersion != null && Object.hasOwnProperty.call(message, "collabVersion"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.collabVersion);
             return writer;
         };
 
@@ -2360,6 +2435,10 @@ export const collab = $root.collab = (() => {
                     }
                 case 5: {
                         message.docState = reader.bytes();
+                        break;
+                    }
+                case 6: {
+                        message.collabVersion = reader.string();
                         break;
                     }
                 default:
@@ -2418,6 +2497,9 @@ export const collab = $root.collab = (() => {
             if (message.docState != null && message.hasOwnProperty("docState"))
                 if (!(message.docState && typeof message.docState.length === "number" || $util.isString(message.docState)))
                     return "docState: buffer expected";
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                if (!$util.isString(message.collabVersion))
+                    return "collabVersion: string expected";
             return null;
         };
 
@@ -2467,6 +2549,8 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.docState, message.docState = $util.newBuffer($util.base64.length(object.docState)), 0);
                 else if (object.docState.length >= 0)
                     message.docState = object.docState;
+            if (object.collabVersion != null)
+                message.collabVersion = String(object.collabVersion);
             return message;
         };
 
@@ -2501,6 +2585,7 @@ export const collab = $root.collab = (() => {
                     if (options.bytes !== Array)
                         object.docState = $util.newBuffer(object.docState);
                 }
+                object.collabVersion = "";
             }
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 object.objectId = message.objectId;
@@ -2512,6 +2597,8 @@ export const collab = $root.collab = (() => {
                 object.sv = options.bytes === String ? $util.base64.encode(message.sv, 0, message.sv.length) : options.bytes === Array ? Array.prototype.slice.call(message.sv) : message.sv;
             if (message.docState != null && message.hasOwnProperty("docState"))
                 object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                object.collabVersion = message.collabVersion;
             return object;
         };
 
@@ -2831,6 +2918,8 @@ export const collab = $root.collab = (() => {
          * @property {Uint8Array|null} [missingUpdate] CollabBatchSyncResult missingUpdate
          * @property {string|null} [error] CollabBatchSyncResult error
          * @property {Uint8Array|null} [serverStateVector] CollabBatchSyncResult serverStateVector
+         * @property {string|null} [collabVersion] CollabBatchSyncResult collabVersion
+         * @property {collab.IRid|null} [messageId] CollabBatchSyncResult messageId
          */
 
         /**
@@ -2897,6 +2986,22 @@ export const collab = $root.collab = (() => {
         CollabBatchSyncResult.prototype.serverStateVector = $util.newBuffer([]);
 
         /**
+         * CollabBatchSyncResult collabVersion.
+         * @member {string} collabVersion
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.collabVersion = "";
+
+        /**
+         * CollabBatchSyncResult messageId.
+         * @member {collab.IRid|null|undefined} messageId
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.messageId = null;
+
+        /**
          * Creates a new CollabBatchSyncResult instance using the specified properties.
          * @function create
          * @memberof collab.CollabBatchSyncResult
@@ -2932,6 +3037,10 @@ export const collab = $root.collab = (() => {
                 writer.uint32(/* id 5, wireType 2 =*/42).string(message.error);
             if (message.serverStateVector != null && Object.hasOwnProperty.call(message, "serverStateVector"))
                 writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.serverStateVector);
+            if (message.collabVersion != null && Object.hasOwnProperty.call(message, "collabVersion"))
+                writer.uint32(/* id 7, wireType 2 =*/58).string(message.collabVersion);
+            if (message.messageId != null && Object.hasOwnProperty.call(message, "messageId"))
+                $root.collab.Rid.encode(message.messageId, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
             return writer;
         };
 
@@ -2990,6 +3099,14 @@ export const collab = $root.collab = (() => {
                     }
                 case 6: {
                         message.serverStateVector = reader.bytes();
+                        break;
+                    }
+                case 7: {
+                        message.collabVersion = reader.string();
+                        break;
+                    }
+                case 8: {
+                        message.messageId = $root.collab.Rid.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -3051,6 +3168,14 @@ export const collab = $root.collab = (() => {
             if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
                 if (!(message.serverStateVector && typeof message.serverStateVector.length === "number" || $util.isString(message.serverStateVector)))
                     return "serverStateVector: buffer expected";
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                if (!$util.isString(message.collabVersion))
+                    return "collabVersion: string expected";
+            if (message.messageId != null && message.hasOwnProperty("messageId")) {
+                let error = $root.collab.Rid.verify(message.messageId);
+                if (error)
+                    return "messageId." + error;
+            }
             return null;
         };
 
@@ -3102,6 +3227,13 @@ export const collab = $root.collab = (() => {
                     $util.base64.decode(object.serverStateVector, message.serverStateVector = $util.newBuffer($util.base64.length(object.serverStateVector)), 0);
                 else if (object.serverStateVector.length >= 0)
                     message.serverStateVector = object.serverStateVector;
+            if (object.collabVersion != null)
+                message.collabVersion = String(object.collabVersion);
+            if (object.messageId != null) {
+                if (typeof object.messageId !== "object")
+                    throw TypeError(".collab.CollabBatchSyncResult.messageId: object expected");
+                message.messageId = $root.collab.Rid.fromObject(object.messageId);
+            }
             return message;
         };
 
@@ -3137,6 +3269,8 @@ export const collab = $root.collab = (() => {
                     if (options.bytes !== Array)
                         object.serverStateVector = $util.newBuffer(object.serverStateVector);
                 }
+                object.collabVersion = "";
+                object.messageId = null;
             }
             if (message.objectId != null && message.hasOwnProperty("objectId"))
                 object.objectId = message.objectId;
@@ -3150,6 +3284,10 @@ export const collab = $root.collab = (() => {
                 object.error = message.error;
             if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
                 object.serverStateVector = options.bytes === String ? $util.base64.encode(message.serverStateVector, 0, message.serverStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.serverStateVector) : message.serverStateVector;
+            if (message.collabVersion != null && message.hasOwnProperty("collabVersion"))
+                object.collabVersion = message.collabVersion;
+            if (message.messageId != null && message.hasOwnProperty("messageId"))
+                object.messageId = $root.collab.Rid.toObject(message.messageId, options);
             return object;
         };
 
@@ -3484,6 +3622,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.IFolderChanged|null} [folderChanged] WorkspaceNotification folderChanged
          * @property {notification.IFolderViewChanged|null} [folderViewChanged] WorkspaceNotification folderViewChanged
          * @property {notification.IInboxNotification|null} [inboxNotification] WorkspaceNotification inboxNotification
+         * @property {notification.ICommentChanged|null} [commentChanged] WorkspaceNotification commentChanged
          */
 
         /**
@@ -3581,17 +3720,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.inboxNotification = null;
 
+        /**
+         * WorkspaceNotification commentChanged.
+         * @member {notification.ICommentChanged|null|undefined} commentChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.commentChanged = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|"commentChanged"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification", "commentChanged"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3639,6 +3786,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.FolderViewChanged.encode(message.folderViewChanged, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
             if (message.inboxNotification != null && Object.hasOwnProperty.call(message, "inboxNotification"))
                 $root.notification.InboxNotification.encode(message.inboxNotification, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
+            if (message.commentChanged != null && Object.hasOwnProperty.call(message, "commentChanged"))
+                $root.notification.CommentChanged.encode(message.commentChanged, writer.uint32(/* id 11, wireType 2 =*/90).fork()).ldelim();
             return writer;
         };
 
@@ -3713,6 +3862,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 10: {
                         message.inboxNotification = $root.notification.InboxNotification.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 11: {
+                        message.commentChanged = $root.notification.CommentChanged.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -3849,6 +4002,16 @@ export const notification = $root.notification = (() => {
                         return "inboxNotification." + error;
                 }
             }
+            if (message.commentChanged != null && message.hasOwnProperty("commentChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.CommentChanged.verify(message.commentChanged);
+                    if (error)
+                        return "commentChanged." + error;
+                }
+            }
             return null;
         };
 
@@ -3913,6 +4076,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.inboxNotification !== "object")
                     throw TypeError(".notification.WorkspaceNotification.inboxNotification: object expected");
                 message.inboxNotification = $root.notification.InboxNotification.fromObject(object.inboxNotification);
+            }
+            if (object.commentChanged != null) {
+                if (typeof object.commentChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.commentChanged: object expected");
+                message.commentChanged = $root.notification.CommentChanged.fromObject(object.commentChanged);
             }
             return message;
         };
@@ -3979,6 +4147,11 @@ export const notification = $root.notification = (() => {
                 object.inboxNotification = $root.notification.InboxNotification.toObject(message.inboxNotification, options);
                 if (options.oneofs)
                     object.payload = "inboxNotification";
+            }
+            if (message.commentChanged != null && message.hasOwnProperty("commentChanged")) {
+                object.commentChanged = $root.notification.CommentChanged.toObject(message.commentChanged, options);
+                if (options.oneofs)
+                    object.payload = "commentChanged";
             }
             return object;
         };
@@ -7953,6 +8126,235 @@ export const notification = $root.notification = (() => {
         };
 
         return InboxNotification;
+    })();
+
+    notification.CommentChanged = (function() {
+
+        /**
+         * Properties of a CommentChanged.
+         * @memberof notification
+         * @interface ICommentChanged
+         * @property {string|null} [workspaceId] CommentChanged workspaceId
+         * @property {string|null} [viewId] CommentChanged viewId
+         */
+
+        /**
+         * Constructs a new CommentChanged.
+         * @memberof notification
+         * @classdesc Represents a CommentChanged.
+         * @implements ICommentChanged
+         * @constructor
+         * @param {notification.ICommentChanged=} [properties] Properties to set
+         */
+        function CommentChanged(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CommentChanged workspaceId.
+         * @member {string} workspaceId
+         * @memberof notification.CommentChanged
+         * @instance
+         */
+        CommentChanged.prototype.workspaceId = "";
+
+        /**
+         * CommentChanged viewId.
+         * @member {string} viewId
+         * @memberof notification.CommentChanged
+         * @instance
+         */
+        CommentChanged.prototype.viewId = "";
+
+        /**
+         * Creates a new CommentChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.ICommentChanged=} [properties] Properties to set
+         * @returns {notification.CommentChanged} CommentChanged instance
+         */
+        CommentChanged.create = function create(properties) {
+            return new CommentChanged(properties);
+        };
+
+        /**
+         * Encodes the specified CommentChanged message. Does not implicitly {@link notification.CommentChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.ICommentChanged} message CommentChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CommentChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.workspaceId != null && Object.hasOwnProperty.call(message, "workspaceId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.workspaceId);
+            if (message.viewId != null && Object.hasOwnProperty.call(message, "viewId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.viewId);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CommentChanged message, length delimited. Does not implicitly {@link notification.CommentChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.ICommentChanged} message CommentChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CommentChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CommentChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.CommentChanged} CommentChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CommentChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.CommentChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.workspaceId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.viewId = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CommentChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.CommentChanged} CommentChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CommentChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CommentChanged message.
+         * @function verify
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CommentChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                if (!$util.isString(message.workspaceId))
+                    return "workspaceId: string expected";
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                if (!$util.isString(message.viewId))
+                    return "viewId: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a CommentChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.CommentChanged} CommentChanged
+         */
+        CommentChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.CommentChanged)
+                return object;
+            let message = new $root.notification.CommentChanged();
+            if (object.workspaceId != null)
+                message.workspaceId = String(object.workspaceId);
+            if (object.viewId != null)
+                message.viewId = String(object.viewId);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CommentChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {notification.CommentChanged} message CommentChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CommentChanged.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.workspaceId = "";
+                object.viewId = "";
+            }
+            if (message.workspaceId != null && message.hasOwnProperty("workspaceId"))
+                object.workspaceId = message.workspaceId;
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                object.viewId = message.viewId;
+            return object;
+        };
+
+        /**
+         * Converts this CommentChanged to JSON.
+         * @function toJSON
+         * @memberof notification.CommentChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CommentChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CommentChanged
+         * @function getTypeUrl
+         * @memberof notification.CommentChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CommentChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.CommentChanged";
+        };
+
+        return CommentChanged;
     })();
 
     return notification;

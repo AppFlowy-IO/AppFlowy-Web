@@ -5,6 +5,7 @@ import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/app
 import { Cell as CellType, CellProps } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
 import { CheckboxCell } from '@/components/database/components/cell/checkbox';
+import { AttributionCell } from '@/components/database/components/cell/attribution';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
 import { DateTimeCell } from '@/components/database/components/cell/date';
 import { FileMediaCell } from '@/components/database/components/cell/file-media';
@@ -76,6 +77,14 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
           fieldId={fieldId}
           attrName={attrName}
         />
+      </PropertyWrapper>
+    );
+  }
+
+  if (fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy) {
+    return (
+      <PropertyWrapper fieldId={fieldId}>
+        <AttributionCell wrap fieldId={fieldId} rowId={rowId} readOnly />
       </PropertyWrapper>
     );
   }

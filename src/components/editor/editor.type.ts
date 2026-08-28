@@ -1,6 +1,7 @@
 import { HTMLAttributes } from 'react';
 import { Element } from 'slate';
 
+import type { DatabaseBlockType } from '@/application/database-block';
 import {
   AIMeetingBlockData,
   AIMeetingSpeakerBlockData,
@@ -28,6 +29,8 @@ import {
   SimpleTableData,
   VideoBlockData,
   ColumnNodeData,
+  AudioBlockData,
+  GoogleDriveBlockData,
 } from '@/application/types';
 
 export interface BlockNode extends Element {
@@ -130,6 +133,18 @@ export interface VideoBlockNode extends BlockNode {
   data: VideoBlockData;
 }
 
+export interface AudioBlockNode extends BlockNode {
+  type: BlockType.AudioBlock;
+  blockId: string;
+  data: AudioBlockData;
+}
+
+export interface GoogleDriveBlockNode extends BlockNode {
+  type: BlockType.GoogleDriveBlock;
+  blockId: string;
+  data: GoogleDriveBlockData;
+}
+
 export interface GalleryBlockNode extends BlockNode {
   type: BlockType.GalleryBlock;
   blockId: string;
@@ -171,7 +186,7 @@ export interface TableCellNode extends BlockNode {
 }
 
 export interface DatabaseNode extends BlockNode {
-  type: BlockType.GridBlock | BlockType.BoardBlock | BlockType.CalendarBlock | BlockType.ChartBlock;
+  type: DatabaseBlockType;
   blockId: string;
   data: DatabaseNodeData;
 }

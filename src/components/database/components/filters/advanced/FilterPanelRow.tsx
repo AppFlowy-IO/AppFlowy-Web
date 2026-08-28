@@ -1,4 +1,4 @@
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -31,6 +31,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
+import { canonicalizeUserUid } from '@/application/user-uid';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
@@ -39,8 +40,9 @@ import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/datab
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
-import { FieldDisplay } from '@/components/database/components/field';
+import { FILTER_EXCLUDED_FIELD_TYPES } from '@/components/database/components/filters/filter-field-types';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
+import { useDebouncedFilterInput } from '@/components/database/components/filters/hooks/useDebouncedFilterInput';
 import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -52,6 +54,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 import AdvancedDateFilterValueInput from './AdvancedDateFilterValueInput';
@@ -62,19 +65,24 @@ interface FilterPanelRowProps {
   onOperatorChange?: (filterId: string, newOperator: FilterType.And | FilterType.Or) => void;
 }
 
+// Desktop parity: SingleSelectBox — 32px tall, 6px radius, primary border that
+// turns theme-thick while its popover is open.
+const selectBoxClass =
+  'flex h-8 items-center justify-between gap-1 overflow-hidden rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary data-[state=open]:border-border-theme-thick disabled:opacity-50';
+
 export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPanelRowProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const removeFilter = useRemoveAdvancedFilterAndRebuild();
-  const updateFilter = useUpdateAdvancedFilterAndRebuild();
+  const updateFilterValue = useUpdateAdvancedFilter();
+  const updateFilterAndRebuild = useUpdateAdvancedFilterAndRebuild();
   const { field } = useFieldSelector(filter.fieldId);
 
   const [fieldSelectorOpen, setFieldSelectorOpen] = useState(false);
 
-  const fieldType: FieldType | null = useMemo(() => {
-    if (!field) return null;
-    return Number(field.get(YjsDatabaseKey.type)) as FieldType;
-  }, [field]);
+  // Not memoized: `field` is a Yjs map with a stable identity that mutates in
+  // place, so a [field]-keyed memo would go stale after in-place field edits.
+  const fieldType: FieldType | null = field ? (Number(field.get(YjsDatabaseKey.type)) as FieldType) : null;
 
   const handleRemove = useCallback(() => {
     removeFilter(filter.id);
@@ -82,45 +90,49 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
 
   const handleFieldChange = useCallback(
     (newFieldId: string) => {
-      updateFilter({
+      updateFilterAndRebuild({
         filterId: filter.id,
         fieldId: newFieldId,
       });
       setFieldSelectorOpen(false);
     },
-    [filter.id, updateFilter]
+    [filter.id, updateFilterAndRebuild]
   );
 
   const handleConditionChange = useCallback(
     (condition: number) => {
-      updateFilter({
+      // Condition changes are scalar CRDT updates. Rebuilding the tree here
+      // would let this edit overwrite unrelated filters from another client.
+      updateFilterValue({
         filterId: filter.id,
         fieldId: filter.fieldId,
         condition,
       });
     },
-    [filter.id, filter.fieldId, updateFilter]
+    [filter.id, filter.fieldId, updateFilterValue]
   );
 
   if (!field) return null;
 
+  const fieldName = field.get(YjsDatabaseKey.name) ?? '';
+
   return (
-    <div className='flex items-center gap-2 px-2 py-1.5' data-testid='advanced-filter-row'>
-      {/* Where / And / Or selector - fixed width */}
-      <div className='w-[56px] shrink-0'>
+    <div className='flex items-center gap-1.5 px-2' data-testid='advanced-filter-row'>
+      {/* Where / And / Or selector - fixed width (desktop: 68px) */}
+      <div className='w-[68px] shrink-0'>
         {isFirst ? (
-          <span className='pl-1 text-sm text-text-primary'>{t('grid.filter.where')}</span>
+          <div className='text-center text-sm text-text-tertiary'>{t('grid.filter.where')}</div>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild disabled={readOnly}>
-              <button className='flex h-7 w-full items-center justify-between gap-1 rounded-md px-2 hover:bg-fill-list-hover'>
-                <span className='text-xs text-text-primary'>
+              <button className={cn(selectBoxClass, 'w-full')}>
+                <span className='truncate'>
                   {filter.operator === FilterType.Or ? t('grid.filter.or') : t('grid.filter.and')}
                 </span>
-                <ArrowDownSvg className='h-3 w-3 text-text-primary' />
+                <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align='start' className='min-w-[80px]'>
+            <DropdownMenuContent align='start' className='min-w-[100px]'>
               <DropdownMenuItem onSelect={() => onOperatorChange?.(filter.id, FilterType.And)}>
                 {t('grid.filter.and')}
                 {filter.operator === FilterType.And && <DropdownMenuItemTick />}
@@ -134,24 +146,24 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
         )}
       </div>
 
-      {/* Field selector - flex-[2] */}
-      <PropertiesMenu
-        asChild
-        searchPlaceholder={t('grid.settings.filterBy')}
-        onSelect={handleFieldChange}
-        open={fieldSelectorOpen}
-        onOpenChange={setFieldSelectorOpen}
-      >
-        <button
-          className='flex h-7 flex-[2] items-center justify-between gap-1 overflow-hidden rounded-md px-2 hover:bg-fill-list-hover disabled:opacity-50'
-          disabled={readOnly}
+      {/* Field selector - flex-[5] */}
+      <div className='min-w-0 flex-[5]'>
+        <PropertiesMenu
+          asChild
+          searchPlaceholder={t('grid.settings.filterBy')}
+          excludedTypes={FILTER_EXCLUDED_FIELD_TYPES}
+          onSelect={handleFieldChange}
+          open={fieldSelectorOpen}
+          onOpenChange={setFieldSelectorOpen}
         >
-          <FieldDisplay fieldId={filter.fieldId} className='truncate text-xs' />
-          <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
-        </button>
-      </PropertiesMenu>
+          <button className={cn(selectBoxClass, 'w-full')} disabled={readOnly} title={fieldName}>
+            <span className='truncate'>{fieldName}</span>
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
+          </button>
+        </PropertiesMenu>
+      </div>
 
-      {/* Condition selector - flex-[2] */}
+      {/* Condition selector - flex-[7] */}
       <ConditionSelector
         filter={filter}
         fieldType={fieldType}
@@ -160,18 +172,23 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
         disabled={readOnly}
       />
 
-      {/* Value input - flex-[3] */}
+      {/* Value input - flex-[7] */}
       <ValueInput filter={filter} fieldType={fieldType} field={field} disabled={readOnly} />
 
-      {/* Delete button - 24px */}
+      {/* Delete button */}
       {!readOnly && (
-        <button
-          className='flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-fill-list-hover'
-          onClick={handleRemove}
-          data-testid='delete-advanced-filter-button'
-        >
-          <DeleteIcon className='h-4 w-4 text-text-caption' />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className='group flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-fill-content-hover'
+              onClick={handleRemove}
+              data-testid='delete-advanced-filter-button'
+            >
+              <DeleteIcon className='h-5 w-5 text-icon-tertiary group-hover:text-icon-error-thick' />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side='bottom'>{t('grid.settings.deleteFilter')}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
@@ -202,38 +219,39 @@ function ConditionSelector({ filter, fieldType, field, onConditionChange, disabl
   // For Checkbox, the condition dropdown is non-interactive (just shows "Is")
   if (fieldType === FieldType.Checkbox) {
     return (
-      <div className='flex h-7 flex-[2] items-center gap-1 overflow-hidden rounded-md px-2'>
-        <span className='truncate text-xs text-text-primary'>{selectedCondition?.text}</span>
+      <div className={cn(selectBoxClass, 'min-w-0 flex-[7] border-transparent')}>
+        <span className='truncate'>{selectedCondition?.text}</span>
       </div>
     );
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild disabled={disabled}>
-        <button
-          className='flex h-7 flex-[2] items-center justify-between gap-1 overflow-hidden rounded-md px-2 hover:bg-fill-list-hover disabled:opacity-50'
-          data-testid='filter-condition-selector'
-        >
-          <span className='truncate text-xs text-text-primary'>
-            {selectedCondition?.text || t('grid.filter.conditon')}
-          </span>
-          <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align='start' className='min-w-[140px]'>
-        {conditions.map((condition) => (
-          <DropdownMenuItem
-            key={condition.value}
-            data-testid={`filter-condition-${condition.value}`}
-            onSelect={() => onConditionChange(condition.value)}
+    <div className='min-w-0 flex-[7]'>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <button
+            className={cn(selectBoxClass, 'w-full')}
+            title={selectedCondition?.text}
+            data-testid='filter-condition-selector'
           >
-            {condition.text}
-            {condition.value === filter.condition && <DropdownMenuItemTick />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <span className='truncate'>{selectedCondition?.text || t('grid.filter.conditon')}</span>
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='start' className='max-h-[300px] w-[240px] overflow-y-auto'>
+          {conditions.map((condition) => (
+            <DropdownMenuItem
+              key={condition.value}
+              data-testid={`filter-condition-${condition.value}`}
+              onSelect={() => onConditionChange(condition.value)}
+            >
+              {condition.text}
+              {condition.value === filter.condition && <DropdownMenuItemTick />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
@@ -346,7 +364,7 @@ function useConditionsForFieldType(
       ];
     }
 
-    if (fieldType === FieldType.Person) {
+    if ([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
       return [
         { value: PersonFilterCondition.PersonContains, text: t('grid.personFilter.contains') },
         { value: PersonFilterCondition.PersonDoesNotContain, text: t('grid.personFilter.doesNotContain') },
@@ -417,8 +435,8 @@ function ValueInput({ filter, fieldType, field, disabled }: ValueInputProps) {
   }
 
   // Person field - person picker
-  if (fieldType === FieldType.Person) {
-    return <PersonValueInput filter={filter as PersonFilter} disabled={disabled} />;
+  if ([FieldType.Person, FieldType.CreatedBy, FieldType.LastEditedBy].includes(fieldType)) {
+    return <PersonValueInput filter={filter as PersonFilter} fieldType={fieldType} disabled={disabled} />;
   }
 
   return null;
@@ -428,12 +446,12 @@ function ValueInput({ filter, fieldType, field, disabled }: ValueInputProps) {
 function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
-  const [value, setValue] = useState<string>(filter.content || '');
-
-  // Sync local state when filter.content changes externally (e.g., from Yjs sync)
-  useEffect(() => {
-    setValue(filter.content || '');
-  }, [filter.content]);
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: filter.content || '',
+    filterId: filter.id,
+    fieldId: filter.fieldId,
+    updateFilter,
+  });
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
@@ -442,22 +460,17 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      setValue(e.target.value);
-      updateFilter({
-        filterId: filter.id,
-        fieldId: filter.fieldId,
-        content: e.target.value,
-      });
+      updateValue(e.target.value);
     },
-    [filter.id, filter.fieldId, updateFilter]
+    [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <input
-        className='h-7 w-full rounded-md border border-line-border bg-transparent px-2 text-xs text-text-primary placeholder:text-text-caption focus:border-content-blue-400 focus:outline-none disabled:opacity-50'
+        className='h-8 w-full rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-theme-thick focus:outline-none disabled:opacity-50'
         placeholder={t('grid.settings.typeAValue')}
         value={value}
         onChange={handleChange}
@@ -491,7 +504,9 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
     ].includes(filter.condition);
   }, [filter.condition]);
   const selectedRowIds = useMemo(() => parseRelationFilterRowIds(filter.content), [filter.content]);
-  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, { enabled: showInput && open });
+  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, {
+    enabled: showInput && open,
+  });
 
   const updateSelectedRowIds = useCallback(
     (rowIds: string[]) => {
@@ -519,20 +534,20 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
     [selectedRowIds, updateSelectedRowIds]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild disabled={disabled}>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             data-testid='advanced-filter-relation-input'
           >
-            <span className={cn('truncate text-xs', selectedRowIds.length > 0 ? 'text-text-primary' : 'text-text-caption')}>
+            <span className={cn('truncate text-sm', selectedRowIds.length > 0 ? 'text-text-primary' : 'text-text-tertiary')}>
               {selectedRowIds.length > 0 ? `${selectedRowIds.length} selected` : t('grid.settings.typeAValue')}
             </span>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </PopoverTrigger>
         <PopoverContent align='start' className='w-[340px] p-1'>
@@ -560,12 +575,12 @@ function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: b
 function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
-  const [value, setValue] = useState<string>(filter.content || '');
-
-  // Sync local state when filter.content changes externally (e.g., from Yjs sync)
-  useEffect(() => {
-    setValue(filter.content || '');
-  }, [filter.content]);
+  const { value, updateValue } = useDebouncedFilterInput({
+    content: filter.content || '',
+    filterId: filter.id,
+    fieldId: filter.fieldId,
+    updateFilter,
+  });
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
@@ -574,22 +589,17 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
-      setValue(e.target.value);
-      updateFilter({
-        filterId: filter.id,
-        fieldId: filter.fieldId,
-        content: e.target.value,
-      });
+      updateValue(e.target.value);
     },
-    [filter.id, filter.fieldId, updateFilter]
+    [updateValue]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <input
-        className='h-7 w-full rounded-md border border-line-border bg-transparent px-2 text-xs text-text-primary placeholder:text-text-caption focus:border-content-blue-400 focus:outline-none disabled:opacity-50'
+        className='h-8 w-full rounded-md border border-border-primary bg-transparent px-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-theme-thick focus:outline-none disabled:opacity-50'
         placeholder={t('grid.settings.typeAValue')}
         value={value}
         onChange={handleChange}
@@ -615,10 +625,10 @@ function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: b
     ].includes(filter.condition);
   }, [filter.condition]);
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <AdvancedDateFilterValueInput filter={filter} disabled={disabled} />
     </div>
   );
@@ -640,19 +650,13 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     );
   }, [filter.condition]);
 
-  const typeOption = useMemo(() => {
-    if (!field) return null;
-    return parseSelectOptionTypeOptions(field);
-  }, [field]);
+  // Not memoized: `field` is a Yjs map with a stable identity that mutates in
+  // place, so a [field]-keyed memo would serve stale options after edits.
+  const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
 
-  const selectedIds = useMemo(() => {
-    return filter.optionIds?.filter((id) => id !== '') || [];
-  }, [filter.optionIds]);
-
-  const selectedOptions = useMemo(() => {
-    if (!typeOption) return [];
-    return typeOption.options.filter((opt) => selectedIds.includes(opt.id));
-  }, [typeOption, selectedIds]);
+  const selectedIds = filter.optionIds?.filter((id) => id !== '') || [];
+  const selectedIdSet = new Set(selectedIds);
+  const selectedOptions = typeOption ? typeOption.options.filter((opt) => selectedIdSet.has(opt.id)) : [];
 
   const handleToggleOption = useCallback(
     (optionId: string) => {
@@ -675,36 +679,47 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     [filter, updateFilter]
   );
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md px-2 hover:bg-fill-list-hover disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             disabled={disabled}
             data-testid='advanced-filter-select-input'
           >
             <div className='flex min-w-0 flex-1 items-center gap-1 overflow-hidden'>
               {selectedOptions.length > 0 ? (
                 selectedOptions.map((opt) => (
-                  <Tag
-                    key={opt.id}
-                    label={opt.name}
-                    textColor={SelectOptionFgColorMap[opt.color]}
-                    bgColor={SelectOptionColorMap[opt.color]}
-                  />
+                  <Tooltip key={opt.id}>
+                    <TooltipTrigger asChild>
+                      <span className='shrink-0'>
+                        <Tag
+                          label={opt.name}
+                          textColor={SelectOptionFgColorMap[opt.color]}
+                          bgColor={SelectOptionColorMap[opt.color]}
+                        />
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side='top'>{opt.name}</TooltipContent>
+                  </Tooltip>
                 ))
               ) : (
-                <span className='truncate text-xs text-text-caption'>{t('grid.settings.typeAValue')}</span>
+                <span className='truncate text-sm text-text-tertiary'>{t('grid.settings.typeAValue')}</span>
               )}
             </div>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </PopoverTrigger>
-        <PopoverContent align='start' className='w-[200px] p-1'>
-          <SelectOptionList fieldId={filter.fieldId} selectedIds={filter.optionIds || []} onSelect={handleToggleOption} />
+        <PopoverContent align='start' className='w-[240px] p-1'>
+          <SelectOptionList
+            fieldId={filter.fieldId}
+            selectedIds={filter.optionIds || []}
+            onSelect={handleToggleOption}
+            showTooltips
+          />
         </PopoverContent>
       </Popover>
     </div>
@@ -734,15 +749,15 @@ function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disa
   }, [filter.condition, t]);
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <DropdownMenu>
         <DropdownMenuTrigger asChild disabled={disabled}>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             data-testid='advanced-filter-checkbox-input'
           >
-            <span className='truncate text-xs text-text-primary'>{selectedText}</span>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <span className='truncate text-sm text-text-primary'>{selectedText}</span>
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align='start' className='min-w-[120px]'>
@@ -767,13 +782,31 @@ function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disa
 }
 
 // Person Value Input — uses lightweight in-place updater (content-only change)
-function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled?: boolean }) {
+function PersonValueInput({
+  filter,
+  fieldType,
+  disabled,
+}: {
+  filter: PersonFilter;
+  fieldType: FieldType;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
   const [open, setOpen] = useState(false);
 
   // Use cached mentionable users - only fetch when popover is open
   const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(open);
+  const isAttributionField = fieldType === FieldType.CreatedBy || fieldType === FieldType.LastEditedBy;
+  const mentionableUserOptions = useMemo(
+    () =>
+      mentionableUsers.flatMap((user) => {
+        const identifier = isAttributionField ? canonicalizeUserUid(user.uid) : user.person_id;
+
+        return identifier ? [{ identifier, user }] : [];
+      }),
+    [isAttributionField, mentionableUsers]
+  );
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
@@ -806,11 +839,13 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
       return t('grid.personFilter.selectPerson');
     }
 
-    if (!mentionableUsers || mentionableUsers.length === 0) {
+    if (mentionableUserOptions.length === 0) {
       return `${selectedUserIds.length} selected`;
     }
 
-    const selectedUsers = mentionableUsers.filter((u) => selectedUserIds.includes(u.person_id));
+    const selectedUsers = mentionableUserOptions
+      .filter(({ identifier }) => selectedUserIds.includes(identifier))
+      .map(({ user }) => user);
 
     if (selectedUsers.length === 0) {
       return `${selectedUserIds.length} selected`;
@@ -821,28 +856,28 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
     }
 
     return `${selectedUsers.length} selected`;
-  }, [selectedUserIds, mentionableUsers, t]);
+  }, [mentionableUserOptions, selectedUserIds, t]);
 
-  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+  if (!showInput) return <div className='min-w-0 flex-[7]' />;
 
   return (
-    <div className='min-w-0 flex-[3]'>
+    <div className='min-w-0 flex-[7]'>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
-            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            className={cn(selectBoxClass, 'w-full')}
             disabled={disabled}
             data-testid='advanced-filter-person-input'
           >
             <span
               className={cn(
-                'truncate text-xs',
-                selectedUserIds.length > 0 ? 'text-text-primary' : 'text-text-caption'
+                'truncate text-sm',
+                selectedUserIds.length > 0 ? 'text-text-primary' : 'text-text-tertiary'
               )}
             >
               {displayText}
             </span>
-            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+            <ArrowDownSvg className='h-5 w-5 shrink-0 text-icon-primary' />
           </button>
         </PopoverTrigger>
         <PopoverContent align='start' className='w-[280px] p-0'>
@@ -851,33 +886,35 @@ function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled
               <div className='flex items-center justify-center py-4'>
                 <Progress />
               </div>
-            ) : !mentionableUsers || mentionableUsers.length === 0 ? (
+            ) : mentionableUserOptions.length === 0 ? (
               <div className='py-4 text-center text-sm text-text-tertiary'>
                 {t('grid.field.person.noMatches')}
               </div>
             ) : (
-              mentionableUsers.map((user) => {
-                const isSelected = selectedUserIds.includes(user.person_id);
+              mentionableUserOptions.map(({ identifier, user }) => {
+                const isSelected = selectedUserIds.includes(identifier);
                 const displayName = user.name || user.email || '?';
 
                 return (
                   <div
-                    key={user.person_id}
+                    key={identifier}
                     className={cn(
                       'flex min-h-[36px] cursor-pointer items-center gap-2 rounded-md px-2 py-1',
                       'hover:bg-fill-content-hover',
                       isSelected && 'bg-fill-content-hover'
                     )}
-                    onClick={() => handleToggleUser(user.person_id)}
+                    onClick={() => handleToggleUser(identifier)}
                   >
                     <Avatar className='h-6 w-6'>
                       <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
-                      <AvatarFallback className='text-xs'>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                      <AvatarFallback className='text-xs' name={displayName}>
+                        {displayName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
                     </Avatar>
                     <div className='flex flex-1 flex-col overflow-hidden'>
                       <span className='truncate text-sm'>{user.name || user.email}</span>
                       {user.name && user.email && (
-                        <span className='truncate text-xs text-text-tertiary'>{user.email}</span>
+                        <span className='truncate text-sm text-text-tertiary'>{user.email}</span>
                       )}
                     </div>
                     {isSelected && <CheckIcon className='h-4 w-4 flex-shrink-0 text-text-action' />}

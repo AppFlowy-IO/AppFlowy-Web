@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as GlobalIcon } from '@/assets/icons/earth.svg';
@@ -34,7 +35,7 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
   const [unPublishLoading, setUnPublishLoading] = React.useState<boolean>(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
-  const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
   const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const isPublisher = view?.publisher_email === currentUser?.email;
 

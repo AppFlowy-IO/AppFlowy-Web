@@ -76,8 +76,11 @@ test.describe('Filter editors (desktop parity)', () => {
     await assertRowCount(page, 1);
   });
 
-  test('Time filter: routes to the Number editor (same conditions, same input)', async ({ page, request }) => {
-    // Given: a grid with a Time column populated with second-strings 10, 20, 30
+  test('Time field: not offered as a filterable field (desktop canCreateFilter parity)', async ({
+    page,
+    request,
+  }) => {
+    // Given: a grid with a Time column
     const email = generateRandomEmail();
 
     await loginAndCreateGrid(page, request, email);
@@ -85,24 +88,20 @@ test.describe('Filter editors (desktop parity)', () => {
     const timeFieldId = await addFieldWithType(page, FieldType.Time);
 
     await typeTextIntoCell(page, timeFieldId, 0, '10');
-    await typeTextIntoCell(page, timeFieldId, 1, '20');
-    await typeTextIntoCell(page, timeFieldId, 2, '30');
 
-    // When: adding a filter on the Time column
-    await addFilterByFieldName(page, FieldTypeNames[FieldType.Time]);
+    // When: opening the filter field picker from the toolbar
+    const filterBtn = page.getByTestId('database-actions-filter');
 
-    // Then: the same numeric input should appear (Time falls through to NumberFilterMenu).
-    const timeInput = page.getByTestId('text-filter-input');
+    await filterBtn.waitFor({ state: 'attached', timeout: 10000 });
+    await filterBtn.evaluate((el) => (el as HTMLElement).click());
 
-    await expect(timeInput).toBeVisible({ timeout: TIMEOUT });
+    const propertyItems = page.locator('[data-item-id]:visible');
 
-    // And: the condition dropdown should expose Number conditions including
-    // GreaterThan (id=2), confirming we're rendering the Number editor.
-    await changeFilterCondition(page, NumberFilterCondition.GreaterThan);
-    await enterFilterText(page, '15');
+    await expect(propertyItems.first()).toBeVisible({ timeout: 10000 });
 
-    // Then: 20 and 30 pass; 10 is filtered out.
-    await assertRowCount(page, 2);
+    // Then: the Name field is offered, but the Time field is excluded —
+    // matching desktop's FieldType.canCreateFilter.
+    await expect(propertyItems.filter({ hasText: FieldTypeNames[FieldType.Time] })).toHaveCount(0);
   });
 
   test('Rollup filter (unconfigured): defaults to Number editor (Count is the seeded calculation)', async ({

@@ -121,10 +121,10 @@ async function getWorkspaceMemberProfile(
 async function openAccountSettings(page: import('@playwright/test').Page) {
   await WorkspaceSelectors.dropdownTrigger(page).click();
   await page.waitForTimeout(1000);
-  const settingsButton = page.getByTestId('account-settings-button');
+  const settingsButton = page.getByTestId('settings-button');
   await expect(settingsButton).toBeVisible();
   await settingsButton.click();
-  await expect(page.getByTestId('account-settings-dialog')).toBeVisible();
+  await expect(page.getByTestId('settings-dialog')).toBeVisible();
 }
 
 /** Helper: reload page and open account settings */
@@ -170,13 +170,9 @@ test.describe('Avatar Notifications', () => {
   });
 
   test.describe('Workspace Member Profile Notifications', () => {
-    test('should update avatar when workspace member profile notification is received', async ({
-      page,
-      request,
-    }) => {
+    test('should update avatar when workspace member profile notification is received', async ({ page, request }) => {
       const testEmail = generateRandomEmail();
-      const testAvatarUrl =
-        'https://api.dicebear.com/7.x/avataaars/svg?seed=notification-test';
+      const testAvatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=notification-test';
 
       testLog.info('Step 1: Sign in with test account');
       await signInAndWaitForApp(page, request, testEmail);
@@ -202,19 +198,16 @@ test.describe('Avatar Notifications', () => {
       expect(profile).not.toBeNull();
       expect(profile?.avatar_url).toBe(testAvatarUrl);
 
-      testLog.info('Step 5: Reload page and verify avatar persists');
-      await reloadAndOpenAccountSettings(page);
+      testLog.info('Step 5: Verify live header avatar uses updated URL');
+      const headerAvatar = page.locator('.appflowy-top-bar [data-slot="avatar"]').first();
+      const avatarImage = headerAvatar.getByTestId('avatar-image');
 
-      testLog.info('Step 6: Verify avatar image uses updated URL');
-      const avatarImage = page.locator('[data-testid="avatar-image"]');
+      await expect(headerAvatar).toBeAttached();
       await expect(avatarImage).toBeAttached();
       await expect(avatarImage).toHaveAttribute('src', testAvatarUrl);
     });
 
-    test('should preserve existing avatar when notification omits avatar field', async ({
-      page,
-      request,
-    }) => {
+    test('should preserve existing avatar when notification omits avatar field', async ({ page, request }) => {
       const testEmail = generateRandomEmail();
       const existingAvatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=existing';
 
@@ -225,12 +218,7 @@ test.describe('Avatar Notifications', () => {
       const workspaceId = await getCurrentWorkspaceId(page);
       expect(workspaceId).not.toBeNull();
 
-      const response = await updateWorkspaceMemberAvatar(
-        page,
-        request,
-        workspaceId!,
-        existingAvatarUrl
-      );
+      const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, existingAvatarUrl);
       expect(response.status()).toBe(200);
 
       await page.waitForTimeout(2000);
@@ -258,10 +246,7 @@ test.describe('Avatar Notifications', () => {
       expect(updatedProfile?.name).toBe('Updated Name');
     });
 
-    test('should clear avatar when notification sends empty string', async ({
-      page,
-      request,
-    }) => {
+    test('should clear avatar when notification sends empty string', async ({ page, request }) => {
       const testEmail = generateRandomEmail();
       const testAvatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=to-clear';
 
@@ -272,12 +257,7 @@ test.describe('Avatar Notifications', () => {
       const workspaceId = await getCurrentWorkspaceId(page);
       expect(workspaceId).not.toBeNull();
 
-      const response = await updateWorkspaceMemberAvatar(
-        page,
-        request,
-        workspaceId!,
-        testAvatarUrl
-      );
+      const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, testAvatarUrl);
       expect(response.status()).toBe(200);
 
       await page.waitForTimeout(2000);

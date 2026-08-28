@@ -1,12 +1,19 @@
-import { memo, useMemo } from 'react';
+import { type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { memo, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import DropColumnIndicator from '@/components/database/components/drag-and-drop/DropColumnIndicator';
 import { DatabaseViewActions } from '@/components/database/components/tabs/ViewActions';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { TabLabel, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
+const TAB_DRAG_TYPE = 'database-view-tab';
+const TAB_DRAG_EDGES: Edge[] = ['left', 'right'];
 
 export interface DatabaseTabItemProps {
   viewId: string;
@@ -23,8 +30,12 @@ export interface DatabaseTabItemProps {
   visibleViewIds: string[];
   onSetMenuViewId: (id: string | null) => void;
   onOpenDeleteModal: (id: string) => void;
-  onOpenRenameModal: (id: string) => void;
+  onDuplicate?: (id: string) => void;
+  duplicateDisabled?: boolean;
+  onOpenRenameModal: (view: View) => void;
   setTabRef: (id: string, el: HTMLElement | null) => void;
+  /** Drag instance of the tab bar group; undefined disables reordering for this tab. */
+  reorderInstanceId?: symbol;
 }
 
 export const DatabaseTabItem = memo(
@@ -38,12 +49,60 @@ export const DatabaseTabItem = memo(
     visibleViewIds,
     onSetMenuViewId,
     onOpenDeleteModal,
+    onDuplicate,
+    duplicateDisabled,
     onOpenRenameModal,
     setTabRef,
+    reorderInstanceId,
   }: DatabaseTabItemProps) => {
     const { t } = useTranslation();
-    const rawLayoutValue = view.get(YjsDatabaseKey.layout);
-    const databaseLayout = Number(rawLayoutValue) as DatabaseViewLayout;
+    const tabRef = useRef<HTMLElement | null>(null);
+    const subscribeToView = useCallback(
+      (onStoreChange: () => void) => {
+        view.observe(onStoreChange);
+
+        return () => {
+          view.unobserve(onStoreChange);
+        };
+      },
+      [view]
+    );
+    const getViewSnapshot = useCallback(() => {
+      const name = view.get(YjsDatabaseKey.name) ?? null;
+      const layout = view.get(YjsDatabaseKey.layout);
+
+      // Rust-backed Yjs enum values may be BigInt. Normalize only the enum
+      // before serializing the primitive external-store snapshot.
+      return JSON.stringify([name, layout === null || layout === undefined ? null : String(layout)]);
+    }, [view]);
+
+    // Y.Map mutates in place, so React.memo cannot detect a renamed tab from
+    // prop identity alone. The primitive snapshot also avoids rerendering this
+    // tab when an unrelated view setting changes.
+    const viewSnapshot = useSyncExternalStore(subscribeToView, getViewSnapshot, getViewSnapshot);
+    const [rawName, rawLayoutValue] = useMemo(
+      () => JSON.parse(viewSnapshot) as [string | null, string | number | null],
+      [viewSnapshot]
+    );
+
+    const { dragState, shouldSuppressClick } = useReorderableItem({
+      elementRef: tabRef,
+      id: viewId,
+      dragType: TAB_DRAG_TYPE,
+      instanceId: reorderInstanceId,
+      canDrag: Boolean(reorderInstanceId),
+      allowedEdges: TAB_DRAG_EDGES,
+    });
+
+    const setRefs = useCallback(
+      (el: HTMLElement | null) => {
+        tabRef.current = el;
+        setTabRef(viewId, el);
+      },
+      [setTabRef, viewId]
+    );
+
+    const databaseLayout = (rawLayoutValue === null ? NaN : Number(rawLayoutValue)) as DatabaseViewLayout;
 
     // Get the default name based on layout if no name is available
     const getDefaultNameByLayout = () => {
@@ -56,12 +115,15 @@ export const DatabaseTabItem = memo(
           return 'Calendar';
         case DatabaseViewLayout.Chart:
           return 'Chart';
+        case DatabaseViewLayout.List:
+          return 'List';
+        case DatabaseViewLayout.Gallery:
+          return 'Gallery';
         default:
           return t('untitled');
       }
     };
 
-    const rawName = view.get(YjsDatabaseKey.name);
     const defaultName = getDefaultNameByLayout();
     const yjsName = rawName?.trim();
     const override = nameOverride?.trim();
@@ -76,6 +138,10 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.Calendar
         : databaseLayout === DatabaseViewLayout.Chart
         ? ViewLayout.Chart
+        : databaseLayout === DatabaseViewLayout.List
+        ? ViewLayout.List
+        : databaseLayout === DatabaseViewLayout.Gallery
+        ? ViewLayout.Gallery
         : ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu
@@ -101,9 +167,15 @@ export const DatabaseTabItem = memo(
         value={viewId}
         id={`view-tab-${viewId}`}
         data-testid={`view-tab-${viewId}`}
-        className={'min-w-[80px] max-w-[200px]'}
-        ref={(el) => {
-          setTabRef(viewId, el);
+        className={cn('min-w-[80px] max-w-[360px]', dragState.type === 'dragging' && 'opacity-40')}
+        ref={setRefs}
+        onClickCapture={(e) => {
+          // Swallow the click that fires right after a drag so the dragged tab
+          // isn't (re-)selected on drop.
+          if (shouldSuppressClick()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
         }}
       >
         <TabLabel
@@ -161,13 +233,16 @@ export const DatabaseTabItem = memo(
             {menuViewId === viewId && (
               <DatabaseViewActions
                 onOpenDeleteModal={onOpenDeleteModal}
+                onDuplicate={onDuplicate}
                 onOpenRenameModal={onOpenRenameModal}
                 deleteDisabled={visibleViewIds.length <= 1}
+                duplicateDisabled={duplicateDisabled}
                 view={viewForActions}
               />
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        {dragState.type === 'over' ? <DropColumnIndicator edge={dragState.closestEdge} /> : null}
       </TabsTrigger>
     );
   }

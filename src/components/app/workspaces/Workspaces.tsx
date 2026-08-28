@@ -1,28 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
-import { clearRedirectTo } from '@/application/session/sign_in';
-import { invalidToken } from '@/application/session/token';
 import { Workspace } from '@/application/types';
+import { isSameUserUid } from '@/application/user-uid';
 import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
-import { ReactComponent as AddUserIcon } from '@/assets/icons/invite_user.svg';
-import { ReactComponent as LogoutIcon } from '@/assets/icons/logout.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ImportIcon } from '@/assets/icons/save_as.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { notify } from '@/components/_shared/notify';
-import { useAIEnabled, useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useCurrentWorkspaceId,
+  useRefreshUserWorkspaceInfo,
+  useUserWorkspaceInfo,
+} from '@/components/app/app.hooks';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
-import InviteMember from '@/components/app/workspaces/InviteMember';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
-import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
 import UpgradeAIMax from '@/components/billing/UpgradeAIMax';
 import UpgradePlan from '@/components/billing/UpgradePlan';
@@ -36,17 +37,21 @@ import {
   dropdownMenuItemVariants,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
-import { AccountSettings } from './AccountSettings';
+import { SettingsDialog } from '@/components/app/settings';
 
 export function Workspaces() {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
+  const refreshUserWorkspaceInfo = useRefreshUserWorkspaceInfo();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const aiEnabled = useAIEnabled();
@@ -56,25 +61,17 @@ export function Workspaces() {
   const [open, setOpen] = useState(false);
   const [hoveredHeader, setHoveredHeader] = useState<boolean>(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const navigate = useNavigate();
+  const workspaceListScrollRef = useRef<HTMLDivElement | null>(null);
   const [changeLoading, setChangeLoading] = useState<string | null>(null);
-  const handleSignOut = useCallback(() => {
-    clearRedirectTo(); // Clear stored redirect URL from previous user
-    invalidToken();
-    navigate('/login?force=true');
-  }, [navigate]);
-
   const { onChangeWorkspace: handleSelectedWorkspace } = useAppOperations();
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | undefined>(undefined);
-  const [openInviteMember, setOpenInviteMember] = useState(false);
   const [openCreateWorkspace, setOpenCreateWorkspace] = useState(false);
   const [openRenameWorkspace, setOpenRenameWorkspace] = useState<Workspace | null>(null);
   const [openDeleteWorkspace, setOpenDeleteWorkspace] = useState<Workspace | null>(null);
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
-  const [openLogoutConfirm, setOpenLogoutConfirm] = useState(false);
-  const [openAccountSettings, setOpenAccountSettings] = useState(false);
+  const [openSettings, setOpenSettings] = useState(false);
 
-  const isOwner = currentWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const isOwner = isSameUserUid(currentWorkspace?.owner?.uid, currentUser?.uid);
 
   useEffect(() => {
     setCurrentWorkspace(userWorkspaceInfo?.workspaces.find((workspace) => workspace.id === currentWorkspaceId));
@@ -96,13 +93,16 @@ export function Workspaces() {
   );
   const [, setSearchParams] = useSearchParams();
 
-  const handleOpenImport = useCallback(() => {
-    setSearchParams((prev) => {
-      prev.set('action', 'import');
-      prev.set('source', 'notion');
-      return prev;
-    });
-  }, [setSearchParams]);
+  const handleOpenImport = useCallback(
+    (source: 'notion' | 'appflowy') => {
+      setSearchParams((prev) => {
+        prev.set('action', 'import');
+        prev.set('source', source);
+        return prev;
+      });
+    },
+    [setSearchParams]
+  );
 
   const handleCreateWorkspace = useCallback(
     async (name: string) => {
@@ -128,9 +128,14 @@ export function Workspaces() {
         });
       }
 
+      // The optimistic patch above only covers the current workspace's local
+      // state — refresh the shared workspace list so every consumer (header,
+      // mobile switcher, members panel) drops the old name.
+      void refreshUserWorkspaceInfo?.();
+
       setOpenRenameWorkspace(null);
     },
-    [openRenameWorkspace, currentWorkspaceId]
+    [openRenameWorkspace, currentWorkspaceId, refreshUserWorkspaceInfo]
   );
 
   return (
@@ -171,19 +176,23 @@ export function Workspaces() {
             <DropdownMenuLabel className='w-full overflow-hidden'>
               <span className='truncate'>{currentUser?.email}</span>
             </DropdownMenuLabel>
-            <DropdownMenuGroup
-              data-testid='workspace-list'
-              className={'appflowy-scroller max-h-[200px] flex-1 overflow-y-auto overflow-x-hidden'}
-            >
-              <WorkspaceList
-                defaultWorkspaces={userWorkspaceInfo?.workspaces}
-                currentWorkspaceId={currentWorkspaceId}
-                onChange={handleChange}
-                changeLoading={changeLoading || undefined}
-                onUpdate={setOpenRenameWorkspace}
-                onDelete={setOpenDeleteWorkspace}
-                onLeave={setOpenLeaveWorkspace}
-              />
+            <DropdownMenuGroup>
+              <div
+                ref={workspaceListScrollRef}
+                data-testid='workspace-list'
+                className={'appflowy-scroller max-h-[200px] flex-1 overflow-y-auto overflow-x-hidden'}
+              >
+                <WorkspaceList
+                  defaultWorkspaces={userWorkspaceInfo?.workspaces}
+                  currentWorkspaceId={currentWorkspaceId}
+                  onChange={handleChange}
+                  changeLoading={changeLoading || undefined}
+                  onUpdate={setOpenRenameWorkspace}
+                  onDelete={setOpenDeleteWorkspace}
+                  onLeave={setOpenLeaveWorkspace}
+                  autoScrollContainerRef={workspaceListScrollRef}
+                />
+              </div>
             </DropdownMenuGroup>
             <DropdownMenuItem
               onSelect={() => {
@@ -197,45 +206,47 @@ export function Workspaces() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              {currentWorkspace && isOwner && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setOpenInviteMember(true);
-                  }}
-                >
-                  <AddUserIcon />
-                  {t('settings.appearance.members.inviteMembers')}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={handleOpenImport}>
-                <ImportIcon />
-                <div className={'flex-1 text-left'}>{t('web.importNotion')}</div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void openUrl('https://docs.appflowy.io/docs/guides/import-from-notion', '_blank');
-                      }}
-                      className={'ml-auto cursor-pointer text-icon-secondary'}
-                    >
-                      <TipIcon />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{t('workspace.learnMore')}</TooltipContent>
-                </Tooltip>
-              </DropdownMenuItem>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger data-testid='import-workspace-trigger'>
+                  <ImportIcon />
+                  <div className={'flex-1 text-left'}>{t('web.importWorkspace')}</div>
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem
+                    data-testid='import-from-appflowy'
+                    onSelect={() => handleOpenImport('appflowy')}
+                  >
+                    <div className={'flex-1 text-left'}>{t('web.importFromAppFlowy')}</div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    data-testid='import-from-notion'
+                    onSelect={() => handleOpenImport('notion')}
+                  >
+                    <div className={'flex-1 text-left'}>{t('web.importFromNotion')}</div>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openUrl('https://docs.appflowy.io/docs/guides/import-from-notion', '_blank');
+                          }}
+                          className={'ml-auto cursor-pointer text-icon-secondary'}
+                        >
+                          <TipIcon />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('workspace.learnMore')}</TooltipContent>
+                    </Tooltip>
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
             </DropdownMenuGroup>
 
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem data-testid='account-settings-button' onSelect={() => setOpenAccountSettings(true)}>
+              <DropdownMenuItem data-testid='settings-button' onSelect={() => setOpenSettings(true)}>
                 <SettingsIcon />
-                <div className={'flex-1 text-left'}>{t('web.accountSettings')}</div>
-              </DropdownMenuItem>
-              <DropdownMenuItem data-testid='logout-menu-item' onSelect={() => setOpenLogoutConfirm(true)}>
-                <LogoutIcon />
-                {t('button.logout')}
+                <div className={'flex-1 text-left'}>{t('web.settings')}</div>
               </DropdownMenuItem>
             </DropdownMenuGroup>
             {isOwner && isHosted && (
@@ -300,10 +311,6 @@ export function Workspaces() {
         />
       )}
 
-      {currentWorkspace && (
-        <InviteMember open={openInviteMember} openOnChange={setOpenInviteMember} workspace={currentWorkspace} />
-      )}
-
       {openRenameWorkspace && (
         <EditWorkspace
           open={Boolean(openRenameWorkspace)}
@@ -333,8 +340,11 @@ export function Workspaces() {
         />
       )}
 
-      <AccountSettings open={openAccountSettings} onClose={() => setOpenAccountSettings(false)} />
-      <LogoutConfirm open={openLogoutConfirm} onClose={() => setOpenLogoutConfirm(false)} onConfirm={handleSignOut} />
+      <SettingsDialog
+        open={openSettings}
+        onClose={() => setOpenSettings(false)}
+        onRequestOpen={() => setOpenSettings(true)}
+      />
     </>
   );
 }

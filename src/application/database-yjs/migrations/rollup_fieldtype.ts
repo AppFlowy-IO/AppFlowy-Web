@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import { normalizeLegacyCellFieldType } from '@/application/database-yjs/cell.field-type';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
@@ -16,7 +17,10 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 
-export const ROLLUP_SCHEMA_VERSION = 2;
+const ROLLUP_SCHEMA_VERSION = 2;
+const ROW_MIGRATION_CONCURRENCY = 8;
+
+export const DATABASE_SCHEMA_VERSION = 3;
 
 type RowLoader = (rowKey: string) => Promise<YDoc>;
 
@@ -64,16 +68,12 @@ function isLegacyTimeField(fieldType: number, field: Y.Map<unknown>): boolean {
 
   const typeOptionMap = field.get(YjsDatabaseKey.type_option) as Y.Map<unknown> | undefined;
   const typeOption = typeOptionMap?.get(String(fieldType)) as Y.Map<unknown> | undefined;
-  const hasRollupKeys =
-    typeOption && Array.from(typeOption.keys()).some((key) => ROLLUP_OPTION_KEYS.has(key));
+  const hasRollupKeys = typeOption && Array.from(typeOption.keys()).some((key) => ROLLUP_OPTION_KEYS.has(key));
 
   return !hasRollupKeys;
 }
 
-function migrateFieldType(
-  field: Y.Map<unknown>,
-  fieldTypeById: Map<string, number>
-): void {
+function migrateFieldType(field: Y.Map<unknown>, fieldTypeById: Map<string, number>): void {
   const fieldId = field.get(YjsDatabaseKey.id) as string;
   const fieldType = Number(field.get(YjsDatabaseKey.type));
 
@@ -98,37 +98,48 @@ function migrateFieldType(
 
 async function migrateRowCells(
   rowDoc: YDoc,
-  fieldTypeById: Map<string, number>
-): Promise<void> {
+  fieldTypeById: Map<string, number>,
+  migrateRollupFieldType: boolean,
+  migrateLegacyCellType: boolean
+): Promise<boolean> {
   const rowRoot = rowDoc.getMap(YjsEditorKey.data_section);
   const row = rowRoot?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
-  if (!row) return;
+  if (!row) return false;
 
   const cells = row.get(YjsDatabaseKey.cells) as YDatabaseCells | undefined;
 
-  if (!cells) return;
+  if (!cells) return true;
 
   rowDoc.transact(() => {
     cells.forEach((cell, fieldId) => {
       const cellMap = cell as YDatabaseCell;
-      const expectedType = fieldTypeById.get(fieldId);
 
-      if (!expectedType) return;
+      if (migrateRollupFieldType) {
+        const expectedType = fieldTypeById.get(fieldId);
 
-      const currentType = Number(cellMap.get(YjsDatabaseKey.field_type));
+        if (expectedType !== undefined) {
+          const currentType = Number(cellMap.get(YjsDatabaseKey.field_type));
 
-      if (currentType === FieldType.Rollup && expectedType === FieldType.Time) {
-        cellMap.set(YjsDatabaseKey.field_type, FieldType.Time);
+          if (currentType === FieldType.Rollup && expectedType === FieldType.Time) {
+            cellMap.set(YjsDatabaseKey.field_type, FieldType.Time);
+          }
+
+          const sourceType = Number(cellMap.get(YjsDatabaseKey.source_field_type));
+
+          if (sourceType === FieldType.Rollup && expectedType === FieldType.Time) {
+            cellMap.set(YjsDatabaseKey.source_field_type, FieldType.Time);
+          }
+        }
       }
 
-      const sourceType = Number(cellMap.get(YjsDatabaseKey.source_field_type));
-
-      if (sourceType === FieldType.Rollup && expectedType === FieldType.Time) {
-        cellMap.set(YjsDatabaseKey.source_field_type, FieldType.Time);
+      if (migrateLegacyCellType) {
+        normalizeLegacyCellFieldType(cellMap);
       }
     });
   });
+
+  return true;
 }
 
 export async function migrateDatabaseFieldTypes(
@@ -148,35 +159,59 @@ export async function migrateDatabaseFieldTypes(
   const metas = ensureMetas(database);
   const currentVersion = Number(metas.get(YjsDatabaseKey.schema_version) ?? 0);
 
-  if (currentVersion >= ROLLUP_SCHEMA_VERSION) return false;
+  const normalizeRequestedRows = Boolean(options?.rowIds?.length && options.loadRow);
+
+  if (currentVersion >= DATABASE_SCHEMA_VERSION && !normalizeRequestedRows) return false;
 
   const fields = database.get(YjsDatabaseKey.fields) as YDatabaseFields | undefined;
 
   if (!fields) return false;
 
   const fieldTypeById = new Map<string, number>();
+  const migrateRollupFieldType = currentVersion < ROLLUP_SCHEMA_VERSION;
+  const migrateLegacyCellType = currentVersion < DATABASE_SCHEMA_VERSION || normalizeRequestedRows;
 
-  doc.transact(() => {
-    fields.forEach((field) => {
-      migrateFieldType(field as Y.Map<unknown>, fieldTypeById);
+  if (migrateRollupFieldType) {
+    doc.transact(() => {
+      fields.forEach((field) => {
+        migrateFieldType(field as Y.Map<unknown>, fieldTypeById);
+      });
     });
-  });
+  }
 
   const rowIds = options?.rowIds ?? collectRowIds(database);
   const loadRow = options?.loadRow;
   const rowKeyPrefix = options?.databaseId || doc.guid;
 
-  if (loadRow && rowIds.length > 0) {
-    for (const rowId of rowIds) {
-      const rowKey = getRowKey(rowKeyPrefix, rowId);
-      const rowDoc = await loadRow(rowKey);
+  let migratedEveryRow = rowIds.length === 0;
 
-      await migrateRowCells(rowDoc, fieldTypeById);
-    }
+  if (loadRow && rowIds.length > 0) {
+    migratedEveryRow = true;
+    let nextRowIndex = 0;
+    const workerCount = Math.min(ROW_MIGRATION_CONCURRENCY, rowIds.length);
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (nextRowIndex < rowIds.length) {
+          const rowId = rowIds[nextRowIndex];
+
+          nextRowIndex += 1;
+          const rowKey = getRowKey(rowKeyPrefix, rowId);
+          const rowDoc = await loadRow(rowKey);
+          const migrated = await migrateRowCells(rowDoc, fieldTypeById, migrateRollupFieldType, migrateLegacyCellType);
+
+          if (!migrated) migratedEveryRow = false;
+        }
+      })
+    );
   }
 
-  if (options?.commitVersion ?? true) {
-    metas.set(YjsDatabaseKey.schema_version, ROLLUP_SCHEMA_VERSION);
+  // Do not mark a row migration complete when row docs were unavailable. A
+  // later open with a loader must still get a chance to repair them.
+  const canCommitVersion = rowIds.length === 0 || (Boolean(loadRow) && migratedEveryRow);
+
+  if (currentVersion < DATABASE_SCHEMA_VERSION && (options?.commitVersion ?? true) && canCommitVersion) {
+    metas.set(YjsDatabaseKey.schema_version, DATABASE_SCHEMA_VERSION);
   }
 
   return true;

@@ -2,15 +2,21 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { useSearchParams } from 'react-router-dom';
 
 import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { PageService } from '@/application/services/domains';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { isDatabaseContainer, resolveActiveDatabaseViewId } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
 import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
-import { useAppOutline, useBreadcrumb } from '@/components/app/app.hooks';
+import {
+  useAppOutline,
+  useBreadcrumb,
+  useCurrentWorkspaceIdOptional,
+  useRefreshOutline,
+} from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { Database } from '@/components/database';
 import { useContainerVisibleViewIds } from '@/components/database/hooks';
@@ -51,7 +57,7 @@ function DatabaseView(props: DatabaseViewProps) {
   // server fetches for any ancestor missing from the shallow outline, so it
   // resolves the database container even when the outline tree doesn't yet
   // include the route view's parent (e.g. immediately after refresh while
-  // the outline still loads at depth=2).
+  // the outline still uses a bounded depth).
   const breadcrumbContainerView = useMemo((): View | undefined => {
     if (containerView) return undefined;
     if (viewMeta.extra?.embedded) return undefined;
@@ -66,6 +72,23 @@ function DatabaseView(props: DatabaseViewProps) {
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || breadcrumbContainerView || view;
+
+  const workspaceId = useCurrentWorkspaceIdOptional();
+  const refreshOutline = useRefreshOutline();
+
+  // Persist a tab reorder by moving the view within its database container.
+  // No-ops for standalone databases (no container), which keep the local order.
+  const handleReorderViews = useCallback(
+    async (movedViewId: string, prevViewId: string | null) => {
+      const container = containerView || breadcrumbContainerView;
+
+      if (!container || !workspaceId) return;
+
+      await PageService.moveTo(workspaceId, movedViewId, container.view_id, prevViewId);
+      await refreshOutline?.();
+    },
+    [containerView, breadcrumbContainerView, workspaceId, refreshOutline]
+  );
 
   const pageMeta = useMemo(() => {
     if (!pageView) {
@@ -85,11 +108,17 @@ function DatabaseView(props: DatabaseViewProps) {
 
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
-   * Comes from URL param 'v', defaults to databasePageId when not specified.
+   * Comes from URL param 'v', defaults to the route id for direct child-view
+   * routes, or the first visible child when the route points at a database
+   * container.
    */
   const activeViewId = useMemo(() => {
-    return search.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM) || databasePageId;
-  }, [search, databasePageId]);
+    return resolveActiveDatabaseViewId({
+      databasePageId,
+      tabViewId: search.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM),
+      visibleViewIds,
+    });
+  }, [search, databasePageId, visibleViewIds]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
@@ -235,6 +264,8 @@ function DatabaseView(props: DatabaseViewProps) {
 
     switch (viewMeta.layout) {
       case ViewLayout.Grid:
+      case ViewLayout.List:
+      case ViewLayout.Gallery:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
         return <KanbanSkeleton includeTitle={false} />;
@@ -284,6 +315,7 @@ function DatabaseView(props: DatabaseViewProps) {
           onOpenRowPage={handleNavigateToRow}
           modalRowId={modalRowId}
           visibleViewIds={visibleViewIds}
+          onReorderViews={handleReorderViews}
         />
       </Suspense>
     </div>

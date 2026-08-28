@@ -16,9 +16,7 @@ import { testLog } from '../../../support/test-helpers';
 /**
  * Paste content into the Slate editor by calling insertData directly.
  */
-async function pasteContent(page: Page, html: string, plainText: string) {
-  await expect(EditorSelectors.slateEditor(page).first()).toBeVisible({ timeout: 10000 });
-
+async function getDocumentEditorIndex(page: Page) {
   const editors = EditorSelectors.slateEditor(page);
   const editorCount = await editors.count();
 
@@ -39,8 +37,13 @@ async function pasteContent(page: Page, html: string, plainText: string) {
     throw new Error('No editor found');
   }
 
-  await editors.nth(targetIndex).click({ force: true });
-  await page.waitForTimeout(300);
+  return targetIndex;
+}
+
+async function pasteContent(page: Page, html: string, plainText: string) {
+  await expect(EditorSelectors.slateEditor(page).first()).toBeVisible({ timeout: 10000 });
+
+  const targetIndex = await getDocumentEditorIndex(page);
 
   await page.evaluate(
     ({ html, plainText, idx }) => {
@@ -95,12 +98,52 @@ async function pasteContent(page: Page, html: string, plainText: string) {
 /**
  * Move cursor to end of document and create a new empty paragraph.
  * Call this between sequential pastes so each paste starts in its own block.
+ *
+ * This must not rely on clicking a computed coordinate: once the document
+ * grows taller than the viewport the old click landed outside it and silently
+ * did nothing — harmless before paste-at-caret (#486), but now a table paste
+ * leaves the caret inside the pasted table's last cell, and the next TSV
+ * paste would fill that table's cells instead of creating a new one. Place
+ * the DOM selection in the last text node outside any table and let Slate
+ * sync it.
  */
 async function moveCursorToEnd(page: Page) {
-  const isMac = process.platform === 'darwin';
-  await page.keyboard.press(isMac ? 'Meta+ArrowDown' : 'Control+End');
+  const targetIndex = await getDocumentEditorIndex(page);
+
+  const placedTextLength = await page.evaluate((idx) => {
+    const allEditors = document.querySelectorAll('[data-slate-editor="true"]');
+    const targetEditor = allEditors[idx] as HTMLElement;
+
+    if (!targetEditor) return null;
+    const walker = document.createTreeWalker(targetEditor, NodeFilter.SHOW_TEXT);
+    let last: globalThis.Text | null = null;
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode as globalThis.Text;
+
+      if (node.parentElement?.closest('.simple-table')) continue;
+      last = node;
+    }
+
+    if (!last) return null;
+    targetEditor.focus();
+    document.getSelection()?.collapse(last, last.length);
+    // Zero-width placeholder chars mean the block is empty.
+    return (last.textContent ?? '').replace(/[﻿​]/g, '').length;
+  }, targetIndex);
+
   await page.waitForTimeout(200);
-  await page.keyboard.press('Enter');
+
+  if (placedTextLength === null) {
+    // No text block outside a table (document ends inside a table).
+    const isMac = process.platform === 'darwin';
+
+    await page.keyboard.press(isMac ? 'Meta+ArrowDown' : 'Control+End');
+  } else if (placedTextLength > 0) {
+    // The last block has content; open a fresh paragraph below it.
+    await page.keyboard.press('Enter');
+  }
+
   await page.waitForTimeout(300);
 }
 
@@ -115,7 +158,7 @@ async function createTestPage(page: Page, request: import('@playwright/test').AP
   await page.waitForTimeout(2000);
 
   await createDocumentPageAndNavigate(page);
-  await EditorSelectors.firstEditor(page).click({ force: true });
+  await EditorSelectors.slateEditor(page).nth(await getDocumentEditorIndex(page)).click({ force: true });
   await page.waitForTimeout(500);
 }
 

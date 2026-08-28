@@ -135,12 +135,14 @@ export async function closeRowDetailWithEscape(page: Page): Promise<void> {
     if (dialogCount === 0) break;
   }
 
-  // If Escape didn't close the dialog, click the backdrop instead.
+  // If Escape didn't close the dialog, click the dialog container outside the paper instead.
+  // MUI wires backdrop-close handling to the container click event; the Backdrop
+  // element itself is a sibling, so clicking `.MuiBackdrop-root` can be a no-op.
   // NEVER click a title-bar button — the first button is expand-to-page.
   if ((await page.locator('.MuiDialog-paper').count()) > 0) {
-    const backdrop = page.locator('.MuiBackdrop-root');
-    if ((await backdrop.count()) > 0) {
-      await backdrop.click({ force: true });
+    const dialogContainer = page.locator('.MuiDialog-container');
+    if ((await dialogContainer.count()) > 0) {
+      await dialogContainer.last().click({ force: true, position: { x: 5, y: 5 } });
     } else {
       await page.mouse.click(10, 10);
     }

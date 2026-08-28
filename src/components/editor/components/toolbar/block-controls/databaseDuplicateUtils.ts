@@ -1,29 +1,24 @@
-import { BlockType, View, ViewLayout } from '@/application/types';
+import { View } from '@/application/types';
 
-const DATABASE_BLOCK_TYPES = new Set([
-  BlockType.GridBlock,
-  BlockType.BoardBlock,
-  BlockType.CalendarBlock,
-  BlockType.ChartBlock,
-]);
+export { getDatabaseLayoutFromBlockType, isDatabaseBlockType } from '@/application/database-block';
 
-export function isDatabaseBlockType(type: BlockType | undefined): boolean {
-  return type ? DATABASE_BLOCK_TYPES.has(type) : false;
-}
+export async function loadDatabaseDuplicateSourceViews(params: {
+  sourceViewIds: string[];
+  firstSourceView: View;
+  loadViewMeta: (viewId: string) => Promise<View | null>;
+}): Promise<Array<View | null>> {
+  return Promise.all(
+    params.sourceViewIds.map((viewId, index) => {
+      // The first view has already been loaded to identify the duplication
+      // path. Preserve that authoritative layout instead of reloading it and
+      // falling back to the shared GridBlock type if the reload fails.
+      if (index === 0) return params.firstSourceView;
 
-export function getDatabaseLayoutFromBlockType(type: BlockType): ViewLayout | undefined {
-  switch (type) {
-    case BlockType.GridBlock:
-      return ViewLayout.Grid;
-    case BlockType.BoardBlock:
-      return ViewLayout.Board;
-    case BlockType.CalendarBlock:
-      return ViewLayout.Calendar;
-    case BlockType.ChartBlock:
-      return ViewLayout.Chart;
-    default:
-      return undefined;
-  }
+      return Promise.resolve()
+        .then(() => params.loadViewMeta(viewId))
+        .catch(() => null);
+    })
+  );
 }
 
 export function findDuplicatedContainerChild(params: {
@@ -32,9 +27,7 @@ export function findDuplicatedContainerChild(params: {
   sourceContainerId: string;
   duplicatedName?: string;
 }): View | undefined {
-  const allAfterChildren = (params.afterChildren ?? []).filter(
-    (child) => child.view_id !== params.sourceContainerId
-  );
+  const allAfterChildren = (params.afterChildren ?? []).filter((child) => child.view_id !== params.sourceContainerId);
 
   const beforeIds = new Set((params.beforeChildren ?? []).map((child) => child.view_id));
   const addedChildren = allAfterChildren.filter((child) => !beforeIds.has(child.view_id));

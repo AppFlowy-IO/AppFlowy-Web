@@ -15,10 +15,12 @@ function RowPropertyCell({
   fieldId,
   rowId,
   onCellUpdated,
+  templateStyle = false,
 }: {
   fieldId: string;
   rowId: string;
   onCellUpdated?: (cell: CellType) => void;
+  templateStyle?: boolean;
 }) {
   const cell = useCellSelector({
     fieldId,
@@ -71,7 +73,8 @@ function RowPropertyCell({
       }}
       className={cn(
         'relative flex h-fit min-h-[36px] flex-1 flex-wrap items-center overflow-x-hidden rounded-300 px-2 py-2 pr-1 text-sm',
-        !isReadOnlyCell && !isChecklist && 'cursor-pointer hover:bg-fill-content-hover'
+        !isReadOnlyCell && !isChecklist && 'cursor-pointer hover:bg-fill-content-hover',
+        templateStyle && 'min-h-[30px] py-1.5'
       )}
     >
       <CellComponent

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+  const submittingRef = useRef(false);
 
   const isAuthenticated = useIsAuthenticatedOptional();
   const [, setSearchParams] = useSearchParams();
@@ -29,18 +30,17 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
   useEffect(() => {
     if (!isAuthenticated) {
       setSearchParams((prev) => {
-        prev.delete('email');
-        prev.delete('action');
-        prev.set('redirectTo', encodeURIComponent(redirectTo));
-        return prev;
+        const next = new URLSearchParams(prev);
+
+        next.delete('email');
+        next.delete('action');
+        next.set('redirectTo', redirectTo);
+        return next;
       });
     }
   }, [isAuthenticated, redirectTo, setSearchParams]);
 
-  const getValidationErrors = useCallback(
-    (password: string) => getPasswordErrors(password, t),
-    [t]
-  );
+  const getValidationErrors = useCallback((password: string) => getPasswordErrors(password, t), [t]);
 
   const validateConfirmPassword = useCallback(
     (password: string) => {
@@ -72,6 +72,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
 
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
+    if (submittingRef.current) return;
 
     const errors = getValidationErrors(newPassword);
 
@@ -85,6 +86,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError('');
     setPasswordErrors([]);
@@ -99,6 +101,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
     } catch (error: any) {
       setError(error.message);
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -140,6 +143,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
             value={newPassword}
             placeholder={t('changePassword.placeholder')}
             variant={hasPasswordErrors ? 'destructive' : 'default'}
+            disabled={loading}
             onKeyDown={(e) => {
               if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                 void handleSubmit(e);
@@ -174,6 +178,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
             value={confirmPassword}
             placeholder={t('changePassword.confirmPassword')}
             variant={hasConfirmError ? 'destructive' : 'default'}
+            disabled={loading}
             onKeyDown={(e) => {
               if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                 void handleSubmit(e);
@@ -185,7 +190,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
 
         {error && !hasConfirmError && <div className={cn('help-text text-xs text-text-error')}>{error}</div>}
       </div>
-      <Button loading={loading} size={'lg'} className={'w-full'} onMouseDown={handleSubmit} disabled={!isFormValid}>
+      <Button loading={loading} size={'lg'} className={'w-full'} onClick={handleSubmit} disabled={!isFormValid}>
         {loading ? (
           <>
             <Progress />
@@ -200,6 +205,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
         onClick={() => {
           invalidToken();
         }}
+        disabled={loading}
         className={'w-full'}
       >
         {t('backToLogin')}

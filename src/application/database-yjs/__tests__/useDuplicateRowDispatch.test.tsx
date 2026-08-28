@@ -7,7 +7,16 @@ import { DatabaseContext, DatabaseContextState } from '@/application/database-yj
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
-import { RowId, YDatabase, YDatabaseField, YDatabaseView, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import {
+  RowId,
+  YDatabase,
+  YDatabaseField,
+  YDatabaseRow,
+  YDatabaseView,
+  YDoc,
+  YjsDatabaseKey,
+  YjsEditorKey,
+} from '@/application/types';
 
 import { createCell, createRowDoc } from './test-helpers';
 
@@ -64,12 +73,15 @@ function createDatabaseDoc(): YDoc {
   return doc;
 }
 
-function createReferenceRowDoc(options: {
-  documentId?: string;
-  isEmptyDocument?: boolean;
-} = {}): YDoc {
+function createReferenceRowDoc(
+  options: {
+    documentId?: string;
+    isEmptyDocument?: boolean;
+    storedFieldType?: FieldType;
+  } = {}
+): YDoc {
   const rowDoc = createRowDoc(sourceRowId, databaseId, {
-    [fieldId]: createCell(FieldType.RichText, 'Source row'),
+    [fieldId]: createCell(options.storedFieldType ?? FieldType.RichText, 'Source row'),
   });
   const meta = new Y.Map<unknown>();
   const metaKeys = getMetaIdMap(sourceRowId);
@@ -128,6 +140,63 @@ function createWrapper({
 }
 
 describe('useDuplicateRowDispatch', () => {
+  it('preserves a lazy cell raw value and stored type', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.MultiSelect });
+    const createdRows = new Map<string, YDoc>();
+    const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument }),
+    });
+    let duplicatedRowId = '';
+
+    await act(async () => {
+      duplicatedRowId = await result.current(sourceRowId);
+    });
+
+    const createdRowDoc = createdRows.get(getRowKey(databaseDocId, duplicatedRowId)) as YDoc;
+    const row = createdRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cell = row.get(YjsDatabaseKey.cells).get(fieldId);
+
+    expect(cell.get(YjsDatabaseKey.data)).toBe('Source row');
+    expect(cell.get(YjsDatabaseKey.field_type)).toBe(FieldType.MultiSelect);
+    expect(cell.get(YjsDatabaseKey.source_field_type)).toBeUndefined();
+  });
+
+  it('deep-clones Y.Array cell data so duplicate edits do not mutate the source', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const referenceRowDoc = createReferenceRowDoc({ storedFieldType: FieldType.Relation });
+    const referenceRow = referenceRowDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database_row) as YDatabaseRow;
+    const referenceCell = referenceRow.get(YjsDatabaseKey.cells).get(fieldId);
+    const sourceIds = new Y.Array<string>();
+
+    referenceCell.set(YjsDatabaseKey.data, sourceIds);
+    sourceIds.push(['row-a', 'row-b']);
+
+    const createdRows = new Map<string, YDoc>();
+    const duplicateRowDocument = jest.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useDuplicateRowDispatch(), {
+      wrapper: createWrapper({ databaseDoc, referenceRowDoc, createdRows, duplicateRowDocument }),
+    });
+    let duplicatedRowId = '';
+
+    await act(async () => {
+      duplicatedRowId = await result.current(sourceRowId);
+    });
+
+    const createdRowDoc = createdRows.get(getRowKey(databaseDocId, duplicatedRowId)) as YDoc;
+    const duplicatedRow = createdRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const duplicatedCell = duplicatedRow.get(YjsDatabaseKey.cells).get(fieldId);
+    const duplicatedIds = duplicatedCell.get(YjsDatabaseKey.data) as Y.Array<string>;
+
+    expect(duplicatedIds.toArray()).toEqual(['row-a', 'row-b']);
+    duplicatedIds.push(['row-c']);
+    expect(sourceIds.toArray()).toEqual(['row-a', 'row-b']);
+    expect(duplicatedIds.toArray()).toEqual(['row-a', 'row-b', 'row-c']);
+  });
+
   it('does not create or duplicate a row page when the source row is document-empty', async () => {
     const databaseDoc = createDatabaseDoc();
     const referenceRowDoc = createReferenceRowDoc({ isEmptyDocument: true });

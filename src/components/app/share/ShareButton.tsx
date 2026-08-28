@@ -9,13 +9,14 @@ import ShareTabs from '@/components/app/share/ShareTabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-export function ShareButton({ viewId }: { viewId: string }) {
+export function ShareButton({ viewId, hidePublish = false }: { viewId: string; hidePublish?: boolean }) {
   const { t } = useTranslation();
 
   const view = useAppView(viewId);
   const layout = view?.layout;
   const [opened, setOpened] = React.useState(false);
   const [publishManageOpen, setPublishManageOpen] = React.useState(false);
+  const publishManageVisible = publishManageOpen && !hidePublish;
 
   if (layout === ViewLayout.AIChat) return null;
 
@@ -38,6 +39,7 @@ export function ShareButton({ viewId }: { viewId: string }) {
           <ShareTabs
             opened={opened}
             viewId={viewId}
+            hidePublish={hidePublish}
             onClose={() => setOpened(false)}
             onOpenPublishManage={() => {
               setOpened(false);
@@ -48,7 +50,7 @@ export function ShareButton({ viewId }: { viewId: string }) {
       </Popover>
       <NormalModal
         data-testid='publish-manage-modal'
-        open={publishManageOpen}
+        open={publishManageVisible}
         onClose={() => setPublishManageOpen(false)}
         scroll='paper'
         overflowHidden

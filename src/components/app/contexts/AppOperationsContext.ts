@@ -5,14 +5,18 @@ import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  DuplicatePageOptions,
+  CreateOrphanedViewPayload,
+  DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
   CreateSpacePayload,
+  CreateSpaceWithInitialPagePayload,
+  CreateSpaceWithInitialPageResponse,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
+  LoadRowDocument,
   LoadView,
   LoadViewMeta,
   Subscription,
@@ -69,7 +73,7 @@ export interface AppOperationsContextType {
   /** Soft-delete a page (move to trash). */
   deletePage?: (viewId: string) => Promise<void>;
   /** Duplicate a page, optionally refreshing its parent children in the outline. */
-  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   /** Update page properties (name, cover, etc.). */
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   /** Update just the page icon. */
@@ -86,6 +90,10 @@ export interface AppOperationsContextType {
   // ── Space operations ───────────────────────────────────────────────
   /** Create a new workspace space (top-level folder). */
   createSpace?: (payload: CreateSpacePayload) => Promise<string>;
+  /** Create a new workspace space and first page. */
+  createSpaceWithInitialPage?: (
+    payload: CreateSpaceWithInitialPagePayload
+  ) => Promise<CreateSpaceWithInitialPageResponse>;
   /** Update space properties. */
   updateSpace?: (payload: UpdateSpacePayload) => Promise<void>;
   /** Create a new database view (Grid/Board/Calendar tab) within an existing database. */
@@ -113,7 +121,7 @@ export interface AppOperationsContextType {
 
   // ── Database operations ────────────────────────────────────────────
   /** Create an orphaned view (e.g. for inline database within a document). */
-  createOrphanedView?: (payload: { document_id: string }) => Promise<Uint8Array>;
+  createOrphanedView?: (payload: CreateOrphanedViewPayload) => Promise<Uint8Array>;
   /** Load AI prompt templates for a database. */
   loadDatabasePrompts?: LoadDatabasePrompts;
   /** Test an AI prompt config against a database. */
@@ -121,11 +129,11 @@ export interface AppOperationsContextType {
   /** Check whether a row document exists (for inline row detail). */
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   /** Load an existing row document. */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   /** Create a new row document (returns encoded initial state). */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  createRowDocument?: import('@/application/types').CreateRowDocument;
   /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
-  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
+  duplicateRowDocument?: import('@/application/types').DuplicateRowDocument;
   /** Resolve a database ID to its primary view ID. */
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 

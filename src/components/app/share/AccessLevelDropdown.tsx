@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AccessLevel, IPeopleWithAccessType } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
@@ -17,11 +18,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface AccessLevelDropdownProps {
   person: IPeopleWithAccessType;
   canModify: boolean;
   currentUserHasFullAccess: boolean;
+  currentUserCanGrantFullAccess?: boolean;
+  disabledReason?: string;
   isYou: boolean;
   onAccessLevelChange: (email: string, accessLevel: AccessLevel) => Promise<void>;
   onRemoveAccess: (email: string) => Promise<void>;
@@ -31,6 +36,8 @@ export function AccessLevelDropdown({
   person,
   canModify,
   currentUserHasFullAccess,
+  currentUserCanGrantFullAccess = false,
+  disabledReason,
   isYou,
   onAccessLevelChange,
   onRemoveAccess,
@@ -89,11 +96,28 @@ export function AccessLevelDropdown({
     );
   }, [loading, isYou, handleRemoveAccess, t]);
 
-  if (person.access_level === AccessLevel.FullAccess) {
-    return (
-      <div className='mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary'>
+  if (!canModify || disabledReason) {
+    const accessLabel = (
+      <div
+        aria-disabled={disabledReason ? true : undefined}
+        className={cn(
+          'mr-2 flex min-w-fit items-center justify-center whitespace-nowrap px-3 py-1.5 text-sm text-text-secondary',
+          disabledReason && 'cursor-not-allowed'
+        )}
+        data-testid={disabledReason ? 'access-level-change-disabled' : undefined}
+        tabIndex={disabledReason ? 0 : undefined}
+      >
         {getAccessLevelText(person.access_level)}
       </div>
+    );
+
+    if (!disabledReason) return accessLabel;
+
+    return (
+      <Tooltip disableHoverableContent>
+        <TooltipTrigger asChild>{accessLabel}</TooltipTrigger>
+        <TooltipContent side='top'>{disabledReason}</TooltipContent>
+      </Tooltip>
     );
   }
 
@@ -161,6 +185,34 @@ export function AccessLevelDropdown({
                 {!loading && person.access_level === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
                 {loading === 'edit' && <Progress variant='primary' />}
               </DropdownMenuItem>
+              {currentUserCanGrantFullAccess && (
+                <DropdownMenuItem
+                  disabled={loading === 'full'}
+                  onSelect={async (e) => {
+                    e.preventDefault();
+                    setLoading('full');
+                    try {
+                      await onAccessLevelChange(person.email, AccessLevel.FullAccess);
+                      setOpen(false);
+                      notify.success(t('shareAction.changeAccessSuccess', { email: person.email }));
+                    } catch (error) {
+                      notify.error(t('shareAction.changeAccessError'));
+                    } finally {
+                      setLoading(null);
+                    }
+                  }}
+                >
+                  <div className='flex items-center gap-2'>
+                    <CrownIcon />
+                    <div className='flex flex-col'>
+                      <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                      <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+                    </div>
+                  </div>
+                  {!loading && person.access_level === AccessLevel.FullAccess && <DropdownMenuItemTick />}
+                  {loading === 'full' && <Progress variant='primary' />}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               {renderRemoveAccess()}
             </>

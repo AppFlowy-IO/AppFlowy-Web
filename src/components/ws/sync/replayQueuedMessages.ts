@@ -18,7 +18,7 @@ export async function replayQueuedMessages(
   applyCollabMessage: (
     message: ICollabMessage,
     options?: { allowVersionReset?: boolean; user?: User }
-  ) => Promise<void>,
+  ) => Promise<unknown>,
   user?: User
 ): Promise<void> {
   let queued = queuedMessagesDuringReset.get(objectId);

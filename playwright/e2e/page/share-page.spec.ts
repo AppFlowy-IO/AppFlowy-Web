@@ -135,10 +135,10 @@ test.describe('Share Page Test', () => {
 
     await page.waitForTimeout(3000);
 
-    // Then: user B appears in the "People with access" section
+    // Then: user B appears in the "People and groups with access" section
     testLog.info('Waiting for user B to appear in the people list...');
     const popover = ShareSelectors.sharePopover(page);
-    await expect(popover.getByText('People with access')).toBeVisible({ timeout: 10000 });
+    await expect(popover.getByText('People and groups with access')).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 10000 });
     testLog.info('User B successfully added to the page');
 
@@ -267,9 +267,9 @@ test.describe('Share Page Test', () => {
     await clickInviteButton(page);
     await page.waitForTimeout(3000);
 
-    // Then: all three users appear in the "People with access" list
+    // Then: all three users appear in the "People and groups with access" list
     const popover = ShareSelectors.sharePopover(page);
-    await expect(popover.getByText('People with access')).toBeVisible({ timeout: 10000 });
+    await expect(popover.getByText('People and groups with access')).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText(userCEmail).first()).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText(userDEmail).first()).toBeVisible({ timeout: 10000 });
@@ -478,9 +478,9 @@ test.describe('Share Page Test', () => {
     await clickInviteButton(page);
     await page.waitForTimeout(3000);
 
-    // And: user B appears in the "People with access" section
+    // And: user B appears in the "People and groups with access" section
     const popover = ShareSelectors.sharePopover(page);
-    await expect(popover.getByText('People with access')).toBeVisible({ timeout: 10000 });
+    await expect(popover.getByText('People and groups with access')).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 10000 });
     testLog.info('User B successfully added');
 
@@ -534,9 +534,9 @@ test.describe('Share Page Test', () => {
     await clickInviteButton(page);
     await page.waitForTimeout(3000);
 
-    // And: user B appears in the "People with access" section
+    // And: user B appears in the "People and groups with access" section
     const popover = ShareSelectors.sharePopover(page);
-    await expect(popover.getByText('People with access')).toBeVisible({ timeout: 10000 });
+    await expect(popover.getByText('People and groups with access')).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 10000 });
     testLog.info('User B successfully added');
 

@@ -3,10 +3,11 @@ import { useSearchParams } from 'react-router-dom';
 
 import { determineErrorType, ErrorType } from '@/application/utils/error-utils';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
-import LoadingDots from '@/components/_shared/LoadingDots';
+import { FullScreenLoading } from '@/components/_shared/FullScreenLoading';
 import { findView } from '@/components/_shared/outline/utils';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { AFConfigContext } from '@/components/main/app.hooks';
 import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
   resolveSidebarHighlightedViewIds,
@@ -23,13 +24,7 @@ import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
 import { AppSyncLayer } from './layers/AppSyncLayer';
 
-function WorkspaceBootstrapError({
-  error,
-  onRetry,
-}: {
-  error: Error;
-  onRetry?: () => void | Promise<unknown>;
-}) {
+function WorkspaceBootstrapError({ error, onRetry }: { error: Error; onRetry?: () => void | Promise<unknown> }) {
   const [retrying, setRetrying] = useState(false);
   const appError = determineErrorType(error);
   const isNetworkError = appError.type === ErrorType.NetworkError;
@@ -80,7 +75,13 @@ function WorkspaceBootstrapError({
 // Internal component to conditionally render sync and business layers only when workspace ID exists
 const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
   const authContext = useContext(AuthInternalContext);
-  const { userWorkspaceInfo, workspaceInfoError, retryLoadWorkspaceInfo } = authContext || {};
+  const { isAuthenticated, userWorkspaceInfo, workspaceInfoError, retryLoadWorkspaceInfo } = authContext || {};
+
+  // Unmount user/workspace-scoped providers in the same render that auth is
+  // invalidated. AppAuthLayer will redirect to login after this commit.
+  if (!isAuthenticated) {
+    return <FullScreenLoading label='Loading workspace' />;
+  }
 
   // Show loading animation while workspace ID is being loaded
   if (!userWorkspaceInfo) {
@@ -88,11 +89,7 @@ const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
       return <WorkspaceBootstrapError error={workspaceInfoError} onRetry={retryLoadWorkspaceInfo} />;
     }
 
-    return (
-      <div className='fixed inset-0 flex items-center justify-center bg-background-primary'>
-        <LoadingDots className='flex items-center justify-center' />
-      </div>
-    );
+    return <FullScreenLoading label='Loading workspace' />;
   }
 
   return (
@@ -105,8 +102,10 @@ const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
 // Refactored AppProvider using layered architecture
 // External API remains identical - all changes are internal
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  const rootConfig = useContext(AFConfigContext);
+
   return (
-    <AppAuthLayer>
+    <AppAuthLayer key={rootConfig?.authenticatedUserId ?? 'anonymous'}>
       <ConditionalWorkspaceLayers>{children}</ConditionalWorkspaceLayers>
     </AppAuthLayer>
   );
@@ -143,6 +142,21 @@ export function useUserWorkspaceInfo() {
   }
 
   return context.userWorkspaceInfo;
+}
+
+/**
+ * Returns a function that force-refreshes the workspace list. Call after
+ * mutations that change it (rename/delete/leave, membership changes).
+ * Throws if used outside AppProvider.
+ */
+export function useRefreshUserWorkspaceInfo() {
+  const context = useContext(AuthInternalContext);
+
+  if (!context) {
+    throw new Error('useRefreshUserWorkspaceInfo must be used within an AppProvider');
+  }
+
+  return context.refreshUserWorkspaceInfo;
 }
 
 /**
@@ -213,6 +227,17 @@ export function useOpenPageModal() {
   return context.openPageModal;
 }
 
+/** Report the effective folder view mounted inside the active page modal. */
+export function useSetOpenPageModalEffectiveViewId() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useSetOpenPageModalEffectiveViewId must be used within an AppProvider');
+  }
+
+  return context.setOpenPageModalEffectiveViewId;
+}
+
 /** The view ID from the current route. */
 export function useAppViewId() {
   const context = useContext(AppNavigationContext);
@@ -224,7 +249,7 @@ export function useAppViewId() {
   return context.viewId;
 }
 
-/** Memoized `{ notFound, deleted }` error flags for the current view. */
+/** Memoized `{ notFound, deleted, noAccess }` error flags for the current view. */
 export function useViewErrorStatus() {
   const context = useContext(AppNavigationContext);
 
@@ -232,10 +257,14 @@ export function useViewErrorStatus() {
     throw new Error('useViewErrorStatus must be used within an AppProvider');
   }
 
-  return useMemo(() => ({
-    notFound: context.notFound,
-    deleted: context.viewHasBeenDeleted,
-  }), [context.notFound, context.viewHasBeenDeleted]);
+  return useMemo(
+    () => ({
+      notFound: context.notFound,
+      deleted: context.viewHasBeenDeleted,
+      noAccess: context.viewNoAccess,
+    }),
+    [context.notFound, context.viewHasBeenDeleted, context.viewNoAccess]
+  );
 }
 
 /** The breadcrumb trail, or undefined if outside AppProvider. Does not throw. */
@@ -328,6 +357,28 @@ export function useMarkViewChildrenStale() {
   return context.markViewChildrenStale;
 }
 
+/** Hydrate missing parent/sibling context for a view and return ancestor IDs to expand. */
+export function useEnsureViewVisibleInOutline() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useEnsureViewVisibleInOutline must be used within an AppProvider');
+  }
+
+  return context.ensureViewVisibleInOutline;
+}
+
+/** Revalidate the root sidebar outline and refresh currently expanded sidebar subtrees. */
+export function useRevalidateSidebarOutline() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useRevalidateSidebarOutline must be used within an AppProvider');
+  }
+
+  return context.revalidateSidebarOutline;
+}
+
 /** Memoized `{ loadFavoriteViews, favoriteViews }`. Only re-renders when favorites change. */
 export function useAppFavorites() {
   const context = useContext(AppOutlineContext);
@@ -336,10 +387,13 @@ export function useAppFavorites() {
     throw new Error('useAppFavorites must be used within an AppProvider');
   }
 
-  return useMemo(() => ({
-    loadFavoriteViews: context.loadFavoriteViews,
-    favoriteViews: context.favoriteViews,
-  }), [context.loadFavoriteViews, context.favoriteViews]);
+  return useMemo(
+    () => ({
+      loadFavoriteViews: context.loadFavoriteViews,
+      favoriteViews: context.favoriteViews,
+    }),
+    [context.loadFavoriteViews, context.favoriteViews]
+  );
 }
 
 /** Memoized `{ loadRecentViews, recentViews }`. Only re-renders when recents change. */
@@ -350,10 +404,13 @@ export function useAppRecent() {
     throw new Error('useAppRecent must be used within an AppProvider');
   }
 
-  return useMemo(() => ({
-    loadRecentViews: context.loadRecentViews,
-    recentViews: context.recentViews,
-  }), [context.loadRecentViews, context.recentViews]);
+  return useMemo(
+    () => ({
+      loadRecentViews: context.loadRecentViews,
+      recentViews: context.recentViews,
+    }),
+    [context.loadRecentViews, context.recentViews]
+  );
 }
 
 /** Memoized `{ loadTrash, trashList }`. Only re-renders when trash changes. */
@@ -364,10 +421,13 @@ export function useAppTrash() {
     throw new Error('useAppTrash must be used within an AppProvider');
   }
 
-  return useMemo(() => ({
-    loadTrash: context.loadTrash,
-    trashList: context.trashList,
-  }), [context.loadTrash, context.trashList]);
+  return useMemo(
+    () => ({
+      loadTrash: context.loadTrash,
+      trashList: context.trashList,
+    }),
+    [context.loadTrash, context.trashList]
+  );
 }
 
 /** Force-reload the entire outline tree from the server. */
@@ -474,10 +534,13 @@ export function usePublishing() {
     throw new Error('usePublishing must be used within an AppProvider');
   }
 
-  return useMemo(() => ({
-    publish: context.publish,
-    unpublish: context.unpublish,
-  }), [context.publish, context.unpublish]);
+  return useMemo(
+    () => ({
+      publish: context.publish,
+      unpublish: context.unpublish,
+    }),
+    [context.publish, context.unpublish]
+  );
 }
 
 /** Memoized `{ getCollabHistory, previewCollabVersion, revertCollabVersion }`. For version history UI. */
@@ -488,11 +551,14 @@ export function useCollabHistory() {
     throw new Error('useCollabHistory must be used within an AppProvider');
   }
 
-  return useMemo(() => ({
-    getCollabHistory: context.getCollabHistory,
-    previewCollabVersion: context.previewCollabVersion,
-    revertCollabVersion: context.revertCollabVersion,
-  }), [context.getCollabHistory, context.previewCollabVersion, context.revertCollabVersion]);
+  return useMemo(
+    () => ({
+      getCollabHistory: context.getCollabHistory,
+      previewCollabVersion: context.previewCollabVersion,
+      revertCollabVersion: context.revertCollabVersion,
+    }),
+    [context.getCollabHistory, context.previewCollabVersion, context.revertCollabVersion]
+  );
 }
 
 /** Get the cached word/character count for a document view. Returns undefined if no viewId. */
@@ -545,6 +611,13 @@ export function useEventEmitter() {
   }
 
   return context;
+}
+
+/** The app-wide event bus, or undefined when rendered outside AppProvider. Safe for publish pages. */
+export function useEventEmitterOptional() {
+  const context = useContext(AppEventEmitterContext);
+
+  return context ?? undefined;
 }
 
 /** Schedule deferred cleanup of a sync object (e.g. Yjs doc) after a delay. */

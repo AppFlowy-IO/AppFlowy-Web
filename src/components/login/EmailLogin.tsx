@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -18,17 +18,20 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [, setSearch] = useSearchParams();
+  const submittingRef = useRef(false);
   const handleSubmitEmail = async (e?: React.MouseEvent<HTMLButtonElement>) => {
-    if (loading) return;
+    e?.preventDefault();
+    if (submittingRef.current) return;
+
     const isValidEmail = isEmail(email);
 
     if (!isValidEmail) {
-      e?.preventDefault();
       setError(t('signIn.invalidEmail'));
       return;
     }
 
     setError('');
+    submittingRef.current = true;
     setLoading(true);
 
     try {
@@ -38,9 +41,11 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
       });
 
       setSearch((prev) => {
-        prev.set('email', email);
-        prev.set('action', LOGIN_ACTION.CHECK_EMAIL);
-        return prev;
+        const next = new URLSearchParams(prev);
+
+        next.set('email', email);
+        next.set('action', LOGIN_ACTION.CHECK_EMAIL);
+        return next;
       });
       // eslint-disable-next-line
     } catch (e: any) {
@@ -50,6 +55,7 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
         toast.error(e.message);
       }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -64,9 +70,11 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
     }
 
     setSearch((prev) => {
-      prev.set('email', email);
-      prev.set('action', LOGIN_ACTION.ENTER_PASSWORD);
-      return prev;
+      const next = new URLSearchParams(prev);
+
+      next.set('email', email);
+      next.set('action', LOGIN_ACTION.ENTER_PASSWORD);
+      return next;
     });
   };
 
@@ -74,7 +82,7 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
     <div className={'flex w-full flex-col items-center justify-center gap-3'}>
       <div className={'flex flex-col gap-1'}>
         <Input
-          data-testid="login-email-input"
+          data-testid='login-email-input'
           autoFocus
           size={'md'}
           variant={error ? 'destructive' : 'default'}
@@ -86,6 +94,7 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
           }}
           value={email}
           placeholder={t('signIn.pleaseInputYourEmail')}
+          disabled={loading}
           onKeyDown={(e) => {
             if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
               void handleSubmitEmail();
@@ -95,7 +104,13 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
         {error && <div className={cn('help-text text-xs text-text-error')}>{error}</div>}
       </div>
 
-      <Button data-testid="login-magic-link-button" onMouseDown={handleSubmitEmail} size={'lg'} className={'w-[320px]'} loading={loading}>
+      <Button
+        data-testid='login-magic-link-button'
+        onClick={handleSubmitEmail}
+        size={'lg'}
+        className={'w-[320px]'}
+        loading={loading}
+      >
         {loading ? (
           <>
             <Progress />
@@ -105,7 +120,14 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
           t('signIn.signInWithEmail')
         )}
       </Button>
-      <Button data-testid="login-password-button" variant={'outline'} onMouseDown={handleSubmitPassword} size={'lg'} className={'w-[320px]'}>
+      <Button
+        data-testid='login-password-button'
+        variant={'outline'}
+        onClick={handleSubmitPassword}
+        size={'lg'}
+        className={'w-[320px]'}
+        disabled={loading}
+      >
         {t('signIn.signInWithPassword')}
       </Button>
     </div>

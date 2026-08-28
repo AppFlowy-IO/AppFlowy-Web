@@ -2,7 +2,8 @@ import { expect } from '@jest/globals';
 import { act, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, useDeleteView } from '@/application/database-yjs';
+import { DatabaseContext, DatabaseContextState, useDeleteView, useUpdateDatabaseView } from '@/application/database-yjs';
+import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -41,6 +42,19 @@ function createContextValue(databaseDoc: YDoc, deletePage: DatabaseContextState[
   };
 }
 
+function prepareRedo(databaseDoc: YDoc) {
+  const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
+  const database = sharedRoot.get(YjsEditorKey.database) as Y.Map<unknown>;
+  const manager = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+  runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+    database.set('history-marker', true);
+  });
+  manager.undo();
+  expect(manager.canRedo()).toBe(true);
+  return { database, manager };
+}
+
 describe('useDeleteView', () => {
   it('proceeds with Yjs deletion when deletePage fails with broken space ancestry', async () => {
     const viewId = 'view-broken-ancestry';
@@ -52,6 +66,7 @@ describe('useDeleteView', () => {
       message: `unable to find space correponds to ${viewId} when deleting snapshot [/api/workspace/ws/page-view/${viewId}/move-to-trash]`,
     });
     const contextValue = createContextValue(databaseDoc, deletePage);
+    const { database, manager } = prepareRedo(databaseDoc);
     const { result } = renderHook(() => useDeleteView(), {
       wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
     });
@@ -61,6 +76,11 @@ describe('useDeleteView', () => {
     });
 
     expect(deletePage).toHaveBeenCalledWith(viewId);
+    expect(getViewsMap(databaseDoc).has(viewId)).toBe(false);
+    expect(manager.canUndo()).toBe(false);
+    expect(manager.canRedo()).toBe(true);
+    void act(() => manager.redo());
+    expect(database.get('history-marker')).toBe(true);
     expect(getViewsMap(databaseDoc).has(viewId)).toBe(false);
   });
 
@@ -82,5 +102,34 @@ describe('useDeleteView', () => {
 
     expect(deletePage).toHaveBeenCalledWith(viewId);
     expect(getViewsMap(databaseDoc).has(viewId)).toBe(false);
+    expect(getOrCreateDatabaseHistoryManager(databaseDoc).canUndo()).toBe(false);
+  });
+});
+
+describe('useUpdateDatabaseView', () => {
+  it('updates the local Yjs tab name without adding database history', async () => {
+    const viewId = 'view-to-rename';
+    const databaseDoc = createDatabaseDoc(viewId);
+    const updatePage = jest.fn().mockResolvedValue(undefined);
+    const { database, manager } = prepareRedo(databaseDoc);
+    const contextValue: DatabaseContextState = {
+      ...createContextValue(databaseDoc, undefined),
+      updatePage,
+    };
+    const { result } = renderHook(() => useUpdateDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(viewId, { name: 'Renamed view' });
+    });
+
+    expect(updatePage).toHaveBeenCalledWith(viewId, { name: 'Renamed view' });
+    expect((getViewsMap(databaseDoc).get(viewId) as Y.Map<unknown>).get(YjsDatabaseKey.name)).toBe('Renamed view');
+    expect(manager.canUndo()).toBe(false);
+    expect(manager.canRedo()).toBe(true);
+    void act(() => manager.redo());
+    expect(database.get('history-marker')).toBe(true);
+    expect((getViewsMap(databaseDoc).get(viewId) as Y.Map<unknown>).get(YjsDatabaseKey.name)).toBe('Renamed view');
   });
 });

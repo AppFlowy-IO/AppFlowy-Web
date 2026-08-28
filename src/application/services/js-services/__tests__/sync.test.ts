@@ -1,5 +1,5 @@
 import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types } from '@/application/types';
+import { CollabOrigin, Types } from '@/application/types';
 import { messages } from '@/proto/messages';
 import { expect } from '@jest/globals';
 import * as random from 'lib0/random';
@@ -32,9 +32,11 @@ jest.mock('@/application/sync-outbox', () => {
       };
 
       peers.forEach((peer) => peer.emit(message));
+      return Promise.resolve(true);
     }),
     deleteOutboxByObjectId: jest.fn(async () => undefined),
     waitForDrain: jest.fn(async () => true),
+    shouldRouteUpdateThroughOutbox: jest.fn(() => false),
     configureDrain: jest.fn(),
     clearDrainConfig: jest.fn(),
     startDrainAll: jest.fn(),
@@ -204,6 +206,20 @@ const expectTextConvergence = (texts: Y.Text[], expectedChars: string) => {
 };
 
 describe('sync protocol', () => {
+  it('routes only writable inline-comment updates through normal collaboration', () => {
+    const [local] = mockSync(1);
+
+    initSync(local);
+    const enqueueOutboxUpdate = outboxMock.enqueueOutboxUpdate as jest.Mock;
+
+    enqueueOutboxUpdate.mockClear();
+    local.doc.transact(() => local.doc.getText('test').insert(0, 'A'), CollabOrigin.InlineCommentAuthorized);
+    expect(enqueueOutboxUpdate).not.toHaveBeenCalled();
+
+    local.doc.transact(() => local.doc.getText('test').insert(1, 'B'), CollabOrigin.InlineComment);
+    expect(enqueueOutboxUpdate).toHaveBeenCalledTimes(1);
+  });
+
   it('should exchange updates between client and server', () => {
     const [local, remote] = mockSync(2);
 
@@ -362,5 +378,71 @@ describe('sync protocol', () => {
     drain();
 
     expectTextConvergence(texts, 'ABC');
+  });
+
+  it('persists an oversized manifest response instead of emitting it on WebSocket', () => {
+    const doc = new Y.Doc({ guid: random.uuidv4() });
+    const emit = jest.fn();
+    const onManifestSync = jest.fn();
+    const ctx: SyncContext = {
+      doc,
+      collabType: Types.Database,
+      emit,
+      onManifestSync,
+    };
+
+    doc.getMap('root').set('large-history', 'value');
+    outboxMock.shouldRouteUpdateThroughOutbox.mockReturnValueOnce(true);
+
+    handleMessage(ctx, {
+      objectId: doc.guid,
+      collabType: Types.Database,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(new Y.Doc()),
+        version: doc.version,
+      },
+    });
+
+    expect(emit).not.toHaveBeenCalled();
+    expect(outboxMock.enqueueOutboxUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        objectId: doc.guid,
+        collabType: Types.Database,
+        payload: expect.any(Uint8Array),
+      }),
+      { broadcast: false, source: 'manifest' }
+    );
+    expect(onManifestSync).toHaveBeenCalledWith(doc.guid, expect.any(Promise));
+  });
+
+  it('does not publish an empty DatabaseRow as a manifest response', () => {
+    const doc = new Y.Doc({ guid: random.uuidv4() });
+    const serverDoc = new Y.Doc();
+    const emit = jest.fn();
+    const onManifestSync = jest.fn();
+    const ctx: SyncContext = {
+      doc,
+      collabType: Types.DatabaseRow,
+      emit,
+      onManifestSync,
+    };
+
+    (outboxMock.enqueueOutboxUpdate as jest.Mock).mockClear();
+
+    handleMessage(ctx, {
+      objectId: doc.guid,
+      collabType: Types.DatabaseRow,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(serverDoc),
+        version: doc.version,
+      },
+    });
+
+    expect(emit).not.toHaveBeenCalled();
+    expect(outboxMock.enqueueOutboxUpdate).not.toHaveBeenCalled();
+    expect(onManifestSync).toHaveBeenCalledWith(doc.guid);
+
+    doc.destroy();
+    serverDoc.destroy();
   });
 });

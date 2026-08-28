@@ -81,6 +81,7 @@ test.describe('Password Login Flow', () => {
             access_token: mockAccessToken,
             refresh_token: mockRefreshToken,
             expires_at: Math.floor(Date.now() / 1000) + 3600,
+            user: { id: mockUserId, email: testEmail },
           }),
         })
       );
@@ -255,12 +256,15 @@ test.describe('Password Login Flow', () => {
       // Enter email and go to password page
       await goToPasswordStep(page, testEmail);
 
-      // Enter wrong password and submit
+      // Enter wrong password and submit. Install the response listener before
+      // clicking — otherwise a fast response can complete before
+      // waitForResponse starts listening and the wait times out.
       await AuthSelectors.passwordInput(page).fill(wrongPassword);
+      const failedLoginResponse = page.waitForResponse(`${gotrueUrl}/token?grant_type=password`);
       await AuthSelectors.passwordSubmitButton(page).click();
 
       // Wait for failed API call
-      await page.waitForResponse(`${gotrueUrl}/token?grant_type=password`);
+      await failedLoginResponse;
 
       // Verify error message
       await expect(page.getByText('Invalid login credentials')).toBeVisible();
@@ -290,12 +294,15 @@ test.describe('Password Login Flow', () => {
       // Enter credentials
       await goToPasswordStep(page, testEmail);
 
-      // Enter password and submit
+      // Enter password and submit. The mocked route fulfills instantly, so the
+      // response listener must be installed before the click or the wait can
+      // miss the response entirely and time out.
       await AuthSelectors.passwordInput(page).fill(testPassword);
+      const mockedLoginResponse = page.waitForResponse(`${gotrueUrl}/token?grant_type=password`);
       await AuthSelectors.passwordSubmitButton(page).click();
 
       // Wait for network error
-      await page.waitForResponse(`${gotrueUrl}/token?grant_type=password`);
+      await mockedLoginResponse;
 
       // Verify error handling - still on password page with error message
       await expect(page).toHaveURL(/action=enterPassword/);

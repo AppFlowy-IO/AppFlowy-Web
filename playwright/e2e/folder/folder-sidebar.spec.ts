@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
+  collapseChildPageItems,
   PageSelectors,
   SidebarSelectors,
   byTestId,
@@ -66,9 +67,7 @@ async function addChildInMainWindow(
 
     const parentItem = PageSelectors.itemByName(page, parentPageName);
     const childrenContainer = parentItem.locator('> div').last();
-    const directChildren = childrenContainer.locator(
-      ':scope > [data-testid="page-item"]'
-    );
+    const directChildren = childrenContainer.locator(collapseChildPageItems());
     const beforeCount = await directChildren.count();
     testLog.info(`addChildInMainWindow attempt ${attempt}: beforeCount=${beforeCount}`);
 
@@ -221,9 +220,7 @@ async function getChildrenInMainWindow(
 ): Promise<ChildInfo[]> {
   const parentItem = PageSelectors.itemByName(page, parentPageName);
   const childrenContainer = parentItem.locator('> div').last();
-  const pageItems = childrenContainer.locator(
-    ':scope > [data-testid="page-item"]'
-  );
+  const pageItems = childrenContainer.locator(collapseChildPageItems());
   const count = await pageItems.count();
 
   const children: ChildInfo[] = [];

@@ -4,7 +4,7 @@ jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, defaultValue: string) => defaultValue,
 }));
 
-import { decodeCellForSort } from '@/application/database-yjs/decode';
+import { decodeCellForSort, decodeCellToText } from '@/application/database-yjs/decode';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { SelectOption, SelectOptionFilterCondition } from '@/application/database-yjs/fields';
 import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
@@ -29,19 +29,45 @@ function createCell(data: unknown, currentType: FieldType, sourceType?: FieldTyp
   const doc = new Y.Doc();
   const cell = doc.getMap('cell') as YDatabaseCell;
   cell.set(YjsDatabaseKey.data, data);
-  cell.set(YjsDatabaseKey.field_type, String(currentType));
-  if (sourceType !== undefined) {
-    cell.set(YjsDatabaseKey.source_field_type, String(sourceType));
-  }
+  cell.set(YjsDatabaseKey.field_type, String(sourceType ?? currentType));
   return cell;
 }
 
 describe('lazy decode + filters parity', () => {
+  it('sorts converted select cells by their displayed option names', () => {
+    const field = createField(FieldType.RichText);
+    const typeOptionMap = new Y.Map();
+    const option = new Y.Map();
+
+    option.set(
+      YjsDatabaseKey.content,
+      JSON.stringify({
+        disable_color: false,
+        options: [{ id: 'opt1', name: 'Alpha', color: 0 }],
+      })
+    );
+    typeOptionMap.set(String(FieldType.MultiSelect), option);
+    field.set(YjsDatabaseKey.type_option, typeOptionMap);
+
+    const cell = createCell('opt1', FieldType.RichText, FieldType.MultiSelect);
+
+    expect(decodeCellToText(cell, field)).toBe('Alpha');
+    expect(decodeCellForSort(cell, field)).toBe('Alpha');
+  });
+
   it('computes checklist percentage from markdown/plain text for sorting', () => {
     const field = createField(FieldType.Checklist);
     const cell = createCell('[x] Done\n[ ] Todo', FieldType.Checklist, FieldType.RichText);
 
     expect(decodeCellForSort(cell, field)).toBeCloseTo(0.5);
+  });
+
+  it('keeps unsupported conversions blank instead of coercing them to a target default', () => {
+    const field = createField(FieldType.Checkbox);
+    const cell = createCell('42', FieldType.Checkbox, FieldType.Number);
+
+    expect(decodeCellToText(cell, field)).toBe('');
+    expect(decodeCellForSort(cell, field)).toBe('');
   });
 
   it('maps checklist data to select option ids when filtering', () => {

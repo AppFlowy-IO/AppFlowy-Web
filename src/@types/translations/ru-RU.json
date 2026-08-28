@@ -1493,7 +1493,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Ссылка скопирована в буфер обмена",
-        "convertToLink": "Сделать встроенной ссылкой"
+        "convertToLink": "Сделать встроенной ссылкой",
+        "pasteAs": {
+          "title": "Вставить как",
+          "mention": "Упоминание",
+          "url": "URL",
+          "bookmark": "Закладка",
+          "embed": "Встроить"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Добавьте заголовки, чтобы создать оглавление.",

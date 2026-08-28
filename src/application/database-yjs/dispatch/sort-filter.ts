@@ -18,8 +18,14 @@ import * as Y from 'yjs';
 
 import { useDatabaseFields, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { FilterType, SortCondition } from '@/application/database-yjs/database.type';
-import { FilterDraft, flattenFilterTree, getDefaultFilterCondition, groupByConsecutiveOperator } from '@/application/database-yjs/filter';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
+import {
+  FilterDraft,
+  flattenFilterTree,
+  getDefaultFilterCondition,
+  groupByConsecutiveOperator,
+  resolveRollupFilterTargetFieldType,
+} from '@/application/database-yjs/filter';
+import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -274,7 +280,7 @@ export function useAddFilter() {
 
             filter.set(YjsDatabaseKey.id, id);
             filter.set(YjsDatabaseKey.field_id, fieldId);
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (!conditionData) {
               Log.warn('[useAddFilter] No default condition for fieldType:', fieldType);
@@ -296,6 +302,11 @@ export function useAddFilter() {
 
             filter.set(YjsDatabaseKey.type, fieldType);
             filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+            const rollupTargetFieldType = resolveRollupFilterTargetFieldType(fieldType, field);
+
+            if (rollupTargetFieldType !== undefined) {
+              filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
+            }
 
             filters.push([filter]);
 
@@ -634,13 +645,19 @@ export function useAddAdvancedFilter() {
             filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
             filter.set(YjsDatabaseKey.type, fieldType);
 
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (conditionData) {
               filter.set(YjsDatabaseKey.condition, conditionData.condition);
               if (conditionData.content !== undefined) {
                 filter.set(YjsDatabaseKey.content, conditionData.content);
               }
+            }
+
+            const rollupTargetFieldType = resolveRollupFilterTargetFieldType(fieldType, field);
+
+            if (rollupTargetFieldType !== undefined) {
+              filter.set(YjsDatabaseKey.rollup_target_type, rollupTargetFieldType);
             }
 
             children.push([filter]);
@@ -798,11 +815,12 @@ export function useUpdateAdvancedFilter() {
             }
 
             if (filter) {
-              // Fast path: filter is a Yjs Map — update in-place
-              if (fieldId) {
-                filter.set(YjsDatabaseKey.field_id, fieldId);
+              if (fieldId && filter.get(YjsDatabaseKey.field_id) !== fieldId) {
+                Log.debug('[useUpdateAdvancedFilter] Skipping stale filter update', { filterId, fieldId });
+                return;
               }
 
+              // Fast path: filter is a Yjs Map — update in-place
               if (condition !== undefined) {
                 filter.set(YjsDatabaseKey.condition, condition);
               }
@@ -827,7 +845,14 @@ export function useUpdateAdvancedFilter() {
 
             const draft = { ...currentDrafts[idx] };
 
-            if (fieldId) draft.fieldId = fieldId;
+            if (fieldId && draft.fieldId !== fieldId) {
+              Log.debug('[useUpdateAdvancedFilter] Skipping stale plain-object filter update', {
+                filterId,
+                fieldId,
+              });
+              return;
+            }
+
             if (condition !== undefined) draft.condition = condition;
             if (content !== undefined) draft.content = content;
 
@@ -974,6 +999,10 @@ function createDataFilterNode(draft: FilterDraft): YDatabaseFilter {
   node.set(YjsDatabaseKey.type, draft.fieldType);
   node.set(YjsDatabaseKey.condition, draft.condition);
 
+  if (draft.rollupTargetFieldType !== undefined) {
+    node.set(YjsDatabaseKey.rollup_target_type, draft.rollupTargetFieldType);
+  }
+
   if (draft.content !== undefined) {
     node.set(YjsDatabaseKey.content, draft.content);
   }
@@ -1113,7 +1142,7 @@ export function useAddAdvancedFilterAndRebuild() {
             if (!field) return;
 
             const fieldType = Number(field.get(YjsDatabaseKey.type));
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (!conditionData) return;
 
@@ -1135,9 +1164,7 @@ export function useAddAdvancedFilterAndRebuild() {
 
               if (existingOps.length > 0) {
                 // Multiple drafts: use dominant operator
-                defaultOperator = existingOps.every((op) => op === FilterType.Or)
-                  ? FilterType.Or
-                  : FilterType.And;
+                defaultOperator = existingOps.every((op) => op === FilterType.Or) ? FilterType.Or : FilterType.And;
               } else {
                 // Single draft: inspect the root group's actual type to preserve OR roots
                 const rootFilter = filters.get(0);
@@ -1152,6 +1179,7 @@ export function useAddAdvancedFilterAndRebuild() {
               id,
               fieldId,
               fieldType,
+              rollupTargetFieldType: resolveRollupFilterTargetFieldType(fieldType, field),
               condition: conditionData.condition,
               content: conditionData.content ?? '',
               operator: defaultOperator,
@@ -1265,6 +1293,7 @@ export function useUpdateAdvancedFilterAndRebuild() {
 
               if (field) {
                 draft.fieldType = Number(field.get(YjsDatabaseKey.type));
+                draft.rollupTargetFieldType = resolveRollupFilterTargetFieldType(draft.fieldType, field);
               }
             }
 

@@ -51,21 +51,46 @@ async function updateWorkspaceMemberAvatar(
   });
 }
 
+/** Helper: get current user's workspace member profile via API */
+async function getWorkspaceMemberProfile(
+  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
+  workspaceId: string
+) {
+  const accessToken = await getAccessToken(page);
+  return request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/workspace-profile`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    failOnStatusCode: false,
+  });
+}
+
 /** Helper: open workspace dropdown then account settings */
 async function openAccountSettings(page: import('@playwright/test').Page) {
   await WorkspaceSelectors.dropdownTrigger(page).click();
   await page.waitForTimeout(1000);
-  const settingsButton = page.getByTestId('account-settings-button');
+  const settingsButton = page.getByTestId('settings-button');
   await expect(settingsButton).toBeVisible();
   await settingsButton.click();
-  await expect(page.getByTestId('account-settings-dialog')).toBeVisible();
+  await expect(page.getByTestId('settings-dialog')).toBeVisible();
 }
 
-/** Helper: reload page and open account settings */
-async function reloadAndOpenAccountSettings(page: import('@playwright/test').Page) {
-  await page.reload();
-  await page.waitForTimeout(3000);
+/** Helper: open the Profile panel inside settings */
+async function openProfileSettings(page: import('@playwright/test').Page) {
   await openAccountSettings(page);
+  const dialog = page.getByTestId('settings-dialog');
+  await dialog.getByTestId('settings-menu-profile').click();
+  await expect(dialog.getByTestId('profile-display-name-input')).toBeVisible();
+  return dialog;
+}
+
+/** Helper: reload page and open profile settings */
+async function reloadAndOpenProfileSettings(page: import('@playwright/test').Page) {
+  await page.reload();
+  await expect(page.locator('.appflowy-top-bar')).toBeVisible();
+  return openProfileSettings(page);
 }
 
 test.describe('Avatar Persistence', () => {
@@ -93,27 +118,30 @@ test.describe('Avatar Persistence', () => {
     const workspaceId = await getCurrentWorkspaceId(page);
     expect(workspaceId).not.toBeNull();
 
-    const response = await updateWorkspaceMemberAvatar(
-      page,
-      request,
-      workspaceId!,
-      testAvatarUrl
-    );
+    const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, testAvatarUrl);
     expect(response.status()).toBe(200);
 
-    await page.waitForTimeout(2000);
+    await expect
+      .poll(async () => {
+        const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
+        if (profileResponse.status() !== 200) return null;
+        const body = await profileResponse.json();
+        return body?.data?.avatar_url ?? null;
+      })
+      .toBe(testAvatarUrl);
 
     testLog.info('Step 3: Reload page and verify avatar persisted');
-    await reloadAndOpenAccountSettings(page);
+    const firstDialog = await reloadAndOpenProfileSettings(page);
 
-    const avatarImage = page.locator('[data-testid="avatar-image"]');
-    await expect(avatarImage).toBeAttached();
-    await expect(avatarImage).toHaveAttribute('src', testAvatarUrl);
+    const firstAvatarImage = firstDialog.getByTestId('avatar-image');
+    await expect(firstAvatarImage).toBeAttached();
+    await expect(firstAvatarImage).toHaveAttribute('src', testAvatarUrl);
 
     testLog.info('Step 4: Reload again to verify persistence');
-    await reloadAndOpenAccountSettings(page);
+    const secondDialog = await reloadAndOpenProfileSettings(page);
 
-    await expect(avatarImage).toBeAttached();
-    await expect(avatarImage).toHaveAttribute('src', testAvatarUrl);
+    const secondAvatarImage = secondDialog.getByTestId('avatar-image');
+    await expect(secondAvatarImage).toBeAttached();
+    await expect(secondAvatarImage).toHaveAttribute('src', testAvatarUrl);
   });
 });

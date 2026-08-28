@@ -7,7 +7,12 @@ import {
   FileMediaCellDataItem, FileMediaType,
 } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
-import { deleteFile, parseToFilesMediaCellData, updateFileName } from '@/application/database-yjs/fields/media/parse';
+import {
+  deleteFile,
+  parseToFilesMediaCellData,
+  toFileMediaCellData,
+  updateFileName,
+} from '@/application/database-yjs/fields/media/parse';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import FileMediaItem from '@/components/database/components/cell/file-media/FileMediaItem';
 import DragItem from '@/components/database/components/drag-and-drop/DragItem';
@@ -68,7 +73,7 @@ function FileMediaList ({
   onPreview: (index: number) => void;
 }) {
   const readOnly = useReadOnly();
-  const data = useMemo(() => cell?.data?.filter((item => item !== null)) || [], [cell?.data]);
+  const data = useMemo(() => toFileMediaCellData(cell?.data), [cell?.data]);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const updateCell = useUpdateCellDispatch(rowId, fieldId);
 
@@ -90,22 +95,22 @@ function FileMediaList ({
 
   const onUpdateName = useCallback((file: FileMediaCellDataItem, name: string) => {
     const newData = updateFileName({
-      data: cell?.data,
+      data,
       fileId: file.id,
       newName: name,
     });
 
     updateCell(newData);
-  }, [cell?.data, updateCell]);
+  }, [data, updateCell]);
 
   const onDelete = useCallback((fileId: string) => {
     const newData = deleteFile({
-      data: cell?.data,
+      data,
       fileId,
     });
 
     updateCell(newData);
-  }, [cell?.data, updateCell]);
+  }, [data, updateCell]);
 
   const images = useMemo(() => {
     return data.filter(item => item.file_type === FileMediaType.Image && item.url);

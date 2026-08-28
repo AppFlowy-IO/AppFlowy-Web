@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 
 import { useChatContext } from '@/components/chat/chat/context';
 import { useChatSettingsLoader } from '@/components/chat/hooks/use-chat-settings-loader';
+import { RagScopeLoadState, useRagScopeLoader } from '@/components/chat/hooks/use-rag-scope-loader';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import {
   AuthorType,
@@ -22,7 +23,6 @@ import { usePromptModal } from './prompt-modal-provider';
 import { useResponseFormatContext } from './response-format-provider';
 import { useSuggestionsContext } from './suggestions-provider';
 
-
 interface MessagesHandlerContextTypes {
   fetchMessages: (payload?: GetChatMessagesPayload) => Promise<RepeatedChatMessage>;
   submitQuestion: (message: string) => Promise<void>;
@@ -40,6 +40,9 @@ interface MessagesHandlerContextTypes {
   setSelectedModelName?: (modelName: string, explicit?: boolean) => void;
   chatSettings: ChatSettings | null;
   updateChatSettings: (payload: Partial<ChatSettings>) => Promise<void>;
+  registerChatSettingsFlush: (flush: () => Promise<void>) => () => void;
+  ragScopeState: RagScopeLoadState;
+  refreshRagScope: () => void;
 }
 
 export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes | undefined>(undefined);
@@ -47,17 +50,24 @@ export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes 
 function useMessagesHandler() {
   const { chatId, requestInstance, currentUser } = useChatContext();
 
-  const { chatSettings, fetchChatSettings, updateChatSettings } = useChatSettingsLoader();
+  const { chatSettings, fetchChatSettings, persistChatSettings, waitForPendingChatSettings, updateChatSettings } =
+    useChatSettingsLoader();
+  const {
+    state: ragScopeState,
+    waitUntilReady: waitUntilRagScopeReady,
+    refresh: refreshRagScope,
+  } = useRagScopeLoader({
+    chatId,
+    requestInstance,
+    fetchChatSettings,
+    persistChatSettings,
+  });
 
   // Get the current model from chat settings
   const [selectedModelName, setSelectedModelName] = useState<string>();
   // Track whether the user has explicitly selected a model in this session.
   // Prevents async initialization (fetchChatSettings) from overwriting the user's choice.
   const userExplicitlySelectedModel = useRef(false);
-
-  useEffect(() => {
-    void fetchChatSettings();
-  }, [fetchChatSettings]);
 
   // Reset the explicit selection flag when chatId changes (new chat opened)
   useEffect(() => {
@@ -94,12 +104,29 @@ function useMessagesHandler() {
   const { registerAnimation } = useMessageAnimation();
   const { registerFetchSuggestions, startFetchSuggestions } = useSuggestionsContext();
   const [questionSending, setQuestionSending] = useState(false);
+  const questionSendingRef = useRef(false);
   const [answerApplying, setAnswerApplying] = useState(false);
   const cancelStreamRef = useRef<() => void>();
+  const chatSettingsFlushersRef = useRef(new Set<() => Promise<void>>());
+
+  const registerChatSettingsFlush = useCallback((flush: () => Promise<void>) => {
+    chatSettingsFlushersRef.current.add(flush);
+
+    return () => {
+      chatSettingsFlushersRef.current.delete(flush);
+    };
+  }, []);
+
+  const flushChatSettings = useCallback(async () => {
+    for (const flush of Array.from(chatSettingsFlushersRef.current)) {
+      await flush();
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
       setQuestionSending(false);
+      questionSendingRef.current = false;
       setAnswerApplying(false);
       cancelStreamRef.current = undefined;
     };
@@ -160,8 +187,25 @@ function useMessagesHandler() {
 
   const submitQuestion = useCallback(
     async (message: string) => {
+      if (questionSendingRef.current) {
+        const error = new Error('A question is already being sent');
+
+        toast.error(error.message);
+        return Promise.reject(error);
+      }
+
+      questionSendingRef.current = true;
       try {
         setQuestionSending(true);
+
+        if (!(await waitUntilRagScopeReady())) {
+          throw new Error('Unable to validate the AI chat context');
+        }
+
+        await flushChatSettings();
+        if (!(await waitForPendingChatSettings())) {
+          throw new Error('Unable to save the AI chat context');
+        }
 
         // Capture whether this is the first message BEFORE we insert anything,
         // so the rename-from-first-prompt logic works correctly.
@@ -233,6 +277,7 @@ function useMessagesHandler() {
 
         return Promise.reject(e);
       } finally {
+        questionSendingRef.current = false;
         setQuestionSending(false);
       }
     },
@@ -245,6 +290,9 @@ function useMessagesHandler() {
       removeMessages,
       registerFetchSuggestions,
       createAssistantMessage,
+      flushChatSettings,
+      waitForPendingChatSettings,
+      waitUntilRagScopeReady,
     ]
   );
 
@@ -274,7 +322,12 @@ function useMessagesHandler() {
   );
 
   const fetchAnswerStream = useCallback(
-    async (questionId: number, format?: ResponseFormat, onMessage?: (text: string, done?: boolean) => void, onProgress?: (step: string) => void) => {
+    async (
+      questionId: number,
+      format?: ResponseFormat,
+      onMessage?: (text: string, done?: boolean) => void,
+      onProgress?: (step: string) => void
+    ) => {
       const question = getMessage(questionId);
       let answerId = question?.reply_message_id;
 
@@ -346,14 +399,7 @@ function useMessagesHandler() {
         return Promise.reject(e);
       }
     },
-    [
-      getMessage,
-      setResponseFormatWithId,
-      saveAnswer,
-      startFetchSuggestions,
-      removeAssistantMessage,
-      requestInstance,
-    ]
+    [getMessage, setResponseFormatWithId, saveAnswer, startFetchSuggestions, removeAssistantMessage, requestInstance]
   );
 
   const cancelAnswerStream = useCallback(() => {
@@ -362,47 +408,51 @@ function useMessagesHandler() {
     }
   }, []);
 
-  // Update local state and persist to chat settings.
-  // Called from both initialization (ModelSelector loadCurrentModel) and explicit user selection.
-  // The `explicit` parameter distinguishes the two to prevent async init from overwriting user choices.
+  // Keep the shared model state in sync. Explicit persistence is handled by
+  // ModelSelector's request adapter so one selection produces exactly one
+  // settings write; initialization only updates local state.
   const updateSelectedModel = useCallback((modelName: string, explicit = true) => {
     if (explicit) {
       userExplicitlySelectedModel.current = true;
     }
 
     setSelectedModelName(modelName);
-    void updateChatSettings({
-      metadata: {
-        ai_model: modelName,
-      },
-    });
-  }, [updateChatSettings]);
+  }, []);
 
-  return useMemo(() => ({
-    fetchMessages,
-    submitQuestion,
-    regenerateAnswer,
-    fetchAnswerStream,
-    cancelAnswerStream,
-    questionSending,
-    answerApplying,
-    selectedModelName,
-    setSelectedModelName: updateSelectedModel,
-    chatSettings,
-    updateChatSettings,
-  }), [
-    fetchMessages,
-    submitQuestion,
-    regenerateAnswer,
-    fetchAnswerStream,
-    cancelAnswerStream,
-    questionSending,
-    answerApplying,
-    selectedModelName,
-    updateSelectedModel,
-    chatSettings,
-    updateChatSettings,
-  ]);
+  return useMemo(
+    () => ({
+      fetchMessages,
+      submitQuestion,
+      regenerateAnswer,
+      fetchAnswerStream,
+      cancelAnswerStream,
+      questionSending,
+      answerApplying,
+      selectedModelName,
+      setSelectedModelName: updateSelectedModel,
+      chatSettings,
+      updateChatSettings,
+      registerChatSettingsFlush,
+      ragScopeState,
+      refreshRagScope,
+    }),
+    [
+      fetchMessages,
+      submitQuestion,
+      regenerateAnswer,
+      fetchAnswerStream,
+      cancelAnswerStream,
+      questionSending,
+      answerApplying,
+      selectedModelName,
+      updateSelectedModel,
+      chatSettings,
+      updateChatSettings,
+      registerChatSettingsFlush,
+      ragScopeState,
+      refreshRagScope,
+    ]
+  );
 }
 
 export function MessagesHandlerProvider({ children }: { children: ReactNode }) {

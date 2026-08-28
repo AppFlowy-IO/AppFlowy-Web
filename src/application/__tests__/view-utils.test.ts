@@ -8,6 +8,7 @@ import {
   isReferencedDatabaseView,
   getFirstChildView,
   getDatabaseTabViewIds,
+  resolveActiveDatabaseViewId,
   isLinkedDatabaseViewUnderDocument,
   canBeMoved,
 } from '../view-utils';
@@ -47,6 +48,18 @@ describe('view-utils', () => {
 
     it('should return true for Calendar layout', () => {
       expect(isDatabaseLayout(ViewLayout.Calendar)).toBe(true);
+    });
+
+    it('should return true for Chart layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Chart)).toBe(true);
+    });
+
+    it('should return true for List layout', () => {
+      expect(isDatabaseLayout(ViewLayout.List)).toBe(true);
+    });
+
+    it('should return true for Gallery layout', () => {
+      expect(isDatabaseLayout(ViewLayout.Gallery)).toBe(true);
     });
 
     it('should return false for Document layout', () => {
@@ -526,9 +539,7 @@ describe('view-utils', () => {
           children: [gridView, embeddedBoardView],
         });
 
-        expect(getDatabaseTabViewIds(embeddedBoardView.view_id, container)).toEqual([
-          embeddedBoardView.view_id,
-        ]);
+        expect(getDatabaseTabViewIds(embeddedBoardView.view_id, container)).toEqual([embeddedBoardView.view_id]);
       });
 
       it('falls back to display tabs when opening a container directly', () => {
@@ -583,6 +594,115 @@ describe('view-utils', () => {
           embeddedGridView.view_id,
           embeddedBoardView.view_id,
         ]);
+      });
+    });
+
+    describe('resolveActiveDatabaseViewId', () => {
+      it('uses the route id when opening a concrete database child view', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'grid-view',
+            tabViewId: null,
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('uses the first visible child when opening a database container route', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('uses a valid tab query over the route id', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: 'board-view',
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('board-view');
+      });
+
+      it('ignores a stale tab query when visible views are authoritative', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: 'deleted-view',
+            visibleViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('preserves legacy standalone behavior when no visible view list is known', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'grid-view',
+            tabViewId: 'board-view',
+            visibleViewIds: undefined,
+          })
+        ).toBe('board-view');
+      });
+
+      it('falls back to a real database view when visible ids include the container id', () => {
+        // Published pages can carry the folder container id inside
+        // visibleViewIds; the container is not a view in the database collab.
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['container', 'grid-view'],
+            existingViewIds: ['inline-view', 'grid-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('keeps the resolved id when it exists in the database', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'grid-view',
+            tabViewId: null,
+            visibleViewIds: ['grid-view', 'board-view'],
+            existingViewIds: ['grid-view', 'board-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('falls back from a tab query pointing at a non-database view', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: 'container',
+            visibleViewIds: ['container', 'grid-view'],
+            existingViewIds: ['grid-view'],
+          })
+        ).toBe('grid-view');
+      });
+
+      it('keeps the resolved id when no visible id exists in the database', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['container'],
+            existingViewIds: ['grid-view'],
+          })
+        ).toBe('container');
+      });
+
+      it('ignores an empty existing view list', () => {
+        expect(
+          resolveActiveDatabaseViewId({
+            databasePageId: 'container',
+            tabViewId: null,
+            visibleViewIds: ['container', 'grid-view'],
+            existingViewIds: [],
+          })
+        ).toBe('container');
       });
     });
 
@@ -696,7 +816,14 @@ describe('view-utils', () => {
     });
 
     it('returns true for all database layouts under document (non-container)', () => {
-      const databaseLayouts = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar];
+      const databaseLayouts = [
+        ViewLayout.Grid,
+        ViewLayout.Board,
+        ViewLayout.Calendar,
+        ViewLayout.Chart,
+        ViewLayout.List,
+        ViewLayout.Gallery,
+      ];
       const parentView = createMockView({
         view_id: 'parent-doc',
         layout: ViewLayout.Document,

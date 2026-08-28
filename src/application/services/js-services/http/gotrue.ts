@@ -1,16 +1,24 @@
 import axios, { AxiosInstance } from 'axios';
 
-import { emit, EventType } from '@/application/session';
-import { afterAuth } from '@/application/session/sign_in';
-import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
-
+import { getTokenParsed, invalidToken, saveGoTrueAuth, type GoTrueAuthUser } from '@/application/session/token';
+import { CUSTOM_PROVIDER_PREFIX } from '@/application/types';
 import { Log } from '@/utils/log';
-import { verifyToken } from './auth-api';
+
+import { verifyToken } from './cloud-auth';
 import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 
 export * from './gotrue-error';
 
 let axiosInstance: AxiosInstance | null = null;
+
+interface VerifyAndRefreshGoTrueTokenParams {
+  accessToken: string;
+  refreshToken: string;
+  logContext: string;
+  verifyErrorMessage?: string;
+  refreshErrorMessage?: string;
+  useVerifyErrorMessage?: boolean;
+}
 
 export function initGrantService(baseURL: string) {
   if (axiosInstance) {
@@ -35,27 +43,108 @@ export function initGrantService(baseURL: string) {
   });
 }
 
+interface RefreshedToken {
+  access_token: string;
+  expires_at: number;
+  refresh_token: string;
+  user: GoTrueAuthUser;
+}
+
+// In-flight refreshes shared by concurrent callers with the same refresh token
+// (axios request interceptor, 401 retry handler, WebSocket reconnect). This
+// must be keyed by token: different sessions/tokens may refresh concurrently,
+// but duplicate requests for one rotating refresh token must join the same
+// promise or the later request can consume an already-used token.
+const refreshInFlightByToken = new Map<string, Promise<RefreshedToken>>();
+
 export async function refreshToken(refresh_token: string) {
-  Log.info('[Auth] refreshToken: requesting new token');
-  const response = await axiosInstance?.post<{
-    access_token: string;
-    expires_at: number;
-    refresh_token: string;
-  }>('/token?grant_type=refresh_token', {
-    refresh_token,
-  });
+  const inFlight = refreshInFlightByToken.get(refresh_token);
 
-  const newToken = response?.data;
-
-  if (newToken) {
-    Log.info('[Auth] refreshToken: success, saving token');
-    saveGoTrueAuth(JSON.stringify(newToken));
-  } else {
-    Log.error('[Auth] refreshToken: no token data in response');
-    return Promise.reject('Failed to refresh token');
+  if (inFlight) {
+    Log.debug('[Auth] refreshToken: joining in-flight refresh');
+    return inFlight;
   }
 
-  return newToken;
+  Log.info('[Auth] refreshToken: requesting new token');
+
+  const promise = (async (): Promise<RefreshedToken> => {
+    const response = await axiosInstance?.post<RefreshedToken>('/token?grant_type=refresh_token', {
+      refresh_token,
+    });
+
+    const newToken = response?.data;
+
+    if (newToken) {
+      Log.info('[Auth] refreshToken: success, saving token');
+      if (!saveGoTrueAuth(JSON.stringify(newToken))) {
+        throw new Error('Failed to persist refreshed token');
+      }
+    } else {
+      Log.error('[Auth] refreshToken: no token data in response');
+      return Promise.reject('Failed to refresh token');
+    }
+
+    return newToken;
+  })();
+
+  refreshInFlightByToken.set(refresh_token, promise);
+
+  try {
+    return await promise;
+  } finally {
+    if (refreshInFlightByToken.get(refresh_token) === promise) {
+      refreshInFlightByToken.delete(refresh_token);
+    }
+  }
+}
+
+function normalizeAuthFlowError(error: unknown, fallbackMessage: string, useErrorMessage: boolean) {
+  const err = error as { message?: string; code?: number };
+  const message =
+    useErrorMessage && typeof err?.message === 'string' ? err.message.replace(/\s*\[.*\]$/, '') : fallbackMessage;
+
+  return {
+    code: err?.code ?? -1,
+    message,
+  };
+}
+
+export async function verifyAndRefreshGoTrueToken({
+  accessToken,
+  refreshToken: refresh_token,
+  logContext,
+  verifyErrorMessage = 'Failed to verify token',
+  refreshErrorMessage = 'Failed to refresh token',
+  useVerifyErrorMessage = true,
+}: VerifyAndRefreshGoTrueTokenParams) {
+  // Clear the previous session before AppFlowy Cloud verification so axios
+  // interceptors cannot refresh or invalidate an old token during the new login.
+  if (localStorage.getItem('token')) {
+    Log.info(`[Auth] ${logContext}: clearing old token before auth flow`);
+    localStorage.removeItem('token');
+  }
+
+  Log.info(`[Auth] ${logContext}: verifying token with AppFlowy Cloud`);
+  try {
+    const result = await verifyToken(accessToken);
+
+    Log.info(`[Auth] ${logContext}: verifyToken completed`, { isNewUser: result.is_new });
+  } catch (error: unknown) {
+    const normalized = normalizeAuthFlowError(error, verifyErrorMessage, useVerifyErrorMessage);
+
+    Log.error(`[Auth] ${logContext}: verifyToken failed`, normalized);
+    return Promise.reject(normalized);
+  }
+
+  Log.info(`[Auth] ${logContext}: refreshing token`);
+  try {
+    await refreshToken(refresh_token);
+  } catch (error: unknown) {
+    const normalized = normalizeAuthFlowError(error, refreshErrorMessage, false);
+
+    Log.error(`[Auth] ${logContext}: refreshToken failed`, normalized);
+    return Promise.reject(normalized);
+  }
 }
 
 export async function signInWithPassword(params: { email: string; password: string; redirectTo: string }) {
@@ -73,33 +162,14 @@ export async function signInWithPassword(params: { email: string; password: stri
     const data = response?.data;
 
     if (data) {
-      Log.info('[Auth] signInWithPassword: GoTrue returned tokens, verifying with AppFlowy Cloud');
-      try {
-        await verifyToken(data.access_token);
-        saveGoTrueAuth(JSON.stringify(data));
-        Log.info('[Auth] signInWithPassword: token verified and saved');
-      } catch (error: unknown) {
-        const err = error as { message?: string; code?: number };
-
-        Log.error('[Auth] signInWithPassword: verifyToken failed', { code: err?.code, message: err?.message });
-        emit(EventType.SESSION_INVALID);
-        const message =
-          typeof err?.message === 'string'
-            ? err.message.replace(/\s*\[.*\]$/, '')
-            : 'Failed to verify token';
-
-        return Promise.reject({
-          code: err?.code ?? -1,
-          message,
-        });
-      }
-
-      Log.info('[Auth] signInWithPassword: success, calling afterAuth');
-      emit(EventType.SESSION_VALID);
-      afterAuth();
+      Log.info('[Auth] signInWithPassword: GoTrue returned tokens, completing auth flow');
+      return verifyAndRefreshGoTrueToken({
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        logContext: 'signInWithPassword',
+      });
     } else {
       Log.error('[Auth] signInWithPassword: GoTrue returned no data');
-      emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
         message: 'Failed to sign in with password',
@@ -115,8 +185,11 @@ export async function signInWithPassword(params: { email: string; password: stri
       message: e.response?.data?.message || 'Incorrect password. Please try again.',
     });
 
-    Log.error('[Auth] signInWithPassword: failed', { status: e.response?.status, code: error.code, message: error.message });
-    emit(EventType.SESSION_INVALID);
+    Log.error('[Auth] signInWithPassword: failed', {
+      status: e.response?.status,
+      code: error.code,
+      message: error.message,
+    });
 
     return Promise.reject({
       code: error.code,
@@ -183,46 +256,14 @@ export async function signUpWithPassword(params: { email: string; password: stri
         });
       }
 
-      Log.info('[Auth] signUpWithPassword: verifying token with AppFlowy Cloud');
-      try {
-        await verifyToken(data.access_token as string);
-      } catch (error: unknown) {
-        const err = error as { message?: string; code?: number };
-
-        Log.error('[Auth] signUpWithPassword: verifyToken failed', { code: err?.code, message: err?.message });
-        emit(EventType.SESSION_INVALID);
-        const message =
-          typeof err?.message === 'string'
-            ? err.message.replace(/\s*\[.*\]$/, '')
-            : 'Failed to verify token';
-
-        return Promise.reject({
-          code: err?.code ?? -1,
-          message,
-        });
-      }
-
-      Log.info('[Auth] signUpWithPassword: refreshing token');
-      try {
-        await refreshToken(data.refresh_token as string);
-      } catch (error: unknown) {
-        const err = error as { message?: string; code?: number };
-
-        Log.error('[Auth] signUpWithPassword: refreshToken failed', { code: err?.code, message: (err as Error)?.message });
-        emit(EventType.SESSION_INVALID);
-
-        return Promise.reject({
-          code: err?.code ?? -1,
-          message: 'Failed to refresh token',
-        });
-      }
-
-      Log.info('[Auth] signUpWithPassword: success, calling afterAuth');
-      emit(EventType.SESSION_VALID);
-      afterAuth();
+      Log.info('[Auth] signUpWithPassword: GoTrue returned tokens, completing auth flow');
+      return verifyAndRefreshGoTrueToken({
+        accessToken: data.access_token as string,
+        refreshToken: data.refresh_token as string,
+        logContext: 'signUpWithPassword',
+      });
     } else {
       Log.error('[Auth] signUpWithPassword: GoTrue returned no data');
-      emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
         message: 'Failed to sign up with password',
@@ -237,8 +278,11 @@ export async function signUpWithPassword(params: { email: string; password: stri
       message: e.response?.data?.message || 'Failed to sign up with password.',
     });
 
-    Log.error('[Auth] signUpWithPassword: failed', { status: e.response?.status, code: error.code, message: error.message });
-    emit(EventType.SESSION_INVALID);
+    Log.error('[Auth] signUpWithPassword: failed', {
+      status: e.response?.status,
+      code: error.code,
+      message: error.message,
+    });
 
     return Promise.reject({
       code: error.code,
@@ -263,7 +307,6 @@ export async function forgotPassword(params: { email: string }) {
       return;
     } else {
       Log.error('[Auth] forgotPassword: GoTrue returned no data');
-      emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
         message: 'Failed to send recovery email',
@@ -272,7 +315,6 @@ export async function forgotPassword(params: { email: string }) {
     // eslint-disable-next-line
   } catch (e: any) {
     Log.error('[Auth] forgotPassword: failed', { status: e.response?.status, message: e.message });
-    emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: -1,
       message: e.message,
@@ -315,8 +357,16 @@ export async function changePassword(params: { password: string }) {
     return;
     // eslint-disable-next-line
   } catch (e: any) {
-    Log.error('[Auth] changePassword: failed', { status: e.response?.status, message: e.response?.data?.msg || e.message });
-    emit(EventType.SESSION_INVALID);
+    Log.error('[Auth] changePassword: failed', {
+      status: e.response?.status,
+      message: e.response?.data?.msg || e.message,
+    });
+    // Only an authentication failure invalidates the session. Network, rate
+    // limit, validation, and server errors leave the stored session usable.
+    if (e.response?.status === 401) {
+      invalidToken();
+    }
+
     return Promise.reject({
       code: -1,
       message: e.response?.data?.msg || e.message,
@@ -351,41 +401,16 @@ export async function signInOTP({
 
     if (data) {
       if (!data.code) {
-        Log.info('[Auth] signInOTP: GoTrue returned tokens, saving to localStorage');
-        saveGoTrueAuth(JSON.stringify(data));
-
-        // Verify token with AppFlowy Cloud to create user if needed
-        let isNewUser = false;
-
-        Log.info('[Auth] signInOTP: verifying token with AppFlowy Cloud');
-        try {
-          const result = await verifyToken(data.access_token);
-
-          isNewUser = result.is_new;
-          Log.info('[Auth] signInOTP: verifyToken completed', { isNewUser });
-        } catch (error) {
-          Log.error('[Auth] signInOTP: verifyToken failed', error);
-          emit(EventType.SESSION_INVALID);
-
-          return Promise.reject({
-            code: -1,
-            message: 'Failed to create user account',
-          });
-        }
-
-        // Emit session valid only after everything is complete
-        if (type === 'magiclink' || type === 'signup') {
-          emit(EventType.SESSION_VALID);
-        }
-
-        // afterAuth() handles redirect: it blocks stale /app/{uuid} paths
-        // (safe for new users) while allowing invitation paths like
-        // /app/accept-guest-invitation. Defaults to /app when no redirectTo exists.
-        Log.info('[Auth] signInOTP: success, calling afterAuth');
-        afterAuth();
+        Log.info('[Auth] signInOTP: GoTrue returned tokens, completing auth flow');
+        return verifyAndRefreshGoTrueToken({
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+          logContext: 'signInOTP',
+          verifyErrorMessage: 'Failed to create user account',
+          useVerifyErrorMessage: false,
+        });
       } else {
         Log.error('[Auth] signInOTP: GoTrue returned error', { code: data.code, msg: data.msg });
-        emit(EventType.SESSION_INVALID);
         return Promise.reject({
           code: data.code,
           message: data.msg,
@@ -393,7 +418,6 @@ export async function signInOTP({
       }
     } else {
       Log.error('[Auth] signInOTP: GoTrue returned no data');
-      emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: 'invalid_token',
         message: 'Invalid token',
@@ -401,8 +425,11 @@ export async function signInOTP({
     }
     // eslint-disable-next-line
   } catch (e: any) {
-    Log.error('[Auth] signInOTP: failed', { status: e.response?.status, code: e.response?.data?.code, message: e.response?.data?.msg || e.message });
-    emit(EventType.SESSION_INVALID);
+    Log.error('[Auth] signInOTP: failed', {
+      status: e.response?.status,
+      code: e.response?.data?.code,
+      message: e.response?.data?.msg || e.message,
+    });
     return Promise.reject({
       code: e.response?.data?.code || e.response?.status,
       message: e.response?.data?.msg || e.message,
@@ -439,16 +466,18 @@ export async function settings() {
   return res?.data;
 }
 
+function redirectToAuthProvider(url: string) {
+  window.location.assign(url);
+}
+
 export function signInGoogle(authUrl: string) {
   const provider = 'google';
   const redirectTo = encodeURIComponent(authUrl);
-  const accessType = 'offline';
-  const prompt = 'consent';
   const baseURL = axiosInstance?.defaults.baseURL;
-  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}&access_type=${accessType}&prompt=${prompt}`;
+  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}&prompt=consent`;
 
   Log.info('[Auth] signInGoogle: redirecting to Google OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
 }
 
 export function signInApple(authUrl: string) {
@@ -458,7 +487,31 @@ export function signInApple(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInApple: redirecting to Apple OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
+}
+
+/**
+ * Start a login through an admin-registered OIDC/OAuth2 provider.
+ *
+ * Same shape as the built-in providers above; only the identifier is dynamic.
+ * It carries the mandatory `custom:` prefix, added here when the caller passes
+ * the bare identifier, and is percent-encoded because the colon is reserved.
+ */
+export function signInCustomProvider(identifier: string, authUrl: string) {
+  const trimmed = identifier.trim();
+
+  if (!trimmed || trimmed === CUSTOM_PROVIDER_PREFIX) {
+    Log.error('[Auth] signInCustomProvider: empty provider identifier');
+    return;
+  }
+
+  const provider = trimmed.startsWith(CUSTOM_PROVIDER_PREFIX) ? trimmed : `${CUSTOM_PROVIDER_PREFIX}${trimmed}`;
+  const redirectTo = encodeURIComponent(authUrl);
+  const baseURL = axiosInstance?.defaults.baseURL;
+  const url = `${baseURL}/authorize?provider=${encodeURIComponent(provider)}&redirect_to=${redirectTo}`;
+
+  Log.info('[Auth] signInCustomProvider: redirecting to provider', { provider });
+  redirectToAuthProvider(url);
 }
 
 export function signInGithub(authUrl: string) {
@@ -468,7 +521,7 @@ export function signInGithub(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInGithub: redirecting to GitHub OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
 }
 
 export function signInDiscord(authUrl: string) {
@@ -478,7 +531,7 @@ export function signInDiscord(authUrl: string) {
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
   Log.info('[Auth] signInDiscord: redirecting to Discord OAuth');
-  window.open(url, '_current');
+  redirectToAuthProvider(url);
 }
 
 interface AxiosErrorLike {

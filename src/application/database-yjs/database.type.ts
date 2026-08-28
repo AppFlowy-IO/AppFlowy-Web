@@ -24,6 +24,14 @@ export enum FieldType {
   Media = 14,
   Person = 15,
   Rollup = 16,
+  CreatedBy = 17,
+  LastEditedBy = 18,
+}
+
+export const ATTRIBUTION_FIELD_TYPES = [FieldType.CreatedBy, FieldType.LastEditedBy] as const;
+
+export function isAttributionFieldType(fieldType: FieldType | undefined): boolean {
+  return fieldType !== undefined && ATTRIBUTION_FIELD_TYPES.includes(fieldType as (typeof ATTRIBUTION_FIELD_TYPES)[number]);
 }
 
 export const AI_FIELD_TYPES = [FieldType.Summary, FieldType.Translate] as const;
@@ -83,6 +91,8 @@ export interface Filter {
   operator?: FilterType.And | FilterType.Or | null;
   /** The actual field column type (RichText, Number, etc.) */
   fieldType?: FieldType;
+  /** Persisted Rollup filter variant used by Desktop to distinguish Number from Text filters. */
+  rollupTargetFieldType?: FieldType;
 }
 
 export enum CalendarLayout {

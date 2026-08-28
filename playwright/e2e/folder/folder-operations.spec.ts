@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import {
   BreadcrumbSelectors,
+  collapseChildPageItems,
   PageSelectors,
   SpaceSelectors,
   SidebarSelectors,
@@ -51,11 +52,11 @@ async function assertSpaceHasExactChildren(
   expectedChildren: string[]
 ) {
   const spaceItem = SpaceSelectors.itemByName(page, spaceName);
-  // Space DOM: space-item > [space-expanded, renderItem div, renderChildren div]
-  // renderChildren div contains direct page-item children
+  // Space DOM: space-item > [space-expanded, renderItem div, renderChildren].
+  // renderChildren is a MUI <Collapse> wrapping the direct child page-items.
   const childrenContainer = spaceItem.locator('> div').last();
-  // Use :scope > to match only direct children (parity with Cypress .children())
-  const pageItems = childrenContainer.locator(`:scope > ${byTestId('page-item')}`);
+  // Match only direct children, traversing the Collapse wrapper.
+  const pageItems = childrenContainer.locator(collapseChildPageItems());
   await expect(pageItems).toHaveCount(expectedChildren.length);
 
   const count = await pageItems.count();
@@ -77,8 +78,8 @@ async function assertPageHasExactChildren(
 ) {
   const pageItem = PageSelectors.itemByName(page, pageName);
   const childrenContainer = pageItem.locator('> div').last();
-  // Use :scope > to match only direct children (parity with Cypress .children())
-  const childPageItems = childrenContainer.locator(`:scope > ${byTestId('page-item')}`);
+  // Match only direct children, traversing the Collapse wrapper.
+  const childPageItems = childrenContainer.locator(collapseChildPageItems());
   await expect(childPageItems).toHaveCount(expectedChildren.length);
 
   const count = await childPageItems.count();

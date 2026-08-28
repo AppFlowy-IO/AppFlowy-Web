@@ -1390,7 +1390,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "הקישור הועתק ללוח הגזירים",
-        "convertToLink": "המרה לקישור להטמעה"
+        "convertToLink": "המרה לקישור להטמעה",
+        "pasteAs": {
+          "title": "הדבק בתור",
+          "mention": "אזכור",
+          "url": "URL",
+          "bookmark": "סימנייה",
+          "embed": "הטמעה"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "יש להוסיף כותרות ראשיות כדי ליצור תוכן עניינים.",

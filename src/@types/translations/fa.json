@@ -533,7 +533,16 @@
       "outline": {
         "addHeadingToCreateOutline": "برای ایجاد فهرست مطالب سر‌فصل‌ها را وارد کنید"
       },
-      "openAI": "AI"
+      "openAI": "AI",
+      "urlPreview": {
+        "pasteAs": {
+          "title": "جای‌گذاری به‌عنوان",
+          "mention": "اشاره",
+          "url": "URL",
+          "bookmark": "نشانک",
+          "embed": "جاسازی"
+        }
+      }
     },
     "textBlock": {
       "placeholder": "برای دستورات '/' را تایپ کنید"

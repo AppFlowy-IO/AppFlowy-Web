@@ -202,13 +202,44 @@ export async function clickUnscheduledEvent(page: Page, index: number = 0): Prom
 }
 
 /**
- * Drag an event to a new date
+ * Drag an event to a new date.
+ *
+ * Uses a manual stepped mouse drag rather than `locator.dragTo`, which issues a
+ * single press→move→release. FullCalendar's drag detection needs intermediate
+ * `mousemove` events: a small jiggle to cross its drag threshold, then a stepped
+ * move so it can track the hovered day cell. Without these, long diagonal drags
+ * (e.g. the last Saturday of a month to the first Sunday of the next week row,
+ * which happens when today/tomorrow straddle two rows) silently fail to register.
  */
 export async function dragEventToDate(page: Page, eventIndex: number, targetDate: Date): Promise<void> {
   const event = CalendarSelectors.event(page).nth(eventIndex);
   const dateStr = formatDateForCalendar(targetDate);
   const targetCell = CalendarSelectors.dayCellByDate(page, dateStr);
-  await event.dragTo(targetCell);
+
+  await event.scrollIntoViewIfNeeded();
+  const eventBox = await event.boundingBox();
+  const targetBox = await targetCell.boundingBox();
+
+  if (!eventBox || !targetBox) {
+    throw new Error(`dragEventToDate: missing bounding box (event=${!!eventBox}, target=${!!targetBox})`);
+  }
+
+  const startX = eventBox.x + eventBox.width / 2;
+  const startY = eventBox.y + eventBox.height / 2;
+  const endX = targetBox.x + targetBox.width / 2;
+  const endY = targetBox.y + targetBox.height / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Jiggle to cross FullCalendar's drag-start threshold.
+  await page.mouse.move(startX + 6, startY + 6, { steps: 5 });
+  await page.waitForTimeout(100);
+  // Stepped move so FullCalendar tracks the hovered day cell along the way.
+  await page.mouse.move(endX, endY, { steps: 25 });
+  await page.waitForTimeout(100);
+  // Settle on the target center, then drop.
+  await page.mouse.move(endX, endY, { steps: 5 });
+  await page.mouse.up();
   await page.waitForTimeout(1000);
 }
 

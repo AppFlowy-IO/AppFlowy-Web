@@ -1,4 +1,4 @@
-import React, { lazy } from 'react';
+import React, { lazy, Suspense } from 'react';
 
 import { Role, UIVariant } from '@/application/types';
 import { OutlineDrawer } from '@/components/_shared/outline';
@@ -65,7 +65,13 @@ function SideBar({ drawerWidth, drawerOpened, toggleOpenDrawer, onResizeDrawerWi
 
         <Outline width={drawerWidth} />
 
-        {role === Role.Guest ? null : <SideBarBottom />}
+        {/* Local boundary: without it the first mount of this lazy chunk suspends
+            up to the root Suspense and hides the already-rendered app. */}
+        {role === Role.Guest ? null : (
+          <Suspense fallback={null}>
+            <SideBarBottom />
+          </Suspense>
+        )}
       </div>
     </OutlineDrawer>
   );

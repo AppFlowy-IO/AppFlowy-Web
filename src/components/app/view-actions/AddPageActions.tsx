@@ -2,30 +2,119 @@ import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { createDatabaseGalleryPageViaGrid } from '@/application/database-yjs/gallery-layout';
+import { createDatabaseListPageViaGrid } from '@/application/database-yjs/list-layout';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
-import { useAIEnabled, useAppOperations, useOpenPageModal, useToView } from '@/components/app/app.hooks';
+import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
+import { isSpaceView } from '@/components/ai-chat/rag-scope';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useCurrentWorkspaceId,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
+  useToView,
+} from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
-  const { addPage } = useAppOperations();
+  const { addPage, bindViewSync, createDatabaseView, deletePage, deleteTrash, loadView, loadViewMeta, updatePage } =
+    useAppOperations();
   const openPageModal = useOpenPageModal();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
+  const currentWorkspaceId = useCurrentWorkspaceId();
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
 
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
-      toast.loading(t('document.creating'));
+
+      const loadingToastId = toast.loading(t('document.creating'));
+
       try {
         // Append after the last child so the new page appears at the bottom.
         // When prev_view_id is omitted the backend prepends (inserts at index 0).
-        const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
+        const response =
+          layout === ViewLayout.List
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('List creation is not available right now');
+                }
+
+                return createDatabaseListPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : layout === ViewLayout.Gallery
+            ? await (() => {
+                if (!bindViewSync || !createDatabaseView || !deletePage || !deleteTrash || !scheduleDeferredCleanup) {
+                  throw new Error('Gallery creation is not available right now');
+                }
+
+                return createDatabaseGalleryPageViaGrid({
+                  parentViewId: view.view_id,
+                  name,
+                  prevViewId: lastChildViewId,
+                  standalone: true,
+                  addPage,
+                  createDatabaseView,
+                  deletePage,
+                  deleteTrash,
+                  loadViewMeta,
+                  loadView,
+                  bindViewSync,
+                  scheduleDeferredCleanup,
+                  updatePage,
+                });
+              })()
+            : await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
+
+        if (layout === ViewLayout.AIChat && currentWorkspaceId) {
+          try {
+            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+              import('@/components/chat/request'),
+              import('@/application/services/js-services/http'),
+            ]);
+            const axiosInstance = getAxiosInstance();
+
+            if (!axiosInstance) {
+              throw new Error('Missing axios instance');
+            }
+
+            const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
+            const scopedParent = isSpaceView(view) ? view : await request.getView(view.view_id);
+            const initialSettings = buildInitialAIChatSettings({ parent: scopedParent });
+
+            if (Object.keys(initialSettings).length > 0) {
+              await request.updateChatSettings(initialSettings);
+            }
+          } catch {
+            toast.error(
+              t('search.updateAIChatSettingsFailed', {
+                defaultValue: 'AI chat was created, but the context could not be attached',
+              })
+            );
+          }
+        }
 
         if (layout === ViewLayout.Document) {
           void openPageModal?.(response.view_id);
@@ -33,13 +122,31 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void toView(response.view_id);
         }
 
-        toast.dismiss();
+        toast.dismiss(loadingToastId);
         // eslint-disable-next-line
       } catch (e: any) {
+        toast.dismiss(loadingToastId);
         toast.error(e.message);
       }
     },
-    [addPage, aiEnabled, openPageModal, t, toView, view.view_id, lastChildViewId]
+    [
+      addPage,
+      aiEnabled,
+      bindViewSync,
+      createDatabaseView,
+      currentWorkspaceId,
+      deletePage,
+      deleteTrash,
+      lastChildViewId,
+      loadView,
+      loadViewMeta,
+      openPageModal,
+      scheduleDeferredCleanup,
+      t,
+      toView,
+      updatePage,
+      view,
+    ]
   );
 
   const actions: {
@@ -54,6 +161,7 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       {
         label: t('document.menuName'),
         icon: <ViewIcon layout={ViewLayout.Document} size={'small'} />,
+        testId: 'add-document-button',
         onSelect: () => {
           void handleAddPage(ViewLayout.Document, t('menuAppHeader.defaultNewPageName'));
         },
@@ -80,16 +188,18 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
-      ...(aiEnabled ? [
-        {
-          label: t('chat.newChat'),
-          icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
-          testId: 'add-ai-chat-button',
-          onSelect: () => {
-            void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
-          },
-        },
-      ] : []),
+      ...(aiEnabled
+        ? [
+            {
+              label: t('chat.newChat'),
+              icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
+              testId: 'add-ai-chat-button',
+              onSelect: () => {
+                void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
+              },
+            },
+          ]
+        : []),
       {
         label: t('chart.menuName'),
         icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,
@@ -101,18 +211,18 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
       {
         label: t('list.menuName'),
         icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,
-        disabled: true,
-        tooltip: t('common.desktopOnly'),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onSelect: () => {},
+        testId: 'add-list-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.List, t('document.plugins.database.newDatabase'));
+        },
       },
       {
         label: t('gallery.menuName'),
         icon: <ViewIcon layout={ViewLayout.Gallery} size={'small'} />,
-        disabled: true,
-        tooltip: t('common.desktopOnly'),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onSelect: () => {},
+        testId: 'add-gallery-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Gallery, t('document.plugins.database.newDatabase'));
+        },
       },
       {
         label: t('moreAction.import'),

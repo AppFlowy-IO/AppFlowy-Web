@@ -10,6 +10,7 @@ import {
   AddPageSelectors,
   BlockSelectors,
   DatabaseGridSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   ViewActionSelectors,
@@ -22,7 +23,7 @@ import {
   expandSpaceByName,
   insertLinkedDatabaseViaSlash,
 } from '../../../support/page-utils';
-import { insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
+import { editFirstGridCell, firstGridCellText, insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
 
 const spaceName = 'General';
 const sourceDatabaseName = 'Block Database';
@@ -130,21 +131,47 @@ async function waitForLinkedDuplicateRewrite(page: Page, docViewId: string): Pro
 }
 
 function directChildPageItems(page: Page, parentViewId: string): Locator {
-  return PageSelectors.itemByViewId(page, parentViewId).locator(':scope > div:nth-child(2) > [data-testid="page-item"]');
+  return PageSelectors.itemByViewId(page, parentViewId).locator(itemDirectChildPageItems());
 }
 
 async function renamePageByName(page: Page, currentName: string, newName: string): Promise<void> {
   const pageItem = PageSelectors.itemByName(page, currentName);
   await expect(pageItem).toBeVisible({ timeout: 30000 });
-  await pageItem.hover({ force: true });
-  await page.waitForTimeout(500);
-  await PageSelectors.moreActionsButton(page, currentName).click({ force: true });
-  await expect(ViewActionSelectors.renameButton(page)).toBeVisible({ timeout: 10000 });
-  await ViewActionSelectors.renameButton(page).click({ force: true });
-  await expect(ModalSelectors.renameInput(page)).toBeVisible({ timeout: 10000 });
-  await ModalSelectors.renameInput(page).clear();
-  await ModalSelectors.renameInput(page).fill(newName);
-  await ModalSelectors.renameSaveButton(page).click({ force: true });
+
+  // On slow CI the rename-modal interaction is racy: the more-actions menu may
+  // not open, the fill can land before the input is ready, or the save click
+  // can be swallowed — leaving the page on its old name. Retry the whole
+  // open → fill → save chain until the sidebar reflects the new name.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await pageItem.hover({ force: true });
+    await page.waitForTimeout(500);
+    await PageSelectors.moreActionsButton(page, currentName).click({ force: true });
+    await expect(ViewActionSelectors.renameButton(page)).toBeVisible({ timeout: 10000 });
+    await ViewActionSelectors.renameButton(page).click({ force: true });
+
+    const renameInput = ModalSelectors.renameInput(page);
+    await expect(renameInput).toBeVisible({ timeout: 10000 });
+    await renameInput.clear();
+    await renameInput.fill(newName);
+    // Confirm the value actually landed before committing the rename.
+    await expect(renameInput).toHaveValue(newName, { timeout: 5000 });
+    await ModalSelectors.renameSaveButton(page).click({ force: true });
+
+    if (
+      await expect(PageSelectors.itemByName(page, newName))
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return;
+    }
+
+    // Rename didn't take effect; dismiss any leftover modal and retry.
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  // Surface a clear failure with the full timeout if every retry fell through.
   await expect(PageSelectors.itemByName(page, newName)).toBeVisible({ timeout: 30000 });
 }
 
@@ -157,21 +184,6 @@ async function createStandaloneGridDatabase(page: Page, name: string): Promise<v
   await expandSpaceByName(page, spaceName);
   await renamePageByName(page, 'New Database', name);
   await page.waitForTimeout(2000);
-}
-
-async function focusAndReplaceCellText(page: Page, gridBlock: Locator, text: string): Promise<void> {
-  const firstCell = gridBlock.locator('[data-testid^="grid-cell-"]').first();
-  await expect(firstCell).toBeVisible({ timeout: 15000 });
-  await firstCell.click({ force: true });
-  await page.waitForTimeout(500);
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-}
-
-async function firstCellText(gridBlock: Locator): Promise<string> {
-  return (await gridBlock.locator('[data-testid^="grid-cell-"]').first().innerText()).trim();
 }
 
 async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void> {
@@ -192,9 +204,15 @@ async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void>
         await page.waitForTimeout(250);
 
         return (
-          (await BlockSelectors.hoverControls(page).isVisible().catch(() => false)) &&
-          (await BlockSelectors.addButton(page).isVisible().catch(() => false)) &&
-          (await BlockSelectors.dragHandle(page).isVisible().catch(() => false))
+          (await BlockSelectors.hoverControls(page)
+            .isVisible()
+            .catch(() => false)) &&
+          (await BlockSelectors.addButton(page)
+            .isVisible()
+            .catch(() => false)) &&
+          (await BlockSelectors.dragHandle(page)
+            .isVisible()
+            .catch(() => false))
         );
       },
       { timeout: 10000, message: 'Expected database block hover controls to become visible' }
@@ -238,8 +256,8 @@ test.describe('Embedded Database Block Duplication', () => {
     await ensurePageExpandedByViewId(page, docViewId);
     await expect(databaseBlocks(editor)).toHaveCount(1, { timeout: 30000 });
 
-    await focusAndReplaceCellText(page, databaseBlocks(editor).nth(0), 'inline original');
-    await expect(await firstCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
+    await editFirstGridCell(page, databaseBlocks(editor).nth(0), 'inline original');
+    await expect(await firstGridCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
 
     await duplicateDatabaseBlockAt(page, editor, 0);
     await expect(databaseBlocks(editor)).toHaveCount(2, { timeout: 30000 });
@@ -254,8 +272,8 @@ test.describe('Embedded Database Block Duplication', () => {
         .first()
     ).toBeVisible({ timeout: 30000 });
 
-    await focusAndReplaceCellText(page, databaseBlocks(editor).nth(1), 'inline dup edit');
-    await expect(await firstCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
+    await editFirstGridCell(page, databaseBlocks(editor).nth(1), 'inline dup edit');
+    await expect(await firstGridCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
   });
 
   test('duplicates linked database blocks as shared views of the same database', async ({ page, request }) => {
@@ -267,7 +285,7 @@ test.describe('Embedded Database Block Duplication', () => {
 
     await createStandaloneGridDatabase(page, sourceDatabaseName);
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30000 });
-    await focusAndReplaceCellText(page, DatabaseGridSelectors.grid(page), 'linked shared');
+    await editFirstGridCell(page, DatabaseGridSelectors.grid(page), 'linked shared');
 
     const docViewId = await createDocumentPageAndNavigate(page);
     await page.waitForTimeout(1000);
@@ -287,7 +305,7 @@ test.describe('Embedded Database Block Duplication', () => {
     await ensurePageExpandedByViewId(page, docViewId);
     await expect(directChildPageItems(page, docViewId)).toHaveCount(2, { timeout: 30000 });
 
-    await focusAndReplaceCellText(page, databaseBlocks(editor).nth(1), 'linked duplicate edit');
-    await expect(await firstCellText(databaseBlocks(editor).nth(0))).toContain('linked duplicate edit');
+    await editFirstGridCell(page, databaseBlocks(editor).nth(1), 'linked duplicate edit');
+    await expect(await firstGridCellText(databaseBlocks(editor).nth(0))).toContain('linked duplicate edit');
   });
 });

@@ -10,12 +10,14 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
 import { BlockPopoverProvider } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { useDecorate } from '@/components/editor/components/blocks/code/useDecorate';
+import { useFindReplaceDecorations } from '@/components/editor/components/find-replace/FindReplaceContext';
 import { Leaf } from '@/components/editor/components/leaf';
 import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { PanelProvider } from '@/components/editor/components/panels/PanelsContext';
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
+import { InlineCommentEditorControls } from '@/components/inline-comment/editor/InlineCommentEditorControls';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -62,9 +64,11 @@ function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Rang
 }
 
 const EditorEditable = () => {
-  const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { canComment = false, readOnly, viewId, workspaceId, fullWidth, contentPadding = 'page' } = useEditorContext();
   const { decorateState } = useEditorLocalState();
+  const { getMatchDecorations } = useFindReplaceDecorations();
   const editor = useSlate();
+  const contentPaddingClassName = contentPadding === 'template' ? 'px-[60px] max-sm:px-6' : 'px-24 max-sm:px-6';
 
   const codeDecorate = useDecorate(editor);
 
@@ -74,22 +78,27 @@ const EditorEditable = () => {
         class_name: string;
       })[] = [];
 
-      if (!decorateState) return [];
+      if (decorateState) {
+        Object.values(decorateState).forEach((state) => {
+          const intersection = Range.intersection(state.range, Editor.range(editor, path));
 
-      Object.values(decorateState).forEach((state) => {
-        const intersection = Range.intersection(state.range, Editor.range(editor, path));
+          if (intersection) {
+            highlightRanges.push({
+              ...intersection,
+              class_name: state.class_name,
+            });
+          }
+        });
+      }
 
-        if (intersection) {
-          highlightRanges.push({
-            ...intersection,
-            class_name: state.class_name,
-          });
-        }
-      });
+      // Find & replace match highlights (already scoped to this text node's path).
+      for (const match of getMatchDecorations(path)) {
+        highlightRanges.push(match as Range & { class_name: string });
+      }
 
       return highlightRanges;
     },
-    [editor, decorateState]
+    [editor, decorateState, getMatchDecorations]
   );
   const renderElement = useCallback((props: RenderElementProps) => {
     return (
@@ -191,7 +200,8 @@ const EditorEditable = () => {
               }}
               id={`editor-${viewId}`}
               className={cn(
-                'custom-caret min-w-0 max-w-full scroll-mb-[100px] scroll-mt-[300px] px-24 pb-56 outline-none focus:outline-none max-sm:px-6',
+                'custom-caret min-w-0 max-w-full scroll-mb-[100px] scroll-mt-[300px] pb-56 outline-none focus:outline-none',
+                contentPaddingClassName,
                 fullWidth ? 'w-full' : 'w-[952px]'
               )}
               renderLeaf={Leaf}
@@ -215,9 +225,15 @@ const EditorEditable = () => {
             </Suspense>
           )}
 
+          {readOnly && <InlineCommentEditorControls canComment={canComment} />}
+
           <div className={cn('pointer-events-none absolute left-0 right-0 top-0 flex h-full justify-center')}>
             <div
-              className={cn(fullWidth ? 'w-full' : 'w-[952px]', 'relative h-full min-w-0 max-w-full px-24 max-sm:px-6')}
+              className={cn(
+                fullWidth ? 'w-full' : 'w-[952px]',
+                'relative h-full min-w-0 max-w-full',
+                contentPaddingClassName
+              )}
             >
               <ErrorBoundary fallback={null}>
                 <RemoteSelectionsLayer editor={editor} />

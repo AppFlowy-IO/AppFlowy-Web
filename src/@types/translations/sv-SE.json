@@ -563,6 +563,15 @@
       },
       "outline": {
         "addHeadingToCreateOutline": "Lägg till rubriker för att skapa en innehållsförteckning."
+      },
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Klistra in som",
+          "mention": "Omnämnande",
+          "url": "URL",
+          "bookmark": "Bokmärke",
+          "embed": "Bädda in"
+        }
       }
     },
     "textBlock": {

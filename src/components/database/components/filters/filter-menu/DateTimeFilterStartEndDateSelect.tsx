@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useReadOnly } from '@/application/database-yjs';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +19,7 @@ function DateTimeFilterStartEndDateSelect ({
   isStart: boolean,
 }) {
   const { t } = useTranslation();
+  const readOnly = useReadOnly();
 
   const conditions = useMemo(() => [{
     value: true,
@@ -31,14 +33,16 @@ function DateTimeFilterStartEndDateSelect ({
     <DropdownMenu>
       <DropdownMenuTrigger
         asChild
+        disabled={readOnly}
       >
         <Button
           variant={'ghost'}
           size={'sm'}
-          className={'min-w-fit w-fit'}
+          className={'h-7 w-fit min-w-fit px-2 text-xs font-medium text-text-primary'}
+          data-testid={'date-filter-start-end-select'}
         >
           {conditions.find((c) => c.value === isStart)?.text ?? ''}
-          <ArrowDownSvg className={'w-5 h-5'} />
+          <ArrowDownSvg className={'h-5 w-5 text-icon-secondary'} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className={'min-w-fit'}>

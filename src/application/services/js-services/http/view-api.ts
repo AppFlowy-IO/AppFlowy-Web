@@ -1,14 +1,20 @@
-import { AppOutlineResponse } from '@/application/services/services.type';
-import { View } from '@/application/types';
+import {
+  AppOutlineResponse,
+  WorkspaceDatabaseListPage,
+  WorkspaceDatabaseWithViews,
+} from '@/application/services/services.type';
+import { CreateOrphanedViewPayload, View } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
-export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
-  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=2`;
+const MAX_WORKSPACE_VIEW_SUBTREES_GET_URL_BYTES = 4096;
+const WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE = 50;
+const WORKSPACE_DATABASE_LIST_PAGE_SIZE = 200;
 
-  return executeAPIRequest<View>(() =>
-    getAxios()?.get<APIResponse<View>>(url)
-  ).then((data) => ({
+export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=6`;
+
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url)).then((data) => ({
     outline: Array.isArray(data.children) ? data.children : [],
     folderRid: data.folder_rid,
   }));
@@ -17,50 +23,177 @@ export async function getAppOutline(workspaceId: string): Promise<AppOutlineResp
 export async function getView(workspaceId: string, viewId: string, depth: number = 1) {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}`;
 
-  return executeAPIRequest<View>(() =>
-    getAxios()?.get<APIResponse<View>>(url)
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
+}
+
+export async function getViewNavigation(workspaceId: string, viewId: string, depth: number = 0) {
+  const url = `/api/workspace/${workspaceId}/view/${viewId}/navigation?depth=${depth}`;
+
+  return executeAPIRequest<View>(() => getAxios()?.get<APIResponse<View>>(url));
+}
+
+export async function getWorkspaceDatabaseListPage(
+  workspaceId: string,
+  offset: number,
+  limit: number = WORKSPACE_DATABASE_LIST_PAGE_SIZE
+): Promise<WorkspaceDatabaseListPage> {
+  const url = `/api/workspace/${workspaceId}/database`;
+
+  return executeAPIRequest<WorkspaceDatabaseListPage>(() =>
+    getAxios()?.get<APIResponse<WorkspaceDatabaseListPage>>(url, {
+      params: { offset, limit },
+    })
   );
+}
+
+/**
+ * Load every database visible to the current user.
+ *
+ * Supplying pagination parameters opts into the metadata-rich database-list
+ * response; an unparameterized request is the legacy compatibility endpoint.
+ */
+export async function listWorkspaceDatabases(workspaceId: string): Promise<WorkspaceDatabaseWithViews[]> {
+  const databases: WorkspaceDatabaseWithViews[] = [];
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const page = await getWorkspaceDatabaseListPage(workspaceId, offset);
+
+    databases.push(...page.databases);
+    // Advance by what the server actually returned — it may cap pages below the
+    // requested limit. An empty page ends the loop even if has_more is set.
+    if (page.databases.length === 0) break;
+    hasMore = page.has_more;
+    offset += page.databases.length;
+  }
+
+  return databases;
 }
 
 export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2) {
   if (viewIds.length === 0) return [];
 
-  const query = new URLSearchParams({
-    depth: String(depth),
-    view_ids: viewIds.join(','),
-  });
-  const url = `/api/workspace/${workspaceId}/views?${query.toString()}`;
+  const url = `/api/workspace/${workspaceId}/views`;
+  const viewChunks = await Promise.all(
+    chunkViewIds(viewIds, WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE).map((chunk) => getViewsChunk(url, chunk, depth))
+  );
+
+  return viewChunks.flat();
+}
+
+async function getViewsChunk(url: string, viewIds: string[], depth: number): Promise<View[]> {
+  if (workspaceViewSubtreesQueryFitsGet(url, viewIds, depth)) {
+    return getViewsByGet(url, viewIds, depth);
+  }
+
+  try {
+    return await getViewsByPost(url, viewIds, depth);
+  } catch (error) {
+    if (!isUnsupportedPostRouteError(error)) {
+      throw error;
+    }
+
+    const viewChunks = await Promise.all(
+      workspaceViewSubtreesGetChunks(url, viewIds, depth).map((chunk) => getViewsByGet(url, chunk, depth))
+    );
+
+    return viewChunks.flat();
+  }
+}
+
+async function getViewsByGet(url: string, viewIds: string[], depth: number): Promise<View[]> {
+  const query = workspaceViewSubtreesQuery(viewIds, depth);
 
   return executeAPIRequest<{ views: View[] }>(() =>
-    getAxios()?.get<APIResponse<{ views: View[] }>>(url)
+    getAxios()?.get<APIResponse<{ views: View[] }>>(`${url}?${query}`)
   ).then((data) => data.views ?? []);
+}
+
+async function getViewsByPost(url: string, viewIds: string[], depth: number): Promise<View[]> {
+  return executeAPIRequest<{ views: View[] }>(() =>
+    getAxios()?.post<APIResponse<{ views: View[] }>>(url, {
+      depth,
+      view_ids: viewIds,
+    })
+  ).then((data) => data.views ?? []);
+}
+
+function workspaceViewSubtreesQuery(viewIds: string[], depth: number): string {
+  const params = new URLSearchParams();
+
+  params.set('depth', String(depth));
+  params.set('view_ids', viewIds.join(','));
+
+  return params.toString();
+}
+
+function workspaceViewSubtreesQueryFitsGet(url: string, viewIds: string[], depth: number): boolean {
+  return `${url}?${workspaceViewSubtreesQuery(viewIds, depth)}`.length <= MAX_WORKSPACE_VIEW_SUBTREES_GET_URL_BYTES;
+}
+
+function workspaceViewSubtreesGetChunks(url: string, viewIds: string[], depth: number): string[][] {
+  const chunks: string[][] = [];
+  let start = 0;
+
+  while (start < viewIds.length) {
+    let end = Math.min(viewIds.length, start + WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE);
+
+    while (end > start + 1 && !workspaceViewSubtreesQueryFitsGet(url, viewIds.slice(start, end), depth)) {
+      end = start + Math.floor((end - start) / 2);
+    }
+
+    chunks.push(viewIds.slice(start, end));
+    start = end;
+  }
+
+  return chunks;
+}
+
+function chunkViewIds(viewIds: string[], chunkSize: number): string[][] {
+  const chunks: string[][] = [];
+
+  for (let index = 0; index < viewIds.length; index += chunkSize) {
+    chunks.push(viewIds.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+}
+
+function isUnsupportedPostRouteError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    ((error as { code: unknown }).code === 404 || (error as { code: unknown }).code === 405)
+  );
 }
 
 export async function getAppFavorites(workspaceId: string) {
   const url = `/api/workspace/${workspaceId}/favorite`;
 
-  return executeAPIRequest<{ views: View[] }>(() =>
-    getAxios()?.get<APIResponse<{ views: View[] }>>(url)
-  ).then((data) => data.views);
+  return executeAPIRequest<{ views: View[] }>(() => getAxios()?.get<APIResponse<{ views: View[] }>>(url)).then(
+    (data) => data.views
+  );
 }
 
 export async function getAppRecent(workspaceId: string) {
   const url = `/api/workspace/${workspaceId}/recent`;
 
-  return executeAPIRequest<{ views: View[] }>(() =>
-    getAxios()?.get<APIResponse<{ views: View[] }>>(url)
-  ).then((data) => data.views);
+  return executeAPIRequest<{ views: View[] }>(() => getAxios()?.get<APIResponse<{ views: View[] }>>(url)).then(
+    (data) => data.views
+  );
 }
 
 export async function getAppTrash(workspaceId: string) {
   const url = `/api/workspace/${workspaceId}/trash`;
 
-  return executeAPIRequest<{ views: View[] }>(() =>
-    getAxios()?.get<APIResponse<{ views: View[] }>>(url)
-  ).then((data) => data.views);
+  return executeAPIRequest<{ views: View[] }>(() => getAxios()?.get<APIResponse<{ views: View[] }>>(url)).then(
+    (data) => data.views
+  );
 }
 
-export async function createOrphanedView(workspaceId: string, payload: { document_id: string }): Promise<Uint8Array> {
+export async function createOrphanedView(workspaceId: string, payload: CreateOrphanedViewPayload): Promise<Uint8Array> {
   const url = `/api/workspace/${workspaceId}/orphaned-view`;
 
   // Server returns doc_state as Vec<u8> which is JSON encoded as number[]

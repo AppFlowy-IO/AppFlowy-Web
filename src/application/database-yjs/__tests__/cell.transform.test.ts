@@ -6,14 +6,14 @@ jest.mock('@/utils/runtime-config', () => ({
 
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { SelectOption } from '@/application/database-yjs/fields';
+import { SelectOption, SelectOptionColor } from '@/application/database-yjs/fields';
 import { YDatabaseCell, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { ChecklistCell, SelectOptionCell, TextCell } from '@/application/database-yjs/cell.type';
 
 function createField(type: FieldType, typeOptionContent?: unknown): YDatabaseField {
   const doc = new Y.Doc();
   const field = doc.getMap('field') as YDatabaseField;
-  
+
   field.set(YjsDatabaseKey.type, String(type));
   if (typeOptionContent !== undefined) {
     const typeOptionMap = new Y.Map();
@@ -28,24 +28,24 @@ function createField(type: FieldType, typeOptionContent?: unknown): YDatabaseFie
 function createCell(data: unknown, currentType: FieldType, sourceType?: FieldType): YDatabaseCell {
   const doc = new Y.Doc();
   const cell = doc.getMap('cell') as YDatabaseCell;
-  
+
   cell.set(YjsDatabaseKey.data, data);
-  cell.set(YjsDatabaseKey.field_type, String(currentType));
-  if (sourceType !== undefined) {
-    cell.set(YjsDatabaseKey.source_field_type, String(sourceType));
-  }
+  cell.set(YjsDatabaseKey.field_type, String(sourceType ?? currentType));
   return cell;
 }
 
 describe('Lazy Cell Transformation (Object Structure)', () => {
-  
   describe('RichText <-> Checklist', () => {
     it('RichText -> Checklist: parses markdown text into checklist structure', () => {
       const field = createField(FieldType.Checklist);
       // Source is RichText, Target is Checklist
-      const cell = createCell(`[x] Done
-[ ] Todo`, FieldType.Checklist, FieldType.RichText);
-      
+      const cell = createCell(
+        `[x] Done
+[ ] Todo`,
+        FieldType.Checklist,
+        FieldType.RichText
+      );
+
       const parsed = parseYDatabaseCellToCell(cell, field) as unknown as ChecklistCell;
       const parsedData = JSON.parse(parsed.data);
 
@@ -62,15 +62,15 @@ describe('Lazy Cell Transformation (Object Structure)', () => {
       const checklistData = JSON.stringify({
         options: [
           { id: '1', name: 'Task A', color: 0 },
-          { id: '2', name: 'Task B', color: 0 }
+          { id: '2', name: 'Task B', color: 0 },
         ],
-        selected_option_ids: ['1']
+        selected_option_ids: ['1'],
       });
       // Source is Checklist, Target is RichText
       const cell = createCell(checklistData, FieldType.RichText, FieldType.Checklist);
 
       const parsed = parseYDatabaseCellToCell(cell, field) as unknown as TextCell;
-      
+
       expect(parsed.fieldType).toBe(FieldType.RichText);
       expect(parsed.data).toBe(`[x] Task A
 [ ] Task B`);
@@ -78,9 +78,13 @@ describe('Lazy Cell Transformation (Object Structure)', () => {
 
     it('RichText -> Checklist: handles plain text list', () => {
       const field = createField(FieldType.Checklist);
-      const cell = createCell(`Item 1
-Item 2`, FieldType.Checklist, FieldType.RichText);
-      
+      const cell = createCell(
+        `Item 1
+Item 2`,
+        FieldType.Checklist,
+        FieldType.RichText
+      );
+
       const parsed = parseYDatabaseCellToCell(cell, field) as unknown as ChecklistCell;
       const parsedData = JSON.parse(parsed.data);
 
@@ -97,7 +101,7 @@ Item 2`, FieldType.Checklist, FieldType.RichText);
       const options: SelectOption[] = [
         { id: 'opt1', name: 'Apple', color: 0 },
         { id: 'opt2', name: 'Banana', color: 0 },
-        { id: 'opt3', name: 'Cherry', color: 0 }
+        { id: 'opt3', name: 'Cherry', color: 0 },
       ];
       const field = createField(FieldType.MultiSelect, { options });
 
@@ -106,9 +110,9 @@ Item 2`, FieldType.Checklist, FieldType.RichText);
         options: [
           { id: 'c1', name: 'Apple', color: 0 }, // Should match opt1
           { id: 'c2', name: 'Cherry', color: 0 }, // Should match opt3
-          { id: 'c3', name: 'Durian', color: 0 }  // No match
+          { id: 'c3', name: 'Durian', color: 0 }, // No match
         ],
-        selected_option_ids: ['c1', 'c2'] // Both checked
+        selected_option_ids: ['c1', 'c2'], // Both checked
       });
 
       const cell = createCell(checklistData, FieldType.MultiSelect, FieldType.Checklist);
@@ -122,40 +126,119 @@ Item 2`, FieldType.Checklist, FieldType.RichText);
     });
 
     it('MultiSelect -> Checklist: converts options to checklist items', () => {
-        const options: SelectOption[] = [
-          { id: 'opt1', name: 'Red', color: 0 },
-          { id: 'opt2', name: 'Blue', color: 0 }
-        ];
-        const field = createField(FieldType.Checklist, { options }); // Checklist field now holds the options
-  
-        const cell = createCell('opt1,opt2', FieldType.Checklist, FieldType.MultiSelect);
-        
-        const parsed = parseYDatabaseCellToCell(cell, field) as unknown as ChecklistCell;
-        const parsedData = JSON.parse(parsed.data);
-  
-        expect(parsedData.options).toHaveLength(2);
-        // IDs are regenerated in the implementation
-        expect(parsedData.options[0].name).toBe('Red'); 
-        expect(parsedData.options[1].name).toBe('Blue');
-        expect(parsedData.selected_option_ids).toHaveLength(2);
-      });
+      const options: SelectOption[] = [
+        { id: 'opt1', name: 'Red', color: SelectOptionColor.OptionColor7 },
+        { id: 'opt2', name: 'Blue', color: SelectOptionColor.OptionColor9 },
+      ];
+      // After converting MultiSelect -> Checklist, the select options remain
+      // under the source (MultiSelect) type-option key (the switch adds the
+      // new type-option without deleting the old one). The read path resolves
+      // them by the cell's source type, not the field's current type.
+      const field = createField(FieldType.Checklist);
+      const typeOptionMap = new Y.Map();
+      const option = new Y.Map();
+
+      option.set(YjsDatabaseKey.content, JSON.stringify({ options }));
+      typeOptionMap.set(String(FieldType.MultiSelect), option);
+      field.set(YjsDatabaseKey.type_option, typeOptionMap);
+
+      const cell = createCell('opt1,opt1,opt2', FieldType.Checklist, FieldType.MultiSelect);
+
+      const parsed = parseYDatabaseCellToCell(cell, field) as unknown as ChecklistCell;
+      const parsedData = JSON.parse(parsed.data);
+
+      expect(parsedData.options).toHaveLength(2);
+      // IDs are regenerated in the implementation
+      expect(parsedData.options[0].name).toBe('Red');
+      expect(parsedData.options[1].name).toBe('Blue');
+      expect(parsedData.options.every((option: SelectOption) => option.color === SelectOptionColor.OptionColor1)).toBe(
+        true
+      );
+      expect(parsedData.selected_option_ids).toHaveLength(2);
+    });
+  });
+
+  describe('SingleSelect <-> MultiSelect (desktop parity: keep option IDs)', () => {
+    const options: SelectOption[] = [
+      { id: 'opt1', name: 'Red', color: 0 },
+      { id: 'opt2', name: 'Blue', color: 0 },
+    ];
+
+    it('SingleSelect -> MultiSelect: preserves the selected option ID', () => {
+      // Options are copied 1:1 on switch, so the field's current (MultiSelect)
+      // type-option holds them.
+      const field = createField(FieldType.MultiSelect, { options });
+      const cell = createCell('opt1', FieldType.MultiSelect, FieldType.SingleSelect);
+
+      const parsed = parseYDatabaseCellToCell(cell, field) as unknown as SelectOptionCell;
+
+      expect(parsed.data).toBe('opt1');
+    });
+
+    it('MultiSelect -> SingleSelect: preserves all stored option IDs', () => {
+      const field = createField(FieldType.SingleSelect, { options });
+      const cell = createCell('opt1,opt2', FieldType.SingleSelect, FieldType.MultiSelect);
+
+      const parsed = parseYDatabaseCellToCell(cell, field) as unknown as SelectOptionCell;
+
+      expect(parsed.data).toBe('opt1,opt2');
+    });
+  });
+
+  describe('RichText -> DateTime (desktop parity: parse text to timestamp)', () => {
+    it('parses a date string into a unix-seconds timestamp', () => {
+      const field = createField(FieldType.DateTime);
+      const cell = createCell('2026-05-14', FieldType.DateTime, FieldType.RichText);
+
+      const parsed = parseYDatabaseCellToCell(cell, field);
+
+      expect(parsed.data).toBe('1778716800');
+    });
+
+    it.each([
+      ['2026-05-14 18:40', '1778784000'],
+      ['1705276800', '1705276800'],
+      ['1705276800000', '1705276800000'],
+      ['February 9, 2024 10:45 AM (GMT+08:00)', '1707446700'],
+    ])('matches Desktop UTC parsing for %s', (input, expected) => {
+      const field = createField(FieldType.DateTime);
+      const cell = createCell(input, FieldType.DateTime, FieldType.RichText);
+
+      expect(parseYDatabaseCellToCell(cell, field).data).toBe(expected);
+    });
+
+    it.each(['999999999', '2024-02-30', '31/1/123'])('rejects non-Desktop date input %s', (input) => {
+      const field = createField(FieldType.DateTime);
+      const cell = createCell(input, FieldType.DateTime, FieldType.RichText);
+
+      expect(parseYDatabaseCellToCell(cell, field).data).toBe('');
+    });
+
+    it('returns empty for unparseable text', () => {
+      const field = createField(FieldType.DateTime);
+      const cell = createCell('not a date', FieldType.DateTime, FieldType.RichText);
+
+      const parsed = parseYDatabaseCellToCell(cell, field);
+
+      expect(parsed.data).toBe('');
+    });
   });
 
   describe('Other Transformations', () => {
     it('RichText -> Checkbox: parses "yes" variants', () => {
-        const field = createField(FieldType.Checkbox);
-        const cell = createCell('yes', FieldType.Checkbox, FieldType.RichText);
-        
-        const parsed = parseYDatabaseCellToCell(cell, field);
-        expect(parsed.data).toBe('Yes');
+      const field = createField(FieldType.Checkbox);
+      const cell = createCell('yes', FieldType.Checkbox, FieldType.RichText);
+
+      const parsed = parseYDatabaseCellToCell(cell, field);
+      expect(parsed.data).toBe('Yes');
     });
 
-    it('RichText -> Checkbox: parses "[x]" as Yes', () => {
-        const field = createField(FieldType.Checkbox);
-        const cell = createCell('[x]', FieldType.Checkbox, FieldType.RichText);
-        
-        const parsed = parseYDatabaseCellToCell(cell, field);
-        expect(parsed.data).toBe('Yes');
+    it('RichText -> Checkbox: treats non-desktop truthy aliases as unchecked', () => {
+      const field = createField(FieldType.Checkbox);
+      const cell = createCell('[x]', FieldType.Checkbox, FieldType.RichText);
+
+      const parsed = parseYDatabaseCellToCell(cell, field);
+      expect(parsed.data).toBe('No');
     });
   });
 });

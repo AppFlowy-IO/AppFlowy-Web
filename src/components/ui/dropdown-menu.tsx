@@ -35,7 +35,7 @@ function DropdownMenuContent({ className, sideOffset = 4, container, forceMount,
         avoidCollisions
         className={cn(
           // Base colors and appearance
-          'border border-border-primary bg-background-primary text-text-primary',
+          'border border-border-primary bg-surface-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
 
           // Size constraints and overflow behavior
@@ -86,7 +86,7 @@ const dropdownMenuItemVariants = cva(
     variants: {
       variant: {
         default: 'text-text-primary',
-        destructive: 'hover:text-text-error hover:*:[svg]:!text-text-error',
+        destructive: 'text-text-error [&_svg]:text-text-error hover:text-text-error focus:text-text-error',
       },
     },
     defaultVariants: {
@@ -241,7 +241,7 @@ const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<t
         data-slot='dropdown-menu-sub-content'
         className={cn(
           // Base colors and appearance
-          'bg-background-primary text-text-primary',
+          'bg-surface-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
           'origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden',
 
@@ -254,7 +254,7 @@ const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<t
           // Position-based animations
           'data-[side=bottom]:slide-in-from-top-2',
           'data-[side=left]:slide-in-from-right-2',
-          'data-[side=right]:slide-in-from-left-2 data-[side=right]:ml-2',
+          'data-[side=right]:ml-2 data-[side=right]:slide-in-from-left-2',
           'data-[side=top]:slide-in-from-bottom-2',
 
           className

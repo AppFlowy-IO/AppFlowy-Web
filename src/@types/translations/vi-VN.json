@@ -1655,7 +1655,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Liên kết đã được sao chép vào clipboard",
-        "convertToLink": "Chuyển đổi thành liên kết nhúng"
+        "convertToLink": "Chuyển đổi thành liên kết nhúng",
+        "pasteAs": {
+          "title": "Dán dưới dạng",
+          "mention": "Đề cập",
+          "url": "URL",
+          "bookmark": "Dấu trang",
+          "embed": "Nhúng"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Thêm tiêu đề để tạo mục lục.",

@@ -2,8 +2,16 @@ import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-sc
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PADDING_END, useDatabaseContext, useReadOnly, useRowsByGroup } from '@/application/database-yjs';
+import {
+  GroupColumn,
+  PADDING_END,
+  Row,
+  useDatabaseContext,
+  useReadOnly,
+  useRowsByGroup,
+} from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
+import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
@@ -22,8 +30,43 @@ export interface GroupProps {
 }
 
 export const Group = ({ groupId }: GroupProps) => {
-  const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
+  const { columns, groupResult, fieldId, groupRowsReady, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
+
+  if (notFound) {
+    return (
+      <div className={'mt-[10%] flex h-full w-full flex-col items-center gap-2 text-text-secondary'}>
+        <div className={'text-sm font-medium'}>{t('board.noGroup')}</div>
+        <div className={'text-xs'}>{t('board.noGroupDesc')}</div>
+      </div>
+    );
+  }
+
+  if (!fieldId) return null;
+
+  if (!groupRowsReady) {
+    return <KanbanSkeleton includeTitle={false} includeTabs={false} />;
+  }
+
+  return (
+    <HydratedGroup
+      groupId={groupId}
+      columns={columns}
+      groupResult={groupResult}
+      fieldId={fieldId}
+      groupRowsReady={groupRowsReady}
+    />
+  );
+};
+
+interface HydratedGroupProps extends GroupProps {
+  columns: GroupColumn[];
+  groupResult: Map<string, Row[]>;
+  fieldId: string;
+  groupRowsReady: boolean;
+}
+
+const HydratedGroup = ({ groupId, columns, groupResult, fieldId, groupRowsReady }: HydratedGroupProps) => {
   const context = useDatabaseContext();
   const { paddingStart, paddingEnd, navigateToRow } = context;
 
@@ -39,7 +82,6 @@ export const Group = ({ groupId }: GroupProps) => {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);
-
   const onDeleteCards = useCallback((ids: string[]) => {
     const rowIds = ids.map((id) => id.split('/')[1]);
 
@@ -92,15 +134,18 @@ export const Group = ({ groupId }: GroupProps) => {
   const innerRef = useRef<HTMLDivElement | null>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
-  const handleRefCallback = useCallback((el: HTMLDivElement | null) => {
-    ref.current = el;
-    if (!el) return;
-    const container = getVerticalScrollContainer(el);
+  const handleRefCallback = useCallback(
+    (el: HTMLDivElement | null) => {
+      ref.current = el;
+      if (!el) return;
+      const container = getVerticalScrollContainer(el);
 
-    if (!container) return;
-    setVerticalScrollContainer(container);
-    setElement(el);
-  }, [getVerticalScrollContainer, ref]);
+      if (!container) return;
+      setVerticalScrollContainer(container);
+      setElement(el);
+    },
+    [getVerticalScrollContainer, ref]
+  );
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
@@ -121,12 +166,15 @@ export const Group = ({ groupId }: GroupProps) => {
     });
   }, []);
 
-  const handleScrollLeft = useCallback((scrollLeft: number) => {
-    ref.current?.scrollTo({
-      left: scrollLeft,
-      behavior: 'auto',
-    });
-  }, [ref]);
+  const handleScrollLeft = useCallback(
+    (scrollLeft: number) => {
+      ref.current?.scrollTo({
+        left: scrollLeft,
+        behavior: 'auto',
+      });
+    },
+    [ref]
+  );
 
   const handleCloseDeleteConfirm = useCallback(() => {
     setDeleteConfirm(false);
@@ -209,16 +257,6 @@ export const Group = ({ groupId }: GroupProps) => {
     };
   }, [ref, verticalScrollContainer]);
 
-  if (notFound) {
-    return (
-      <div className={'mt-[10%] flex h-full w-full flex-col items-center gap-2 text-text-secondary'}>
-        <div className={'text-sm font-medium'}>{t('board.noGroup')}</div>
-        <div className={'text-xs'}>{t('board.noGroupDesc')}</div>
-      </div>
-    );
-  }
-
-  if (!fieldId) return null;
   if (readOnly && columns.length === 0) return null;
 
   return (
@@ -241,6 +279,7 @@ export const Group = ({ groupId }: GroupProps) => {
             groupId={groupId}
             fieldId={fieldId}
             groupResult={groupResult}
+            groupRowsReady={groupRowsReady}
             columns={columns}
             ref={innerRef}
             addCardBefore={addCardBefore}

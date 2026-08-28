@@ -11,9 +11,20 @@ import {
   createDocumentYjsRenderDocFromSnapshot,
 } from '@/application/publish-snapshot/document-yjs-render-bridge';
 import type { PublishedDocumentRaw, PublishedPageSnapshot, PublishedView } from '@/application/publish-snapshot/types';
-import { AppendBreadcrumb, CreateRow, LoadView, LoadViewMeta, View, ViewInfo, ViewLayout, YDoc } from '@/application/types';
+import {
+  AppendBreadcrumb,
+  CreateRow,
+  LoadRowDocument,
+  LoadView,
+  LoadViewMeta,
+  View,
+  ViewInfo,
+  ViewLayout,
+  YDoc,
+} from '@/application/types';
+import { isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
 import { notify } from '@/components/_shared/notify';
-import { findAncestors, findView } from '@/components/_shared/outline/utils';
+import { findAncestors, findParentView, findView } from '@/components/_shared/outline/utils';
 import { PublishService, RowService } from '@/application/services/domains';
 
 function publishedViewToViewInfo(view: PublishedView): ViewInfo {
@@ -78,14 +89,6 @@ function findViewInfoById(views: ViewInfo[] | null | undefined, viewId: string):
   }
 }
 
-function snapshotToRenderDoc(snapshot: PublishedPageSnapshot) {
-  if (snapshot.kind === 'database') {
-    return createDatabaseYjsRenderDocsFromSnapshot(snapshot).doc;
-  }
-
-  return createDocumentYjsRenderDocFromSnapshot(snapshot);
-}
-
 function rowDocumentsFromSnapshot(snapshot: PublishedPageSnapshot): Record<string, PublishedDocumentRaw> {
   if (snapshot.kind !== 'database') return {};
 
@@ -102,7 +105,7 @@ export interface PublishContextType {
   loadViewMeta: LoadViewMeta;
   createRow?: CreateRow;
   loadView: LoadView;
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  loadRowDocument?: LoadRowDocument;
   outline?: View[];
   appendBreadcrumb?: AppendBreadcrumb;
   breadcrumbs: View[];
@@ -136,10 +139,22 @@ export const PublishProvider = ({
   const [snapshotDataSource] = useState(() => createPublishSnapshotDataSource());
   const rowDocumentSnapshotsRef = useRef<Record<string, PublishedDocumentRaw>>({});
   const rowDocumentDocsRef = useRef<Map<string, YDoc>>(new Map());
+  const databaseRowDocsRef = useRef<Map<string, YDoc>>(new Map());
   const viewMetaSubscribersRef = useRef<Map<string, (meta: ViewMeta) => void>>(new Map());
 
   const registerSnapshotRowDocuments = useCallback((snapshot: PublishedPageSnapshot) => {
     Object.assign(rowDocumentSnapshotsRef.current, rowDocumentsFromSnapshot(snapshot));
+  }, []);
+
+  const createSnapshotRenderDoc = useCallback((snapshot: PublishedPageSnapshot) => {
+    if (snapshot.kind === 'database') {
+      const { doc, rowMap } = createDatabaseYjsRenderDocsFromSnapshot(snapshot);
+
+      Object.values(rowMap).forEach((rowDoc) => databaseRowDocsRef.current.set(rowDoc.guid, rowDoc));
+      return doc;
+    }
+
+    return createDocumentYjsRenderDocFromSnapshot(snapshot);
   }, []);
 
   const snapshotViewMeta = useMemo(() => {
@@ -188,33 +203,27 @@ export const PublishProvider = ({
     return crumbs.length > 0 ? crumbs : [currentView];
   }, [viewMeta, outline]);
 
-  const [breadcrumbs, setBreadcrumbs] = useState<View[]>([]);
-
-  useEffect(() => {
-    setBreadcrumbs(originalCrumbs);
-  }, [originalCrumbs]);
+  // Trailing crumb appended by pages without their own route ancestry (e.g. a
+  // database row opened as a full page). Held separately from the ancestor
+  // chain so outline updates, which rebuild originalCrumbs, cannot erase it.
+  const [appendedCrumb, setAppendedCrumb] = useState<View | undefined>(undefined);
 
   const appendBreadcrumb = useCallback((view?: View) => {
-    setBreadcrumbs((prev) => {
-      if (!view) {
-        return prev.slice(0, -1);
-      }
-
-      const index = prev.findIndex((v) => v.view_id === view.view_id);
-
-      if (index === -1) {
-        return [...prev, view];
-      }
-
-      const rest = prev.slice(0, index);
-
-      return [...rest, view];
-    });
+    setAppendedCrumb(view);
   }, []);
+
+  const breadcrumbs = useMemo(() => {
+    if (!appendedCrumb) return originalCrumbs;
+    const index = originalCrumbs.findIndex((v) => v.view_id === appendedCrumb.view_id);
+
+    if (index === -1) return [...originalCrumbs, appendedCrumb];
+    return [...originalCrumbs.slice(0, index), appendedCrumb];
+  }, [originalCrumbs, appendedCrumb]);
 
   useEffect(() => {
     rowDocumentSnapshotsRef.current = {};
     rowDocumentDocsRef.current.clear();
+    databaseRowDocsRef.current.clear();
 
     if (snapshot) {
       registerSnapshotRowDocuments(snapshot);
@@ -348,10 +357,44 @@ export const PublishProvider = ({
 
   const toView = useCallback(
     async (viewId: string, blockId?: string) => {
-      try {
-        const view = await loadViewMeta(viewId);
+      const outlineView = findView(outline, viewId);
+      const outlineParent = findParentView(outline, viewId);
+      let currentOutlineView: View | null | undefined;
+      const getCurrentOutlineView = () => {
+        if (currentOutlineView === undefined) {
+          currentOutlineView = viewMeta ? findView(outline, viewMeta.view_id) : null;
+        }
 
-        const res = await PublishService.getViewInfo(viewId);
+        return currentOutlineView;
+      };
+
+      const databaseContainer =
+        outlineView && isDatabaseLayout(outlineView.layout) && isDatabaseContainer(outlineParent)
+          ? outlineParent
+          : undefined;
+      const currentPublishedDatabaseView = databaseContainer?.children.find(
+        (child) => child.view_id === getCurrentOutlineView()?.view_id && child.is_published
+      );
+      let publishedDatabaseRoute: View | undefined;
+
+      if (databaseContainer?.is_published) {
+        publishedDatabaseRoute = databaseContainer;
+      } else if (outlineView?.is_published) {
+        publishedDatabaseRoute = outlineView;
+      } else {
+        publishedDatabaseRoute =
+          currentPublishedDatabaseView ?? databaseContainer?.children.find((child) => child.is_published);
+      }
+
+      let targetView = outlineView || undefined;
+
+      try {
+        const view = targetView || (await loadViewMeta(viewId));
+        const routeViewId = publishedDatabaseRoute?.view_id || viewId;
+
+        targetView = view;
+
+        const res = await PublishService.getViewInfo(routeViewId);
 
         if (!res) {
           throw new Error('View has not been published yet');
@@ -370,6 +413,8 @@ export const PublishProvider = ({
             case ViewLayout.Grid:
             case ViewLayout.Board:
             case ViewLayout.Calendar:
+            case ViewLayout.List:
+            case ViewLayout.Gallery:
               searchParams.set('r', blockId);
               break;
             default:
@@ -379,6 +424,10 @@ export const PublishProvider = ({
 
         if (isTemplate) {
           searchParams.set('template', 'true');
+        }
+
+        if (databaseContainer) {
+          searchParams.set('v', viewId);
         }
 
         let url = `/${viewNamespace}/${publishName}`;
@@ -392,20 +441,26 @@ export const PublishProvider = ({
         });
         return;
       } catch (e) {
-        // For unpublished sibling database views, switch the tab via URL parameter
-        // instead of navigating to a non-existent published page.
-        // Only apply this fallback when a ?v= param is already present (indicating
-        // we're on a database page with tabs). Otherwise, re-throw so callers
-        // (e.g., relation pills, @-mentions) can handle the error.
-        const currentParams = new URLSearchParams(window.location.search);
+        // A database tab may not have its own published route. If the current
+        // published page is already a database, switch tabs in place.
+        const targetDatabaseId = targetView?.extra?.database_id;
+        const currentDatabaseId = getCurrentOutlineView()?.extra?.database_id;
+        const isCurrentDatabaseTab = Boolean(targetDatabaseId) && targetDatabaseId === currentDatabaseId;
 
-        currentParams.set('v', viewId);
-        navigate(`${window.location.pathname}?${currentParams.toString()}`, {
-          replace: true,
-        });
+        if (viewMeta && isDatabaseLayout(viewMeta.layout) && isCurrentDatabaseTab) {
+          const currentParams = new URLSearchParams(window.location.search);
+
+          currentParams.set('v', viewId);
+          navigate(`${window.location.pathname}?${currentParams.toString()}`, {
+            replace: true,
+          });
+          return;
+        }
+
+        throw e;
       }
     },
-    [loadViewMeta, isTemplate, navigate]
+    [isTemplate, loadViewMeta, navigate, outline, viewMeta]
   );
 
   const loadOutline = useCallback(async () => {
@@ -423,23 +478,24 @@ export const PublishProvider = ({
     }
   }, [namespace]);
 
-  const createRow = useCallback(
-    async (rowKey: string) => {
-      try {
-        const doc = await RowService.create(rowKey);
+  const createRow = useCallback(async (rowKey: string) => {
+    try {
+      const snapshotRow = databaseRowDocsRef.current.get(rowKey);
 
-        if (!doc) {
-          throw new Error('Failed to create row');
-        }
+      if (snapshotRow) return snapshotRow;
 
-        createdRowKeys.current.push(rowKey);
-        return doc;
-      } catch (e) {
-        return Promise.reject(e);
+      const doc = await RowService.create(rowKey);
+
+      if (!doc) {
+        throw new Error('Failed to create row');
       }
-    },
-    []
-  );
+
+      createdRowKeys.current.push(rowKey);
+      return doc;
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }, []);
 
   const loadRowDocument = useCallback(async (documentId: string): Promise<YDoc | null> => {
     const cachedDoc = rowDocumentDocsRef.current.get(documentId);
@@ -470,7 +526,7 @@ export const PublishProvider = ({
 
       try {
         if (snapshot?.view.viewId === viewId) {
-          return snapshotToRenderDoc(snapshot);
+          return createSnapshotRenderDoc(snapshot);
         }
 
         const res = await PublishService.getViewInfo(viewId);
@@ -489,12 +545,12 @@ export const PublishProvider = ({
 
         registerSnapshotRowDocuments(data);
 
-        return snapshotToRenderDoc(data);
+        return createSnapshotRenderDoc(data);
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [loadRowDocument, registerSnapshotRowDocuments, snapshot, snapshotDataSource]
+    [createSnapshotRenderDoc, loadRowDocument, registerSnapshotRowDocuments, snapshot, snapshotDataSource]
   );
 
   const onRendered = useCallback(() => {
@@ -582,11 +638,7 @@ export const PublishProvider = ({
     ]
   );
 
-  return (
-    <PublishContext.Provider value={contextValue}>
-      {children}
-    </PublishContext.Provider>
-  );
+  return <PublishContext.Provider value={contextValue}>{children}</PublishContext.Provider>;
 };
 
 export function usePublishContext() {

@@ -11,7 +11,8 @@ import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
 import { useAppOperations, useCurrentWorkspaceId, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import {
   ImportAbortError,
-  importCsvAsDatabase,
+  ImportCsvBatchItem,
+  importCsvFilesAsDatabases,
   importNotionZipToView,
   populateDocumentWithMarkdown,
   stripFileExtension,
@@ -21,7 +22,20 @@ const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
 const CSV_ACCEPT = '.csv,text/csv';
 const NOTION_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 
+// Enough failed names to be actionable in a toast without turning it into a wall of text.
+const MAX_REPORTED_FAILURES = 3;
+
+// File names and server messages are raw user/server data, and i18next escapes interpolated
+// values by default — without this a file called `Q1&Q2.csv` shows up as `Q1&amp;Q2.csv`.
+// Toasts render plain text, so there is nothing to escape for.
+const RAW_INTERPOLATION = { interpolation: { escapeValue: false } };
+
 type ImportFormat = 'markdown' | 'csv' | 'notion';
+
+interface CsvProgress {
+  current: number;
+  total: number;
+}
 
 interface ImportDialogProps {
   open: boolean;
@@ -37,6 +51,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const openPageModal = useOpenPageModal();
   const toView = useToView();
   const [active, setActive] = useState<ImportFormat | null>(null);
+  const [csvProgress, setCsvProgress] = useState<CsvProgress | null>(null);
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const notionInputRef = useRef<HTMLInputElement>(null);
@@ -53,13 +68,31 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
 
   const close = useCallback(() => {
     setActive(null);
+    setCsvProgress(null);
     onOpenChange(false);
   }, [onOpenChange]);
 
-  const handleClose = useCallback(() => {
+  // Backdrop click / Escape: never interrupts an import. Cancelling a batch has to be
+  // deliberate, otherwise a stray click throws away a long-running import.
+  const handleDismiss = useCallback(() => {
     if (active) return;
     onOpenChange(false);
   }, [active, onOpenChange]);
+
+  // A CSV batch and a Notion zip upload can both run for minutes, so the close button doubles as
+  // a cancel for them and keeps whatever already imported. Markdown blocks the button instead:
+  // it is two round trips, and its page already exists by the time the upload starts.
+  const cancellable = active === 'csv' || active === 'notion';
+  const closeDisabled = active !== null && !cancellable;
+
+  // The button doubles as the cancel control during a batch, so it has to say so.
+  const closeLabel = cancellable ? t('importPanel.cancelImport') : t('button.close');
+
+  const handleCloseClick = useCallback(() => {
+    if (closeDisabled) return;
+    if (cancellable) abortRef.current?.abort();
+    onOpenChange(false);
+  }, [cancellable, closeDisabled, onOpenChange]);
 
   const handleMarkdown = useCallback(
     async (file: File) => {
@@ -87,24 +120,76 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   );
 
   const handleCsv = useCallback(
-    async (file: File) => {
-      if (!workspaceId) return;
+    async (files: File[]) => {
+      if (!workspaceId || files.length === 0) return;
       const controller = new AbortController();
 
       abortRef.current?.abort();
       abortRef.current = controller;
       setActive('csv');
+      setCsvProgress({ current: 1, total: files.length });
       try {
-        const result = await importCsvAsDatabase({
+        const { items, aborted } = await importCsvFilesAsDatabases({
           workspaceId,
           parentViewId,
-          file,
+          files,
           signal: controller.signal,
+          onFileStart: (index, total) => setCsvProgress({ current: index + 1, total }),
         });
 
-        toast.success(t('importPanel.success'));
+        const importedViewIds: string[] = [];
+        const failed: ImportCsvBatchItem[] = [];
+
+        for (const item of items) {
+          if (item.viewId) importedViewIds.push(item.viewId);
+          else failed.push(item);
+        }
+
+        // Cancelling — or a batch-fatal server error such as the pending-task cap — leaves the
+        // remaining files unattempted, so `files.length` is not a denominator we can honestly
+        // report. Only claim "x of y" when every selected file actually got a turn.
+        const attemptedAll = !aborted && items.length === files.length;
+
+        if (importedViewIds.length > 0) {
+          if (attemptedAll && importedViewIds.length < files.length) {
+            toast.success(t('importPanel.partialSuccess', { success: importedViewIds.length, count: files.length }));
+          } else {
+            toast.success(
+              importedViewIds.length === 1
+                ? t('importPanel.success')
+                : t('importPanel.successCount', { count: importedViewIds.length })
+            );
+          }
+        }
+
+        // Files that were attempted and broke are reported even when the batch was cancelled
+        // afterwards: cancelling hides the files never started, not the ones that already failed.
+        if (failed.length === 1) {
+          toast.error(
+            t('importPanel.failedFile', {
+              name: failed[0].fileName,
+              reason: failed[0].error || t('importPanel.failed'),
+              ...RAW_INTERPOLATION,
+            })
+          );
+        } else if (failed.length > 1) {
+          const shown = failed.slice(0, MAX_REPORTED_FAILURES).map((item) => item.fileName);
+          const names = shown.join(', ');
+          const extra = failed.length - shown.length;
+
+          toast.error(
+            extra > 0
+              ? t('importPanel.failedFilesOverflow', { names, count: extra, ...RAW_INTERPOLATION })
+              : t('importPanel.failedFiles', { names, ...RAW_INTERPOLATION })
+          );
+        }
+
+        // Files left unattempted mean there is still work here — keep the dialog open so the
+        // user can retry them instead of navigating away from a half-finished batch.
+        if (!attemptedAll || importedViewIds.length === 0) return;
+
         close();
-        void toView(result.viewId);
+        void toView(importedViewIds[0]);
         // eslint-disable-next-line
       } catch (e: any) {
         if (e instanceof ImportAbortError) return;
@@ -112,6 +197,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
         setActive(null);
+        setCsvProgress(null);
       }
     },
     [workspaceId, parentViewId, toView, close, t]
@@ -159,10 +245,10 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
 
   const onCsvPicked = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
+      const files = Array.from(event.target.files ?? []);
 
       event.target.value = '';
-      if (file) void handleCsv(file);
+      if (files.length > 0) void handleCsv(files);
     },
     [handleCsv]
   );
@@ -180,7 +266,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   return (
     <Dialog
       open={open}
-      onClose={handleClose}
+      onClose={handleDismiss}
       keepMounted={false}
       PaperProps={{
         'data-testid': 'import-dialog',
@@ -194,8 +280,11 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             size='small'
             color='inherit'
             className='-right-1.5 h-6 w-6'
-            onClick={handleClose}
-            disabled={!!active}
+            data-testid='import-dialog-close'
+            title={closeLabel}
+            aria-label={closeLabel}
+            onClick={handleCloseClick}
+            disabled={closeDisabled}
           >
             <CloseIcon />
           </IconButton>
@@ -211,7 +300,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           >
             <TextIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.textAndMarkdown')}</span>
-            {active === 'markdown' && <CircularProgress size={14} className='ml-auto' />}
+            {active === 'markdown' ? <CircularProgress size={14} className='ml-auto' /> : null}
           </button>
 
           <button
@@ -223,7 +312,16 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           >
             <DatabaseIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.csv')}</span>
-            {active === 'csv' && <CircularProgress size={14} className='ml-auto' />}
+            {active === 'csv' ? (
+              <span className='ml-auto flex items-center gap-2'>
+                {csvProgress && csvProgress.total > 1 ? (
+                  <span className='text-xs text-text-secondary' data-testid='import-csv-progress'>
+                    {t('importPanel.importingCount', { current: csvProgress.current, total: csvProgress.total })}
+                  </span>
+                ) : null}
+                <CircularProgress size={14} />
+              </span>
+            ) : null}
           </button>
 
           <button
@@ -235,9 +333,17 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           >
             <NotionIcon className='h-5 w-5 text-icon-primary' />
             <span className='text-sm'>{t('importPanel.notionZip')}</span>
-            {active === 'notion' && <CircularProgress size={14} className='ml-auto' />}
+            {active === 'notion' ? <CircularProgress size={14} className='ml-auto' /> : null}
           </button>
         </div>
+
+        {/* The visible counter sits inside a disabled button, which assistive tech skips, so the
+            batch reports its progress from a live region that stays in the accessibility tree. */}
+        <span aria-live='polite' className='sr-only' data-testid='import-csv-progress-announcement'>
+          {active === 'csv' && csvProgress && csvProgress.total > 1
+            ? t('importPanel.importingProgress', { current: csvProgress.current, total: csvProgress.total })
+            : ''}
+        </span>
 
         <input
           ref={markdownInputRef}
@@ -251,6 +357,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           ref={csvInputRef}
           type='file'
           accept={CSV_ACCEPT}
+          multiple
           className='hidden'
           data-testid='import-csv-input'
           onChange={onCsvPicked}

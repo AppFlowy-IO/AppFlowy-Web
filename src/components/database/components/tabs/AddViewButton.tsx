@@ -9,14 +9,8 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface AddViewButtonProps {
   onBeforeAddView?: () => void;
@@ -85,21 +79,18 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
+          aria-label={t('grid.settings.addView', { defaultValue: 'Add view' })}
           data-testid='add-view-button'
           size={'icon'}
           variant={'ghost'}
           loading={addLoading}
           className={'mx-1.5 p-1.5 text-icon-secondary'}
+          type='button'
         >
-          {addLoading ? <Progress variant={'inherit'} /> : <PlusIcon className={'h-5 w-5'} />}
+          {addLoading ? <Progress variant={'inherit'} /> : <PlusIcon aria-hidden='true' className={'h-5 w-5'} />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side={'bottom'}
-        align={'start'}
-        className={'!min-w-[120px]'}
-        onCloseAutoFocus={(e) => e.preventDefault()}
-      >
+      <DropdownMenuContent side={'bottom'} align={'start'} className={'!min-w-[120px]'}>
         <DropdownMenuItem
           onClick={() => {
             void handleAddView(DatabaseViewLayout.Grid, t('grid.menuName'));
@@ -144,31 +135,25 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
           {t('form.menuName')}
         </DropdownMenuItem>
 
-        {/* List - Desktop Only */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <DropdownMenuItem disabled>
-                <ViewIcon layout={ViewLayout.List} size={'small'} />
-                {t('list.menuName')}
-              </DropdownMenuItem>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
-        </Tooltip>
+        <DropdownMenuItem
+          data-testid='add-list-view-button'
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.List, t('list.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.List} size={'small'} />
+          {t('list.menuName')}
+        </DropdownMenuItem>
 
-        {/* Gallery - Desktop Only */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <DropdownMenuItem disabled>
-                <ViewIcon layout={ViewLayout.Gallery} size={'small'} />
-                {t('gallery.menuName')}
-              </DropdownMenuItem>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
-        </Tooltip>
+        <DropdownMenuItem
+          data-testid='add-gallery-view-button'
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.Gallery, t('gallery.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.Gallery} size={'small'} />
+          {t('gallery.menuName')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

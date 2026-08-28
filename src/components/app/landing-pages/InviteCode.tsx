@@ -23,6 +23,7 @@ function InviteCode() {
   const [invalidMessage, setInvalidMessage] = useState<string>();
   const [workspace, setWorkspace] = useState<Workspace>();
   const [isError, setIsError] = useState(false);
+  const [error, setError] = useState<{ code?: number; message?: string }>();
 
   const loadWorkspaceInfo = useCallback(async () => {
     if (!params.code) {
@@ -31,6 +32,7 @@ function InviteCode() {
     }
 
     try {
+      setError(undefined);
       const info = await WorkspaceService.getInfoByInvitationCode(params.code);
 
       setWorkspace({
@@ -52,6 +54,7 @@ function InviteCode() {
         setInvalidMessage(e.message);
         setIsInValid(true);
       } else {
+        setError(e);
         setIsError(true);
       }
     } finally {
@@ -70,9 +73,12 @@ function InviteCode() {
     }
 
     setLoading(true);
+    setError(undefined);
+
     try {
       await WorkspaceService.joinByInvitationCode(params.code);
 
+      setIsError(false);
       window.open(`/app/${workspace?.id}`, '_self');
       setHasJoined(true);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -81,6 +87,7 @@ function InviteCode() {
         setInvalidMessage(e.message);
         setIsInValid(true);
       } else {
+        setError(e);
         setIsError(true);
       }
     } finally {
@@ -105,7 +112,22 @@ function InviteCode() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={handleJoin} />;
+    const isMemberLimitError = error?.code === ERROR_CODE.WORKSPACE_MEMBER_LIMIT_EXCEEDED;
+
+    return (
+      <ErrorPage
+        onRetry={handleJoin}
+        error={error}
+        title={isMemberLimitError ? t('landingPage.inviteCode.memberLimitTitle') : undefined}
+        description={
+          isMemberLimitError
+            ? t('landingPage.inviteCode.memberLimitDescription', {
+                workspaceName: workspace?.name || t('workspace.defaultName'),
+              })
+            : undefined
+        }
+      />
+    );
   }
 
   if (hasJoined) {

@@ -1,9 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { AuthService } from '@/application/services/domains';
+import { buildLoginUrl } from '@/application/session/sign_in';
+import { LOGIN_ACTION } from '@/components/login/const';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +24,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
   const [emailError, setEmailError] = useState('');
   const [error, setError] = useState('');
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
+  const submittingRef = useRef(false);
 
   const validateEmail = useCallback((email: string): boolean => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -29,10 +32,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
     return emailRegex.test(email);
   }, []);
 
-  const getValidationErrors = useCallback(
-    (password: string) => getPasswordErrors(password, t),
-    [t]
-  );
+  const getValidationErrors = useCallback((password: string) => getPasswordErrors(password, t), [t]);
 
   const validateConfirmPassword = useCallback(
     (confirmPwd: string) => {
@@ -74,6 +74,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
 
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
+    if (submittingRef.current) return;
 
     // Validate email
     if (!email) {
@@ -99,6 +100,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
     setError('');
     setEmailError('');
@@ -111,10 +113,12 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
     } catch (error: any) {
       if (error.message === 'confirmation_email_sent') {
         // Email confirmation is required — redirect to check email page
-        const encodedRedirect = encodeURIComponent(redirectTo);
-        const encodedEmail = encodeURIComponent(email);
-
-        window.location.href = `/login?action=checkEmail&email=${encodedEmail}&redirectTo=${encodedRedirect}&type=signup`;
+        window.location.href = buildLoginUrl({
+          action: LOGIN_ACTION.CHECK_EMAIL,
+          email,
+          redirectTo,
+          type: 'signup',
+        });
         return;
       } else if (error.code === 422) {
         setEmailError(t('signUp.emailAlreadyRegistered'));
@@ -124,14 +128,13 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
         setError(error.message || t('signUp.signUpFailed'));
       }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
 
   const goBackToLogin = () => {
-    const encodedRedirect = encodeURIComponent(redirectTo);
-
-    window.location.href = `/login?redirectTo=${encodedRedirect}`;
+    window.location.href = buildLoginUrl({ redirectTo });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -143,7 +146,8 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
   const hasPasswordErrors = passwordErrors.length > 0;
   const hasConfirmError = error?.includes('match');
   const hasEmailError = !!emailError;
-  const isFormValid = email && password && confirmPassword && !hasPasswordErrors && !hasEmailError && password === confirmPassword;
+  const isFormValid =
+    email && password && confirmPassword && !hasPasswordErrors && !hasEmailError && password === confirmPassword;
 
   return (
     <div className={'flex w-[320px] flex-col items-center justify-center gap-5 text-text-primary'}>
@@ -169,7 +173,8 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
             placeholder={t('signIn.pleaseInputYourEmail')}
             variant={hasEmailError ? 'destructive' : 'default'}
             onKeyDown={handleKeyDown}
-            data-testid="signup-email-input"
+            data-testid='signup-email-input'
+            disabled={loading}
           />
           {hasEmailError && <div className={cn('help-text text-xs text-text-error')}>{emailError}</div>}
         </div>
@@ -187,7 +192,8 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
             placeholder={t('changePassword.placeholder')}
             variant={hasPasswordErrors ? 'destructive' : 'default'}
             onKeyDown={handleKeyDown}
-            data-testid="signup-password-input"
+            data-testid='signup-password-input'
+            disabled={loading}
           />
           {passwordErrors.length > 0 && (
             <div className={'flex flex-col gap-1'}>
@@ -218,7 +224,8 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
             placeholder={t('signUp.repeatPasswordHint')}
             variant={hasConfirmError ? 'destructive' : 'default'}
             onKeyDown={handleKeyDown}
-            data-testid="signup-confirm-password-input"
+            data-testid='signup-confirm-password-input'
+            disabled={loading}
           />
           {hasConfirmError && <div className={cn('help-text text-xs text-text-error')}>{error}</div>}
         </div>
@@ -226,7 +233,14 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
         {error && !hasConfirmError && <div className={cn('help-text text-xs text-text-error')}>{error}</div>}
       </div>
 
-      <Button loading={loading} size={'lg'} className={'w-full'} onMouseDown={handleSubmit} disabled={!isFormValid} data-testid="signup-submit-button">
+      <Button
+        loading={loading}
+        size={'lg'}
+        className={'w-full'}
+        onClick={handleSubmit}
+        disabled={!isFormValid}
+        data-testid='signup-submit-button'
+      >
         {loading ? (
           <>
             <Progress />
@@ -244,7 +258,8 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
             variant={'link'}
             onClick={goBackToLogin}
             className={'px-0 text-text-secondary underline'}
-            data-testid="signup-back-to-login-button"
+            data-testid='signup-back-to-login-button'
+            disabled={loading}
           >
             {t('signIn.loginButtonText')}
           </Button>
@@ -255,7 +270,8 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
             variant={'link'}
             onClick={goBackToLogin}
             className={'px-0 text-text-secondary underline'}
-            data-testid="signup-go-back-button"
+            data-testid='signup-go-back-button'
+            disabled={loading}
           >
             {t('signUp.goBack')}
           </Button>

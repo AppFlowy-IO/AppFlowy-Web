@@ -1,3 +1,4 @@
+import { DATABASE_BLOCK_TYPES } from '@/application/database-block';
 import { normalizePublishedPageSnapshot } from '@/application/publish-snapshot/normalize';
 import {
   publishedDatabasePayload,
@@ -16,51 +17,57 @@ describe('shouldDisableFixedGlobalCommentInput', () => {
     expect(shouldDisableFixedGlobalCommentInput(normalizePublishedPageSnapshot(publishedDocumentPayload))).toBe(false);
   });
 
-  it('disables fixed comments for published documents with database blocks in raw data', () => {
-    const snapshot = normalizePublishedPageSnapshot({
-      ...publishedDocumentPayload,
-      document: {
-        ...publishedDocumentPayload.document,
-        raw: {
-          data: {
-            page_id: 'page-id',
-            blocks: {
-              'page-id': {
-                id: 'page-id',
-                ty: BlockType.Page,
-                children: 'page-id',
+  it.each(DATABASE_BLOCK_TYPES)(
+    'disables fixed comments for published documents with %s blocks in raw data',
+    (blockType) => {
+      const snapshot = normalizePublishedPageSnapshot({
+        ...publishedDocumentPayload,
+        document: {
+          ...publishedDocumentPayload.document,
+          raw: {
+            data: {
+              page_id: 'page-id',
+              blocks: {
+                'page-id': {
+                  id: 'page-id',
+                  ty: BlockType.Page,
+                  children: 'page-id',
+                },
+                'database-block-id': {
+                  id: 'database-block-id',
+                  ty: blockType,
+                  parent: 'page-id',
+                  children: 'database-block-id',
+                },
               },
-              'database-block-id': {
-                id: 'database-block-id',
-                ty: BlockType.GridBlock,
-                parent: 'page-id',
-                children: 'database-block-id',
-              },
+              meta: {},
             },
-            meta: {},
           },
         },
-      },
-    });
+      });
 
-    expect(shouldDisableFixedGlobalCommentInput(snapshot)).toBe(true);
-  });
+      expect(shouldDisableFixedGlobalCommentInput(snapshot)).toBe(true);
+    }
+  );
 
-  it('disables fixed comments for published documents with database blocks in slate children', () => {
-    const snapshot = normalizePublishedPageSnapshot({
-      ...publishedDocumentPayload,
-      document: {
-        children: [
-          {
-            type: BlockType.GridBlock,
-            blockId: 'database-block-id',
-            data: {},
-            children: [{ text: '' }],
-          },
-        ],
-      },
-    });
+  it.each(DATABASE_BLOCK_TYPES)(
+    'disables fixed comments for published documents with %s blocks in slate children',
+    (blockType) => {
+      const snapshot = normalizePublishedPageSnapshot({
+        ...publishedDocumentPayload,
+        document: {
+          children: [
+            {
+              type: blockType,
+              blockId: 'database-block-id',
+              data: {},
+              children: [{ text: '' }],
+            },
+          ],
+        },
+      });
 
-    expect(shouldDisableFixedGlobalCommentInput(snapshot)).toBe(true);
-  });
+      expect(shouldDisableFixedGlobalCommentInput(snapshot)).toBe(true);
+    }
+  );
 });

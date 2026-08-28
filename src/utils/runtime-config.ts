@@ -29,3 +29,11 @@ export function getConfigValue(key: keyof RuntimeConfig, defaultValue: string): 
 
   return defaultValue;
 }
+
+/**
+ * Keep Vite's `import.meta.env` access behind this module so CommonJS Jest
+ * suites can replace it through the existing runtime-config module mapping.
+ */
+export function isDevelopmentOrTestEnvironment(): boolean {
+  return import.meta.env.DEV || import.meta.env.MODE === 'test';
+}

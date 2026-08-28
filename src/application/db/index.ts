@@ -3,6 +3,7 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 
 import { databasePrefix } from '@/application/constants';
+import { appViewCacheSchema, type AppViewCacheTable } from '@/application/db/tables/app_view_cache';
 import {
   collabStorageSchema,
   type CollabSnapshotRecord,
@@ -18,6 +19,10 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
+import {
+  workspaceDatabaseCatalogSchema,
+  WorkspaceDatabaseCatalogTable,
+} from '@/application/db/tables/workspace_database_catalog';
 import { YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -27,15 +32,38 @@ type DexieTables = ViewMetasTable &
   WorkspaceMemberProfileTable &
   VersionsTable &
   SyncOutboxTable &
-  CollabStorageTable;
+  CollabStorageTable &
+  AppViewCacheTable &
+  WorkspaceDatabaseCatalogTable;
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
 export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
 const _schema = Object.assign(
   {},
-  { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema, ...syncOutboxSchema, ...collabStorageSchema }
+  {
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...versionSchema,
+    ...syncOutboxSchema,
+    ...collabStorageSchema,
+    ...appViewCacheSchema,
+    ...workspaceDatabaseCatalogSchema,
+  }
 );
+
+const legacyAppViewCacheSchema = {
+  app_view_cache: '[workspace_id+view_id], workspace_id, view_id, updated_at',
+};
+
+const legacyUserIndexedAppViewCacheSchema = {
+  app_view_cache: '[workspace_id+view_id], user_id, [user_id+workspace_id+view_id], workspace_id, view_id, updated_at',
+};
+
+const dropAppViewCacheSchema = {
+  app_view_cache: null,
+};
 
 // Version 1: Initial schema with view_metas, users, and rows
 db.version(1).stores({
@@ -147,13 +175,86 @@ db.version(7).stores({
   ...collabStorageSchema,
 });
 
+// Version 8: durable app view payload cache used by the sidebar to render
+// expanded children immediately while refreshing from the server.
+db.version(8).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...legacyAppViewCacheSchema,
+});
+
+// Version 9: add a user-scoped lookup index to app_view_cache. Existing v8 rows
+// cannot be safely attributed, so discard them during migration.
+db.version(9)
+  .stores({
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...workspaceMemberProfileSchema,
+    ...versionSchema,
+    ...syncOutboxSchema,
+    ...collabStorageSchema,
+    ...legacyUserIndexedAppViewCacheSchema,
+  })
+  .upgrade(async (transaction) => {
+    try {
+      await transaction.table('app_view_cache').clear();
+    } catch (error) {
+      console.error('Failed to clear app_view_cache on v9 upgrade:', error);
+      throw error;
+    }
+  });
+
+// Version 10: drop the legacy app_view_cache store before changing its primary
+// key. Dexie cannot migrate an IndexedDB object store key path in place.
+db.version(10).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...dropAppViewCacheSchema,
+});
+
+// Version 11: recreate app_view_cache with user_id in the primary key so two
+// users can persist separate cache rows for the same workspace/view.
+db.version(11).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...appViewCacheSchema,
+});
+
+// Version 12: persist the workspace database catalog by view ID. Database
+// identity lookups can now resolve from IndexedDB before fetching the server
+// catalog, without reopening the legacy workspace-database collaboration doc.
+db.version(12).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...appViewCacheSchema,
+  ...workspaceDatabaseCatalogSchema,
+});
+
 const openedSet = new Set<string>();
 const ensuredStores = new Map<string, Promise<void>>();
 
-const yjsStoreDefinitions = [
-  { name: 'updates', options: { autoIncrement: true } },
-  { name: 'custom' },
-];
+const yjsStoreDefinitions = [{ name: 'updates', options: { autoIncrement: true } }, { name: 'custom' }];
 
 type IndexedDBFactoryWithDatabases = IDBFactory & {
   databases?: () => Promise<Array<{ name?: string | null }>>;
@@ -352,9 +453,15 @@ const pendingRowOpens = new Map<string, Promise<CachedProviderEntry>>();
 const DATABASE_BLOB_RID_PREFIX = 'af_database_blob_rid:';
 const SHARED_COLLAB_COMPACT_UPDATE_THRESHOLD = 200;
 const SHARED_COLLAB_COMPACT_MAX_RETRIES = 3;
+const DELETE_INDEXEDDB_BLOCKED_TIMEOUT_MS = 2000;
 
 type CollabPersistenceProvider = IndexeddbPersistence | SharedIndexeddbPersistence;
-type SharedCollabOpenOptions = { awaitSync?: boolean; expectedVersion?: string; forceReset?: boolean; skipCache?: boolean };
+type SharedCollabOpenOptions = {
+  awaitSync?: boolean;
+  expectedVersion?: string;
+  forceReset?: boolean;
+  skipCache?: boolean;
+};
 
 class SharedCollabCompactionRetry extends Error {
   constructor() {
@@ -421,7 +528,10 @@ function createCachedProviderEntry(
       if (settled) return;
 
       settled = true;
-      (provider as { off?: (event: string, listener: (...args: unknown[]) => void) => void }).off?.('synced', handleSync);
+      (provider as { off?: (event: string, listener: (...args: unknown[]) => void) => void }).off?.(
+        'synced',
+        handleSync
+      );
       resolveWhenSynced();
     },
   };
@@ -566,9 +676,11 @@ class SharedIndexeddbPersistence {
   };
 
   private queueCompact() {
-    this._pendingWrite = this._pendingWrite.then(() => this.compact()).catch((error) => {
-      Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
-    });
+    this._pendingWrite = this._pendingWrite
+      .then(() => this.compact())
+      .catch((error) => {
+        Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
+      });
   }
 
   private async compact() {
@@ -759,21 +871,43 @@ async function disposeRowProvider(name: string, options: { destroyDoc?: boolean 
   return disposed;
 }
 
-async function deleteIndexedDBDatabase(name: string) {
+async function deleteIndexedDBDatabase(name: string, options: { blockedTimeoutMs?: number } = {}) {
   if (typeof indexedDB === 'undefined') return true;
 
   return new Promise<boolean>((resolve) => {
     const request = indexedDB.deleteDatabase(name);
+    let settled = false;
+    let blockedTimeout: ReturnType<typeof setTimeout> | undefined;
 
-    request.onsuccess = () => resolve(true);
+    const resolveOnce = (deleted: boolean) => {
+      if (settled) return;
+
+      settled = true;
+
+      if (blockedTimeout) {
+        clearTimeout(blockedTimeout);
+      }
+
+      resolve(deleted);
+    };
+
+    request.onsuccess = () => resolveOnce(true);
     request.onerror = () => {
       Log.warn('[DB] failed to delete collab IndexedDB database', { name, error: request.error });
-      resolve(false);
+      resolveOnce(false);
     };
 
     request.onblocked = () => {
       Log.warn('[DB] delete collab IndexedDB database blocked', { name });
-      resolve(false);
+
+      if (blockedTimeout) {
+        clearTimeout(blockedTimeout);
+      }
+
+      blockedTimeout = setTimeout(() => {
+        Log.warn('[DB] delete collab IndexedDB database timed out after blocked', { name });
+        resolveOnce(false);
+      }, options.blockedTimeoutMs ?? DELETE_INDEXEDDB_BLOCKED_TIMEOUT_MS);
     };
   });
 }
@@ -1000,7 +1134,7 @@ async function _openRowCollabDBWithProviderInternal(
     guid: name,
   }) as YDoc;
   let provider = new SharedIndexeddbPersistence(name, doc);
-  let version = await provider.get(name + '/version') as string | undefined;
+  let version = (await provider.get(name + '/version')) as string | undefined;
 
   if (options?.forceReset || (options?.expectedVersion && version !== options.expectedVersion)) {
     await provider.destroy();
@@ -1259,6 +1393,7 @@ export async function clearData() {
 export const __dbTestUtils = {
   createCachedProviderEntry,
   clearBlobRidCheckpointsForDeletedDatabases,
+  deleteIndexedDBDatabase,
   destroyProviderEntry,
   readSharedCollabRecordsForSync,
   waitForProviderEntry,

@@ -693,6 +693,15 @@
         "copy": "Salin",
         "cut": "Potong",
         "paste": "Tempel"
+      },
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Tempel sebagai",
+          "mention": "Sebutan",
+          "url": "URL",
+          "bookmark": "Markah",
+          "embed": "Sematkan"
+        }
       }
     },
     "textBlock": {

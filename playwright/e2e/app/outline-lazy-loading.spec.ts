@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Request } from '@playwright/test';
 import { PageSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
@@ -16,6 +16,48 @@ function extractViewId(testId: string | null | undefined, prefix: string): strin
 async function waitForSidebarReady(page: import('@playwright/test').Page) {
   await expect(page.locator('[data-testid="space-item"]').first()).toBeVisible({ timeout: 60000 });
   await expect(PageSelectors.items(page).first()).toBeVisible({ timeout: 60000 });
+}
+
+function extractBatchViewRequest(request: Request): { depth: string | null; viewIds: string[] } {
+  const url = new URL(request.url());
+  let depth = url.searchParams.get('depth');
+  let viewIds =
+    url.searchParams
+      .get('view_ids')
+      ?.split(',')
+      .map((id: string) => id.trim())
+      .filter(Boolean) ?? [];
+
+  if (request.method() !== 'POST') {
+    return { depth, viewIds };
+  }
+
+  let body: unknown;
+
+  try {
+    body = request.postDataJSON();
+  } catch {
+    return { depth, viewIds };
+  }
+
+  if (!body || typeof body !== 'object') {
+    return { depth, viewIds };
+  }
+
+  const payload = body as { depth?: unknown; view_ids?: unknown };
+
+  if (payload.depth !== undefined && payload.depth !== null) {
+    depth = String(payload.depth);
+  }
+
+  if (Array.isArray(payload.view_ids)) {
+    viewIds = payload.view_ids
+      .filter((id): id is string => typeof id === 'string')
+      .map((id) => id.trim())
+      .filter(Boolean);
+  }
+
+  return { depth, viewIds };
 }
 
 /**
@@ -169,14 +211,7 @@ test.describe('Outline Lazy Loading', () => {
 
     // Intercept batch view requests
     await page.route('**/api/workspace/*/views*', async (route) => {
-      const url = new URL(route.request().url());
-      const depth = url.searchParams.get('depth');
-      const viewIds =
-        url.searchParams
-          .get('view_ids')
-          ?.split(',')
-          .map((id: string) => id.trim())
-          .filter(Boolean) ?? [];
+      const { depth, viewIds } = extractBatchViewRequest(route.request());
 
       seenBatchRequests.push({ depth, viewIds });
       await route.continue();

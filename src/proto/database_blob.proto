@@ -9,14 +9,40 @@ message DatabaseBlobRowRid {
     uint32 seq_no = 2;
 }
 
+// Optional limits and continuation state for one page of a database-blob diff.
+message DatabaseBlobDiffPageRequest {
+    uint32 max_items = 1;
+    uint64 max_bytes = 2;
+    bytes cursor = 3;
+}
+
 message DatabaseBlobDiffRequest {
     optional DatabaseBlobRowRid max_known_rid = 1;
     int32 version = 2;
+    // Explicit false selects the fast row-only path. Omitted requests retain the legacy
+    // document-aware behavior so existing clients can safely reuse their watermarks.
+    optional bool include_documents = 3;
+    optional DatabaseBlobDiffPageRequest page = 4;
+}
+
+// Opaque server cursor payload. The API returns only its encoded bytes.
+message DatabaseBlobDiffPageCursor {
+    uint32 format_version = 1;
+    bytes workspace_id = 2;
+    bytes database_id = 3;
+    string manifest_version = 4;
+    optional DatabaseBlobRowRid max_known_rid = 5;
+    uint64 next_offset = 6;
+    bytes plan_hash = 7;
+    optional DatabaseBlobRowRid max_observed_rid = 8;
+    bytes signature = 9;
 }
 
 message CollabDocState {
     bytes doc_state = 1;
     int32 encoder_version = 2;
+    // Collab version known to the sender of this message.
+    string collab_version = 3;
 }
 
 message DatabaseBlobRowDocument {
@@ -38,6 +64,13 @@ message DatabaseBlobRowDelete {
     DatabaseBlobRowRid rid = 2;
 }
 
+// Continuation metadata for a paginated database-blob diff response.
+message DatabaseBlobDiffPageInfo {
+    bytes next_cursor = 1;
+    bool has_more = 2;
+    bool restart_required = 3;
+}
+
 message DatabaseBlobDiffResponse {
     string manifest_version = 1;
     optional string head_blob_key = 2;
@@ -47,6 +80,8 @@ message DatabaseBlobDiffResponse {
     DiffStatus status = 6;
     optional uint32 retry_after_secs = 7;
     optional string message = 8;
+    repeated bytes missing_row_ids = 9;
+    optional DatabaseBlobDiffPageInfo page = 10;
 }
 
 message BlobDescriptor {
@@ -70,6 +105,7 @@ message ManifestRowPointer {
     DatabaseBlobRowRid rid = 4;
     bool deleted = 5;
     optional ManifestRowDocumentPointer document = 6;
+    uint32 segment_len = 7;
 }
 
 message DatabaseBlobManifest {
@@ -80,6 +116,8 @@ message DatabaseBlobManifest {
     repeated ManifestRowPointer row_index = 5;
     int64 updated_at_millis = 6;
     uint64 lock_epoch = 7;
+    // True when generation deferred at least one canonical row and clients must keep polling.
+    bool generation_incomplete = 8;
 }
 
 enum DiffStatus {
