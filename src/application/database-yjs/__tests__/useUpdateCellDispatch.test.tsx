@@ -1,9 +1,9 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
 import { useUpdateCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch';
+import { getOrCreateDatabaseHistoryManager, runDatabaseAction } from '@/application/database-yjs/history';
 import {
   RowId,
   YDatabase,
@@ -18,6 +18,8 @@ import {
 
 import { createRowDoc } from './test-helpers';
 
+import type { ReactNode } from 'react';
+
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
@@ -31,17 +33,17 @@ const viewId = 'view-id';
 const rowId = 'row-id';
 const fieldId = 'name-field-id';
 
-function createTextField(): YDatabaseField {
+function createTextField(fieldType: FieldType = FieldType.RichText): YDatabaseField {
   const field = new Y.Map() as YDatabaseField;
 
   field.set(YjsDatabaseKey.id, fieldId);
   field.set(YjsDatabaseKey.name, 'Name');
-  field.set(YjsDatabaseKey.type, FieldType.RichText);
+  field.set(YjsDatabaseKey.type, fieldType);
 
   return field;
 }
 
-function createDatabaseDoc(): YDoc {
+function createDatabaseDoc(fieldType: FieldType = FieldType.RichText): YDoc {
   const doc = new Y.Doc({ guid: databaseId }) as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map() as YDatabase;
@@ -49,7 +51,7 @@ function createDatabaseDoc(): YDoc {
   const views = new Y.Map<YDatabaseView>() as YDatabaseViews;
   const view = new Y.Map() as YDatabaseView;
 
-  fields.set(fieldId, createTextField());
+  fields.set(fieldId, createTextField(fieldType));
   views.set(viewId, view);
   database.set(YjsDatabaseKey.id, databaseId);
   database.set(YjsDatabaseKey.fields, fields);
@@ -74,7 +76,7 @@ function getCell(rowDoc: YDoc) {
 }
 
 function createWrapper(contextValue: DatabaseContextState) {
-  return ({ children }: { children: React.ReactNode }) => (
+  return ({ children }: { children: ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
   );
 }
@@ -103,6 +105,57 @@ describe('useUpdateCellDispatch', () => {
       expect(getCellData(rowDoc)).toBe('Recovered value');
     });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
+
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    expect(history.canUndo()).toBe(true);
+    void act(() => {
+      history.undo();
+    });
+    expect(getCellData(rowDoc)).toBeUndefined();
+    void act(() => {
+      history.redo();
+    });
+    expect(getCellData(rowDoc)).toBe('Recovered value');
+  });
+
+  it.each([FieldType.Summary, FieldType.Translate])('skips AI-generated %s cell writes', async (fieldType) => {
+    const databaseDoc = createDatabaseDoc(fieldType);
+    const rowDoc = createRowDoc(rowId, databaseId, {});
+    const database = databaseDoc
+      .getMap(YjsEditorKey.data_section)
+      .get(YjsEditorKey.database) as unknown as Y.Map<unknown>;
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    runDatabaseAction(databaseDoc, { type: 'database.test-marker' }, () => {
+      database.set('history-marker', true);
+    });
+    history.undo();
+    expect(history.canRedo()).toBe(true);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: { [rowId]: rowDoc },
+      workspaceId: 'workspace-id',
+    };
+    const { result } = renderHook(() => useUpdateCellDispatch(rowId, fieldId), {
+      wrapper: createWrapper(contextValue),
+    });
+
+    result.current('Generated value', undefined, { policy: 'skip' });
+
+    await waitFor(() => {
+      expect(getCellData(rowDoc)).toBe('Generated value');
+    });
+    expect(history.canUndo()).toBe(false);
+    expect(history.canRedo()).toBe(true);
+    void act(() => {
+      history.redo();
+    });
+    expect(database.get('history-marker')).toBe(true);
+    expect(getCellData(rowDoc)).toBe('Generated value');
   });
 
   it('makes an edited lazy cell native to the current field type', async () => {
@@ -166,6 +219,19 @@ describe('useUpdateStartEndTimeCell', () => {
       expect(cell?.get(YjsDatabaseKey.include_time)).toBe(true);
     });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
+
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    expect(history.canUndo()).toBe(true);
+    void act(() => {
+      history.undo();
+    });
+    expect(getCell(rowDoc)).toBeUndefined();
+    void act(() => {
+      history.redo();
+    });
+    expect(getCell(rowDoc)?.get(YjsDatabaseKey.data)).toBe('100');
+    expect(getCell(rowDoc)?.get(YjsDatabaseKey.end_timestamp)).toBe('200');
   });
 
   it('does not commit calendar time updates when the row doc cannot be loaded', async () => {

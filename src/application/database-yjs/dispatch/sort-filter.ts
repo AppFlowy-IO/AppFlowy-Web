@@ -25,7 +25,7 @@ import {
   groupByConsecutiveOperator,
   resolveRollupFilterTargetFieldType,
 } from '@/application/database-yjs/filter';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
+import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -1164,9 +1164,7 @@ export function useAddAdvancedFilterAndRebuild() {
 
               if (existingOps.length > 0) {
                 // Multiple drafts: use dominant operator
-                defaultOperator = existingOps.every((op) => op === FilterType.Or)
-                  ? FilterType.Or
-                  : FilterType.And;
+                defaultOperator = existingOps.every((op) => op === FilterType.Or) ? FilterType.Or : FilterType.And;
               } else {
                 // Single draft: inspect the root group's actual type to preserve OR roots
                 const rootFilter = filters.get(0);

@@ -1,19 +1,30 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 
 import { DatabaseContext } from '@/application/database-yjs';
 import type { DatabaseContextState, GridGrouping } from '@/application/database-yjs';
 import type { YDoc } from '@/application/types';
+import { useIsDatabaseHistoryScopeActive } from '@/components/database/databaseHistoryScopeCoordinator';
 import { GridProvider } from '@/components/database/grid/GridProvider';
 import {
   createGridInteractionStore,
   GridInteractionContext,
   useGridContext,
+  useGridHistoryScopeId,
   useGridInteractionActions,
   useIsGridCellActive,
   useIsGridRowHovered,
+  useRestoreGridHistoryFocus,
 } from '@/components/database/grid/useGridContext';
+import { useDatabaseRowHistoryHotkeys } from '@/components/database/hooks/useDatabaseRowHistoryHotkeys';
+
+jest.mock('@/components/database/hooks/useDatabaseRowHistoryHotkeys', () => ({
+  useDatabaseRowHistoryHotkeys: jest.fn(),
+}));
+
+const mockUseDatabaseRowHistoryHotkeys = jest.mocked(useDatabaseRowHistoryHotkeys);
 
 const grouping: GridGrouping = {
   activeGroupIds: [],
@@ -37,6 +48,14 @@ function createContextValue(): DatabaseContextState {
 }
 
 describe('GridProvider interaction isolation', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('notifies only the interaction channel that changed', () => {
     const store = createGridInteractionStore();
     const activeCellListener = jest.fn();
@@ -69,6 +88,8 @@ describe('GridProvider interaction isolation', () => {
     render(
       <GridInteractionContext.Provider
         value={{
+          historyScopeId: 'test-history-scope',
+          restoreHistoryFocus: jest.fn(),
           setActiveCell: store.setActiveCell,
           setHoverRowKey: store.setHoverRowKey,
           store,
@@ -211,5 +232,176 @@ describe('GridProvider interaction isolation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Report height' }));
     expect(resizeListener).toHaveBeenCalledWith('row-a', 48);
     expect(baseRenderCount).toBe(1);
+  });
+
+  it('restores history focus after a grid-owned modal editor closes', () => {
+    function Controls() {
+      const { setActiveCell } = useGridInteractionActions();
+      const historyScopeId = useGridHistoryScopeId();
+      const restoreHistoryFocus = useRestoreGridHistoryFocus();
+
+      return (
+        <>
+          <button
+            onClick={() => setActiveCell({ fieldId: 'status', rowId: 'row-a', rowKey: 'row-a' })}
+            type='button'
+          >
+            Activate cell
+          </button>
+          <button
+            onClick={() => {
+              restoreHistoryFocus?.();
+              setActiveCell(undefined);
+            }}
+            type='button'
+          >
+            Close editor
+          </button>
+          {createPortal(
+            <button data-database-history-scope={historyScopeId} type='button'>
+              Portaled editor
+            </button>,
+            document.body
+          )}
+        </>
+      );
+    }
+
+    const { container } = render(
+      <DatabaseContext.Provider value={createContextValue()}>
+        <GridProvider grouping={grouping}>
+          <Controls />
+        </GridProvider>
+      </DatabaseContext.Provider>
+    );
+    const gridRoot = container.firstElementChild as HTMLElement;
+
+    fireEvent.pointerDown(gridRoot);
+    fireEvent.click(screen.getByRole('button', { name: 'Activate cell' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Portaled editor' }));
+
+    expect(mockUseDatabaseRowHistoryHotkeys).toHaveBeenLastCalledWith(undefined, {
+      enabled: true,
+      ignoreInput: true,
+      useLatest: true,
+    });
+
+    fireEvent.pointerDown(document.documentElement);
+
+    expect(mockUseDatabaseRowHistoryHotkeys).toHaveBeenLastCalledWith(undefined, {
+      enabled: false,
+      ignoreInput: true,
+      useLatest: true,
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close editor' }));
+
+    expect(mockUseDatabaseRowHistoryHotkeys).toHaveBeenLastCalledWith(undefined, {
+      enabled: true,
+      ignoreInput: true,
+      useLatest: true,
+    });
+
+    fireEvent.pointerDown(document.documentElement);
+
+    expect(mockUseDatabaseRowHistoryHotkeys).toHaveBeenLastCalledWith(undefined, {
+      enabled: false,
+      ignoreInput: true,
+      useLatest: true,
+    });
+  });
+
+  it('assigns a distinct history scope to each grid instance', () => {
+    const { container } = render(
+      <DatabaseContext.Provider value={createContextValue()}>
+        <GridProvider grouping={grouping}>
+          <span>Grid A</span>
+        </GridProvider>
+        <GridProvider grouping={grouping}>
+          <span>Grid B</span>
+        </GridProvider>
+      </DatabaseContext.Provider>
+    );
+    const scopeElements = container.querySelectorAll('[data-database-history-scope]');
+
+    expect(scopeElements).toHaveLength(2);
+    expect(scopeElements[0].getAttribute('data-database-history-scope')).not.toBe(
+      scopeElements[1].getAttribute('data-database-history-scope')
+    );
+    expect(screen.getByText('Grid A').closest('[data-database-history-scope]')).toBe(scopeElements[0]);
+    expect(screen.getByText('Grid B').closest('[data-database-history-scope]')).toBe(scopeElements[1]);
+  });
+
+  it('keeps history ownership exclusive when focus moves or a grid restores it', () => {
+    function RestoreHistoryButton({ name }: { name: string }) {
+      const historyScopeId = useGridHistoryScopeId();
+      const restoreHistoryFocus = useRestoreGridHistoryFocus();
+      const isHistoryScopeActive = useIsDatabaseHistoryScopeActive(historyScopeId ?? '');
+
+      return (
+        <>
+          <output data-testid={`history-scope-${name}`}>{String(isHistoryScopeActive)}</output>
+          <button onClick={() => restoreHistoryFocus?.()} type='button'>
+            Restore {name}
+          </button>
+        </>
+      );
+    }
+
+    render(
+      <DatabaseContext.Provider value={createContextValue()}>
+        <GridProvider grouping={grouping}>
+          <span>Grid A</span>
+          <RestoreHistoryButton name='A' />
+        </GridProvider>
+        <GridProvider grouping={grouping}>
+          <span>Grid B</span>
+          <RestoreHistoryButton name='B' />
+        </GridProvider>
+      </DatabaseContext.Provider>
+    );
+    const gridA = screen.getByText('Grid A').closest('[data-database-history-scope]') as HTMLElement;
+    const gridB = screen.getByText('Grid B').closest('[data-database-history-scope]') as HTMLElement;
+
+    fireEvent.pointerDown(gridA);
+
+    expect(screen.getByTestId('history-scope-A').textContent).toBe('true');
+    expect(screen.getByTestId('history-scope-B').textContent).toBe('false');
+
+    fireEvent.pointerDown(gridB);
+
+    expect(screen.getByTestId('history-scope-A').textContent).toBe('false');
+    expect(screen.getByTestId('history-scope-B').textContent).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore A' }));
+
+    expect(screen.getByTestId('history-scope-A').textContent).toBe('true');
+    expect(screen.getByTestId('history-scope-B').textContent).toBe('false');
+
+    fireEvent.pointerDown(document.documentElement);
+
+    expect(screen.getByTestId('history-scope-A').textContent).toBe('false');
+    expect(screen.getByTestId('history-scope-B').textContent).toBe('false');
+  });
+
+  it('shares one document pointer listener across grid instances', () => {
+    const addEventListener = jest.spyOn(document, 'addEventListener');
+    const removeEventListener = jest.spyOn(document, 'removeEventListener');
+    const { unmount } = render(
+      <DatabaseContext.Provider value={createContextValue()}>
+        <GridProvider grouping={grouping}>
+          <span>Grid A</span>
+        </GridProvider>
+        <GridProvider grouping={grouping}>
+          <span>Grid B</span>
+        </GridProvider>
+      </DatabaseContext.Provider>
+    );
+
+    expect(addEventListener.mock.calls.filter(([type]) => type === 'pointerdown')).toHaveLength(1);
+
+    unmount();
+
+    expect(removeEventListener.mock.calls.filter(([type]) => type === 'pointerdown')).toHaveLength(1);
   });
 });

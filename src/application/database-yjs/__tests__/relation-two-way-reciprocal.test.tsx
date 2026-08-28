@@ -388,4 +388,3 @@ function ensureTypeOption(field: YDatabaseField) {
 
   return typeOption;
 }
-

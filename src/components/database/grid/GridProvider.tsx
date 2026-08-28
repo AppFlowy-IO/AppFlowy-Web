@@ -8,6 +8,7 @@ import {
   useRenderRows,
 } from '@/components/database/components/grid/grid-row';
 import type { RenderRow } from '@/components/database/components/grid/grid-row';
+import { useDatabaseHistoryScope } from '@/components/database/databaseHistoryScopeCoordinator';
 import {
   createGridInteractionStore,
   createGridRowResizeStore,
@@ -18,7 +19,7 @@ import {
 export const GridProvider = ({ children, grouping }: { children: ReactNode; grouping: GridGrouping }) => {
   const { rowOrders } = grouping;
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
-  const { isDocumentBlock, activeViewId } = useDatabaseContext();
+  const { isDocumentBlock, activeViewId, readOnly } = useDatabaseContext();
   // Each database view owns independent transient interaction state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const interactionStore = useMemo(() => createGridInteractionStore(), [activeViewId]);
@@ -49,10 +50,12 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
   }, []);
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const { activateHistoryScope, clearHistoryScope, historyScopeId } = useDatabaseHistoryScope({ enabled: !readOnly });
 
   useEffect(() => {
     setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
-  }, [activeViewId, isDocumentBlock]);
+    clearHistoryScope();
+  }, [activeViewId, clearHistoryScope, isDocumentBlock]);
 
   useEffect(() => {
     const element = ref.current;
@@ -92,6 +95,16 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
     },
     [interactionStore]
   );
+
+  const handleSetActiveCell = useCallback(
+    (nextActiveCell: ReturnType<typeof interactionStore.getActiveCell>) => {
+      interactionStore.setActiveCell(nextActiveCell);
+
+      if (nextActiveCell) activateHistoryScope();
+    },
+    [activateHistoryScope, interactionStore]
+  );
+  const restoreHistoryFocus = activateHistoryScope;
 
   const loadMoreRows = useCallback(() => {
     setVisibleRowLimit((prev) => prev + EMBEDDED_GRID_LOAD_MORE_INCREMENT);
@@ -136,17 +149,19 @@ export const GridProvider = ({ children, grouping }: { children: ReactNode; grou
   );
   const interactionContextValue = useMemo(
     () => ({
-      setActiveCell: interactionStore.setActiveCell,
+      historyScopeId,
+      restoreHistoryFocus,
+      setActiveCell: handleSetActiveCell,
       setHoverRowKey: handleHoverRowStart,
       store: interactionStore,
     }),
-    [handleHoverRowStart, interactionStore]
+    [handleHoverRowStart, handleSetActiveCell, historyScopeId, interactionStore, restoreHistoryFocus]
   );
 
   return (
     <GridContext.Provider value={contextValue}>
       <GridInteractionContext.Provider value={interactionContextValue}>
-        <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
+        <div ref={ref} data-database-history-scope={historyScopeId} className={'flex min-h-0 flex-1 flex-col'}>
           {children}
         </div>
       </GridInteractionContext.Provider>

@@ -8,23 +8,23 @@ import { hasAdvancedFilterRoot } from '@/application/database-yjs/filter';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import { Board } from '@/components/database/board';
-import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { Chart } from '@/components/database/chart';
 import {
   DatabaseConditionsActionsContext,
   DatabaseConditionsContext,
 } from '@/components/database/components/conditions/context';
+import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
-import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import {
   getDatabaseViewportStyle,
   shouldAutoShrinkDatabaseViewport,
   shouldScrollEmbeddedDatabaseViewport,
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
+import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
@@ -37,7 +37,7 @@ import {
 } from '@/utils/database-view-order';
 import { Log } from '@/utils/log';
 
-import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
+import DatabaseConditionsPanel from 'src/components/database/components/conditions/DatabaseConditions';
 
 const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
@@ -419,47 +419,47 @@ function DatabaseViews({
     <DatabaseSearchProvider activeViewId={activeViewId}>
       <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
         <DatabaseConditionsActionsContext.Provider value={databaseConditionsActions}>
-        <DatabaseTabs
-          viewName={viewName}
-          databasePageId={databasePageId}
-          selectedViewId={activeViewId}
-          setSelectedViewId={handleViewChange}
-          viewIds={displayedViewIds}
-          onViewAddedToDatabase={handleViewAddedToDatabase}
-          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
-          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
-          onViewIdsChanged={onViewIdsChanged}
-          onReorderTabs={handleReorderTabs}
-        />
+          <DatabaseTabs
+            viewName={viewName}
+            databasePageId={databasePageId}
+            selectedViewId={activeViewId}
+            setSelectedViewId={handleViewChange}
+            viewIds={displayedViewIds}
+            onViewAddedToDatabase={handleViewAddedToDatabase}
+            onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+            onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
+            onViewIdsChanged={onViewIdsChanged}
+            onReorderTabs={handleReorderTabs}
+          />
 
-        <DatabaseConditions />
+          <DatabaseConditionsPanel />
 
-        <div
-          className={cn(
-            'relative flex w-full flex-col',
-            shouldUseFixedViewport
-              ? shouldAutoShrinkViewport
-                ? shouldScrollEmbeddedViewport
-                  ? 'min-h-0 overflow-y-auto overflow-x-hidden'
-                  : 'min-h-0 overflow-hidden'
-                : 'h-full min-h-0 flex-1 overflow-hidden'
-              : 'overflow-visible'
-          )}
-          style={viewportStyle}
-        >
           <div
             className={cn(
-              'w-full',
-              shouldUseFixedViewport &&
-                (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+              'relative flex w-full flex-col',
+              shouldUseFixedViewport
+                ? shouldAutoShrinkViewport
+                  ? shouldScrollEmbeddedViewport
+                    ? 'min-h-0 overflow-y-auto overflow-x-hidden'
+                    : 'min-h-0 overflow-hidden'
+                  : 'h-full min-h-0 flex-1 overflow-hidden'
+                : 'overflow-visible'
             )}
             style={viewportStyle}
           >
-            <Suspense fallback={null}>
-              <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
-            </Suspense>
+            <div
+              className={cn(
+                'w-full',
+                shouldUseFixedViewport &&
+                  (shouldAutoShrinkViewport ? 'flex min-h-0 flex-col' : 'flex h-full min-h-0 flex-col')
+              )}
+              style={viewportStyle}
+            >
+              <Suspense fallback={null}>
+                <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>
+              </Suspense>
+            </div>
           </div>
-        </div>
         </DatabaseConditionsActionsContext.Provider>
       </DatabaseConditionsContext.Provider>
     </DatabaseSearchProvider>

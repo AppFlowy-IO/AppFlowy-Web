@@ -4,28 +4,23 @@ import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
-import {
-  AttributionUid,
-  resolveUserAttributionUid,
-  touchRowAttribution,
-} from '@/application/database-yjs/attribution';
+import { AttributionUid, resolveUserAttributionUid, touchRowAttribution } from '@/application/database-yjs/attribution';
 import { getStoredCellFieldType, setCellStoredType } from '@/application/database-yjs/cell.field-type';
-import {
-  useDatabase,
-  useDatabaseContext,
-  useRowMap,
-  useSharedRoot,
-} from '@/application/database-yjs/context';
+import { useDatabase, useDatabaseContext, useRowMap, useSharedRoot } from '@/application/database-yjs/context';
 import { waitForDatabaseHydration } from '@/application/database-yjs/database.hydration';
 import { FieldType, FieldVisibility } from '@/application/database-yjs/database.type';
 import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit, RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { createRelationField, setRelationTypeOptionValues } from '@/application/database-yjs/fields/relation/utils';
+import {
+  executeDatabaseOperations as executeOperations,
+  runDatabaseAction,
+  runDatabaseRowAction,
+} from '@/application/database-yjs/history';
+import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { waitForDatabaseRowHydration } from '@/application/database-yjs/row.hydration';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { getRelationRowIdsFromCell } from '@/application/database-yjs/relation/cell';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   FieldId,
   RowId,
@@ -164,7 +159,7 @@ export function applyRelationCellChangeset(
 }
 
 function setRelationCellRowIds(rowDoc: YDoc, fieldId: FieldId, rowIds: RowId[], actorUid?: AttributionUid) {
-  rowDoc.transact(() => {
+  runDatabaseRowAction(rowDoc, { type: 'relation.update-cell', fieldId, fieldType: FieldType.Relation }, () => {
     const row = getRowFromDoc(rowDoc);
     const cell = getOrCreateRelationCell(rowDoc, fieldId);
 
@@ -393,7 +388,7 @@ export async function deleteReciprocalRelationField(args: {
 
   if (!relatedDoc || !relatedDatabase) return;
 
-  relatedDoc.transact(() => {
+  runDatabaseAction(relatedDoc, { type: 'relation.delete-reciprocal-field', policy: 'skip' }, () => {
     deleteFieldFromDatabase(relatedDatabase, relationOption.reciprocal_field_id as FieldId);
   });
 }
@@ -408,21 +403,29 @@ async function clearRelationCells(args: {
 }) {
   const rowIds = collectDatabaseRowIds(args.database, Object.keys(args.rowMap ?? {}));
 
-  await Promise.all(rowIds.map(async (rowId) => {
-    const rowDoc = await loadRowDoc({
-      databaseDoc: args.databaseDoc,
-      rowId,
-      rowMap: args.rowMap,
-      createRow: args.createRow,
-    });
+  await Promise.all(
+    rowIds.map(async (rowId) => {
+      const rowDoc = await loadRowDoc({
+        databaseDoc: args.databaseDoc,
+        rowId,
+        rowMap: args.rowMap,
+        createRow: args.createRow,
+      });
 
-    rowDoc?.transact(() => {
-      const row = getRowFromDoc(rowDoc);
+      if (!rowDoc) return;
 
-      row?.get(YjsDatabaseKey.cells)?.delete(args.fieldId);
-      if (row) touchRowAttribution(row, args.actorUid);
-    });
-  }));
+      runDatabaseRowAction(
+        rowDoc,
+        { type: 'relation.clear-cell', fieldId: args.fieldId, fieldType: FieldType.Relation },
+        () => {
+          const row = getRowFromDoc(rowDoc);
+
+          row?.get(YjsDatabaseKey.cells)?.delete(args.fieldId);
+          if (row) touchRowAttribution(row, args.actorUid);
+        }
+      );
+    })
+  );
 }
 
 async function backfillReciprocalLinks(args: {
@@ -437,39 +440,43 @@ async function backfillReciprocalLinks(args: {
 }) {
   const sourceRowIds = collectDatabaseRowIds(args.sourceDatabase, Object.keys(args.rowMap ?? {}));
 
-  await Promise.all(sourceRowIds.map(async (sourceRowId) => {
-    const sourceRowDoc = await loadRowDoc({
-      databaseDoc: args.sourceDatabaseDoc,
-      rowId: sourceRowId,
-      rowMap: args.rowMap,
-      createRow: args.createRow,
-    });
-
-    if (!sourceRowDoc) return;
-
-    const relatedRowIds = getRelationRowIdsFromCell(
-      getRowFromDoc(sourceRowDoc)?.get(YjsDatabaseKey.cells)?.get(args.sourceFieldId)
-    );
-
-    await Promise.all(relatedRowIds.map(async (relatedRowId) => {
-      const relatedRowDoc = await loadRowDoc({
-        databaseDoc: args.reciprocalDatabaseDoc,
-        rowId: relatedRowId,
+  await Promise.all(
+    sourceRowIds.map(async (sourceRowId) => {
+      const sourceRowDoc = await loadRowDoc({
+        databaseDoc: args.sourceDatabaseDoc,
+        rowId: sourceRowId,
+        rowMap: args.rowMap,
         createRow: args.createRow,
-        rowMap: args.reciprocalDatabaseDoc === args.sourceDatabaseDoc ? args.rowMap : undefined,
       });
 
-      if (!relatedRowDoc) return;
+      if (!sourceRowDoc) return;
 
-      applyRelationCellChanges(
-        relatedRowDoc,
-        args.reciprocalFieldId,
-        { insertedRowIds: [sourceRowId] },
-        RelationLimit.NoLimit,
-        args.actorUid
+      const relatedRowIds = getRelationRowIdsFromCell(
+        getRowFromDoc(sourceRowDoc)?.get(YjsDatabaseKey.cells)?.get(args.sourceFieldId)
       );
-    }));
-  }));
+
+      await Promise.all(
+        relatedRowIds.map(async (relatedRowId) => {
+          const relatedRowDoc = await loadRowDoc({
+            databaseDoc: args.reciprocalDatabaseDoc,
+            rowId: relatedRowId,
+            createRow: args.createRow,
+            rowMap: args.reciprocalDatabaseDoc === args.sourceDatabaseDoc ? args.rowMap : undefined,
+          });
+
+          if (!relatedRowDoc) return;
+
+          applyRelationCellChanges(
+            relatedRowDoc,
+            args.reciprocalFieldId,
+            { insertedRowIds: [sourceRowId] },
+            RelationLimit.NoLimit,
+            args.actorUid
+          );
+        })
+      );
+    })
+  );
 }
 
 export async function applyRelationReciprocalInserts(args: {
@@ -523,47 +530,51 @@ export async function applyRelationReciprocalInserts(args: {
     ? parseRelationTypeOption(reciprocalField).source_limit
     : RelationLimit.NoLimit;
 
-  await Promise.all(args.insertedRowIds.map(async (targetRowId) => {
-    const targetRowDoc = await loadRowDoc({
-      databaseDoc: relatedDoc,
-      rowId: targetRowId,
-      createRow: args.createRow,
-      rowMap: relatedDoc === args.databaseDoc ? args.rowMap : undefined,
-    });
-
-    if (!targetRowDoc) return;
-
-    const reciprocalChanges = applyRelationCellChanges(
-      targetRowDoc,
-      reciprocalFieldId,
-      { insertedRowIds: [args.sourceRowId] },
-      reciprocalLimit,
-      args.actorUid
-    );
-
-    if (reciprocalLimit !== RelationLimit.OneOnly) return;
-
-    await Promise.all(reciprocalChanges.removedRowIds.map(async (removedSourceRowId) => {
-      if (removedSourceRowId === args.sourceRowId) return;
-
-      const removedSourceRowDoc = await loadRowDoc({
-        databaseDoc: args.databaseDoc,
-        rowId: removedSourceRowId,
-        rowMap: args.rowMap,
+  await Promise.all(
+    args.insertedRowIds.map(async (targetRowId) => {
+      const targetRowDoc = await loadRowDoc({
+        databaseDoc: relatedDoc,
+        rowId: targetRowId,
         createRow: args.createRow,
+        rowMap: relatedDoc === args.databaseDoc ? args.rowMap : undefined,
       });
 
-      if (!removedSourceRowDoc) return;
+      if (!targetRowDoc) return;
 
-      applyRelationCellChanges(
-        removedSourceRowDoc,
-        args.sourceFieldId,
-        { removedRowIds: [targetRowId] },
-        typeOption.source_limit,
+      const reciprocalChanges = applyRelationCellChanges(
+        targetRowDoc,
+        reciprocalFieldId,
+        { insertedRowIds: [args.sourceRowId] },
+        reciprocalLimit,
         args.actorUid
       );
-    }));
-  }));
+
+      if (reciprocalLimit !== RelationLimit.OneOnly) return;
+
+      await Promise.all(
+        reciprocalChanges.removedRowIds.map(async (removedSourceRowId) => {
+          if (removedSourceRowId === args.sourceRowId) return;
+
+          const removedSourceRowDoc = await loadRowDoc({
+            databaseDoc: args.databaseDoc,
+            rowId: removedSourceRowId,
+            rowMap: args.rowMap,
+            createRow: args.createRow,
+          });
+
+          if (!removedSourceRowDoc) return;
+
+          applyRelationCellChanges(
+            removedSourceRowDoc,
+            args.sourceFieldId,
+            { removedRowIds: [targetRowId] },
+            typeOption.source_limit,
+            args.actorUid
+          );
+        })
+      );
+    })
+  );
 }
 
 export function useUpdateRelationCell(rowId: RowId, fieldId: FieldId) {
@@ -700,8 +711,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
       // fall back to the doc guid (matches other database code paths) so the
       // reciprocal field is created with a resolvable database_id.
       const sourceDatabaseId = database.get(YjsDatabaseKey.id) ?? context.databaseDoc.guid;
-      const databaseIdChanged =
-        updates.database_id !== undefined && updates.database_id !== oldOption.database_id;
+      const databaseIdChanged = updates.database_id !== undefined && updates.database_id !== oldOption.database_id;
       const disablingTwoWay = oldOption.is_two_way && updates.is_two_way === false;
 
       if ((databaseIdChanged || disablingTwoWay) && oldOption.reciprocal_field_id && oldOption.database_id) {
@@ -716,7 +726,10 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         const oldRelatedDatabase = oldRelatedDoc ? getDatabaseFromDoc(oldRelatedDoc) : null;
 
         if (oldRelatedDatabase) {
-          oldRelatedDoc?.transact(() => deleteFieldFromDatabase(oldRelatedDatabase, oldOption.reciprocal_field_id as FieldId));
+          oldRelatedDoc &&
+            runDatabaseAction(oldRelatedDoc, { type: 'relation.delete-reciprocal-field', policy: 'skip' }, () =>
+              deleteFieldFromDatabase(oldRelatedDatabase, oldOption.reciprocal_field_id as FieldId)
+            );
         }
       }
 
@@ -736,8 +749,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         };
       }
 
-      const shouldCreateReciprocal =
-        nextOption.is_two_way && nextOption.database_id && !nextOption.reciprocal_field_id;
+      const shouldCreateReciprocal = nextOption.is_two_way && nextOption.database_id && !nextOption.reciprocal_field_id;
 
       // The back-pointer sync after `executeOperations` needs the same related doc the create
       // path resolves; keep it so that block does not pay a second loadView round-trip (and a
@@ -769,7 +781,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
             target_limit: RelationLimit.NoLimit,
           });
 
-          relatedDoc.transact(() => {
+          runDatabaseAction(relatedDoc, { type: 'relation.create-reciprocal-field', policy: 'skip' }, () => {
             relatedDatabase.get(YjsDatabaseKey.fields)?.set(reciprocalFieldId, reciprocalField);
             addFieldToAllViews(relatedDatabase, reciprocalFieldId);
           });
@@ -825,7 +837,13 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
             setRelationTypeOption(currentField, nextOption);
           },
         ],
-        'updateRelationTypeOption'
+        'updateRelationTypeOption',
+        {
+          type: 'relation.update-type-option',
+          fieldId,
+          fieldType: FieldType.Relation,
+          policy: 'skip',
+        }
       );
 
       if (nextOption.is_two_way && nextOption.reciprocal_field_id && nextOption.database_id) {
@@ -848,7 +866,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         if (relatedDoc && reciprocalField) {
           const reciprocalOption = parseRelationTypeOption(reciprocalField);
 
-          relatedDoc.transact(() => {
+          runDatabaseAction(relatedDoc, { type: 'relation.update-reciprocal-field', policy: 'skip' }, () => {
             setRelationTypeOption(reciprocalField, {
               ...reciprocalOption,
               database_id: sourceDatabaseId,
@@ -859,7 +877,18 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         }
       }
     },
-    [actorUid, bindViewSync, context, createRow, database, fieldId, getViewIdFromDatabaseId, loadView, rowMap, sharedRoot]
+    [
+      actorUid,
+      bindViewSync,
+      context,
+      createRow,
+      database,
+      fieldId,
+      getViewIdFromDatabaseId,
+      loadView,
+      rowMap,
+      sharedRoot,
+    ]
   );
 }
 
@@ -897,30 +926,34 @@ export async function createRowInRelatedDatabase(args: {
   const rowKey = getRowKey(args.relatedDatabaseDoc.guid, rowId);
   const rowDoc = await args.createRow(rowKey);
 
-  rowDoc.transact(() => {
-    initialDatabaseRow(rowId, databaseId, rowDoc, args.actorUid);
-    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as Y.Map<unknown>;
-    const row = rowSharedRoot.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
+  runDatabaseRowAction(
+    rowDoc,
+    { type: 'relation.create-related-row-primary-cell', fieldId: args.primaryFieldId },
+    () => {
+      initialDatabaseRow(rowId, databaseId, rowDoc, args.actorUid);
+      const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as Y.Map<unknown>;
+      const row = rowSharedRoot.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
-    if (!row) return;
+      if (!row) return;
 
-    const cells = row.get(YjsDatabaseKey.cells);
+      const cells = row.get(YjsDatabaseKey.cells);
 
-    if (!cells) return;
+      if (!cells) return;
 
-    const primaryCell = new Y.Map() as YDatabaseCell;
-    const now = String(dayjs().unix());
+      const primaryCell = new Y.Map() as YDatabaseCell;
+      const now = String(dayjs().unix());
 
-    primaryCell.set(YjsDatabaseKey.created_at, now);
-    primaryCell.set(YjsDatabaseKey.last_modified, now);
-    primaryCell.set(YjsDatabaseKey.field_type, FieldType.RichText);
-    primaryCell.set(YjsDatabaseKey.data, trimmed);
-    cells.set(args.primaryFieldId, primaryCell);
-  });
+      primaryCell.set(YjsDatabaseKey.created_at, now);
+      primaryCell.set(YjsDatabaseKey.last_modified, now);
+      primaryCell.set(YjsDatabaseKey.field_type, FieldType.RichText);
+      primaryCell.set(YjsDatabaseKey.data, trimmed);
+      cells.set(args.primaryFieldId, primaryCell);
+    }
+  );
 
   // Add the new row to every view's row_orders so it shows up in any open
   // grid/board/calendar of the target database.
-  args.relatedDatabaseDoc.transact(() => {
+  runDatabaseAction(args.relatedDatabaseDoc, { type: 'relation.create-related-row-order', policy: 'skip' }, () => {
     const views = relatedDatabase.get(YjsDatabaseKey.views);
 
     if (!views) return;

@@ -1,4 +1,3 @@
-import type { VirtualItem } from '@tanstack/react-virtual';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import * as Y from 'yjs';
@@ -17,6 +16,8 @@ import {
 } from '@/components/database/grid/useGridContext';
 
 import GridVirtualColumn from '../GridVirtualColumn';
+
+import type { VirtualItem } from '@tanstack/react-virtual';
 
 jest.mock('@/components/database/components/grid/grid-cell/GridCell', () => ({
   __esModule: true,
@@ -122,6 +123,8 @@ function renderColumns({
       showStickyHeader: false,
     };
     const interactionContextValue = {
+      historyScopeId: 'test-history-scope',
+      restoreHistoryFocus: jest.fn(),
       setActiveCell: (nextActiveCell?: { rowId: string; rowKey: string; fieldId: string }) => {
         onActiveCellChange(nextActiveCell);
         interactionStore.setActiveCell(nextActiveCell);
