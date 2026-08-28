@@ -599,15 +599,15 @@ Then('the skipped relation cell still links to the second row', async ({ page })
 async function triggerDatabaseRowHotkey(page: Page, action: 'undo' | 'redo') {
   const hasRowDetailModal = (await RowDetailSelectors.modal(page).count()) > 0;
 
-  if (hasRowDetailModal) {
-    await page.evaluate(() => {
-      const activeElement = document.activeElement;
+  await page.evaluate(() => {
+    const activeElement = document.activeElement;
 
-      if (activeElement instanceof HTMLElement) {
-        activeElement.blur();
-      }
-    });
-  } else {
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  });
+
+  if (!hasRowDetailModal) {
     await DatabaseGridSelectors.grid(page).dispatchEvent('pointerdown', { bubbles: true });
     await page.waitForTimeout(100);
   }

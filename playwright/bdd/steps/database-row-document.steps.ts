@@ -439,12 +439,20 @@ Then('the duplicated row-page inline grid remains unchanged', async ({ page }) =
 
 async function addNewCard(page: Page, cardName: string) {
   const todoColumn = BoardSelectors.boardContainer(page).locator('[data-column-id]').filter({ hasText: 'To Do' });
+  const newCardButton = todoColumn.getByRole('button', { name: 'New', exact: true });
 
-  await todoColumn.getByText('New').click({ force: true });
+  if (!(await newCardButton.isVisible())) {
+    await page.keyboard.press('Escape');
+  }
+
+  await expect(newCardButton).toBeVisible({ timeout: 15000 });
+  await newCardButton.click({ force: true });
   await page.waitForTimeout(500);
   await page.keyboard.type(cardName, { delay: 30 });
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(2000);
+  await expect(cardByName(page, cardName)).toBeVisible({ timeout: 15000 });
+  await page.keyboard.press('Escape');
+  await expect(newCardButton).toBeVisible({ timeout: 15000 });
 }
 
 async function addImageLinkToCardRowPage(page: Page, cardName: string, imageUrl: string) {
@@ -458,11 +466,15 @@ async function addImageLinkToCardRowPage(page: Page, cardName: string, imageUrl:
 
   await expect(imageCommand).toBeVisible({ timeout: 10000 });
   await imageCommand.click({ force: true });
+  await expect(page.getByTestId('slash-panel')).toBeHidden();
 
   const popover = page.locator('.MuiPopover-root:visible').last();
 
   await expect(popover).toBeVisible({ timeout: 10000 });
-  await popover.getByText('Embed link', { exact: true }).click({ force: true });
+  const embedLinkTab = popover.getByRole('tab', { name: 'Embed link' });
+
+  await embedLinkTab.click();
+  await expect(embedLinkTab).toHaveAttribute('aria-selected', 'true');
 
   const input = popover.getByPlaceholder('Paste or type an image link');
 
