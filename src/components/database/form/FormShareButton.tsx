@@ -27,7 +27,12 @@ import { useFormShareContext } from './FormShareContext';
 export function FormShareButton() {
   const share = useFormShareContext();
   const url = share.resolveShareUrl();
-  const canAuthor = useCanAuthorFormView();
+  const {
+    canAuthor,
+    isLoading: isLoadingEntitlement,
+    hasError: hasEntitlementError,
+    ensureCanAuthor,
+  } = useCanAuthorFormView();
 
   const [, setSearch] = useSearchParams();
   const openUpgradePlan = useCallback(() => {
@@ -37,7 +42,29 @@ export function FormShareButton() {
     });
   }, [setSearch]);
 
+  const retryEntitlement = useCallback(async () => {
+    const allowed = await ensureCanAuthor();
+
+    if (allowed === false) openUpgradePlan();
+  }, [ensureCanAuthor, openUpgradePlan]);
+
   if (!canAuthor) {
+    if (canAuthor === null) {
+      return (
+        <Button
+          data-testid='form-share-button'
+          size='sm'
+          className='gap-1'
+          disabled={!hasEntitlementError || isLoadingEntitlement}
+          loading={isLoadingEntitlement}
+          onClick={hasEntitlementError ? () => void retryEntitlement() : undefined}
+        >
+          <Share2 size={14} />
+          {hasEntitlementError ? 'Retry plan check' : 'Share form'}
+        </Button>
+      );
+    }
+
     return (
       <Button
         data-testid='form-share-button'
@@ -64,6 +91,7 @@ export function FormShareButton() {
       errorKind={share.errorKind}
       errorMessage={share.error}
       onUpgradePlan={openUpgradePlan}
+      onRetry={share.retryBootstrap}
       setTier={share.setTier}
       setAnonymous={share.setAnonymous}
       url={url}

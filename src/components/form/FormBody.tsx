@@ -1,11 +1,11 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 
 import {
   requestPublicFormUploadUrl,
   submitPublicForm,
   uploadFormFileToPresignedUrl,
-} from '@/application/services/js-services/http';
+} from '@/application/services/js-services/http/form-api';
 import {
   FormAnswerValue,
   FormFileAttachment,
@@ -52,6 +52,13 @@ export function FormBody({
   const [submitState, setSubmitState] = useState<
     { kind: 'idle' } | { kind: 'submitting' } | { kind: 'submitted' } | { kind: 'error'; message: string }
   >({ kind: 'idle' });
+  // Native controls inside the fieldset are disabled while a submission is
+  // in flight, but popover content (for example the date picker calendar) is
+  // rendered in a portal outside that fieldset. Keep a synchronous guard as
+  // the source of truth so those controls cannot mutate the captured answer
+  // set before uploads finish. A ref also closes the same-tick window before
+  // React commits the disabled state and prevents duplicate submissions.
+  const submittingRef = useRef(false);
 
   // Idempotency contract:
   //   * One key per submission ATTEMPT — same key reused across retries
@@ -72,6 +79,8 @@ export function FormBody({
   const [idempotencyKey, setIdempotencyKey] = useState(() => uuid());
 
   const handleChange = useCallback((questionId: string, value: FormAnswerValue) => {
+    if (submittingRef.current) return;
+
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
     // Clear any inline error as the user starts editing the field —
     // standard form pattern; avoids the "red ink lingers while typing"
@@ -86,6 +95,8 @@ export function FormBody({
   }, []);
 
   const handleSubmit = useCallback(async () => {
+    if (submittingRef.current) return;
+
     // Client-side required check — runs before the network round-trip so
     // the user sees "Required" instantly. The server re-validates and is
     // the authority; we treat its `field_errors` as the source of truth
@@ -103,24 +114,34 @@ export function FormBody({
     // submit endpoint — see the prop docstring for the bug report
     // this guards against.
     if (previewMode) {
+      submittingRef.current = true;
       setSubmitState({ kind: 'submitted' });
       return;
     }
 
+    submittingRef.current = true;
     setSubmitState({ kind: 'submitting' });
 
     try {
-      const uploadedAnswers = await uploadPendingFileAnswers(token, answers);
+      const uploadResult = await uploadPendingFileAnswers(token, answers);
+      const uploadedAnswers = uploadResult.answers;
 
-      // Cache the uploaded shape locally so a server-side `kind: 'invalid'`
-      // retry skips the re-upload. `uploadedAnswers` is already in the wire
-      // shape (`{file_id, name, size}`) — `uploadPendingFile` strips on both
-      // its fresh-upload and replay branches — so we can post it directly.
+      // Cache every successful upload before handling a sibling failure. A
+      // retry then skips files whose object-storage PUT already completed,
+      // instead of minting duplicate file IDs and uploading the same bytes
+      // again. The bounded runner waits for every in-flight upload to settle,
+      // so a quick retry cannot race an upload left behind by this attempt.
       setAnswers(uploadedAnswers);
+
+      if (!uploadResult.ok) {
+        throw uploadResult.error;
+      }
+
       const payload: FormSubmissionPayload = { answers: uploadedAnswers };
       const res: FormSubmitResponse = await submitPublicForm(token, payload, idempotencyKey);
 
       if (res.kind === 'invalid') {
+        submittingRef.current = false;
         setFieldErrors(res.field_errors);
         setSubmitState({ kind: 'idle' });
         return;
@@ -130,11 +151,13 @@ export function FormBody({
     } catch (err) {
       const message = (err as { message?: string })?.message ?? 'Submission failed';
 
+      submittingRef.current = false;
       setSubmitState({ kind: 'error', message });
     }
   }, [answers, idempotencyKey, previewMode, schema.questions, token]);
 
   const handleSubmitAnother = useCallback(() => {
+    submittingRef.current = false;
     setAnswers(seedAnswers(schema.questions));
     setFieldErrors({});
     setSubmitState({ kind: 'idle' });
@@ -167,17 +190,24 @@ export function FormBody({
         {schema.description && <p className='text-text-caption'>{schema.description}</p>}
       </header>
 
-      <div className='flex flex-col gap-6'>
-        {schema.questions.map((q) => (
-          <FormQuestion
-            key={q.id}
-            question={q}
-            value={answers[q.id]}
-            error={fieldErrors[q.id]}
-            onChange={handleChange}
-          />
-        ))}
-      </div>
+      <fieldset
+        data-testid='public-form-questions'
+        disabled={submitState.kind === 'submitting'}
+        aria-busy={submitState.kind === 'submitting'}
+        className='m-0 min-w-0 border-0 p-0'
+      >
+        <div className='flex flex-col gap-6'>
+          {schema.questions.map((q) => (
+            <FormQuestion
+              key={q.id}
+              question={q}
+              value={answers[q.id]}
+              error={fieldErrors[q.id]}
+              onChange={handleChange}
+            />
+          ))}
+        </div>
+      </fieldset>
 
       <div className='flex flex-col items-start gap-2'>
         {submitState.kind === 'error' && <p className='text-sm text-fill-default'>{submitState.message}</p>}
@@ -196,8 +226,9 @@ export function FormBody({
 async function uploadPendingFileAnswers(
   token: string,
   answers: Record<string, FormAnswerValue>
-): Promise<Record<string, FormAnswerValue>> {
+): Promise<UploadPendingFileAnswersResult> {
   const out: Record<string, FormAnswerValue> = {};
+  const tasks: Array<() => Promise<void>> = [];
 
   for (const [questionId, answer] of Object.entries(answers)) {
     if (answer.kind !== 'files') {
@@ -205,19 +236,70 @@ async function uploadPendingFileAnswers(
       continue;
     }
 
-    // Files within a question are independent — parallelize. `Promise.all`
-    // preserves input order, so the form-owner-facing list reads the same
-    // as the picker order regardless of upload settle order. Cross-question
-    // ordering stays sequential to keep daily-quota errors attached to the
-    // earliest question that triggered them.
-    const uploadedFiles = await Promise.all(
-      answer.files.map((attachment) => uploadPendingFile(token, attachment))
-    );
+    const uploadedFiles = [...answer.files];
 
     out[questionId] = { kind: 'files', files: uploadedFiles };
+
+    answer.files.forEach((attachment, index) => {
+      if (attachment.file_id) {
+        uploadedFiles[index] = submittedFileAttachment(attachment);
+        return;
+      }
+
+      tasks.push(async () => {
+        uploadedFiles[index] = await uploadPendingFile(token, attachment);
+      });
+    });
   }
 
-  return out;
+  const results = await settleWithConcurrency(tasks, MAX_CONCURRENT_FILE_UPLOADS);
+  const firstFailure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+
+  if (firstFailure) {
+    return { ok: false, answers: out, error: firstFailure.reason };
+  }
+
+  return { ok: true, answers: out };
+}
+
+const MAX_CONCURRENT_FILE_UPLOADS = 4;
+
+type UploadPendingFileAnswersResult =
+  | { ok: true; answers: Record<string, FormAnswerValue> }
+  | { ok: false; answers: Record<string, FormAnswerValue>; error: unknown };
+
+/**
+ * Runs independent upload jobs with one shared cap across all questions.
+ * Result slots match task order, so callers can surface the first question's
+ * failure deterministically even though network work happens concurrently.
+ */
+async function settleWithConcurrency(
+  tasks: Array<() => Promise<void>>,
+  concurrency: number
+): Promise<PromiseSettledResult<void>[]> {
+  const results: PromiseSettledResult<void>[] = new Array(tasks.length);
+  let nextTaskIndex = 0;
+
+  const worker = async () => {
+    while (nextTaskIndex < tasks.length) {
+      const taskIndex = nextTaskIndex;
+
+      nextTaskIndex += 1;
+
+      try {
+        await tasks[taskIndex]();
+        results[taskIndex] = { status: 'fulfilled', value: undefined };
+      } catch (reason) {
+        results[taskIndex] = { status: 'rejected', reason };
+      }
+    }
+  };
+
+  const workerCount = Math.min(Math.max(1, concurrency), tasks.length);
+
+  await Promise.all(Array.from({ length: workerCount }, worker));
+
+  return results;
 }
 
 async function uploadPendingFile(token: string, attachment: FormFileAttachment): Promise<FormFileAttachment> {

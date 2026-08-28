@@ -1,7 +1,11 @@
 import { useParams } from 'react-router-dom';
 
-import { FormView } from '@/components/form';
-import NotFound from '@/components/error/NotFound';
+import { initAPIService } from '@/application/services/js-services/http/core';
+import { FormView } from '@/components/form/FormView';
+import { defaultConfig } from '@/components/main/app.hooks';
+import { useAppThemeMode } from '@/components/main/useAppThemeMode';
+
+initAPIService(defaultConfig);
 
 /**
  * Public form page at `/form/:token`. Reads the URL token (the share-link
@@ -16,8 +20,23 @@ import NotFound from '@/components/error/NotFound';
 function FormPage() {
   const { token } = useParams();
 
-  if (!token) return <NotFound />;
-  return <FormView token={token} />;
+  // Public forms need the semantic color variables kept in sync with the
+  // visitor's preferred theme, but not the authenticated app's MUI/i18n/
+  // workspace provider graph.
+  useAppThemeMode();
+
+  if (!token) {
+    return (
+      <div data-testid='public-not-found' className='flex h-screen items-center justify-center text-text-caption'>
+        Form not found
+      </div>
+    );
+  }
+
+  // A route-param change reuses this page instance. Remount the stateful form
+  // so the previous token's schema and answers can never pair with the new
+  // token before FormView's fetch effect runs.
+  return <FormView key={token} token={token} />;
 }
 
 export default FormPage;

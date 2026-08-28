@@ -2,15 +2,11 @@ import { Dialog } from '@mui/material';
 import { ArrowRight, FileText, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
-import {
-  useDatabaseFields,
-  useDatabaseFieldsVersion,
-  useFormLayoutSnapshot,
-  useFormWriter,
-} from '@/application/database-yjs';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
+import type { FormWriter } from '@/application/database-yjs/form-writer';
 import { YjsDatabaseKey } from '@/application/types';
+import type { YDatabaseFields } from '@/application/types';
 import { Button } from '@/components/ui/button';
 
 /**
@@ -43,30 +39,46 @@ const DIALOG_PAPER_PROPS = { className: 'max-w-md w-full' } as const;
  *      Create-N populates, Start-from-scratch leaves empty. Both mark
  *      decided.
  *
- * The component renders nothing in the non-prompt branches — it's safe
- * to mount unconditionally in `FormBuilderView`.
+ * `FormBuilderView` mounts this only while the form is undecided and empty,
+ * then this component resolves the hydration-dependent field-count branch.
  */
-export function FormAutoCreate() {
-  const snapshot = useFormLayoutSnapshot();
-  const fields = useDatabaseFields();
-  const fieldsVersion = useDatabaseFieldsVersion();
-  const writer = useFormWriter();
-  const ctx = useDatabaseContextOptional();
-  const readOnly = ctx?.readOnly ?? false;
-
-  // Refresh race guard. On a refreshed page the YJS doc applies
-  // asynchronously: the React tree mounts before the persisted
-  // `__form_decided__` sentinel arrives over the wire. Desktop's
-  // `form_page.dart:_evaluateAutoCreatePromptOnce` awaits an
-  // explicit `_overrides.hydrated` future before deciding; our
-  // analog is a one-render delay — `useEffect` with no deps fires
-  // after the first commit, by which point an in-flight Y.applyUpdate
-  // for the same tick has already flushed through the observer.
+export function FormAutoCreate({
+  snapshot,
+  fields,
+  fieldsVersion,
+  writer,
+  ensureHydrated,
+}: {
+  snapshot: FormLayoutSnapshot;
+  fields: YDatabaseFields | undefined;
+  fieldsVersion: number;
+  writer: FormWriter;
+  ensureHydrated: () => Promise<void>;
+}) {
+  // Refresh race guard. A database may render immediately from IndexedDB while
+  // its server state is newer (for example another client already chose Start
+  // from scratch). Wait for an authoritative metadata refresh before making
+  // any one-time Yjs write; a passive-effect delay is not a hydration signal.
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setHydrated(true);
-  }, []);
+    let cancelled = false;
+
+    void ensureHydrated()
+      .then(() => {
+        if (!cancelled) setHydrated(true);
+      })
+      .catch((error) => {
+        // Fail closed: manual question authoring remains available, but we do
+        // not make an irreversible auto-create choice from potentially stale
+        // local state.
+        console.error('[FormAutoCreate] Failed to hydrate form settings', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureHydrated]);
 
   const supportedFieldIds = useMemo(() => {
     if (!fields) return [];
@@ -99,34 +111,20 @@ export function FormAutoCreate() {
   // 1-2 supported → adopt silently. 3+ → fall through to the modal
   // surfaced by `showDialog` below.
   useEffect(() => {
-    if (readOnly || !hydrated) return;
+    if (!hydrated) return;
     if (snapshot.decided || snapshot.questions.length > 0) return;
     if (!fields) return;
     if (fieldCount > 2) return;
     if (fieldCount > 0) writer.populateFromFields(supportedFieldIds);
     writer.markDecided();
-  }, [
-    readOnly,
-    hydrated,
-    snapshot.decided,
-    snapshot.questions.length,
-    fields,
-    fieldCount,
-    supportedFieldIds,
-    writer,
-  ]);
+  }, [hydrated, snapshot.decided, snapshot.questions.length, fields, fieldCount, supportedFieldIds, writer]);
 
   // Modal visibility is derived, not imperative. When the user picks
   // Create-N / Start-from-scratch (or a remote sync delivers a
   // previously-persisted decision), `writer.markDecided()` flips
   // `snapshot.decided` and this expression evaluates false on the
   // same render — no auto-dismiss effect, no flash.
-  const showDialog =
-    !readOnly &&
-    hydrated &&
-    !snapshot.decided &&
-    snapshot.questions.length === 0 &&
-    fieldCount > 2;
+  const showDialog = hydrated && !snapshot.decided && snapshot.questions.length === 0 && fieldCount > 2;
 
   if (!showDialog) return null;
 
@@ -139,26 +137,15 @@ export function FormAutoCreate() {
   };
 
   return (
-    <Dialog
-      open={true}
-      onClose={dismissAsScratch}
-      PaperProps={DIALOG_PAPER_PROPS}
-    >
-      <div
-        data-testid='form-auto-create-dialog'
-        className='flex flex-col items-center gap-4 px-6 py-6 text-center'
-      >
+    <Dialog open={true} onClose={dismissAsScratch} PaperProps={DIALOG_PAPER_PROPS}>
+      <div data-testid='form-auto-create-dialog' className='flex flex-col items-center gap-4 px-6 py-6 text-center'>
         <div className='flex items-center gap-3 text-text-caption'>
           <Table2 size={24} />
           <ArrowRight size={16} />
           <FileText size={24} />
         </div>
-        <h2 className='text-lg font-semibold'>
-          Auto-create form questions based on existing properties?
-        </h2>
-        <p className='text-sm text-text-caption'>
-          Only supported property types will create new questions.
-        </p>
+        <h2 className='text-lg font-semibold'>Auto-create form questions based on existing properties?</h2>
+        <p className='text-sm text-text-caption'>Only supported property types will create new questions.</p>
         <Button
           data-testid='form-auto-create-confirm'
           className='w-full'
@@ -167,9 +154,7 @@ export function FormAutoCreate() {
             writer.markDecided();
           }}
         >
-          {fieldCount === 1
-            ? 'Create 1 question'
-            : `Create ${fieldCount} questions`}
+          {fieldCount === 1 ? 'Create 1 question' : `Create ${fieldCount} questions`}
         </Button>
         <button
           data-testid='form-auto-create-start-from-scratch'

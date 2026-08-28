@@ -3858,12 +3858,12 @@ export function useUpdateTranslateLanguage(fieldId: string) {
   );
 }
 
-export function useAddSelectOption(fieldId: string) {
+export function useAddSelectOptionDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    (option: SelectOption, explicitHistoryGroup?: object) => {
+    (fieldId: string, option: SelectOption, explicitHistoryGroup?: object) => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
       if (!field) {
@@ -3955,7 +3955,18 @@ export function useAddSelectOption(fieldId: string) {
         historyGroup
       );
     },
-    [database, fieldId, sharedRoot]
+    [database, sharedRoot]
+  );
+}
+
+export function useAddSelectOption(fieldId: string) {
+  const addSelectOption = useAddSelectOptionDispatch();
+
+  return useCallback(
+    (option: SelectOption, explicitHistoryGroup?: object) => {
+      addSelectOption(fieldId, option, explicitHistoryGroup);
+    },
+    [addSelectOption, fieldId]
   );
 }
 

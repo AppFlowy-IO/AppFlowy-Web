@@ -16,8 +16,11 @@ import {
   useFormWriter,
 } from '@/application/database-yjs';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { useDatabaseContextOptional } from '@/application/database-yjs/context';
-import { YjsDatabaseKey } from '@/application/types';
+import { useDatabaseContextOptional, useDatabaseView } from '@/application/database-yjs/context';
+import { useAddSelectOptionDispatch } from '@/application/database-yjs/dispatch';
+import type { FormWriter } from '@/application/database-yjs/form-writer';
+import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import type { YDatabaseField } from '@/application/types';
 
 import { FormAutoCreate } from './FormAutoCreate';
 import { FormAccessBanner } from './FormAccessBanner';
@@ -26,6 +29,7 @@ import { FormPreviewButton } from './FormPreviewButton';
 import { FormQuestionCard } from './FormQuestionCard';
 import { FormQuestionCardReadOnly } from './FormQuestionCardReadOnly';
 import { FormQuestionTypePicker } from './FormQuestionTypePicker';
+import type { AddFormSelectOption } from './FormSelectOptionsEditor';
 import { FormShareButton } from './FormShareButton';
 import { FormShareProvider } from './FormShareContext';
 import { FormTitle } from './FormTitle';
@@ -44,9 +48,8 @@ import { FormTitle } from './FormTitle';
  *   │             + Add question                        │
  *   └────────────────────────────────────────────────────┘
  *
- * The auto-create modal (`FormAutoCreate`) is mounted unconditionally
- * — it self-evaluates on hydrate and renders nothing when the form's
- * already decided.
+ * The auto-create helper is mounted only for an undecided empty form and
+ * removes its hydration subscription as soon as that one-time branch resolves.
  */
 export function FormBuilderView() {
   const ctx = useDatabaseContextOptional();
@@ -67,10 +70,36 @@ export function FormBuilderView() {
 }
 
 function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
+  const ctx = useDatabaseContextOptional();
   const snapshot = useFormLayoutSnapshot();
   const fields = useDatabaseFields();
   const fieldsVersion = useDatabaseFieldsVersion();
   const writer = useFormWriter();
+  const addSelectOption = useAddSelectOptionDispatch();
+  const view = useDatabaseView();
+  const viewName = view?.get(YjsDatabaseKey.name) ?? '';
+  const databaseId = ctx?.databaseDoc
+    .getMap(YjsEditorKey.data_section)
+    .get(YjsEditorKey.database)
+    ?.get(YjsDatabaseKey.id) as string | undefined;
+  const activeViewId = ctx?.activeViewId;
+  const loadView = ctx?.loadView;
+
+  const ensureFormHydrated = useCallback(async () => {
+    if (!loadView) return;
+    if (!activeViewId || !databaseId) {
+      throw new Error('Database identity is unavailable for form hydration');
+    }
+
+    // An IndexedDB-backed database can render before realtime has reconciled
+    // it with the server. Refresh the canonical metadata before the one-time
+    // auto-create decision so a stale cache cannot overwrite a remote choice.
+    await loadView(activeViewId, false, false, {
+      databaseId,
+      databaseMetadataOnly: true,
+      forceFetch: true,
+    });
+  }, [activeViewId, databaseId, loadView]);
 
   // Resolve every `field_id` in the projection to its on-disk field.
   // Orphans (entries whose underlying field was deleted from a Grid
@@ -101,6 +130,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
           descriptionVisible: q.descriptionVisible,
           longAnswer: q.longAnswer,
           isRichText: fieldType === FieldType.RichText,
+          selectField: fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect ? field : undefined,
         };
       })
       .filter((v): v is NonNullable<typeof v> => v !== null);
@@ -140,7 +170,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
     // `writer` is memoized on view identity in `useFormWriter`, so
     // this callback only changes on a view swap — never on snapshot
     // updates.
-    [writer],
+    [writer]
   );
 
   return (
@@ -153,18 +183,22 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
       */}
       {!readOnly && (
         <header className='flex items-center justify-end gap-2'>
-          <FormPreviewButton />
+          <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} viewName={viewName} />
           <FormShareButton />
         </header>
       )}
       <FormTitle readOnly={readOnly} />
-      <FormFormDescription
-        description={snapshot.description}
-        readOnly={readOnly}
-        onChange={writer.setFormDescription}
-      />
+      <FormFormDescription description={snapshot.description} readOnly={readOnly} onChange={writer.setFormDescription} />
       {!readOnly && <FormAccessBanner />}
-      {!readOnly && <FormAutoCreate />}
+      {!readOnly && !snapshot.decided && snapshot.questions.length === 0 && (
+        <FormAutoCreate
+          snapshot={snapshot}
+          fields={fields}
+          fieldsVersion={fieldsVersion}
+          writer={writer}
+          ensureHydrated={ensureFormHydrated}
+        />
+      )}
 
       {resolved.length === 0 ? (
         <EmptyState decided={snapshot.decided} readOnly={readOnly} />
@@ -185,10 +219,14 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
         <DraggableQuestionList
           questions={resolved}
           onReorder={handleReorder}
+          writer={writer}
+          addSelectOption={addSelectOption}
         />
       )}
 
-      {!readOnly && <FormQuestionTypePicker />}
+      {!readOnly && (
+        <FormQuestionTypePicker fieldsMap={fields} fieldsVersion={fieldsVersion} snapshot={snapshot} writer={writer} />
+      )}
     </div>
   );
 }
@@ -202,6 +240,7 @@ type ResolvedQuestion = {
   descriptionVisible: boolean;
   longAnswer: boolean;
   isRichText: boolean;
+  selectField?: YDatabaseField;
 };
 
 /**
@@ -224,30 +263,23 @@ type ResolvedQuestion = {
 function DraggableQuestionList({
   questions,
   onReorder,
+  writer,
+  addSelectOption,
 }: {
   questions: ResolvedQuestion[];
   onReorder: (result: DropResult) => void;
+  writer: FormWriter;
+  addSelectOption: AddFormSelectOption;
 }) {
   return (
     <DragDropContext onDragEnd={onReorder}>
       <Droppable droppableId='form-question-stack'>
         {(provided) => (
-          <div
-            ref={provided.innerRef}
-            {...provided.droppableProps}
-            className='flex flex-col gap-3'
-          >
+          <div ref={provided.innerRef} {...provided.droppableProps} className='flex flex-col gap-3'>
             {questions.map((q, idx) => (
-              <Draggable
-                key={q.questionId}
-                draggableId={q.questionId}
-                index={idx}
-              >
+              <Draggable key={q.questionId} draggableId={q.questionId} index={idx}>
                 {(draggable, snapshot) => (
-                  <PortaledDraggable
-                    draggable={draggable}
-                    snapshot={snapshot}
-                  >
+                  <PortaledDraggable draggable={draggable} snapshot={snapshot}>
                     <FormQuestionCard
                       questionId={q.questionId}
                       name={q.name}
@@ -259,6 +291,9 @@ function DraggableQuestionList({
                       index={idx}
                       questionCount={questions.length}
                       isRichText={q.isRichText}
+                      selectField={q.selectField}
+                      addSelectOption={addSelectOption}
+                      writer={writer}
                     />
                   </PortaledDraggable>
                 )}
@@ -272,21 +307,15 @@ function DraggableQuestionList({
   );
 }
 
-function EmptyState({
-  decided,
-  readOnly,
-}: {
-  decided: boolean;
-  readOnly: boolean;
-}) {
+function EmptyState({ decided, readOnly }: { decided: boolean; readOnly: boolean }) {
   // Three flavors of empty: decided + editor → invite to add; decided
   // + read-only → "no questions yet, ask the owner"; undecided →
   // "this form hasn't been set up yet".
   const copy = !decided
     ? 'This form hasn’t been set up yet.'
     : readOnly
-      ? 'No questions yet.'
-      : 'No questions yet. Use “+ Add question” to pick from existing properties.';
+    ? 'No questions yet.'
+    : 'No questions yet. Use “+ Add question” to pick from existing properties.';
 
   return (
     <div className='rounded-md border border-dashed border-line-divider px-4 py-8 text-center text-sm text-text-caption'>

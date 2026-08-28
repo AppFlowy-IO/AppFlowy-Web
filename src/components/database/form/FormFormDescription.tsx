@@ -26,11 +26,16 @@ export function FormFormDescription({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sync the draft when the description changes from elsewhere (another
-  // client edited the field, or the projection rehydrated). Skip when
-  // the user is currently typing — clobbering the in-flight edit would
-  // be surprising.
+  // client edited the field, or the projection rehydrated). Cancel any local
+  // debounce first so its stale closure cannot overwrite the newer external
+  // value after this effect accepts it.
   useEffect(() => {
     if (description !== lastExternal.current) {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+
       lastExternal.current = description;
       setDraft(description);
     }
@@ -69,7 +74,10 @@ export function FormFormDescription({
 
         setDraft(v);
         if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => flush(v), 500);
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          flush(v);
+        }, 500);
       }}
       onBlur={() => {
         if (timer.current) {

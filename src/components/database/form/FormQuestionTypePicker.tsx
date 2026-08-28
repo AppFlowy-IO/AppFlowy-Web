@@ -1,23 +1,16 @@
-import { TFunction } from 'i18next';
+import type { TFunction } from 'i18next';
 import { PlusCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-  useDatabaseFields,
-  useDatabaseFieldsVersion,
-  useFormLayoutSnapshot,
-  useFormWriter,
-} from '@/application/database-yjs';
 import { useNewPropertyDispatch } from '@/application/database-yjs/dispatch';
 import { FieldType } from '@/application/database-yjs/database.type';
+import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
+import type { FormWriter } from '@/application/database-yjs/form-writer';
 import { YjsDatabaseKey } from '@/application/types';
+import type { YDatabaseFields } from '@/application/types';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 /**
  * Field types the web form-builder ships custom rendering for. Mirrors
@@ -63,21 +56,65 @@ const EXISTING_PREVIEW_LIMIT = 5;
  * disables the option with a "Coming soon" tooltip. M3 wires the
  * field-create HTTP path.
  */
-export function FormQuestionTypePicker() {
+export function FormQuestionTypePicker({
+  fieldsMap,
+  fieldsVersion,
+  snapshot,
+  writer,
+}: {
+  fieldsMap: YDatabaseFields | undefined;
+  fieldsVersion: number;
+  snapshot: FormLayoutSnapshot;
+  writer: FormWriter;
+}) {
   const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          data-testid='form-add-question-button'
+          type='button'
+          className='mx-auto flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-fill-default hover:bg-fill-content'
+        >
+          <PlusCircle size={16} />
+          Add question
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align='center' className='w-72 p-1'>
+        {open && (
+          <QuestionPickerContent
+            fieldsMap={fieldsMap}
+            fieldsVersion={fieldsVersion}
+            snapshot={snapshot}
+            writer={writer}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function QuestionPickerContent({
+  fieldsMap,
+  fieldsVersion,
+  snapshot,
+  writer,
+  onClose,
+}: {
+  fieldsMap: YDatabaseFields | undefined;
+  fieldsVersion: number;
+  snapshot: FormLayoutSnapshot;
+  writer: FormWriter;
+  onClose: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const writer = useFormWriter();
-  const fieldsMap = useDatabaseFields();
-  const fieldsVersion = useDatabaseFieldsVersion();
-  const snapshot = useFormLayoutSnapshot();
   const createProperty = useNewPropertyDispatch();
   const { t } = useTranslation();
 
-  // Build the "existing properties" candidate list. A field is a
-  // candidate iff it's a supported type AND isn't already on the form.
-  // `fieldsVersion` is included so the list refreshes when a field is
-  // renamed, added, or retyped — Y.Map identity is stable so we can't
-  // rely on `fieldsMap` alone for invalidation.
+  // The content component exists only while the popover is open, so a hidden
+  // picker neither scans the fields map nor subscribes through dispatch hooks.
   const candidates = useMemo(() => {
     if (!fieldsMap) return [];
     const onFormIds = new Set(snapshot.questions.map((q) => q.fieldId));
@@ -101,99 +138,72 @@ export function FormQuestionTypePicker() {
   }, [fieldsMap, fieldsVersion, snapshot]);
 
   const showCollapse = candidates.length > EXISTING_PREVIEW_LIMIT;
-  const visibleCandidates =
-    showCollapse && !expanded
-      ? candidates.slice(0, EXISTING_PREVIEW_LIMIT)
-      : candidates;
+  const visibleCandidates = showCollapse && !expanded ? candidates.slice(0, EXISTING_PREVIEW_LIMIT) : candidates;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
+    <>
+      {candidates.length > 0 && (
+        <>
+          <SectionHeader label='Existing properties' />
+          {visibleCandidates.map((c) => (
+            <button
+              key={c.id}
+              type='button'
+              onClick={() => {
+                writer.addQuestion(c.id);
+                onClose();
+              }}
+              className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'
+            >
+              <FieldTypeIcon type={c.type} className='h-4 w-4 shrink-0 text-text-tertiary' />
+              <span className='flex-1 truncate'>{c.name}</span>
+            </button>
+          ))}
+          {showCollapse && (
+            <button
+              type='button'
+              onClick={() => setExpanded((v) => !v)}
+              className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs text-text-caption hover:bg-fill-content'
+            >
+              {expanded ? 'Show less' : `Show ${candidates.length - EXISTING_PREVIEW_LIMIT} more`}
+            </button>
+          )}
+          <div className='my-1 border-t border-line-divider' />
+        </>
+      )}
+      <SectionHeader label='New question' />
+      {/*
+        Picking a New-question type creates a brand-new database field
+        (via the existing `useNewPropertyDispatch` — direct YJS write
+        to every linked view's `fields` / `field_orders` /
+        `field_settings`) AND appends a `FormQuestionPB` entry to this
+        form view's projection. The new property shows up in the Grid
+        tab and every other form view, which is the same behavior the
+        desktop's `_createAndAdd` ships.
+      */}
+      {FORM_QUESTION_FIELD_TYPES.map((ty) => (
         <button
-          data-testid='form-add-question-button'
+          key={ty}
+          data-testid={`form-question-type-option-${ty}`}
           type='button'
-          className='mx-auto flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-fill-default hover:bg-fill-content'
-        >
-          <PlusCircle size={16} />
-          Add question
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align='center' className='w-72 p-1'>
-        {candidates.length > 0 && (
-          <>
-            <SectionHeader label='Existing properties' />
-            {visibleCandidates.map((c) => (
-              <button
-                key={c.id}
-                type='button'
-                onClick={() => {
-                  writer.addQuestion(c.id);
-                  setOpen(false);
-                }}
-                className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'
-              >
-                <FieldTypeIcon
-                  type={c.type}
-                  className='h-4 w-4 shrink-0 text-text-tertiary'
-                />
-                <span className='flex-1 truncate'>{c.name}</span>
-              </button>
-            ))}
-            {showCollapse && (
-              <button
-                type='button'
-                onClick={() => setExpanded((v) => !v)}
-                className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs text-text-caption hover:bg-fill-content'
-              >
-                {expanded
-                  ? 'Show less'
-                  : `Show ${candidates.length - EXISTING_PREVIEW_LIMIT} more`}
-              </button>
-            )}
-            <div className='my-1 border-t border-line-divider' />
-          </>
-        )}
-        <SectionHeader label='New question' />
-        {/*
-          Picking a New-question type creates a brand-new database field
-          (via the existing `useNewPropertyDispatch` — direct YJS write
-          to every linked view's `fields` / `field_orders` /
-          `field_settings`) AND appends a `FormQuestionPB` entry to this
-          form view's projection. The new property shows up in the Grid
-          tab and every other form view, which is the same behavior the
-          desktop's `_createAndAdd` ships.
-        */}
-        {FORM_QUESTION_FIELD_TYPES.map((ty) => (
-          <button
-            key={ty}
-            data-testid={`form-question-type-option-${ty}`}
-            type='button'
-            onClick={() => {
-              const newFieldId = createProperty(ty);
+          onClick={() => {
+            const newFieldId = createProperty(ty);
 
-              writer.addQuestion(newFieldId);
-              setOpen(false);
-            }}
-            className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'
-          >
-            <FieldTypeIcon
-              type={ty}
-              className='h-4 w-4 shrink-0 text-text-tertiary'
-            />
-            <span className='flex-1'>{fieldTypeLabel(t, ty)}</span>
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
+            writer.addQuestion(newFieldId);
+            onClose();
+          }}
+          className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'
+        >
+          <FieldTypeIcon type={ty} className='h-4 w-4 shrink-0 text-text-tertiary' />
+          <span className='flex-1'>{fieldTypeLabel(t, ty)}</span>
+        </button>
+      ))}
+    </>
   );
 }
 
 function SectionHeader({ label }: { label: string }) {
-  return (
-    <div className='px-3 pb-1 pt-2 text-xs font-medium text-text-caption'>
-      {label}
-    </div>
-  );
+  return <div className='px-3 pb-1 pt-2 text-xs font-medium text-text-caption'>{label}</div>;
 }
 
 /**
@@ -209,7 +219,7 @@ function fieldTypeLabel(
   // `RangeError: Map maximum size exceeded`. Same call-signature at the
   // use site, but with a tractable type.
   t: TFunction,
-  ty: FieldType,
+  ty: FieldType
 ): string {
   switch (ty) {
     case FieldType.RichText:

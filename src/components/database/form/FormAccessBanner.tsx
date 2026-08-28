@@ -43,7 +43,12 @@ export function FormAccessBanner() {
   // upgrade modal instead of an empty popover; the cloud's plan
   // gate refuses the underlying mint and `info` would otherwise
   // stay null forever.
-  const canAuthor = useCanAuthorFormView();
+  const {
+    canAuthor,
+    isLoading: isLoadingEntitlement,
+    hasError: hasEntitlementError,
+    ensureCanAuthor,
+  } = useCanAuthorFormView();
 
   const [, setSearch] = useSearchParams();
   const openUpgradePlan = useCallback(() => {
@@ -52,6 +57,12 @@ export function FormAccessBanner() {
       return prev;
     });
   }, [setSearch]);
+
+  const retryEntitlement = useCallback(async () => {
+    const allowed = await ensureCanAuthor();
+
+    if (allowed === false) openUpgradePlan();
+  }, [ensureCanAuthor, openUpgradePlan]);
 
   const changeLinkClasses = cn(
     'text-sm font-medium hover:underline',
@@ -73,7 +84,7 @@ export function FormAccessBanner() {
     >
       <BannerIcon tier={tier} isPublic={isPublic} />
       <span className='flex-1'>{bannerCopy(tier, workspaceName)}</span>
-      {canAuthor ? (
+      {canAuthor === true ? (
         <FormSharePopover
           trigger={
             <button type='button' className={changeLinkClasses}>
@@ -85,6 +96,7 @@ export function FormAccessBanner() {
           errorKind={share.errorKind}
           errorMessage={share.error}
           onUpgradePlan={openUpgradePlan}
+          onRetry={share.retryBootstrap}
           setTier={share.setTier}
           setAnonymous={share.setAnonymous}
           url={url}
@@ -92,10 +104,26 @@ export function FormAccessBanner() {
       ) : (
         <button
           type='button'
-          className={changeLinkClasses}
-          onClick={openUpgradePlan}
+          className={cn(
+            changeLinkClasses,
+            canAuthor === null && !hasEntitlementError && 'cursor-wait opacity-60',
+          )}
+          disabled={canAuthor === null && (!hasEntitlementError || isLoadingEntitlement)}
+          onClick={
+            canAuthor === false
+              ? openUpgradePlan
+              : hasEntitlementError
+                ? () => void retryEntitlement()
+                : undefined
+          }
         >
-          Change
+          {canAuthor === null
+            ? isLoadingEntitlement
+              ? 'Checking plan…'
+              : hasEntitlementError
+                ? 'Retry plan check'
+                : 'Plan unavailable'
+            : 'Change'}
         </button>
       )}
     </div>

@@ -1,19 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 
 import { useDatabaseView } from '@/application/database-yjs/context';
-import {
-  decodeSnapshot,
-  FormLayoutSnapshot,
-  FormQuestionEntry,
-  readFormLayoutSnapshot,
-} from '@/application/database-yjs/form-questions';
+import { decodeSnapshot, readFormLayoutSnapshot } from '@/application/database-yjs/form-questions';
+import type { FormLayoutSnapshot, FormQuestionEntry } from '@/application/database-yjs/form-questions';
+import type { YDatabaseView } from '@/application/types';
 
 const EMPTY: FormLayoutSnapshot = Object.freeze({
   decided: false,
   description: '',
   questions: [],
 });
+
+type FormLayoutStore = {
+  getSnapshot: () => FormLayoutSnapshot;
+  subscribe: (onStoreChange: () => void) => () => void;
+};
 
 function questionsEqual(a: FormQuestionEntry, b: FormQuestionEntry): boolean {
   return (
@@ -39,6 +41,87 @@ function snapshotsEqual(a: FormLayoutSnapshot, b: FormLayoutSnapshot): boolean {
   return true;
 }
 
+const EMPTY_STORE: FormLayoutStore = {
+  getSnapshot: () => EMPTY,
+  subscribe: () => () => undefined,
+};
+
+// One store per Yjs view means every hook consumer shares one deep observer and
+// one decoded snapshot. The WeakMap does not retain views after their database
+// document is released.
+const stores = new WeakMap<YDatabaseView, FormLayoutStore>();
+
+function createFormLayoutStore(view: YDatabaseView): FormLayoutStore {
+  const subscribers = new Set<() => void>();
+  let snapshot = readFormLayoutSnapshot(view);
+  let observing = false;
+
+  const refresh = (): boolean => {
+    const next = readFormLayoutSnapshot(view);
+
+    if (snapshotsEqual(snapshot, next)) return false;
+    snapshot = next;
+    return true;
+  };
+
+  const publish = () => {
+    if (!refresh()) return;
+    subscribers.forEach((subscriber) => subscriber());
+  };
+
+  const attach = () => {
+    if (observing) return;
+    observing = true;
+    view.observeDeep(publish);
+
+    // Close the render-to-subscribe gap. If the view changed after React read
+    // getSnapshot but before the subscription was installed, publish the fresh
+    // snapshot immediately.
+    if (refresh()) {
+      subscribers.forEach((subscriber) => subscriber());
+    }
+  };
+
+  const detach = () => {
+    if (!observing) return;
+    observing = false;
+    view.unobserveDeep(publish);
+  };
+
+  return {
+    getSnapshot: () => {
+      // React can abandon a render before subscribe() runs. Refresh every
+      // unobserved read so a cached store from that render cannot go stale.
+      if (!observing) {
+        refresh();
+      }
+
+      return snapshot;
+    },
+    subscribe: (onStoreChange) => {
+      subscribers.add(onStoreChange);
+      if (subscribers.size === 1) attach();
+
+      return () => {
+        subscribers.delete(onStoreChange);
+        if (subscribers.size === 0) detach();
+      };
+    },
+  };
+}
+
+function getFormLayoutStore(view: YDatabaseView | undefined): FormLayoutStore {
+  if (!view) return EMPTY_STORE;
+  let store = stores.get(view);
+
+  if (!store) {
+    store = createFormLayoutStore(view);
+    stores.set(view, store);
+  }
+
+  return store;
+}
+
 /**
  * Subscribe to the current database view's `form_field_settings` map and
  * surface a typed snapshot. Re-emits on any deep mutation (entry add /
@@ -55,53 +138,9 @@ function snapshotsEqual(a: FormLayoutSnapshot, b: FormLayoutSnapshot): boolean {
  */
 export function useFormLayoutSnapshot(): FormLayoutSnapshot {
   const view = useDatabaseView();
-  // Start from the frozen empty snapshot; the effect below seeds the
-  // real value on mount. Decoding twice (once in the initializer, once
-  // in the effect) was wasted work — the effect runs synchronously
-  // before commit so the first paint sees the seeded value.
-  const [snapshot, setSnapshot] = useState<FormLayoutSnapshot>(EMPTY);
+  const store = getFormLayoutStore(view);
 
-  useEffect(() => {
-    if (!view) {
-      setSnapshot(EMPTY);
-      return;
-    }
-
-    // Seed so a view-swap doesn't render with the previous map's
-    // contents until the first mutation arrives.
-    setSnapshot(readFormLayoutSnapshot(view));
-
-    // Observe the view's Y.Map deeply, not just the
-    // `form_field_settings` child. On a fresh form view the
-    // child map doesn't exist yet — the writer creates it on the
-    // first `addQuestion` / `markDecided` call. If we only attached
-    // to the child, that first write would slip past unnoticed and
-    // the snapshot would stay frozen at `EMPTY` until a tab swap
-    // forced a re-subscribe.
-    //
-    // Deep-observing the view itself catches both the child creation
-    // AND every subsequent per-entry write, since `observeDeep`
-    // propagates events from nested maps. The trade-off is firing on
-    // unrelated view-level keys (name, layout_settings, etc.) — we
-    // short-circuit those by returning the previous snapshot when the
-    // decoded value is shallow-equal, so renaming the form via
-    // `FormTitle` doesn't invalidate every downstream `useMemo` keyed
-    // on the snapshot (preview schema, resolved questions list, etc.).
-    const observer = () => {
-      setSnapshot((prev) => {
-        const next = readFormLayoutSnapshot(view);
-
-        return snapshotsEqual(prev, next) ? prev : next;
-      });
-    };
-
-    view.observeDeep(observer);
-    return () => {
-      view.unobserveDeep(observer);
-    };
-  }, [view]);
-
-  return snapshot;
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 }
 
 /// Variant that takes an explicit view rather than reading the current

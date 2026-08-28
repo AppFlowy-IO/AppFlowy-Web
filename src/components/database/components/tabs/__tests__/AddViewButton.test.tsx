@@ -7,9 +7,24 @@ import { AddViewButton } from '@/components/database/components/tabs/AddViewButt
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 
 const mockAddView = jest.fn();
+const mockEnsureCanAuthor = jest.fn();
+const mockToastError = jest.fn();
+let mockCanAuthor: boolean | null = true;
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddDatabaseView: () => mockAddView,
+}));
+
+jest.mock('@/components/database/form/useCanAuthorFormView', () => ({
+  useCanAuthorFormView: () => ({
+    canAuthor: mockCanAuthor,
+    isLoading: mockCanAuthor === null,
+    ensureCanAuthor: mockEnsureCanAuthor,
+  }),
+}));
+
+jest.mock('sonner', () => ({
+  toast: { error: (...args: unknown[]) => mockToastError(...args) },
 }));
 
 jest.mock('react-i18next', () => ({
@@ -50,6 +65,8 @@ jest.mock('@/components/ui/tooltip', () => ({
 describe('AddViewButton', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCanAuthor = true;
+    mockEnsureCanAuthor.mockResolvedValue(true);
     mockAddView.mockResolvedValue('list-view-id');
     jest.spyOn(Date, 'now').mockReturnValueOnce(0).mockReturnValueOnce(300);
   });
@@ -85,5 +102,53 @@ describe('AddViewButton', () => {
 
     expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Gallery, 'gallery.menuName');
     await waitFor(() => expect(onViewAdded).toHaveBeenCalledWith('gallery-view-id'));
+  });
+
+  it('waits for an unknown Form entitlement before deciding whether to create', async () => {
+    let resolveEntitlement!: (allowed: boolean) => void;
+    const entitlement = new Promise<boolean>((resolve) => {
+      resolveEntitlement = resolve;
+    });
+    const onViewAdded = jest.fn();
+
+    mockCanAuthor = null;
+    mockEnsureCanAuthor.mockReturnValue(entitlement);
+    mockAddView.mockResolvedValue('form-view-id');
+    render(
+      <MemoryRouter>
+        <AddViewButton onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+
+    expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1);
+    expect(mockAddView).not.toHaveBeenCalled();
+
+    resolveEntitlement(true);
+
+    await waitFor(() => {
+      expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Form, 'form.menuName');
+      expect(onViewAdded).toHaveBeenCalledWith('form-view-id');
+    });
+  });
+
+  it('does not treat a failed plan check as a confirmed Free workspace', async () => {
+    mockCanAuthor = null;
+    mockEnsureCanAuthor.mockResolvedValue(null);
+    render(
+      <MemoryRouter>
+        <AddViewButton onViewAdded={jest.fn()} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        'Could not verify your workspace plan. Please try again.',
+      );
+    });
+    expect(mockAddView).not.toHaveBeenCalled();
   });
 });

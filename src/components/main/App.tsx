@@ -1,41 +1,10 @@
-import { AUTH_CALLBACK_PATH } from '@/application/session/sign_in';
-import NotFound from '@/components/error/NotFound';
-import withAppWrapper from '@/components/main/withAppWrapper';
-
 import '@/styles/app.scss';
-import { lazy } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
-import { Toaster } from '../ui/sonner';
-
-const LoginPage = lazy(() => import('@/pages/LoginPage'));
-const LoginAuth = lazy(() => import('@/components/login/LoginAuth'));
-const AppRouter = lazy(() => import('@/components/app/AppRouter'));
-const AsTemplatePage = lazy(() => import('@/pages/AsTemplatePage'));
-const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitationPage'));
-const AfterPaymentPage = lazy(() => import('@/pages/AfterPaymentPage'));
-const ImportPage = lazy(() => import('@/pages/ImportPage'));
-const PublishPage = lazy(() => import('@/pages/PublishPage'));
 const FormPage = lazy(() => import('@/pages/FormPage'));
-
-const AppMain = withAppWrapper(() => {
-  return (
-    <Routes>
-      <Route path={'/:namespace/:publishName'} element={<PublishPage />} />
-      <Route path={'/login'} element={<LoginPage />} />
-      <Route path={AUTH_CALLBACK_PATH} element={<LoginAuth />} />
-      <Route path='/404' element={<NotFound />} />
-      <Route path='/after-payment' element={<AfterPaymentPage />} />
-      <Route path='/as-template' element={<AsTemplatePage />} />
-      <Route path='/accept-invitation' element={<AcceptInvitationPage />} />
-      <Route path={'/import'} element={<ImportPage />} />
-      <Route path={'/form/:token'} element={<FormPage />} />
-      <Route path='/' element={<Navigate to='/app' replace />} />
-      <Route path='/app/*' element={<AppRouter />} />
-      <Route path='*' element={<NotFound />} />
-    </Routes>
-  );
-});
+const MainAppRoutes = lazy(() => import('@/components/main/MainAppRoutes'));
 
 function App() {
   return (
@@ -45,9 +14,43 @@ function App() {
         v7_relativeSplatPath: true,
       }}
     >
-      <AppMain />
-      <Toaster />
+      <ErrorBoundary FallbackComponent={RouteError}>
+        <Suspense fallback={<RouteLoading />}>
+          <Routes>
+            <Route path='/form/:token' element={<FormPage />} />
+            <Route path='*' element={<MainAppRoutes />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
+  );
+}
+
+function RouteError() {
+  return (
+    <div className='fixed inset-0 flex flex-col items-center justify-center gap-3 bg-background-primary px-6 text-center'>
+      <h1 className='text-xl font-semibold'>Couldn’t load this page</h1>
+      <p className='text-sm text-text-caption'>Please reload and try again.</p>
+      <button
+        type='button'
+        className='rounded-md bg-fill-default px-3 py-2 text-sm font-medium text-white'
+        onClick={() => window.location.reload()}
+      >
+        Reload page
+      </button>
+    </div>
+  );
+}
+
+function RouteLoading() {
+  return (
+    <div
+      role='status'
+      aria-label='Loading page'
+      className='fixed inset-0 flex items-center justify-center bg-background-primary'
+    >
+      <span className='text-text-caption'>Loading…</span>
+    </div>
   );
 }
 

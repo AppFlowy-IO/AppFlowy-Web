@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { ERROR_CODE } from '@/application/constants';
 import { useDatabase, useDatabaseViewId } from '@/application/database-yjs';
@@ -19,7 +26,7 @@ import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
  *     refused. Surface an upgrade prompt instead of the loading skeleton
  *     so Free workspaces don't see a blank popover (regression image #41).
  *   - `other` — network failure, permission, transient cloud error. Keep
- *     a generic message; the user can retry by closing and reopening.
+ *     a generic message and expose an explicit retry action.
  */
 export type FormShareErrorKind = 'plan_required' | 'other';
 
@@ -55,6 +62,45 @@ type BootstrapOutcome =
   | { kind: 'success'; info: FormShareInfo }
   | { kind: 'failure'; error: unknown };
 
+type FormShareDelta = {
+  tier?: FormShareTier;
+  anonymous?: boolean;
+  submission_access?: FormSubmissionAccess;
+};
+
+interface FormShareMutationScope {
+  key: string;
+  workspaceId: string | undefined;
+  databaseId: string | undefined;
+  viewId: string | undefined;
+  active: boolean;
+  confirmed: FormShareInfo | null;
+  desired: FormShareInfo | null;
+  revision: number;
+  confirmedRevision: number;
+  draining: Promise<void> | null;
+}
+
+function createMutationScope(
+  key: string,
+  workspaceId: string | undefined,
+  databaseId: string | undefined,
+  viewId: string | undefined,
+): FormShareMutationScope {
+  return {
+    key,
+    workspaceId,
+    databaseId,
+    viewId,
+    active: true,
+    confirmed: null,
+    desired: null,
+    revision: 0,
+    confirmedRevision: 0,
+    draining: null,
+  };
+}
+
 /**
  * One GET-then-mint attempt against the cloud. The caller wraps this
  * in a retry loop because some failures are transient (folder cache
@@ -76,9 +122,10 @@ async function tryBootstrap(
 
     if (existing) return { kind: 'success', info: existing };
   } catch (e) {
-    // Fall through to mint — mint carries the authoritative answer.
-    // eslint-disable-next-line no-console
-    console.debug('[useFormShare] GET failed, falling through to mint', e);
+    // Never turn a failed read into a write. Auth, permission, network, and
+    // server failures must be surfaced/retried as reads; mint is valid only
+    // after a successful GET authoritatively reports no existing share.
+    return { kind: 'failure', error: e };
   }
 
   try {
@@ -104,18 +151,18 @@ async function tryBootstrap(
   }
 }
 
-function isTransientError(err: unknown): boolean {
+function isViewPropagationError(err: unknown): boolean {
   const e = err as { code?: number; message?: string } | null | undefined;
 
-  // RECORD_NOT_FOUND (-2) is the canonical "the cloud doesn't see
-  // this view yet" signal. NetworkError / -1 also retries — covers
-  // the case where the user opened the popover while offline for a
-  // second.
+  // RECORD_NOT_FOUND (-2) is the canonical "the cloud doesn't see this view
+  // yet" signal. Axios already retries transport failures, so code -1 must be
+  // surfaced for an explicit user retry instead of starting a second backoff
+  // loop here.
   if (e?.code === ERROR_CODE.RECORD_NOT_FOUND) return true;
 
-  if (e?.code === -1) return true;
-
-  if (e?.message && /not found|view.*does not exist/i.test(e.message)) {
+  // Older cloud builds did not consistently attach the canonical code. Keep a
+  // narrow message fallback that requires the error to identify the view.
+  if (e?.message && /view.*(?:not found|does not exist)|(?:not found|does not exist).*view/i.test(e.message)) {
     return true;
   }
 
@@ -155,6 +202,8 @@ export interface FormShareState {
   /// popover can render an upgrade prompt instead of an infinite
   /// loading skeleton (regression image #41).
   errorKind: FormShareErrorKind | null;
+  /** Re-runs bootstrap for the current form after a terminal load failure. */
+  retryBootstrap: () => void;
   setTier: (tier: FormShareTier) => Promise<void>;
   setAnonymous: (value: boolean) => Promise<void>;
   setSubmissionAccess: (access: FormSubmissionAccess) => Promise<void>;
@@ -168,12 +217,54 @@ export function useFormShare(): FormShareState {
   const database = useDatabase();
   const workspaceId = useCurrentWorkspaceIdOptional();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
+  const scopeKey = `${workspaceId ?? ''}\u0000${databaseId ?? ''}\u0000${viewId ?? ''}`;
+  const mutationScopeRef = useRef<FormShareMutationScope | null>(null);
+  const mutationScope = useMemo(
+    () => createMutationScope(
+      scopeKey,
+      workspaceId,
+      databaseId,
+      viewId,
+    ),
+    [databaseId, scopeKey, viewId, workspaceId],
+  );
 
   const [info, setInfo] = useState<FormShareInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<FormShareErrorKind | null>(null);
-  const busy = useRef(false);
+  const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
+  const [bootstrapRevision, setBootstrapRevision] = useState(0);
+
+  const retryBootstrap = useCallback(() => {
+    const scope = mutationScopeRef.current;
+
+    if (!scope?.active || !scope.workspaceId || !scope.databaseId || !scope.viewId) return;
+
+    // Commit loading synchronously with the interaction. The effect generation
+    // below still owns the request and cancellation lifecycle, so a retry cannot
+    // bypass the Form-to-Form scope guards.
+    setStateScopeKey(scope.key);
+    setError(null);
+    setErrorKind(null);
+    setIsLoading(true);
+    setBootstrapRevision((revision) => revision + 1);
+  }, []);
+
+  // A Form-to-Form switch can reuse this hook instance. Rotate the request
+  // scope before paint/user events, without mutating refs during a potentially
+  // abandoned concurrent render.
+  useLayoutEffect(() => {
+    const previous = mutationScopeRef.current;
+
+    if (previous && previous !== mutationScope) previous.active = false;
+    mutationScope.active = true;
+    mutationScopeRef.current = mutationScope;
+
+    return () => {
+      mutationScope.active = false;
+    };
+  }, [mutationScope]);
 
   // Bootstrap order:
   //   1. GET the existing token (cheap, idempotent — most common case
@@ -192,9 +283,20 @@ export function useFormShare(): FormShareState {
   // overwrite the new view's state — guard with a per-effect cancel
   // flag so only the latest bootstrap can call setState.
   useEffect(() => {
+    const scope = mutationScope;
+
+    if (mutationScopeRef.current !== scope) return;
+    scope.active = true;
+    setStateScopeKey(scopeKey);
+
     if (!viewId || !databaseId || !workspaceId) {
+      setInfo(null);
+      setError(null);
+      setErrorKind(null);
       setIsLoading(false);
-      return;
+      return () => {
+        scope.active = false;
+      };
     }
 
     let cancelled = false;
@@ -212,9 +314,9 @@ export function useFormShare(): FormShareState {
     setIsLoading(true);
     void (async () => {
       // GET-first path. Cheap when another client has already minted —
-      // most common case after the first session. Failures fall
-      // through to mint, which carries the authoritative answer
-      // (plan-gate refusal / success / actual server error).
+      // most common case after the first session. Only a successful empty
+      // read proceeds to mint; failed reads stay read-only and are classified
+      // or retried below.
       //
       // Both GET and mint depend on `check_form_view_scope` server-
       // side, which rejects with `RecordNotFound` when a freshly-
@@ -224,15 +326,17 @@ export function useFormShare(): FormShareState {
       // — retry the whole bootstrap a handful of times with backoff
       // before surfacing as a final-state error.
       const MAX_ATTEMPTS = 5;
-      const BACKOFF_MS = [250, 500, 1000, 1500, 2000];
+      const BACKOFF_MS = [250, 500, 1000, 1500];
       let lastError: unknown = null;
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-        if (cancelled) return;
+        if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
         const outcome = await tryBootstrap(workspaceId, databaseId, viewId);
 
-        if (cancelled) return;
+        if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
         if (outcome.kind === 'success') {
+          scope.confirmed = outcome.info;
+          scope.desired = outcome.info;
           setInfo(outcome.info);
           setError(null);
           setErrorKind(null);
@@ -249,14 +353,19 @@ export function useFormShare(): FormShareState {
           break;
         }
 
-        if (!isTransientError(outcome.error)) {
+        if (!isViewPropagationError(outcome.error)) {
           // Non-transient, non-plan-gate error (auth, 5xx, etc.)
           // — break out so we don't burn the user's time on a hopeless
           // retry loop.
           break;
         }
 
-        const delay = BACKOFF_MS[attempt] ?? 2000;
+        // There is no next attempt after the final failure. Break immediately
+        // rather than making the user wait through a backoff that cannot lead to
+        // another request.
+        if (attempt + 1 >= MAX_ATTEMPTS) break;
+
+        const delay = BACKOFF_MS[attempt] ?? 1500;
 
         // eslint-disable-next-line no-console
         console.debug(
@@ -266,7 +375,7 @@ export function useFormShare(): FormShareState {
         await wait(delay);
       }
 
-      if (cancelled) return;
+      if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
       const message =
         (lastError as { message?: string })?.message ?? 'load failed';
       const kind = classifyError(lastError);
@@ -283,44 +392,109 @@ export function useFormShare(): FormShareState {
 
     return () => {
       cancelled = true;
+      scope.active = false;
     };
-  }, [databaseId, viewId, workspaceId]);
+  }, [bootstrapRevision, databaseId, mutationScope, scopeKey, viewId, workspaceId]);
 
-  const patch = useCallback(
-    async (delta: {
-      tier?: FormShareTier;
-      anonymous?: boolean;
-      submission_access?: FormSubmissionAccess;
-    }) => {
-      if (!viewId || !databaseId || !workspaceId) return;
-      if (busy.current) return; // race guard
-      busy.current = true;
-      try {
-        const next = await patchFormShare(
-          workspaceId,
-          databaseId,
-          viewId,
-          delta,
-        );
+  const patch = useCallback((delta: FormShareDelta): Promise<void> => {
+    const scope = mutationScopeRef.current;
 
-        setInfo(next);
-        setError(null);
-        setErrorKind(null);
-      } catch (e) {
-        const message = (e as { message?: string })?.message ?? 'patch failed';
+    if (
+      !scope?.active ||
+      !scope.workspaceId ||
+      !scope.databaseId ||
+      !scope.viewId ||
+      !scope.confirmed ||
+      !scope.desired
+    ) {
+      return Promise.resolve();
+    }
 
-        setError(message);
-        setErrorKind(classifyError(e));
-      } finally {
-        busy.current = false;
+    const mutationWorkspaceId = scope.workspaceId;
+    const mutationDatabaseId = scope.databaseId;
+    const mutationViewId = scope.viewId;
+
+    // Apply immediately so subsequent rapid controls derive from the user's
+    // latest choice, not from the last network response. The drain sends a
+    // complete desired state, allowing intermediate clicks to coalesce safely.
+    scope.desired = { ...scope.desired, ...delta };
+    scope.revision += 1;
+    setInfo(scope.desired);
+    setError(null);
+    setErrorKind(null);
+
+    if (scope.draining) return scope.draining;
+
+    const drainPromise = (async () => {
+      while (
+        mutationScopeRef.current === scope &&
+        scope.active &&
+        scope.confirmed &&
+        scope.desired &&
+        scope.confirmedRevision < scope.revision
+      ) {
+        const revision = scope.revision;
+        const desired = scope.desired;
+
+        try {
+          const next = await patchFormShare(
+            mutationWorkspaceId,
+            mutationDatabaseId,
+            mutationViewId,
+            {
+              tier: desired.tier,
+              anonymous: desired.anonymous,
+              submission_access: desired.submission_access,
+            },
+          );
+
+          if (mutationScopeRef.current !== scope || !scope.active) return;
+
+          scope.confirmed = next;
+          scope.confirmedRevision = revision;
+          setError(null);
+          setErrorKind(null);
+
+          if (scope.revision === revision) {
+            scope.desired = next;
+            setInfo(next);
+          } else {
+            // A later choice arrived while this request was in flight. Keep
+            // that optimistic state visible; the next loop iteration sends it.
+            setInfo(scope.desired);
+          }
+        } catch (e) {
+          if (mutationScopeRef.current !== scope || !scope.active) return;
+
+          // If the user made a newer choice, still attempt that complete final
+          // state. Otherwise roll the optimistic value back to the last server
+          // confirmation and surface the failure.
+          if (scope.revision !== revision) continue;
+
+          const message = (e as { message?: string })?.message ?? 'patch failed';
+
+          scope.desired = scope.confirmed;
+          scope.confirmedRevision = scope.revision;
+          setInfo(scope.confirmed);
+          setError(message);
+          setErrorKind(classifyError(e));
+          return;
+        }
       }
-    },
-    [databaseId, viewId, workspaceId],
-  );
+    })();
+
+    scope.draining = drainPromise;
+    void drainPromise.finally(() => {
+      if (scope.draining === drainPromise) scope.draining = null;
+    });
+    return drainPromise;
+  }, []);
 
   const setTier = useCallback(
     async (tier: FormShareTier) => {
-      if (!info) return;
+      const current = mutationScopeRef.current?.desired;
+
+      if (!current) return;
       // Anonymous coercion is intentionally minimal — Notion-parity
       // model (Image #51): the toggle controls anonymous, the picker
       // controls tier, they do not bleed.
@@ -333,22 +507,24 @@ export function useFormShare(): FormShareState {
       //     valid combination (e.g. anonymous team surveys); flipping
       //     tier through the picker must not silently re-identify
       //     submissions.
-      const anonymous = tier === 'public' ? true : info.anonymous;
+      const anonymous = tier === 'public' ? true : current.anonymous;
       const submission_access = coerceSubmissionAccess(
         tier,
         anonymous,
-        info.submission_access,
+        current.submission_access,
       );
 
       await patch({ tier, anonymous, submission_access });
     },
-    [info, patch],
+    [patch],
   );
 
   const setAnonymous = useCallback(
     async (value: boolean) => {
-      if (!info) return;
-      if (info.tier === 'public') return; // cloud forces it
+      const current = mutationScopeRef.current?.desired;
+
+      if (!current) return;
+      if (current.tier === 'public') return; // cloud forces it
       // No tier promotion — Notion-parity. Anonymous under Workspace
       // tier is a first-class state (image #51: signed-in workspace
       // members submit, but their identity is not recorded in the
@@ -357,31 +533,44 @@ export function useFormShare(): FormShareState {
       // explicitly wanted Workspace + Anonymous (and triggered the
       // image #48 confusion when they switched back).
       const submission_access = coerceSubmissionAccess(
-        info.tier,
+        current.tier,
         value,
-        info.submission_access,
+        current.submission_access,
       );
 
       await patch({ anonymous: value, submission_access });
     },
-    [info, patch],
+    [patch],
   );
 
   const setSubmissionAccess = useCallback(
     async (access: FormSubmissionAccess) => {
-      if (!info) return;
-      const coerced = coerceSubmissionAccess(info.tier, info.anonymous, access);
+      const current = mutationScopeRef.current?.desired;
+
+      if (!current) return;
+      const coerced = coerceSubmissionAccess(current.tier, current.anonymous, access);
 
       await patch({ submission_access: coerced });
     },
-    [info, patch],
+    [patch],
   );
+
+  // Passive effects have not run yet on the first render after a tab switch.
+  // Hide the previous scope synchronously so its URL/tier cannot flash or be
+  // acted on while the new scope bootstraps.
+  const stateMatchesScope = stateScopeKey === scopeKey;
+  const scopedInfo = stateMatchesScope ? info : null;
+  const scopedIsLoading = stateMatchesScope
+    ? isLoading
+    : Boolean(viewId && databaseId && workspaceId);
+  const scopedError = stateMatchesScope ? error : null;
+  const scopedErrorKind = stateMatchesScope ? errorKind : null;
 
   const resolveShareUrl = useCallback(() => {
     // Prefer the server-computed URL (built from `APPFLOWY_WEB_URL`).
     // This is the same URL the desktop reads — single source of truth
     // across all clients.
-    if (info?.share_url) return info.share_url;
+    if (scopedInfo?.share_url) return scopedInfo.share_url;
     // Fallbacks (in priority order):
     //   1. Same-origin guess: web is hosted alongside the cloud, so
     //      `{origin}/form/{token}` resolves to our own FormPage route.
@@ -390,11 +579,11 @@ export function useFormShare(): FormShareState {
     //      something identifiable to paste even before the bootstrap
     //      completes.
     const base = `${window.location.origin}/form`;
-    const token = info?.token;
+    const token = scopedInfo?.token;
 
     if (!token) return `${base}/${viewId ?? ''}`;
     return `${base}/${token}`;
-  }, [info, viewId]);
+  }, [scopedInfo, viewId]);
 
   // Memo the returned object so `FormShareProvider`'s context value has a
   // stable identity across renders that didn't actually change anything.
@@ -403,15 +592,26 @@ export function useFormShare(): FormShareState {
   // to re-render even when info/setters are unchanged.
   return useMemo(
     () => ({
-      info,
-      isLoading,
-      error,
-      errorKind,
+      info: scopedInfo,
+      isLoading: scopedIsLoading,
+      error: scopedError,
+      errorKind: scopedErrorKind,
+      retryBootstrap,
       setTier,
       setAnonymous,
       setSubmissionAccess,
       resolveShareUrl,
     }),
-    [info, isLoading, error, errorKind, setTier, setAnonymous, setSubmissionAccess, resolveShareUrl],
+    [
+      scopedInfo,
+      scopedIsLoading,
+      scopedError,
+      scopedErrorKind,
+      retryBootstrap,
+      setTier,
+      setAnonymous,
+      setSubmissionAccess,
+      resolveShareUrl,
+    ],
   );
 }

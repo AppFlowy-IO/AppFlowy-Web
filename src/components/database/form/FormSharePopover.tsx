@@ -34,6 +34,7 @@ export function FormSharePopover({
   errorKind,
   errorMessage,
   onUpgradePlan,
+  onRetry,
   setTier,
   setAnonymous,
   url,
@@ -54,6 +55,7 @@ export function FormSharePopover({
   /// the popover alone is otherwise the only diagnostic surface.
   errorMessage: string | null;
   onUpgradePlan: () => void;
+  onRetry: () => void;
   setTier: (t: FormShareTier) => Promise<void>;
   setAnonymous: (v: boolean) => Promise<void>;
   // `setSubmissionAccess` removed from the surface while the
@@ -104,15 +106,14 @@ export function FormSharePopover({
           //     the cloud's `is_workspace_on_paid_plan` gate refuses
           //     the mint — without this branch the skeleton would
           //     animate forever).
-          //   * other error → generic non-skeleton message so the user
-          //     can close + retry instead of staring at a "loading"
-          //     indicator that won't resolve.
+          //   * other error → generic non-skeleton message with an explicit
+          //     retry instead of an indicator that won't resolve.
           isLoading ? (
             <ShareLoading />
           ) : errorKind === 'plan_required' ? (
             <UpgradePrompt onUpgradePlan={onUpgradePlan} />
           ) : (
-            <GenericLoadFailure errorMessage={errorMessage} />
+            <GenericLoadFailure errorMessage={errorMessage} onRetry={onRetry} />
           )
         ) : (
           <>
@@ -249,17 +250,23 @@ function UpgradePrompt({ onUpgradePlan }: { onUpgradePlan: () => void }) {
  * permission / cloud-side validation requires reproducing locally
  * with devtools open.
  */
-function GenericLoadFailure({ errorMessage }: { errorMessage: string | null }) {
+function GenericLoadFailure({
+  errorMessage,
+  onRetry,
+}: {
+  errorMessage: string | null;
+  onRetry: () => void;
+}) {
   return (
     <div
       data-testid='form-share-popover-error'
       className='flex flex-col items-center gap-2 px-4 py-5 text-center'
     >
       <div className='text-sm font-medium'>Couldn&apos;t load share settings</div>
-      <p className='text-xs text-text-caption'>
-        Close this popover and try again. If the problem persists, refresh
-        the page.
-      </p>
+      <p className='text-xs text-text-caption'>Try again. If the problem persists, refresh the page.</p>
+      <Button data-testid='form-share-popover-retry' size='sm' onClick={onRetry}>
+        Retry
+      </Button>
       {errorMessage && (
         <p
           data-testid='form-share-popover-error-detail'

@@ -15,7 +15,6 @@ import {
 } from '@/components/database/components/conditions/context';
 import { DatabaseSearchProvider } from '@/components/database/components/conditions/DatabaseSearchContext';
 import { DatabaseTabs } from '@/components/database/components/tabs';
-import { FormBuilderView } from '@/components/database/form';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { GridGroupingProvider } from '@/components/database/grid/GridGroupingContext';
@@ -42,6 +41,11 @@ import DatabaseConditionsPanel from 'src/components/database/components/conditio
 
 const List = lazy(() => import('@/components/database/list/List'));
 const Gallery = lazy(() => import('@/components/database/gallery'));
+const FormBuilderView = lazy(() =>
+  import('@/components/database/form/FormBuilderView').then(({ FormBuilderView: Component }) => ({
+    default: Component,
+  }))
+);
 
 function DatabaseViews({
   onChangeView,
@@ -346,7 +350,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.Form:
-        return <FormBuilderView />;
+        return <FormBuilderView key={activeViewId} />;
       case DatabaseViewLayout.List:
         return <List />;
       case DatabaseViewLayout.Gallery:

@@ -1,21 +1,12 @@
 import { Plus } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
-import {
-  parseSelectOptionTypeOptions,
-  useAddSelectOption,
-  useDatabaseFields,
-  useDatabaseFieldsVersion,
-} from '@/application/database-yjs';
-import {
-  generateOptionId,
-  getColorByOption,
-} from '@/application/database-yjs/fields/select-option/utils';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields/select-option/parse';
+import type { SelectOption } from '@/application/database-yjs/fields/select-option/select_option.type';
+import { generateOptionId, getColorByOption } from '@/application/database-yjs/fields/select-option/utils';
+import type { YDatabaseField } from '@/application/types';
 import { Tag } from '@/components/_shared/tag';
-import {
-  SelectOptionColorMap,
-  SelectOptionFgColorMap,
-} from '@/components/database/components/cell/cell.const';
+import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
 /**
  * Editable option list shown inside the form-builder card for
@@ -24,32 +15,102 @@ import {
  * sees existing options as chips and a "+ Add option" affordance that
  * expands inline into a text input.
  *
- * Persistence goes through `useAddSelectOption`, the same path the
- * grid header's type-option editor uses — so chip colors / IDs stay
- * consistent across the form-builder and Grid view, and a desktop
+ * Persistence goes through the parent's shared select-option dispatcher, the
+ * same write path the grid header's type-option editor uses — so chip colors /
+ * IDs stay consistent across the form-builder and Grid view, and a desktop
  * client editing the same field sees the new option immediately.
  *
  * F1 scope: add only. Rename / reorder / delete still happen via the
  * Grid header's option editor (the desktop's inline 3-dot per chip is
  * a follow-up).
  */
-export function FormSelectOptionsEditor({ fieldId }: { fieldId: string }) {
-  const fields = useDatabaseFields();
-  // `fieldsVersion` invalidates the option list when any field mutates —
-  // including the type-option blob we're about to read. Y.Map identity
-  // alone is stable across mutations.
-  const fieldsVersion = useDatabaseFieldsVersion();
-  const addOption = useAddSelectOption(fieldId);
+type SelectOptionsStore = {
+  getSnapshot: () => SelectOption[];
+  subscribe: (onStoreChange: () => void) => () => void;
+};
 
-  const options = useMemo(() => {
-    if (!fields) return [];
-    const field = fields.get(fieldId);
+export type AddFormSelectOption = (fieldId: string, option: SelectOption) => void;
 
-    if (!field) return [];
-    return parseSelectOptionTypeOptions(field).options ?? [];
-    // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldId, fieldsVersion]);
+const stores = new WeakMap<YDatabaseField, SelectOptionsStore>();
+
+function optionsEqual(a: readonly SelectOption[], b: readonly SelectOption[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  return a.every((option, index) => {
+    const other = b[index];
+
+    return option.id === other.id && option.name === other.name && option.color === other.color;
+  });
+}
+
+function createSelectOptionsStore(field: YDatabaseField): SelectOptionsStore {
+  const subscribers = new Set<() => void>();
+  let snapshot = parseSelectOptionTypeOptions(field).options ?? [];
+  let observing = false;
+
+  const refresh = () => {
+    const next = parseSelectOptionTypeOptions(field).options ?? [];
+
+    if (optionsEqual(snapshot, next)) return false;
+    snapshot = next;
+    return true;
+  };
+
+  const publish = () => {
+    if (!refresh()) return;
+    subscribers.forEach((subscriber) => subscriber());
+  };
+
+  return {
+    getSnapshot: () => {
+      // A render may be abandoned before subscribe() is installed. Always
+      // refresh an unobserved store so that cached options cannot go stale.
+      if (!observing) {
+        refresh();
+      }
+
+      return snapshot;
+    },
+    subscribe: (onStoreChange) => {
+      subscribers.add(onStoreChange);
+      if (!observing) {
+        observing = true;
+        field.observeDeep(publish);
+        if (refresh()) subscribers.forEach((subscriber) => subscriber());
+      }
+
+      return () => {
+        subscribers.delete(onStoreChange);
+        if (subscribers.size === 0 && observing) {
+          observing = false;
+          field.unobserveDeep(publish);
+        }
+      };
+    },
+  };
+}
+
+function useSelectOptions(field: YDatabaseField): SelectOption[] {
+  let store = stores.get(field);
+
+  if (!store) {
+    store = createSelectOptionsStore(field);
+    stores.set(field, store);
+  }
+
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+}
+
+export function FormSelectOptionsEditor({
+  fieldId,
+  field,
+  addOption,
+}: {
+  fieldId: string;
+  field: YDatabaseField;
+  addOption: AddFormSelectOption;
+}) {
+  const options = useSelectOptions(field);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -72,9 +133,7 @@ export function FormSelectOptionsEditor({ fieldId }: { fieldId: string }) {
     // YJS writer also bails on exact-name collisions but the local
     // case-insensitive check avoids a no-op round-trip and preserves
     // the input for the creator to edit.
-    const exists = options.some(
-      (o) => o.name.toLowerCase() === value.toLowerCase(),
-    );
+    const exists = options.some((o) => o.name.toLowerCase() === value.toLowerCase());
 
     if (exists) {
       setDraft('');
@@ -83,7 +142,7 @@ export function FormSelectOptionsEditor({ fieldId }: { fieldId: string }) {
       return;
     }
 
-    addOption({
+    addOption(fieldId, {
       id: generateOptionId(),
       name: value,
       color: getColorByOption(options),

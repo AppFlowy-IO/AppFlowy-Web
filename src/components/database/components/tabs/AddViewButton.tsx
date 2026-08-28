@@ -22,11 +22,12 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
   const { t } = useTranslation();
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Form-view Pro gate — single source of truth in
   // `useCanAuthorFormView` (covers dev / test / self-hosted / Pro in
   // one place). Mirrors the desktop's `canCreateFormView`.
-  const canAuthor = useCanAuthorFormView();
+  const { canAuthor, ensureCanAuthor } = useCanAuthorFormView({ enabled: menuOpen });
 
   // `?action=change_plan` is observed by the `UpgradePlan` widget
   // mounted in `Workspaces`, which auto-opens the compare-plan modal.
@@ -44,9 +45,21 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
     // Pro gate at click time: Form on Free plan opens the upgrade
     // modal instead of creating a view the user can't share. Other
     // layouts proceed without gating.
-    if (layout === DatabaseViewLayout.Form && !canAuthor) {
-      openUpgradePlan();
-      return;
+    if (layout === DatabaseViewLayout.Form) {
+      if (canAuthor === null) setAddLoading(true);
+      const allowed = canAuthor ?? (await ensureCanAuthor());
+
+      if (allowed === null) {
+        setAddLoading(false);
+        toast.error('Could not verify your workspace plan. Please try again.');
+        return;
+      }
+
+      if (!allowed) {
+        setAddLoading(false);
+        openUpgradePlan();
+        return;
+      }
     }
 
     onBeforeAddView?.();
@@ -76,7 +89,7 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           aria-label={t('grid.settings.addView', { defaultValue: 'Add view' })}

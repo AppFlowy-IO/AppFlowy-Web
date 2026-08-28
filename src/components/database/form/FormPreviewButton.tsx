@@ -1,23 +1,19 @@
 import { Dialog } from '@mui/material';
 import { Eye } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 
-import {
-  useDatabaseFields,
-  useDatabaseFieldsVersion,
-  useFormLayoutSnapshot,
-} from '@/application/database-yjs';
-import { useDatabaseView } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
-import {
-  PublicFormSchema,
-  PublicOption,
-  PublicQuestion,
-  PublicQuestionKind,
-} from '@/application/types/form';
+import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
+import type { PublicFormSchema, PublicOption, PublicQuestion, PublicQuestionKind } from '@/application/types/form';
 import { YjsDatabaseKey } from '@/application/types';
-import { FormBody } from '@/components/form/FormBody';
+import type { YDatabaseField, YDatabaseFields } from '@/application/types';
 import { Button } from '@/components/ui/button';
+
+const FormBody = lazy(() =>
+  import('@/components/form/FormBody').then(({ FormBody: Component }) => ({
+    default: Component,
+  }))
+);
 
 // Synthetic placeholder options shown when a select question has none.
 // Mirrors `_readSelectOptions`'s fallback in the desktop preview
@@ -46,16 +42,21 @@ const DIALOG_PAPER_PROPS = {
  * preview live: every per-question edit ripples into the preview on
  * the next open without a fetch round-trip.
  */
-export function FormPreviewButton() {
+export function FormPreviewButton({
+  snapshot,
+  fieldsMap,
+  fieldsVersion,
+  viewName,
+}: {
+  snapshot: FormLayoutSnapshot;
+  fieldsMap: YDatabaseFields | undefined;
+  fieldsVersion: number;
+  viewName: string;
+}) {
   const [open, setOpen] = useState(false);
-  const snapshot = useFormLayoutSnapshot();
-  const fieldsMap = useDatabaseFields();
-  const fieldsVersion = useDatabaseFieldsVersion();
-  const view = useDatabaseView();
   // Use the actual form view name as the preview title (desktop:
   // `form_preview_page.dart` falls back to "Form title" when empty —
   // matching that here too).
-  const viewName = view?.get(YjsDatabaseKey.name) ?? '';
   const previewTitle = viewName || 'Form title';
 
   // Gate the heavy compute (JSON.parse per select field, O(N) over the
@@ -80,10 +81,7 @@ export function FormPreviewButton() {
       // For select questions with no real options yet, fall back to
       // the synthetic placeholder list so the creator sees the row
       // shape (matches desktop `_readSelectOptions` fallback).
-      const realOptions =
-        kind === 'single_select' || kind === 'multi_select'
-          ? extractOptions(field)
-          : undefined;
+      const realOptions = kind === 'single_select' || kind === 'multi_select' ? extractOptions(field) : undefined;
       const previewOptions =
         kind === 'single_select' || kind === 'multi_select'
           ? realOptions && realOptions.length > 0
@@ -126,24 +124,18 @@ export function FormPreviewButton() {
 
   return (
     <>
-      <Button
-        data-testid='form-preview-button'
-        variant='ghost'
-        size='sm'
-        className='gap-1'
-        onClick={handleOpen}
-      >
+      <Button data-testid='form-preview-button' variant='ghost' size='sm' className='gap-1' onClick={handleOpen}>
         <Eye size={14} />
         Preview
       </Button>
-      <Dialog
-        open={open}
-        onClose={handleClose}
-        PaperProps={DIALOG_PAPER_PROPS}
-      >
+      <Dialog open={open} onClose={handleClose} PaperProps={DIALOG_PAPER_PROPS}>
         {open && schema && (
           <div data-testid='form-preview-dialog'>
-            <FormBody token='preview' schema={schema} previewMode />
+            <Suspense
+              fallback={<div className='px-6 py-10 text-center text-sm text-text-caption'>Loading preview…</div>}
+            >
+              <FormBody token='preview' schema={schema} previewMode />
+            </Suspense>
           </div>
         )}
       </Dialog>
@@ -179,8 +171,7 @@ function toPublicKind(ty: FieldType): PublicQuestionKind | null {
  * select share the same `options` shape in the YJS collab; the
  * `type_option` map is keyed by the field-type number-as-string.
  */
-function extractOptions(field: ReturnType<NonNullable<ReturnType<typeof useDatabaseFields>>['get']>): PublicOption[] | undefined {
-  if (!field) return undefined;
+function extractOptions(field: YDatabaseField): PublicOption[] | undefined {
   const typeOption = field.get(YjsDatabaseKey.type_option);
 
   if (!typeOption) return undefined;

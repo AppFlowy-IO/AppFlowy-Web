@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
-import { getPublicFormSchema } from '@/application/services/js-services/http';
+import { getPublicFormSchema } from '@/application/services/js-services/http/form-api';
 import { PublicFormResponse, PublicFormSchema } from '@/application/types/form';
-import NotFound from '@/components/error/NotFound';
 import { Button } from '@/components/ui/button';
 
-import { FormBody } from './FormBody';
+const FormBody = lazy(() => import('./FormBody').then(({ FormBody }) => ({ default: FormBody })));
 
 /**
  * Container component for the public form page. Owns the fetch + branch
@@ -68,7 +67,11 @@ export function FormView({ token }: { token: string }) {
     case 'loading':
       return <FormLoading />;
     case 'active':
-      return <FormBody token={token} schema={status.schema} />;
+      return (
+        <Suspense fallback={<FormLoading label='Loading form…' />}>
+          <FormBody token={token} schema={status.schema} />
+        </Suspense>
+      );
     case 'auth_required':
       return (
         <FormMessageLayout
@@ -91,35 +94,26 @@ export function FormView({ token }: { token: string }) {
         />
       );
     case 'closed':
-      return (
-        <FormMessageLayout
-          testid='public-form-closed'
-          title='Form closed'
-          body={status.message}
-        />
-      );
+      return <FormMessageLayout testid='public-form-closed' title='Form closed' body={status.message} />;
     case 'error':
       // 404 / 410 surface as a clean Not Found to avoid leaking server
       // internals; everything else gets a generic error layout.
       if (status.code === 404 || status.code === 410) {
-        return <NotFound />;
+        return (
+          <FormMessageLayout
+            testid='public-not-found'
+            title='Form not found'
+            body='This form does not exist or is no longer available.'
+          />
+        );
       }
 
-      return (
-        <FormMessageLayout
-          title='Couldn’t load this form'
-          body={status.message}
-        />
-      );
+      return <FormMessageLayout title='Couldn’t load this form' body={status.message} />;
   }
 }
 
-function FormLoading() {
-  return (
-    <div className='flex h-screen items-center justify-center text-text-caption'>
-      Loading…
-    </div>
-  );
+function FormLoading({ label = 'Loading…' }: { label?: string }) {
+  return <div className='flex h-screen items-center justify-center text-text-caption'>{label}</div>;
 }
 
 function FormMessageLayout({
@@ -134,10 +128,7 @@ function FormMessageLayout({
   testid?: string;
 }) {
   return (
-    <div
-      data-testid={testid}
-      className='flex h-screen flex-col items-center justify-center gap-3 px-6 text-center'
-    >
+    <div data-testid={testid} className='flex h-screen flex-col items-center justify-center gap-3 px-6 text-center'>
       <h1 className='text-2xl font-semibold'>{title}</h1>
       <p className='max-w-md text-text-caption'>{body}</p>
       {action}
