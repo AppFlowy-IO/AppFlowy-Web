@@ -9,7 +9,7 @@ import {
   FORM_REQUIRED,
 } from '@/application/database-yjs/form-questions';
 import type { YDatabaseFormFieldSettings, YDatabaseView } from '@/application/types';
-import { YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 
 import { useFormLayoutSnapshot } from '../useFormLayoutSnapshot';
 
@@ -31,6 +31,7 @@ function createView(id: string, questionId: string, description: string): YDatab
   entry.set(FORM_DESCRIPTION, description);
   entry.set(FORM_ORDER, 0);
   settings.set(questionId, entry);
+  view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
   view.set(YjsDatabaseKey.form_field_settings, settings);
   return view;
 }

@@ -4,11 +4,7 @@ import * as Y from 'yjs';
 import { deleteCollabDB, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { invalidateViewCache } from '@/application/services/js-services/cached-api';
-import {
-  fetchDatabaseCollab,
-  fetchPageCollab,
-  fetchRowDocumentCollab,
-} from '@/application/services/js-services/fetch';
+import { fetchDatabaseCollab, fetchPageCollab, fetchRowDocumentCollab } from '@/application/services/js-services/fetch';
 import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { getDatabaseIdFromDoc, openRowSubDocument, openView } from '@/application/view-loader';
@@ -129,12 +125,39 @@ describe('view-loader database cache identity', () => {
     expect(getDatabaseIdFromDoc(canonicalDoc)).toBe(databaseId);
     expect(mockOpenCollabDBWithProvider).toHaveBeenCalledWith(databaseId, { awaitSync: true });
     expect(mockOpenCollabDBWithProvider).toHaveBeenCalledWith(viewId, { skipCache: true });
-    expect(mockEnqueueOutboxUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      objectId: databaseId,
-      collabType: Types.Database,
-      payload: expect.any(Uint8Array),
-    }));
+    expect(mockEnqueueOutboxUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectId: databaseId,
+        collabType: Types.Database,
+        payload: expect.any(Uint8Array),
+      })
+    );
     expect(mockFetchPageCollab).not.toHaveBeenCalled();
+  });
+
+  it('opens Form views as canonical database collabs', async () => {
+    const viewId = '00000000-0000-4000-8000-000000000021';
+    const databaseId = '00000000-0000-4000-8000-000000000022';
+    const canonicalDoc = createCompleteDatabaseDoc(databaseId, databaseId, viewId);
+    const legacyDoc = createEmptyDoc(viewId);
+    const docs = new Map([
+      [databaseId, canonicalDoc],
+      [viewId, legacyDoc],
+    ]);
+
+    mockOpenCollabDBWithProvider.mockImplementation(async (name: string) => {
+      const doc = docs.get(name);
+
+      if (!doc) throw new Error(`Unexpected open ${name}`);
+      return createProvider(doc) as never;
+    });
+
+    const result = await openView('workspace-id', viewId, ViewLayout.Form, { databaseId });
+
+    expect(result.doc).toBe(canonicalDoc);
+    expect(result.collabType).toBe(Types.Database);
+    expect(mockOpenCollabDBWithProvider).toHaveBeenCalledWith(databaseId, { awaitSync: true });
+    expect(mockOpenCollabDB).not.toHaveBeenCalledWith(viewId);
   });
 
   it('fetches by viewId into the canonical databaseId cache when local cache is empty', async () => {

@@ -905,12 +905,11 @@ export interface YDatabaseView extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.field_settings): YDatabaseFieldSettings;
 
   /// Per-view form-builder map; only present on Form-layout views.
-  /// Missing on every other layout (Grid/Board/Calendar/etc). Treat
-  /// `undefined` as "this view never authored form questions" — the
-  /// projection should render empty, not synthesize one entry per field.
-  get(
-    key: YjsDatabaseKey.form_field_settings,
-  ): YDatabaseFormFieldSettings | undefined;
+  /// Missing on every other layout (Grid/Board/Calendar/etc). On a Form
+  /// layout, a missing map is the legacy opt-out shape: fields in that
+  /// view's `field_orders` default to included until the decided sentinel
+  /// switches the projection to builder opt-in mode.
+  get(key: YjsDatabaseKey.form_field_settings): YDatabaseFormFieldSettings | undefined;
 
   get(key: YjsDatabaseKey.field_orders): YDatabaseFieldOrders;
 
@@ -1102,11 +1101,12 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
 /// `FormFieldSettingsByFieldIdMap` in
 /// `libs/collab/src/database/views/form_field_settings.rs` —
 /// keys are field ids, values are the `FormFieldSettings` map. The
-/// map is the source of truth for the projection model (plan §1.4.1):
-/// a field is on the form iff an entry exists for it; the entries are
-/// rendered in `order` ascending. Two sentinel keys (`__form_decided__`
-/// and `__form_description__`) carry form-level state — readers must
-/// skip them when projecting per-question entries.
+/// map stores projection overrides. Without the `__form_decided__`
+/// sentinel, legacy opt-out semantics include each view field by default;
+/// with the sentinel, builder opt-in semantics require an explicit included
+/// entry. Entries render in `order` ascending, with view field order as the
+/// stable tie-break. `__form_description__` carries form-level text; readers
+/// must skip both sentinels when projecting per-question entries.
 export interface YDatabaseFormFieldSettings extends Y.Map<unknown> {
   // The value type is intentionally a permissive `Y.Map<unknown>` rather
   // than a typed `YDatabaseFormFieldSetting` because the per-key set is
@@ -1245,6 +1245,7 @@ export const layoutMap = {
   [ViewLayout.Chart]: 'chart',
   [ViewLayout.List]: 'list',
   [ViewLayout.Gallery]: 'gallery',
+  [ViewLayout.Form]: 'form',
 };
 
 export const databaseLayoutMap = {
@@ -1254,6 +1255,7 @@ export const databaseLayoutMap = {
   [DatabaseViewLayout.Chart]: 'chart',
   [DatabaseViewLayout.List]: 'list',
   [DatabaseViewLayout.Gallery]: 'gallery',
+  [DatabaseViewLayout.Form]: 'form',
 };
 
 export enum FontLayout {

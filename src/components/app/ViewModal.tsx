@@ -431,6 +431,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Chart:
       case ViewLayout.List:
       case ViewLayout.Gallery:
+      case ViewLayout.Form:
         return DatabaseView;
       default:
         return null;

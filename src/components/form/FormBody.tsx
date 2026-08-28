@@ -317,7 +317,7 @@ async function uploadPendingFile(token: string, attachment: FormFileAttachment):
     content_type: attachment.file.type || undefined,
   });
 
-  await uploadFormFileToPresignedUrl(mint.upload_url, attachment.file);
+  await uploadFormFileToPresignedUrl(mint.upload_url, attachment.file, mint.upload_content_type);
 
   return {
     file_id: mint.file_id,

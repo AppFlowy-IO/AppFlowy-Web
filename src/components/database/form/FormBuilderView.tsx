@@ -16,7 +16,8 @@ import {
   useFormWriter,
 } from '@/application/database-yjs';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { useDatabaseContextOptional, useDatabaseView } from '@/application/database-yjs/context';
+import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
+import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { useAddSelectOptionDispatch } from '@/application/database-yjs/dispatch';
 import type { FormWriter } from '@/application/database-yjs/form-writer';
 import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -24,7 +25,6 @@ import type { YDatabaseField } from '@/application/types';
 
 import { FormAutoCreate } from './FormAutoCreate';
 import { FormAccessBanner } from './FormAccessBanner';
-import { FormFormDescription } from './FormFormDescription';
 import { FormPreviewButton } from './FormPreviewButton';
 import { FormQuestionCard } from './FormQuestionCard';
 import { FormQuestionCardReadOnly } from './FormQuestionCardReadOnly';
@@ -76,8 +76,6 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
   const fieldsVersion = useDatabaseFieldsVersion();
   const writer = useFormWriter();
   const addSelectOption = useAddSelectOptionDispatch();
-  const view = useDatabaseView();
-  const viewName = view?.get(YjsDatabaseKey.name) ?? '';
   const databaseId = ctx?.databaseDoc
     .getMap(YjsEditorKey.data_section)
     .get(YjsEditorKey.database)
@@ -120,6 +118,12 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
 
         if (!field) return null;
         const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+        // The legacy opt-out snapshot contains every field-order entry, while
+        // the cloud exposes only respondent-editable field kinds. Apply the
+        // shared cloud/desktop type allow-list before rendering authoring
+        // cards so computed fields and the Form respondent field stay hidden.
+        if (!isFormQuestionFieldType(fieldType)) return null;
 
         return {
           questionId: q.fieldId,
@@ -165,7 +169,11 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
       const questionId = resolvedRef.current[from]?.questionId;
 
       if (!questionId) return;
-      writer.reorderQuestion(questionId, to);
+      writer.reorderQuestion(
+        questionId,
+        to,
+        resolvedRef.current.map((question) => question.questionId)
+      );
     },
     // `writer` is memoized on view identity in `useFormWriter`, so
     // this callback only changes on a view swap — never on snapshot
@@ -174,59 +182,63 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
   );
 
   return (
-    <div className='mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 py-10'>
-      {/*
+    <div
+      data-testid='form-builder-scroll-container'
+      className='appflowy-scroller h-full min-h-0 w-full flex-1 overflow-y-auto overflow-x-hidden'
+    >
+      <div className='mx-auto flex min-h-full w-full max-w-2xl flex-col gap-4 px-6 py-10'>
+        {/*
         Toolbar / banner / auto-create modal are authoring-only. A
         respondent / view-only member sees the same questions but none
         of the editor chrome — same posture as the desktop's
         `_FormToolbar` and `_FormAccessBanner` gating on read-only.
       */}
-      {!readOnly && (
-        <header className='flex items-center justify-end gap-2'>
-          <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} viewName={viewName} />
-          <FormShareButton />
-        </header>
-      )}
-      <FormTitle readOnly={readOnly} />
-      <FormFormDescription description={snapshot.description} readOnly={readOnly} onChange={writer.setFormDescription} />
-      {!readOnly && <FormAccessBanner />}
-      {!readOnly && !snapshot.decided && snapshot.questions.length === 0 && (
-        <FormAutoCreate
-          snapshot={snapshot}
-          fields={fields}
-          fieldsVersion={fieldsVersion}
-          writer={writer}
-          ensureHydrated={ensureFormHydrated}
-        />
-      )}
+        {!readOnly && (
+          <header className='flex items-center justify-end gap-2'>
+            <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
+            <FormShareButton />
+          </header>
+        )}
+        <FormTitle readOnly={readOnly} />
+        {!readOnly && <FormAccessBanner />}
+        {!readOnly && !snapshot.decided && snapshot.questions.length === 0 && (
+          <FormAutoCreate
+            snapshot={snapshot}
+            fields={fields}
+            fieldsVersion={fieldsVersion}
+            writer={writer}
+            ensureHydrated={ensureFormHydrated}
+          />
+        )}
 
-      {resolved.length === 0 ? (
-        <EmptyState decided={snapshot.decided} readOnly={readOnly} />
-      ) : readOnly ? (
-        <div className='flex flex-col gap-3'>
-          {resolved.map((q) => (
-            <FormQuestionCardReadOnly
-              key={q.questionId}
-              name={q.name}
-              fieldType={q.fieldType}
-              required={q.required}
-              description={q.descriptionVisible ? q.description : ''}
-              longAnswer={q.longAnswer}
-            />
-          ))}
-        </div>
-      ) : (
-        <DraggableQuestionList
-          questions={resolved}
-          onReorder={handleReorder}
-          writer={writer}
-          addSelectOption={addSelectOption}
-        />
-      )}
+        {resolved.length === 0 ? (
+          <EmptyState decided={snapshot.decided} readOnly={readOnly} />
+        ) : readOnly ? (
+          <div className='flex flex-col gap-3'>
+            {resolved.map((q) => (
+              <FormQuestionCardReadOnly
+                key={q.questionId}
+                name={q.name}
+                fieldType={q.fieldType}
+                required={q.required}
+                description={q.descriptionVisible ? q.description : ''}
+                longAnswer={q.longAnswer}
+              />
+            ))}
+          </div>
+        ) : (
+          <DraggableQuestionList
+            questions={resolved}
+            onReorder={handleReorder}
+            writer={writer}
+            addSelectOption={addSelectOption}
+          />
+        )}
 
-      {!readOnly && (
-        <FormQuestionTypePicker fieldsMap={fields} fieldsVersion={fieldsVersion} snapshot={snapshot} writer={writer} />
-      )}
+        {!readOnly && (
+          <FormQuestionTypePicker fieldsMap={fields} fieldsVersion={fieldsVersion} snapshot={snapshot} writer={writer} />
+        )}
+      </div>
     </div>
   );
 }
@@ -271,6 +283,8 @@ function DraggableQuestionList({
   writer: FormWriter;
   addSelectOption: AddFormSelectOption;
 }) {
+  const visibleQuestionIds = useMemo(() => questions.map((question) => question.questionId), [questions]);
+
   return (
     <DragDropContext onDragEnd={onReorder}>
       <Droppable droppableId='form-question-stack'>
@@ -290,6 +304,7 @@ function DraggableQuestionList({
                       longAnswer={q.longAnswer}
                       index={idx}
                       questionCount={questions.length}
+                      visibleQuestionIds={visibleQuestionIds}
                       isRichText={q.isRichText}
                       selectField={q.selectField}
                       addSelectOption={addSelectOption}

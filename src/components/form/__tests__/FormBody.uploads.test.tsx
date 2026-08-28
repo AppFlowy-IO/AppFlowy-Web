@@ -32,7 +32,7 @@ jest.mock('@/components/form/FormQuestion', () => ({
         >
           Select a new date from the open calendar
         </button>,
-        document.body,
+        document.body
       );
 
       return (
@@ -59,7 +59,12 @@ jest.mock('@/components/form/FormQuestion', () => ({
             onChange(question.id, {
               kind: 'files',
               files: fileNames.map((name) => {
-                const file = new File([name], name, { type: 'text/plain' });
+                // Exercise the browser's MIME-less-file path for b.txt. The
+                // upload must use the server-returned signed fallback, not a
+                // client-side guess.
+                const file = new File([name], name, {
+                  type: name === 'b.txt' ? '' : 'text/plain',
+                });
 
                 return {
                   local_id: `local-${name}`,
@@ -97,6 +102,7 @@ describe('FormBody file uploads', () => {
     mockRequestUploadUrl.mockImplementation(async (_token, request) => ({
       file_id: `uploaded-${request.file_name}`,
       upload_url: `https://uploads.example.com/${request.file_name}`,
+      upload_content_type: request.content_type ?? 'application/zip',
       download_url: `https://downloads.example.com/${request.file_name}`,
       expires_in_secs: 300,
     }));
@@ -138,6 +144,11 @@ describe('FormBody file uploads', () => {
     expect(mintedNames.filter((name) => name === 'a-1.txt')).toHaveLength(1);
     expect(mintedNames.filter((name) => name === 'a-2.txt')).toHaveLength(1);
     expect(mintedNames.filter((name) => name === 'b.txt')).toHaveLength(2);
+    expect(mockUploadFile).toHaveBeenCalledWith(
+      'https://uploads.example.com/b.txt',
+      expect.any(File),
+      'application/zip'
+    );
     expect(mockSubmit).toHaveBeenCalledTimes(1);
 
     const payload = mockSubmit.mock.calls[0][1];

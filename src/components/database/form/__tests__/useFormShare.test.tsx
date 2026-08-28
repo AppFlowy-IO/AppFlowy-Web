@@ -25,10 +25,7 @@ jest.mock('@/application/services/js-services/http', () => ({
   patchFormShare: (...args: unknown[]) => mockPatchFormShare(...args),
 }));
 
-function shareInfo(
-  viewId: string,
-  overrides: Partial<FormShareInfo> = {},
-): FormShareInfo {
+function shareInfo(viewId: string, overrides: Partial<FormShareInfo> = {}): FormShareInfo {
   return {
     token: `token-${viewId}`,
     tier: 'workspace',
@@ -61,9 +58,8 @@ describe('useFormShare mutations', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockViewId = 'view-a';
-    mockGetFormShare.mockImplementation(
-      (_workspaceId: string, _databaseId: string, viewId: string) =>
-        Promise.resolve(shareInfo(viewId)),
+    mockGetFormShare.mockImplementation((_workspaceId: string, _databaseId: string, viewId: string) =>
+      Promise.resolve(shareInfo(viewId))
     );
   });
 
@@ -71,9 +67,7 @@ describe('useFormShare mutations', () => {
     const firstPatch = deferred<FormShareInfo>();
     const secondPatch = deferred<FormShareInfo>();
 
-    mockPatchFormShare
-      .mockReturnValueOnce(firstPatch.promise)
-      .mockReturnValueOnce(secondPatch.promise);
+    mockPatchFormShare.mockReturnValueOnce(firstPatch.promise).mockReturnValueOnce(secondPatch.promise);
 
     const { result } = renderHook(() => useFormShare());
 
@@ -94,7 +88,7 @@ describe('useFormShare mutations', () => {
       'workspace-id',
       'database-id',
       'view-a',
-      expect.objectContaining({ tier: 'public', anonymous: true }),
+      expect.objectContaining({ tier: 'public', anonymous: true })
     );
 
     await act(async () => {
@@ -108,7 +102,7 @@ describe('useFormShare mutations', () => {
       'workspace-id',
       'database-id',
       'view-a',
-      expect.objectContaining({ tier: 'closed', anonymous: true }),
+      expect.objectContaining({ tier: 'closed', anonymous: true })
     );
 
     await act(async () => {
@@ -147,6 +141,69 @@ describe('useFormShare mutations', () => {
       token: 'token-view-b',
       tier: 'workspace',
     });
+  });
+
+  it('rebootstraps a missing PATCH token and applies the latest queued choice', async () => {
+    const recoveryGet = deferred<FormShareInfo | null>();
+    const recoveredPatch = deferred<FormShareInfo | null>();
+    const replacement = shareInfo('view-a', {
+      token: 'replacement-token',
+      share_url: 'https://appflowy.test/form/replacement-token',
+    });
+
+    mockGetFormShare.mockResolvedValueOnce(shareInfo('view-a')).mockReturnValueOnce(recoveryGet.promise);
+    mockMintFormShare.mockResolvedValue(replacement);
+    mockPatchFormShare.mockResolvedValueOnce(null).mockReturnValueOnce(recoveredPatch.promise);
+
+    const { result } = renderHook(() => useFormShare());
+
+    await waitFor(() => expect(result.current.info?.token).toBe('token-view-a'));
+
+    let publicMutation!: Promise<void>;
+    let closedMutation!: Promise<void>;
+
+    act(() => {
+      publicMutation = result.current.setTier('public');
+    });
+    await waitFor(() => expect(mockGetFormShare).toHaveBeenCalledTimes(2));
+
+    // Queue another choice while the missing-token recovery GET is pending.
+    // Recovery must not replace this with the state captured by the first
+    // PATCH request.
+    act(() => {
+      closedMutation = result.current.setTier('closed');
+    });
+
+    await act(async () => {
+      recoveryGet.resolve(null);
+      await flushMicrotasks();
+    });
+
+    expect(mockMintFormShare).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockPatchFormShare).toHaveBeenCalledTimes(2));
+    expect(mockPatchFormShare).toHaveBeenNthCalledWith(
+      2,
+      'workspace-id',
+      'database-id',
+      'view-a',
+      expect.objectContaining({ tier: 'closed', anonymous: true })
+    );
+
+    await act(async () => {
+      recoveredPatch.resolve({
+        ...replacement,
+        tier: 'closed',
+        anonymous: true,
+      });
+      await Promise.all([publicMutation, closedMutation]);
+    });
+
+    expect(result.current.info).toMatchObject({
+      token: 'replacement-token',
+      tier: 'closed',
+      anonymous: true,
+    });
+    expect(result.current.error).toBeNull();
   });
 
   it('does not mint when reading the existing share fails', async () => {

@@ -46,18 +46,12 @@ export function FormPreviewButton({
   snapshot,
   fieldsMap,
   fieldsVersion,
-  viewName,
 }: {
   snapshot: FormLayoutSnapshot;
   fieldsMap: YDatabaseFields | undefined;
   fieldsVersion: number;
-  viewName: string;
 }) {
   const [open, setOpen] = useState(false);
-  // Use the actual form view name as the preview title (desktop:
-  // `form_preview_page.dart` falls back to "Form title" when empty —
-  // matching that here too).
-  const previewTitle = viewName || 'Form title';
 
   // Gate the heavy compute (JSON.parse per select field, O(N) over the
   // question list) on `open`. The form builder updates the snapshot on
@@ -68,56 +62,10 @@ export function FormPreviewButton({
   const schema = useMemo<PublicFormSchema | null>(() => {
     if (!open) return null;
     if (!fieldsMap) return null;
-    const questions: PublicQuestion[] = [];
-
-    for (const q of snapshot.questions) {
-      const field = fieldsMap.get(q.fieldId);
-
-      if (!field) continue;
-      const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-      const kind = toPublicKind(fieldType);
-
-      if (!kind) continue;
-      // For select questions with no real options yet, fall back to
-      // the synthetic placeholder list so the creator sees the row
-      // shape (matches desktop `_readSelectOptions` fallback).
-      const realOptions = kind === 'single_select' || kind === 'multi_select' ? extractOptions(field) : undefined;
-      const previewOptions =
-        kind === 'single_select' || kind === 'multi_select'
-          ? realOptions && realOptions.length > 0
-            ? realOptions
-            : PREVIEW_PLACEHOLDER_OPTIONS
-          : undefined;
-
-      questions.push({
-        id: q.fieldId,
-        label: field.get(YjsDatabaseKey.name) || 'Untitled question',
-        description: q.descriptionVisible ? q.description : undefined,
-        kind,
-        required: q.required,
-        long_answer: q.longAnswer,
-        max_selections: undefined,
-        options: previewOptions,
-        input_style: 'auto',
-      });
-    }
-
-    return {
-      form_id: 'preview',
-      tier: 'workspace',
-      anonymous: true,
-      title: previewTitle,
-      description: snapshot.description || undefined,
-      questions,
-      submit_label: 'Submit',
-      submit_color: 'primary',
-      confirmation_title: 'Looks good — preview only, nothing was saved.',
-      allow_another_response: false,
-      hide_branding: true,
-    };
+    return buildFormPreviewSchema(snapshot, fieldsMap);
     // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, snapshot, fieldsMap, fieldsVersion, previewTitle]);
+  }, [open, snapshot, fieldsMap, fieldsVersion]);
 
   const handleOpen = useCallback(() => setOpen(true), []);
   const handleClose = useCallback(() => setOpen(false), []);
@@ -141,6 +89,64 @@ export function FormPreviewButton({
       </Dialog>
     </>
   );
+}
+
+/**
+ * Build the respondent-shaped preview from the local question projection.
+ *
+ * The current public-schema endpoint does not project the database view name
+ * or the form-description sentinel: it returns `Untitled form` and no
+ * form-level description. Keep preview honest about that deployed contract
+ * until Cloud supports those fields. Per-question descriptions are part of
+ * the public projection and remain previewed below.
+ */
+export function buildFormPreviewSchema(snapshot: FormLayoutSnapshot, fieldsMap: YDatabaseFields): PublicFormSchema {
+  const questions: PublicQuestion[] = [];
+
+  for (const q of snapshot.questions) {
+    const field = fieldsMap.get(q.fieldId);
+
+    if (!field) continue;
+    const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+    const kind = toPublicKind(fieldType);
+
+    if (!kind) continue;
+    // For select questions with no real options yet, fall back to
+    // the synthetic placeholder list so the creator sees the row
+    // shape (matches desktop `_readSelectOptions` fallback).
+    const realOptions = kind === 'single_select' || kind === 'multi_select' ? extractOptions(field) : undefined;
+    const previewOptions =
+      kind === 'single_select' || kind === 'multi_select'
+        ? realOptions && realOptions.length > 0
+          ? realOptions
+          : PREVIEW_PLACEHOLDER_OPTIONS
+        : undefined;
+
+    questions.push({
+      id: q.fieldId,
+      label: field.get(YjsDatabaseKey.name) || 'Untitled question',
+      description: q.descriptionVisible ? q.description : undefined,
+      kind,
+      required: q.required,
+      long_answer: q.longAnswer,
+      max_selections: undefined,
+      options: previewOptions,
+      input_style: 'auto',
+    });
+  }
+
+  return {
+    form_id: 'preview',
+    tier: 'workspace',
+    anonymous: true,
+    title: 'Untitled form',
+    questions,
+    submit_label: 'Submit',
+    submit_color: 'primary',
+    confirmation_title: 'Looks good — preview only, nothing was saved.',
+    allow_another_response: false,
+    hide_branding: true,
+  };
 }
 
 function toPublicKind(ty: FieldType): PublicQuestionKind | null {

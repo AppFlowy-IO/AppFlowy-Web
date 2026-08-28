@@ -119,6 +119,8 @@ export const DatabaseTabItem = memo(
           return 'List';
         case DatabaseViewLayout.Gallery:
           return 'Gallery';
+        case DatabaseViewLayout.Form:
+          return 'Form';
         default:
           return t('untitled');
       }
@@ -142,6 +144,8 @@ export const DatabaseTabItem = memo(
         ? ViewLayout.List
         : databaseLayout === DatabaseViewLayout.Gallery
         ? ViewLayout.Gallery
+        : databaseLayout === DatabaseViewLayout.Form
+        ? ViewLayout.Form
         : ViewLayout.Grid;
 
     // Build minimal View object from YDatabaseView for actions menu

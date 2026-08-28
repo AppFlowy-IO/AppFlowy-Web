@@ -51,10 +51,7 @@ function ensureMap(view: YDatabaseView): YDatabaseFormFieldSettings {
  * form_field_settings container. Used by every per-question write so
  * we don't accidentally clobber a partial map.
  */
-function ensureEntry(
-  view: YDatabaseView,
-  fieldId: string,
-): Y.Map<unknown> {
+function ensureEntry(view: YDatabaseView, fieldId: string): Y.Map<unknown> {
   const map = ensureMap(view);
   const existing = map.get(fieldId);
 
@@ -81,9 +78,9 @@ export interface FormWriter {
   /// already on the form. `order` is auto-assigned to current entry
   /// count, so adds land at the bottom.
   addQuestion(fieldId: string): void;
-  /// Drop the entry for `fieldId`. The underlying database field stays
-  /// — same projection-model semantics as the desktop's "Remove from
-  /// form" action.
+  /// Exclude `fieldId` from the projection. Builder-mode views drop the
+  /// explicit entry; legacy opt-out views persist `included = false` so the
+  /// question cannot reappear through the legacy default.
   removeQuestion(fieldId: string): void;
   /// Wipe the projection. Used by the "Start from scratch" auto-create
   /// branch. Sentinels are preserved.
@@ -95,8 +92,10 @@ export interface FormWriter {
   populateFromFields(fieldIds: readonly string[]): void;
   /// Move a question to a new index in the projection. Implemented by
   /// rewriting every `order` so the persisted values stay packed —
-  /// keeps the rust-side sort deterministic without negotiation.
-  reorderQuestion(fieldId: string, newIndex: number): void;
+  /// keeps the rust-side sort deterministic without negotiation. The
+  /// optional visible-id list lets the UI exclude unsupported fields in
+  /// addition to the writer's included/orphan filtering.
+  reorderQuestion(fieldId: string, newIndex: number, visibleFieldIds?: readonly string[]): void;
   /// Toggle the Required asterisk. No-op if `fieldId` isn't on the form.
   setRequired(fieldId: string, value: boolean): void;
   /// Toggle the description-row visibility. Turning OFF also clears the
@@ -147,12 +146,14 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
   return {
     addQuestion(fieldId) {
       txn(() => {
-        const map = ensureMap(view);
-        const existing = map.get(fieldId);
+        // In legacy opt-out mode a field with no settings entry is already a
+        // visible question. Treat that exactly like an explicit included row
+        // so a stale picker action cannot move it unexpectedly.
+        if (currentEntryIdsSorted(view).includes(fieldId)) return;
 
         // Three cases:
         //   * No entry yet → fall through, create one via `ensureEntry`.
-        //   * Existing entry with `included: true` → already on the form;
+        //   * Existing/default-included entry → handled by the guard above;
         //     no-op so we don't disturb the user's current ordering.
         //   * Existing entry with `included: false` → another client (or
         //     a prior remove) left a stale settings row. Flip it back to
@@ -160,10 +161,6 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
         //     respondent UI re-renders it at the bottom. Without this
         //     branch the picker would no-op silently and the user couldn't
         //     re-add the question without manual collab editing.
-        if (existing && asBool(existing.get(FORM_INCLUDED), true)) {
-          return;
-        }
-
         // Repack legacy entries before computing the append position.
         // `maxExistingOrder()` deliberately ignores `FORM_ORDER_LEGACY`
         // (0xFFFFFFFF) entries — without a repack a form composed entirely
@@ -192,8 +189,17 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
       txn(() => {
         const map = view.get(YjsDatabaseKey.form_field_settings);
 
-        if (!map?.get(fieldId)) return;
-        map.delete(fieldId);
+        if (!currentEntryIdsSorted(view).includes(fieldId)) return;
+        if (isBuilderMode(map)) {
+          // Builder mode is opt-in: absence means excluded.
+          map?.delete(fieldId);
+        } else {
+          // Legacy mode is opt-out: deleting the row would make the cloud's
+          // default_for(fieldId) include it again. Persist an explicit false
+          // override so removal survives refresh and public projection.
+          ensureEntry(view, fieldId).set(FORM_INCLUDED, false);
+        }
+
         // Pack `order` so subsequent adds don't collide with the
         // now-vacant slot. Cheap (O(N) where N = question count).
         repackOrder(view);
@@ -204,9 +210,20 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
       txn(() => {
         const map = view.get(YjsDatabaseKey.form_field_settings);
 
-        if (!map) return;
-        for (const id of currentEntryIds()) {
-          map.delete(id);
+        if (isBuilderMode(map)) {
+          if (!map) return;
+          for (const id of currentEntryIds()) {
+            map.delete(id);
+          }
+
+          return;
+        }
+
+        // `clearQuestions` and the subsequent `markDecided` are separate
+        // public writer calls. Hide every legacy-defaulted field immediately
+        // so there is no interval where deleting settings exposes all fields.
+        for (const id of currentEntryIdsSorted(view)) {
+          ensureEntry(view, id).set(FORM_INCLUDED, false);
         }
       });
     },
@@ -216,6 +233,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
         // Wipe existing entries first so the projection matches the
         // input list exactly. Order = list index, no gaps.
         const map = view.get(YjsDatabaseKey.form_field_settings);
+        const builderMode = isBuilderMode(map);
 
         if (map) {
           for (const id of currentEntryIds()) {
@@ -223,31 +241,46 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
           }
         }
 
+        if (!builderMode) {
+          // Legacy mode defaults missing rows to included. Materialize false
+          // overrides for every unselected view field before adding the
+          // requested subset, keeping the public schema exact even before
+          // the caller writes the decided sentinel.
+          const selected = new Set(fieldIds);
+
+          for (const id of readFieldOrderIds(view) ?? []) {
+            if (!selected.has(id)) {
+              ensureEntry(view, id).set(FORM_INCLUDED, false);
+            }
+          }
+        }
+
         fieldIds.forEach((fieldId, idx) => {
           const entry = ensureEntry(view, fieldId);
 
+          entry.set(FORM_INCLUDED, true);
           entry.set(FORM_ORDER, idx);
         });
       });
     },
 
-    reorderQuestion(fieldId, newIndex) {
+    reorderQuestion(fieldId, newIndex, visibleFieldIds) {
       txn(() => {
-        const map = view.get(YjsDatabaseKey.form_field_settings);
-
-        if (!map?.get(fieldId)) return;
         // Build the desired-order id list, then re-stamp every entry's
-        // `order` value. Easier to reason about than swapping pairs,
-        // and the per-entry write is cheap.
-        const ids = currentEntryIdsSorted(view);
+        // `order` value. The current visible list filters included:false,
+        // orphaned, and (when supplied by the UI) unsupported field entries.
+        const ids = currentEntryIdsSorted(view, visibleFieldIds);
+
+        if (!ids.includes(fieldId)) return;
         const without = ids.filter((id) => id !== fieldId);
         const clamped = Math.max(0, Math.min(newIndex, without.length));
 
         without.splice(clamped, 0, fieldId);
         without.forEach((id, idx) => {
-          const entry = map.get(id);
+          const entry = ensureEntry(view, id);
 
-          entry?.set(FORM_ORDER, idx);
+          entry.set(FORM_INCLUDED, true);
+          entry.set(FORM_ORDER, idx);
         });
       });
     },
@@ -324,40 +357,72 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
   };
 }
 
-function currentEntryIdsSorted(view: YDatabaseView): string[] {
-  const map = view.get(YjsDatabaseKey.form_field_settings);
+function isBuilderMode(map: YDatabaseFormFieldSettings | undefined): boolean {
+  return Boolean(map?.get(FORM_DECIDED_SENTINEL));
+}
 
-  if (!map) return [];
-  const pairs: Array<{ id: string; order: number }> = [];
+function readFieldOrderIds(view: YDatabaseView): string[] | undefined {
+  const fieldOrders = view.get(YjsDatabaseKey.field_orders);
 
-  map.forEach((value, key) => {
-    if (typeof key !== 'string') return;
-    if (!(value instanceof Y.Map)) return;
-    if (key === FORM_DECIDED_SENTINEL || key === FORM_DESCRIPTION_SENTINEL) {
-      return;
-    }
+  if (!(fieldOrders instanceof Y.Array)) return undefined;
+  const seen = new Set<string>();
+  const ids: string[] = [];
 
-    const raw = value.get(FORM_ORDER);
-    const order = typeof raw === 'number' && Number.isFinite(raw) ? raw : Number.MAX_SAFE_INTEGER;
+  fieldOrders.forEach((order) => {
+    const id = order?.id;
 
-    pairs.push({ id: key, order });
+    if (typeof id !== 'string' || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
   });
-  pairs.sort((a, b) =>
-    a.order === b.order ? a.id.localeCompare(b.id) : a.order - b.order,
-  );
+  return ids;
+}
+
+function currentEntryIdsSorted(view: YDatabaseView, visibleFieldIds?: readonly string[]): string[] {
+  const map = view.get(YjsDatabaseKey.form_field_settings);
+  const fieldOrderIds = readFieldOrderIds(view);
+  const allowedFieldIds = fieldOrderIds === undefined ? undefined : new Set(fieldOrderIds);
+  const sourceIds = visibleFieldIds ?? fieldOrderIds ?? currentExplicitEntryIds(map);
+  const seen = new Set<string>();
+  const pairs: Array<{ id: string; order: number; sourceIndex: number }> = [];
+
+  sourceIds.forEach((id, sourceIndex) => {
+    if (typeof id !== 'string' || seen.has(id)) return;
+    seen.add(id);
+    if (allowedFieldIds && !allowedFieldIds.has(id)) return;
+    const entry = map?.get(id);
+
+    if (!entry && isBuilderMode(map)) return;
+    if (entry && !asBool(entry.get(FORM_INCLUDED), true)) return;
+    const raw = entry?.get(FORM_ORDER);
+    const order = typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : Number.MAX_SAFE_INTEGER;
+
+    pairs.push({ id, order, sourceIndex });
+  });
+  pairs.sort((a, b) => (a.order === b.order ? a.sourceIndex - b.sourceIndex : a.order - b.order));
   return pairs.map((p) => p.id);
 }
 
-function repackOrder(view: YDatabaseView) {
-  const map = view.get(YjsDatabaseKey.form_field_settings);
+function currentExplicitEntryIds(map: YDatabaseFormFieldSettings | undefined): string[] {
+  if (!map) return [];
+  const ids: string[] = [];
 
-  if (!map) return;
+  map.forEach((value, key) => {
+    if (typeof key !== 'string' || !(value instanceof Y.Map)) return;
+    if (key === FORM_DECIDED_SENTINEL || key === FORM_DESCRIPTION_SENTINEL) return;
+    ids.push(key);
+  });
+  return ids;
+}
+
+function repackOrder(view: YDatabaseView) {
   const ids = currentEntryIdsSorted(view);
 
   ids.forEach((id, idx) => {
-    const entry = map.get(id);
+    const entry = ensureEntry(view, id);
 
-    entry?.set(FORM_ORDER, idx);
+    entry.set(FORM_INCLUDED, true);
+    entry.set(FORM_ORDER, idx);
   });
 }
 
@@ -371,26 +436,11 @@ function repackOrder(view: YDatabaseView) {
 function hasLegacyOrderEntry(view: YDatabaseView): boolean {
   const map = view.get(YjsDatabaseKey.form_field_settings);
 
-  if (!map) return false;
-  let legacy = false;
+  return currentEntryIdsSorted(view).some((id) => {
+    const raw = map?.get(id)?.get(FORM_ORDER);
 
-  map.forEach((value, key) => {
-    if (legacy) return;
-    if (typeof key !== 'string') return;
-    if (!(value instanceof Y.Map)) return;
-    if (key === FORM_DECIDED_SENTINEL || key === FORM_DESCRIPTION_SENTINEL) return;
-    const raw = value.get(FORM_ORDER);
-
-    if (
-      typeof raw !== 'number' ||
-      !Number.isFinite(raw) ||
-      raw < 0 ||
-      raw === 0xffff_ffff
-    ) {
-      legacy = true;
-    }
+    return typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0 || raw === 0xffff_ffff;
   });
-  return legacy;
 }
 
 /// Largest `FORM_ORDER` across non-sentinel entries. Legacy entries
@@ -401,18 +451,10 @@ function hasLegacyOrderEntry(view: YDatabaseView): boolean {
 /// use `max + 1` as the first explicit order without special-casing.
 function maxExistingOrder(view: YDatabaseView): number {
   const map = view.get(YjsDatabaseKey.form_field_settings);
-
-  if (!map) return -1;
   let max = -1;
 
-  map.forEach((value, key) => {
-    if (typeof key !== 'string') return;
-    if (!(value instanceof Y.Map)) return;
-    if (key === FORM_DECIDED_SENTINEL || key === FORM_DESCRIPTION_SENTINEL) {
-      return;
-    }
-
-    const raw = value.get(FORM_ORDER);
+  currentEntryIdsSorted(view).forEach((id) => {
+    const raw = map?.get(id)?.get(FORM_ORDER);
 
     if (typeof raw !== 'number' || !Number.isFinite(raw)) return;
     if (raw < 0) return;

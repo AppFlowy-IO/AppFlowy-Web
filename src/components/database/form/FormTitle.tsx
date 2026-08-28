@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 
 import { useDatabaseView, useDatabaseViewId } from '@/application/database-yjs/context';
 import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
@@ -17,54 +18,114 @@ import { Input } from '@/components/ui/input';
  * heavier than the form-description debounce; flushing on every char
  * would spam the server.
  *
- * Read-only collapses to a plain heading so respondents / view-only
- * members see the title without an editable input.
+ * This is the database-view name used by authoring/navigation chrome. The
+ * public respondent schema does not project it yet, so preview deliberately
+ * uses the server's current default heading instead.
  */
 export function FormTitle({ readOnly }: { readOnly: boolean }) {
   const view = useDatabaseView();
   const viewId = useDatabaseViewId();
   const updateView = useUpdateDatabaseView();
-  const name = (view?.get(YjsDatabaseKey.name)) ?? '';
+  const name = view?.get(YjsDatabaseKey.name) ?? '';
   const [draft, setDraft] = useState(name);
-  const lastSaved = useRef(name);
+  const [saving, setSaving] = useState(false);
+  const authoritativeName = useRef(name);
+  const pendingExternalName = useRef<string | null>(null);
+  const focused = useRef(false);
+  const dirty = useRef(false);
+  const savingRef = useRef(false);
 
   // Sync from external rename (another tab / desktop) when the input is
   // NOT focused. If the user is currently editing, leave their caret
   // alone — clobbering would be surprising.
   useEffect(() => {
-    if (name !== lastSaved.current) {
-      lastSaved.current = name;
-      setDraft(name);
+    if (name === authoritativeName.current) return;
+
+    authoritativeName.current = name;
+    if (focused.current || savingRef.current) {
+      pendingExternalName.current = name;
+      return;
     }
+
+    pendingExternalName.current = null;
+    dirty.current = false;
+    setDraft(name);
   }, [name]);
 
   if (readOnly) {
     return <h1 className='text-3xl font-bold'>{name || 'Form'}</h1>;
   }
 
-  const flush = () => {
-    if (!viewId) return;
+  const flush = async () => {
+    if (!viewId || savingRef.current) return;
     const next = draft.trim();
 
-    if (next === lastSaved.current) return;
+    if (next === authoritativeName.current) {
+      pendingExternalName.current = null;
+      dirty.current = false;
+      if (next !== draft) setDraft(next);
+      return;
+    }
+
     if (!next) {
       // Empty input → revert (matches desktop behavior). Forms must
       // have a non-empty name; the sidebar would render "Untitled"
       // anyway, but we keep the previous explicit name instead.
-      setDraft(lastSaved.current);
+      pendingExternalName.current = null;
+      dirty.current = false;
+      setDraft(authoritativeName.current);
       return;
     }
 
-    lastSaved.current = next;
-    void updateView(viewId, { name: next });
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await updateView(viewId, { name: next });
+      // Only acknowledge the draft after both the page rename and Yjs update
+      // complete. A rejected request leaves the draft dirty, so the next blur
+      // retries the same value instead of silently treating it as saved.
+      authoritativeName.current = next;
+      pendingExternalName.current = null;
+      dirty.current = false;
+      setDraft(next);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to rename form');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   };
 
   return (
     <Input
       variant='ghost'
       value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={flush}
+      onChange={(e) => {
+        dirty.current = true;
+        setDraft(e.target.value);
+      }}
+      disabled={saving}
+      aria-busy={saving}
+      onFocus={() => {
+        focused.current = true;
+        dirty.current = draft.trim() !== authoritativeName.current;
+      }}
+      onBlur={() => {
+        focused.current = false;
+
+        // If the user only focused the field, accept a remote rename that
+        // arrived while the caret was active. A genuinely edited draft still
+        // wins on blur and is saved against the latest authoritative name.
+        if (!dirty.current && pendingExternalName.current !== null) {
+          const externalName = pendingExternalName.current;
+
+          pendingExternalName.current = null;
+          setDraft(externalName);
+          return;
+        }
+
+        void flush();
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -72,7 +133,7 @@ export function FormTitle({ readOnly }: { readOnly: boolean }) {
         }
       }}
       placeholder='Form'
-      className='!h-auto !text-3xl !font-bold !px-0'
+      className='!h-auto !px-0 !text-3xl !font-bold'
     />
   );
 }

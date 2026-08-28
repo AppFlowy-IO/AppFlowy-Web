@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { ERROR_CODE } from '@/application/constants';
 import { useDatabase, useDatabaseViewId } from '@/application/database-yjs';
@@ -58,9 +51,7 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type BootstrapOutcome =
-  | { kind: 'success'; info: FormShareInfo }
-  | { kind: 'failure'; error: unknown };
+type BootstrapOutcome = { kind: 'success'; info: FormShareInfo } | { kind: 'failure'; error: unknown };
 
 type FormShareDelta = {
   tier?: FormShareTier;
@@ -85,7 +76,7 @@ function createMutationScope(
   key: string,
   workspaceId: string | undefined,
   databaseId: string | undefined,
-  viewId: string | undefined,
+  viewId: string | undefined
 ): FormShareMutationScope {
   return {
     key,
@@ -112,11 +103,7 @@ function createMutationScope(
  * caller can classify (plan_required vs transient vs other) and
  * decide whether to retry.
  */
-async function tryBootstrap(
-  workspaceId: string,
-  databaseId: string,
-  viewId: string,
-): Promise<BootstrapOutcome> {
+async function tryBootstrap(workspaceId: string, databaseId: string, viewId: string): Promise<BootstrapOutcome> {
   try {
     const existing = await getFormShare(workspaceId, databaseId, viewId);
 
@@ -172,7 +159,7 @@ function isViewPropagationError(err: unknown): boolean {
 function coerceSubmissionAccess(
   tier: FormShareTier,
   anonymous: boolean,
-  requested: FormSubmissionAccess,
+  requested: FormSubmissionAccess
 ): FormSubmissionAccess {
   if (tier === 'public') return 'none';
   if (anonymous) return 'none';
@@ -220,13 +207,8 @@ export function useFormShare(): FormShareState {
   const scopeKey = `${workspaceId ?? ''}\u0000${databaseId ?? ''}\u0000${viewId ?? ''}`;
   const mutationScopeRef = useRef<FormShareMutationScope | null>(null);
   const mutationScope = useMemo(
-    () => createMutationScope(
-      scopeKey,
-      workspaceId,
-      databaseId,
-      viewId,
-    ),
-    [databaseId, scopeKey, viewId, workspaceId],
+    () => createMutationScope(scopeKey, workspaceId, databaseId, viewId),
+    [databaseId, scopeKey, viewId, workspaceId]
   );
 
   const [info, setInfo] = useState<FormShareInfo | null>(null);
@@ -370,14 +352,13 @@ export function useFormShare(): FormShareState {
         // eslint-disable-next-line no-console
         console.debug(
           `[useFormShare] bootstrap attempt ${attempt + 1} hit transient error; retrying in ${delay}ms`,
-          outcome.error,
+          outcome.error
         );
         await wait(delay);
       }
 
       if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
-      const message =
-        (lastError as { message?: string })?.message ?? 'load failed';
+      const message = (lastError as { message?: string })?.message ?? 'load failed';
       const kind = classifyError(lastError);
 
       // eslint-disable-next-line no-console
@@ -426,6 +407,12 @@ export function useFormShare(): FormShareState {
     if (scope.draining) return scope.draining;
 
     const drainPromise = (async () => {
+      // A nullable PATCH response means the token disappeared between the
+      // initial bootstrap and this mutation (for example, another client
+      // revoked it). Recover at most once per drain so a revoke loop cannot
+      // spin forever.
+      let recoveredMissingToken = false;
+
       while (
         mutationScopeRef.current === scope &&
         scope.active &&
@@ -437,18 +424,69 @@ export function useFormShare(): FormShareState {
         const desired = scope.desired;
 
         try {
-          const next = await patchFormShare(
-            mutationWorkspaceId,
-            mutationDatabaseId,
-            mutationViewId,
-            {
-              tier: desired.tier,
-              anonymous: desired.anonymous,
-              submission_access: desired.submission_access,
-            },
-          );
+          const next = await patchFormShare(mutationWorkspaceId, mutationDatabaseId, mutationViewId, {
+            tier: desired.tier,
+            anonymous: desired.anonymous,
+            submission_access: desired.submission_access,
+          });
 
           if (mutationScopeRef.current !== scope || !scope.active) return;
+
+          if (next === null) {
+            if (recoveredMissingToken) {
+              const missingError = {
+                message: 'The form share token changed again. Reload share settings and retry.',
+              };
+
+              scope.confirmed = null;
+              scope.desired = null;
+              scope.confirmedRevision = scope.revision;
+              setInfo(null);
+              setError(missingError.message);
+              setErrorKind('other');
+              return;
+            }
+
+            recoveredMissingToken = true;
+            const recovered = await tryBootstrap(mutationWorkspaceId, mutationDatabaseId, mutationViewId);
+
+            if (mutationScopeRef.current !== scope || !scope.active) return;
+            if (recovered.kind === 'failure') {
+              const message =
+                (recovered.error as { message?: string })?.message ?? 'reload failed after the share token changed';
+
+              // The prior confirmation points at a token the server has told
+              // us is gone. Clear it instead of rolling the optimistic state
+              // back to a stale URL. The popover exposes retryBootstrap.
+              scope.confirmed = null;
+              scope.desired = null;
+              scope.confirmedRevision = scope.revision;
+              setInfo(null);
+              setError(message);
+              setErrorKind(classifyError(recovered.error));
+              return;
+            }
+
+            const latestDesired = scope.desired;
+
+            if (!latestDesired) return;
+
+            scope.confirmed = recovered.info;
+            scope.desired = {
+              ...recovered.info,
+              tier: latestDesired.tier,
+              anonymous: latestDesired.anonymous,
+              submission_access: latestDesired.submission_access,
+            };
+            setInfo(scope.desired);
+            setError(null);
+            setErrorKind(null);
+            // Do not advance confirmedRevision: the recovered token still
+            // needs the complete latest desired state applied to it. The next
+            // loop iteration performs that PATCH, including any user choice
+            // made while recovery was in flight.
+            continue;
+          }
 
           scope.confirmed = next;
           scope.confirmedRevision = revision;
@@ -508,15 +546,11 @@ export function useFormShare(): FormShareState {
       //     tier through the picker must not silently re-identify
       //     submissions.
       const anonymous = tier === 'public' ? true : current.anonymous;
-      const submission_access = coerceSubmissionAccess(
-        tier,
-        anonymous,
-        current.submission_access,
-      );
+      const submission_access = coerceSubmissionAccess(tier, anonymous, current.submission_access);
 
       await patch({ tier, anonymous, submission_access });
     },
-    [patch],
+    [patch]
   );
 
   const setAnonymous = useCallback(
@@ -532,15 +566,11 @@ export function useFormShare(): FormShareState {
       // was incorrect: it surfaced a Public form for users who
       // explicitly wanted Workspace + Anonymous (and triggered the
       // image #48 confusion when they switched back).
-      const submission_access = coerceSubmissionAccess(
-        current.tier,
-        value,
-        current.submission_access,
-      );
+      const submission_access = coerceSubmissionAccess(current.tier, value, current.submission_access);
 
       await patch({ anonymous: value, submission_access });
     },
-    [patch],
+    [patch]
   );
 
   const setSubmissionAccess = useCallback(
@@ -552,7 +582,7 @@ export function useFormShare(): FormShareState {
 
       await patch({ submission_access: coerced });
     },
-    [patch],
+    [patch]
   );
 
   // Passive effects have not run yet on the first render after a tab switch.
@@ -560,9 +590,7 @@ export function useFormShare(): FormShareState {
   // acted on while the new scope bootstraps.
   const stateMatchesScope = stateScopeKey === scopeKey;
   const scopedInfo = stateMatchesScope ? info : null;
-  const scopedIsLoading = stateMatchesScope
-    ? isLoading
-    : Boolean(viewId && databaseId && workspaceId);
+  const scopedIsLoading = stateMatchesScope ? isLoading : Boolean(viewId && databaseId && workspaceId);
   const scopedError = stateMatchesScope ? error : null;
   const scopedErrorKind = stateMatchesScope ? errorKind : null;
 
@@ -612,6 +640,6 @@ export function useFormShare(): FormShareState {
       setAnonymous,
       setSubmissionAccess,
       resolveShareUrl,
-    ],
+    ]
   );
 }

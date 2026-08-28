@@ -36,7 +36,8 @@ export function isDatabaseLayout(layout: ViewLayout): boolean {
     layout === ViewLayout.Calendar ||
     layout === ViewLayout.Chart ||
     layout === ViewLayout.List ||
-    layout === ViewLayout.Gallery
+    layout === ViewLayout.Gallery ||
+    layout === ViewLayout.Form
   );
 }
 
@@ -113,10 +114,7 @@ export function isReferencedDatabaseView(view: View | null | undefined, parentVi
     return false;
   }
 
-  const viewIsDatabaseChild =
-    isDatabaseLayout(view.layout) || view.layout === ViewLayout.Form;
-
-  return viewIsDatabaseChild && isDatabaseLayout(parentView.layout);
+  return isDatabaseLayout(view.layout) && isDatabaseLayout(parentView.layout);
 }
 
 /**

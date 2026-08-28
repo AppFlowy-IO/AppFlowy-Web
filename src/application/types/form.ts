@@ -142,7 +142,9 @@ export interface PublicFormUploadUrlRequest {
 export interface PublicFormUploadUrlResponse {
   file_id: string;
   upload_url: string;
-  download_url: string;
+  /** Exact Content-Type value included in the presigned PUT signature. */
+  upload_content_type: string;
+  download_url?: string;
   expires_in_secs: number;
 }
 

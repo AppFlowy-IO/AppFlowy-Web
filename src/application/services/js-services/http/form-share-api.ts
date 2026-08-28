@@ -40,11 +40,7 @@ export interface FormShareUpdateRequest {
   submission_access?: FormSubmissionAccess;
 }
 
-function shareUrl(
-  workspaceId: string,
-  databaseId: string,
-  viewId: string,
-): string {
+function shareUrl(workspaceId: string, databaseId: string, viewId: string): string {
   return `/api/workspace/${workspaceId}/database/${databaseId}/view/${viewId}/form/share`;
 }
 
@@ -52,15 +48,13 @@ function shareUrl(
 export async function getFormShare(
   workspaceId: string,
   databaseId: string,
-  viewId: string,
+  viewId: string
 ): Promise<FormShareInfo | null> {
   // Use a custom catch so the "no token yet" case doesn't bubble up
   // as an exception — it's a common state worth distinguishing from a
   // real error.
   return executeAPIRequest<FormShareInfo | null>(() =>
-    getAxios()?.get<APIResponse<FormShareInfo | null>>(
-      shareUrl(workspaceId, databaseId, viewId),
-    ),
+    getAxios()?.get<APIResponse<FormShareInfo | null>>(shareUrl(workspaceId, databaseId, viewId))
   );
 }
 
@@ -69,13 +63,10 @@ export async function mintFormShare(
   workspaceId: string,
   databaseId: string,
   viewId: string,
-  request: FormShareMintRequest = {},
+  request: FormShareMintRequest = {}
 ): Promise<FormShareInfo> {
   return executeAPIRequest<FormShareInfo>(() =>
-    getAxios()?.post<APIResponse<FormShareInfo>>(
-      shareUrl(workspaceId, databaseId, viewId),
-      request,
-    ),
+    getAxios()?.post<APIResponse<FormShareInfo>>(shareUrl(workspaceId, databaseId, viewId), request)
   );
 }
 
@@ -84,12 +75,9 @@ export async function patchFormShare(
   workspaceId: string,
   databaseId: string,
   viewId: string,
-  request: FormShareUpdateRequest,
-): Promise<FormShareInfo> {
-  return executeAPIRequest<FormShareInfo>(() =>
-    getAxios()?.patch<APIResponse<FormShareInfo>>(
-      shareUrl(workspaceId, databaseId, viewId),
-      request,
-    ),
+  request: FormShareUpdateRequest
+): Promise<FormShareInfo | null> {
+  return executeAPIRequest<FormShareInfo | null>(() =>
+    getAxios()?.patch<APIResponse<FormShareInfo | null>>(shareUrl(workspaceId, databaseId, viewId), request)
   );
 }

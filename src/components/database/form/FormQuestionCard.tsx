@@ -53,6 +53,7 @@ function _FormQuestionCard({
   longAnswer,
   index,
   questionCount,
+  visibleQuestionIds,
   isRichText,
   selectField,
   addSelectOption,
@@ -67,6 +68,7 @@ function _FormQuestionCard({
   longAnswer: boolean;
   index: number;
   questionCount: number;
+  visibleQuestionIds?: readonly string[];
   isRichText: boolean;
   selectField?: YDatabaseField;
   addSelectOption: AddFormSelectOption;
@@ -188,13 +190,16 @@ function _FormQuestionCard({
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={index === 0} onSelect={() => writer.reorderQuestion(questionId, index - 1)}>
+              <DropdownMenuItem
+                disabled={index === 0}
+                onSelect={() => writer.reorderQuestion(questionId, index - 1, visibleQuestionIds)}
+              >
                 <ArrowUp size={14} />
                 Move up
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={index === questionCount - 1}
-                onSelect={() => writer.reorderQuestion(questionId, index + 1)}
+                onSelect={() => writer.reorderQuestion(questionId, index + 1, visibleQuestionIds)}
               >
                 <ArrowDown size={14} />
                 Move down

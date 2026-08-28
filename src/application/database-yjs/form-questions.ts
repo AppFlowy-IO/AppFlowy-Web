@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 
-import { YDatabaseFormFieldSettings, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, YDatabaseFormFieldSettings, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 
 /// Sentinels reserved by the cloud's biz layer
 /// (`appflowy-cloud/src/biz/forms/share.rs` — `FORM_DECIDED_SENTINEL`
@@ -90,10 +90,7 @@ function asOrder(value: unknown): number {
 /// `FormQuestionEntry`. The map is the second-level value inside
 /// `form_field_settings` — keyed by field id on the parent level, this
 /// is the map of property-name → value.
-function decodeEntry(
-  fieldId: string,
-  raw: Y.Map<unknown>,
-): FormQuestionEntry {
+function decodeEntry(fieldId: string, raw: Y.Map<unknown>): FormQuestionEntry {
   return {
     fieldId,
     // `included` defaults to true. The collab's `FormFieldSettings::default_for`
@@ -109,19 +106,44 @@ function decodeEntry(
   };
 }
 
-/// Project the per-view `form_field_settings` map into a `FormLayoutSnapshot`.
-/// Returns the frozen empty snapshot when the map is missing — this is
-/// the common case for non-form views (Grid/Board/Calendar/etc), and
-/// allocating a fresh empty object per read would create needless GC
-/// pressure as the database collab churns.
-export function readFormLayoutSnapshot(
-  view: YDatabaseView | undefined,
-): FormLayoutSnapshot {
-  if (!view) return EMPTY_SNAPSHOT;
-  const map = view.get(YjsDatabaseKey.form_field_settings);
+function readFieldOrderIds(view: YDatabaseView): string[] | undefined {
+  const fieldOrders = view.get(YjsDatabaseKey.field_orders);
 
-  if (!map) return EMPTY_SNAPSHOT;
-  return decodeSnapshot(map);
+  if (!(fieldOrders instanceof Y.Array)) return undefined;
+  const seen = new Set<string>();
+  const ids: string[] = [];
+
+  fieldOrders.forEach((order) => {
+    const id = order?.id;
+
+    if (typeof id !== 'string' || seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  });
+  return ids;
+}
+
+/// Project the per-view `form_field_settings` map into a `FormLayoutSnapshot`.
+///
+/// The decided sentinel selects the same inclusion mode as the cloud:
+///   * sentinel present -> builder opt-in (only explicit included entries)
+///   * sentinel absent  -> legacy opt-out (every field-order entry defaults
+///     to included unless an explicit `included = false` override hides it)
+///
+/// `field_orders` is the authoritative field sequence used by the cloud's
+/// `get_fields_in_view` projection. Reading it here also prevents orphaned
+/// settings rows from surfacing after their database field was deleted.
+export function readFormLayoutSnapshot(view: YDatabaseView | undefined): FormLayoutSnapshot {
+  if (!view) return EMPTY_SNAPSHOT;
+  if (Number(view.get(YjsDatabaseKey.layout)) !== DatabaseViewLayout.Form) {
+    return EMPTY_SNAPSHOT;
+  }
+
+  const map = view.get(YjsDatabaseKey.form_field_settings);
+  const fieldOrderIds = readFieldOrderIds(view);
+
+  if (!map && fieldOrderIds === undefined) return EMPTY_SNAPSHOT;
+  return decodeSnapshot(map, fieldOrderIds);
 }
 
 /// Lower-level decode used by the snapshot helper above and by the
@@ -129,13 +151,14 @@ export function readFormLayoutSnapshot(
 /// handling from container traversal so unit tests can feed a synthetic
 /// `Y.Map`.
 export function decodeSnapshot(
-  map: YDatabaseFormFieldSettings,
+  map: YDatabaseFormFieldSettings | undefined,
+  fieldOrderIds?: readonly string[]
 ): FormLayoutSnapshot {
   let decided = false;
   let description = '';
-  const entries: FormQuestionEntry[] = [];
+  const settingsByFieldId = new Map<string, FormQuestionEntry>();
 
-  map.forEach((value, key) => {
+  map?.forEach((value, key) => {
     if (typeof key !== 'string') return;
     if (!(value instanceof Y.Map)) return;
     if (key === FORM_DECIDED_SENTINEL) {
@@ -153,18 +176,32 @@ export function decodeSnapshot(
     }
 
     if (isSentinel(key)) return;
-    const entry = decodeEntry(key, value);
-
-    if (!entry.included) return;
-    entries.push(entry);
+    settingsByFieldId.set(key, decodeEntry(key, value));
   });
 
-  // Mirror the rust read path: sort by `order`, break ties on field id
-  // for determinism. Two views with the same question set + same order
-  // values render the questions in the same sequence.
+  // When field order is available, use it in both modes. Besides excluding
+  // orphan settings, it is the cloud projection's stable tie-break for
+  // legacy entries whose order is `u32::MAX`. The lower-level decoder keeps
+  // accepting a bare map for focused tests and preview helpers.
+  const candidateIds = fieldOrderIds ?? Array.from(settingsByFieldId.keys());
+  const entries = candidateIds
+    .map((fieldId, fieldOrderIndex) => {
+      const explicit = settingsByFieldId.get(fieldId);
+
+      // Builder mode is opt-in. Legacy mode is opt-out and therefore
+      // materializes the same default used by `FormFieldSettings::default_for`
+      // in the cloud for every missing per-field entry.
+      if (!explicit && decided) return null;
+      const entry = explicit ?? decodeEntry(fieldId, new Y.Map<unknown>());
+
+      if (!entry.included) return null;
+      return { entry, fieldOrderIndex };
+    })
+    .filter((value): value is { entry: FormQuestionEntry; fieldOrderIndex: number } => value !== null);
+
   entries.sort((a, b) =>
-    a.order === b.order ? a.fieldId.localeCompare(b.fieldId) : a.order - b.order,
+    a.entry.order === b.entry.order ? a.fieldOrderIndex - b.fieldOrderIndex : a.entry.order - b.entry.order
   );
 
-  return { decided, description, questions: entries };
+  return { decided, description, questions: entries.map(({ entry }) => entry) };
 }

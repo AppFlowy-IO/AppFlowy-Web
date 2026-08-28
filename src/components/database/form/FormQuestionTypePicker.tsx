@@ -5,30 +5,13 @@ import { useTranslation } from 'react-i18next';
 
 import { useNewPropertyDispatch } from '@/application/database-yjs/dispatch';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { FORM_QUESTION_FIELD_TYPES, isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
 import type { FormWriter } from '@/application/database-yjs/form-writer';
 import { YjsDatabaseKey } from '@/application/types';
 import type { YDatabaseFields } from '@/application/types';
 import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-
-/**
- * Field types the web form-builder ships custom rendering for. Mirrors
- * the desktop's `formQuestionFieldTypes` — same set so the two clients
- * never diverge on what counts as a "form-supported" type. Adding a
- * type here without also adding it on desktop (or vice versa) would let
- * one client author a question the other can't render.
- */
-const FORM_QUESTION_FIELD_TYPES: FieldType[] = [
-  FieldType.RichText,
-  FieldType.Number,
-  FieldType.SingleSelect,
-  FieldType.MultiSelect,
-  FieldType.Checkbox,
-  FieldType.DateTime,
-  FieldType.URL,
-  FieldType.Media,
-];
 
 /// Notion's "Show N more" threshold (Image #8). Keeps the picker
 /// compact for typical 5-7-field databases while still surfacing the
@@ -125,7 +108,7 @@ function QuestionPickerContent({
       if (onFormIds.has(fieldId)) return;
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
-      if (!FORM_QUESTION_FIELD_TYPES.includes(fieldType)) return;
+      if (!isFormQuestionFieldType(fieldType)) return;
       out.push({
         id: fieldId,
         name: field.get(YjsDatabaseKey.name) || 'Untitled',

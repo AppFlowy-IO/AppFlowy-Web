@@ -3,27 +3,12 @@ import { ArrowRight, FileText, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 import { FieldType } from '@/application/database-yjs/database.type';
+import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
 import type { FormWriter } from '@/application/database-yjs/form-writer';
 import { YjsDatabaseKey } from '@/application/types';
 import type { YDatabaseFields } from '@/application/types';
 import { Button } from '@/components/ui/button';
-
-/**
- * Same field-type filter as the desktop's `formQuestionFieldTypes`.
- * Kept inline to avoid coupling the auto-create lifecycle to the
- * picker's import.
- */
-const SUPPORTED_TYPES: Set<FieldType> = new Set([
-  FieldType.RichText,
-  FieldType.Number,
-  FieldType.SingleSelect,
-  FieldType.MultiSelect,
-  FieldType.Checkbox,
-  FieldType.DateTime,
-  FieldType.URL,
-  FieldType.Media,
-]);
 
 // Hoisted so MUI's Paper doesn't see a fresh props object every render.
 const DIALOG_PAPER_PROPS = { className: 'max-w-md w-full' } as const;
@@ -88,7 +73,7 @@ export function FormAutoCreate({
       if (typeof id !== 'string') return;
       const ty = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
-      if (SUPPORTED_TYPES.has(ty)) out.push(id);
+      if (isFormQuestionFieldType(ty)) out.push(id);
     });
     return out;
     // `fieldsVersion` invalidates the memo when the field map mutates;

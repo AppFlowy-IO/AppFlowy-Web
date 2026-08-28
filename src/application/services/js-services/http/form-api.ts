@@ -40,9 +40,7 @@ const PUBLIC_FORM_BASE = '/api/workspace/public-form';
  * We don't auto-unwrap the kind here — callers need to render different
  * UI per variant, and the wire shape is the natural switch key.
  */
-export async function getPublicFormSchema(
-  token: string,
-): Promise<PublicFormResponse> {
+export async function getPublicFormSchema(token: string): Promise<PublicFormResponse> {
   // The cloud's public-form endpoints return the schema body directly
   // (not wrapped in the workspace-API `{code, data}` envelope), so we
   // can't route through `executeAPIRequest`. Validate-and-throw here,
@@ -56,9 +54,7 @@ export async function getPublicFormSchema(
   }
 
   try {
-    const response = await axios.get<PublicFormResponse>(
-      `${PUBLIC_FORM_BASE}/${token}`,
-    );
+    const response = await axios.get<PublicFormResponse>(`${PUBLIC_FORM_BASE}/${token}`);
 
     if (!response?.data || typeof response.data !== 'object') {
       return Promise.reject({ code: -1, message: 'Malformed form schema response' });
@@ -83,7 +79,7 @@ export async function getPublicFormSchema(
 export async function submitPublicForm(
   token: string,
   payload: FormSubmissionPayload,
-  idempotencyKey: string,
+  idempotencyKey: string
 ): Promise<FormSubmitResponse> {
   // The cloud's `/public-form/{token}/submit` endpoint emits two distinct
   // shapes the caller has to disambiguate:
@@ -112,7 +108,7 @@ export async function submitPublicForm(
         headers: {
           'Idempotency-Key': idempotencyKey,
         },
-      },
+      }
     );
 
     if (!response?.data || typeof response.data !== 'object') {
@@ -146,9 +142,7 @@ export async function submitPublicForm(
  */
 function tryParseInvalidPayloadError(err: unknown): FormSubmitResponse | null {
   if (!axios.isAxiosError(err) || err.response?.status !== 400) return null;
-  const body = err.response.data as
-    | { error?: string; question_ids?: unknown }
-    | undefined;
+  const body = err.response.data as { error?: string; question_ids?: unknown } | undefined;
 
   if (body?.error !== 'missing_required_answers') return null;
   const ids = Array.isArray(body.question_ids) ? body.question_ids : [];
@@ -179,7 +173,7 @@ function tryParseInvalidPayloadError(err: unknown): FormSubmitResponse | null {
  */
 export async function requestPublicFormUploadUrl(
   token: string,
-  request: PublicFormUploadUrlRequest,
+  request: PublicFormUploadUrlRequest
 ): Promise<PublicFormUploadUrlResponse> {
   const axios = getAxios();
 
@@ -188,12 +182,14 @@ export async function requestPublicFormUploadUrl(
   }
 
   try {
-    const response = await axios.post<PublicFormUploadUrlResponse>(
-      `${PUBLIC_FORM_BASE}/${token}/upload-url`,
-      request,
-    );
+    const response = await axios.post<PublicFormUploadUrlResponse>(`${PUBLIC_FORM_BASE}/${token}/upload-url`, request);
 
-    if (!response?.data || typeof response.data !== 'object') {
+    if (
+      !response?.data ||
+      typeof response.data !== 'object' ||
+      typeof response.data.upload_content_type !== 'string' ||
+      response.data.upload_content_type.length === 0
+    ) {
       return Promise.reject({ code: -1, message: 'Malformed upload-url response' });
     }
 
@@ -213,6 +209,7 @@ export async function requestPublicFormUploadUrl(
 export async function uploadFormFileToPresignedUrl(
   upload_url: string,
   file: File,
+  upload_content_type: string
 ): Promise<void> {
   // Use plain fetch — the shared axios instance carries auth headers we don't
   // want on a third-party (or differently-scoped) S3 endpoint.
@@ -220,7 +217,9 @@ export async function uploadFormFileToPresignedUrl(
     method: 'PUT',
     body: file,
     headers: {
-      'Content-Type': file.type || 'application/octet-stream',
+      // This value can differ from `File.type` when the browser reports an
+      // empty MIME. Object storage verifies the signed header exactly.
+      'Content-Type': upload_content_type,
     },
   });
 
