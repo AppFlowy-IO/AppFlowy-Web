@@ -109,6 +109,23 @@ Feature: Database row undo redo
     When I trigger database row redo
     Then the database has 1 filter with content "Alpha"
 
+  Scenario Outline: Database history hotkeys work in non-grid layouts
+    Given a seeded grid database is ready for complex undo redo
+    And the undo redo database uses the "<layout>" layout
+    When I create a text filter containing "Alpha" for undo redo
+    Then the database has 1 filter with content "Alpha"
+    When I trigger database layout undo
+    Then the database has 0 filters
+    When I trigger database layout redo
+    Then the database has 1 filter with content "Alpha"
+
+    Examples:
+      | layout   |
+      | Board    |
+      | List     |
+      | Gallery  |
+      | Calendar |
+
   Scenario: Database filter update supports undo and redo
     Given a seeded grid database is ready for complex undo redo
     And a text filter containing "Alpha" exists for undo redo
