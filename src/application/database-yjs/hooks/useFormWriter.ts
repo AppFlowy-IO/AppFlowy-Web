@@ -14,6 +14,7 @@ const NOOP_WRITER: FormWriter = {
   removeQuestion: noop,
   clearQuestions: noop,
   populateFromFields: noop,
+  resolveAutoCreate: noop,
   reorderQuestion: noop,
   setRequired: noop,
   setDescriptionVisible: noop,

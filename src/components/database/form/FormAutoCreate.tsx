@@ -11,7 +11,10 @@ import type { YDatabaseFields } from '@/application/types';
 import { Button } from '@/components/ui/button';
 
 // Hoisted so MUI's Paper doesn't see a fresh props object every render.
-const DIALOG_PAPER_PROPS = { className: 'max-w-md w-full' } as const;
+const DIALOG_PAPER_PROPS = {
+  className: 'max-w-md w-full',
+  'aria-label': 'Auto-create form questions',
+} as const;
 
 type HydrationResult =
   | { request: () => Promise<void>; attempt: number; status: 'pending' }
@@ -28,11 +31,10 @@ function hydrationErrorMessage(error: unknown): string {
  * states gated by the decision sentinel plus the Form view's ordered fields:
  *
  *   1. `decided` → do nothing.
- *   2. unresolved and fieldCount <= 2 → silent sidebar-
- *      create seed: populate from the supported subset, mark decided.
- *   3. unresolved and fieldCount > 2 → show the modal;
- *      Create-N populates, Start-from-scratch leaves empty. Both mark
- *      decided.
+ *   2. unresolved and fieldCount === 0 → atomically decide an empty Form.
+ *   3. unresolved and fieldCount > 0 → show the modal;
+ *      Create-N populates, Start-from-scratch leaves empty. Both resolve in
+ *      one history transaction.
  *
  * `FormBuilderView` mounts this only while the explicit Form decision is
  * unresolved, then this component resolves the hydration-dependent branch.
@@ -43,12 +45,14 @@ export function FormAutoCreate({
   fieldsVersion,
   writer,
   ensureHydrated,
+  onDismiss,
 }: {
   snapshot: FormLayoutSnapshot;
   fields: YDatabaseFields | undefined;
   fieldsVersion: number;
   writer: FormWriter;
   ensureHydrated: () => Promise<void>;
+  onDismiss: () => void;
 }) {
   // Refresh race guard. A database may render immediately from IndexedDB while
   // its server state is newer (for example another client already chose Start
@@ -60,6 +64,7 @@ export function FormAutoCreate({
     attempt: 0,
     status: 'pending',
   }));
+  const [dismissedRequest, setDismissedRequest] = useState<(() => Promise<void>) | null>(null);
 
   // Associate a result with the exact request function and retry attempt that
   // produced it. If the active view changes, the new request is pending during
@@ -115,25 +120,40 @@ export function FormAutoCreate({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields, fieldsVersion, snapshot.fieldOrderIds]);
 
-  const fieldCount = supportedFieldIds.length;
+  const explicitlyExcluded = useMemo(
+    () => new Set(snapshot.explicitlyExcludedFieldIds),
+    [snapshot.explicitlyExcludedFieldIds]
+  );
+  const projectedSupportedFieldIds = useMemo(
+    () => supportedFieldIds.filter((fieldId) => !explicitlyExcluded.has(fieldId)),
+    [explicitlyExcluded, supportedFieldIds]
+  );
+  const projectedFieldCount = projectedSupportedFieldIds.length;
 
-  // Silent-seed path. Self-gating on `snapshot.decided` — the second
-  // call inside the effect (`markDecided`) flips that flag synchronously
-  // via the YJS observer, so the next run bails on the guard. No
-  // imperative latch needed.
+  // Silent-seed path. Self-gating on `snapshot.decided` — the atomic writer
+  // call flips that flag synchronously via the YJS observer, so the next run
+  // bails on the guard. No imperative latch needed.
   //
-  // 0 supported → seed nothing + mark decided so a "Create 0 questions"
-  // modal never fires for a database of only unsupported types.
-  // 1-2 supported → adopt silently. 3+ → fall through to the modal
-  // surfaced by `showDialog` below.
+  // A newly-created standalone Form already carries a decided default layout.
+  // Any unresolved Form is therefore a linked or legacy view that still needs
+  // the same Create-N / Start-from-scratch choice, even with one or two
+  // questions. Resolve only the degenerate zero-question case silently so a
+  // "Create 0 questions" modal never appears.
   useEffect(() => {
     if (hydrationStatus !== 'ready') return;
     if (snapshot.decided) return;
     if (!fields || snapshot.fieldOrderIds === null) return;
-    if (fieldCount > 2) return;
-    if (fieldCount > 0) writer.populateFromFields(supportedFieldIds);
-    writer.markDecided();
-  }, [hydrationStatus, snapshot.decided, snapshot.fieldOrderIds, fields, fieldCount, supportedFieldIds, writer]);
+    if (projectedFieldCount !== 0) return;
+    writer.resolveAutoCreate(projectedSupportedFieldIds);
+  }, [
+    hydrationStatus,
+    snapshot.decided,
+    snapshot.fieldOrderIds,
+    fields,
+    projectedFieldCount,
+    projectedSupportedFieldIds,
+    writer,
+  ]);
 
   if (currentHydrationResult?.status === 'failed') {
     return (
@@ -167,24 +187,34 @@ export function FormAutoCreate({
 
   // Modal visibility is derived, not imperative. When the user picks
   // Create-N / Start-from-scratch (or a remote sync delivers a
-  // previously-persisted decision), `writer.markDecided()` flips
+  // previously-persisted decision), `writer.resolveAutoCreate()` flips
   // `snapshot.decided` and this expression evaluates false on the
   // same render — no auto-dismiss effect, no flash.
   const showDialog =
-    hydrationStatus === 'ready' && !snapshot.decided && snapshot.fieldOrderIds !== null && fieldCount > 2;
+    hydrationStatus === 'ready' &&
+    !snapshot.decided &&
+    snapshot.fieldOrderIds !== null &&
+    dismissedRequest !== ensureHydrated &&
+    projectedFieldCount > 0;
 
   if (!showDialog) return null;
 
-  // Tap-outside or Esc → treat as Start-from-scratch (cleanest default;
-  // the user explicitly didn't pick Create-N). Matches the desktop's
-  // `FormAutoCreateDialog.show` barrier policy.
-  const dismissAsScratch = () => {
-    writer.clearQuestions();
-    writer.markDecided();
+  // Clearing an existing legacy projection is destructive. Only the explicit
+  // Start-from-scratch action may make that decision; Escape and backdrop
+  // clicks dismiss this session's prompt without touching shared state.
+  const startFromScratch = () => {
+    writer.resolveAutoCreate([]);
   };
 
   return (
-    <Dialog open={true} onClose={dismissAsScratch} PaperProps={DIALOG_PAPER_PROPS}>
+    <Dialog
+      open={true}
+      onClose={() => {
+        setDismissedRequest(() => ensureHydrated);
+        onDismiss();
+      }}
+      PaperProps={DIALOG_PAPER_PROPS}
+    >
       <div data-testid='form-auto-create-dialog' className='flex flex-col items-center gap-4 px-6 py-6 text-center'>
         <div className='flex items-center gap-3 text-text-caption'>
           <Table2 size={24} />
@@ -197,16 +227,15 @@ export function FormAutoCreate({
           data-testid='form-auto-create-confirm'
           className='w-full'
           onClick={() => {
-            writer.populateFromFields(supportedFieldIds);
-            writer.markDecided();
+            writer.resolveAutoCreate(projectedSupportedFieldIds);
           }}
         >
-          {fieldCount === 1 ? 'Create 1 question' : `Create ${fieldCount} questions`}
+          {projectedFieldCount === 1 ? 'Create 1 question' : `Create ${projectedFieldCount} questions`}
         </Button>
         <button
           data-testid='form-auto-create-start-from-scratch'
           type='button'
-          onClick={dismissAsScratch}
+          onClick={startFromScratch}
           className='text-sm text-text-caption hover:underline'
         >
           Start from scratch

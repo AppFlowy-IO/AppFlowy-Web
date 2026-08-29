@@ -56,14 +56,17 @@ export function useCanAuthorFormView({ enabled = true }: { enabled?: boolean } =
   });
 
   const ensureCanAuthor = useCallback(async (): Promise<boolean | null> => {
-    if (hasEnvironmentBypass || isPro) return true;
+    if (hasEnvironmentBypass) return true;
     if (!currentWorkspaceId) return null;
 
+    // Always enter the cache-aware loader at a gated interaction. It returns
+    // a still-valid cached result immediately, but refreshes an expired Pro
+    // result before creation/duplication proceeds after a downgrade.
     const plan = await loadSubscription();
 
     if (plan === null) return null;
     return plan !== SubscriptionPlan.Free;
-  }, [currentWorkspaceId, hasEnvironmentBypass, isPro, loadSubscription]);
+  }, [currentWorkspaceId, hasEnvironmentBypass, loadSubscription]);
 
   if (hasEnvironmentBypass || isPro) {
     return { canAuthor: true, isLoading: false, hasError: false, ensureCanAuthor };

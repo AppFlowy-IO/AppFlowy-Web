@@ -10,14 +10,16 @@ import { FormShareState, useFormShare } from './useFormShare';
  */
 const FormShareContext = createContext<FormShareState | null>(null);
 
-export function FormShareProvider({ children }: { children: React.ReactNode }) {
-  const share = useFormShare();
+export function FormShareProvider({
+  canUpdateSettings,
+  children,
+}: {
+  canUpdateSettings: boolean;
+  children: React.ReactNode;
+}) {
+  const share = useFormShare({ canUpdateSettings });
 
-  return (
-    <FormShareContext.Provider value={share}>
-      {children}
-    </FormShareContext.Provider>
-  );
+  return <FormShareContext.Provider value={share}>{children}</FormShareContext.Provider>;
 }
 
 export function useFormShareContext(): FormShareState {

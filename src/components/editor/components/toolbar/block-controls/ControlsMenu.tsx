@@ -38,6 +38,7 @@ import CalloutIconControl from './CalloutIconControl';
 import CalloutQuickStyleControl from './CalloutQuickStyleControl';
 import Color from './Color';
 import {
+  assertLinkedDatabaseBlockDuplicateIsSafe,
   findDuplicatedContainerChild,
   getDatabaseLayoutFromBlockType,
   isDatabaseBlockType,
@@ -296,6 +297,12 @@ function ControlsMenu({
           firstSourceView,
           loadViewMeta,
         });
+
+        // The generic linked-view path below does not copy Form's per-view
+        // settings or enforce its plan entitlement. Reject the entire block
+        // before creating any children so a mixed Grid/Form block cannot be
+        // partially duplicated or silently lose its Form projection.
+        assertLinkedDatabaseBlockDuplicateIsSafe(sourceViews);
 
         const duplicatedViewIds = await Promise.all(
           sourceViewIds.map(async (_, i) => {

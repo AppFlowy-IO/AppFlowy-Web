@@ -7,6 +7,7 @@ import { useViewObjectPermission } from '@/components/app/hooks/useViewObjectPer
 import {
   isCollabObjectPermissionForTarget,
   findPermissionProbeView,
+  type PermissionProbeTarget,
   resolvePermissionProbeTarget,
 } from '@/components/app/layers/permissionProbe';
 import {
@@ -15,11 +16,17 @@ import {
   canUseViewMutationActions,
 } from '@/components/app/view-actions/viewActionPermission';
 
-export function useViewActionPermissions(view: View | null | undefined, opened: boolean, fallbackViewId?: string) {
+export function useViewActionPermissions(
+  view: View | null | undefined,
+  opened: boolean,
+  fallbackViewId?: string,
+  explicitTarget?: PermissionProbeTarget
+) {
   const workspaceId = useCurrentWorkspaceId();
   const viewId = view?.view_id ?? fallbackViewId;
   const activeObjectPermission = useViewObjectPermission(viewId);
-  const resolvedTarget = viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined;
+  const resolvedTarget =
+    explicitTarget ?? (viewId && view ? resolvePermissionProbeTarget(viewId, view) : undefined);
   const collabObjectId = resolvedTarget?.collabObjectId;
   const collabType = resolvedTarget?.collabType;
   const requestSeq = useRef(0);
@@ -105,6 +112,9 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
   const canLoadViewActionPermissions = Boolean(opened && workspaceId && viewId);
   const hasLoadedViewActionPermissions = !canLoadViewActionPermissions || loadedViewId === viewId;
   const permissionForCurrentView = loadedViewId === viewId ? objectPermission : null;
+  const canRead = hasLoadedViewActionPermissions && permissionForCurrentView?.can_read === true;
+  const canWrite = canRead && permissionForCurrentView.can_write;
+  const canShare = canRead && permissionForCurrentView.can_share;
   const canManageViewActions = hasLoadedViewActionPermissions
     ? canUseViewMutationActions({ objectPermission: permissionForCurrentView })
     : false;
@@ -116,6 +126,9 @@ export function useViewActionPermissions(view: View | null | undefined, opened: 
     : false;
 
   return {
+    canRead,
+    canShare,
+    canWrite,
     canCreateViewActions,
     canManageViewActions,
     canUsePageHistory,

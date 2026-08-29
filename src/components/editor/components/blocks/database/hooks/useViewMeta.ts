@@ -17,6 +17,7 @@ interface UseViewMetaProps {
 interface UseViewMetaResult {
   databaseName: string;
   loadViewMeta: (id: string, callback?: (meta: View | null) => void) => Promise<View | null>;
+  viewMeta: View | null;
 }
 
 /**
@@ -34,16 +35,15 @@ export function useViewMeta({
   onNotFound,
 }: UseViewMetaProps): UseViewMetaResult {
   const [databaseName, setDatabaseName] = useState<string>('');
+  const [loadedViewMeta, setLoadedViewMeta] = useState<{ viewId: string; view: View } | null>(null);
   const onNotFoundRef = useRef(onNotFound);
+  const activeViewIdRef = useRef(viewId);
 
   onNotFoundRef.current = onNotFound;
+  activeViewIdRef.current = viewId;
 
   const loadWithRetry = useCallback(
-    async (
-      id: string,
-      callback?: (meta: View | null) => void,
-      retries = 3
-    ): Promise<View | null> => {
+    async (id: string, callback?: (meta: View | null) => void, retries = 3): Promise<View | null> => {
       if (!loadViewMetaFn) return null;
 
       for (let attempt = 1; attempt <= retries; attempt++) {
@@ -71,8 +71,9 @@ export function useViewMeta({
         const meta = await loadWithRetry(id, callback);
 
         if (meta) {
-          if (id === viewId) {
+          if (id === activeViewIdRef.current) {
             setDatabaseName(meta.name ?? '');
+            setLoadedViewMeta({ viewId: id, view: meta });
           }
 
           return meta;
@@ -95,7 +96,7 @@ export function useViewMeta({
         throw error;
       }
     },
-    [loadWithRetry, viewId, ignoreMetaErrors]
+    [loadWithRetry, ignoreMetaErrors]
   );
 
   // Initial load
@@ -107,5 +108,9 @@ export function useViewMeta({
     });
   }, [viewId, loadViewMeta]);
 
-  return { databaseName, loadViewMeta };
+  return {
+    databaseName,
+    loadViewMeta,
+    viewMeta: loadedViewMeta?.viewId === viewId ? loadedViewMeta.view : null,
+  };
 }

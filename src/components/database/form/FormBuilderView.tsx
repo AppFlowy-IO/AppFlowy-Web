@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   DragDropContext,
@@ -38,8 +38,7 @@ import { FormTitle } from './FormTitle';
  * Top-level form-builder view. Mirrors the desktop's `FormBuilderPage`:
  *
  *   ┌─ toolbar ──────────────────── Preview · Share form ┐
- *   │  Form                                              │
- *   │  Description (optional)                            │
+ *   │  View name (AppFlowy-only)                         │
  *   │  ┌─ access banner ────────────────────── Change ─┐ │
  *   │  │ 🔒 Only members at <ws> can fill out this form │
  *   │  └────────────────────────────────────────────────┘ │
@@ -48,23 +47,17 @@ import { FormTitle } from './FormTitle';
  *   │             + Add question                        │
  *   └────────────────────────────────────────────────────┘
  *
- * The auto-create helper is mounted only for an undecided empty form and
+ * The auto-create helper is mounted for every unresolved Form, including a
+ * fresh view whose legacy projection temporarily exposes existing fields. It
  * removes its hydration subscription as soon as that one-time branch resolves.
  */
 export function FormBuilderView() {
   const ctx = useDatabaseContextOptional();
   const readOnly = ctx?.readOnly ?? false;
 
-  // The share-state hook only matters when authoring chrome is mounted;
-  // skip the bootstrap fetch in respondent / view-only mode by gating the
-  // provider on `readOnly`.
-  if (readOnly) {
-    return <FormBuilderBody readOnly />;
-  }
-
   return (
-    <FormShareProvider>
-      <FormBuilderBody readOnly={false} />
+    <FormShareProvider canUpdateSettings={ctx?.canShare === true}>
+      <FormBuilderBody readOnly={readOnly} />
     </FormShareProvider>
   );
 }
@@ -82,7 +75,16 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
     ?.get(YjsDatabaseKey.id) as string | undefined;
   const activeViewId = ctx?.activeViewId;
   const loadView = ctx?.loadView;
-  const autoCreatePending = !readOnly && !snapshot.decided;
+  const [dismissedHydrationRequest, setDismissedHydrationRequest] = useState<(() => Promise<void>) | null>(null);
+  const canWriteRef = useRef(!readOnly);
+
+  // Commit before passive child cleanup runs. If a permission change replaces
+  // the editable list, its unmount flush reads this value and cannot write
+  // after access was revoked. A layout effect avoids leaking an abandoned
+  // concurrent render into the currently committed cards.
+  useLayoutEffect(() => {
+    canWriteRef.current = !readOnly;
+  }, [readOnly]);
 
   const ensureFormHydrated = useCallback(async () => {
     if (!loadView) {
@@ -102,6 +104,8 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
       forceFetch: true,
     });
   }, [activeViewId, databaseId, loadView]);
+  const autoCreateDismissed = dismissedHydrationRequest === ensureFormHydrated;
+  const autoCreatePending = !readOnly && !snapshot.decided && !autoCreateDismissed;
 
   // Resolve every `field_id` in the projection to its on-disk field.
   // Orphans (entries whose underlying field was deleted from a Grid
@@ -192,19 +196,23 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
     >
       <div className='mx-auto flex min-h-full w-full max-w-2xl flex-col gap-4 px-6 py-10'>
         {/*
-        Toolbar / banner / auto-create modal are authoring-only. A
-        respondent / view-only member sees the same questions but none
-        of the editor chrome — same posture as the desktop's
-        `_FormToolbar` and `_FormAccessBanner` gating on read-only.
+        Preview, share-link inspection, and the access banner remain visible
+        to view-only members, matching Desktop. The provider and popovers use
+        page permission to disable every mutation independently from the paid
+        plan entitlement. Auto-create and question editing remain author-only.
       */}
-        {!readOnly && (
-          <header className='flex items-center justify-end gap-2'>
-            <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
-            <FormShareButton />
-          </header>
-        )}
-        <FormTitle readOnly={readOnly} />
-        {!readOnly && <FormAccessBanner />}
+        <header className='flex items-center justify-end gap-2'>
+          <FormPreviewButton snapshot={snapshot} fieldsMap={fields} fieldsVersion={fieldsVersion} />
+          <FormShareButton />
+        </header>
+        <section data-testid='form-internal-view-name' className='flex flex-col gap-1'>
+          <span className='text-xs font-medium text-text-caption'>View name</span>
+          <FormTitle key={activeViewId} readOnly={readOnly} />
+          <p className='text-xs text-text-tertiary'>
+            Used in AppFlowy only. Shared forms currently display &ldquo;Untitled form&rdquo;.
+          </p>
+        </section>
+        <FormAccessBanner />
         {autoCreatePending && (
           <FormAutoCreate
             snapshot={snapshot}
@@ -212,6 +220,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
             fieldsVersion={fieldsVersion}
             writer={writer}
             ensureHydrated={ensureFormHydrated}
+            onDismiss={() => setDismissedHydrationRequest(() => ensureFormHydrated)}
           />
         )}
 
@@ -236,6 +245,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
             onReorder={handleReorder}
             writer={writer}
             addSelectOption={addSelectOption}
+            canWriteRef={canWriteRef}
           />
         )}
 
@@ -281,13 +291,20 @@ function DraggableQuestionList({
   onReorder,
   writer,
   addSelectOption,
+  canWriteRef,
 }: {
   questions: ResolvedQuestion[];
   onReorder: (result: DropResult) => void;
   writer: FormWriter;
   addSelectOption: AddFormSelectOption;
+  canWriteRef: React.RefObject<boolean>;
 }) {
-  const visibleQuestionIds = useMemo(() => questions.map((question) => question.questionId), [questions]);
+  // Snapshot objects are rebuilt for any question setting mutation. Key the
+  // shared ID array by its primitive sequence so toggling one card does not
+  // invalidate the memoized props of every other card.
+  const visibleQuestionIdsKey = questions.map((question) => question.questionId).join('\u0000');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const visibleQuestionIds = useMemo(() => questions.map((question) => question.questionId), [visibleQuestionIdsKey]);
 
   return (
     <DragDropContext onDragEnd={onReorder}>
@@ -313,6 +330,7 @@ function DraggableQuestionList({
                       selectField={q.selectField}
                       addSelectOption={addSelectOption}
                       writer={writer}
+                      canWriteRef={canWriteRef}
                     />
                   </PortaledDraggable>
                 )}

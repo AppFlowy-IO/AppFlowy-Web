@@ -152,9 +152,13 @@ describe('useSubscriptionPlan', () => {
     expect(result.current.isPro).toBe(false);
   });
 
-  it('does not invent a loading state when a mounted cached result passes its TTL', async () => {
+  it('expires a mounted Pro result and publishes the refreshed downgrade', async () => {
     const dateNow = jest.spyOn(Date, 'now').mockReturnValue(1_000);
-    const getSubscriptions = jest.fn().mockResolvedValue([proSubscription]);
+    const downgradeRequest = deferred<Subscription[]>();
+    const getSubscriptions = jest
+      .fn<Promise<Subscription[]>, []>()
+      .mockResolvedValueOnce([proSubscription])
+      .mockImplementationOnce(() => downgradeRequest.promise);
     const { result, rerender } = renderHook(() =>
       useSubscriptionPlan(getSubscriptions, { cacheKey: 'workspace:mounted-ttl' }),
     );
@@ -164,9 +168,18 @@ describe('useSubscriptionPlan', () => {
     dateNow.mockReturnValue(61_001);
     rerender();
 
-    expect(result.current.isPro).toBe(true);
+    expect(result.current.isPro).toBe(false);
+    expect(result.current.isLoading).toBe(true);
+    await waitFor(() => expect(getSubscriptions).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      downgradeRequest.resolve([]);
+      await downgradeRequest.promise;
+    });
+
+    expect(result.current.activeSubscriptionPlan).toBe(SubscriptionPlan.Free);
+    expect(result.current.isPro).toBe(false);
     expect(result.current.isLoading).toBe(false);
-    expect(getSubscriptions).toHaveBeenCalledTimes(1);
     dateNow.mockRestore();
   });
 

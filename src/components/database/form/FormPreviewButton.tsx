@@ -15,28 +15,19 @@ const FormBody = lazy(() =>
   }))
 );
 
-// Synthetic placeholder options shown when a select question has none.
-// Mirrors `_readSelectOptions`'s fallback in the desktop preview
-// (`form_preview_inputs.dart`): a fresh question with no options yet
-// still renders three "Option 1/2/3" rows so the creator can see the
-// option-picker shape without first authoring real options.
-const PREVIEW_PLACEHOLDER_OPTIONS: PublicOption[] = [
-  { id: '__preview_opt_1', label: 'Option 1' },
-  { id: '__preview_opt_2', label: 'Option 2' },
-  { id: '__preview_opt_3', label: 'Option 3' },
-];
-
 // Hoisted so MUI's Paper doesn't see a fresh props object every render.
 const DIALOG_PAPER_PROPS = {
   className: 'max-h-[85vh] w-[90vw] max-w-2xl overflow-auto',
+  'aria-label': 'Form preview',
 } as const;
 
 /**
  * Preview the form-builder draft in respondent mode. Reuses the
- * `FormBody` component the public `/form/:token` page renders, so
- * what the creator sees here is bit-for-bit what the respondent will
- * see — minus the actual submission (the preview's submit is
- * intercepted with a no-op; see `previewToken`).
+ * `FormBody` component the public `/form/:token` page renders, so question
+ * rendering and validation stay aligned with the respondent surface. The
+ * preview title and form description intentionally match the deployed public
+ * schema. Cloud does not project the local authoring values yet, so showing
+ * them here would promise respondents a different form than the shared URL.
  *
  * Building the synthetic schema from the local draft keeps the
  * preview live: every per-question edit ripples into the preview on
@@ -94,11 +85,9 @@ export function FormPreviewButton({
 /**
  * Build the respondent-shaped preview from the local question projection.
  *
- * The current public-schema endpoint does not project the database view name
- * or the form-description sentinel: it returns `Untitled form` and no
- * form-level description. Keep preview honest about that deployed contract
- * until Cloud supports those fields. Per-question descriptions are part of
- * the public projection and remain previewed below.
+ * The deployed public schema currently returns a fixed title and no form-level
+ * description. Keep Preview on that contract until Cloud projects those local
+ * authoring values for shared forms.
  */
 export function buildFormPreviewSchema(snapshot: FormLayoutSnapshot, fieldsMap: YDatabaseFields): PublicFormSchema {
   const questions: PublicQuestion[] = [];
@@ -111,16 +100,8 @@ export function buildFormPreviewSchema(snapshot: FormLayoutSnapshot, fieldsMap: 
     const kind = toPublicKind(fieldType);
 
     if (!kind) continue;
-    // For select questions with no real options yet, fall back to
-    // the synthetic placeholder list so the creator sees the row
-    // shape (matches desktop `_readSelectOptions` fallback).
     const realOptions = kind === 'single_select' || kind === 'multi_select' ? extractOptions(field) : undefined;
-    const previewOptions =
-      kind === 'single_select' || kind === 'multi_select'
-        ? realOptions && realOptions.length > 0
-          ? realOptions
-          : PREVIEW_PLACEHOLDER_OPTIONS
-        : undefined;
+    const previewOptions = kind === 'single_select' || kind === 'multi_select' ? realOptions ?? [] : undefined;
 
     questions.push({
       id: q.fieldId,

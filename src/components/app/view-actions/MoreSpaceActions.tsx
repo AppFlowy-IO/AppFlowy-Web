@@ -9,6 +9,11 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useCurrentWorkspaceId, useRefreshOutline } from '@/components/app/app.hooks';
+import {
+  assertGenericDeepDuplicateIsSafe,
+  FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE,
+  isUnsafeFormDeepDuplicate,
+} from '@/components/app/view-actions/formDuplicateSafety';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
@@ -30,11 +35,17 @@ function MoreSpaceActions({
   const workspaceId = useCurrentWorkspaceId();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const refreshOutline = useRefreshOutline();
+  const formDuplicateUnavailable = isUnsafeFormDeepDuplicate(view);
 
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;
     setDuplicateLoading(true);
     try {
+      await assertGenericDeepDuplicateIsSafe({
+        workspaceId,
+        viewId: view.view_id,
+        knownView: view,
+      });
       await PageService.duplicate(workspaceId, view.view_id);
 
       void refreshOutline?.();
@@ -45,7 +56,7 @@ function MoreSpaceActions({
     } finally {
       setDuplicateLoading(false);
     }
-  }, [onClose, refreshOutline, view.view_id, workspaceId]);
+  }, [onClose, refreshOutline, view, workspaceId]);
 
   const handleManageClick = useCallback(() => {
     onClose();
@@ -63,11 +74,15 @@ function MoreSpaceActions({
       {canOpenManageActions && (
         <DropdownMenuItem
           data-testid={'space-action-duplicate'}
-          onSelect={handleDuplicateClick}
-          disabled={duplicateLoading}
+          onSelect={formDuplicateUnavailable ? undefined : handleDuplicateClick}
+          disabled={duplicateLoading || formDuplicateUnavailable}
+          title={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : undefined}
+          aria-label={formDuplicateUnavailable ? FORM_DEEP_DUPLICATE_UNAVAILABLE_MESSAGE : undefined}
         >
           {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />}
-          {t('space.duplicate')}
+          {formDuplicateUnavailable
+            ? t('form.duplicateUnavailable', 'Duplicate unavailable for Forms')
+            : t('space.duplicate')}
         </DropdownMenuItem>
       )}
       {isLoadingActions && (

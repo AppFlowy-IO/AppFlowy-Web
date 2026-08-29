@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, MoreHorizontal, Star, Trash2, Type as TypeIcon } from 'lucide-react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { FieldType } from '@/application/database-yjs/database.type';
 import type { FormWriter } from '@/application/database-yjs/form-writer';
@@ -58,6 +58,7 @@ function _FormQuestionCard({
   selectField,
   addSelectOption,
   writer,
+  canWriteRef = ALWAYS_WRITABLE,
 }: {
   questionId: string;
   name: string;
@@ -73,6 +74,8 @@ function _FormQuestionCard({
   selectField?: YDatabaseField;
   addSelectOption: AddFormSelectOption;
   writer: FormWriter;
+  /** Current page permission, shared by the parent across branch unmounts. */
+  canWriteRef?: React.RefObject<boolean>;
 }) {
   // Tracks ONLY the dropdown's open state — needed so the 3-dot
   // trigger stays visible while the menu is open even if the user
@@ -84,6 +87,10 @@ function _FormQuestionCard({
   const [descriptionDraft, setDescriptionDraft] = useState(description);
   const descriptionDraftRef = useRef(description);
   const lastCommittedDescription = useRef(description);
+  const descriptionFocusedRef = useRef(false);
+  const descriptionDirtyRef = useRef(false);
+  const deferredExternalDescriptionRef = useRef<string | null>(null);
+  const descriptionVisibleRef = useRef(descriptionVisible);
   const descriptionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const helper = helperText(fieldType);
   const isSelect = fieldType === FieldType.SingleSelect || fieldType === FieldType.MultiSelect;
@@ -97,31 +104,64 @@ function _FormQuestionCard({
   const commitDescription = useCallback(
     (value: string) => {
       clearDescriptionTimer();
+      deferredExternalDescriptionRef.current = null;
+      descriptionDirtyRef.current = false;
+      if (!canWriteRef.current) return;
       if (value === lastCommittedDescription.current) return;
       lastCommittedDescription.current = value;
       writer.setDescription(questionId, value);
     },
-    [clearDescriptionTimer, questionId, writer]
+    [canWriteRef, clearDescriptionTimer, questionId, writer]
   );
+  const commitDescriptionRef = useRef(commitDescription);
+
+  // Cleanup must observe only committed props/callbacks. Assigning these refs
+  // during render could leak an abandoned concurrent render into the mounted
+  // card's navigation-time flush.
+  useLayoutEffect(() => {
+    commitDescriptionRef.current = commitDescription;
+    descriptionVisibleRef.current = descriptionVisible;
+  }, [commitDescription, descriptionVisible]);
 
   useEffect(() => {
     if (description === lastCommittedDescription.current) return;
-    clearDescriptionTimer();
     lastCommittedDescription.current = description;
+    if (descriptionFocusedRef.current) {
+      deferredExternalDescriptionRef.current = description;
+      return;
+    }
+
+    clearDescriptionTimer();
+    descriptionDirtyRef.current = false;
+    deferredExternalDescriptionRef.current = null;
     descriptionDraftRef.current = description;
     setDescriptionDraft(description);
   }, [clearDescriptionTimer, description]);
 
-  useEffect(() => {
-    return clearDescriptionTimer;
-  }, [clearDescriptionTimer]);
+  const flushDescriptionOnUnmount = useCallback(() => {
+    // Desktop writes this field through on every keystroke. Web batches the
+    // same Yjs mutation for 500ms, so navigation must flush the final draft
+    // instead of cancelling it. The writer's membership guard makes this a
+    // safe no-op when the card unmounted because the question was removed.
+    if (canWriteRef.current && descriptionVisibleRef.current && descriptionDirtyRef.current) {
+      commitDescriptionRef.current(descriptionDraftRef.current);
+    } else {
+      clearDescriptionTimer();
+    }
+  }, [canWriteRef, clearDescriptionTimer]);
+
+  useEffect(() => flushDescriptionOnUnmount, [flushDescriptionOnUnmount]);
 
   // A remote visibility change can remove the input without unmounting the
   // card. Cancel its draft instead of letting a late timer call
   // `setDescription`, which would make the writer turn the description back
   // on. Blur still flushes ordinary local focus changes.
   useEffect(() => {
-    if (!descriptionVisible) clearDescriptionTimer();
+    if (!descriptionVisible) {
+      clearDescriptionTimer();
+      descriptionDirtyRef.current = false;
+      deferredExternalDescriptionRef.current = null;
+    }
   }, [clearDescriptionTimer, descriptionVisible]);
 
   return (
@@ -149,6 +189,8 @@ function _FormQuestionCard({
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end' className='w-56'>
               <DropdownMenuItem
+                role='menuitemcheckbox'
+                aria-checked={required}
                 onSelect={(e) => {
                   e.preventDefault();
                   writer.setRequired(questionId, !required);
@@ -159,9 +201,11 @@ function _FormQuestionCard({
                   <Star size={14} />
                   Required
                 </span>
-                <Switch checked={required} />
+                <Switch aria-hidden tabIndex={-1} className='pointer-events-none' checked={required} />
               </DropdownMenuItem>
               <DropdownMenuItem
+                role='menuitemcheckbox'
+                aria-checked={descriptionVisible}
                 onSelect={(e) => {
                   e.preventDefault();
                   writer.setDescriptionVisible(questionId, !descriptionVisible);
@@ -172,10 +216,12 @@ function _FormQuestionCard({
                   <TypeIcon size={14} />
                   Description
                 </span>
-                <Switch checked={descriptionVisible} />
+                <Switch aria-hidden tabIndex={-1} className='pointer-events-none' checked={descriptionVisible} />
               </DropdownMenuItem>
               {isRichText && (
                 <DropdownMenuItem
+                  role='menuitemcheckbox'
+                  aria-checked={longAnswer}
                   onSelect={(e) => {
                     e.preventDefault();
                     writer.setLongAnswer(questionId, !longAnswer);
@@ -186,7 +232,7 @@ function _FormQuestionCard({
                     <TypeIcon size={14} />
                     Long answer
                   </span>
-                  <Switch checked={longAnswer} />
+                  <Switch aria-hidden tabIndex={-1} className='pointer-events-none' checked={longAnswer} />
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -248,13 +294,30 @@ function _FormQuestionCard({
 
             setDescriptionDraft(value);
             descriptionDraftRef.current = value;
+            descriptionDirtyRef.current = true;
             clearDescriptionTimer();
             descriptionTimer.current = setTimeout(() => {
               descriptionTimer.current = null;
               commitDescription(value);
             }, DESCRIPTION_DEBOUNCE_MS);
           }}
-          onBlur={() => commitDescription(descriptionDraftRef.current)}
+          onFocus={() => {
+            descriptionFocusedRef.current = true;
+          }}
+          onBlur={() => {
+            descriptionFocusedRef.current = false;
+            if (descriptionDirtyRef.current) {
+              commitDescription(descriptionDraftRef.current);
+              return;
+            }
+
+            const deferred = deferredExternalDescriptionRef.current;
+
+            if (deferred === null) return;
+            deferredExternalDescriptionRef.current = null;
+            descriptionDraftRef.current = deferred;
+            setDescriptionDraft(deferred);
+          }}
           // The whole card is RBD's drag activator (see
           // `DraggableQuestionList`). Without stopping mouse-down on
           // the input, dragging across the description text starts
@@ -283,6 +346,8 @@ function _FormQuestionCard({
     </div>
   );
 }
+
+const ALWAYS_WRITABLE: React.RefObject<boolean> = { current: true };
 
 /// Helper subtitle shown between the question title and its body. Single-
 /// select reads "up to 1"; multi-value pickers (multi-select, relation,

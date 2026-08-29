@@ -35,6 +35,7 @@ export function FormShareButton() {
   } = useCanAuthorFormView();
 
   const [, setSearch] = useSearchParams();
+  const canUpdateSettings = share.canUpdateSettings;
   const openUpgradePlan = useCallback(() => {
     setSearch((prev) => {
       prev.set('action', 'change_plan');
@@ -47,10 +48,17 @@ export function FormShareButton() {
 
     if (allowed === false) openUpgradePlan();
   }, [ensureCanAuthor, openUpgradePlan]);
+  const shouldShowEntitlementGate =
+    canUpdateSettings &&
+    share.info === null &&
+    !share.isLoading &&
+    (share.errorKind === 'plan_required' || (!share.errorKind && !share.error));
 
   // Existing shares stay inspectable after a plan downgrade so their owner can
-  // close an active link. Only minting/reopening/broadening remains gated.
-  if (!canAuthor && share.info === null) {
+  // close an active link. Loading and generic GET failures also keep the
+  // popover reachable so an owner can retry the read needed to close it.
+  // Only a confirmed missing/plan-gated link takes the entitlement-only path.
+  if (shouldShowEntitlementGate && !canAuthor) {
     if (canAuthor === null) {
       return (
         <Button
@@ -88,8 +96,12 @@ export function FormShareButton() {
       errorKind={share.errorKind}
       errorMessage={share.error}
       onUpgradePlan={openUpgradePlan}
+      hasEntitlementError={hasEntitlementError}
+      onRetryEntitlement={() => void retryEntitlement()}
       onRetry={share.retryBootstrap}
-      canBroadenAccess={canAuthor === true}
+      onRetryMutation={share.retryMutation}
+      canUpdateSettings={canUpdateSettings}
+      canBroadenAccess={canUpdateSettings && canAuthor === true}
       setTier={share.setTier}
       setAnonymous={share.setAnonymous}
       url={url}

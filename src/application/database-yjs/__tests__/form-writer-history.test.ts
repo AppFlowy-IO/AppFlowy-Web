@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 
 import {
   FORM_DECIDED_SENTINEL,
+  FORM_DESCRIPTION,
   FORM_DESCRIPTION_VISIBLE,
   FORM_INCLUDED,
   FORM_LONG_ANSWER,
@@ -103,6 +104,97 @@ describe('Form writer database history', () => {
     expect(entry?.get(FORM_LONG_ANSWER)).toBe(true);
     history.undo();
     expect(entry?.get(FORM_LONG_ANSWER)).toBeUndefined();
+
+    databaseDoc.destroy();
+  });
+
+  it('resolves auto-create membership and the decided sentinel as one undoable action', () => {
+    const { databaseDoc, settings, view } = createFixture(['field-a', 'field-b']);
+
+    // Model an unresolved legacy Form whose default-included fields are
+    // waiting for the one-time auto-create choice.
+    settings.delete(FORM_DECIDED_SENTINEL);
+    const writer = createFormWriter(view);
+    const history = getOrCreateDatabaseHistoryManager(databaseDoc);
+
+    writer.resolveAutoCreate(['field-b']);
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      decided: true,
+      questions: [{ fieldId: 'field-b' }],
+    });
+    expect(history.canUndo()).toBe(true);
+
+    history.undo();
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      decided: false,
+      questions: [{ fieldId: 'field-a' }, { fieldId: 'field-b' }],
+    });
+    expect(history.canUndo()).toBe(false);
+
+    history.redo();
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      decided: true,
+      questions: [{ fieldId: 'field-b' }],
+    });
+
+    databaseDoc.destroy();
+  });
+
+  it('preserves legacy question attributes while materializing explicit membership', () => {
+    const { databaseDoc, settings, view } = createFixture(['field-a', 'field-b']);
+    const legacyEntry = settings.get('field-b');
+
+    settings.delete(FORM_DECIDED_SENTINEL);
+    legacyEntry?.set(FORM_REQUIRED, true);
+    legacyEntry?.set(FORM_DESCRIPTION_VISIBLE, true);
+    legacyEntry?.set(FORM_DESCRIPTION, 'Keep this guidance');
+    legacyEntry?.set(FORM_LONG_ANSWER, true);
+
+    createFormWriter(view).resolveAutoCreate(['field-b']);
+
+    expect(settings.get('field-b')).toBe(legacyEntry);
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      decided: true,
+      questions: [
+        {
+          fieldId: 'field-b',
+          required: true,
+          descriptionVisible: true,
+          description: 'Keep this guidance',
+          longAnswer: true,
+        },
+      ],
+    });
+
+    databaseDoc.destroy();
+  });
+
+  it('materializes every visible legacy question before the first override edit', () => {
+    const { databaseDoc, settings, view } = createFixture(['field-a', 'field-b', 'field-c']);
+
+    settings.delete(FORM_DECIDED_SENTINEL);
+    createFormWriter(view).setRequired('field-c', true);
+
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      decided: true,
+      questions: [{ fieldId: 'field-a' }, { fieldId: 'field-b' }, { fieldId: 'field-c', required: true }],
+    });
+    expect(settings.get('field-c')?.get(FORM_INCLUDED)).toBe(true);
+
+    databaseDoc.destroy();
+  });
+
+  it('materializes the remaining legacy projection when removing a synthesized question', () => {
+    const { databaseDoc, settings, view } = createFixture(['field-a', 'field-b', 'field-c']);
+
+    settings.delete(FORM_DECIDED_SENTINEL);
+    createFormWriter(view).removeQuestion('field-c');
+
+    expect(readFormLayoutSnapshot(view)).toMatchObject({
+      decided: true,
+      questions: [{ fieldId: 'field-a' }, { fieldId: 'field-b' }],
+    });
+    expect(settings.has('field-c')).toBe(false);
 
     databaseDoc.destroy();
   });

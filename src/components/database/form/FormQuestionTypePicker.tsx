@@ -3,7 +3,7 @@ import { PlusCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useNewPropertyDispatch } from '@/application/database-yjs/dispatch';
+import { useNewFormQuestionDispatch } from '@/application/database-yjs/dispatch';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { FORM_QUESTION_FIELD_TYPES, isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
@@ -63,12 +63,9 @@ export function buildExistingQuestionCandidates(
  *   └────────────────────────────────────────────────────────────┘
  *
  * Existing-property picks call `addQuestion` (no new field is created;
- * we just add a `FormQuestionPB` entry to this view's
- * `form_field_settings`). New-question picks must create a field on
- * the database first — but the web side doesn't have a "createField"
- * API today, so for M2 the New section opens a stub menu that
- * disables the option with a "Coming soon" tooltip. M3 wires the
- * field-create HTTP path.
+ * only this view's Form projection changes). New-question picks use one
+ * database-history transaction to create the field in every linked view and
+ * attach it to this Form, matching Desktop's atomic command.
  */
 export function FormQuestionTypePicker({
   fieldsMap,
@@ -124,7 +121,7 @@ function QuestionPickerContent({
   onClose: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const createProperty = useNewPropertyDispatch();
+  const createQuestion = useNewFormQuestionDispatch();
   const { t } = useTranslation();
 
   // The content component exists only while the popover is open, so a hidden
@@ -173,13 +170,10 @@ function QuestionPickerContent({
       )}
       <SectionHeader label='New question' />
       {/*
-        Picking a New-question type creates a brand-new database field
-        (via the existing `useNewPropertyDispatch` — direct YJS write
-        to every linked view's `fields` / `field_orders` /
-        `field_settings`) AND appends a `FormQuestionPB` entry to this
-        form view's projection. The new property shows up in the Grid
-        tab and every other form view, which is the same behavior the
-        desktop's `_createAndAdd` ships.
+        Picking a New-question type creates a brand-new database field and
+        attaches it to this Form in one Yjs/history transaction. The new
+        property shows up in every linked view's schema; decided Form views
+        still control membership through their own projections.
       */}
       {FORM_QUESTION_FIELD_TYPES.map((ty) => (
         <button
@@ -187,9 +181,7 @@ function QuestionPickerContent({
           data-testid={`form-question-type-option-${ty}`}
           type='button'
           onClick={() => {
-            const newFieldId = createProperty(ty);
-
-            writer.addQuestion(newFieldId);
+            createQuestion(ty);
             onClose();
           }}
           className='flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'

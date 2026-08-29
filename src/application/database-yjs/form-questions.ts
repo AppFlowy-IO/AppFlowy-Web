@@ -49,6 +49,10 @@ export interface FormLayoutSnapshot {
   /// view metadata is not resolved yet; an empty array is a resolved view
   /// with no fields. Auto-create must not write while this is `null`.
   fieldOrderIds: readonly string[] | null;
+  /// Explicit legacy opt-out rows. Auto-create must preserve these exclusions
+  /// when it materializes the decided sentinel; merely opening a legacy Form
+  /// must never re-add a question its creator removed.
+  explicitlyExcludedFieldIds: readonly string[];
   /// Form-level description (the "Description (optional)" line below
   /// the title). Stored under `FORM_DESCRIPTION_SENTINEL`.
   description: string;
@@ -61,6 +65,7 @@ export interface FormLayoutSnapshot {
 const EMPTY_SNAPSHOT: FormLayoutSnapshot = Object.freeze({
   decided: false,
   fieldOrderIds: null,
+  explicitlyExcludedFieldIds: [],
   description: '',
   questions: [],
 });
@@ -189,6 +194,9 @@ export function decodeSnapshot(
   // legacy entries whose order is `u32::MAX`. The lower-level decoder keeps
   // accepting a bare map for focused tests and preview helpers.
   const candidateIds = fieldOrderIds ?? Array.from(settingsByFieldId.keys());
+  const explicitlyExcludedFieldIds = candidateIds.filter(
+    (fieldId) => settingsByFieldId.get(fieldId)?.included === false
+  );
   const entries = candidateIds
     .map((fieldId, fieldOrderIndex) => {
       const explicit = settingsByFieldId.get(fieldId);
@@ -211,6 +219,7 @@ export function decodeSnapshot(
   return {
     decided,
     fieldOrderIds: fieldOrderIds ? [...fieldOrderIds] : null,
+    explicitlyExcludedFieldIds,
     description,
     questions: entries.map(({ entry }) => entry),
   };

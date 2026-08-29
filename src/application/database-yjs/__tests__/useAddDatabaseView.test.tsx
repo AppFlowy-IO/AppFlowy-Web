@@ -175,6 +175,58 @@ function getDatabase(databaseDoc: YDoc): Y.Map<unknown> {
 }
 
 describe('useAddDatabaseView', () => {
+  it('rejects Form creation before calling the server without canonical write permission', async () => {
+    const databaseDoc = createDatabaseDoc('database-id');
+    const createDatabaseView = jest.fn();
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: false,
+      canShare: true,
+      databaseDoc,
+      databasePageId: 'base-view-id',
+      activeViewId: 'base-view-id',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Form, 'Form')).rejects.toThrow(
+      'Edit access is required to create or duplicate a Form view.'
+    );
+    expect(createDatabaseView).not.toHaveBeenCalled();
+  });
+
+  it('allows an editor to create a Form without share-management permission', async () => {
+    const databaseDoc = createDatabaseDoc('database-id');
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: 'form-view-id',
+      database_id: 'database-id',
+      database_update: createAddViewUpdate(databaseDoc, 'form-view-id'),
+    });
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      canWrite: true,
+      canShare: false,
+      databaseDoc,
+      databasePageId: 'base-view-id',
+      activeViewId: 'base-view-id',
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      isDocumentBlock: false,
+    };
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await expect(result.current(DatabaseViewLayout.Form, 'Form')).resolves.toBe('form-view-id');
+    expect(createDatabaseView).toHaveBeenCalledTimes(1);
+  });
+
   it('applies created-tab updates without adding history or clearing redo', async () => {
     const databaseId = 'db-history';
     const baseViewId = 'base-view-id';

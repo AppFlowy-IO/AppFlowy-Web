@@ -85,6 +85,13 @@ export function useCurrentUserOptional(): User | undefined {
   return context?.currentUser;
 }
 
+/** Stable account scope for process-local queues; safe outside the app shell. */
+export function useAuthenticatedUserIdOptional(): string | undefined {
+  const context = useContext(AFConfigContext);
+
+  return context?.authenticatedUserId ?? context?.currentUser?.uuid ?? context?.currentUser?.uid;
+}
+
 /**
  * Returns whether the user is authenticated.
  * Returns false when AFConfigContext provider is absent (e.g. publish pages).

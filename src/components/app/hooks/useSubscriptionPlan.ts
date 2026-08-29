@@ -214,6 +214,11 @@ export function useSubscriptionPlan(
     [cacheKey, usesSharedCache],
   );
   const cacheSnapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const sharedCacheExpired =
+    usesSharedCache &&
+    cacheSnapshot.plan !== null &&
+    cacheSnapshot.expiresAt > 0 &&
+    cacheSnapshot.expiresAt <= Date.now();
 
   useEffect(() => {
     mountedRef.current = true;
@@ -297,14 +302,51 @@ export function useSubscriptionPlan(
     void loadSubscription();
   }, [enabled, getSubscriptions, isHosted, loadSubscription]);
 
+  useEffect(() => {
+    if (
+      !enabled ||
+      !usesSharedCache ||
+      cacheSnapshot.plan === null ||
+      cacheSnapshot.expiresAt <= 0
+    ) {
+      return;
+    }
+
+    const remainingMs = cacheSnapshot.expiresAt - Date.now();
+
+    if (sharedCacheExpired || remainingMs <= 0) {
+      void loadSubscription();
+      return;
+    }
+
+    // A cache entry does not publish an external-store revision merely
+    // because wall-clock time passes. Wake the active consumer at expiry so
+    // a workspace downgrade cannot leave a mounted Form gate on stale Pro
+    // access indefinitely.
+    const timer = window.setTimeout(() => void loadSubscription(), remainingMs + 1);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    cacheSnapshot.expiresAt,
+    cacheSnapshot.plan,
+    enabled,
+    loadSubscription,
+    sharedCacheExpired,
+    usesSharedCache,
+  ]);
+
   const currentState: SubscriptionPlanState = !isHosted
     ? { identity, plan: null, status: 'ready' }
     : usesSharedCache
       ? {
           identity,
-          plan: cacheSnapshot.plan,
+          plan: sharedCacheExpired ? null : cacheSnapshot.plan,
           status:
-            cacheSnapshot.status === 'idle' && enabled ? 'loading' : cacheSnapshot.status,
+            sharedCacheExpired && enabled
+              ? 'loading'
+              : cacheSnapshot.status === 'idle' && enabled
+                ? 'loading'
+                : cacheSnapshot.status,
         }
       : localState.identity === identity
         ? localState

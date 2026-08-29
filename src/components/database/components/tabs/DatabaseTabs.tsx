@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -97,6 +97,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
     const [duplicatingViewId, setDuplicatingViewId] = useState<string | null>(null);
+    const mountedRef = useRef(true);
+    const duplicateScopeRevisionRef = useRef(0);
     const { canAuthor, ensureCanAuthor } = useCanAuthorFormView({ enabled: Boolean(menuViewId) });
     const [, setSearch] = useSearchParams();
     const openUpgradePlan = useCallback(() => {
@@ -105,6 +107,22 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         return prev;
       });
     }, [setSearch]);
+
+    useEffect(
+      () => () => {
+        mountedRef.current = false;
+        duplicateScopeRevisionRef.current += 1;
+      },
+      []
+    );
+
+    useLayoutEffect(() => {
+      duplicateScopeRevisionRef.current += 1;
+
+      return () => {
+        duplicateScopeRevisionRef.current += 1;
+      };
+    }, [databasePageId, duplicateView]);
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
@@ -440,13 +458,18 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const duplicateDatabaseView = useCallback(
       async (viewId: string) => {
         if (!context.createDatabaseView || !views || duplicatingViewId) return;
+        const duplicateScopeRevision = duplicateScopeRevisionRef.current;
+        const isCurrentDuplicateScope = () =>
+          mountedRef.current && duplicateScopeRevisionRef.current === duplicateScopeRevision;
         const sourceView = views.get(viewId);
 
         setMenuViewId(null);
 
         if (Number(sourceView?.get(YjsDatabaseKey.layout)) === DatabaseViewLayout.Form) {
           if (canAuthor === null) setDuplicatingViewId(viewId);
-          const allowed = canAuthor ?? (await ensureCanAuthor());
+          const allowed = canAuthor === false ? false : await ensureCanAuthor();
+
+          if (!isCurrentDuplicateScope()) return;
 
           if (allowed === null) {
             setDuplicatingViewId(null);
@@ -471,13 +494,19 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         try {
           const duplicatedViewId = await duplicateView(viewId, duplicatedName);
 
-          handleViewAdded(duplicatedViewId, viewId);
-          toast.success(t('button.duplicateSuccessfully'));
+          if (isCurrentDuplicateScope()) {
+            handleViewAdded(duplicatedViewId, viewId);
+            toast.success(t('button.duplicateSuccessfully'));
+          }
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage'));
+          if (isCurrentDuplicateScope()) {
+            toast.error(
+              error instanceof Error ? error.message : t('document.plugins.subPage.errors.failedDuplicatePage')
+            );
+          }
         } finally {
-          setDuplicatingViewId(null);
           onAfterViewAddedToDatabase?.();
+          if (isCurrentDuplicateScope()) setDuplicatingViewId(null);
         }
       },
       [

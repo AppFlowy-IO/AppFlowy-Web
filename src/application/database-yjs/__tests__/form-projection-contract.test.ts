@@ -4,7 +4,9 @@ import {
   FORM_DECIDED_SENTINEL,
   FORM_DESCRIPTION,
   FORM_DESCRIPTION_SENTINEL,
+  FORM_DESCRIPTION_VISIBLE,
   FORM_INCLUDED,
+  FORM_LONG_ANSWER,
   FORM_ORDER,
   FORM_REQUIRED,
   readFormLayoutSnapshot,
@@ -97,13 +99,18 @@ describe('form projection compatibility contract', () => {
     expect(snapshot.questions.map(({ fieldId }) => fieldId)).toEqual(['field-b']);
   });
 
-  it('persists a false override when removing a legacy-defaulted question', () => {
+  it('atomically materializes legacy membership before removing a defaulted question', () => {
     const view = createView(['field-a', 'field-b']);
     const writer = createFormWriter(view);
 
     writer.removeQuestion('field-a');
 
-    expect(view.get(YjsDatabaseKey.form_field_settings)?.get('field-a')?.get(FORM_INCLUDED)).toBe(false);
+    const settings = view.get(YjsDatabaseKey.form_field_settings);
+
+    expect(settings?.has(FORM_DECIDED_SENTINEL)).toBe(true);
+    expect(settings?.has('field-a')).toBe(false);
+    expect(settings?.get('field-b')?.get(FORM_INCLUDED)).toBe(true);
+    expect(settings?.get('field-b')?.get(FORM_ORDER)).toBe(0);
     expect(readFormLayoutSnapshot(view).questions.map(({ fieldId }) => fieldId)).toEqual(['field-b']);
   });
 
@@ -121,5 +128,27 @@ describe('form projection compatibility contract', () => {
     expect(readFormLayoutSnapshot(view).questions.map(({ fieldId }) => fieldId)).toEqual(['field-b', 'field-a']);
     expect(hidden.get(FORM_ORDER)).toBe(1);
     expect(orphan.get(FORM_ORDER)).toBe(0);
+  });
+
+  it('does not resurrect a removed question through stale override callbacks', () => {
+    const view = createView(['field-a']);
+
+    markBuilderMode(view);
+    setEntry(view, 'field-a', { [FORM_INCLUDED]: true, [FORM_ORDER]: 0 });
+    const writer = createFormWriter(view);
+
+    writer.removeQuestion('field-a');
+    writer.setRequired('field-a', true);
+    writer.setDescriptionVisible('field-a', true);
+    writer.setDescription('field-a', 'Stale draft');
+    writer.setLongAnswer('field-a', true);
+
+    const settings = view.get(YjsDatabaseKey.form_field_settings);
+
+    expect(settings?.has('field-a')).toBe(false);
+    expect(settings?.get('field-a')?.get(FORM_REQUIRED)).toBeUndefined();
+    expect(settings?.get('field-a')?.get(FORM_DESCRIPTION_VISIBLE)).toBeUndefined();
+    expect(settings?.get('field-a')?.get(FORM_DESCRIPTION)).toBeUndefined();
+    expect(settings?.get('field-a')?.get(FORM_LONG_ANSWER)).toBeUndefined();
   });
 });

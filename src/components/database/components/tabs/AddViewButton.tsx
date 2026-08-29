@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -6,8 +6,8 @@ import { toast } from 'sonner';
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
 import { ViewIcon } from '@/components/_shared/view-icon';
+import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
@@ -23,6 +23,27 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const mountedRef = useRef(true);
+  const actionScopeRevisionRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      actionScopeRevisionRef.current += 1;
+    },
+    []
+  );
+
+  // An entitlement request can outlive the database that opened this menu.
+  // Invalidate that accepted click when any operation target/callback changes
+  // so the old closure cannot create a Form in an off-screen database.
+  useLayoutEffect(() => {
+    actionScopeRevisionRef.current += 1;
+
+    return () => {
+      actionScopeRevisionRef.current += 1;
+    };
+  }, [onAddView, onAfterAddView, onBeforeAddView, onViewAdded]);
 
   // Form-view Pro gate — single source of truth in
   // `useCanAuthorFormView` (covers dev / test / self-hosted / Pro in
@@ -42,12 +63,17 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
   }, [setSearch]);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    const actionScopeRevision = actionScopeRevisionRef.current;
+    const isCurrentActionScope = () => mountedRef.current && actionScopeRevisionRef.current === actionScopeRevision;
+
     // Pro gate at click time: Form on Free plan opens the upgrade
     // modal instead of creating a view the user can't share. Other
     // layouts proceed without gating.
     if (layout === DatabaseViewLayout.Form) {
       if (canAuthor === null) setAddLoading(true);
-      const allowed = canAuthor ?? (await ensureCanAuthor());
+      const allowed = canAuthor === false ? false : await ensureCanAuthor();
+
+      if (!isCurrentActionScope()) return;
 
       if (allowed === null) {
         setAddLoading(false);
@@ -70,20 +96,26 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
     try {
       const viewId = await onAddView(layout, name);
 
-      onViewAdded(viewId);
+      if (isCurrentActionScope()) onViewAdded(viewId);
     } catch (e: unknown) {
-      console.error('[AddViewButton] Error adding view:', e);
-      toast.error(e instanceof Error ? e.message : 'Failed to add view');
+      if (isCurrentActionScope()) {
+        console.error('[AddViewButton] Error adding view:', e);
+        toast.error(e instanceof Error ? e.message : 'Failed to add view');
+      }
     } finally {
       onAfterAddView?.();
-      // Ensure minimum loading time to prevent jarring UI flicker
-      const elapsed = Date.now() - startTime;
-      const remaining = MIN_LOADING_TIME - elapsed;
+      if (isCurrentActionScope()) {
+        // Ensure minimum loading time to prevent jarring UI flicker
+        const elapsed = Date.now() - startTime;
+        const remaining = MIN_LOADING_TIME - elapsed;
 
-      if (remaining > 0) {
-        setTimeout(() => setAddLoading(false), remaining);
-      } else {
-        setAddLoading(false);
+        if (remaining > 0) {
+          setTimeout(() => {
+            if (isCurrentActionScope()) setAddLoading(false);
+          }, remaining);
+        } else {
+          setAddLoading(false);
+        }
       }
     }
   };

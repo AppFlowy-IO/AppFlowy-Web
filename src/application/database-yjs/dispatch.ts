@@ -51,6 +51,8 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition, resolveRollupFilterTargetFieldType } from '@/application/database-yjs/filter';
+import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
+import { attachNewFormQuestion } from '@/application/database-yjs/form-writer';
 import {
   initializeGalleryLayoutSetting,
   normalizeCreatedDatabaseGalleryView,
@@ -1599,14 +1601,14 @@ export function useUpdatePropertyNameDispatch(fieldId: string) {
   );
 }
 
-function createField(type: FieldType, fieldId: string) {
+function createField(type: FieldType, fieldId: string, fieldName?: string) {
   const createSimpleField = (fieldType: FieldType, initTypeOption?: (typeOption: YMapFieldTypeOption) => void) => {
     const field = new Y.Map() as YDatabaseField;
     const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
     const typeOption = new Y.Map() as YMapFieldTypeOption;
     const timestamp = String(dayjs().unix());
 
-    field.set(YjsDatabaseKey.name, getFieldName(fieldType));
+    field.set(YjsDatabaseKey.name, fieldName ?? getFieldName(fieldType));
     field.set(YjsDatabaseKey.id, fieldId);
     field.set(YjsDatabaseKey.type, fieldType);
     field.set(YjsDatabaseKey.created_at, timestamp);
@@ -1628,8 +1630,16 @@ function createField(type: FieldType, fieldId: string) {
       return createSimpleField(FieldType.Number, (typeOption) => {
         typeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
       });
-    case FieldType.DateTime:
-      return createDateTimeField(fieldId);
+    case FieldType.DateTime: {
+      const field = createDateTimeField(fieldId);
+
+      if (fieldName !== undefined) {
+        field.set(YjsDatabaseKey.name, fieldName);
+      }
+
+      return field;
+    }
+
     case FieldType.SingleSelect:
       return createSimpleField(FieldType.SingleSelect, (typeOption) => {
         typeOption.set(
@@ -1701,6 +1711,81 @@ function createField(type: FieldType, fieldId: string) {
     default:
       throw new Error(`Field type ${type} not supported`);
   }
+}
+
+/**
+ * Desktop parity for Form's "New question" command. The generic property
+ * creator and a subsequent Form-writer call would produce two Yjs/history
+ * transactions and expose a transient unattached field. Keep the entire
+ * schema + projection mutation indivisible and name the field `Question N`.
+ */
+export function useNewFormQuestionDispatch() {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const formViewId = useDatabaseViewId();
+
+  return useCallback(
+    (fieldType: FieldType) => {
+      if (!formViewId || !isFormQuestionFieldType(fieldType)) {
+        throw new Error('Unsupported Form question type or missing Form view');
+      }
+
+      const fieldId = nanoid(6);
+      const fields = database.get(YjsDatabaseKey.fields);
+      const views = database.get(YjsDatabaseKey.views);
+      const targetView = views?.get(formViewId);
+
+      if (
+        !fields ||
+        !views ||
+        !targetView ||
+        Number(targetView.get(YjsDatabaseKey.layout)) !== DatabaseViewLayout.Form
+      ) {
+        throw new Error('Target view must be a Form');
+      }
+
+      // Validate every linked view before the transaction mutates anything.
+      // A malformed view must not leave a partially-created schema field.
+      const linkedViews: YDatabaseView[] = [];
+
+      views.forEach((view) => {
+        if (!view.get(YjsDatabaseKey.field_orders) || !view.get(YjsDatabaseKey.field_settings)) {
+          throw new Error('Database view is missing field configuration');
+        }
+
+        linkedViews.push(view);
+      });
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const questionNumber = attachNewFormQuestion(targetView, fieldId);
+            const field = createField(fieldType, fieldId, `Question ${questionNumber}`);
+
+            fields.set(fieldId, field);
+            linkedViews.forEach((view) => {
+              const setting = new Y.Map() as YDatabaseFieldSetting;
+
+              setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+              setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
+              view.get(YjsDatabaseKey.field_settings).set(fieldId, setting);
+              view.get(YjsDatabaseKey.field_orders).push([{ id: fieldId }]);
+            });
+          },
+        ],
+        'createFormQuestion',
+        {
+          type: 'field.create',
+          fieldId,
+          fieldType,
+          policy: 'capture',
+        }
+      );
+      return fieldId;
+    },
+    [database, formViewId, sharedRoot]
+  );
 }
 
 export function useNewPropertyDispatch() {
@@ -2637,10 +2722,22 @@ interface AddDatabaseViewOptions {
   requireExactCreatedView?: boolean;
 }
 
+export const FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION =
+  'Edit access is required to create or duplicate a Form view.';
+
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
-  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, deletePage, loadViewMeta, isDocumentBlock } =
-    useDatabaseContext();
+  const {
+    databasePageId,
+    activeViewId,
+    createDatabaseView,
+    databaseDoc,
+    deletePage,
+    loadViewMeta,
+    isDocumentBlock,
+    readOnly,
+    canWrite,
+  } = useDatabaseContext();
   const sharedRoot = useSharedRoot();
 
   const database = useMemo(() => {
@@ -2655,6 +2752,10 @@ export function useAddDatabaseView() {
 
   return useCallback(
     async (layout: DatabaseViewLayout, nameOverride?: string, options?: AddDatabaseViewOptions) => {
+      if (layout === DatabaseViewLayout.Form && (readOnly || canWrite === false)) {
+        throw new Error(FORM_VIEW_CREATION_REQUIRES_WRITE_PERMISSION);
+      }
+
       if (!createDatabaseView) {
         throw new Error('createDatabaseView not found');
       }
@@ -2895,6 +2996,8 @@ export function useAddDatabaseView() {
       deletePage,
       loadViewMeta,
       isDocumentBlock,
+      readOnly,
+      canWrite,
     ]
   );
 }
@@ -3195,7 +3298,7 @@ export function useUpdateDatabaseView() {
               throw new Error(`View not found`);
             }
 
-            const name = payload.name || view.get(YjsDatabaseKey.name);
+            const name = payload.name ?? view.get(YjsDatabaseKey.name);
 
             view.set(YjsDatabaseKey.name, name);
           },

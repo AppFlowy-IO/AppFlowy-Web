@@ -1,6 +1,28 @@
-import { View } from '@/application/types';
+import { View, ViewLayout } from '@/application/types';
 
 export { getDatabaseLayoutFromBlockType, isDatabaseBlockType } from '@/application/database-block';
+
+export const LINKED_FORM_BLOCK_DUPLICATE_UNAVAILABLE_MESSAGE =
+  'This database block contains a Form and cannot be duplicated yet because its Form settings would not be preserved.';
+
+export const LINKED_DATABASE_BLOCK_DUPLICATE_CHECK_FAILED_MESSAGE =
+  'Could not verify every database tab before duplicating this block. Refresh the page and try again.';
+
+/**
+ * Linked block duplication creates fresh database views directly. Until that
+ * path can copy Form's per-view Yjs settings and apply the Form entitlement,
+ * fail closed before creating any child. Missing metadata is also unsafe: an
+ * unverified tab could itself be a Form.
+ */
+export function assertLinkedDatabaseBlockDuplicateIsSafe(sourceViews: Array<View | null>): void {
+  if (sourceViews.some((view) => view?.layout === ViewLayout.Form)) {
+    throw new Error(LINKED_FORM_BLOCK_DUPLICATE_UNAVAILABLE_MESSAGE);
+  }
+
+  if (sourceViews.some((view) => view === null)) {
+    throw new Error(LINKED_DATABASE_BLOCK_DUPLICATE_CHECK_FAILED_MESSAGE);
+  }
+}
 
 export async function loadDatabaseDuplicateSourceViews(params: {
   sourceViewIds: string[];

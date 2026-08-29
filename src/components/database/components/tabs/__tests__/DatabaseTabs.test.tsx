@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
@@ -242,6 +242,62 @@ describe('DatabaseTabs', () => {
 
     expect(updatedParams.get('action')).toBe('change_plan');
     expect(updatedParams.get('preserved')).toBe('true');
+  });
+
+  it('does not duplicate a Form after its database scope unmounts during a cold entitlement check', async () => {
+    let resolveEntitlement!: (allowed: boolean) => void;
+    const entitlement = new Promise<boolean>((resolve) => {
+      resolveEntitlement = resolve;
+    });
+    const ensureCanAuthor = jest.fn().mockReturnValue(entitlement);
+    const duplicateView = jest.fn().mockResolvedValue('duplicated-view-id');
+    const onBeforeViewAddedToDatabase = jest.fn();
+    const sourceYjsView = {
+      get: jest.fn((key: YjsDatabaseKey) => {
+        if (key === YjsDatabaseKey.name) return 'Form';
+        if (key === YjsDatabaseKey.layout) return DatabaseViewLayout.Form;
+        return undefined;
+      }),
+    };
+
+    (useDatabase as jest.Mock).mockReturnValue({
+      get: () => new Map([[databaseView.view_id, sourceYjsView]]),
+    });
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue({
+      createDatabaseView: jest.fn(),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => databaseContainer),
+      readOnly: false,
+      showActions: true,
+    } as unknown as DatabaseContextState);
+    jest.mocked(useCanAuthorFormView).mockReturnValue({
+      canAuthor: null,
+      ensureCanAuthor,
+      hasError: false,
+      isLoading: true,
+    });
+
+    const rendered = render(
+      <DatabaseTabs
+        databasePageId={databaseView.view_id}
+        selectedViewId={databaseView.view_id}
+        viewIds={[databaseView.view_id]}
+        onBeforeViewAddedToDatabase={onBeforeViewAddedToDatabase}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
+    expect(ensureCanAuthor).toHaveBeenCalledTimes(1);
+
+    rendered.unmount();
+    await act(async () => {
+      resolveEntitlement(true);
+      await entitlement;
+    });
+
+    expect(duplicateView).not.toHaveBeenCalled();
+    expect(onBeforeViewAddedToDatabase).not.toHaveBeenCalled();
   });
 
   it('renders the database container name for an embedded database', async () => {

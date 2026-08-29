@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 
@@ -22,56 +22,108 @@ export function FormFormDescription({
   onChange: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(description);
+  const draftRef = useRef(description);
   const lastExternal = useRef(description);
+  const pendingExternal = useRef<string | null>(null);
+  const focused = useRef(false);
+  const dirty = useRef(false);
+  const readOnlyRef = useRef(readOnly);
+  const onChangeRef = useRef(onChange);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useLayoutEffect(() => {
+    onChangeRef.current = onChange;
+    readOnlyRef.current = readOnly;
+  }, [onChange, readOnly]);
+
   // Sync the draft when the description changes from elsewhere (another
-  // client edited the field, or the projection rehydrated). Cancel any local
-  // debounce first so its stale closure cannot overwrite the newer external
-  // value after this effect accepts it.
+  // client edited the field, or the projection rehydrated). Protect a focused
+  // or dirty local draft: remember the remote value as the latest authority,
+  // but let the creator either finish and flush their edit or blur an untouched
+  // field and accept the deferred update.
   useEffect(() => {
     if (description !== lastExternal.current) {
+      lastExternal.current = description;
+
+      if (focused.current || dirty.current) {
+        pendingExternal.current = description;
+        return;
+      }
+
       if (timer.current) {
         clearTimeout(timer.current);
         timer.current = null;
       }
 
-      lastExternal.current = description;
+      pendingExternal.current = null;
+      draftRef.current = description;
       setDraft(description);
     }
   }, [description]);
 
-  // Cancel the pending debounce on unmount so a late timer doesn't fire
-  // `onChange` against a stale closure after the component has been
-  // detached (e.g. user switched views within the 500ms idle window).
+  // A permission downgrade must not let an already-scheduled authoring write
+  // mutate the local collab. Discard the unsaved draft and restore the
+  // server-observed value when the editor becomes read-only.
+  useEffect(() => {
+    if (!readOnly) return;
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+
+    focused.current = false;
+    dirty.current = false;
+    pendingExternal.current = null;
+    lastExternal.current = description;
+    draftRef.current = description;
+    setDraft(description);
+  }, [description, readOnly]);
+
+  // Navigation can unmount the editor before blur or the debounce fires.
+  // Flush the latest draft synchronously through the current writer so a tab
+  // switch cannot discard authored description text (Desktop does the same
+  // handoff from its field/service disposal path).
   useEffect(() => {
     return () => {
       if (timer.current) {
         clearTimeout(timer.current);
         timer.current = null;
       }
+
+      const value = draftRef.current;
+
+      if (dirty.current && !readOnlyRef.current && value !== lastExternal.current) {
+        lastExternal.current = value;
+        onChangeRef.current(value);
+      }
     };
   }, []);
 
   const flush = (value: string) => {
-    if (value === lastExternal.current) return;
+    pendingExternal.current = null;
+    dirty.current = false;
+    if (readOnlyRef.current || value === lastExternal.current) return;
     lastExternal.current = value;
-    onChange(value);
+    onChangeRef.current(value);
   };
 
   if (readOnly) {
     if (!description) return null;
-    return (
-      <p className='text-sm italic text-text-caption'>{description}</p>
-    );
+    return <p className='text-sm italic text-text-caption'>{description}</p>;
   }
 
   return (
     <TextareaAutosize
       value={draft}
+      onFocus={() => {
+        focused.current = true;
+        dirty.current = draftRef.current !== lastExternal.current;
+      }}
       onChange={(e) => {
         const v = e.target.value;
 
+        dirty.current = true;
+        draftRef.current = v;
         setDraft(v);
         if (timer.current) clearTimeout(timer.current);
         timer.current = setTimeout(() => {
@@ -80,12 +132,24 @@ export function FormFormDescription({
         }, 500);
       }}
       onBlur={() => {
+        focused.current = false;
         if (timer.current) {
           clearTimeout(timer.current);
           timer.current = null;
         }
 
-        flush(draft);
+        if (dirty.current) {
+          flush(draftRef.current);
+          return;
+        }
+
+        if (pendingExternal.current !== null) {
+          const external = pendingExternal.current;
+
+          pendingExternal.current = null;
+          draftRef.current = external;
+          setDraft(external);
+        }
       }}
       placeholder='Description (optional)'
       variant='ghost'

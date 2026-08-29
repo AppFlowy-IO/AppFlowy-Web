@@ -13,10 +13,13 @@ const mockWriter = {
 const decidedSnapshot: FormLayoutSnapshot = {
   decided: true,
   fieldOrderIds: [],
+  explicitlyExcludedFieldIds: [],
   description: '',
   questions: [],
 };
 let mockSnapshot = decidedSnapshot;
+let mockReadOnly = false;
+let mockCanShare = true;
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabaseFields: () => undefined,
@@ -27,7 +30,8 @@ jest.mock('@/application/database-yjs', () => ({
 
 jest.mock('@/application/database-yjs/context', () => ({
   useDatabaseContextOptional: () => ({
-    readOnly: false,
+    readOnly: mockReadOnly,
+    canShare: mockCanShare,
     activeViewId: 'form-view-id',
     databaseDoc: {
       getMap: () => ({
@@ -43,26 +47,36 @@ jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddSelectOptionDispatch: () => jest.fn(),
 }));
 
-jest.mock('../FormAccessBanner', () => ({ FormAccessBanner: () => null }));
+jest.mock('../FormAccessBanner', () => ({ FormAccessBanner: () => <div data-testid='form-access-banner' /> }));
 jest.mock('../FormAutoCreate', () => ({
   FormAutoCreate: () => <div data-testid='form-auto-create' />,
 }));
-jest.mock('../FormFormDescription', () => ({ FormFormDescription: () => null }));
-jest.mock('../FormPreviewButton', () => ({ FormPreviewButton: () => null }));
+jest.mock('../FormFormDescription', () => ({
+  FormFormDescription: () => <div data-testid='respondent-form-description-editor' />,
+}));
+jest.mock('../FormPreviewButton', () => ({
+  FormPreviewButton: () => <button data-testid='form-preview-button' />,
+}));
 jest.mock('../FormQuestionCard', () => ({ FormQuestionCard: () => null }));
 jest.mock('../FormQuestionCardReadOnly', () => ({ FormQuestionCardReadOnly: () => null }));
 jest.mock('../FormQuestionTypePicker', () => ({
   FormQuestionTypePicker: () => <div data-testid='form-question-type-picker' />,
 }));
-jest.mock('../FormShareButton', () => ({ FormShareButton: () => null }));
-jest.mock('../FormTitle', () => ({ FormTitle: () => null }));
+jest.mock('../FormShareButton', () => ({ FormShareButton: () => <button data-testid='form-share-button' /> }));
+jest.mock('../FormTitle', () => ({ FormTitle: () => <div data-testid='form-view-name-editor' /> }));
 jest.mock('../FormShareContext', () => ({
-  FormShareProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  FormShareProvider: ({ canUpdateSettings, children }: { canUpdateSettings: boolean; children: ReactNode }) => (
+    <div data-testid='form-share-provider' data-can-update={canUpdateSettings ? 'true' : 'false'}>
+      {children}
+    </div>
+  ),
 }));
 
 describe('FormBuilderView scrolling', () => {
   beforeEach(() => {
     mockSnapshot = decidedSnapshot;
+    mockReadOnly = false;
+    mockCanShare = true;
   });
 
   it('owns vertical scrolling inside fixed database viewports', () => {
@@ -74,12 +88,16 @@ describe('FormBuilderView scrolling', () => {
       expect(scrollContainer.classList.contains(className)).toBe(true);
     });
     expect(screen.getByTestId('form-question-type-picker')).toBeTruthy();
+    expect(screen.getByTestId('form-view-name-editor')).toBeTruthy();
+    expect(screen.getByText('Used in AppFlowy only. Shared forms currently display “Untitled form”.')).toBeTruthy();
+    expect(screen.queryByTestId('respondent-form-description-editor')).toBeNull();
   });
 
   it('evaluates auto-create for a fresh Form even when legacy projection materializes questions', () => {
     mockSnapshot = {
       decided: false,
       fieldOrderIds: ['field-a'],
+      explicitlyExcludedFieldIds: [],
       description: '',
       questions: [
         {
@@ -99,5 +117,28 @@ describe('FormBuilderView scrolling', () => {
     expect(screen.getByTestId('form-auto-create')).toBeTruthy();
     expect(screen.getByText('This form hasn’t been set up yet.')).toBeTruthy();
     expect(screen.queryByTestId('form-question-type-picker')).toBeNull();
+  });
+
+  it('keeps Preview and share-link inspection visible for view-only Forms', () => {
+    mockReadOnly = true;
+    mockCanShare = false;
+
+    render(<FormBuilderView />);
+
+    expect(screen.getByTestId('form-preview-button')).toBeTruthy();
+    expect(screen.getByTestId('form-share-button')).toBeTruthy();
+    expect(screen.getByTestId('form-share-provider').getAttribute('data-can-update')).toBe('false');
+    expect(screen.getByTestId('form-access-banner')).toBeTruthy();
+    expect(screen.queryByTestId('form-question-type-picker')).toBeNull();
+  });
+
+  it('uses canonical share permission for an editable member without can_share', () => {
+    mockReadOnly = false;
+    mockCanShare = false;
+
+    render(<FormBuilderView />);
+
+    expect(screen.getByTestId('form-share-provider').getAttribute('data-can-update')).toBe('false');
+    expect(screen.getByTestId('form-question-type-picker')).toBeTruthy();
   });
 });

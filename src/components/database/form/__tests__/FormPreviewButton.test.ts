@@ -8,7 +8,7 @@ import { YjsDatabaseKey } from '@/application/types';
 import { buildFormPreviewSchema } from '../FormPreviewButton';
 
 describe('form respondent preview schema', () => {
-  it('matches the public title/description contract while preserving question descriptions', () => {
+  it('matches the deployed public title and description contract while preserving question descriptions', () => {
     const doc = new Y.Doc();
     const fields = doc.getMap('fields') as YDatabaseFields;
     const field = new Y.Map<unknown>() as YDatabaseField;
@@ -20,6 +20,7 @@ describe('form respondent preview schema', () => {
     const snapshot: FormLayoutSnapshot = {
       decided: true,
       fieldOrderIds: ['question-id'],
+      explicitlyExcludedFieldIds: [],
       description: 'Local form description',
       questions: [
         {
@@ -42,5 +43,37 @@ describe('form respondent preview schema', () => {
       label: 'Question title',
       description: 'Public question description',
     });
+  });
+
+  it('does not fabricate selectable answers for an empty select field', () => {
+    const doc = new Y.Doc();
+    const fields = doc.getMap('fields') as YDatabaseFields;
+    const field = new Y.Map<unknown>() as YDatabaseField;
+
+    field.set(YjsDatabaseKey.name, 'Pick one');
+    field.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+    fields.set('select-id', field);
+    const snapshot: FormLayoutSnapshot = {
+      decided: true,
+      fieldOrderIds: ['select-id'],
+      explicitlyExcludedFieldIds: [],
+      description: '',
+      questions: [
+        {
+          fieldId: 'select-id',
+          included: true,
+          required: false,
+          descriptionVisible: false,
+          description: '',
+          longAnswer: false,
+          order: 0,
+        },
+      ],
+    };
+
+    const schema = buildFormPreviewSchema(snapshot, fields);
+
+    expect(schema.title).toBe('Untitled form');
+    expect(schema.questions[0].options).toEqual([]);
   });
 });

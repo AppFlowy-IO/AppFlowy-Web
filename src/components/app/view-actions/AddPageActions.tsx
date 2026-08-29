@@ -65,7 +65,7 @@ function AddPageActions({
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
       if (layout === ViewLayout.Form) {
-        const allowed = canAuthor ?? (await ensureCanAuthor());
+        const allowed = canAuthor === false ? false : await ensureCanAuthor();
 
         // A cold entitlement check keeps this menu open. If the user dismisses
         // it while that request is pending, cancel this menu instance quietly;
@@ -306,7 +306,7 @@ function AddPageActions({
           <Tooltip key={action.label}>
             <TooltipTrigger asChild>
               <div>
-                <DropdownMenuItem disabled>
+                <DropdownMenuItem data-testid={action.testId} disabled>
                   {action.icon}
                   {action.label}
                 </DropdownMenuItem>

@@ -69,6 +69,32 @@ function ensureEntry(view: YDatabaseView, fieldId: string): Y.Map<unknown> {
   return map.get(fieldId)!;
 }
 
+/**
+ * Attach a newly-created database field to one Form projection inside the
+ * caller's existing Yjs transaction. This deliberately does not open its own
+ * history action: the Form-specific field creator uses it so schema creation,
+ * per-view field orders/settings, and Form membership undo as one operation.
+ */
+export function attachNewFormQuestion(view: YDatabaseView, fieldId: string): number {
+  materializeLegacyProjectionForEdit(view);
+
+  // Resolve the append position from the live Yjs state inside the caller's
+  // transaction. A React snapshot can be stale after a remote add/reorder.
+  // Legacy entries must be packed first or their u32::MAX sentinel would sort
+  // a newly-created explicit order ahead of the existing questions.
+  if (hasLegacyOrderEntry(view)) {
+    repackOrder(view);
+  }
+
+  const questionNumber = currentEntryIdsSorted(view).length + 1;
+  const order = maxExistingOrder(view) + 1;
+  const entry = ensureEntry(view, fieldId);
+
+  entry.set(FORM_INCLUDED, true);
+  entry.set(FORM_ORDER, order);
+  return questionNumber;
+}
+
 /// Doc that owns the view's Y.Map. Required for `transact` so the
 /// caller's batch fires as one collab update rather than per-key.
 function docOf(view: YDatabaseView): Y.Doc {
@@ -88,10 +114,14 @@ export interface FormWriter {
   /// branch. Sentinels are preserved.
   clearQuestions(): void;
   /// Populate the projection from a list of field ids (typically every
-  /// supported-type field on the database). Used by Create-N + the
-  /// silent sidebar-create seed. Existing entries are wiped first so
-  /// `order` stays packed (no holes).
+  /// supported-type field on the database). Existing entries are wiped first
+  /// so `order` stays packed (no holes). Auto-create callers should use
+  /// `resolveAutoCreate` so membership and the decision remain atomic.
   populateFromFields(fieldIds: readonly string[]): void;
+  /// Resolve the one-time auto-create choice atomically. Replaces Form
+  /// membership with exactly `fieldIds` (an empty list means start from
+  /// scratch) and writes the decided sentinel in the same history action.
+  resolveAutoCreate(fieldIds: readonly string[]): void;
   /// Move a question to a new index in the projection. Implemented by
   /// rewriting every `order` so the persisted values stay packed —
   /// keeps the rust-side sort deterministic without negotiation. The
@@ -141,6 +171,58 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     return out;
   }
 
+  function hasQuestion(fieldId: string): boolean {
+    return currentEntryIdsSorted(view).includes(fieldId);
+  }
+
+  function replaceQuestionMembership(fieldIds: readonly string[]): void {
+    // Replace membership without replacing the selected entry maps. Legacy
+    // Forms can already carry Required / Description / Long answer overrides
+    // before the decided sentinel exists; recreating those maps while
+    // materializing explicit membership would silently discard authored
+    // question settings.
+    const map = view.get(YjsDatabaseKey.form_field_settings);
+    const builderMode = isBuilderMode(map);
+    const selected = new Set(fieldIds);
+
+    if (map) {
+      for (const id of currentEntryIds()) {
+        if (selected.has(id)) continue;
+
+        if (builderMode) {
+          map.delete(id);
+        } else {
+          // Keep legacy attributes on excluded questions so a later re-add can
+          // restore them, but materialize the membership decision explicitly.
+          map.get(id)?.set(FORM_INCLUDED, false);
+        }
+      }
+    }
+
+    if (!builderMode) {
+      // Legacy mode defaults missing rows to included. Materialize false
+      // overrides for every unselected view field before adding the requested
+      // subset, keeping the public schema exact before the decided sentinel is
+      // written later in the same transaction.
+      for (const id of readFieldOrderIds(view) ?? []) {
+        if (!selected.has(id)) {
+          ensureEntry(view, id).set(FORM_INCLUDED, false);
+        }
+      }
+    }
+
+    fieldIds.forEach((fieldId, idx) => {
+      const entry = ensureEntry(view, fieldId);
+
+      entry.set(FORM_INCLUDED, true);
+      entry.set(FORM_ORDER, idx);
+    });
+  }
+
+  function writeDecidedSentinel(): void {
+    writeFormDecidedSentinel(view);
+  }
+
   return {
     addQuestion(fieldId) {
       txn('add-question', () => {
@@ -148,6 +230,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
         // visible question. Treat that exactly like an explicit included row
         // so a stale picker action cannot move it unexpectedly.
         if (currentEntryIdsSorted(view).includes(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
 
         // Three cases:
         //   * No entry yet → fall through, create one via `ensureEntry`.
@@ -185,9 +268,10 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     removeQuestion(fieldId) {
       txn('remove-question', () => {
+        if (!currentEntryIdsSorted(view).includes(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
         const map = view.get(YjsDatabaseKey.form_field_settings);
 
-        if (!currentEntryIdsSorted(view).includes(fieldId)) return;
         if (isBuilderMode(map)) {
           // Builder mode is opt-in: absence means excluded.
           map?.delete(fieldId);
@@ -206,6 +290,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     clearQuestions() {
       txn('clear-questions', () => {
+        materializeLegacyProjectionForEdit(view);
         const map = view.get(YjsDatabaseKey.form_field_settings);
 
         if (isBuilderMode(map)) {
@@ -228,37 +313,14 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     populateFromFields(fieldIds) {
       txn('populate-from-fields', () => {
-        // Wipe existing entries first so the projection matches the
-        // input list exactly. Order = list index, no gaps.
-        const map = view.get(YjsDatabaseKey.form_field_settings);
-        const builderMode = isBuilderMode(map);
+        replaceQuestionMembership(fieldIds);
+      });
+    },
 
-        if (map) {
-          for (const id of currentEntryIds()) {
-            map.delete(id);
-          }
-        }
-
-        if (!builderMode) {
-          // Legacy mode defaults missing rows to included. Materialize false
-          // overrides for every unselected view field before adding the
-          // requested subset, keeping the public schema exact even before
-          // the caller writes the decided sentinel.
-          const selected = new Set(fieldIds);
-
-          for (const id of readFieldOrderIds(view) ?? []) {
-            if (!selected.has(id)) {
-              ensureEntry(view, id).set(FORM_INCLUDED, false);
-            }
-          }
-        }
-
-        fieldIds.forEach((fieldId, idx) => {
-          const entry = ensureEntry(view, fieldId);
-
-          entry.set(FORM_INCLUDED, true);
-          entry.set(FORM_ORDER, idx);
-        });
+    resolveAutoCreate(fieldIds) {
+      txn('resolve-auto-create', () => {
+        replaceQuestionMembership(fieldIds);
+        writeDecidedSentinel();
       });
     },
 
@@ -270,6 +332,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
         const ids = currentEntryIdsSorted(view, visibleFieldIds);
 
         if (!ids.includes(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
         const without = ids.filter((id) => id !== fieldId);
         const clamped = Math.max(0, Math.min(newIndex, without.length));
 
@@ -285,6 +348,8 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     setRequired(fieldId, value) {
       txn('set-required', () => {
+        if (!hasQuestion(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_REQUIRED, value);
@@ -293,6 +358,8 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     setDescriptionVisible(fieldId, value) {
       txn('set-description-visible', () => {
+        if (!hasQuestion(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_DESCRIPTION_VISIBLE, value);
@@ -307,6 +374,8 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     setDescription(fieldId, value) {
       txn('set-description', () => {
+        if (!hasQuestion(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_DESCRIPTION, value);
@@ -318,6 +387,8 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     setLongAnswer(fieldId, value) {
       txn('set-long-answer', () => {
+        if (!hasQuestion(fieldId)) return;
+        materializeLegacyProjectionForEdit(view);
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_LONG_ANSWER, value);
@@ -326,17 +397,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
     markDecided() {
       txn('mark-decided', () => {
-        const map = ensureMap(view);
-
-        if (map.get(FORM_DECIDED_SENTINEL)) return;
-        const sentinel = new Y.Map<unknown>();
-
-        // Write a non-default `included = false` so any future
-        // is-default-skip filter still persists the row. The reader
-        // treats the entry's existence as the decided signal — the
-        // inner values are irrelevant.
-        sentinel.set(FORM_INCLUDED, false);
-        map.set(FORM_DECIDED_SENTINEL, sentinel);
+        writeDecidedSentinel();
       });
     },
 
@@ -353,6 +414,39 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
       });
     },
   };
+}
+
+function writeFormDecidedSentinel(view: YDatabaseView): void {
+  const map = ensureMap(view);
+
+  if (map.get(FORM_DECIDED_SENTINEL)) return;
+  const sentinel = new Y.Map<unknown>();
+
+  // Write a non-default `included = false` so any future default-skipping
+  // serializer still persists the row. The reader treats entry existence as
+  // the decided signal; its inner values are intentionally irrelevant.
+  sentinel.set(FORM_INCLUDED, false);
+  map.set(FORM_DECIDED_SENTINEL, sentinel);
+}
+
+/**
+ * Turn a sentinel-less legacy opt-out projection into explicit Form
+ * membership before the first real builder mutation. This is especially
+ * important after the setup dialog is dismissed for the current session:
+ * editing one synthesized question must not leave the remaining synthesized
+ * questions dependent on legacy defaults or make the setup prompt reappear.
+ */
+function materializeLegacyProjectionForEdit(view: YDatabaseView): void {
+  const map = view.get(YjsDatabaseKey.form_field_settings);
+
+  if (isBuilderMode(map)) return;
+  currentEntryIdsSorted(view).forEach((fieldId, index) => {
+    const entry = ensureEntry(view, fieldId);
+
+    entry.set(FORM_INCLUDED, true);
+    entry.set(FORM_ORDER, index);
+  });
+  writeFormDecidedSentinel(view);
 }
 
 function isBuilderMode(map: YDatabaseFormFieldSettings | undefined): boolean {

@@ -107,6 +107,7 @@ describe('FormBody file uploads', () => {
       upload_if_none_match: '*',
       expires_in_secs: 300,
     }));
+    mockUploadFile.mockResolvedValue();
     mockSubmit.mockResolvedValue({ kind: 'submitted', submission_id: 'submission-1', status: 'accepted' });
   });
 
@@ -234,6 +235,46 @@ describe('FormBody file uploads', () => {
     await waitFor(() => expect(screen.getByText(/could not be processed/i)).toBeTruthy());
     expect(screen.queryByTestId('public-form-confirmation')).toBeNull();
     expect(screen.getByTestId('public-form-submit').disabled).toBe(true);
+  });
+
+  it('reuses the idempotency key when an ambiguous retry keeps the same payload', async () => {
+    mockSubmit
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce({ kind: 'submitted', submission_id: 'submission-1', status: 'accepted' });
+
+    render(<FormBody token='form-token' schema={schemaWithDate} />);
+
+    fireEvent.click(screen.getByTestId('select-files-a'));
+    fireEvent.click(screen.getByTestId('select-date'));
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    await waitFor(() => expect(screen.getByText('response lost')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    await waitFor(() => expect(screen.getByTestId('public-form-confirmation')).toBeTruthy());
+
+    expect(mockSubmit).toHaveBeenCalledTimes(2);
+    expect(mockSubmit.mock.calls[1][2]).toBe(mockSubmit.mock.calls[0][2]);
+  });
+
+  it('mints a fresh idempotency key when answers change after an ambiguous failure', async () => {
+    mockSubmit
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce({ kind: 'submitted', submission_id: 'submission-2', status: 'accepted' });
+
+    render(<FormBody token='form-token' schema={schemaWithDate} />);
+
+    fireEvent.click(screen.getByTestId('select-files-a'));
+    fireEvent.click(screen.getByTestId('select-date'));
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    await waitFor(() => expect(screen.getByText('response lost')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('portaled-select-date'));
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+    await waitFor(() => expect(screen.getByTestId('public-form-confirmation')).toBeTruthy());
+
+    expect(mockSubmit).toHaveBeenCalledTimes(2);
+    expect(mockSubmit.mock.calls[1][2]).not.toBe(mockSubmit.mock.calls[0][2]);
+    expect(mockSubmit.mock.calls[1][1].answers.date).toEqual({ kind: 'date', iso: '2026-02-02' });
   });
 });
 

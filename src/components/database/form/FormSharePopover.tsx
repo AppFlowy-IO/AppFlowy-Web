@@ -27,7 +27,11 @@ export function FormSharePopover({
   errorKind,
   errorMessage,
   onUpgradePlan,
+  hasEntitlementError,
+  onRetryEntitlement,
   onRetry,
+  onRetryMutation,
+  canUpdateSettings,
   canBroadenAccess,
   setTier,
   setAnonymous,
@@ -49,7 +53,14 @@ export function FormSharePopover({
   /// the popover alone is otherwise the only diagnostic surface.
   errorMessage: string | null;
   onUpgradePlan: () => void;
+  /** The plan lookup itself failed, so broadening must offer retry—not pricing. */
+  hasEntitlementError?: boolean;
+  onRetryEntitlement?: () => void;
   onRetry: () => void;
+  /** Replays the retained final settings choice after a PATCH failure. */
+  onRetryMutation: () => void;
+  /** Page permission. False keeps inspection/copy available but blocks writes. */
+  canUpdateSettings: boolean;
   /** Paid-plan entitlement. Closing an existing share remains available. */
   canBroadenAccess: boolean;
   setTier: (t: FormShareTier) => Promise<void>;
@@ -109,6 +120,8 @@ export function FormSharePopover({
             <ShareLoading />
           ) : errorKind === 'plan_required' ? (
             <UpgradePrompt onUpgradePlan={onUpgradePlan} />
+          ) : !errorMessage && !canUpdateSettings ? (
+            <NoActiveShare onRetry={onRetry} />
           ) : (
             <GenericLoadFailure errorMessage={errorMessage} onRetry={onRetry} />
           )
@@ -123,8 +136,11 @@ export function FormSharePopover({
                 <TierSubmenu
                   current={tier}
                   workspaceName={workspaceName}
+                  canUpdateSettings={canUpdateSettings}
                   canBroadenAccess={canBroadenAccess}
                   onUpgradePlan={onUpgradePlan}
+                  hasEntitlementError={hasEntitlementError}
+                  onRetryEntitlement={onRetryEntitlement}
                   onSelect={setTier}
                 />
               }
@@ -136,10 +152,25 @@ export function FormSharePopover({
               checked={anonymous}
               forcedOn={tier === 'public'}
               forcedTooltip='Public forms always collect responses anonymously.'
-              disabled={!canBroadenAccess}
-              disabledTooltip='Upgrade to change response identity settings.'
+              disabled={!canUpdateSettings || !canBroadenAccess}
+              disabledTooltip={
+                canUpdateSettings
+                  ? 'Upgrade to change response identity settings.'
+                  : 'View-only access can inspect and copy this link, but cannot change settings.'
+              }
               onChange={setAnonymous}
             />
+            {canUpdateSettings && errorMessage && (
+              <MutationFailure
+                errorKind={errorKind}
+                errorMessage={errorMessage}
+                onRetry={onRetryMutation}
+                onUpgradePlan={onUpgradePlan}
+              />
+            )}
+            {canUpdateSettings && hasEntitlementError && onRetryEntitlement && (
+              <EntitlementFailure onRetry={onRetryEntitlement} />
+            )}
             {/*
               Submission-access row intentionally omitted. The cloud's
               `supported_submission_access` (`share.rs:86`) hardcodes
@@ -163,6 +194,7 @@ export function FormSharePopover({
             <div className='mx-1 flex items-stretch overflow-hidden rounded-md border border-line-divider'>
               <input
                 readOnly
+                aria-label='Form share URL'
                 value={url}
                 placeholder='Share URL is not configured'
                 className='flex-1 bg-transparent px-2 py-1 text-xs outline-none'
@@ -183,6 +215,73 @@ export function FormSharePopover({
         )}
       </PopoverContent>
     </Popover>
+  );
+}
+
+function EntitlementFailure({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      data-testid='form-share-entitlement-error'
+      role='alert'
+      className='mx-1 mt-2 flex items-center gap-2 rounded-md border border-line-divider px-2 py-2'
+    >
+      <p className='min-w-0 flex-1 text-xs'>Couldn&apos;t verify the workspace plan.</p>
+      <Button data-testid='form-share-entitlement-retry' size='sm' variant='ghost' onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+function NoActiveShare({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      data-testid='form-share-popover-no-active-link'
+      className='flex flex-col items-center gap-2 px-4 py-5 text-center'
+    >
+      <div className='text-sm font-medium'>No active form link</div>
+      <p className='text-xs text-text-caption'>Ask someone with edit access to create and configure the share link.</p>
+      <Button data-testid='form-share-popover-no-active-retry' size='sm' variant='ghost' onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+function MutationFailure({
+  errorKind,
+  errorMessage,
+  onRetry,
+  onUpgradePlan,
+}: {
+  errorKind: FormShareErrorKind | null;
+  errorMessage: string;
+  onRetry: () => void;
+  onUpgradePlan: () => void;
+}) {
+  const planRequired = errorKind === 'plan_required';
+
+  return (
+    <div
+      data-testid='form-share-mutation-error'
+      role='alert'
+      className='mx-1 mt-2 flex items-center gap-2 rounded-md border border-line-divider px-2 py-2'
+    >
+      <div className='min-w-0 flex-1'>
+        <p className='text-xs font-medium'>Couldn&apos;t save share settings</p>
+        <p className='truncate text-[11px] text-text-tertiary' title={errorMessage}>
+          {errorMessage}
+        </p>
+      </div>
+      <Button
+        data-testid='form-share-mutation-retry'
+        size='sm'
+        variant='ghost'
+        onClick={planRequired ? onUpgradePlan : onRetry}
+      >
+        {planRequired ? 'Upgrade' : 'Retry'}
+      </Button>
+    </div>
   );
 }
 
@@ -349,6 +448,7 @@ function ToggleRow({
       <span className='flex-1 whitespace-nowrap'>{label}</span>
       <Switch
         data-testid={testId}
+        aria-label={label}
         checked={checked}
         disabled={forcedOn || disabled}
         onCheckedChange={(v) => onChange(!!v)}
@@ -360,24 +460,35 @@ function ToggleRow({
 function TierSubmenu({
   current,
   workspaceName,
+  canUpdateSettings,
   canBroadenAccess,
   onUpgradePlan,
+  hasEntitlementError,
+  onRetryEntitlement,
   onSelect,
 }: {
   current: FormShareTier;
   workspaceName: string;
+  canUpdateSettings: boolean;
   canBroadenAccess: boolean;
   onUpgradePlan: () => void;
+  hasEntitlementError?: boolean;
+  onRetryEntitlement?: () => void;
   onSelect: (t: FormShareTier) => void;
 }) {
   const selectTier = (next: FormShareTier) => {
     if (next === current) return;
+    if (!canUpdateSettings) return;
     if (next === 'closed' || canBroadenAccess) {
       onSelect(next);
       return;
     }
 
-    onUpgradePlan();
+    if (hasEntitlementError && onRetryEntitlement) {
+      onRetryEntitlement();
+    } else {
+      onUpgradePlan();
+    }
   };
 
   return (
@@ -389,6 +500,7 @@ function TierSubmenu({
         subtitle='Only signed-in members can fill out.'
         onClick={() => selectTier('workspace')}
         leadingIcon={<Lock size={14} />}
+        disabled={!canUpdateSettings}
       />
       <Choice
         testId='form-share-tier-choice-public'
@@ -397,6 +509,7 @@ function TierSubmenu({
         titleBadge={<TierBadge kind='public' />}
         subtitle='Anyone with the URL can fill out. Forces anonymous responses.'
         onClick={() => selectTier('public')}
+        disabled={!canUpdateSettings}
       />
       <Choice
         testId='form-share-tier-choice-closed'
@@ -405,6 +518,7 @@ function TierSubmenu({
         titleBadge={<TierBadge kind='closed' />}
         subtitle='Closes the form. Existing link returns "no longer accepting".'
         onClick={() => selectTier('closed')}
+        disabled={!canUpdateSettings}
       />
     </div>
   );
@@ -418,6 +532,7 @@ function Choice({
   onClick,
   leadingIcon,
   testId,
+  disabled = false,
 }: {
   selected: boolean;
   title: string;
@@ -426,13 +541,16 @@ function Choice({
   onClick: () => void;
   leadingIcon?: React.ReactNode;
   testId?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
       data-testid={testId}
       type='button'
+      aria-pressed={selected}
       onClick={onClick}
-      className='flex items-start gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'
+      disabled={disabled}
+      className='flex items-start gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content disabled:cursor-not-allowed disabled:opacity-60'
     >
       <span className='mt-0.5 text-text-tertiary'>
         {selected ? (

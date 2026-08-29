@@ -1,4 +1,4 @@
-import { Ban, Globe, Lock } from 'lucide-react';
+import { Ban, CircleAlert, Globe, LoaderCircle, Lock } from 'lucide-react';
 import { useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
@@ -26,15 +26,12 @@ export function FormAccessBanner() {
   const auth = useContext(AuthInternalContext);
   const workspaceName = auth?.userWorkspaceInfo?.selectedWorkspace?.name ?? 'this workspace';
 
-  const tier = share.info?.tier ?? 'workspace';
-  // Cloud `coerce_anonymous` defaults Workspace tier to anonymous=false,
-  // Public tier to anonymous=true (forced). The default echoed here
-  // matches that contract so the banner attributes are stable even
-  // before `info` arrives.
+  const tier = share.info?.tier;
   const anonymous = share.info?.anonymous ?? false;
   const submissionAccess = share.info?.submission_access ?? 'none';
   const url = share.resolveShareUrl();
   const isPublic = tier === 'public';
+  const hasUnavailableLink = !share.isLoading && share.info === null;
 
   // Pro gate — single source of truth in `useCanAuthorFormView`
   // (covers dev / test / self-hosted bypasses + Pro plan in one
@@ -62,6 +59,11 @@ export function FormAccessBanner() {
 
     if (allowed === false) openUpgradePlan();
   }, [ensureCanAuthor, openUpgradePlan]);
+  const shouldShowEntitlementGate =
+    share.canUpdateSettings &&
+    share.info === null &&
+    !share.isLoading &&
+    (share.errorKind === 'plan_required' || (!share.errorKind && !share.error));
 
   const changeLinkClasses = cn(
     'text-sm font-medium hover:underline',
@@ -71,7 +73,7 @@ export function FormAccessBanner() {
   return (
     <div
       data-testid='form-access-banner'
-      data-tier={tier}
+      data-tier={tier ?? 'unavailable'}
       data-anonymous={anonymous ? 'true' : 'false'}
       data-submission-access={submissionAccess}
       className={cn(
@@ -81,9 +83,11 @@ export function FormAccessBanner() {
           : 'border-line-divider text-text-primary'
       )}
     >
-      <BannerIcon tier={tier} isPublic={isPublic} />
-      <span className='flex-1'>{bannerCopy(tier, workspaceName)}</span>
-      {canAuthor === true || share.info !== null ? (
+      <BannerIcon tier={tier} isPublic={isPublic} isLoading={share.isLoading} unavailable={hasUnavailableLink} />
+      <span className='flex-1' aria-live='polite'>
+        {bannerCopy(tier, workspaceName, share.isLoading, hasUnavailableLink)}
+      </span>
+      {!shouldShowEntitlementGate || canAuthor === true ? (
         <FormSharePopover
           trigger={
             <button type='button' className={changeLinkClasses}>
@@ -95,8 +99,12 @@ export function FormAccessBanner() {
           errorKind={share.errorKind}
           errorMessage={share.error}
           onUpgradePlan={openUpgradePlan}
+          hasEntitlementError={hasEntitlementError}
+          onRetryEntitlement={() => void retryEntitlement()}
           onRetry={share.retryBootstrap}
-          canBroadenAccess={canAuthor === true}
+          onRetryMutation={share.retryMutation}
+          canUpdateSettings={share.canUpdateSettings}
+          canBroadenAccess={share.canUpdateSettings && canAuthor === true}
           setTier={share.setTier}
           setAnonymous={share.setAnonymous}
           url={url}
@@ -123,9 +131,22 @@ export function FormAccessBanner() {
   );
 }
 
-function BannerIcon({ tier, isPublic }: { tier: FormShareTier; isPublic: boolean }) {
+function BannerIcon({
+  tier,
+  isPublic,
+  isLoading,
+  unavailable,
+}: {
+  tier: FormShareTier | undefined;
+  isPublic: boolean;
+  isLoading: boolean;
+  unavailable: boolean;
+}) {
   const className = isPublic ? 'text-text-warning-on-fill' : 'text-text-tertiary';
   const props = { size: 16, className };
+
+  if (isLoading) return <LoaderCircle {...props} className={`${className} animate-spin`} />;
+  if (unavailable) return <CircleAlert {...props} />;
 
   switch (tier) {
     case 'public':
@@ -138,7 +159,15 @@ function BannerIcon({ tier, isPublic }: { tier: FormShareTier; isPublic: boolean
   }
 }
 
-function bannerCopy(tier: FormShareTier, workspaceName: string): string {
+function bannerCopy(
+  tier: FormShareTier | undefined,
+  workspaceName: string,
+  isLoading: boolean,
+  unavailable: boolean
+): string {
+  if (isLoading) return 'Loading form link…';
+  if (unavailable) return 'Form link unavailable.';
+
   switch (tier) {
     case 'public':
       return 'This form is public. Anyone with the link can submit a response.';

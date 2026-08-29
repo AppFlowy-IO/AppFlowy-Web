@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 import { DatabaseViewLayout } from '@/application/types';
@@ -145,10 +145,70 @@ describe('AddViewButton', () => {
     fireEvent.click(screen.getByTestId('add-form-view-option'));
 
     await waitFor(() => {
-      expect(mockToastError).toHaveBeenCalledWith(
-        'Could not verify your workspace plan. Please try again.',
-      );
+      expect(mockToastError).toHaveBeenCalledWith('Could not verify your workspace plan. Please try again.');
     });
     expect(mockAddView).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a cached Pro result before creating a Form', async () => {
+    mockCanAuthor = true;
+    mockEnsureCanAuthor.mockResolvedValue(false);
+
+    render(
+      <MemoryRouter>
+        <AddViewButton onViewAdded={jest.fn()} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+
+    await waitFor(() => expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1));
+    expect(mockAddView).not.toHaveBeenCalled();
+  });
+
+  it('does not create a Form after its database scope unmounts during a cold entitlement check', async () => {
+    let resolveEntitlement!: (allowed: boolean) => void;
+    const entitlement = new Promise<boolean>((resolve) => {
+      resolveEntitlement = resolve;
+    });
+
+    mockCanAuthor = null;
+    mockEnsureCanAuthor.mockReturnValue(entitlement);
+    const rendered = render(
+      <MemoryRouter>
+        <AddViewButton onViewAdded={jest.fn()} />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByTestId('add-form-view-option'));
+    expect(mockEnsureCanAuthor).toHaveBeenCalledTimes(1);
+
+    rendered.unmount();
+    await act(async () => {
+      resolveEntitlement(true);
+      await entitlement;
+    });
+
+    expect(mockAddView).not.toHaveBeenCalled();
+  });
+
+  it('keeps Form enabled because the surrounding editor already enforces write permission', async () => {
+    const onViewAdded = jest.fn();
+
+    render(
+      <MemoryRouter>
+        <AddViewButton onViewAdded={onViewAdded} />
+      </MemoryRouter>
+    );
+
+    const formOption = screen.getByTestId('add-form-view-option');
+
+    expect(formOption.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(formOption);
+
+    await waitFor(() => {
+      expect(mockAddView).toHaveBeenCalledWith(DatabaseViewLayout.Form, 'form.menuName');
+      expect(onViewAdded).toHaveBeenCalledWith('list-view-id');
+    });
   });
 });

@@ -33,10 +33,10 @@ import { FormQuestion } from './FormQuestion';
  * round-trip; the per-question input components are dumb and bubble up
  * `(questionId, value)` pairs.
  *
- * Idempotency: a fresh UUID is minted on each mount and reused for every
- * submit attempt during that session. Network retries against the same
- * key are cheap (the cloud replays); a tab reload mints a new key, which
- * the user explicitly asked for by reloading.
+ * Idempotency: a key is bound to the exact uploaded payload sent to the
+ * cloud. An ambiguous network retry of that payload reuses the key, while
+ * an edited response receives a fresh key so a replay cannot silently drop
+ * the new answers.
  */
 export function FormBody({
   token,
@@ -81,23 +81,11 @@ export function FormBody({
     []
   );
 
-  // Idempotency contract:
-  //   * One key per submission ATTEMPT — same key reused across retries
-  //     of the same attempt (network blip + automatic retry) so the
-  //     cloud's `(token, idempotency_key)` dedup returns the original
-  //     submission_id instead of creating a duplicate row.
-  //   * Fresh key on "Submit another response" — the user is explicitly
-  //     starting a new attempt; without rotation the cloud would dedup
-  //     the second submit against the first and silently drop it
-  //     (user-reported: "Submit another response" looked like it
-  //     worked but no new row appeared).
-  //
-  // `useState` lazy init (not `useMemo`) — React explicitly does not
-  // guarantee memo retention, so an empty-deps memo can rerun under
-  // strict mode. State init is retained for the lifetime of the
-  // component except when we explicitly call `setIdempotencyKey` from
-  // `handleSubmitAnother`.
-  const [idempotencyKey, setIdempotencyKey] = useState(() => uuid());
+  // The server deduplicates solely by `(token, idempotency_key)`. Keep the
+  // key in a ref together with the exact uploaded payload it represents:
+  // retries after an ambiguous response reuse it, but edits cannot replay a
+  // success for different answers. This state does not affect rendering.
+  const idempotencyAttemptRef = useRef<{ key: string; payloadFingerprint: string } | null>(null);
 
   const handleChange = useCallback((questionId: string, value: FormAnswerValue) => {
     if (submittingRef.current) return;
@@ -178,6 +166,12 @@ export function FormBody({
       }
 
       const payload: FormSubmissionPayload = { answers: uploadedAnswers };
+      const payloadFingerprint = JSON.stringify(payload);
+      const previousAttempt = idempotencyAttemptRef.current;
+      const idempotencyKey =
+        previousAttempt?.payloadFingerprint === payloadFingerprint ? previousAttempt.key : uuid();
+
+      idempotencyAttemptRef.current = { key: idempotencyKey, payloadFingerprint };
       const res: FormSubmitResponse = await submitPublicForm(token, payload, idempotencyKey);
 
       if (res.kind === 'invalid') {
@@ -221,7 +215,7 @@ export function FormBody({
       submittingRef.current = false;
       setSubmitState({ kind: 'error', message, loginUrl: publicError.loginUrl });
     }
-  }, [answers, idempotencyKey, previewMode, retryBlocked, schema.questions, token]);
+  }, [answers, previewMode, retryBlocked, schema.questions, token]);
 
   const handleSubmitAnother = useCallback(() => {
     submittingRef.current = false;
@@ -234,9 +228,7 @@ export function FormBody({
       retryTimerRef.current = null;
     }
 
-    // Rotate the idempotency key so the cloud treats this as a fresh
-    // submission rather than a retry of the previous one.
-    setIdempotencyKey(uuid());
+    idempotencyAttemptRef.current = null;
   }, [schema.questions]);
 
   if (submitState.kind === 'submitted') {

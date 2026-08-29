@@ -12,6 +12,7 @@ import {
 } from '@/application/services/js-services/http';
 import { YjsDatabaseKey } from '@/application/types';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { useAuthenticatedUserIdOptional } from '@/components/main/app.hooks';
 
 /**
  * Why an error from the share bootstrap matters to the UI:
@@ -51,7 +52,10 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type BootstrapOutcome = { kind: 'success'; info: FormShareInfo } | { kind: 'failure'; error: unknown };
+type BootstrapOutcome =
+  | { kind: 'success'; info: FormShareInfo }
+  | { kind: 'empty' }
+  | { kind: 'failure'; error: unknown };
 
 type FormShareDelta = {
   tier?: FormShareTier;
@@ -61,39 +65,101 @@ type FormShareDelta = {
 
 interface FormShareMutationScope {
   key: string;
+  principalId: string;
   workspaceId: string | undefined;
   databaseId: string | undefined;
   viewId: string | undefined;
   active: boolean;
+  owners: Set<symbol>;
+  subscribers: Map<symbol, (scope: FormShareMutationScope, bootstrapSettled: boolean) => void>;
   confirmed: FormShareInfo | null;
   desired: FormShareInfo | null;
   revision: number;
-  confirmedRevision: number;
   pendingRequest: FormShareDelta;
   pendingOptimistic: FormShareDelta;
   draining: Promise<void> | null;
+  mutationError: { kind: FormShareErrorKind; message: string } | null;
+}
+
+// Process-local outbox keyed by the exact Form share scope. A Form provider is
+// unmounted whenever the user switches database tabs, but a PATCH already in
+// flight (and the latest choice queued behind it) still belongs to the user's
+// durable intent. Retaining the lane lets that drain finish off-screen and lets
+// a later mount reclaim/retry a failed final choice, matching Desktop's
+// `_FormSharePersistenceOutbox` lifecycle.
+const formShareMutationScopes = new Map<string, FormShareMutationScope>();
+let formShareMutationPrincipalId: string | undefined;
+
+function hasFormShareDelta(delta: FormShareDelta): boolean {
+  return Object.keys(delta).length > 0;
+}
+
+function releaseFormShareMutationScope(scope: FormShareMutationScope) {
+  if (scope.active || scope.draining || hasFormShareDelta(scope.pendingRequest)) return;
+  if (formShareMutationScopes.get(scope.key) === scope) formShareMutationScopes.delete(scope.key);
 }
 
 function createMutationScope(
   key: string,
+  principalId: string,
   workspaceId: string | undefined,
   databaseId: string | undefined,
   viewId: string | undefined
 ): FormShareMutationScope {
   return {
     key,
+    principalId,
     workspaceId,
     databaseId,
     viewId,
-    active: true,
+    active: false,
+    owners: new Set(),
+    subscribers: new Map(),
     confirmed: null,
     desired: null,
     revision: 0,
-    confirmedRevision: 0,
     pendingRequest: {},
     pendingOptimistic: {},
     draining: null,
+    mutationError: null,
   };
+}
+
+function mutationScopeMatches(
+  scope: FormShareMutationScope,
+  principalId: string,
+  workspaceId: string | undefined,
+  databaseId: string | undefined,
+  viewId: string | undefined
+): boolean {
+  return (
+    scope.principalId === principalId &&
+    scope.workspaceId === workspaceId &&
+    scope.databaseId === databaseId &&
+    scope.viewId === viewId
+  );
+}
+
+function notifyFormShareMutationScope(scope: FormShareMutationScope, bootstrapSettled = false) {
+  scope.subscribers.forEach((subscriber) => subscriber(scope, bootstrapSettled));
+}
+
+/** Test isolation for the process-local mutation outbox. */
+export function resetFormShareMutationOutboxForTesting() {
+  invalidateFormShareMutationScopes();
+  formShareMutationPrincipalId = undefined;
+}
+
+function invalidateFormShareMutationScopes() {
+  formShareMutationScopes.forEach((scope) => {
+    scope.active = false;
+    scope.owners.clear();
+    scope.subscribers.clear();
+    scope.pendingRequest = {};
+    scope.pendingOptimistic = {};
+    scope.revision += 1;
+  });
+  formShareMutationScopes.clear();
 }
 
 /**
@@ -107,11 +173,17 @@ function createMutationScope(
  * caller can classify (plan_required vs transient vs other) and
  * decide whether to retry.
  */
-async function tryBootstrap(workspaceId: string, databaseId: string, viewId: string): Promise<BootstrapOutcome> {
+async function tryBootstrap(
+  workspaceId: string,
+  databaseId: string,
+  viewId: string,
+  canMint = true
+): Promise<BootstrapOutcome> {
   try {
     const existing = await getFormShare(workspaceId, databaseId, viewId);
 
     if (existing) return { kind: 'success', info: existing };
+    if (!canMint) return { kind: 'empty' };
   } catch (e) {
     // Never turn a failed read into a write. Auth, permission, network, and
     // server failures must be surfaced/retried as reads; mint is valid only
@@ -186,6 +258,8 @@ function coerceSubmissionAccess(
  * does nothing.
  */
 export interface FormShareState {
+  /** Page permission, independent from the paid-plan authoring entitlement. */
+  canUpdateSettings: boolean;
   info: FormShareInfo | null;
   isLoading: boolean;
   error: string | null;
@@ -195,6 +269,8 @@ export interface FormShareState {
   errorKind: FormShareErrorKind | null;
   /** Re-runs bootstrap for the current form after a terminal load failure. */
   retryBootstrap: () => void;
+  /** Replays the latest failed share-settings intent without losing it. */
+  retryMutation: () => void;
   setTier: (tier: FormShareTier) => Promise<void>;
   setAnonymous: (value: boolean) => Promise<void>;
   setSubmissionAccess: (access: FormSubmissionAccess) => Promise<void>;
@@ -203,17 +279,25 @@ export interface FormShareState {
   resolveShareUrl: () => string;
 }
 
-export function useFormShare(): FormShareState {
+export function useFormShare({ canUpdateSettings = true }: { canUpdateSettings?: boolean } = {}): FormShareState {
   const viewId = useDatabaseViewId();
   const database = useDatabase();
   const workspaceId = useCurrentWorkspaceIdOptional();
+  const principalId = useAuthenticatedUserIdOptional() ?? 'anonymous';
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
-  const scopeKey = `${workspaceId ?? ''}\u0000${databaseId ?? ''}\u0000${viewId ?? ''}`;
+  const scopeKey = `${principalId}\u0000${workspaceId ?? ''}\u0000${databaseId ?? ''}\u0000${viewId ?? ''}`;
   const mutationScopeRef = useRef<FormShareMutationScope | null>(null);
-  const mutationScope = useMemo(
-    () => createMutationScope(scopeKey, workspaceId, databaseId, viewId),
-    [databaseId, scopeKey, viewId, workspaceId]
+  const mutationOwner = useMemo(() => Symbol('form-share-mutation-owner'), []);
+  const mutationScopeCandidate = useMemo(
+    () => createMutationScope(scopeKey, principalId, workspaceId, databaseId, viewId),
+    [databaseId, principalId, scopeKey, viewId, workspaceId]
   );
+  const [adoptedMutationScope, setAdoptedMutationScope] = useState<FormShareMutationScope | null>(null);
+  const mutationScope =
+    adoptedMutationScope?.key === scopeKey &&
+    mutationScopeMatches(adoptedMutationScope, principalId, workspaceId, databaseId, viewId)
+      ? adoptedMutationScope
+      : mutationScopeCandidate;
 
   const [info, setInfo] = useState<FormShareInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -237,20 +321,204 @@ export function useFormShare(): FormShareState {
     setBootstrapRevision((revision) => revision + 1);
   }, []);
 
+  const syncMutationScope = useCallback(
+    (scope: FormShareMutationScope, bootstrapSettled: boolean) => {
+      if (mutationScopeRef.current !== scope) return;
+      setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
+      setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
+      setErrorKind(canUpdateSettings ? scope.mutationError?.kind ?? null : null);
+      if (bootstrapSettled) setIsLoading(false);
+    },
+    [canUpdateSettings]
+  );
+
+  const startMutationDrain = useCallback((scope: FormShareMutationScope): Promise<void> => {
+    if (scope.draining) return scope.draining;
+    if (
+      !scope.workspaceId ||
+      !scope.databaseId ||
+      !scope.viewId ||
+      !scope.confirmed ||
+      !scope.desired ||
+      !hasFormShareDelta(scope.pendingRequest)
+    ) {
+      return Promise.resolve();
+    }
+
+    const mutationWorkspaceId = scope.workspaceId;
+    const mutationDatabaseId = scope.databaseId;
+    const mutationViewId = scope.viewId;
+
+    scope.mutationError = null;
+    notifyFormShareMutationScope(scope);
+
+    const drainPromise = (async () => {
+      // A nullable PATCH response means the token disappeared between the
+      // initial bootstrap and this mutation. Recover at most once per drain so
+      // a revoke loop cannot spin forever.
+      let recoveredMissingToken = false;
+
+      while (scope.confirmed && scope.desired && hasFormShareDelta(scope.pendingRequest)) {
+        const revision = scope.revision;
+        const request = scope.pendingRequest;
+        const optimistic = scope.pendingOptimistic;
+
+        scope.pendingRequest = {};
+        scope.pendingOptimistic = {};
+
+        try {
+          const next = await patchFormShare(mutationWorkspaceId, mutationDatabaseId, mutationViewId, request);
+
+          if (next === null) {
+            // The vanished token never received this request. Retain the latest
+            // sparse intent in the process outbox so a replacement token can
+            // receive it now or after this Form remounts.
+            scope.pendingRequest = { ...request, ...scope.pendingRequest };
+            scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
+
+            if (recoveredMissingToken) {
+              const message = 'The form share token changed again. Reload share settings and retry.';
+
+              scope.confirmed = null;
+              scope.desired = null;
+              scope.mutationError = { kind: 'other', message };
+              notifyFormShareMutationScope(scope);
+
+              return;
+            }
+
+            recoveredMissingToken = true;
+            const recovered = await tryBootstrap(mutationWorkspaceId, mutationDatabaseId, mutationViewId);
+
+            if (recovered.kind !== 'success') {
+              const recoveryError =
+                recovered.kind === 'failure'
+                  ? recovered.error
+                  : new Error('The replacement form share token is unavailable');
+              const message =
+                (recoveryError as { message?: string })?.message ?? 'reload failed after the share token changed';
+              const kind = classifyError(recoveryError);
+
+              scope.confirmed = null;
+              scope.desired = null;
+              scope.mutationError = { kind, message };
+              notifyFormShareMutationScope(scope);
+
+              return;
+            }
+
+            scope.confirmed = recovered.info;
+            scope.desired = {
+              ...recovered.info,
+              ...scope.pendingOptimistic,
+            };
+            scope.mutationError = null;
+            notifyFormShareMutationScope(scope);
+
+            continue;
+          }
+
+          scope.confirmed = next;
+          scope.mutationError = null;
+
+          if (scope.revision === revision && !hasFormShareDelta(scope.pendingRequest)) {
+            scope.desired = next;
+          } else {
+            // A later choice arrived while this request was in flight. Keep
+            // only that pending optimistic state over the authoritative
+            // response; this also adopts unrelated concurrent server changes.
+            scope.desired = { ...next, ...scope.pendingOptimistic };
+          }
+
+          notifyFormShareMutationScope(scope);
+        } catch (cause) {
+          const message = (cause as { message?: string })?.message ?? 'patch failed';
+          const kind = classifyError(cause);
+
+          // Preserve the failed request together with any newer queued values.
+          // Newer fields win, so Retry always replays the user's final intent.
+          scope.pendingRequest = { ...request, ...scope.pendingRequest };
+          scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
+          scope.desired = scope.confirmed;
+          scope.mutationError = { kind, message };
+          notifyFormShareMutationScope(scope);
+
+          return;
+        }
+      }
+    })();
+
+    scope.draining = drainPromise;
+    void drainPromise.finally(() => {
+      if (scope.draining === drainPromise) scope.draining = null;
+      releaseFormShareMutationScope(scope);
+    });
+    return drainPromise;
+  }, []);
+
+  const retryMutation = useCallback(() => {
+    const scope = mutationScopeRef.current;
+
+    if (!canUpdateSettings) return;
+    if (!scope?.active || !hasFormShareDelta(scope.pendingRequest)) return;
+    if (!scope.confirmed || !scope.desired) {
+      retryBootstrap();
+      return;
+    }
+
+    scope.mutationError = null;
+    scope.desired = { ...scope.confirmed, ...scope.pendingOptimistic };
+    notifyFormShareMutationScope(scope);
+    void startMutationDrain(scope);
+  }, [canUpdateSettings, retryBootstrap, startMutationDrain]);
+
   // A Form-to-Form switch can reuse this hook instance. Rotate the request
   // scope before paint/user events, without mutating refs during a potentially
   // abandoned concurrent render.
   useLayoutEffect(() => {
+    if (formShareMutationPrincipalId !== principalId) {
+      invalidateFormShareMutationScopes();
+      formShareMutationPrincipalId = principalId;
+    }
+
+    // Scope discovery during render is intentionally side-effect free. Commit
+    // one canonical lane here; if two providers rendered the same Form
+    // concurrently, the later committer adopts the first lane on a synchronous
+    // rerender before its passive bootstrap can run.
+    const registered = formShareMutationScopes.get(mutationScope.key);
+
+    if (
+      registered &&
+      registered !== mutationScope &&
+      mutationScopeMatches(registered, principalId, workspaceId, databaseId, viewId)
+    ) {
+      setAdoptedMutationScope(registered);
+      return;
+    }
+
     const previous = mutationScopeRef.current;
 
-    if (previous && previous !== mutationScope) previous.active = false;
+    if (previous && previous !== mutationScope) {
+      previous.owners.delete(mutationOwner);
+      previous.subscribers.delete(mutationOwner);
+      previous.active = previous.owners.size > 0;
+      releaseFormShareMutationScope(previous);
+    }
+
+    formShareMutationScopes.set(mutationScope.key, mutationScope);
+    mutationScope.owners.add(mutationOwner);
+    mutationScope.subscribers.set(mutationOwner, syncMutationScope);
     mutationScope.active = true;
     mutationScopeRef.current = mutationScope;
 
     return () => {
-      mutationScope.active = false;
+      mutationScope.owners.delete(mutationOwner);
+      mutationScope.subscribers.delete(mutationOwner);
+      mutationScope.active = mutationScope.owners.size > 0;
+      if (mutationScopeRef.current === mutationScope) mutationScopeRef.current = null;
+      releaseFormShareMutationScope(mutationScope);
     };
-  }, [mutationScope]);
+  }, [databaseId, mutationOwner, mutationScope, principalId, syncMutationScope, viewId, workspaceId]);
 
   // Bootstrap order:
   //   1. GET the existing token (cheap, idempotent — most common case
@@ -280,9 +548,7 @@ export function useFormShare(): FormShareState {
       setError(null);
       setErrorKind(null);
       setIsLoading(false);
-      return () => {
-        scope.active = false;
-      };
+      return;
     }
 
     let cancelled = false;
@@ -299,6 +565,12 @@ export function useFormShare(): FormShareState {
     setErrorKind(null);
     setIsLoading(true);
     void (async () => {
+      // A previous mount may have handed this scope an in-flight outbox drain.
+      // Let it settle before reading the token, otherwise a stale GET can race
+      // and temporarily replace the just-persisted final choice.
+      await scope.draining;
+      if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
+
       // GET-first path. Cheap when another client has already minted —
       // most common case after the first session. Only a successful empty
       // read proceeds to mint; failed reads stay read-only and are classified
@@ -317,16 +589,65 @@ export function useFormShare(): FormShareState {
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
-        const outcome = await tryBootstrap(workspaceId, databaseId, viewId);
+        const mutationRevisionAtRequest = scope.revision;
+        const confirmedAtRequest = scope.confirmed;
+        const outcome = await tryBootstrap(workspaceId, databaseId, viewId, canUpdateSettings);
 
         if (cancelled || mutationScopeRef.current !== scope || !scope.active) return;
-        if (outcome.kind === 'success') {
-          scope.confirmed = outcome.info;
-          scope.desired = outcome.info;
-          setInfo(outcome.info);
+        if (outcome.kind === 'empty') {
+          // A concurrent editable provider may have minted while this
+          // read-only GET was in flight. Preserve that canonical token rather
+          // than replacing it with the older empty observation.
+          const shareChangedWhileReading =
+            scope.revision !== mutationRevisionAtRequest || scope.confirmed !== confirmedAtRequest;
+
+          if (shareChangedWhileReading && scope.confirmed) {
+            setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
+            setError(null);
+            setErrorKind(null);
+            setIsLoading(false);
+            return;
+          }
+
+          scope.confirmed = null;
+          scope.desired = null;
+          notifyFormShareMutationScope(scope, true);
           setError(null);
           setErrorKind(null);
           setIsLoading(false);
+          return;
+        }
+
+        if (outcome.kind === 'success') {
+          // Another provider for this Form may have mutated the canonical
+          // outbox while this GET was in flight. Never let that older read
+          // replace its optimistic/final state; the mutation drain broadcasts
+          // the authoritative result to every committed subscriber.
+          const shareChangedWhileReading =
+            scope.revision !== mutationRevisionAtRequest || scope.confirmed !== confirmedAtRequest;
+
+          if (shareChangedWhileReading && scope.confirmed) {
+            setInfo(canUpdateSettings ? scope.desired : scope.confirmed);
+            setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
+            setErrorKind(canUpdateSettings ? scope.mutationError?.kind ?? null : null);
+            setIsLoading(false);
+            return;
+          }
+
+          scope.confirmed = outcome.info;
+          const hasPendingMutation = hasFormShareDelta(scope.pendingRequest);
+          const canApplyPendingMutation = canUpdateSettings && hasPendingMutation;
+
+          // A view-only mount must show the server-confirmed share settings,
+          // never an unpersisted intent retained from an earlier editor. Keep
+          // that outbox silent until an editable mount can legitimately drain
+          // it.
+          scope.desired = canApplyPendingMutation ? { ...outcome.info, ...scope.pendingOptimistic } : outcome.info;
+          notifyFormShareMutationScope(scope, true);
+          setError(canUpdateSettings ? scope.mutationError?.message ?? null : null);
+          setErrorKind(canUpdateSettings ? scope.mutationError?.kind ?? null : null);
+          setIsLoading(false);
+          if (canApplyPendingMutation) void startMutationDrain(scope);
           return;
         }
 
@@ -377,173 +698,39 @@ export function useFormShare(): FormShareState {
 
     return () => {
       cancelled = true;
-      scope.active = false;
     };
-  }, [bootstrapRevision, databaseId, mutationScope, scopeKey, viewId, workspaceId]);
+  }, [
+    bootstrapRevision,
+    canUpdateSettings,
+    databaseId,
+    mutationScope,
+    scopeKey,
+    startMutationDrain,
+    viewId,
+    workspaceId,
+  ]);
 
-  const patch = useCallback((requestDelta: FormShareDelta, optimisticDelta = requestDelta): Promise<void> => {
-    const scope = mutationScopeRef.current;
+  const patch = useCallback(
+    (requestDelta: FormShareDelta, optimisticDelta = requestDelta): Promise<void> => {
+      const scope = mutationScopeRef.current;
 
-    if (
-      !scope?.active ||
-      !scope.workspaceId ||
-      !scope.databaseId ||
-      !scope.viewId ||
-      !scope.confirmed ||
-      !scope.desired
-    ) {
-      return Promise.resolve();
-    }
+      if (!canUpdateSettings) return Promise.resolve();
+      if (!scope?.active || !scope.confirmed || !scope.desired) return Promise.resolve();
 
-    const mutationWorkspaceId = scope.workspaceId;
-    const mutationDatabaseId = scope.databaseId;
-    const mutationViewId = scope.viewId;
+      // Apply invariant-derived values immediately for responsive UI, while
+      // retaining only the fields the user actually changed for PATCH. Sparse
+      // requests keep a desktop or another tab's unrelated concurrent setting.
+      scope.pendingRequest = { ...scope.pendingRequest, ...requestDelta };
+      scope.pendingOptimistic = { ...scope.pendingOptimistic, ...optimisticDelta };
+      scope.desired = { ...scope.desired, ...scope.pendingOptimistic };
+      scope.revision += 1;
+      scope.mutationError = null;
+      notifyFormShareMutationScope(scope);
 
-    // Apply invariant-derived values immediately for responsive UI, while
-    // retaining only the fields the user actually changed for PATCH. Sparse
-    // requests keep a desktop or another tab's unrelated concurrent setting.
-    scope.desired = { ...scope.desired, ...optimisticDelta };
-    scope.pendingRequest = { ...scope.pendingRequest, ...requestDelta };
-    scope.pendingOptimistic = { ...scope.pendingOptimistic, ...optimisticDelta };
-    scope.revision += 1;
-    setInfo(scope.desired);
-    setError(null);
-    setErrorKind(null);
-
-    if (scope.draining) return scope.draining;
-
-    const drainPromise = (async () => {
-      // A nullable PATCH response means the token disappeared between the
-      // initial bootstrap and this mutation (for example, another client
-      // revoked it). Recover at most once per drain so a revoke loop cannot
-      // spin forever.
-      let recoveredMissingToken = false;
-
-      while (
-        mutationScopeRef.current === scope &&
-        scope.active &&
-        scope.confirmed &&
-        scope.desired &&
-        scope.confirmedRevision < scope.revision
-      ) {
-        const revision = scope.revision;
-        const request = scope.pendingRequest;
-        const optimistic = scope.pendingOptimistic;
-
-        scope.pendingRequest = {};
-        scope.pendingOptimistic = {};
-
-        try {
-          const next = await patchFormShare(mutationWorkspaceId, mutationDatabaseId, mutationViewId, request);
-
-          if (mutationScopeRef.current !== scope || !scope.active) return;
-
-          if (next === null) {
-            if (recoveredMissingToken) {
-              const missingError = {
-                message: 'The form share token changed again. Reload share settings and retry.',
-              };
-
-              scope.confirmed = null;
-              scope.desired = null;
-              scope.pendingRequest = {};
-              scope.pendingOptimistic = {};
-              scope.confirmedRevision = scope.revision;
-              setInfo(null);
-              setError(missingError.message);
-              setErrorKind('other');
-              return;
-            }
-
-            recoveredMissingToken = true;
-            // The vanished token never received this request. Reapply only
-            // the user's sparse intent to the replacement token; later input
-            // wins field-by-field while bootstrap is in flight.
-            scope.pendingRequest = { ...request, ...scope.pendingRequest };
-            scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
-            const recovered = await tryBootstrap(mutationWorkspaceId, mutationDatabaseId, mutationViewId);
-
-            if (mutationScopeRef.current !== scope || !scope.active) return;
-            if (recovered.kind === 'failure') {
-              const message =
-                (recovered.error as { message?: string })?.message ?? 'reload failed after the share token changed';
-
-              // The prior confirmation points at a token the server has told
-              // us is gone. Clear it instead of rolling the optimistic state
-              // back to a stale URL. The popover exposes retryBootstrap.
-              scope.confirmed = null;
-              scope.desired = null;
-              scope.pendingRequest = {};
-              scope.pendingOptimistic = {};
-              scope.confirmedRevision = scope.revision;
-              setInfo(null);
-              setError(message);
-              setErrorKind(classifyError(recovered.error));
-              return;
-            }
-
-            scope.confirmed = recovered.info;
-            scope.desired = {
-              ...recovered.info,
-              ...scope.pendingOptimistic,
-            };
-            setInfo(scope.desired);
-            setError(null);
-            setErrorKind(null);
-            // Do not advance confirmedRevision: the recovered token still
-            // needs the latest sparse intent applied to it. The next loop
-            // iteration performs that PATCH, including choices made while
-            // recovery was in flight.
-            continue;
-          }
-
-          scope.confirmed = next;
-          scope.confirmedRevision = revision;
-          setError(null);
-          setErrorKind(null);
-
-          if (scope.revision === revision) {
-            scope.desired = next;
-            setInfo(next);
-          } else {
-            // A later choice arrived while this request was in flight. Keep
-            // only that pending optimistic state over the authoritative
-            // response; this also adopts unrelated concurrent server changes.
-            scope.desired = { ...next, ...scope.pendingOptimistic };
-            setInfo(scope.desired);
-          }
-        } catch (e) {
-          if (mutationScopeRef.current !== scope || !scope.active) return;
-
-          // If the user made a newer choice, retry the failed sparse fields
-          // together with that choice. Newer values win. Otherwise roll the
-          // optimistic value back to the last server confirmation.
-          if (scope.revision !== revision) {
-            scope.pendingRequest = { ...request, ...scope.pendingRequest };
-            scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
-            continue;
-          }
-
-          const message = (e as { message?: string })?.message ?? 'patch failed';
-
-          scope.desired = scope.confirmed;
-          scope.pendingRequest = {};
-          scope.pendingOptimistic = {};
-          scope.confirmedRevision = scope.revision;
-          setInfo(scope.confirmed);
-          setError(message);
-          setErrorKind(classifyError(e));
-          return;
-        }
-      }
-    })();
-
-    scope.draining = drainPromise;
-    void drainPromise.finally(() => {
-      if (scope.draining === drainPromise) scope.draining = null;
-    });
-    return drainPromise;
-  }, []);
+      return startMutationDrain(scope);
+    },
+    [canUpdateSettings, startMutationDrain]
+  );
 
   const setTier = useCallback(
     async (tier: FormShareTier) => {
@@ -626,22 +813,26 @@ export function useFormShare(): FormShareState {
   // to re-render even when info/setters are unchanged.
   return useMemo(
     () => ({
+      canUpdateSettings,
       info: scopedInfo,
       isLoading: scopedIsLoading,
       error: scopedError,
       errorKind: scopedErrorKind,
       retryBootstrap,
+      retryMutation,
       setTier,
       setAnonymous,
       setSubmissionAccess,
       resolveShareUrl,
     }),
     [
+      canUpdateSettings,
       scopedInfo,
       scopedIsLoading,
       scopedError,
       scopedErrorKind,
       retryBootstrap,
+      retryMutation,
       setTier,
       setAnonymous,
       setSubmissionAccess,

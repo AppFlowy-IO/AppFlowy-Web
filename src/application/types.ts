@@ -2040,6 +2040,8 @@ export interface ViewComponentProps {
   canComment?: boolean;
   /** Canonical server write permission, independent from locks/mobile UI. */
   canWrite?: boolean;
+  /** Canonical server share-management permission. Never infer this from editability. */
+  canShare?: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   createRow?: CreateRow;

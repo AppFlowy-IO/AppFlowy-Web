@@ -420,6 +420,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     if (!effectiveViewId) return false;
     return getViewCanWriteStatus(effectiveViewId, outline, resolvedView, objectPermission);
   }, [effectiveViewId, objectPermission, outline, resolvedView]);
+  const canShare = objectPermission.can_share;
 
   const View = useMemo(() => {
     switch (layout) {
@@ -448,6 +449,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         readOnly={isReadOnly}
         canComment={canComment}
         canWrite={canWrite}
+        canShare={canShare}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -494,6 +496,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     isReadOnly,
     canComment,
     canWrite,
+    canShare,
     toView,
     loadViewMeta,
     createRow,
