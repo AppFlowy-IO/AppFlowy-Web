@@ -3,8 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { DatabaseContextState } from '@/application/database-yjs/context';
 import { useDuplicateDatabaseView, useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, UIVariant, View, ViewLayout, YjsDatabaseKey } from '@/application/types';
 import { DatabaseTabs } from '@/components/database/components/tabs/DatabaseTabs';
+import { useCanAuthorFormView } from '@/components/database/form/useCanAuthorFormView';
+
+const mockSetSearch = jest.fn();
 
 jest.mock('@/application/database-yjs', () => ({
   useDatabase: jest.fn(),
@@ -14,6 +17,15 @@ jest.mock('@/application/database-yjs', () => ({
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useDuplicateDatabaseView: jest.fn(),
   useUpdateDatabaseView: jest.fn(),
+}));
+
+jest.mock('@/components/database/form/useCanAuthorFormView', () => ({
+  useCanAuthorFormView: jest.fn(),
+}));
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useSearchParams: () => [new URLSearchParams(), mockSetSearch],
 }));
 
 jest.mock('react-i18next', () => ({
@@ -101,6 +113,12 @@ describe('DatabaseTabs', () => {
     (useDatabase as jest.Mock).mockReturnValue(undefined);
     (useDuplicateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
     (useUpdateDatabaseView as jest.Mock).mockReturnValue(jest.fn());
+    jest.mocked(useCanAuthorFormView).mockReturnValue({
+      canAuthor: true,
+      ensureCanAuthor: jest.fn().mockResolvedValue(true),
+      hasError: false,
+      isLoading: false,
+    });
   });
 
   it('duplicates a tab through the database-view hook and selects the returned view', async () => {
@@ -167,6 +185,63 @@ describe('DatabaseTabs', () => {
       expect(onAfterViewAddedToDatabase).toHaveBeenCalledTimes(1);
     });
     expect(onBeforeViewAddedToDatabase).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks Form duplication and opens the upgrade flow after an entitlement downgrade', async () => {
+    const duplicateView = jest.fn().mockResolvedValue('duplicated-view-id');
+    const onBeforeViewAddedToDatabase = jest.fn();
+    const onAfterViewAddedToDatabase = jest.fn();
+    const ensureCanAuthor = jest.fn().mockResolvedValue(false);
+    const sourceYjsView = {
+      get: jest.fn((key: YjsDatabaseKey) => {
+        if (key === YjsDatabaseKey.name) return 'Form';
+        if (key === YjsDatabaseKey.layout) return DatabaseViewLayout.Form;
+        return undefined;
+      }),
+    };
+    const views = new Map([[databaseView.view_id, sourceYjsView]]);
+    const context = {
+      createDatabaseView: jest.fn(),
+      isDocumentBlock: true,
+      loadViewMeta: jest.fn(async () => databaseContainer),
+      readOnly: false,
+      showActions: true,
+    } as unknown as DatabaseContextState;
+    const props = {
+      databasePageId: databaseView.view_id,
+      selectedViewId: databaseView.view_id,
+      viewIds: [databaseView.view_id],
+      onBeforeViewAddedToDatabase,
+      onAfterViewAddedToDatabase,
+    };
+
+    (useDatabase as jest.Mock).mockReturnValue({ get: () => views });
+    (useDuplicateDatabaseView as jest.Mock).mockReturnValue(duplicateView);
+    (useDatabaseContext as jest.Mock).mockReturnValue(context);
+
+    const rendered = render(<DatabaseTabs {...props} />);
+
+    jest.mocked(useCanAuthorFormView).mockReturnValue({
+      canAuthor: false,
+      ensureCanAuthor,
+      hasError: false,
+      isLoading: false,
+    });
+    rendered.rerender(<DatabaseTabs {...props} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate view' }));
+
+    await waitFor(() => expect(mockSetSearch).toHaveBeenCalledTimes(1));
+    expect(duplicateView).not.toHaveBeenCalled();
+    expect(ensureCanAuthor).not.toHaveBeenCalled();
+    expect(onBeforeViewAddedToDatabase).not.toHaveBeenCalled();
+    expect(onAfterViewAddedToDatabase).not.toHaveBeenCalled();
+
+    const updateSearch = mockSetSearch.mock.calls[0][0] as (params: URLSearchParams) => URLSearchParams;
+    const updatedParams = updateSearch(new URLSearchParams('preserved=true'));
+
+    expect(updatedParams.get('action')).toBe('change_plan');
+    expect(updatedParams.get('preserved')).toBe('true');
   });
 
   it('renders the database container name for an embedded database', async () => {

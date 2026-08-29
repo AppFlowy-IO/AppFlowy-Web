@@ -82,9 +82,13 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
     ?.get(YjsDatabaseKey.id) as string | undefined;
   const activeViewId = ctx?.activeViewId;
   const loadView = ctx?.loadView;
+  const autoCreatePending = !readOnly && !snapshot.decided;
 
   const ensureFormHydrated = useCallback(async () => {
-    if (!loadView) return;
+    if (!loadView) {
+      throw new Error('Form hydration is unavailable');
+    }
+
     if (!activeViewId || !databaseId) {
       throw new Error('Database identity is unavailable for form hydration');
     }
@@ -201,7 +205,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
         )}
         <FormTitle readOnly={readOnly} />
         {!readOnly && <FormAccessBanner />}
-        {!readOnly && !snapshot.decided && snapshot.questions.length === 0 && (
+        {autoCreatePending && (
           <FormAutoCreate
             snapshot={snapshot}
             fields={fields}
@@ -211,7 +215,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
           />
         )}
 
-        {resolved.length === 0 ? (
+        {autoCreatePending || resolved.length === 0 ? (
           <EmptyState decided={snapshot.decided} readOnly={readOnly} />
         ) : readOnly ? (
           <div className='flex flex-col gap-3'>
@@ -235,7 +239,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
           />
         )}
 
-        {!readOnly && (
+        {!readOnly && !autoCreatePending && (
           <FormQuestionTypePicker fieldsMap={fields} fieldsVersion={fieldsVersion} snapshot={snapshot} writer={writer} />
         )}
       </div>

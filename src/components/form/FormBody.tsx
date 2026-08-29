@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 
 import {
@@ -11,6 +11,15 @@ import {
   FormFileAttachment,
   FormSubmissionPayload,
   FormSubmitResponse,
+  PUBLIC_FORM_MAX_ANSWER_STRING_AND_KEY_BYTES,
+  PUBLIC_FORM_MAX_BYTES_PER_FILE,
+  PUBLIC_FORM_MAX_EMAIL_ANSWER_BYTES,
+  PUBLIC_FORM_MAX_FILES_PER_QUESTION,
+  PUBLIC_FORM_MAX_FILES_PER_SUBMISSION,
+  PUBLIC_FORM_MAX_PHONE_ANSWER_BYTES,
+  PUBLIC_FORM_MAX_TEXT_ANSWER_BYTES,
+  PUBLIC_FORM_MAX_URL_ANSWER_BYTES,
+  PUBLIC_FORM_SUBMIT_MAX_BODY_BYTES,
   PublicFormSchema,
   PublicQuestion,
 } from '@/application/types/form';
@@ -50,8 +59,13 @@ export function FormBody({
   const [answers, setAnswers] = useState<Record<string, FormAnswerValue>>(() => seedAnswers(schema.questions));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitState, setSubmitState] = useState<
-    { kind: 'idle' } | { kind: 'submitting' } | { kind: 'submitted' } | { kind: 'error'; message: string }
+    | { kind: 'idle' }
+    | { kind: 'submitting' }
+    | { kind: 'submitted' }
+    | { kind: 'error'; message: string; loginUrl?: string }
   >({ kind: 'idle' });
+  const [retryBlocked, setRetryBlocked] = useState(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Native controls inside the fieldset are disabled while a submission is
   // in flight, but popover content (for example the date picker calendar) is
   // rendered in a portal outside that fieldset. Keep a synchronous guard as
@@ -59,6 +73,13 @@ export function FormBody({
   // set before uploads finish. A ref also closes the same-tick window before
   // React commits the disabled state and prevents duplicate submissions.
   const submittingRef = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    },
+    []
+  );
 
   // Idempotency contract:
   //   * One key per submission ATTEMPT — same key reused across retries
@@ -95,7 +116,7 @@ export function FormBody({
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (submittingRef.current) return;
+    if (submittingRef.current || retryBlocked) return;
 
     // Client-side required check — runs before the network round-trip so
     // the user sees "Required" instantly. The server re-validates and is
@@ -105,6 +126,25 @@ export function FormBody({
 
     if (Object.keys(localErrors).length > 0) {
       setFieldErrors(localErrors);
+      return;
+    }
+
+    // Check the aggregate JSON ceiling before minting any upload
+    // capabilities. The API repeats this check on the final, uploaded shape,
+    // but waiting until then would leave needless pending objects behind.
+    if (new Blob([JSON.stringify({ answers })]).size > PUBLIC_FORM_SUBMIT_MAX_BODY_BYTES) {
+      setSubmitState({
+        kind: 'error',
+        message: 'This response is too large. Shorten one or more answers and try again.',
+      });
+      return;
+    }
+
+    if (formAnswerStringAndKeyBytes(answers) > PUBLIC_FORM_MAX_ANSWER_STRING_AND_KEY_BYTES) {
+      setSubmitState({
+        kind: 'error',
+        message: 'This response contains too much text. Shorten one or more answers and try again.',
+      });
       return;
     }
 
@@ -147,20 +187,53 @@ export function FormBody({
         return;
       }
 
+      if (res.status === 'failed') {
+        // This idempotency key now points at a terminal failed reservation;
+        // retrying it can only replay the same status. Require a fresh page
+        // attempt instead of presenting a false confirmation or spinning.
+        submittingRef.current = false;
+        setRetryBlocked(true);
+        setSubmitState({
+          kind: 'error',
+          message: 'This response could not be processed. Reload the form to start a new response.',
+        });
+        return;
+      }
+
       setSubmitState({ kind: 'submitted' });
     } catch (err) {
-      const message = (err as { message?: string })?.message ?? 'Submission failed';
+      const publicError = err as { message?: string; retryAfterSecs?: number; loginUrl?: string };
+      const retryAfterSecs = publicError.retryAfterSecs;
+      const hasRetryDelay = typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0;
+      const message = `${publicError.message ?? 'Submission failed'}${
+        hasRetryDelay ? ` Try again in ${Math.ceil(retryAfterSecs)} seconds.` : ''
+      }`;
+
+      if (hasRetryDelay) {
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        setRetryBlocked(true);
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          setRetryBlocked(false);
+        }, Math.min(retryAfterSecs, 86_400) * 1000);
+      }
 
       submittingRef.current = false;
-      setSubmitState({ kind: 'error', message });
+      setSubmitState({ kind: 'error', message, loginUrl: publicError.loginUrl });
     }
-  }, [answers, idempotencyKey, previewMode, schema.questions, token]);
+  }, [answers, idempotencyKey, previewMode, retryBlocked, schema.questions, token]);
 
   const handleSubmitAnother = useCallback(() => {
     submittingRef.current = false;
     setAnswers(seedAnswers(schema.questions));
     setFieldErrors({});
     setSubmitState({ kind: 'idle' });
+    setRetryBlocked(false);
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+
     // Rotate the idempotency key so the cloud treats this as a fresh
     // submission rather than a retry of the previous one.
     setIdempotencyKey(uuid());
@@ -211,9 +284,24 @@ export function FormBody({
 
       <div className='flex flex-col items-start gap-2'>
         {submitState.kind === 'error' && <p className='text-sm text-fill-default'>{submitState.message}</p>}
-        <Button data-testid='public-form-submit' onClick={handleSubmit} disabled={submitState.kind === 'submitting'}>
-          {submitState.kind === 'submitting' ? 'Submitting…' : schema.submit_label}
-        </Button>
+        {submitState.kind === 'error' && submitState.loginUrl ? (
+          <Button
+            data-testid='public-form-login'
+            onClick={() => {
+              window.location.href = submitState.loginUrl!;
+            }}
+          >
+            Log in
+          </Button>
+        ) : (
+          <Button
+            data-testid='public-form-submit'
+            onClick={handleSubmit}
+            disabled={submitState.kind === 'submitting' || retryBlocked}
+          >
+            {submitState.kind === 'submitting' ? 'Submitting…' : schema.submit_label}
+          </Button>
+        )}
       </div>
 
       <p className='pt-6 text-xs text-text-caption'>
@@ -317,7 +405,12 @@ async function uploadPendingFile(token: string, attachment: FormFileAttachment):
     content_type: attachment.file.type || undefined,
   });
 
-  await uploadFormFileToPresignedUrl(mint.upload_url, attachment.file, mint.upload_content_type);
+  await uploadFormFileToPresignedUrl(
+    mint.upload_url,
+    attachment.file,
+    mint.upload_content_type,
+    mint.upload_if_none_match
+  );
 
   return {
     file_id: mint.file_id,
@@ -382,17 +475,92 @@ function collectLocalErrors(
   answers: Record<string, FormAnswerValue>
 ): Record<string, string> {
   const out: Record<string, string> = {};
+  let totalFiles = 0;
 
   for (const q of questions) {
-    if (!q.required) continue;
     const v = answers[q.id];
 
-    if (isEmpty(v)) {
+    if (q.required && isEmpty(v)) {
       out[q.id] = 'Required';
+    }
+
+    if (v?.kind === 'text') {
+      const maxBytes = maxTextAnswerBytes(q.kind);
+
+      if (maxBytes !== undefined && new Blob([v.value]).size > maxBytes) {
+        out[q.id] = `Keep this answer under ${formatAnswerLimit(maxBytes)}.`;
+      }
+    }
+
+    if (q.kind !== 'files' || v?.kind !== 'files') continue;
+
+    const maxFiles = Math.min(q.max_files ?? PUBLIC_FORM_MAX_FILES_PER_QUESTION, PUBLIC_FORM_MAX_FILES_PER_QUESTION);
+    const maxBytes = Math.min(q.max_bytes_per_file ?? PUBLIC_FORM_MAX_BYTES_PER_FILE, PUBLIC_FORM_MAX_BYTES_PER_FILE);
+
+    totalFiles += v.files.length;
+    if (v.files.length > maxFiles) {
+      out[q.id] = `Attach no more than ${maxFiles} files.`;
+    } else if (v.files.some((file) => file.size <= 0 || file.size > maxBytes)) {
+      out[q.id] = 'Remove empty or oversized files before submitting.';
+    }
+  }
+
+  if (totalFiles > PUBLIC_FORM_MAX_FILES_PER_SUBMISSION) {
+    for (const q of questions) {
+      if (q.kind === 'files' && answers[q.id]?.kind === 'files') {
+        out[q.id] = `Attach no more than ${PUBLIC_FORM_MAX_FILES_PER_SUBMISSION} files per response.`;
+      }
     }
   }
 
   return out;
+}
+
+function maxTextAnswerBytes(kind: PublicQuestion['kind']): number | undefined {
+  switch (kind) {
+    case 'text':
+      return PUBLIC_FORM_MAX_TEXT_ANSWER_BYTES;
+    case 'url':
+      return PUBLIC_FORM_MAX_URL_ANSWER_BYTES;
+    case 'email':
+      return PUBLIC_FORM_MAX_EMAIL_ANSWER_BYTES;
+    case 'phone':
+      return PUBLIC_FORM_MAX_PHONE_ANSWER_BYTES;
+    default:
+      return undefined;
+  }
+}
+
+function formatAnswerLimit(bytes: number): string {
+  return bytes >= 1024 ? `${bytes / 1024} KB` : `${bytes} bytes`;
+}
+
+function formAnswerStringAndKeyBytes(answers: Record<string, FormAnswerValue>): number {
+  let total = 0;
+
+  for (const [questionId, answer] of Object.entries(answers)) {
+    total += utf8Bytes(questionId) + nestedStringAndKeyBytes(answer);
+  }
+
+  return total;
+}
+
+function nestedStringAndKeyBytes(value: unknown): number {
+  if (typeof value === 'string') return utf8Bytes(value);
+  if (Array.isArray(value)) {
+    return value.reduce((total, item) => total + nestedStringAndKeyBytes(item), 0);
+  }
+
+  if (!value || typeof value !== 'object') return 0;
+
+  return Object.entries(value).reduce(
+    (total, [key, nested]) => total + utf8Bytes(key) + nestedStringAndKeyBytes(nested),
+    0
+  );
+}
+
+function utf8Bytes(value: string): number {
+  return new Blob([value]).size;
 }
 
 function isEmpty(v: FormAnswerValue | undefined): boolean {

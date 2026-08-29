@@ -24,6 +24,7 @@ function createView(id: string, questionId: string, description: string): YDatab
   const view = doc.getMap(`view-${id}`) as YDatabaseView;
   const settings = new Y.Map() as YDatabaseFormFieldSettings;
   const entry = new Y.Map<unknown>();
+  const fieldOrders = new Y.Array<{ id: string }>();
 
   entry.set(FORM_INCLUDED, true);
   entry.set(FORM_REQUIRED, false);
@@ -31,7 +32,9 @@ function createView(id: string, questionId: string, description: string): YDatab
   entry.set(FORM_DESCRIPTION, description);
   entry.set(FORM_ORDER, 0);
   settings.set(questionId, entry);
+  fieldOrders.push([{ id: questionId }]);
   view.set(YjsDatabaseKey.layout, DatabaseViewLayout.Form);
+  view.set(YjsDatabaseKey.field_orders, fieldOrders);
   view.set(YjsDatabaseKey.form_field_settings, settings);
   return view;
 }
@@ -81,5 +84,16 @@ describe('useFormLayoutSnapshot', () => {
 
     unmount();
     expect(unobserve).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes Form field-order changes independently of field-map insertion order', () => {
+    mockView = createView('ordered', 'question-a', 'A');
+    const { result } = renderHook(() => useFormLayoutSnapshot());
+
+    act(() => {
+      mockView?.get(YjsDatabaseKey.field_orders)?.insert(0, [{ id: 'question-b' }]);
+    });
+
+    expect(result.current.fieldOrderIds).toEqual(['question-b', 'question-a']);
   });
 });

@@ -137,9 +137,17 @@ export interface PublicFormUploadUrlRequest {
   file_name: string;
   content_length: number;
   content_type?: string;
+  /**
+   * The current Web client always requests the replay-resistant contract.
+   * Kept on the wire DTO because the server rejects legacy clients with 426
+   * once the compatibility window is closed.
+   */
+  upload_protocol?: PublicFormUploadProtocol;
 }
 
-export interface PublicFormUploadUrlResponse {
+export type PublicFormUploadProtocol = 'legacy_v1' | 'create_only_v2';
+
+interface PublicFormUploadUrlResponseBase {
   file_id: string;
   upload_url: string;
   /** Exact Content-Type value included in the presigned PUT signature. */
@@ -147,6 +155,26 @@ export interface PublicFormUploadUrlResponse {
   download_url?: string;
   expires_in_secs: number;
 }
+
+/**
+ * The selected object-store PUT contract. `upload_if_none_match` is required
+ * for create-only capabilities and absent from legacy responses.
+ */
+export type PublicFormUploadUrlResponse =
+  | (PublicFormUploadUrlResponseBase & {
+      upload_protocol: 'create_only_v2';
+      upload_if_none_match: string;
+    })
+  | (PublicFormUploadUrlResponseBase & {
+      upload_protocol: 'legacy_v1';
+      upload_if_none_match?: never;
+    });
+
+/** Response refined by `requestPublicFormUploadUrl` after wire validation. */
+export type CreateOnlyPublicFormUploadUrlResponse = Extract<
+  PublicFormUploadUrlResponse,
+  { upload_protocol: 'create_only_v2' }
+>;
 
 /**
  * Submit-response from `submitPublicForm`. Two variants:
@@ -162,5 +190,21 @@ export interface PublicFormUploadUrlResponse {
  * bubble out as `APIError`.
  */
 export type FormSubmitResponse =
-  | { kind: 'submitted'; submission_id: string; status: string }
+  | {
+      kind: 'submitted';
+      submission_id: string;
+      status: 'queued' | 'processing' | 'accepted' | 'failed';
+    }
   | { kind: 'invalid'; field_errors: Record<string, string> };
+
+/** Transport ceilings mirrored from the public-form server contract. */
+export const PUBLIC_FORM_SUBMIT_MAX_BODY_BYTES = 256 * 1024;
+export const PUBLIC_FORM_MAX_ANSWER_STRING_AND_KEY_BYTES = 128 * 1024;
+export const PUBLIC_FORM_MAX_TEXT_ANSWER_BYTES = 32 * 1024;
+export const PUBLIC_FORM_MAX_URL_ANSWER_BYTES = 2 * 1024;
+export const PUBLIC_FORM_MAX_EMAIL_ANSWER_BYTES = 320;
+export const PUBLIC_FORM_MAX_PHONE_ANSWER_BYTES = 64;
+export const PUBLIC_FORM_MAX_BYTES_PER_FILE = 5 * 1024 * 1024;
+export const PUBLIC_FORM_MAX_FILE_NAME_BYTES = 255;
+export const PUBLIC_FORM_MAX_FILES_PER_QUESTION = 10;
+export const PUBLIC_FORM_MAX_FILES_PER_SUBMISSION = 20;

@@ -1,7 +1,12 @@
 import isURL from 'validator/lib/isURL';
 
-import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
+
+const UUID_PATH_SEGMENT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+const PUBLIC_FORM_UPLOAD_PATH = new RegExp(
+  `^/api/workspace/public-form/${UUID_PATH_SEGMENT}/uploads/${UUID_PATH_SEGMENT}$`,
+  'i'
+);
 
 /**
  * Constructs file storage URLs for the AppFlowy API
@@ -15,7 +20,11 @@ function getFileStorageBaseUrl(): string {
   return getConfigValue('APPFLOWY_BASE_URL', '') + '/api/file_storage';
 }
 
-function resolveAppflowyOriginAndPathname(): { origin: string | null; pathname: string | null } {
+function resolveAppflowyOriginAndPathname(): {
+  origin: string | null;
+  pathname: string | null;
+  basePathname: string | null;
+} {
   const baseUrl = getConfigValue('APPFLOWY_BASE_URL', '').trim();
 
   if (baseUrl) {
@@ -25,22 +34,24 @@ function resolveAppflowyOriginAndPathname(): { origin: string | null; pathname: 
       return {
         origin: parsed.origin,
         pathname: `${parsed.pathname.replace(/\/$/, '')}/api/file_storage`,
+        basePathname: parsed.pathname.replace(/\/$/, ''),
       };
-    } catch (error) {
-      console.warn('Invalid APPFLOWY_BASE_URL provided:', error);
+    } catch {
+      // Configuration errors must not copy a potentially credential-bearing
+      // base URL into browser logs.
+      console.warn('Invalid APPFLOWY_BASE_URL provided');
     }
   }
 
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return { origin: window.location.origin, pathname: '/api/file_storage' };
+    return { origin: window.location.origin, pathname: '/api/file_storage', basePathname: '' };
   }
 
-  return { origin: null, pathname: null };
+  return { origin: null, pathname: null, basePathname: null };
 }
 
-
 export function isFileURL(url: string): boolean {
-  if (isAppFlowyFileStorageUrl(url)) {
+  if (isAppFlowyAuthenticatedFileUrl(url)) {
     return true;
   }
 
@@ -60,8 +71,6 @@ export function isFileURL(url: string): boolean {
  * @returns true if the URL is an AppFlowy file storage URL
  */
 export function isAppFlowyFileStorageUrl(url: string): boolean {
-  Log.debug('[isAppFlowyFileStorageUrl] url', url);
-
   if (!url) return false;
 
   const { origin, pathname: basePathname } = resolveAppflowyOriginAndPathname();
@@ -73,18 +82,62 @@ export function isAppFlowyFileStorageUrl(url: string): boolean {
   let parsedUrl: URL;
 
   try {
-    parsedUrl =
-      url.startsWith('http://') || url.startsWith('https://') ? new URL(url) : new URL(url, origin);
-  } catch (error) {
-    console.warn('Failed to parse file storage URL:', error);
+    parsedUrl = url.startsWith('http://') || url.startsWith('https://') ? new URL(url) : new URL(url, origin);
+  } catch {
+    // URLs can contain signed query parameters or opaque identifiers. Keep
+    // parse failures observable without persisting the input value.
+    console.warn('Failed to parse file storage URL');
     return false;
   }
 
   const isFirstParty = parsedUrl.origin === origin;
   const normalizedBasePath = basePathname.startsWith('/') ? basePathname : `/${basePathname}`;
-  const isFileStoragePath = parsedUrl.pathname.startsWith(normalizedBasePath);
+  const isFileStoragePath =
+    parsedUrl.pathname === normalizedBasePath || parsedUrl.pathname.startsWith(`${normalizedBasePath}/`);
 
-  return isFirstParty && isFileStoragePath;
+  return isFirstParty && parsedUrl.username === '' && parsedUrl.password === '' && isFileStoragePath;
+}
+
+/**
+ * Stable URLs written into accepted public-form Media cells. The endpoint
+ * requires a workspace-member bearer token and redirects to a short-lived
+ * object-store URL, so it must never be fetched as an anonymous external URL.
+ */
+export function isAppFlowyPublicFormUploadUrl(url: string): boolean {
+  if (!url) return false;
+
+  const { origin, basePathname } = resolveAppflowyOriginAndPathname();
+
+  if (!origin || basePathname === null) return false;
+
+  try {
+    const parsedUrl = url.startsWith('http://') || url.startsWith('https://') ? new URL(url) : new URL(url, origin);
+
+    if (
+      parsedUrl.origin !== origin ||
+      parsedUrl.username !== '' ||
+      parsedUrl.password !== '' ||
+      parsedUrl.search !== '' ||
+      parsedUrl.hash !== '' ||
+      !parsedUrl.pathname.startsWith(basePathname)
+    ) {
+      return false;
+    }
+
+    const routePath = parsedUrl.pathname.slice(basePathname.length) || '/';
+
+    return PUBLIC_FORM_UPLOAD_PATH.test(routePath);
+  } catch {
+    return false;
+  }
+}
+
+/** First-party file routes to which the Web access token may safely be sent. */
+export function isAppFlowyAuthenticatedFileUrl(url: string): boolean {
+  // Check the narrow bearer-token path before the broader legacy file-storage
+  // classifier. Neither branch logs the supplied URL because it may carry
+  // opaque identifiers or signed query parameters.
+  return isAppFlowyPublicFormUploadUrl(url) || isAppFlowyFileStorageUrl(url);
 }
 
 /**
@@ -95,7 +148,7 @@ export function isAppFlowyFileStorageUrl(url: string): boolean {
  * @returns Complete file URL
  */
 export function getAppFlowyFileUrl(workspaceId: string, viewId: string, fileId: string): string {
-  console.warn("URL should be valid - seeing this indicates a bug")
+  console.warn('URL should be valid - seeing this indicates a bug');
   return `${getFileStorageBaseUrl()}/${workspaceId}/v1/blob/${viewId}/${fileId}`;
 }
 
@@ -152,12 +205,7 @@ export function getMultipartUploadedPartsUrl(
 /**
  * Constructs URL for aborting a multipart upload
  */
-export function getMultipartAbortUrl(
-  workspaceId: string,
-  parentDir: string,
-  fileId: string,
-  uploadId: string
-): string {
+export function getMultipartAbortUrl(workspaceId: string, parentDir: string, fileId: string, uploadId: string): string {
   return `${getFileStorageBaseUrl()}/${workspaceId}/upload/${parentDir}/${fileId}/${uploadId}`;
 }
 
@@ -177,11 +225,7 @@ export function getMultipartCompleteUrl(workspaceId: string): string {
  * @param fileId - Optional file ID
  * @returns Complete file storage URL
  */
-export function constructFileStorageUrl(
-  workspaceId: string,
-  viewId?: string,
-  fileId?: string
-): string {
+export function constructFileStorageUrl(workspaceId: string, viewId?: string, fileId?: string): string {
   const base = `${getFileStorageBaseUrl()}/${workspaceId}/v1/blob`;
 
   if (viewId && fileId) {
@@ -203,17 +247,13 @@ export function constructFileStorageUrl(
  * Resolves a file URL or ID into a complete accessible URL.
  * If the input is already a URL (http/https), it returns it as is.
  * If it's a file ID, it constructs the AppFlowy file storage URL.
- * 
+ *
  * @param urlOrId - The file URL or ID
  * @param workspaceId - The workspace ID
  * @param viewId - The view ID
  * @returns The resolved complete URL
  */
-export function resolveFileUrl(
-  urlOrId: string | undefined,
-  workspaceId: string,
-  viewId: string
-): string {
+export function resolveFileUrl(urlOrId: string | undefined, workspaceId: string, viewId: string): string {
   if (!urlOrId) return '';
 
   if (isFileURL(urlOrId)) {

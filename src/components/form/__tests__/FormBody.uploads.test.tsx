@@ -103,7 +103,8 @@ describe('FormBody file uploads', () => {
       file_id: `uploaded-${request.file_name}`,
       upload_url: `https://uploads.example.com/${request.file_name}`,
       upload_content_type: request.content_type ?? 'application/zip',
-      download_url: `https://downloads.example.com/${request.file_name}`,
+      upload_protocol: 'create_only_v2',
+      upload_if_none_match: '*',
       expires_in_secs: 300,
     }));
     mockSubmit.mockResolvedValue({ kind: 'submitted', submission_id: 'submission-1', status: 'accepted' });
@@ -147,7 +148,8 @@ describe('FormBody file uploads', () => {
     expect(mockUploadFile).toHaveBeenCalledWith(
       'https://uploads.example.com/b.txt',
       expect.any(File),
-      'application/zip'
+      'application/zip',
+      '*'
     );
     expect(mockSubmit).toHaveBeenCalledTimes(1);
 
@@ -214,6 +216,24 @@ describe('FormBody file uploads', () => {
     await waitFor(() => expect(screen.getByTestId('public-form-confirmation')).toBeTruthy());
 
     expect(mockSubmit.mock.calls[0][1].answers.date).toEqual({ kind: 'date', iso: '2026-01-01' });
+  });
+
+  it('does not show a success confirmation for a terminal failed replay', async () => {
+    mockSubmit.mockResolvedValue({
+      kind: 'submitted',
+      submission_id: 'submission-1',
+      status: 'failed',
+    });
+
+    render(<FormBody token='form-token' schema={schema} />);
+
+    fireEvent.click(screen.getByTestId('select-files-a'));
+    fireEvent.click(screen.getByTestId('select-files-b'));
+    fireEvent.click(screen.getByTestId('public-form-submit'));
+
+    await waitFor(() => expect(screen.getByText(/could not be processed/i)).toBeTruthy());
+    expect(screen.queryByTestId('public-form-confirmation')).toBeNull();
+    expect(screen.getByTestId('public-form-submit').disabled).toBe(true);
   });
 });
 

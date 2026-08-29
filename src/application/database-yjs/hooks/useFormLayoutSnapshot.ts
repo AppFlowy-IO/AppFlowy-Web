@@ -8,6 +8,7 @@ import type { YDatabaseView } from '@/application/types';
 
 const EMPTY: FormLayoutSnapshot = Object.freeze({
   decided: false,
+  fieldOrderIds: null,
   description: '',
   questions: [],
 });
@@ -32,6 +33,15 @@ function questionsEqual(a: FormQuestionEntry, b: FormQuestionEntry): boolean {
 function snapshotsEqual(a: FormLayoutSnapshot, b: FormLayoutSnapshot): boolean {
   if (a === b) return true;
   if (a.decided !== b.decided) return false;
+  if (a.fieldOrderIds === null || b.fieldOrderIds === null) {
+    if (a.fieldOrderIds !== b.fieldOrderIds) return false;
+  } else {
+    if (a.fieldOrderIds.length !== b.fieldOrderIds.length) return false;
+    for (let i = 0; i < a.fieldOrderIds.length; i += 1) {
+      if (a.fieldOrderIds[i] !== b.fieldOrderIds[i]) return false;
+    }
+  }
+
   if (a.description !== b.description) return false;
   if (a.questions.length !== b.questions.length) return false;
   for (let i = 0; i < a.questions.length; i += 1) {

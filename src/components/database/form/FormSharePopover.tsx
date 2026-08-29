@@ -1,17 +1,10 @@
 import { Check, ChevronRight, Link as LinkIcon, Lock, Sparkles, User, UserCheck } from 'lucide-react';
 import { useContext, useEffect, useRef, useState } from 'react';
 
-import {
-  FormShareInfo,
-  FormShareTier,
-} from '@/application/services/js-services/http';
+import { FormShareInfo, FormShareTier } from '@/application/services/js-services/http';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { Button } from '@/components/ui/button';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +28,7 @@ export function FormSharePopover({
   errorMessage,
   onUpgradePlan,
   onRetry,
+  canBroadenAccess,
   setTier,
   setAnonymous,
   url,
@@ -56,6 +50,8 @@ export function FormSharePopover({
   errorMessage: string | null;
   onUpgradePlan: () => void;
   onRetry: () => void;
+  /** Paid-plan entitlement. Closing an existing share remains available. */
+  canBroadenAccess: boolean;
   setTier: (t: FormShareTier) => Promise<void>;
   setAnonymous: (v: boolean) => Promise<void>;
   // `setSubmissionAccess` removed from the surface while the
@@ -72,8 +68,7 @@ export function FormSharePopover({
   // publish/embed surfaces — fall back to a generic label there rather
   // than throwing.
   const auth = useContext(AuthInternalContext);
-  const workspaceName =
-    auth?.userWorkspaceInfo?.selectedWorkspace?.name ?? 'this workspace';
+  const workspaceName = auth?.userWorkspaceInfo?.selectedWorkspace?.name ?? 'this workspace';
 
   const tier = info?.tier ?? 'workspace';
   const anonymous = info?.anonymous ?? true;
@@ -88,6 +83,8 @@ export function FormSharePopover({
   }, []);
 
   const copy = async () => {
+    if (!url) return;
+
     await navigator.clipboard.writeText(url);
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
@@ -126,6 +123,8 @@ export function FormSharePopover({
                 <TierSubmenu
                   current={tier}
                   workspaceName={workspaceName}
+                  canBroadenAccess={canBroadenAccess}
+                  onUpgradePlan={onUpgradePlan}
                   onSelect={setTier}
                 />
               }
@@ -137,6 +136,8 @@ export function FormSharePopover({
               checked={anonymous}
               forcedOn={tier === 'public'}
               forcedTooltip='Public forms always collect responses anonymously.'
+              disabled={!canBroadenAccess}
+              disabledTooltip='Upgrade to change response identity settings.'
               onChange={setAnonymous}
             />
             {/*
@@ -163,13 +164,16 @@ export function FormSharePopover({
               <input
                 readOnly
                 value={url}
+                placeholder='Share URL is not configured'
                 className='flex-1 bg-transparent px-2 py-1 text-xs outline-none'
               />
               <div className='w-px bg-line-divider' />
               <button
                 type='button'
                 onClick={copy}
-                className='flex shrink-0 items-center gap-1 px-3 py-1 text-xs hover:bg-fill-content'
+                disabled={!url}
+                title={url ? undefined : 'APPFLOWY_WEB_URL is not configured on the server'}
+                className='flex shrink-0 items-center gap-1 px-3 py-1 text-xs hover:bg-fill-content disabled:cursor-not-allowed disabled:opacity-50'
               >
                 <LinkIcon size={12} />
                 {copied ? 'Copied' : 'Copy form link'}
@@ -184,10 +188,7 @@ export function FormSharePopover({
 
 function ShareLoading() {
   return (
-    <div
-      data-testid='form-share-popover-loading'
-      className='flex flex-col items-center gap-3 px-4 py-6'
-    >
+    <div data-testid='form-share-popover-loading' className='flex flex-col items-center gap-3 px-4 py-6'>
       {/*
         Visible "Loading…" copy + skeleton bars. The previous skeleton-
         only design (image #44) used `bg-fill-content` which matches the
@@ -224,14 +225,8 @@ function UpgradePrompt({ onUpgradePlan }: { onUpgradePlan: () => void }) {
     >
       <Sparkles size={20} className='text-fill-default' />
       <div className='text-sm font-semibold'>Sharing forms is a Pro feature</div>
-      <p className='text-xs text-text-caption'>
-        Upgrade to Pro or Team to publish forms and collect responses.
-      </p>
-      <Button
-        data-testid='form-share-popover-upgrade-cta'
-        size='sm'
-        onClick={onUpgradePlan}
-      >
+      <p className='text-xs text-text-caption'>Upgrade to Pro or Team to publish forms and collect responses.</p>
+      <Button data-testid='form-share-popover-upgrade-cta' size='sm' onClick={onUpgradePlan}>
         See upgrade options
       </Button>
     </div>
@@ -250,18 +245,9 @@ function UpgradePrompt({ onUpgradePlan }: { onUpgradePlan: () => void }) {
  * permission / cloud-side validation requires reproducing locally
  * with devtools open.
  */
-function GenericLoadFailure({
-  errorMessage,
-  onRetry,
-}: {
-  errorMessage: string | null;
-  onRetry: () => void;
-}) {
+function GenericLoadFailure({ errorMessage, onRetry }: { errorMessage: string | null; onRetry: () => void }) {
   return (
-    <div
-      data-testid='form-share-popover-error'
-      className='flex flex-col items-center gap-2 px-4 py-5 text-center'
-    >
+    <div data-testid='form-share-popover-error' className='flex flex-col items-center gap-2 px-4 py-5 text-center'>
       <div className='text-sm font-medium'>Couldn&apos;t load share settings</div>
       <p className='text-xs text-text-caption'>Try again. If the problem persists, refresh the page.</p>
       <Button data-testid='form-share-popover-retry' size='sm' onClick={onRetry}>
@@ -310,9 +296,7 @@ function SubMenuRow({
             the browser wrap the label to two lines (user-reported
             regression — see the wider-popover screenshot).
           */}
-          <span className='flex-1 truncate whitespace-nowrap text-left'>
-            {label}
-          </span>
+          <span className='flex-1 truncate whitespace-nowrap text-left'>{label}</span>
           <span className='flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary'>
             <span className='truncate'>{value}</span>
             {badge}
@@ -341,6 +325,8 @@ function ToggleRow({
   checked,
   forcedOn,
   forcedTooltip,
+  disabled = false,
+  disabledTooltip,
   onChange,
   testId,
 }: {
@@ -349,23 +335,22 @@ function ToggleRow({
   checked: boolean;
   forcedOn: boolean;
   forcedTooltip: string;
+  disabled?: boolean;
+  disabledTooltip?: string;
   onChange: (value: boolean) => void;
   testId?: string;
 }) {
   return (
     <div
-      title={forcedOn ? forcedTooltip : undefined}
-      className={cn(
-        'flex items-center gap-2 rounded px-2 py-1 text-sm',
-        forcedOn && 'opacity-70',
-      )}
+      title={forcedOn ? forcedTooltip : disabled ? disabledTooltip : undefined}
+      className={cn('flex items-center gap-2 rounded px-2 py-1 text-sm', (forcedOn || disabled) && 'opacity-70')}
     >
       <span className='text-text-tertiary'>{icon}</span>
       <span className='flex-1 whitespace-nowrap'>{label}</span>
       <Switch
         data-testid={testId}
         checked={checked}
-        disabled={forcedOn}
+        disabled={forcedOn || disabled}
         onCheckedChange={(v) => onChange(!!v)}
       />
     </div>
@@ -375,12 +360,26 @@ function ToggleRow({
 function TierSubmenu({
   current,
   workspaceName,
+  canBroadenAccess,
+  onUpgradePlan,
   onSelect,
 }: {
   current: FormShareTier;
   workspaceName: string;
+  canBroadenAccess: boolean;
+  onUpgradePlan: () => void;
   onSelect: (t: FormShareTier) => void;
 }) {
+  const selectTier = (next: FormShareTier) => {
+    if (next === current) return;
+    if (next === 'closed' || canBroadenAccess) {
+      onSelect(next);
+      return;
+    }
+
+    onUpgradePlan();
+  };
+
   return (
     <div className='flex flex-col'>
       <Choice
@@ -388,7 +387,7 @@ function TierSubmenu({
         selected={current === 'workspace'}
         title={`Anyone at ${workspaceName} with link`}
         subtitle='Only signed-in members can fill out.'
-        onClick={() => onSelect('workspace')}
+        onClick={() => selectTier('workspace')}
         leadingIcon={<Lock size={14} />}
       />
       <Choice
@@ -397,7 +396,7 @@ function TierSubmenu({
         title='Anyone on the web with link'
         titleBadge={<TierBadge kind='public' />}
         subtitle='Anyone with the URL can fill out. Forces anonymous responses.'
-        onClick={() => onSelect('public')}
+        onClick={() => selectTier('public')}
       />
       <Choice
         testId='form-share-tier-choice-closed'
@@ -405,7 +404,7 @@ function TierSubmenu({
         title='No access'
         titleBadge={<TierBadge kind='closed' />}
         subtitle='Closes the form. Existing link returns "no longer accepting".'
-        onClick={() => onSelect('closed')}
+        onClick={() => selectTier('closed')}
       />
     </div>
   );
@@ -436,7 +435,11 @@ function Choice({
       className='flex items-start gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'
     >
       <span className='mt-0.5 text-text-tertiary'>
-        {selected ? <Check size={14} className='text-fill-default' /> : (leadingIcon ?? <span className='inline-block h-3.5 w-3.5' />)}
+        {selected ? (
+          <Check size={14} className='text-fill-default' />
+        ) : (
+          leadingIcon ?? <span className='inline-block h-3.5 w-3.5' />
+        )}
       </span>
       <span className='flex-1'>
         <div className='flex items-center gap-1.5 font-medium'>
@@ -463,16 +466,14 @@ function TierBadge({ kind }: { kind: 'public' | 'closed' }) {
   // `bg-fill-warning/15 text-fill-warning` tokens don't exist in
   // `tailwind/new-colors.cjs` and rendered as transparent.
   const palette =
-    kind === 'public'
-      ? 'bg-fill-warning-light text-text-warning-on-fill'
-      : 'bg-fill-secondary text-text-caption';
+    kind === 'public' ? 'bg-fill-warning-light text-text-warning-on-fill' : 'bg-fill-secondary text-text-caption';
   const label = kind === 'public' ? 'Public' : 'Closed';
 
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-sm px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide',
-        palette,
+        palette
       )}
     >
       {label}

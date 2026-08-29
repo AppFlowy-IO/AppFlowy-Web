@@ -69,6 +69,8 @@ interface FormShareMutationScope {
   desired: FormShareInfo | null;
   revision: number;
   confirmedRevision: number;
+  pendingRequest: FormShareDelta;
+  pendingOptimistic: FormShareDelta;
   draining: Promise<void> | null;
 }
 
@@ -88,6 +90,8 @@ function createMutationScope(
     desired: null,
     revision: 0,
     confirmedRevision: 0,
+    pendingRequest: {},
+    pendingOptimistic: {},
     draining: null,
   };
 }
@@ -194,8 +198,8 @@ export interface FormShareState {
   setTier: (tier: FormShareTier) => Promise<void>;
   setAnonymous: (value: boolean) => Promise<void>;
   setSubmissionAccess: (access: FormSubmissionAccess) => Promise<void>;
-  /// Web-facing share URL the user copies. Falls back to a view-id URL
-  /// when no token is available (local-server mode, or pre-bootstrap).
+  /// Server-computed Web share URL, or an empty string when the deployment
+  /// has not configured `APPFLOWY_WEB_URL`.
   resolveShareUrl: () => string;
 }
 
@@ -377,7 +381,7 @@ export function useFormShare(): FormShareState {
     };
   }, [bootstrapRevision, databaseId, mutationScope, scopeKey, viewId, workspaceId]);
 
-  const patch = useCallback((delta: FormShareDelta): Promise<void> => {
+  const patch = useCallback((requestDelta: FormShareDelta, optimisticDelta = requestDelta): Promise<void> => {
     const scope = mutationScopeRef.current;
 
     if (
@@ -395,10 +399,12 @@ export function useFormShare(): FormShareState {
     const mutationDatabaseId = scope.databaseId;
     const mutationViewId = scope.viewId;
 
-    // Apply immediately so subsequent rapid controls derive from the user's
-    // latest choice, not from the last network response. The drain sends a
-    // complete desired state, allowing intermediate clicks to coalesce safely.
-    scope.desired = { ...scope.desired, ...delta };
+    // Apply invariant-derived values immediately for responsive UI, while
+    // retaining only the fields the user actually changed for PATCH. Sparse
+    // requests keep a desktop or another tab's unrelated concurrent setting.
+    scope.desired = { ...scope.desired, ...optimisticDelta };
+    scope.pendingRequest = { ...scope.pendingRequest, ...requestDelta };
+    scope.pendingOptimistic = { ...scope.pendingOptimistic, ...optimisticDelta };
     scope.revision += 1;
     setInfo(scope.desired);
     setError(null);
@@ -421,14 +427,14 @@ export function useFormShare(): FormShareState {
         scope.confirmedRevision < scope.revision
       ) {
         const revision = scope.revision;
-        const desired = scope.desired;
+        const request = scope.pendingRequest;
+        const optimistic = scope.pendingOptimistic;
+
+        scope.pendingRequest = {};
+        scope.pendingOptimistic = {};
 
         try {
-          const next = await patchFormShare(mutationWorkspaceId, mutationDatabaseId, mutationViewId, {
-            tier: desired.tier,
-            anonymous: desired.anonymous,
-            submission_access: desired.submission_access,
-          });
+          const next = await patchFormShare(mutationWorkspaceId, mutationDatabaseId, mutationViewId, request);
 
           if (mutationScopeRef.current !== scope || !scope.active) return;
 
@@ -440,6 +446,8 @@ export function useFormShare(): FormShareState {
 
               scope.confirmed = null;
               scope.desired = null;
+              scope.pendingRequest = {};
+              scope.pendingOptimistic = {};
               scope.confirmedRevision = scope.revision;
               setInfo(null);
               setError(missingError.message);
@@ -448,6 +456,11 @@ export function useFormShare(): FormShareState {
             }
 
             recoveredMissingToken = true;
+            // The vanished token never received this request. Reapply only
+            // the user's sparse intent to the replacement token; later input
+            // wins field-by-field while bootstrap is in flight.
+            scope.pendingRequest = { ...request, ...scope.pendingRequest };
+            scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
             const recovered = await tryBootstrap(mutationWorkspaceId, mutationDatabaseId, mutationViewId);
 
             if (mutationScopeRef.current !== scope || !scope.active) return;
@@ -460,6 +473,8 @@ export function useFormShare(): FormShareState {
               // back to a stale URL. The popover exposes retryBootstrap.
               scope.confirmed = null;
               scope.desired = null;
+              scope.pendingRequest = {};
+              scope.pendingOptimistic = {};
               scope.confirmedRevision = scope.revision;
               setInfo(null);
               setError(message);
@@ -467,24 +482,18 @@ export function useFormShare(): FormShareState {
               return;
             }
 
-            const latestDesired = scope.desired;
-
-            if (!latestDesired) return;
-
             scope.confirmed = recovered.info;
             scope.desired = {
               ...recovered.info,
-              tier: latestDesired.tier,
-              anonymous: latestDesired.anonymous,
-              submission_access: latestDesired.submission_access,
+              ...scope.pendingOptimistic,
             };
             setInfo(scope.desired);
             setError(null);
             setErrorKind(null);
             // Do not advance confirmedRevision: the recovered token still
-            // needs the complete latest desired state applied to it. The next
-            // loop iteration performs that PATCH, including any user choice
-            // made while recovery was in flight.
+            // needs the latest sparse intent applied to it. The next loop
+            // iteration performs that PATCH, including choices made while
+            // recovery was in flight.
             continue;
           }
 
@@ -498,20 +507,28 @@ export function useFormShare(): FormShareState {
             setInfo(next);
           } else {
             // A later choice arrived while this request was in flight. Keep
-            // that optimistic state visible; the next loop iteration sends it.
+            // only that pending optimistic state over the authoritative
+            // response; this also adopts unrelated concurrent server changes.
+            scope.desired = { ...next, ...scope.pendingOptimistic };
             setInfo(scope.desired);
           }
         } catch (e) {
           if (mutationScopeRef.current !== scope || !scope.active) return;
 
-          // If the user made a newer choice, still attempt that complete final
-          // state. Otherwise roll the optimistic value back to the last server
-          // confirmation and surface the failure.
-          if (scope.revision !== revision) continue;
+          // If the user made a newer choice, retry the failed sparse fields
+          // together with that choice. Newer values win. Otherwise roll the
+          // optimistic value back to the last server confirmation.
+          if (scope.revision !== revision) {
+            scope.pendingRequest = { ...request, ...scope.pendingRequest };
+            scope.pendingOptimistic = { ...optimistic, ...scope.pendingOptimistic };
+            continue;
+          }
 
           const message = (e as { message?: string })?.message ?? 'patch failed';
 
           scope.desired = scope.confirmed;
+          scope.pendingRequest = {};
+          scope.pendingOptimistic = {};
           scope.confirmedRevision = scope.revision;
           setInfo(scope.confirmed);
           setError(message);
@@ -548,7 +565,7 @@ export function useFormShare(): FormShareState {
       const anonymous = tier === 'public' ? true : current.anonymous;
       const submission_access = coerceSubmissionAccess(tier, anonymous, current.submission_access);
 
-      await patch({ tier, anonymous, submission_access });
+      await patch({ tier }, { tier, anonymous, submission_access });
     },
     [patch]
   );
@@ -568,7 +585,7 @@ export function useFormShare(): FormShareState {
       // image #48 confusion when they switched back).
       const submission_access = coerceSubmissionAccess(current.tier, value, current.submission_access);
 
-      await patch({ anonymous: value, submission_access });
+      await patch({ anonymous: value }, { anonymous: value, submission_access });
     },
     [patch]
   );
@@ -595,23 +612,12 @@ export function useFormShare(): FormShareState {
   const scopedErrorKind = stateMatchesScope ? errorKind : null;
 
   const resolveShareUrl = useCallback(() => {
-    // Prefer the server-computed URL (built from `APPFLOWY_WEB_URL`).
-    // This is the same URL the desktop reads — single source of truth
-    // across all clients.
-    if (scopedInfo?.share_url) return scopedInfo.share_url;
-    // Fallbacks (in priority order):
-    //   1. Same-origin guess: web is hosted alongside the cloud, so
-    //      `{origin}/form/{token}` resolves to our own FormPage route.
-    //      Works in local dev and single-host self-hosts.
-    //   2. View id placeholder: pre-token state — gives the creator
-    //      something identifiable to paste even before the bootstrap
-    //      completes.
-    const base = `${window.location.origin}/form`;
-    const token = scopedInfo?.token;
-
-    if (!token) return `${base}/${viewId ?? ''}`;
-    return `${base}/${token}`;
-  }, [scopedInfo, viewId]);
+    // Never guess from window.location or substitute a view ID. The server
+    // deliberately owns this URL so separate Web/API origins and path-prefix
+    // deployments stay correct; an empty value is an operator configuration
+    // error that the popover must surface instead of copying a broken link.
+    return scopedInfo?.share_url ?? '';
+  }, [scopedInfo]);
 
   // Memo the returned object so `FormShareProvider`'s context value has a
   // stable identity across renders that didn't actually change anything.

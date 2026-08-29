@@ -11,11 +11,13 @@ import {
   FORM_ORDER,
   FORM_REQUIRED,
 } from '@/application/database-yjs/form-questions';
+import { runDatabaseAction } from '@/application/database-yjs/history';
 import { YDatabaseFormFieldSettings, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 
 /**
  * Mutation primitives for the form-builder projection. All writes go
- * through `YDoc.transact` so a single user-initiated change (e.g.
+ * through the database history transaction helper so a single
+ * user-initiated change (e.g.
  * "Required ON" → schedule write) shows up as one collab update on the
  * wire, not as five property-by-property updates.
  *
@@ -118,12 +120,8 @@ export interface FormWriter {
 export function createFormWriter(view: YDatabaseView): FormWriter {
   const doc = docOf(view);
 
-  function txn(fn: () => void) {
-    // `'local'` origin tag matches the convention the rest of the
-    // database-yjs writers use — observers can distinguish local
-    // writes from remote sync updates by inspecting the transaction
-    // origin.
-    doc.transact(fn, 'local');
+  function txn(action: string, fn: () => void) {
+    runDatabaseAction(doc, { type: `database.form.${action}` }, fn);
   }
 
   function currentEntryIds(): string[] {
@@ -145,7 +143,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
 
   return {
     addQuestion(fieldId) {
-      txn(() => {
+      txn('add-question', () => {
         // In legacy opt-out mode a field with no settings entry is already a
         // visible question. Treat that exactly like an explicit included row
         // so a stale picker action cannot move it unexpectedly.
@@ -186,7 +184,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     removeQuestion(fieldId) {
-      txn(() => {
+      txn('remove-question', () => {
         const map = view.get(YjsDatabaseKey.form_field_settings);
 
         if (!currentEntryIdsSorted(view).includes(fieldId)) return;
@@ -207,7 +205,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     clearQuestions() {
-      txn(() => {
+      txn('clear-questions', () => {
         const map = view.get(YjsDatabaseKey.form_field_settings);
 
         if (isBuilderMode(map)) {
@@ -229,7 +227,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     populateFromFields(fieldIds) {
-      txn(() => {
+      txn('populate-from-fields', () => {
         // Wipe existing entries first so the projection matches the
         // input list exactly. Order = list index, no gaps.
         const map = view.get(YjsDatabaseKey.form_field_settings);
@@ -265,7 +263,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     reorderQuestion(fieldId, newIndex, visibleFieldIds) {
-      txn(() => {
+      txn('reorder-question', () => {
         // Build the desired-order id list, then re-stamp every entry's
         // `order` value. The current visible list filters included:false,
         // orphaned, and (when supplied by the UI) unsupported field entries.
@@ -286,7 +284,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     setRequired(fieldId, value) {
-      txn(() => {
+      txn('set-required', () => {
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_REQUIRED, value);
@@ -294,7 +292,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     setDescriptionVisible(fieldId, value) {
-      txn(() => {
+      txn('set-description-visible', () => {
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_DESCRIPTION_VISIBLE, value);
@@ -308,7 +306,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     setDescription(fieldId, value) {
-      txn(() => {
+      txn('set-description', () => {
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_DESCRIPTION, value);
@@ -319,7 +317,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     setLongAnswer(fieldId, value) {
-      txn(() => {
+      txn('set-long-answer', () => {
         const entry = ensureEntry(view, fieldId);
 
         entry.set(FORM_LONG_ANSWER, value);
@@ -327,7 +325,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     markDecided() {
-      txn(() => {
+      txn('mark-decided', () => {
         const map = ensureMap(view);
 
         if (map.get(FORM_DECIDED_SENTINEL)) return;
@@ -343,7 +341,7 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     },
 
     setFormDescription(value) {
-      txn(() => {
+      txn('set-form-description', () => {
         const map = ensureMap(view);
         const sentinel = map.get(FORM_DESCRIPTION_SENTINEL) ?? new Y.Map<unknown>();
 

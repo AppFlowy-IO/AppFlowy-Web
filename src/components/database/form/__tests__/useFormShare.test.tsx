@@ -83,13 +83,7 @@ describe('useFormShare mutations', () => {
 
     expect(result.current.info).toMatchObject({ tier: 'closed', anonymous: true });
     expect(mockPatchFormShare).toHaveBeenCalledTimes(1);
-    expect(mockPatchFormShare).toHaveBeenNthCalledWith(
-      1,
-      'workspace-id',
-      'database-id',
-      'view-a',
-      expect.objectContaining({ tier: 'public', anonymous: true })
-    );
+    expect(mockPatchFormShare).toHaveBeenNthCalledWith(1, 'workspace-id', 'database-id', 'view-a', { tier: 'public' });
 
     await act(async () => {
       firstPatch.resolve(shareInfo('view-a', { tier: 'public', anonymous: true }));
@@ -97,19 +91,31 @@ describe('useFormShare mutations', () => {
     });
 
     await waitFor(() => expect(mockPatchFormShare).toHaveBeenCalledTimes(2));
-    expect(mockPatchFormShare).toHaveBeenNthCalledWith(
-      2,
-      'workspace-id',
-      'database-id',
-      'view-a',
-      expect.objectContaining({ tier: 'closed', anonymous: true })
-    );
+    expect(mockPatchFormShare).toHaveBeenNthCalledWith(2, 'workspace-id', 'database-id', 'view-a', { tier: 'closed' });
 
     await act(async () => {
       secondPatch.resolve(shareInfo('view-a', { tier: 'closed', anonymous: true }));
       await Promise.all([publicMutation, closedMutation]);
     });
 
+    expect(result.current.info).toMatchObject({ tier: 'closed', anonymous: true });
+  });
+
+  it('patches only the changed field and adopts unrelated concurrent server state', async () => {
+    mockPatchFormShare.mockResolvedValue(
+      shareInfo('view-a', {
+        tier: 'closed',
+        anonymous: true,
+      })
+    );
+    const { result } = renderHook(() => useFormShare());
+
+    await waitFor(() => expect(result.current.info?.token).toBe('token-view-a'));
+    await act(async () => {
+      await result.current.setAnonymous(true);
+    });
+
+    expect(mockPatchFormShare).toHaveBeenCalledWith('workspace-id', 'database-id', 'view-a', { anonymous: true });
     expect(result.current.info).toMatchObject({ tier: 'closed', anonymous: true });
   });
 
@@ -181,13 +187,7 @@ describe('useFormShare mutations', () => {
 
     expect(mockMintFormShare).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mockPatchFormShare).toHaveBeenCalledTimes(2));
-    expect(mockPatchFormShare).toHaveBeenNthCalledWith(
-      2,
-      'workspace-id',
-      'database-id',
-      'view-a',
-      expect.objectContaining({ tier: 'closed', anonymous: true })
-    );
+    expect(mockPatchFormShare).toHaveBeenNthCalledWith(2, 'workspace-id', 'database-id', 'view-a', { tier: 'closed' });
 
     await act(async () => {
       recoveredPatch.resolve({

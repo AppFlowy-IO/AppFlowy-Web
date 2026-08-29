@@ -60,6 +60,7 @@ describe('form projection compatibility contract', () => {
 
     expect(readFormLayoutSnapshot(view)).toMatchObject({
       decided: false,
+      fieldOrderIds: ['field-b', 'field-a'],
       questions: [
         { fieldId: 'field-b', included: true, required: false },
         { fieldId: 'field-a', included: true, required: false },

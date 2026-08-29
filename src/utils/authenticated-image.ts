@@ -1,5 +1,5 @@
 import { getTokenParsed } from '@/application/session/token';
-import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
+import { isAppFlowyAuthenticatedFileUrl, isAppFlowyPublicFormUploadUrl } from '@/utils/file-storage-url';
 import { transcodeIfUnsupported } from '@/utils/image';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -63,20 +63,32 @@ export async function fetchAuthenticatedImage(url: string, token = getTokenParse
  */
 export async function getImageUrl(url: string | undefined): Promise<string> {
   if (!url) return '';
-  Log.debug('[getImageUrl] url', url);
+  // Image URLs can contain opaque form IDs or signed object-store query
+  // parameters. Keep diagnostics useful without persisting capabilities.
+  Log.debug('[getImageUrl] resolving image URL');
 
-  // If it's an AppFlowy file storage URL, fetch with authentication
-  if (isAppFlowyFileStorageUrl(url)) {
+  // Both routes may accept a workspace-member bearer token, but regular
+  // file-storage URLs can also be public on published/template pages.
+  if (isAppFlowyAuthenticatedFileUrl(url)) {
     const token = getTokenParsed();
 
     if (!token) {
+      // Accepted form uploads are always owner/member-only. A plain <img>
+      // fallback can never succeed and would create a noisy anonymous 401.
+      if (isAppFlowyPublicFormUploadUrl(url)) return '';
+
       // Allow browser to load publicly-accessible URLs without authentication
       return resolveImageUrl(url);
     }
 
     const blobUrl = await fetchAuthenticatedImage(url, token);
 
-    return blobUrl || '';
+    if (blobUrl) return blobUrl;
+
+    // A stale/invalid token must not hide an otherwise anonymous published
+    // image. Durable form uploads are member-only and must never fall back to
+    // a browser request without Authorization.
+    return isAppFlowyPublicFormUploadUrl(url) ? '' : resolveImageUrl(url);
   }
 
   // For other URLs (emojis, external images, data URLs), return as-is

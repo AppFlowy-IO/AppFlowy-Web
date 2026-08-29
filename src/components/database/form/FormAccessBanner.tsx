@@ -24,8 +24,7 @@ export function FormAccessBanner() {
   // that (e.g. the publish/embed surface) it's null. Read defensively
   // so the banner falls back to generic copy without crashing.
   const auth = useContext(AuthInternalContext);
-  const workspaceName =
-    auth?.userWorkspaceInfo?.selectedWorkspace?.name ?? 'this workspace';
+  const workspaceName = auth?.userWorkspaceInfo?.selectedWorkspace?.name ?? 'this workspace';
 
   const tier = share.info?.tier ?? 'workspace';
   // Cloud `coerce_anonymous` defaults Workspace tier to anonymous=false,
@@ -66,7 +65,7 @@ export function FormAccessBanner() {
 
   const changeLinkClasses = cn(
     'text-sm font-medium hover:underline',
-    isPublic ? 'text-text-warning-on-fill' : 'text-fill-default',
+    isPublic ? 'text-text-warning-on-fill' : 'text-fill-default'
   );
 
   return (
@@ -79,12 +78,12 @@ export function FormAccessBanner() {
         'flex items-center gap-3 rounded-md border px-4 py-3 text-sm',
         isPublic
           ? 'border-border-warning-thick bg-fill-warning-light text-text-warning-on-fill'
-          : 'border-line-divider text-text-primary',
+          : 'border-line-divider text-text-primary'
       )}
     >
       <BannerIcon tier={tier} isPublic={isPublic} />
       <span className='flex-1'>{bannerCopy(tier, workspaceName)}</span>
-      {canAuthor === true ? (
+      {canAuthor === true || share.info !== null ? (
         <FormSharePopover
           trigger={
             <button type='button' className={changeLinkClasses}>
@@ -97,6 +96,7 @@ export function FormAccessBanner() {
           errorMessage={share.error}
           onUpgradePlan={openUpgradePlan}
           onRetry={share.retryBootstrap}
+          canBroadenAccess={canAuthor === true}
           setTier={share.setTier}
           setAnonymous={share.setAnonymous}
           url={url}
@@ -104,25 +104,18 @@ export function FormAccessBanner() {
       ) : (
         <button
           type='button'
-          className={cn(
-            changeLinkClasses,
-            canAuthor === null && !hasEntitlementError && 'cursor-wait opacity-60',
-          )}
+          className={cn(changeLinkClasses, canAuthor === null && !hasEntitlementError && 'cursor-wait opacity-60')}
           disabled={canAuthor === null && (!hasEntitlementError || isLoadingEntitlement)}
           onClick={
-            canAuthor === false
-              ? openUpgradePlan
-              : hasEntitlementError
-                ? () => void retryEntitlement()
-                : undefined
+            canAuthor === false ? openUpgradePlan : hasEntitlementError ? () => void retryEntitlement() : undefined
           }
         >
           {canAuthor === null
             ? isLoadingEntitlement
               ? 'Checking plan…'
               : hasEntitlementError
-                ? 'Retry plan check'
-                : 'Plan unavailable'
+              ? 'Retry plan check'
+              : 'Plan unavailable'
             : 'Change'}
         </button>
       )}
@@ -130,13 +123,7 @@ export function FormAccessBanner() {
   );
 }
 
-function BannerIcon({
-  tier,
-  isPublic,
-}: {
-  tier: FormShareTier;
-  isPublic: boolean;
-}) {
+function BannerIcon({ tier, isPublic }: { tier: FormShareTier; isPublic: boolean }) {
   const className = isPublic ? 'text-text-warning-on-fill' : 'text-text-tertiary';
   const props = { size: 16, className };
 

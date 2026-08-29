@@ -45,6 +45,10 @@ export interface FormLayoutSnapshot {
   /// desktop. The web's authoring surface uses this to suppress the
   /// modal on second open; respondent UI ignores it.
   decided: boolean;
+  /// Authoritative property sequence for this Form view. `null` means the
+  /// view metadata is not resolved yet; an empty array is a resolved view
+  /// with no fields. Auto-create must not write while this is `null`.
+  fieldOrderIds: readonly string[] | null;
   /// Form-level description (the "Description (optional)" line below
   /// the title). Stored under `FORM_DESCRIPTION_SENTINEL`.
   description: string;
@@ -56,6 +60,7 @@ export interface FormLayoutSnapshot {
 
 const EMPTY_SNAPSHOT: FormLayoutSnapshot = Object.freeze({
   decided: false,
+  fieldOrderIds: null,
   description: '',
   questions: [],
 });
@@ -203,5 +208,10 @@ export function decodeSnapshot(
     a.entry.order === b.entry.order ? a.fieldOrderIndex - b.fieldOrderIndex : a.entry.order - b.entry.order
   );
 
-  return { decided, description, questions: entries.map(({ entry }) => entry) };
+  return {
+    decided,
+    fieldOrderIds: fieldOrderIds ? [...fieldOrderIds] : null,
+    description,
+    questions: entries.map(({ entry }) => entry),
+  };
 }

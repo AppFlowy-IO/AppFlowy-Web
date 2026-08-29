@@ -17,7 +17,7 @@ initAPIService(defaultConfig);
  * `login_url`, which the view renders as a sign-in prompt rather than
  * pushing the user through a generic 401 page.
  */
-function FormPage() {
+function FormPage({ notFoundFallback }: { notFoundFallback?: React.ReactNode }) {
   const { token } = useParams();
 
   // Public forms need the semantic color variables kept in sync with the
@@ -36,7 +36,7 @@ function FormPage() {
   // A route-param change reuses this page instance. Remount the stateful form
   // so the previous token's schema and answers can never pair with the new
   // token before FormView's fetch effect runs.
-  return <FormView key={token} token={token} />;
+  return <FormView key={token} token={token} notFoundFallback={notFoundFallback} />;
 }
 
 export default FormPage;

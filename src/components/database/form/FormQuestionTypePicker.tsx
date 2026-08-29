@@ -18,6 +18,37 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 /// full list on demand for bigger ones.
 const EXISTING_PREVIEW_LIMIT = 5;
 
+export interface ExistingQuestionCandidate {
+  id: string;
+  name: string;
+  type: FieldType;
+}
+
+export function buildExistingQuestionCandidates(
+  fieldsMap: YDatabaseFields | undefined,
+  fieldOrderIds: readonly string[] | null,
+  onFormIds: ReadonlySet<string>
+): ExistingQuestionCandidate[] {
+  if (!fieldsMap || fieldOrderIds === null) return [];
+  const out: ExistingQuestionCandidate[] = [];
+
+  fieldOrderIds.forEach((fieldId) => {
+    if (onFormIds.has(fieldId)) return;
+    const field = fieldsMap.get(fieldId);
+
+    if (!field) return;
+    const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+    if (!isFormQuestionFieldType(fieldType)) return;
+    out.push({
+      id: fieldId,
+      name: field.get(YjsDatabaseKey.name) || 'Untitled',
+      type: fieldType,
+    });
+  });
+  return out;
+}
+
 /**
  * "+ Add question" button + two-section picker popover (Notion parity).
  *
@@ -99,23 +130,9 @@ function QuestionPickerContent({
   // The content component exists only while the popover is open, so a hidden
   // picker neither scans the fields map nor subscribes through dispatch hooks.
   const candidates = useMemo(() => {
-    if (!fieldsMap) return [];
     const onFormIds = new Set(snapshot.questions.map((q) => q.fieldId));
-    const out: { id: string; name: string; type: FieldType }[] = [];
 
-    fieldsMap.forEach((field, fieldId) => {
-      if (typeof fieldId !== 'string') return;
-      if (onFormIds.has(fieldId)) return;
-      const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-
-      if (!isFormQuestionFieldType(fieldType)) return;
-      out.push({
-        id: fieldId,
-        name: field.get(YjsDatabaseKey.name) || 'Untitled',
-        type: fieldType,
-      });
-    });
-    return out;
+    return buildExistingQuestionCandidates(fieldsMap, snapshot.fieldOrderIds, onFormIds);
     // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldsMap, fieldsVersion, snapshot]);

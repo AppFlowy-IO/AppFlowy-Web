@@ -2902,6 +2902,7 @@ export function useAddDatabaseView() {
 const DUPLICATED_DATABASE_VIEW_CONFIGURATION_KEYS = [
   YjsDatabaseKey.field_orders,
   YjsDatabaseKey.field_settings,
+  YjsDatabaseKey.form_field_settings,
   YjsDatabaseKey.filters,
   YjsDatabaseKey.groups,
   YjsDatabaseKey.layout_settings,

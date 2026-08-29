@@ -48,7 +48,9 @@ export function FormShareButton() {
     if (allowed === false) openUpgradePlan();
   }, [ensureCanAuthor, openUpgradePlan]);
 
-  if (!canAuthor) {
+  // Existing shares stay inspectable after a plan downgrade so their owner can
+  // close an active link. Only minting/reopening/broadening remains gated.
+  if (!canAuthor && share.info === null) {
     if (canAuthor === null) {
       return (
         <Button
@@ -66,12 +68,7 @@ export function FormShareButton() {
     }
 
     return (
-      <Button
-        data-testid='form-share-button'
-        size='sm'
-        className='gap-1'
-        onClick={openUpgradePlan}
-      >
+      <Button data-testid='form-share-button' size='sm' className='gap-1' onClick={openUpgradePlan}>
         <Share2 size={14} />
         Share form
       </Button>
@@ -92,6 +89,7 @@ export function FormShareButton() {
       errorMessage={share.error}
       onUpgradePlan={openUpgradePlan}
       onRetry={share.retryBootstrap}
+      canBroadenAccess={canAuthor === true}
       setTier={share.setTier}
       setAnonymous={share.setAnonymous}
       url={url}

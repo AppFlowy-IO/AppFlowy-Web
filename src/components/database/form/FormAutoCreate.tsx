@@ -13,19 +13,29 @@ import { Button } from '@/components/ui/button';
 // Hoisted so MUI's Paper doesn't see a fresh props object every render.
 const DIALOG_PAPER_PROPS = { className: 'max-w-md w-full' } as const;
 
+type HydrationResult =
+  | { request: () => Promise<void>; attempt: number; status: 'pending' }
+  | { request: () => Promise<void>; attempt: number; status: 'ready' }
+  | { request: () => Promise<void>; attempt: number; status: 'failed'; errorMessage: string };
+
+function hydrationErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return 'The latest form settings could not be loaded.';
+}
+
 /**
  * Mirror of the desktop's `_evaluateAutoCreatePromptOnce`. Three landing
- * states gated by `(snapshot.decided, snapshot.questions.length, fields)`:
+ * states gated by the decision sentinel plus the Form view's ordered fields:
  *
- *   1. `decided` OR `questions.length > 0` → do nothing.
- *   2. `!decided && questions.empty && fieldCount <= 2` → silent sidebar-
+ *   1. `decided` → do nothing.
+ *   2. unresolved and fieldCount <= 2 → silent sidebar-
  *      create seed: populate from the supported subset, mark decided.
- *   3. `!decided && questions.empty && fieldCount > 2` → show the modal;
+ *   3. unresolved and fieldCount > 2 → show the modal;
  *      Create-N populates, Start-from-scratch leaves empty. Both mark
  *      decided.
  *
- * `FormBuilderView` mounts this only while the form is undecided and empty,
- * then this component resolves the hydration-dependent field-count branch.
+ * `FormBuilderView` mounts this only while the explicit Form decision is
+ * unresolved, then this component resolves the hydration-dependent branch.
  */
 export function FormAutoCreate({
   snapshot,
@@ -44,33 +54,54 @@ export function FormAutoCreate({
   // its server state is newer (for example another client already chose Start
   // from scratch). Wait for an authoritative metadata refresh before making
   // any one-time Yjs write; a passive-effect delay is not a hydration signal.
-  const [hydrated, setHydrated] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [hydrationResult, setHydrationResult] = useState<HydrationResult>(() => ({
+    request: ensureHydrated,
+    attempt: 0,
+    status: 'pending',
+  }));
+
+  // Associate a result with the exact request function and retry attempt that
+  // produced it. If the active view changes, the new request is pending during
+  // render immediately; a stale success can never unlock auto-create for it.
+  const currentHydrationResult =
+    hydrationResult.request === ensureHydrated && hydrationResult.attempt === attempt ? hydrationResult : null;
+  const hydrationStatus = currentHydrationResult?.status ?? 'pending';
 
   useEffect(() => {
     let cancelled = false;
+    const request = ensureHydrated;
 
-    void ensureHydrated()
+    void request()
       .then(() => {
-        if (!cancelled) setHydrated(true);
+        if (!cancelled) {
+          setHydrationResult({ request, attempt, status: 'ready' });
+        }
       })
       .catch((error) => {
-        // Fail closed: manual question authoring remains available, but we do
-        // not make an irreversible auto-create choice from potentially stale
-        // local state.
-        console.error('[FormAutoCreate] Failed to hydrate form settings', error);
+        if (!cancelled) {
+          setHydrationResult({
+            request,
+            attempt,
+            status: 'failed',
+            errorMessage: hydrationErrorMessage(error),
+          });
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [ensureHydrated]);
+  }, [attempt, ensureHydrated]);
 
   const supportedFieldIds = useMemo(() => {
-    if (!fields) return [];
+    if (!fields || snapshot.fieldOrderIds === null) return [];
     const out: string[] = [];
 
-    fields.forEach((field, id) => {
-      if (typeof id !== 'string') return;
+    snapshot.fieldOrderIds.forEach((id) => {
+      const field = fields.get(id);
+
+      if (!field) return;
       const ty = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
       if (isFormQuestionFieldType(ty)) out.push(id);
@@ -82,7 +113,7 @@ export function FormAutoCreate({
     // `fieldsVersion` isn't referenced inside the closure — that's the
     // entire point of the invalidation-token pattern.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, fieldsVersion]);
+  }, [fields, fieldsVersion, snapshot.fieldOrderIds]);
 
   const fieldCount = supportedFieldIds.length;
 
@@ -96,20 +127,51 @@ export function FormAutoCreate({
   // 1-2 supported → adopt silently. 3+ → fall through to the modal
   // surfaced by `showDialog` below.
   useEffect(() => {
-    if (!hydrated) return;
-    if (snapshot.decided || snapshot.questions.length > 0) return;
-    if (!fields) return;
+    if (hydrationStatus !== 'ready') return;
+    if (snapshot.decided) return;
+    if (!fields || snapshot.fieldOrderIds === null) return;
     if (fieldCount > 2) return;
     if (fieldCount > 0) writer.populateFromFields(supportedFieldIds);
     writer.markDecided();
-  }, [hydrated, snapshot.decided, snapshot.questions.length, fields, fieldCount, supportedFieldIds, writer]);
+  }, [hydrationStatus, snapshot.decided, snapshot.fieldOrderIds, fields, fieldCount, supportedFieldIds, writer]);
+
+  if (currentHydrationResult?.status === 'failed') {
+    return (
+      <div
+        role='alert'
+        data-testid='form-auto-create-hydration-error'
+        className='flex items-center gap-3 rounded-md border border-line-divider px-4 py-3'
+      >
+        <div className='min-w-0 flex-1'>
+          <p className='text-sm font-medium text-text-primary'>Couldn&apos;t refresh form settings</p>
+          <p className='text-xs text-text-caption'>
+            Questions are temporarily hidden to prevent changes based on stale data. Check your connection and retry.
+          </p>
+          <p
+            data-testid='form-auto-create-hydration-error-detail'
+            className='mt-1 break-words text-xs text-text-tertiary'
+          >
+            {currentHydrationResult.errorMessage}
+          </p>
+        </div>
+        <Button
+          data-testid='form-auto-create-hydration-retry'
+          size='sm'
+          onClick={() => setAttempt((current) => current + 1)}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   // Modal visibility is derived, not imperative. When the user picks
   // Create-N / Start-from-scratch (or a remote sync delivers a
   // previously-persisted decision), `writer.markDecided()` flips
   // `snapshot.decided` and this expression evaluates false on the
   // same render — no auto-dismiss effect, no flash.
-  const showDialog = hydrated && !snapshot.decided && snapshot.questions.length === 0 && fieldCount > 2;
+  const showDialog =
+    hydrationStatus === 'ready' && !snapshot.decided && snapshot.fieldOrderIds !== null && fieldCount > 2;
 
   if (!showDialog) return null;
 

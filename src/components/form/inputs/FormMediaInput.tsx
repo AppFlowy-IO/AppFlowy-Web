@@ -1,7 +1,7 @@
 import { Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { FormFileAttachment } from '@/application/types/form';
+import { FormFileAttachment, PUBLIC_FORM_MAX_FILE_NAME_BYTES } from '@/application/types/form';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -53,6 +53,30 @@ export function FormMediaInput({ value, onChange, max_files, max_bytes_per_file 
       const nextRejected: RejectedFile[] = [];
 
       for (const file of picked) {
+        if (
+          !file.name.trim() ||
+          new Blob([file.name]).size > PUBLIC_FORM_MAX_FILE_NAME_BYTES ||
+          [...file.name].some((character) => isUnsafeFileNameCharacter(character))
+        ) {
+          nextRejected.push({
+            local_id: crypto.randomUUID(),
+            name: file.name,
+            size: file.size,
+            error: 'The file name is empty, too long, or contains unsupported characters.',
+          });
+          continue;
+        }
+
+        if (file.size <= 0) {
+          nextRejected.push({
+            local_id: crypto.randomUUID(),
+            name: file.name,
+            size: file.size,
+            error: 'Empty files cannot be uploaded.',
+          });
+          continue;
+        }
+
         if (typeof max_bytes_per_file === 'number' && file.size > max_bytes_per_file) {
           nextRejected.push({
             local_id: crypto.randomUUID(),
@@ -150,6 +174,22 @@ export function FormMediaInput({ value, onChange, max_files, max_bytes_per_file 
         </ul>
       )}
     </div>
+  );
+}
+
+function isUnsafeFileNameCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0);
+
+  if (codePoint === undefined) return false;
+
+  return (
+    codePoint < 0x20 ||
+    (codePoint >= 0x7f && codePoint <= 0x9f) ||
+    codePoint === 0x061c ||
+    codePoint === 0x200e ||
+    codePoint === 0x200f ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2066 && codePoint <= 0x2069)
   );
 }
 

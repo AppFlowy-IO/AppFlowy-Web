@@ -25,6 +25,7 @@ import {
   shouldUseFixedDatabaseViewport,
 } from '@/components/database/layout';
 import { ListGroupingProvider } from '@/components/database/list/ListGroupingContext';
+import { DatabaseHistoryScope } from '@/components/database/DatabaseHistoryScope';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
@@ -350,7 +351,11 @@ function DatabaseViews({
       case DatabaseViewLayout.Chart:
         return <Chart />;
       case DatabaseViewLayout.Form:
-        return <FormBuilderView key={activeViewId} />;
+        return (
+          <DatabaseHistoryScope className='flex h-full min-h-0 w-full flex-1 flex-col'>
+            <FormBuilderView key={activeViewId} />
+          </DatabaseHistoryScope>
+        );
       case DatabaseViewLayout.List:
         return <List />;
       case DatabaseViewLayout.Gallery:

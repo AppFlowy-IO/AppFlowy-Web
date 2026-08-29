@@ -17,9 +17,9 @@ const FormBody = lazy(() => import('./FormBody').then(({ FormBody }) => ({ defau
  *   - `active`          — render the form
  *   - `auth_required`   — render "Log in to fill out" CTA pointing at `login_url`
  *   - `closed`          — render server-supplied "no longer accepting" copy
- *   - `error`           — 404/410/network. We don't auto-retry; the page is
- *                          read-mostly and a stale tab being asked to retry
- *                          forever would mask a real outage.
+ *   - `error`           — 404/410/network after the shared HTTP client's
+ *                          bounded 429/5xx retries (including Retry-After)
+ *                          are exhausted.
  */
 type Status =
   | { kind: 'loading' }
@@ -28,7 +28,14 @@ type Status =
   | { kind: 'closed'; message: string }
   | { kind: 'error'; code: number; message: string };
 
-export function FormView({ token }: { token: string }) {
+export function FormView({
+  token,
+  notFoundFallback,
+}: {
+  token: string;
+  /** Rendered only when the public Form endpoint definitively returns 404. */
+  notFoundFallback?: React.ReactNode;
+}) {
   const [status, setStatus] = useState<Status>({ kind: 'loading' });
 
   useEffect(() => {
@@ -96,8 +103,17 @@ export function FormView({ token }: { token: string }) {
     case 'closed':
       return <FormMessageLayout testid='public-form-closed' title='Form closed' body={status.message} />;
     case 'error':
+      // `/form/:value` is also a legacy publish namespace. A UUID-shaped
+      // publish slug is indistinguishable from a Form token until the Form API
+      // authoritatively returns 404, so only that response may hand rendering
+      // back to the publish router. Revoked/expired (410), auth, closed, and
+      // transient failures must remain Form outcomes.
+      if (status.code === 404 && notFoundFallback !== undefined) {
+        return <>{notFoundFallback}</>;
+      }
+
       // 404 / 410 surface as a clean Not Found to avoid leaking server
-      // internals; everything else gets a generic error layout.
+      // internals when no route fallback was supplied.
       if (status.code === 404 || status.code === 410) {
         return (
           <FormMessageLayout

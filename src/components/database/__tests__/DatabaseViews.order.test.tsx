@@ -90,6 +90,16 @@ jest.mock('@/components/database/gallery', () => ({
   default: () => <div data-testid='gallery-layout' />,
 }));
 
+jest.mock('@/components/database/form/FormBuilderView', () => ({
+  FormBuilderView: () => <div data-testid='form-builder-layout' />,
+}));
+
+jest.mock('@/components/database/DatabaseHistoryScope', () => ({
+  DatabaseHistoryScope: ({ children }: { children: ReactNode }) => (
+    <div data-testid='database-history-scope'>{children}</div>
+  ),
+}));
+
 jest.mock('@/components/database/components/UnsupportedView', () => () => null);
 jest.mock('src/components/database/components/conditions/DatabaseConditions', () => () => null);
 jest.mock('sonner', () => ({
@@ -479,6 +489,39 @@ describe('DatabaseViews order', () => {
     });
     expect(global.__databaseViewsOrderTestState?.gridGroupingProviderRenderCount ?? 0).toBe(0);
 
+    doc.destroy();
+  });
+
+  it('mounts the Form builder inside the database history scope', async () => {
+    const visibleViewIds = ['form', 'grid', 'grid2'];
+    const doc = createDatabaseDoc('db-form-history', [
+      { viewId: 'form', name: 'Form', createdAt: '100', layout: DatabaseViewLayout.Form },
+      { viewId: 'grid', name: 'Grid', createdAt: '200' },
+      { viewId: 'grid2', name: 'Grid 2', createdAt: '300' },
+    ]);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: 'form',
+      activeViewId: 'form',
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+    };
+
+    render(
+      <DatabaseContext.Provider value={contextValue}>
+        <DatabaseViews
+          activeViewId='form'
+          databasePageId='form'
+          onChangeView={jest.fn()}
+          visibleViewIds={visibleViewIds}
+        />
+      </DatabaseContext.Provider>
+    );
+
+    const formBuilder = await screen.findByTestId('form-builder-layout');
+
+    expect(formBuilder.parentElement).toBe(screen.getByTestId('database-history-scope'));
     doc.destroy();
   });
 });

@@ -1,6 +1,11 @@
 import { memo } from 'react';
 
-import { FormAnswerValue, PublicQuestion } from '@/application/types/form';
+import {
+  FormAnswerValue,
+  PUBLIC_FORM_MAX_BYTES_PER_FILE,
+  PUBLIC_FORM_MAX_FILES_PER_QUESTION,
+  PublicQuestion,
+} from '@/application/types/form';
 import { cn } from '@/lib/utils';
 
 import { FormCheckboxInput } from './inputs/FormCheckboxInput';
@@ -126,8 +131,14 @@ function QuestionInput({
         <FormMediaInput
           value={value?.kind === 'files' ? value.files : []}
           onChange={(files) => onChange({ kind: 'files', files })}
-          max_files={question.max_files}
-          max_bytes_per_file={question.max_bytes_per_file}
+          max_files={Math.min(
+            question.max_files ?? PUBLIC_FORM_MAX_FILES_PER_QUESTION,
+            PUBLIC_FORM_MAX_FILES_PER_QUESTION
+          )}
+          max_bytes_per_file={Math.min(
+            question.max_bytes_per_file ?? PUBLIC_FORM_MAX_BYTES_PER_FILE,
+            PUBLIC_FORM_MAX_BYTES_PER_FILE
+          )}
         />
       );
     case 'person':

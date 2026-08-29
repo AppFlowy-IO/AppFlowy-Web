@@ -1,7 +1,8 @@
 import '@/styles/app.scss';
 import { lazy, Suspense } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useParams } from 'react-router-dom';
+import { validate as isUuid } from 'uuid';
 
 const FormPage = lazy(() => import('@/pages/FormPage'));
 const MainAppRoutes = lazy(() => import('@/components/main/MainAppRoutes'));
@@ -17,13 +18,24 @@ function App() {
       <ErrorBoundary FallbackComponent={RouteError}>
         <Suspense fallback={<RouteLoading />}>
           <Routes>
-            <Route path='/form/:token' element={<FormPage />} />
+            <Route path='/form/:token' element={<FormOrPublishedRoute />} />
             <Route path='*' element={<MainAppRoutes />} />
           </Routes>
         </Suspense>
       </ErrorBoundary>
     </BrowserRouter>
   );
+}
+
+/**
+ * `/form/:value` predates public Forms as a valid published-page namespace.
+ * Share tokens are UUIDs, so keep ordinary publish slugs on the existing app
+ * route instead of sending them through the public Form API.
+ */
+export function FormOrPublishedRoute() {
+  const { token } = useParams();
+
+  return token && isUuid(token) ? <FormPage notFoundFallback={<MainAppRoutes />} /> : <MainAppRoutes />;
 }
 
 function RouteError() {

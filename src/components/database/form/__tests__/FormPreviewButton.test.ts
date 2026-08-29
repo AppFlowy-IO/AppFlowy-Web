@@ -19,6 +19,7 @@ describe('form respondent preview schema', () => {
 
     const snapshot: FormLayoutSnapshot = {
       decided: true,
+      fieldOrderIds: ['question-id'],
       description: 'Local form description',
       questions: [
         {
