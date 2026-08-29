@@ -1,16 +1,20 @@
+import { lazy, Suspense } from 'react';
+
 import { PublicQuestion } from '@/application/types/form';
 import { Input } from '@/components/ui/input';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
+
+import { loadFormLongTextInput } from './form-input-loaders';
+
+const FormLongTextInput = lazy(loadFormLongTextInput);
 
 /**
  * Renders text-like questions (text/url/email/phone). `long_answer`
- * promotes the input to an auto-sizing textarea — Notion-parity for
- * the "Long answer" toggle.
+ * promotes plain text to an auto-sizing textarea — Notion-parity for
+ * the "Long answer" toggle and consistent with Desktop's one-line default.
  *
  * Type-specific input modes are set so mobile keyboards switch
- * accordingly (`url`, `email`, `tel`). Validation is left to the server
- * — we don't want to reject locally and miss a typo the cloud would
- * have allowed.
+ * accordingly (`url`, `email`, `tel`). Submit-time validation lives in
+ * FormBody so both typed and pasted values follow the cloud contract.
  */
 export function FormTextInput({
   question,
@@ -25,20 +29,11 @@ export function FormTextInput({
   // `_TextInput` and respondent-facing copy across both clients.
   const placeholder = 'Type your answer';
 
-  // Plain-text questions render as a multi-line textarea so respondents
-  // get room to write; the `long_answer` flag now only influences the
-  // initial row count. Typed fields (url/email/phone) stay single-line
-  // because their values are inherently short and the typed `<input>` lets
-  // mobile keyboards switch layouts.
-  if (question.kind === 'text') {
+  if (question.kind === 'text' && question.long_answer) {
     return (
-      <TextareaAutosize
-        className='w-full py-2'
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        minRows={question.long_answer ? 5 : 3}
-      />
+      <Suspense fallback={<div aria-hidden className='h-32 w-full animate-pulse rounded-md bg-fill-content' />}>
+        <FormLongTextInput value={value} onChange={onChange} placeholder={placeholder} />
+      </Suspense>
     );
   }
 

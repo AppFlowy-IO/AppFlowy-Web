@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   DragDropContext,
   Draggable,
@@ -8,6 +7,7 @@ import {
   Droppable,
   DropResult,
 } from 'react-beautiful-dnd';
+import { createPortal } from 'react-dom';
 
 import {
   useDatabaseFields,
@@ -15,24 +15,25 @@ import {
   useFormLayoutSnapshot,
   useFormWriter,
 } from '@/application/database-yjs';
-import { FieldType } from '@/application/database-yjs/database.type';
-import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { useAddSelectOptionDispatch } from '@/application/database-yjs/dispatch';
+import { isFormQuestionFieldType } from '@/application/database-yjs/form-field-types';
 import type { FormWriter } from '@/application/database-yjs/form-writer';
 import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import type { YDatabaseField } from '@/application/types';
 
-import { FormAutoCreate } from './FormAutoCreate';
 import { FormAccessBanner } from './FormAccessBanner';
+import { FormAutoCreate } from './FormAutoCreate';
 import { FormPreviewButton } from './FormPreviewButton';
 import { FormQuestionCard } from './FormQuestionCard';
 import { FormQuestionCardReadOnly } from './FormQuestionCardReadOnly';
 import { FormQuestionTypePicker } from './FormQuestionTypePicker';
-import type { AddFormSelectOption } from './FormSelectOptionsEditor';
 import { FormShareButton } from './FormShareButton';
 import { FormShareProvider } from './FormShareContext';
 import { FormTitle } from './FormTitle';
+
+import type { AddFormSelectOption } from './FormSelectOptionsEditor';
 
 /**
  * Top-level form-builder view. Mirrors the desktop's `FormBuilderPage`:
@@ -163,25 +164,24 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
   // ref pattern is the `advanced-use-latest` rule from the perf guide.
   const resolvedRef = useRef(resolved);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     resolvedRef.current = resolved;
   }, [resolved]);
 
   const handleReorder = useCallback(
     (result: DropResult) => {
       if (!result.destination) return;
-      const from = result.source.index;
+      const visibleQuestionIds = resolvedRef.current.map((question) => question.questionId);
+      const questionId = result.draggableId;
+      const currentIndex = visibleQuestionIds.indexOf(questionId);
       const to = result.destination.index;
 
-      if (from === to) return;
-      const questionId = resolvedRef.current[from]?.questionId;
-
-      if (!questionId) return;
-      writer.reorderQuestion(
-        questionId,
-        to,
-        resolvedRef.current.map((question) => question.questionId)
-      );
+      // `source.index` belongs to the list snapshot where the drag began.
+      // Another collaborator can insert, remove, or reorder questions before
+      // drop, so resolve both identity and the no-op check against the latest
+      // visible IDs instead.
+      if (currentIndex === -1 || currentIndex === to) return;
+      writer.reorderQuestion(questionId, to, visibleQuestionIds);
     },
     // `writer` is memoized on view identity in `useFormWriter`, so
     // this callback only changes on a view swap — never on snapshot

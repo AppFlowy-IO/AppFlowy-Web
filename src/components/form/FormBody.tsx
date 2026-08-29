@@ -27,6 +27,8 @@ import { Button } from '@/components/ui/button';
 
 import { FormQuestion } from './FormQuestion';
 
+export { preloadFormQuestionInputs } from './FormQuestion';
+
 /**
  * Renders the actual form (title + question stack + submit button) plus
  * the post-submit confirmation. Owns the answer-map state and the submit
@@ -168,8 +170,7 @@ export function FormBody({
       const payload: FormSubmissionPayload = { answers: uploadedAnswers };
       const payloadFingerprint = JSON.stringify(payload);
       const previousAttempt = idempotencyAttemptRef.current;
-      const idempotencyKey =
-        previousAttempt?.payloadFingerprint === payloadFingerprint ? previousAttempt.key : uuid();
+      const idempotencyKey = previousAttempt?.payloadFingerprint === payloadFingerprint ? previousAttempt.key : uuid();
 
       idempotencyAttemptRef.current = { key: idempotencyKey, payloadFingerprint };
       const res: FormSubmitResponse = await submitPublicForm(token, payload, idempotencyKey);
@@ -481,6 +482,10 @@ function collectLocalErrors(
 
       if (maxBytes !== undefined && new Blob([v.value]).size > maxBytes) {
         out[q.id] = `Keep this answer under ${formatAnswerLimit(maxBytes)}.`;
+      } else {
+        const formatError = textAnswerFormatError(q.kind, v.value);
+
+        if (formatError) out[q.id] = formatError;
       }
     }
 
@@ -506,6 +511,139 @@ function collectLocalErrors(
   }
 
   return out;
+}
+
+const EMAIL_USER_PATTERN = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+$/;
+const EMAIL_DOMAIN_LABEL_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+const PHONE_PATTERN = /^[0-9 +\-().#*xX]+$/;
+
+function textAnswerFormatError(kind: PublicQuestion['kind'], value: string): string | undefined {
+  // The cloud treats whitespace-only typed answers as empty. Required-field
+  // validation above remains responsible for deciding whether empty is valid.
+  if (value.trim().length === 0) return undefined;
+
+  switch (kind) {
+    case 'url':
+      return validHttpUrl(value) ? undefined : 'Enter a valid URL that starts with http:// or https://.';
+    case 'email':
+      return validEmail(value) ? undefined : 'Enter a valid email address.';
+    case 'phone':
+      return validPhone(value) ? undefined : 'Enter a valid phone number.';
+    default:
+      return undefined;
+  }
+}
+
+function validHttpUrl(value: string): boolean {
+  if (value.trim() !== value || containsControlCharacter(value)) return false;
+
+  try {
+    const parsed = new URL(value);
+
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.hostname.length > 0 &&
+      parsed.username.length === 0 &&
+      parsed.password.length === 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Mirrors validator 0.19's HTML5-style email rules used by the cloud. */
+function validEmail(value: string): boolean {
+  if (value.trim() !== value || containsControlCharacter(value)) return false;
+
+  const separator = value.lastIndexOf('@');
+
+  if (separator < 1) return false;
+
+  const user = value.slice(0, separator);
+  const domain = value.slice(separator + 1);
+
+  if (unicodeLength(user) > 64 || unicodeLength(domain) > 255 || !EMAIL_USER_PATTERN.test(user)) return false;
+
+  return validEmailDomain(domain);
+}
+
+function validEmailDomain(domain: string): boolean {
+  if (domain.startsWith('[') && domain.endsWith(']')) {
+    return validIpLiteral(domain.slice(1, -1));
+  }
+
+  if (validAsciiDomain(domain)) return true;
+  if (containsDisallowedAsciiDomainCharacter(domain)) return false;
+
+  try {
+    // Browser URL parsing uses the same IDNA-to-ASCII step as the server's
+    // validator. Re-validate the resulting labels instead of accepting URL
+    // parser normalizations as an email-domain decision.
+    return validAsciiDomain(new URL(`http://${domain}`).hostname);
+  } catch {
+    return false;
+  }
+}
+
+function validAsciiDomain(domain: string): boolean {
+  return domain.length > 0 && domain.split('.').every((label) => EMAIL_DOMAIN_LABEL_PATTERN.test(label));
+}
+
+function validIpLiteral(value: string): boolean {
+  if (!/^[A-Fa-f0-9:.]+$/.test(value)) return false;
+
+  if (!value.includes(':')) {
+    const segments = value.split('.');
+
+    return (
+      segments.length === 4 &&
+      segments.every((segment) => /^(?:0|[1-9]\d{0,2})$/.test(segment) && Number(segment) <= 255)
+    );
+  }
+
+  try {
+    new URL(`http://[${value}]`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validPhone(value: string): boolean {
+  return value.trim() === value && /[0-9]/.test(value) && PHONE_PATTERN.test(value);
+}
+
+function unicodeLength(value: string): number {
+  return Array.from(value).length;
+}
+
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+
+    if (codePoint <= 31 || (codePoint >= 127 && codePoint <= 159)) return true;
+  }
+
+  return false;
+}
+
+function containsDisallowedAsciiDomainCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+
+    if (codePoint > 127) continue;
+
+    const allowed =
+      codePoint === 45 ||
+      codePoint === 46 ||
+      (codePoint >= 48 && codePoint <= 57) ||
+      (codePoint >= 65 && codePoint <= 90) ||
+      (codePoint >= 97 && codePoint <= 122);
+
+    if (!allowed) return true;
+  }
+
+  return false;
 }
 
 function maxTextAnswerBytes(kind: PublicQuestion['kind']): number | undefined {

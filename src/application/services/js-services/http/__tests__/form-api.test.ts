@@ -4,21 +4,19 @@ import {
   submitPublicForm,
   uploadFormFileToPresignedUrl,
 } from '../form-api';
-import { getAxios, handleAPIError } from '../core';
+import { getPublicFormClient } from '../public-form-client';
 
-jest.mock('../core', () => ({
-  getAxios: jest.fn(),
-  handleAPIError: jest.fn(),
+jest.mock('../public-form-client', () => ({
+  ...jest.requireActual('../public-form-client'),
+  getPublicFormClient: jest.fn(),
 }));
 
 describe('public form uploads', () => {
   const originalFetch = global.fetch;
-  const mockGetAxios = getAxios as jest.MockedFunction<typeof getAxios>;
-  const mockHandleAPIError = handleAPIError as jest.MockedFunction<typeof handleAPIError>;
+  const mockGetPublicFormClient = getPublicFormClient as jest.MockedFunction<typeof getPublicFormClient>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockHandleAPIError.mockReturnValue({ code: -1, message: 'Request failed' });
   });
 
   afterEach(() => {
@@ -53,7 +51,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ get } as never);
+    mockGetPublicFormClient.mockReturnValue({ get } as never);
 
     await expect(getPublicFormSchema('c6c31f9b-c334-4e3a-be20-79f661d4ad87')).rejects.toMatchObject({
       message: 'Malformed form schema response',
@@ -72,7 +70,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ post } as never);
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       requestPublicFormUploadUrl('c6c31f9b-c334-4e3a-be20-79f661d4ad87', {
@@ -101,7 +99,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ post } as never);
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       requestPublicFormUploadUrl('c6c31f9b-c334-4e3a-be20-79f661d4ad87', {
@@ -113,7 +111,7 @@ describe('public form uploads', () => {
 
   it('preserves public error codes and body retry hints from direct JSON errors', async () => {
     const post = jest.fn().mockRejectedValue({
-      isAxiosError: true,
+      name: 'PublicFormHTTPError',
       message: 'Request failed with status code 503',
       response: {
         status: 503,
@@ -122,12 +120,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ post } as never);
-    mockHandleAPIError.mockReturnValue({
-      code: 503,
-      httpStatus: 503,
-      message: 'Request failed with status code 503',
-    });
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       requestPublicFormUploadUrl('c6c31f9b-c334-4e3a-be20-79f661d4ad87', {
@@ -144,7 +137,7 @@ describe('public form uploads', () => {
 
   it('surfaces 426 as a create-only client-upgrade failure', async () => {
     const post = jest.fn().mockRejectedValue({
-      isAxiosError: true,
+      name: 'PublicFormHTTPError',
       message: 'Request failed with status code 426',
       response: {
         status: 426,
@@ -153,8 +146,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ post } as never);
-    mockHandleAPIError.mockReturnValue({ code: 426, httpStatus: 426, message: 'Upgrade Required' });
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       requestPublicFormUploadUrl('c6c31f9b-c334-4e3a-be20-79f661d4ad87', {
@@ -173,7 +165,7 @@ describe('public form uploads', () => {
     ['upload_capacity_reached', 'temporarily at capacity'],
   ])('uses fixed user copy for the %s upload error', async (publicCode, expectedMessage) => {
     const post = jest.fn().mockRejectedValue({
-      isAxiosError: true,
+      name: 'PublicFormHTTPError',
       message: 'Request failed',
       response: {
         status: publicCode === 'invalid_file_name' ? 400 : 429,
@@ -182,11 +174,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ post } as never);
-    mockHandleAPIError.mockReturnValue({
-      code: publicCode === 'invalid_file_name' ? 400 : 429,
-      message: 'Request failed',
-    });
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       requestPublicFormUploadUrl('c6c31f9b-c334-4e3a-be20-79f661d4ad87', {
@@ -207,7 +195,7 @@ describe('public form uploads', () => {
       },
     });
 
-    mockGetAxios.mockReturnValue({ post } as never);
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
     const idempotencyKey = 'a0aa83b5-82f8-4eca-a466-954b7f329c78';
 
     await expect(
@@ -224,7 +212,7 @@ describe('public form uploads', () => {
   it('rejects malformed idempotency keys before sending a request', async () => {
     const post = jest.fn();
 
-    mockGetAxios.mockReturnValue({ post } as never);
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       submitPublicForm('c6c31f9b-c334-4e3a-be20-79f661d4ad87', { answers: {} }, 'retry-me')
@@ -235,7 +223,7 @@ describe('public form uploads', () => {
   it('rejects an oversized submit body before consuming server capacity', async () => {
     const post = jest.fn();
 
-    mockGetAxios.mockReturnValue({ post } as never);
+    mockGetPublicFormClient.mockReturnValue({ post } as never);
 
     await expect(
       submitPublicForm(

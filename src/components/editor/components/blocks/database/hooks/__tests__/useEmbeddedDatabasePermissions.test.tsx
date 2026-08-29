@@ -1,12 +1,14 @@
-import { renderHook } from '@testing-library/react';
+import { render, renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { Types, UIVariant, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useViewActionPermissions } from '@/components/app/view-actions/useViewActionPermissions';
 
 import {
+  type EmbeddedDatabasePermissions,
+  EmbeddedDatabasePermissionsResolver,
   resolveEmbeddedDatabaseCollabId,
-  useEmbeddedDatabasePermissions,
+  useAppEmbeddedDatabasePermissions,
 } from '../useEmbeddedDatabasePermissions';
 
 jest.mock('@/components/app/view-actions/useViewActionPermissions', () => ({
@@ -57,13 +59,9 @@ describe('useEmbeddedDatabasePermissions', () => {
     mockSourceCapabilities(false, false);
 
     const { result } = renderHook(() =>
-      useEmbeddedDatabasePermissions({
+      useAppEmbeddedDatabasePermissions({
         sourceViewId,
         sourceDatabaseId,
-        variant: UIVariant.App,
-        publishReadOnly: false,
-        publishCanWrite: true,
-        publishCanShare: true,
       })
     );
 
@@ -78,13 +76,9 @@ describe('useEmbeddedDatabasePermissions', () => {
     mockSourceCapabilities(true, true);
 
     const { result } = renderHook(() =>
-      useEmbeddedDatabasePermissions({
+      useAppEmbeddedDatabasePermissions({
         sourceViewId,
         sourceDatabaseId,
-        variant: UIVariant.App,
-        publishReadOnly: true,
-        publishCanWrite: false,
-        publishCanShare: false,
       })
     );
 
@@ -95,13 +89,9 @@ describe('useEmbeddedDatabasePermissions', () => {
     mockSourceCapabilities(true, false);
 
     const { result } = renderHook(() =>
-      useEmbeddedDatabasePermissions({
+      useAppEmbeddedDatabasePermissions({
         sourceViewId,
         sourceDatabaseId,
-        variant: UIVariant.App,
-        publishReadOnly: false,
-        publishCanWrite: true,
-        publishCanShare: true,
       })
     );
 
@@ -116,12 +106,8 @@ describe('useEmbeddedDatabasePermissions', () => {
     mockSourceCapabilities(false, false);
 
     const { result } = renderHook(() =>
-      useEmbeddedDatabasePermissions({
+      useAppEmbeddedDatabasePermissions({
         sourceViewId,
-        variant: UIVariant.App,
-        publishReadOnly: false,
-        publishCanWrite: true,
-        publishCanShare: true,
       })
     );
 
@@ -129,22 +115,25 @@ describe('useEmbeddedDatabasePermissions', () => {
     expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, false, sourceViewId, undefined);
   });
 
-  it('preserves the static publish permissions without opening a source permission probe', () => {
+  it('preserves the static publish permissions without mounting the app permission resolver', () => {
     mockSourceCapabilities(false, false);
+    let resolvedPermissions: EmbeddedDatabasePermissions | undefined;
 
-    const { result } = renderHook(() =>
-      useEmbeddedDatabasePermissions({
-        sourceViewId,
-        sourceDatabaseId,
-        variant: UIVariant.Publish,
-        publishReadOnly: true,
-      })
+    render(
+      <EmbeddedDatabasePermissionsResolver
+        sourceViewId={sourceViewId}
+        sourceDatabaseId={sourceDatabaseId}
+        variant={UIVariant.Publish}
+        publishReadOnly
+      >
+        {(permissions) => {
+          resolvedPermissions = permissions;
+          return null;
+        }}
+      </EmbeddedDatabasePermissionsResolver>
     );
 
-    expect(result.current).toEqual({ readOnly: true, canWrite: false, canShare: false });
-    expect(mockUseViewActionPermissions).toHaveBeenCalledWith(null, false, sourceViewId, {
-      collabObjectId: sourceDatabaseId,
-      collabType: Types.Database,
-    });
+    expect(resolvedPermissions).toEqual({ readOnly: true, canWrite: false, canShare: false });
+    expect(mockUseViewActionPermissions).not.toHaveBeenCalled();
   });
 });

@@ -1,10 +1,18 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 
 import { getPublicFormSchema } from '@/application/services/js-services/http/form-api';
 import { PublicFormResponse, PublicFormSchema } from '@/application/types/form';
 import { Button } from '@/components/ui/button';
 
-const FormBody = lazy(() => import('./FormBody').then(({ FormBody }) => ({ default: FormBody })));
+let formBodyModulePromise: Promise<typeof import('./FormBody')> | undefined;
+
+export function preloadFormBodyModule() {
+  formBodyModulePromise ??= import('./FormBody');
+  return formBodyModulePromise;
+}
+
+const FormBody = lazy(() => preloadFormBodyModule().then(({ FormBody }) => ({ default: FormBody })));
 
 /**
  * Container component for the public form page. Owns the fetch + branch
@@ -17,9 +25,7 @@ const FormBody = lazy(() => import('./FormBody').then(({ FormBody }) => ({ defau
  *   - `active`          — render the form
  *   - `auth_required`   — render "Log in to fill out" CTA pointing at `login_url`
  *   - `closed`          — render server-supplied "no longer accepting" copy
- *   - `error`           — 404/410/network after the shared HTTP client's
- *                          bounded 429/5xx retries (including Retry-After)
- *                          are exhausted.
+ *   - `error`           — 404/410/network or transport failure.
  */
 type Status =
   | { kind: 'loading' }
@@ -40,15 +46,33 @@ export function FormView({
 
   useEffect(() => {
     let cancelled = false;
+    // Start the small respondent shell at the same time as the schema request.
+    // The question-type preloader below keeps date/media/long-text controls
+    // conditional on the returned schema.
+    const bodyModule = preloadFormBodyModule();
+
+    // Closed/auth-required responses do not await this module. Observe a
+    // potential chunk error now so those branches cannot create an unhandled
+    // rejection; active forms surface it through the schema chain below.
+    void bodyModule.catch(() => undefined);
 
     setStatus({ kind: 'loading' });
     getPublicFormSchema(token)
-      .then((res: PublicFormResponse) => {
+      .then(async (res: PublicFormResponse) => {
         if (cancelled) return;
         switch (res.kind) {
-          case 'active':
+          case 'active': {
+            // Render the respondent shell immediately. Conditional controls
+            // begin loading as soon as the body module is available, while
+            // each question's Suspense boundary streams its own placeholder
+            // instead of letting the slowest leaf chunk block the whole form.
+            void bodyModule
+              .then(({ preloadFormQuestionInputs }) => preloadFormQuestionInputs(res.questions))
+              .catch(() => undefined);
             setStatus({ kind: 'active', schema: res });
             break;
+          }
+
           case 'closed':
             setStatus({ kind: 'closed', message: res.message });
             break;
@@ -75,9 +99,18 @@ export function FormView({
       return <FormLoading />;
     case 'active':
       return (
-        <Suspense fallback={<FormLoading label='Loading form…' />}>
-          <FormBody token={token} schema={status.schema} />
-        </Suspense>
+        <ErrorBoundary
+          fallback={
+            <FormMessageLayout
+              title='Couldn’t load this form'
+              body='A form component could not be loaded. Refresh the page to try again.'
+            />
+          }
+        >
+          <Suspense fallback={<FormLoading label='Loading form…' />}>
+            <FormBody token={token} schema={status.schema} />
+          </Suspense>
+        </ErrorBoundary>
       );
     case 'auth_required':
       return (

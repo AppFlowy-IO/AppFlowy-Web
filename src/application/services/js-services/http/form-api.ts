@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { validate as isUuid } from 'uuid';
 
 import {
@@ -11,17 +10,17 @@ import {
   PublicFormUploadUrlRequest,
 } from '@/application/types/form';
 
-import { APIError, getAxios, handleAPIError } from './core';
+import { getPublicFormClient, isPublicFormHTTPError } from './public-form-client';
 
 /**
  * Public form HTTP surface — mirror of the actix scope
  * `public_form_scope` in `appflowy-cloud/src/api/workspace/public_form.rs`.
  *
  * **Auth posture:** these endpoints accept anonymous traffic. The cloud
- * uses `OptionalUserUuid`, so the shared axios instance can carry a
- * bearer token (workspace-tier forms still need it) or not (public-tier
- * accepts no auth). No special http client is needed — passing the
- * existing instance is correct.
+ * uses `OptionalUserUuid`, so the lightweight client sends a stored bearer
+ * token when one is available (workspace-tier forms still need it) and sends
+ * no authorization header for anonymous visitors. Keeping this transport
+ * separate avoids loading the authenticated app bootstrap on public routes.
  */
 
 // nudge: form-api wire-shape fix
@@ -60,7 +59,11 @@ const PUBLIC_FORM_ERROR_MESSAGES: Record<string, string> = {
 };
 
 /** Public endpoints use a direct JSON error body instead of `AppResponse`. */
-export interface PublicFormAPIError extends APIError {
+export interface PublicFormAPIError {
+  code: number;
+  message: string;
+  httpStatus?: number;
+  retryAfterSecs?: number;
   publicCode?: string;
   loginUrl?: string;
 }
@@ -85,14 +88,10 @@ export async function getPublicFormSchema(token: string): Promise<PublicFormResp
   // The cloud's public-form endpoints return the schema body directly
   // (not wrapped in the workspace-API `{code, data}` envelope), so we
   // can't route through `executeAPIRequest`. Validate-and-throw here,
-  // but normalize axios failures via `handleAPIError` so callers see an
-  // `APIError` with the real HTTP status — FormView depends on `code`
+  // but normalize lightweight-client failures so callers see an `APIError`
+  // with the real HTTP status — FormView depends on `code`
   // being 404/410 to render the NotFound/Gone branch.
-  const client = getAxios();
-
-  if (!client) {
-    return Promise.reject({ code: -1, message: 'API service not initialized' });
-  }
+  const client = getPublicFormClient();
 
   if (!isUuid(token)) return Promise.reject(invalidPublicFormTokenError());
 
@@ -136,16 +135,12 @@ export async function submitPublicForm(
   //   * 400 → `{ error: 'missing_required_answers', question_ids: [...] }`
   //     — translate into `{kind: 'invalid', field_errors}` so the UI can
   //     surface per-question "Required" markers without a second request.
-  //   * Any other non-2xx → reject with `handleAPIError` (preserves
+  //   * Any other non-2xx → reject with the normalized public error (preserves
   //     retry-after on 429, status on 404/410, etc.).
   //
   // The 400 path is the reason this can't route through `executeAPIRequest`:
   // a 400 must NOT propagate as an error; the answer is in the body.
-  const client = getAxios();
-
-  if (!client) {
-    return Promise.reject({ code: -1, message: 'API service not initialized' });
-  }
+  const client = getPublicFormClient();
 
   if (!isUuid(token)) return Promise.reject(invalidPublicFormTokenError());
 
@@ -206,7 +201,7 @@ export async function submitPublicForm(
 /**
  * Recognize the cloud's `400 missing_required_answers` response and turn
  * it into a typed `invalid` variant. Returns `null` for anything else so
- * the caller can fall through to the generic `handleAPIError` path.
+ * the caller can fall through to the generic public-error path.
  *
  * The cloud body is `{ error: 'missing_required_answers', question_ids: [...] }`;
  * we surface a generic per-question "Required" message because that's all
@@ -214,7 +209,7 @@ export async function submitPublicForm(
  * the wire grows them.
  */
 function tryParseInvalidPayloadError(err: unknown): FormSubmitResponse | null {
-  if (!axios.isAxiosError(err) || err.response?.status !== 400) return null;
+  if (!isPublicFormHTTPError(err) || err.response.status !== 400) return null;
   const body = err.response.data as { error?: string; question_ids?: unknown } | undefined;
 
   if (body?.error !== 'missing_required_answers') return null;
@@ -248,11 +243,7 @@ export async function requestPublicFormUploadUrl(
   token: string,
   request: PublicFormUploadUrlRequest
 ): Promise<CreateOnlyPublicFormUploadUrlResponse> {
-  const client = getAxios();
-
-  if (!client) {
-    return Promise.reject({ code: -1, message: 'API service not initialized' });
-  }
+  const client = getPublicFormClient();
 
   if (!isUuid(token)) return Promise.reject(invalidPublicFormTokenError());
 
@@ -419,9 +410,9 @@ function isValidCreateOnlyUploadResponse(value: CreateOnlyPublicFormUploadUrlRes
 }
 
 function handlePublicFormAPIError(error: unknown): PublicFormAPIError {
-  const normalized = handleAPIError(error);
+  const normalized = normalizePublicFormTransportError(error);
 
-  if (!axios.isAxiosError(error) || !error.response) return normalized;
+  if (!isPublicFormHTTPError(error)) return normalized;
 
   const body = error.response.data as
     | {
@@ -445,6 +436,47 @@ function handlePublicFormAPIError(error: unknown): PublicFormAPIError {
     loginUrl: typeof body?.login_url === 'string' ? body.login_url : undefined,
     retryAfterSecs: normalized.retryAfterSecs ?? bodyRetryAfter,
   };
+}
+
+function normalizePublicFormTransportError(error: unknown): PublicFormAPIError {
+  if (isPublicFormHTTPError(error)) {
+    const body = error.response.data as { code?: unknown; message?: unknown } | undefined;
+    const retryAfter = readRetryAfterSeconds(error.response.headers);
+
+    return {
+      code: typeof body?.code === 'number' ? body.code : error.response.status,
+      httpStatus: error.response.status,
+      message: typeof body?.message === 'string' && body.message ? body.message : error.message || 'Request failed',
+      retryAfterSecs: retryAfter,
+    };
+  }
+
+  if (isPublicFormAPIError(error)) return error;
+
+  return {
+    code: -1,
+    message: error instanceof Error ? error.message : 'Unknown error occurred',
+  };
+}
+
+function readRetryAfterSeconds(headers: unknown): number | undefined {
+  if (!headers || typeof headers !== 'object') return undefined;
+  const record = headers as Record<string, unknown> & { get?: (name: string) => unknown };
+  const raw = record['retry-after'] ?? record.get?.('retry-after');
+  const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseInt(raw.trim(), 10) : NaN;
+
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function isPublicFormAPIError(error: unknown): error is PublicFormAPIError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'number' &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  );
 }
 
 function jsonSizeInBytes(value: unknown): number {

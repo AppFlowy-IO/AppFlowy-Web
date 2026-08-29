@@ -1,6 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+import type { DropResult } from 'react-beautiful-dnd';
 
+import { FieldType } from '@/application/database-yjs/database.type';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
+import { YjsDatabaseKey } from '@/application/types';
 
 import { FormBuilderView } from '../FormBuilderView';
 
@@ -18,11 +21,13 @@ const decidedSnapshot: FormLayoutSnapshot = {
   questions: [],
 };
 let mockSnapshot = decidedSnapshot;
+let mockFields: Map<string, Map<string, unknown>> | undefined;
 let mockReadOnly = false;
 let mockCanShare = true;
+let mockOnDragEnd: ((result: DropResult) => void) | undefined;
 
 jest.mock('@/application/database-yjs', () => ({
-  useDatabaseFields: () => undefined,
+  useDatabaseFields: () => mockFields,
   useDatabaseFieldsVersion: () => 0,
   useFormLayoutSnapshot: () => mockSnapshot,
   useFormWriter: () => mockWriter,
@@ -45,6 +50,46 @@ jest.mock('@/application/database-yjs/context', () => ({
 
 jest.mock('@/application/database-yjs/dispatch', () => ({
   useAddSelectOptionDispatch: () => jest.fn(),
+}));
+
+jest.mock('react-beautiful-dnd', () => ({
+  DragDropContext: ({
+    children,
+    onDragEnd,
+  }: {
+    children: ReactNode;
+    onDragEnd: (result: DropResult) => void;
+  }) => {
+    mockOnDragEnd = onDragEnd;
+    return <>{children}</>;
+  },
+  Droppable: ({
+    children,
+  }: {
+    children: (provided: { innerRef: () => void; droppableProps: Record<string, never>; placeholder: null }) => ReactNode;
+  }) => children({ innerRef: jest.fn(), droppableProps: {}, placeholder: null }),
+  Draggable: ({
+    children,
+    draggableId,
+  }: {
+    children: (
+      provided: {
+        innerRef: () => void;
+        draggableProps: { 'data-draggable-id': string };
+        dragHandleProps: Record<string, never>;
+      },
+      snapshot: { isDragging: boolean }
+    ) => ReactNode;
+    draggableId: string;
+  }) =>
+    children(
+      {
+        innerRef: jest.fn(),
+        draggableProps: { 'data-draggable-id': draggableId },
+        dragHandleProps: {},
+      },
+      { isDragging: false }
+    ),
 }));
 
 jest.mock('../FormAccessBanner', () => ({ FormAccessBanner: () => <div data-testid='form-access-banner' /> }));
@@ -74,9 +119,12 @@ jest.mock('../FormShareContext', () => ({
 
 describe('FormBuilderView scrolling', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockSnapshot = decidedSnapshot;
+    mockFields = undefined;
     mockReadOnly = false;
     mockCanShare = true;
+    mockOnDragEnd = undefined;
   });
 
   it('owns vertical scrolling inside fixed database viewports', () => {
@@ -140,5 +188,56 @@ describe('FormBuilderView scrolling', () => {
 
     expect(screen.getByTestId('form-share-provider').getAttribute('data-can-update')).toBe('false');
     expect(screen.getByTestId('form-question-type-picker')).toBeTruthy();
+  });
+
+  it('reorders the dragged ID against the latest visible list after a collaborative change', () => {
+    const question = (fieldId: string, order: number) => ({
+      fieldId,
+      included: true,
+      required: false,
+      descriptionVisible: false,
+      description: '',
+      longAnswer: false,
+      order,
+    });
+
+    mockFields = new Map(
+      ['field-a', 'field-b', 'field-c'].map((fieldId) => [
+        fieldId,
+        new Map<string, unknown>([
+          [YjsDatabaseKey.name, fieldId],
+          [YjsDatabaseKey.type, FieldType.RichText],
+        ]),
+      ])
+    );
+    mockSnapshot = {
+      ...decidedSnapshot,
+      fieldOrderIds: ['field-a', 'field-b', 'field-c'],
+      questions: [question('field-a', 0), question('field-b', 1), question('field-c', 2)],
+    };
+    const { rerender } = render(<FormBuilderView />);
+
+    // The drag began with field-a at source index 0. Before it is dropped,
+    // another client moves field-a after the other visible questions.
+    mockSnapshot = {
+      ...decidedSnapshot,
+      fieldOrderIds: ['field-b', 'field-c', 'field-a'],
+      questions: [question('field-b', 0), question('field-c', 1), question('field-a', 2)],
+    };
+    rerender(<FormBuilderView />);
+
+    act(() => {
+      mockOnDragEnd?.({
+        draggableId: 'field-a',
+        type: 'DEFAULT',
+        source: { droppableId: 'form-question-stack', index: 0 },
+        destination: { droppableId: 'form-question-stack', index: 1 },
+        reason: 'DROP',
+        mode: 'FLUID',
+        combine: null,
+      });
+    });
+
+    expect(mockWriter.reorderQuestion).toHaveBeenCalledWith('field-a', 1, ['field-b', 'field-c', 'field-a']);
   });
 });

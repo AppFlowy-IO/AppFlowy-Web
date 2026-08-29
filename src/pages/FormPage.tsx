@@ -1,11 +1,7 @@
 import { useParams } from 'react-router-dom';
 
-import { initAPIService } from '@/application/services/js-services/http/core';
 import { FormView } from '@/components/form/FormView';
-import { defaultConfig } from '@/components/main/app.hooks';
 import { useAppThemeMode } from '@/components/main/useAppThemeMode';
-
-initAPIService(defaultConfig);
 
 /**
  * Public form page at `/form/:token`. Reads the URL token (the share-link

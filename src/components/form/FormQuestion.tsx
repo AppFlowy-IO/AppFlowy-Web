@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { lazy, memo, Suspense } from 'react';
 
 import {
   FormAnswerValue,
@@ -8,13 +8,65 @@ import {
 } from '@/application/types/form';
 import { cn } from '@/lib/utils';
 
+import { loadFormLongTextInput } from './inputs/form-input-loaders';
 import { FormCheckboxInput } from './inputs/FormCheckboxInput';
-import { FormDateInput } from './inputs/FormDateInput';
-import { FormMediaInput } from './inputs/FormMediaInput';
 import { FormNumberInput } from './inputs/FormNumberInput';
 import { FormSelectInput } from './inputs/FormSelectInput';
-import { FormTextInput } from './inputs/FormTextInput';
 import { FormUnsupportedInput } from './inputs/FormUnsupportedInput';
+
+let formTextInputModule: Promise<typeof import('./inputs/FormTextInput')> | undefined;
+let formTextInputComponent: Promise<{ default: typeof import('./inputs/FormTextInput').FormTextInput }> | undefined;
+let formDateInputComponent: Promise<{ default: typeof import('./inputs/FormDateInput').FormDateInput }> | undefined;
+let formMediaInputComponent: Promise<{ default: typeof import('./inputs/FormMediaInput').FormMediaInput }> | undefined;
+
+const loadFormTextInputModule = () => {
+  formTextInputModule ??= import('./inputs/FormTextInput');
+  return formTextInputModule;
+};
+
+const loadFormTextInput = () => {
+  formTextInputComponent ??= loadFormTextInputModule().then(({ FormTextInput }) => ({ default: FormTextInput }));
+  return formTextInputComponent;
+};
+
+const loadFormDateInput = () => {
+  formDateInputComponent ??= import('./inputs/FormDateInput').then(({ FormDateInput }) => ({ default: FormDateInput }));
+  return formDateInputComponent;
+};
+
+const loadFormMediaInput = () => {
+  formMediaInputComponent ??= import('./inputs/FormMediaInput').then(({ FormMediaInput }) => ({
+    default: FormMediaInput,
+  }));
+  return formMediaInputComponent;
+};
+
+const FormTextInput = lazy(loadFormTextInput);
+const FormDateInput = lazy(loadFormDateInput);
+const FormMediaInput = lazy(loadFormMediaInput);
+
+/** Load only the controls required by a projected respondent schema. */
+export async function preloadFormQuestionInputs(questions: PublicQuestion[]): Promise<void> {
+  const needsText = questions.some((question) =>
+    ['text', 'url', 'email', 'phone'].includes(question.kind)
+  );
+  const needsLongText = questions.some((question) => question.kind === 'text' && question.long_answer);
+  const needsDate = questions.some((question) => question.kind === 'date');
+  const needsMedia = questions.some((question) => question.kind === 'files');
+  const loaders: Promise<unknown>[] = [];
+
+  if (needsText) {
+    loaders.push(loadFormTextInput());
+  }
+
+  if (needsLongText) loaders.push(loadFormLongTextInput());
+
+  if (needsDate) loaders.push(loadFormDateInput());
+
+  if (needsMedia) loaders.push(loadFormMediaInput());
+
+  await Promise.all(loaders);
+}
 
 /**
  * One question card. Renders title + required asterisk + optional
@@ -59,11 +111,17 @@ function _FormQuestion({
         {question.description && <p className='text-sm text-text-caption'>{question.description}</p>}
       </div>
       <div className={cn(error && 'ring-fill-default/40 rounded-md ring-1')}>
-        <QuestionInput question={question} value={value} onChange={(v) => onChange(question.id, v)} />
+        <Suspense fallback={<QuestionInputLoading />}>
+          <QuestionInput question={question} value={value} onChange={(v) => onChange(question.id, v)} />
+        </Suspense>
       </div>
       {error && <p className='text-xs text-fill-default'>{error}</p>}
     </div>
   );
+}
+
+function QuestionInputLoading() {
+  return <div aria-hidden className='h-10 w-full animate-pulse rounded-md bg-fill-content' />;
 }
 
 function QuestionInput({

@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 
 import { getPublicFormSchema } from '@/application/services/js-services/http/form-api';
 import type { PublicFormResponse, PublicFormSchema } from '@/application/types/form';
+import { preloadFormQuestionInputs } from '@/components/form/FormBody';
 import { FormView } from '@/components/form/FormView';
 
 jest.mock('@/application/services/js-services/http/form-api', () => ({
@@ -10,9 +11,13 @@ jest.mock('@/application/services/js-services/http/form-api', () => ({
 
 jest.mock('@/components/form/FormBody', () => ({
   FormBody: ({ token }: { token: string }) => <div data-testid='public-form-body'>{token}</div>,
+  preloadFormQuestionInputs: jest.fn().mockResolvedValue(undefined),
 }));
 
 const mockGetPublicFormSchema = getPublicFormSchema as jest.MockedFunction<typeof getPublicFormSchema>;
+const mockPreloadFormQuestionInputs = preloadFormQuestionInputs as jest.MockedFunction<
+  typeof preloadFormQuestionInputs
+>;
 
 const activeSchema: PublicFormSchema = {
   form_id: 'form-token',
@@ -34,6 +39,7 @@ function renderWithFallback() {
 describe('FormView publish fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPreloadFormQuestionInputs.mockResolvedValue(undefined);
   });
 
   it('renders the publish route only when the Form API definitively returns 404', async () => {
@@ -80,5 +86,26 @@ describe('FormView publish fallback', () => {
 
     expect(await screen.findByTestId(expectedTestId)).toBeTruthy();
     expect(screen.queryByTestId('publish-fallback')).toBeNull();
+
+    if (response.kind === 'active') {
+      expect(mockPreloadFormQuestionInputs).toHaveBeenCalledWith(response.questions);
+    }
+  });
+
+  it('renders an active form without waiting for conditional input preloads', async () => {
+    let resolvePreload: (() => void) | undefined;
+
+    mockPreloadFormQuestionInputs.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolvePreload = resolve;
+      })
+    );
+    mockGetPublicFormSchema.mockResolvedValue({ kind: 'active', ...activeSchema });
+
+    renderWithFallback();
+
+    expect(await screen.findByTestId('public-form-body')).toBeTruthy();
+    expect(mockPreloadFormQuestionInputs).toHaveBeenCalledWith(activeSchema.questions);
+    resolvePreload?.();
   });
 });

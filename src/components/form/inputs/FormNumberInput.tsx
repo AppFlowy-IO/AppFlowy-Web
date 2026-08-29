@@ -2,6 +2,12 @@ import { useState } from 'react';
 
 import { Input } from '@/components/ui/input';
 
+interface NumberDraft {
+  text: string;
+  /** Controlled value represented by `text`, including JavaScript's `-0`. */
+  value: number | null;
+}
+
 /**
  * Numeric input. Empty string ⇄ `null` so the answer-map distinguishes
  * "not answered" from "0" (important for required-field validation and
@@ -18,18 +24,17 @@ export function FormNumberInput({
   // Local string state lets the user type intermediate values like "-",
   // "1.", or "-0." that don't yet parse to a finite number, without the
   // controlled prop snapping them away on each keystroke.
-  const [text, setText] = useState<string>(value !== null ? String(value) : '');
+  const [draft, setDraft] = useState<NumberDraft>(() => ({
+    text: formatNumber(value),
+    value,
+  }));
 
-  // Re-derive text whenever the controlled `value` prop changes externally
-  // (e.g. "Submit another response" reset). Setting state during render is
-  // React's documented escape hatch for cases where state-as-snapshot
-  // genuinely needs to track a prop — cheaper than a useEffect because it
-  // happens in the same commit, with no extra render.
-  const [lastSyncedValue, setLastSyncedValue] = useState(value);
-
-  if (value !== lastSyncedValue) {
-    setLastSyncedValue(value);
-    setText(value !== null ? String(value) : '');
+  // A local draft remembers the numeric value it emitted. The controlled
+  // echo therefore leaves spelling such as "-0" and "1." intact, while a
+  // genuinely different prop still resets the field in the same render.
+  // Object.is is intentional: unlike ===, it distinguishes -0 from +0.
+  if (!Object.is(value, draft.value)) {
+    setDraft({ text: formatNumber(value), value });
   }
 
   return (
@@ -37,25 +42,33 @@ export function FormNumberInput({
       className='w-full'
       type='text'
       inputMode='decimal'
-      value={text}
+      value={draft.text}
       onChange={(e) => {
         const raw = e.target.value;
 
         // Allow only digits, one optional leading minus, and one dot.
         if (raw !== '' && !/^-?\d*\.?\d*$/.test(raw)) return;
 
-        setText(raw);
+        const nextValue = parseNumberDraft(raw);
 
-        if (raw === '' || raw === '-' || raw === '.' || raw === '-.') {
-          onChange(null);
-          return;
-        }
-
-        const parsed = Number(raw);
-
-        onChange(Number.isFinite(parsed) ? parsed : null);
+        setDraft({ text: raw, value: nextValue });
+        onChange(nextValue);
       }}
       placeholder="Respondent's answer"
     />
   );
+}
+
+function parseNumberDraft(raw: string): number | null {
+  if (raw === '' || raw === '-' || raw === '.' || raw === '-.') return null;
+
+  const parsed = Number(raw);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatNumber(value: number | null): string {
+  if (value === null) return '';
+  if (Object.is(value, -0)) return '-0';
+  return String(value);
 }

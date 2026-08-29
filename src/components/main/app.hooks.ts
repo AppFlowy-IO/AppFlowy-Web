@@ -1,17 +1,8 @@
 import { createContext, useContext } from 'react';
 
-import { AFCloudConfig } from '@/application/services/services.type';
 import { User } from '@/application/types';
-import { getConfigValue } from '@/utils/runtime-config';
 
-const baseURL = getConfigValue('APPFLOWY_BASE_URL', 'https://test.appflowy.cloud');
-const gotrueURL = getConfigValue('APPFLOWY_GOTRUE_BASE_URL', 'https://test.appflowy.cloud/gotrue');
-
-export const defaultConfig: AFCloudConfig = {
-  baseURL,
-  gotrueURL,
-  wsURL: '', // Legacy field - not used, keeping for backward compatibility
-};
+export { defaultConfig } from '@/application/services/js-services/http/cloud-config';
 
 /**
  * Root authentication context — provided at the app root level.

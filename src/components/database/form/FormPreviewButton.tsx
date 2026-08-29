@@ -1,12 +1,13 @@
 import { Dialog } from '@mui/material';
 import { Eye } from 'lucide-react';
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { ErrorBoundary } from 'react-error-boundary';
 
 import { FieldType } from '@/application/database-yjs/database.type';
 import type { FormLayoutSnapshot } from '@/application/database-yjs/form-questions';
-import type { PublicFormSchema, PublicOption, PublicQuestion, PublicQuestionKind } from '@/application/types/form';
 import { YjsDatabaseKey } from '@/application/types';
 import type { YDatabaseField, YDatabaseFields } from '@/application/types';
+import type { PublicFormSchema, PublicOption, PublicQuestion, PublicQuestionKind } from '@/application/types/form';
 import { Button } from '@/components/ui/button';
 
 const FormBody = lazy(() =>
@@ -70,15 +71,28 @@ export function FormPreviewButton({
       <Dialog open={open} onClose={handleClose} PaperProps={DIALOG_PAPER_PROPS}>
         {open && schema && (
           <div data-testid='form-preview-dialog'>
-            <Suspense
-              fallback={<div className='px-6 py-10 text-center text-sm text-text-caption'>Loading preview…</div>}
-            >
-              <FormBody token='preview' schema={schema} previewMode />
-            </Suspense>
+            <ErrorBoundary fallback={<PreviewLoadError onClose={handleClose} />}>
+              <Suspense
+                fallback={<div className='px-6 py-10 text-center text-sm text-text-caption'>Loading preview…</div>}
+              >
+                <FormBody token='preview' schema={schema} previewMode />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         )}
       </Dialog>
     </>
+  );
+}
+
+function PreviewLoadError({ onClose }: { onClose: () => void }) {
+  return (
+    <div data-testid='form-preview-load-error' className='flex flex-col items-center gap-3 px-6 py-10 text-center'>
+      <p className='text-sm text-text-caption'>Preview couldn’t load. Close it and refresh the page to try again.</p>
+      <Button variant='outline' size='sm' onClick={onClose}>
+        Close preview
+      </Button>
+    </div>
   );
 }
 
