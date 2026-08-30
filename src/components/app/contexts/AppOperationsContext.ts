@@ -109,7 +109,7 @@ export interface AppOperationsContextType {
 
   // ── Publishing ─────────────────────────────────────────────────────
   /** Publish a view to the web. Hook: `usePublishing()`. */
-  publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
+  publish?: (view: View, publishName?: string, visibleViewIds?: string[], commentsEnabled?: boolean) => Promise<void>;
   /** Unpublish a previously published view. Hook: `usePublishing()`. */
   unpublish?: (viewId: string) => Promise<void>;
 

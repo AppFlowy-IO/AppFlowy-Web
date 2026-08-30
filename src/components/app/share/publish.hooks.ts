@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 
+import { cachePublishCommentsEnabled } from '@/application/publish/comment-state';
 import { UpdatePublishConfigPayload, View } from '@/application/types';
 import { isSameUserUid } from '@/application/user-uid';
 import { notify } from '@/components/_shared/notify';
 import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { ViewService, PublishService } from '@/application/services/domains';
+import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
 export function useLoadPublishInfo(viewId: string) {
@@ -44,14 +46,17 @@ export function useLoadPublishInfo(viewId: string) {
   const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null) ?? undefined;
 
   const [publishInfo, setPublishInfo] = React.useState<{
-    namespace: string,
-    publishName: string,
-    publisherEmail: string,
-    commentEnabled: boolean,
-    duplicateEnabled: boolean,
+    namespace: string;
+    publishName: string;
+    publisherEmail: string;
+    commentEnabled: boolean;
+    duplicateEnabled: boolean;
   }>();
   const [publishInfoViewId, setPublishInfoViewId] = React.useState<string | null>(null);
   const publishInfoRequestSeqRef = React.useRef(0);
+  const publishInfoMutationSeqRef = React.useRef(0);
+  const publishInfoMutationPendingRef = React.useRef(0);
+  const publishInfoMutationQueueRef = React.useRef<Promise<void>>(Promise.resolve());
   const [loading, setLoading] = React.useState<boolean>(false);
 
   const currentUser = useCurrentUser();
@@ -59,8 +64,9 @@ export function useLoadPublishInfo(viewId: string) {
   const currentViewPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
   const isPublisher = currentViewPublishInfo?.publisherEmail === currentUser?.email;
 
-  const loadPublishInfo = useCallback(async() => {
+  const loadPublishInfo = useCallback(async () => {
     const requestSeq = publishInfoRequestSeqRef.current + 1;
+    const mutationSeq = publishInfoMutationSeqRef.current;
 
     publishInfoRequestSeqRef.current = requestSeq;
 
@@ -68,13 +74,31 @@ export function useLoadPublishInfo(viewId: string) {
     try {
       const res = await PublishService.getViewInfo(viewId);
 
-      if (publishInfoRequestSeqRef.current !== requestSeq) return;
+      const stale =
+        publishInfoRequestSeqRef.current !== requestSeq ||
+        publishInfoMutationSeqRef.current !== mutationSeq ||
+        publishInfoMutationPendingRef.current > 0;
+
+      if (stale) {
+        clearPublishViewInfoCache(viewId);
+        return;
+      }
+
       setPublishInfo(res);
       setPublishInfoViewId(viewId);
 
       // eslint-disable-next-line
-    } catch(e: any) {
-      if (publishInfoRequestSeqRef.current !== requestSeq) return;
+    } catch (e: any) {
+      const stale =
+        publishInfoRequestSeqRef.current !== requestSeq ||
+        publishInfoMutationSeqRef.current !== mutationSeq ||
+        publishInfoMutationPendingRef.current > 0;
+
+      if (stale) {
+        clearPublishViewInfoCache(viewId);
+        return;
+      }
+
       // Not published or fetch failed - clear stale publish info
       setPublishInfo(undefined);
       setPublishInfoViewId(viewId);
@@ -89,26 +113,48 @@ export function useLoadPublishInfo(viewId: string) {
     void loadPublishInfo();
   }, [loadPublishInfo]);
 
-  const updatePublishConfig = useCallback(async(payload: UpdatePublishConfigPayload) => {
-    if(!workspaceId) return;
-    try {
-      await PublishService.updateConfig(workspaceId, payload);
-      setPublishInfo(prev => {
-        if(!prev) return prev;
-        return {
-          publishName: payload.publish_name || prev.publishName,
-          namespace: prev.namespace,
-          publisherEmail: prev.publisherEmail,
-          commentEnabled: payload.comments_enabled === undefined ? prev.commentEnabled : payload.comments_enabled,
-          duplicateEnabled: payload.duplicate_enabled === undefined ? prev.duplicateEnabled : payload.duplicate_enabled,
-        };
-      });
-      // eslint-disable-next-line
-    } catch(e: any) {
-      notify.error(e.message);
-    }
+  const updatePublishConfig = useCallback(
+    (payload: UpdatePublishConfigPayload): Promise<boolean> => {
+      if (!workspaceId) return Promise.resolve(false);
 
-  }, [workspaceId]);
+      publishInfoMutationSeqRef.current += 1;
+      publishInfoMutationPendingRef.current += 1;
+
+      const mutation = publishInfoMutationQueueRef.current.then(async () => {
+        try {
+          await PublishService.updateConfig(workspaceId, payload);
+          if (payload.comments_enabled !== undefined) {
+            cachePublishCommentsEnabled(payload.view_id, payload.comments_enabled);
+          }
+
+          setPublishInfo((prev) => {
+            if (!prev) return prev;
+            return {
+              publishName: payload.publish_name || prev.publishName,
+              namespace: prev.namespace,
+              publisherEmail: prev.publisherEmail,
+              commentEnabled: payload.comments_enabled === undefined ? prev.commentEnabled : payload.comments_enabled,
+              duplicateEnabled:
+                payload.duplicate_enabled === undefined ? prev.duplicateEnabled : payload.duplicate_enabled,
+            };
+          });
+          return true;
+          // eslint-disable-next-line
+        } catch (e: any) {
+          notify.error(e.message);
+          return false;
+        } finally {
+          publishInfoMutationPendingRef.current -= 1;
+          // Invalidate reads that began while this mutation was queued or in flight.
+          publishInfoMutationSeqRef.current += 1;
+        }
+      });
+
+      publishInfoMutationQueueRef.current = mutation.then(() => undefined);
+      return mutation;
+    },
+    [workspaceId]
+  );
 
   const url = useMemo(() => {
     return `${window.origin}/${currentViewPublishInfo?.namespace}/${currentViewPublishInfo?.publishName}`;

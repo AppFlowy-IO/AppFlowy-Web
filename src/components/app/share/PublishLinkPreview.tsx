@@ -23,7 +23,7 @@ function PublishLinkPreview({
   viewId: string;
   publishInfo: { namespace: string; publishName: string };
   onUnPublish: () => Promise<void>;
-  updatePublishConfig: (payload: UpdatePublishConfigPayload) => Promise<void>;
+  updatePublishConfig: (payload: UpdatePublishConfigPayload) => Promise<boolean>;
   url: string;
   isOwner: boolean;
   isPublisher: boolean;
@@ -45,10 +45,12 @@ function PublishLinkPreview({
     setLoading(true);
     setPublishName(newName);
     try {
-      await updatePublishConfig({
+      const updated = await updatePublishConfig({
         publish_name: newName,
         view_id: viewId,
       });
+
+      if (!updated) setPublishName(publishInfo.publishName);
     } finally {
       setLoading(false);
     }
@@ -71,7 +73,9 @@ function PublishLinkPreview({
           {'/'}
           <div className={'flex w-[110px] items-center gap-1 rounded-[6px] border border-border-primary px-2 py-1'}>
             <Tooltip placement={'top'} title={publishInfo.namespace}>
-              <span className={'flex-1 truncate'} data-testid={'publish-namespace'}>{publishInfo.namespace}</span>
+              <span className={'flex-1 truncate'} data-testid={'publish-namespace'}>
+                {publishInfo.namespace}
+              </span>
             </Tooltip>
             <Tooltip placement={'top'} title={t('settings.sites.namespaceDescription')}>
               <IconButton

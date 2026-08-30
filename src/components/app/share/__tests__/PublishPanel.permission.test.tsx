@@ -70,5 +70,11 @@ describe('PublishPanel object permission', () => {
     fireEvent.click(screen.getByTestId('publish-confirm-button'));
 
     await waitFor(() => expect(mockPublish).toHaveBeenCalledTimes(1));
+    expect(mockPublish).toHaveBeenCalledWith(
+      expect.objectContaining({ view_id: 'view-id' }),
+      undefined,
+      undefined,
+      undefined
+    );
   });
 });
