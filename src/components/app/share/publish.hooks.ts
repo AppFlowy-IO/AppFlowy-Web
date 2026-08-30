@@ -7,18 +7,22 @@ import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { ViewService, PublishService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
-export function useLoadPublishInfo(viewId: string) {
-  const outlineView = useAppView(viewId);
-  const userWorkspaceInfo = useUserWorkspaceInfo();
-  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+type PublishInfo = {
+  namespace: string;
+  publishName: string;
+  publisherEmail: string;
+  commentEnabled: boolean;
+  duplicateEnabled: boolean;
+};
 
-  // Fallback view fetched from server when not in outline (e.g. lazy-loaded children)
-  const [fallbackView, setFallbackView] = React.useState<View | null>(null);
+function usePublishView(viewId: string | undefined, workspaceId: string | undefined) {
+  const outlineView = useAppView(viewId);
+  const [fetchedView, setFetchedView] = React.useState<View | null>(null);
 
   useEffect(() => {
     if (outlineView || !viewId || !workspaceId) {
       if (outlineView) {
-        setFallbackView((prev) => (prev?.view_id === viewId ? null : prev));
+        setFetchedView((previousView) => (previousView?.view_id === viewId ? null : previousView));
       }
 
       return;
@@ -27,13 +31,13 @@ export function useLoadPublishInfo(viewId: string) {
     let cancelled = false;
 
     ViewService.get(workspaceId, viewId)
-      .then((fetchedView) => {
-        if (!cancelled && fetchedView) {
-          setFallbackView(fetchedView);
+      .then((view) => {
+        if (!cancelled && view) {
+          setFetchedView(view);
         }
       })
       .catch(() => {
-        // View not found - ignore
+        // The publish-info request remains useful even when folder metadata is unavailable.
       });
 
     return () => {
@@ -41,81 +45,114 @@ export function useLoadPublishInfo(viewId: string) {
     };
   }, [outlineView, viewId, workspaceId]);
 
-  const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null) ?? undefined;
+  return outlineView ?? (fetchedView?.view_id === viewId ? fetchedView : undefined);
+}
 
-  const [publishInfo, setPublishInfo] = React.useState<{
-    namespace: string,
-    publishName: string,
-    publisherEmail: string,
-    commentEnabled: boolean,
-    duplicateEnabled: boolean,
+export function useLoadPublishInfo(viewId: string, fallbackViewId?: string) {
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+  const primaryView = usePublishView(viewId, workspaceId);
+  const fallbackView = usePublishView(fallbackViewId, workspaceId);
+  // Desktop publications are keyed by the active database child. Older Web
+  // publications can be keyed by the container, so probe both without a waterfall.
+  const candidateViewIds = useMemo(
+    () => (fallbackViewId && fallbackViewId !== viewId ? [viewId, fallbackViewId] : [viewId]),
+    [fallbackViewId, viewId]
+  );
+  const requestKey = candidateViewIds.join(':');
+  const [publishState, setPublishState] = React.useState<{
+    requestKey: string;
+    viewId: string;
+    publishInfo?: PublishInfo;
   }>();
-  const [publishInfoViewId, setPublishInfoViewId] = React.useState<string | null>(null);
   const publishInfoRequestSeqRef = React.useRef(0);
   const [loading, setLoading] = React.useState<boolean>(false);
 
+  const currentPublishState = publishState?.requestKey === requestKey ? publishState : undefined;
+  const publishInfoViewId = currentPublishState?.viewId ?? viewId;
+  const publishInfo = currentPublishState?.publishInfo;
+  const view = publishInfoViewId === fallbackViewId ? fallbackView : primaryView;
   const currentUser = useCurrentUser();
   const isOwner = isSameUserUid(userWorkspaceInfo?.selectedWorkspace?.owner?.uid, currentUser?.uid);
-  const currentViewPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
-  const isPublisher = currentViewPublishInfo?.publisherEmail === currentUser?.email;
+  const isPublisher = publishInfo?.publisherEmail === currentUser?.email;
 
-  const loadPublishInfo = useCallback(async() => {
+  const loadPublishInfo = useCallback(async () => {
     const requestSeq = publishInfoRequestSeqRef.current + 1;
 
     publishInfoRequestSeqRef.current = requestSeq;
 
     setLoading(true);
     try {
-      const res = await PublishService.getViewInfo(viewId);
+      const results = await Promise.allSettled(
+        candidateViewIds.map((candidateViewId) => PublishService.getViewInfo(candidateViewId))
+      );
 
       if (publishInfoRequestSeqRef.current !== requestSeq) return;
-      setPublishInfo(res);
-      setPublishInfoViewId(viewId);
 
-      // eslint-disable-next-line
-    } catch(e: any) {
-      if (publishInfoRequestSeqRef.current !== requestSeq) return;
-      // Not published or fetch failed - clear stale publish info
-      setPublishInfo(undefined);
-      setPublishInfoViewId(viewId);
+      const publishedResultIndex = results.findIndex((result) => result.status === 'fulfilled');
+
+      if (publishedResultIndex === -1) {
+        setPublishState({ requestKey, viewId });
+      } else {
+        const publishedResult = results[publishedResultIndex];
+
+        if (publishedResult.status === 'fulfilled') {
+          setPublishState({
+            requestKey,
+            viewId: candidateViewIds[publishedResultIndex],
+            publishInfo: publishedResult.value,
+          });
+        }
+      }
     } finally {
       if (publishInfoRequestSeqRef.current === requestSeq) {
         setLoading(false);
       }
     }
-  }, [viewId]);
+  }, [candidateViewIds, requestKey, viewId]);
 
   useEffect(() => {
     void loadPublishInfo();
   }, [loadPublishInfo]);
 
-  const updatePublishConfig = useCallback(async(payload: UpdatePublishConfigPayload) => {
-    if(!workspaceId) return;
-    try {
-      await PublishService.updateConfig(workspaceId, payload);
-      setPublishInfo(prev => {
-        if(!prev) return prev;
-        return {
-          publishName: payload.publish_name || prev.publishName,
-          namespace: prev.namespace,
-          publisherEmail: prev.publisherEmail,
-          commentEnabled: payload.comments_enabled === undefined ? prev.commentEnabled : payload.comments_enabled,
-          duplicateEnabled: payload.duplicate_enabled === undefined ? prev.duplicateEnabled : payload.duplicate_enabled,
-        };
-      });
-      // eslint-disable-next-line
-    } catch(e: any) {
-      notify.error(e.message);
-    }
-
-  }, [workspaceId]);
+  const updatePublishConfig = useCallback(
+    async (payload: UpdatePublishConfigPayload) => {
+      if (!workspaceId) return;
+      try {
+        await PublishService.updateConfig(workspaceId, payload);
+        setPublishState((previousState) => {
+          if (!previousState?.publishInfo || previousState.requestKey !== requestKey) return previousState;
+          return {
+            ...previousState,
+            publishInfo: {
+              publishName: payload.publish_name || previousState.publishInfo.publishName,
+              namespace: previousState.publishInfo.namespace,
+              publisherEmail: previousState.publishInfo.publisherEmail,
+              commentEnabled:
+                payload.comments_enabled === undefined
+                  ? previousState.publishInfo.commentEnabled
+                  : payload.comments_enabled,
+              duplicateEnabled:
+                payload.duplicate_enabled === undefined
+                  ? previousState.publishInfo.duplicateEnabled
+                  : payload.duplicate_enabled,
+            },
+          };
+        });
+        // eslint-disable-next-line
+      } catch (e: any) {
+        notify.error(e.message);
+      }
+    },
+    [requestKey, workspaceId]
+  );
 
   const url = useMemo(() => {
-    return `${window.origin}/${currentViewPublishInfo?.namespace}/${currentViewPublishInfo?.publishName}`;
-  }, [currentViewPublishInfo]);
+    return `${window.origin}/${publishInfo?.namespace}/${publishInfo?.publishName}`;
+  }, [publishInfo]);
 
   return {
-    publishInfo: currentViewPublishInfo,
+    publishInfo,
     publishInfoViewId,
     url,
     loadPublishInfo,
