@@ -27,6 +27,7 @@
       "jest"
     ],
     "typeRoots": [
+      "./node_modules/@types",
       "./node_modules/@fullcalendar"
     ],
     "baseUrl": ".",

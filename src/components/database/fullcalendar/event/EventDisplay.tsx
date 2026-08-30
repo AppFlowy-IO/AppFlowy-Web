@@ -1,4 +1,8 @@
 import { EventApi, EventContentArg } from '@fullcalendar/core';
+import { useMemo } from 'react';
+
+import { useFieldsSelector, isAIFieldType } from '@/application/database-yjs';
+import { useAIEnabled } from '@/components/app/app.hooks';
 
 import {
   MonthAllDayEvent,
@@ -26,6 +30,14 @@ export function EventDisplay({
   className,
 }: EventDisplayProps) {
   const rowId = event.extendedProps?.rowId;
+  const fields = useFieldsSelector();
+  const aiEnabled = useAIEnabled();
+  
+  const showFields = useMemo(() => {
+    return fields.filter(
+      (field) => !field.isPrimary && (aiEnabled || !isAIFieldType(field.fieldType))
+    );
+  }, [fields, aiEnabled]);
 
   if (!rowId) return null;
 
@@ -54,6 +66,7 @@ export function EventDisplay({
         showLeftIndicator={showLeftIndicator}
         className={className}
         rowId={rowId}
+        showFields={showFields}
       />
     </div>
   );
