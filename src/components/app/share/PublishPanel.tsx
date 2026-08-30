@@ -2,6 +2,8 @@ import { Button, CircularProgress, Tooltip, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { cachePublishCommentsEnabled, useCachedPublishCommentsEnabled } from '@/application/publish/comment-state';
+import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
 import { notify } from '@/components/_shared/notify';
 import { Switch } from '@/components/_shared/switch';
@@ -37,15 +39,25 @@ function PublishPanel({
     isPublisher,
     updatePublishConfig,
   } = useLoadPublishInfo(viewId);
+  const publishedCommentEnabled = publishInfo?.commentEnabled;
+  const publishedDuplicateEnabled = publishInfo?.duplicateEnabled;
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
   // Track publish/unpublish actions locally so the panel updates immediately,
   // even when the view object (e.g. server fallback) has a stale is_published flag.
   const [publishedOverride, setPublishedOverride] = React.useState<boolean | undefined>(undefined);
-  const [commentEnabled, setCommentEnabled] = React.useState<boolean | undefined>(undefined);
+  const cachedCommentEnabled = useCachedPublishCommentsEnabled(viewId);
+  const [pendingCommentChange, setPendingCommentChange] = React.useState<{
+    viewId: string;
+    enabled: boolean;
+  }>();
+  const pendingCommentEnabled = pendingCommentChange?.viewId === viewId ? pendingCommentChange.enabled : undefined;
+  const commentsEnabledForPublish = pendingCommentEnabled ?? cachedCommentEnabled ?? publishedCommentEnabled;
+  const commentEnabled = commentsEnabledForPublish ?? false;
+  const commentUpdatePending = pendingCommentEnabled !== undefined;
   const [duplicateEnabled, setDuplicateEnabled] = React.useState<boolean | undefined>(undefined);
 
-  // Reset session-local overrides when the target view changes
+  // Reset the immediate publish-state override when the target view changes.
   useEffect(() => {
     setPublishedOverride(undefined);
   }, [viewId]);
@@ -57,11 +69,30 @@ function PublishPanel({
   }, [loadPublishInfo, opened]);
 
   useEffect(() => {
-    if (opened && publishInfo && publishInfoViewId === viewId) {
-      setCommentEnabled(publishInfo.commentEnabled);
-      setDuplicateEnabled(publishInfo.duplicateEnabled);
+    if (!opened || publishedCommentEnabled === undefined || publishInfoViewId !== viewId) return;
+
+    cachePublishCommentsEnabled(viewId, publishedCommentEnabled);
+  }, [opened, publishedCommentEnabled, publishInfoViewId, viewId]);
+
+  useEffect(() => {
+    if (!opened || publishedDuplicateEnabled === undefined || publishInfoViewId !== viewId) return;
+
+    setDuplicateEnabled(publishedDuplicateEnabled);
+  }, [opened, publishedDuplicateEnabled, publishInfoViewId, viewId]);
+
+  useEffect(() => {
+    if (!opened || publishedCommentEnabled === undefined) return;
+
+    if (cachedCommentEnabled === undefined) {
+      cachePublishCommentsEnabled(viewId, publishedCommentEnabled);
+      return;
     }
-  }, [opened, publishInfo, publishInfoViewId, viewId]);
+
+    if (cachedCommentEnabled === publishedCommentEnabled) return;
+
+    clearPublishViewInfoCache(viewId);
+    void loadPublishInfo();
+  }, [cachedCommentEnabled, loadPublishInfo, opened, publishedCommentEnabled, viewId]);
 
   const handlePublish = useCallback(
     async (publishName?: string) => {
@@ -71,7 +102,11 @@ function PublishPanel({
       const newPublishName = publishName || publishInfo?.publishName || undefined;
 
       try {
-        await publish(view, newPublishName);
+        await publish(view, newPublishName, undefined, commentsEnabledForPublish);
+        if (commentsEnabledForPublish !== undefined) {
+          cachePublishCommentsEnabled(viewId, commentsEnabledForPublish);
+        }
+
         setPublishedOverride(true);
         await loadPublishInfo();
         notify.success(t('publish.publishSuccessfully'));
@@ -82,7 +117,7 @@ function PublishPanel({
         setPublishLoading(false);
       }
     },
-    [loadPublishInfo, publish, t, view, publishInfo]
+    [commentsEnabledForPublish, loadPublishInfo, publish, t, view, publishInfo, viewId]
   );
 
   const handleUnpublish = useCallback(async () => {
@@ -152,10 +187,18 @@ function PublishPanel({
           <div className={'flex items-center justify-between gap-4 p-1.5 text-sm'}>
             <span>{t('comments')}</span>
             <Switch
-              checked={commentEnabled !== false}
+              checked={commentEnabled}
+              disabled={commentUpdatePending}
               onChange={(e) => {
-                setCommentEnabled(e.target.checked);
-                void updatePublishConfig({ comments_enabled: e.target.checked, view_id: viewId });
+                const enabled = e.target.checked;
+
+                setPendingCommentChange({ viewId, enabled });
+                void updatePublishConfig({ comments_enabled: enabled, view_id: viewId }).then((updated) => {
+                  if (updated) cachePublishCommentsEnabled(viewId, enabled);
+                  setPendingCommentChange((current) =>
+                    current?.viewId === viewId && current.enabled === enabled ? undefined : current
+                  );
+                });
               }}
               size={'small'}
               inputProps={{ 'data-testid': 'publish-comments-switch' } as React.InputHTMLAttributes<HTMLInputElement>}
@@ -166,8 +209,13 @@ function PublishPanel({
             <Switch
               checked={duplicateEnabled !== false}
               onChange={(e) => {
-                setDuplicateEnabled(e.target.checked);
-                void updatePublishConfig({ duplicate_enabled: e.target.checked, view_id: viewId });
+                const previousValue = duplicateEnabled !== false;
+                const enabled = e.target.checked;
+
+                setDuplicateEnabled(enabled);
+                void updatePublishConfig({ duplicate_enabled: enabled, view_id: viewId }).then((updated) => {
+                  if (!updated) setDuplicateEnabled(previousValue);
+                });
               }}
               size={'small'}
             />
@@ -186,6 +234,7 @@ function PublishPanel({
     unpublishLoading,
     t,
     commentEnabled,
+    commentUpdatePending,
     duplicateEnabled,
     updatePublishConfig,
     viewId,
@@ -222,10 +271,7 @@ function PublishPanel({
 
     return (
       <div className={'flex w-full flex-col gap-4'}>
-        <Tooltip
-          disableHoverListener={canShare}
-          title={!canShare ? t('shareAction.readOnlyPublishTooltip') : ''}
-        >
+        <Tooltip disableHoverListener={canShare} title={!canShare ? t('shareAction.readOnlyPublishTooltip') : ''}>
           <span className={'w-full'}>{publishButton}</span>
         </Tooltip>
       </div>

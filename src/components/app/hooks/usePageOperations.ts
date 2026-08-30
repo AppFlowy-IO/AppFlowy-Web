@@ -470,7 +470,7 @@ export function usePageOperations({
 
   // Publish view
   const publish = useCallback(
-    async (view: View, publishName?: string, visibleViewIds?: string[]) => {
+    async (view: View, publishName?: string, visibleViewIds?: string[], commentsEnabled?: boolean) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
       const isDatabaseView = isDatabaseLayout(view.layout);
@@ -549,6 +549,15 @@ export function usePageOperations({
 
         await publishCollabs(currentWorkspaceId, [{ meta, data }]);
         clearPublishViewInfoCache(viewId);
+
+        // The binary database-publish endpoint does not accept publish config.
+        // Apply an explicit comments setting immediately after publishing.
+        if (commentsEnabled !== undefined) {
+          await PublishService.updateConfig(currentWorkspaceId, {
+            view_id: viewId,
+            comments_enabled: commentsEnabled,
+          });
+        }
       } else {
         // Document publishing gathers the folder, document, and referenced
         // dependencies on the server. Push the browser's current state first,
@@ -572,6 +581,7 @@ export function usePageOperations({
           {
             publish_name: publishName,
             visible_database_view_ids: visibleViewIds,
+            comments_enabled: commentsEnabled,
           },
           ensureServerState
         );

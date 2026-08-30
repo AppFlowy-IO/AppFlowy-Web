@@ -1191,6 +1191,7 @@ export enum CollabOrigin {
 export interface PublishViewPayload {
   publish_name?: string;
   visible_database_view_ids?: string[];
+  comments_enabled?: boolean;
 }
 
 export interface UploadPublishNamespacePayload {

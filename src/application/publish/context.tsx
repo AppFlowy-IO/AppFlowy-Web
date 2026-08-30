@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db } from '@/application/db';
 import { ViewMeta } from '@/application/db/tables/view_metas';
+import { subscribeToPublishCommentsEnabled } from '@/application/publish/comment-state';
 import { createDatabaseYjsRenderDocsFromSnapshot } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { createPublishSnapshotDataSource } from '@/application/publish-snapshot/data-source';
 import {
@@ -11,6 +12,7 @@ import {
   createDocumentYjsRenderDocFromSnapshot,
 } from '@/application/publish-snapshot/document-yjs-render-bridge';
 import type { PublishedDocumentRaw, PublishedPageSnapshot, PublishedView } from '@/application/publish-snapshot/types';
+import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
 import {
   AppendBreadcrumb,
   CreateRow,
@@ -187,6 +189,7 @@ export const PublishProvider = ({
       }
     | undefined
   >();
+  const publishInfoRequestSeqRef = useRef(0);
 
   const originalCrumbs = useMemo(() => {
     if (!viewMeta) return [];
@@ -290,8 +293,16 @@ export const PublishProvider = ({
 
   const loadPublishInfo = useCallback(async () => {
     if (!viewId) return;
+    const requestSeq = publishInfoRequestSeqRef.current + 1;
+
+    publishInfoRequestSeqRef.current = requestSeq;
     try {
       const res = await PublishService.getViewInfo(viewId);
+
+      if (publishInfoRequestSeqRef.current !== requestSeq) {
+        clearPublishViewInfoCache(viewId);
+        return;
+      }
 
       setPublishInfo(res);
 
@@ -304,6 +315,15 @@ export const PublishProvider = ({
   useEffect(() => {
     void loadPublishInfo();
   }, [loadPublishInfo]);
+
+  useEffect(() => {
+    if (!viewId) return;
+
+    return subscribeToPublishCommentsEnabled(viewId, () => {
+      clearPublishViewInfoCache(viewId);
+      void loadPublishInfo();
+    });
+  }, [loadPublishInfo, viewId]);
 
   const navigate = useNavigate();
 

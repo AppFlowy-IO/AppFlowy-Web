@@ -22,6 +22,7 @@ jest.mock('@/application/services/domains', () => ({
   PublishService: {
     publish: jest.fn(),
     unpublish: jest.fn(),
+    updateConfig: jest.fn(),
   },
   ViewService: {
     invalidateDatabaseCatalog: jest.fn(),
@@ -129,8 +130,23 @@ describe('usePageOperations publish', () => {
     expect(PublishService.publish).toHaveBeenCalledWith(workspaceId, 'document-view-id', {
       publish_name: undefined,
       visible_database_view_ids: undefined,
+      comments_enabled: undefined,
     });
     expect(calls).toEqual(['flush', 'publish']);
+  });
+
+  it('passes an explicit comments setting to document publishing', async () => {
+    const { result, workspaceId } = renderUsePageOperations();
+
+    await act(async () => {
+      await result.current.publish(createView({ view_id: 'document-view-id' }), undefined, undefined, false);
+    });
+
+    expect(PublishService.publish).toHaveBeenCalledWith(workspaceId, 'document-view-id', {
+      publish_name: undefined,
+      visible_database_view_ids: undefined,
+      comments_enabled: false,
+    });
   });
 
   it('uses full HTTP sync when the document outbox does not drain', async () => {
@@ -258,6 +274,30 @@ describe('usePageOperations publish', () => {
 
     expect(getDatabaseIdForViewId).not.toHaveBeenCalled();
     expect(gatherDatabasePublishData).toHaveBeenCalledWith(viewId, undefined, databaseId);
+  });
+
+  it('applies an explicit comments setting after database publishing', async () => {
+    const viewId = 'grid-view-id';
+    const { result, workspaceId } = renderUsePageOperations();
+
+    await act(async () => {
+      await result.current.publish(
+        createView({
+          view_id: viewId,
+          name: 'Grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'database-id' },
+        }),
+        undefined,
+        undefined,
+        false
+      );
+    });
+
+    expect(PublishService.updateConfig).toHaveBeenCalledWith(workspaceId, {
+      view_id: viewId,
+      comments_enabled: false,
+    });
   });
 
   it('publishes Chart views through the client-side database endpoint', async () => {
