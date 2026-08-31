@@ -9,7 +9,15 @@ import ShareTabs from '@/components/app/share/ShareTabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
-export function ShareButton({ viewId, hidePublish = false }: { viewId: string; hidePublish?: boolean }) {
+export function ShareButton({
+  viewId,
+  publishViewId = viewId,
+  hidePublish = false,
+}: {
+  viewId: string;
+  publishViewId?: string;
+  hidePublish?: boolean;
+}) {
   const { t } = useTranslation();
 
   const view = useAppView(viewId);
@@ -39,6 +47,7 @@ export function ShareButton({ viewId, hidePublish = false }: { viewId: string; h
           <ShareTabs
             opened={opened}
             viewId={viewId}
+            publishViewId={publishViewId}
             hidePublish={hidePublish}
             onClose={() => setOpened(false)}
             onOpenPublishManage={() => {
