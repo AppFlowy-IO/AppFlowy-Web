@@ -644,6 +644,52 @@ describe('useNewRowDispatch database templates', () => {
     });
   });
 
+  it('restores non-empty row metadata after async template duplication is accepted', async () => {
+    const { doc, database } = createDatabaseDoc();
+    const template = addTemplate(database, { empty: false });
+    const sourceDocument = new Y.Doc({ guid: template.docViewId }) as YDoc;
+    const createdRows = new Map<string, YDoc>();
+
+    sourceDocument.getMap(YjsEditorKey.data_section).set(YjsEditorKey.document, new Y.Map());
+    const duplicateRowDocument: NonNullable<DatabaseContextState['duplicateRowDocument']> = jest.fn(
+      async (_databaseId, _sourceId, targetRowId) => {
+        const targetRowDoc = createdRows.get(getRowKey(databaseDocId, targetRowId)) as YDoc;
+        const meta = targetRowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
+
+        // The server accepts duplication as a background task. While the request
+        // is pending, canonical hydration can replace the optimistic metadata.
+        meta.set(getMetaIdMap(targetRowId).get(RowMetaKey.IsDocumentEmpty) as string, true);
+      }
+    );
+    const context: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: doc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      workspaceId: 'workspace-id',
+      createRow: async (key) => {
+        const rowDoc = new Y.Doc({ guid: key }) as YDoc;
+
+        createdRows.set(key, rowDoc);
+        return rowDoc;
+      },
+      loadRowDocument: async () => sourceDocument,
+      duplicateRowDocument,
+    };
+    const { result } = renderHook(() => useNewRowDispatch(), { wrapper: createWrapper(context) });
+    let rowId = '';
+
+    await act(async () => {
+      rowId = (await result.current({ templateId: template.templateId, openAfterCreate: true })) as string;
+    });
+
+    const rowDoc = createdRows.get(getRowKey(databaseDocId, rowId)) as YDoc;
+    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
+
+    expect(meta.get(getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty) as string)).toBe(false);
+  });
+
   it('uses a non-empty default template through the same document materialization path', async () => {
     const { doc, database } = createDatabaseDoc();
     const template = addTemplate(database, { empty: false, makeDefault: true });

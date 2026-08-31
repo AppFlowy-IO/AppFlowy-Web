@@ -538,6 +538,17 @@ function markRowDocumentEmpty(rowDoc: YDoc, rowId: string) {
   }, 'database-row-template-fallback');
 }
 
+function markRowDocumentNonEmpty(rowDoc: YDoc, rowId: string) {
+  rowDoc.transact(() => {
+    const materializedMeta = generateRowMeta(rowId, {
+      [RowMetaKey.IsDocumentEmpty]: false,
+    });
+    const meta = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.meta) as Y.Map<unknown>;
+
+    Object.entries(materializedMeta).forEach(([key, value]) => meta.set(key, value));
+  }, 'database-row-template-materialized');
+}
+
 export function useNewRowDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
@@ -913,6 +924,10 @@ export function useNewRowDispatch() {
                 row_id: selectedTemplate.templateId,
               });
             });
+            // Cloud returns after queueing duplication, not after writing the
+            // target. Reassert this after the request so row hydration received
+            // while awaiting it cannot make the target open as an empty document.
+            markRowDocumentNonEmpty(rowDoc, rowId);
           } catch (error) {
             // Cell defaults must remain usable if document materialization is
             // temporarily unavailable; this is also Desktop's graceful fallback.
