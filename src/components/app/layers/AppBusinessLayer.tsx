@@ -11,7 +11,14 @@ import {
   resolveWorkspaceViewMetadata,
 } from '@/application/services/js-services/workspace-view-metadata';
 import { getTokenParsed } from '@/application/session/token';
-import { type CollabObjectPermission, LoadViewMetaOptions, LoadViewOptions, TextCount, View } from '@/application/types';
+import {
+  type CollabObjectPermission,
+  LoadViewMetaOptions,
+  LoadViewOptions,
+  TextCount,
+  Types,
+  View,
+} from '@/application/types';
 import { isPermissionDeniedError } from '@/application/utils/error-utils';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
@@ -109,17 +116,32 @@ async function resolvePermissionProbeTargetFromMetadata(
   const memoryView =
     findView(outline, viewId) ?? findPermissionProbeView(viewId, ViewService.getCached(workspaceId, viewId));
 
-  if (memoryView) return resolvePermissionProbeTarget(viewId, memoryView);
+  let routeView: View | null | undefined = memoryView;
 
-  const diskResponse = await ViewService.getCachedFromDisk(workspaceId, viewId).catch(() => undefined);
-  const diskView = findPermissionProbeView(viewId, diskResponse);
+  if (!routeView) {
+    const diskResponse = await ViewService.getCachedFromDisk(workspaceId, viewId).catch(() => undefined);
 
-  if (diskView) return resolvePermissionProbeTarget(viewId, diskView);
+    routeView = findPermissionProbeView(viewId, diskResponse) ?? undefined;
+  }
 
-  const responseRoot = await ViewService.get(workspaceId, viewId);
-  const routeView = findPermissionProbeView(viewId, responseRoot);
+  if (!routeView) {
+    const responseRoot = await ViewService.get(workspaceId, viewId);
 
-  return resolvePermissionProbeTarget(viewId, routeView);
+    routeView = findPermissionProbeView(viewId, responseRoot) ?? undefined;
+  }
+
+  const target = resolvePermissionProbeTarget(viewId, routeView);
+
+  if (target.collabType !== Types.Database || target.collabObjectId !== viewId) return target;
+
+  // A pre-container database view has no Folder `extra.database_id`, but its permission belongs to
+  // the canonical Database collab. Resolve that identity from the workspace catalog before
+  // probing; otherwise the safe initial permission remains read-only and the owner can never see
+  // the upgrade action. The catalog is PostgreSQL-first on the server and uses legacy metadata
+  // only as its compatibility fallback.
+  const databaseId = await ViewService.getDatabaseIdFromWorkspaceCatalog(workspaceId, viewId);
+
+  return databaseId ? { collabObjectId: databaseId, collabType: Types.Database } : target;
 }
 
 function purgePermissionProbeTarget(workspaceId: string, routeViewId: string, target: PermissionProbeTarget) {

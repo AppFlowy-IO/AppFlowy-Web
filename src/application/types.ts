@@ -2070,6 +2070,18 @@ export interface CreatePageResponse {
   database_id?: string;
 }
 
+export interface UpgradeDatabaseContainerResponse {
+  database_id: string;
+  container_view_id: string;
+  database_view_id: string;
+  upgraded: boolean;
+}
+
+export interface DatabaseContainerUpgradeStatusResponse {
+  eligible: boolean;
+  already_upgraded: boolean;
+}
+
 export interface DuplicatePageOptions {
   parentViewId?: string;
   openAfterDuplicate?: boolean;

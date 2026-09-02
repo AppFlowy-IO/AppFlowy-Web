@@ -1,11 +1,14 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
-import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { PageService } from '@/application/services/domains';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { isDatabaseContainer, resolveActiveDatabaseViewId } from '@/application/view-utils';
-import { findView } from '@/components/_shared/outline/utils';
+import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { ERROR_CODE } from '@/application/constants';
+import { isDatabaseContainer, isDatabaseLayout, resolveActiveDatabaseViewId } from '@/application/view-utils';
+import { findParentView, findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
 import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
@@ -15,11 +18,15 @@ import {
   useAppOutline,
   useBreadcrumb,
   useCurrentWorkspaceIdOptional,
+  useEnsureViewVisibleInOutline,
   useRefreshOutline,
 } from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { Database } from '@/components/database';
 import { useContainerVisibleViewIds } from '@/components/database/hooks';
+import { Button } from '@/components/ui/button';
+import { getErrorMessage, isAPIErrorCode } from '@/utils/errors';
+import { Log } from '@/utils/log';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
@@ -27,8 +34,22 @@ type DatabaseViewProps = ViewComponentProps & {
   bindViewSync?: (doc: ViewComponentProps['doc']) => SyncContext | null;
 };
 
+const DATABASE_CONTAINER_STATUS_RETRY_DELAYS_MS = [500, 1500, 3000] as const;
+
+function databaseContainerStatusRetryDelay(error: unknown, retryIndex: number): number {
+  const retryAfterSecs =
+    typeof error === 'object' && error !== null && 'retryAfterSecs' in error
+      ? (error as { retryAfterSecs?: unknown }).retryAfterSecs
+      : undefined;
+
+  return typeof retryAfterSecs === 'number' && Number.isFinite(retryAfterSecs) && retryAfterSecs >= 0
+    ? retryAfterSecs * 1000
+    : DATABASE_CONTAINER_STATUS_RETRY_DELAYS_MS[retryIndex];
+}
+
 function DatabaseView(props: DatabaseViewProps) {
   const { viewMeta, uploadFile } = props;
+  const { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const outline = useAppOutline();
 
@@ -53,6 +74,25 @@ function DatabaseView(props: DatabaseViewProps) {
     embedded: viewMeta.extra?.embedded,
   });
 
+  const outlineParentView = useMemo((): View | undefined => {
+    if (!outline || !databasePageId) return undefined;
+
+    const structuralParent = findParentView(outline, databasePageId);
+
+    if (structuralParent) return structuralParent;
+
+    const parentViewId = view?.parent_view_id || viewMeta.parentViewId;
+
+    return parentViewId ? findView(outline, parentViewId) || undefined : undefined;
+  }, [databasePageId, outline, view?.parent_view_id, viewMeta.parentViewId]);
+
+  const breadcrumbParentView = useMemo((): View | undefined => {
+    if (!breadcrumbs?.length) return undefined;
+    const currentIdx = breadcrumbs.findIndex((crumb) => crumb.view_id === databasePageId);
+
+    return currentIdx > 0 ? breadcrumbs[currentIdx - 1] : undefined;
+  }, [breadcrumbs, databasePageId]);
+
   // Breadcrumb-based container fallback. The breadcrumb chain is built with
   // server fetches for any ancestor missing from the shallow outline, so it
   // resolves the database container even when the outline tree doesn't yet
@@ -61,20 +101,26 @@ function DatabaseView(props: DatabaseViewProps) {
   const breadcrumbContainerView = useMemo((): View | undefined => {
     if (containerView) return undefined;
     if (viewMeta.extra?.embedded) return undefined;
-    if (!breadcrumbs?.length) return undefined;
-    const currentIdx = breadcrumbs.findIndex((crumb) => crumb.view_id === databasePageId);
 
-    if (currentIdx <= 0) return undefined;
-    const parent = breadcrumbs[currentIdx - 1];
-
-    return parent && isDatabaseContainer(parent) ? parent : undefined;
-  }, [breadcrumbs, containerView, databasePageId, viewMeta.extra?.embedded]);
+    return breadcrumbParentView && isDatabaseContainer(breadcrumbParentView) ? breadcrumbParentView : undefined;
+  }, [breadcrumbParentView, containerView, viewMeta.extra?.embedded]);
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || breadcrumbContainerView || view;
 
   const workspaceId = useCurrentWorkspaceIdOptional();
   const refreshOutline = useRefreshOutline();
+  const ensureViewVisibleInOutline = useEnsureViewVisibleInOutline();
+  const [isUpgradingContainer, setIsUpgradingContainer] = useState(false);
+  const [upgradedDatabaseView, setUpgradedDatabaseView] = useState<{
+    workspaceId: string;
+    viewId: string;
+  } | null>(null);
+  const [databaseContainerUpgradeStatus, setDatabaseContainerUpgradeStatus] = useState<{
+    workspaceId: string;
+    viewId: string;
+    eligible: boolean;
+  } | null>(null);
 
   // Persist a tab reorder by moving the view within its database container.
   // No-ops for standalone databases (no container), which keep the local order.
@@ -148,6 +194,100 @@ function DatabaseView(props: DatabaseViewProps) {
   const [, forceUpdate] = useState(0);
   const dataSection = doc?.getMap(YjsEditorKey.data_section);
   const database = dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
+  const databaseViews = database?.get(YjsDatabaseKey.views);
+  const resolvedParentView = outlineParentView || breadcrumbParentView;
+  const isPotentialLegacyDatabase =
+    (upgradedDatabaseView === null ||
+      upgradedDatabaseView.workspaceId !== workspaceId ||
+      upgradedDatabaseView.viewId !== databasePageId) &&
+    !containerView &&
+    !breadcrumbContainerView &&
+    viewMeta.extra?.embedded !== true &&
+    Boolean(databasePageId) &&
+    resolvedParentView !== undefined &&
+    !isDatabaseContainer(resolvedParentView) &&
+    !isDatabaseLayout(resolvedParentView.layout) &&
+    databaseViews?.has(databasePageId) === true;
+  const isLegacyDatabase =
+    isPotentialLegacyDatabase &&
+    databaseContainerUpgradeStatus?.workspaceId === workspaceId &&
+    databaseContainerUpgradeStatus?.viewId === databasePageId &&
+    databaseContainerUpgradeStatus.eligible;
+
+  // A current linked-database alias has the same local shape as some historical mounted roots.
+  // Ask the server, which can compare the Folder projection, Database body, and compatibility
+  // catalog. POST performs the same validation again while holding the migration locks.
+  useEffect(() => {
+    if (!workspaceId || !databasePageId || !isPotentialLegacyDatabase || props.readOnly || props.canWrite === false) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryIndex = 0;
+    let retryTimeout: number | undefined;
+
+    const loadStatus = async () => {
+      try {
+        const status = await PageService.getDatabaseContainerUpgradeStatus(workspaceId, databasePageId);
+
+        if (cancelled) return;
+
+        setDatabaseContainerUpgradeStatus({
+          workspaceId,
+          viewId: databasePageId,
+          eligible: status.eligible && !status.already_upgraded,
+        });
+      } catch (error) {
+        if (cancelled) return;
+
+        if (
+          isAPIErrorCode(error, ERROR_CODE.RETRY_LATER) &&
+          retryIndex < DATABASE_CONTAINER_STATUS_RETRY_DELAYS_MS.length
+        ) {
+          const delay = databaseContainerStatusRetryDelay(error, retryIndex);
+
+          retryIndex += 1;
+          retryTimeout = window.setTimeout(() => void loadStatus(), delay);
+          return;
+        }
+
+        setDatabaseContainerUpgradeStatus({ workspaceId, viewId: databasePageId, eligible: false });
+      }
+    };
+
+    void loadStatus();
+
+    return () => {
+      cancelled = true;
+      if (retryTimeout !== undefined) window.clearTimeout(retryTimeout);
+    };
+  }, [databasePageId, isPotentialLegacyDatabase, props.canWrite, props.readOnly, workspaceId]);
+
+  const handleUpgradeDatabaseContainer = useCallback(async () => {
+    if (!workspaceId || !databasePageId || isUpgradingContainer) return;
+
+    setIsUpgradingContainer(true);
+    try {
+      const result = await PageService.upgradeDatabaseContainer(workspaceId, databasePageId);
+
+      setUpgradedDatabaseView({ workspaceId, viewId: result.database_view_id });
+      toast.success(
+        t(result.upgraded ? 'web.databaseContainerUpgrade.success' : 'web.databaseContainerUpgrade.alreadyUpgraded')
+      );
+      try {
+        await refreshOutline?.();
+        await ensureViewVisibleInOutline?.(result.database_view_id);
+      } catch (error) {
+        // The POST is already committed. Keep its success state and let reload/server
+        // notifications reconcile the outline rather than telling the user migration failed.
+        Log.warn('[DatabaseView] Database upgraded, but outline reconciliation failed', getErrorMessage(error));
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error) || t('web.databaseContainerUpgrade.failed'));
+    } finally {
+      setIsUpgradingContainer(false);
+    }
+  }, [databasePageId, ensureViewVisibleInOutline, isUpgradingContainer, refreshOutline, t, workspaceId]);
 
   // Ref to track if database is available
   const databaseRef = useRef(database);
@@ -292,14 +432,31 @@ function DatabaseView(props: DatabaseViewProps) {
       className={'relative flex h-full w-full flex-col'}
     >
       {rowId ? null : (
-        <ViewMetaPreview
-          {...pageMeta}
-          readOnly={props.readOnly}
-          updatePage={props.updatePage}
-          updatePageIcon={props.updatePageIcon}
-          updatePageName={props.updatePageName}
-          uploadFile={uploadFile}
-        />
+        <>
+          <ViewMetaPreview
+            {...pageMeta}
+            readOnly={props.readOnly}
+            updatePage={props.updatePage}
+            updatePageIcon={props.updatePageIcon}
+            updatePageName={props.updatePageName}
+            uploadFile={uploadFile}
+          />
+          {isLegacyDatabase && !props.readOnly && props.canWrite !== false ? (
+            <div
+              className='mx-24 mb-3 flex items-center justify-between gap-4 rounded-300 border border-border-primary bg-fill-content px-4 py-3'
+              data-testid='legacy-database-upgrade-banner'
+            >
+              <span className='text-sm text-text-secondary'>{t('web.databaseContainerUpgrade.description')}</span>
+              <Button
+                data-testid='upgrade-database-container-button'
+                loading={isUpgradingContainer}
+                onClick={() => void handleUpgradeDatabaseContainer()}
+              >
+                {t('web.databaseContainerUpgrade.button')}
+              </Button>
+            </div>
+          ) : null}
+        </>
       )}
 
       <Suspense fallback={skeleton}>

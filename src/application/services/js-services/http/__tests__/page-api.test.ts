@@ -12,7 +12,12 @@ import {
 } from '@/application/types';
 import { executeAPIRequest, executeAPIVoidRequest, getAxios } from '@/application/services/js-services/http/core';
 
-import { createSpace, createSpaceWithInitialPage } from '../page-api';
+import {
+  createSpace,
+  createSpaceWithInitialPage,
+  getDatabaseContainerUpgradeStatus,
+  upgradeDatabaseContainer,
+} from '../page-api';
 
 jest.mock('uuid', () => ({
   v4: jest.fn(() => 'generated-space-id'),
@@ -536,6 +541,56 @@ describe('createSpaceWithInitialPage', () => {
     });
     expect(post.mock.calls.map(([url]) => url)).not.toContain('/api/workspace/workspace-id/v2/space');
     expect(deleteRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('upgradeDatabaseContainer', () => {
+  it('gets the server-authoritative upgrade eligibility', async () => {
+    const get = jest.fn().mockResolvedValue(
+      apiResponse({
+        eligible: true,
+        already_upgraded: false,
+      })
+    );
+
+    jest.mocked(getAxios).mockReturnValue({ get } as never);
+    (executeAPIRequest as jest.Mock).mockImplementationOnce(
+      async (request: () => Promise<ReturnType<typeof apiResponse>>) => (await request()).data.data
+    );
+
+    await expect(getDatabaseContainerUpgradeStatus('workspace-id', 'database-view-id')).resolves.toEqual({
+      eligible: true,
+      already_upgraded: false,
+    });
+    expect(get).toHaveBeenCalledWith(
+      '/api/workspace/workspace-id/page-view/database-view-id/upgrade-database-container'
+    );
+  });
+
+  it('posts to the legacy database upgrade endpoint and returns its IDs', async () => {
+    const post = jest.fn().mockResolvedValue(
+      apiResponse({
+        database_id: 'database-id',
+        database_view_id: 'database-view-id',
+        container_view_id: 'container-view-id',
+        upgraded: true,
+      })
+    );
+
+    jest.mocked(getAxios).mockReturnValue({ post } as never);
+    (executeAPIRequest as jest.Mock).mockImplementationOnce(
+      async (request: () => Promise<ReturnType<typeof apiResponse>>) => (await request()).data.data
+    );
+
+    await expect(upgradeDatabaseContainer('workspace-id', 'database-view-id')).resolves.toEqual({
+      database_id: 'database-id',
+      database_view_id: 'database-view-id',
+      container_view_id: 'container-view-id',
+      upgraded: true,
+    });
+    expect(post).toHaveBeenCalledWith(
+      '/api/workspace/workspace-id/page-view/database-view-id/upgrade-database-container'
+    );
   });
 });
 

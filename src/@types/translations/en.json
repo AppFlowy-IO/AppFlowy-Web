@@ -3540,6 +3540,13 @@
   "web": {
     "continue": "Continue",
     "or": "or",
+    "databaseContainerUpgrade": {
+      "description": "Upgrade to the latest database version.",
+      "button": "Upgrade database",
+      "success": "Database upgraded",
+      "alreadyUpgraded": "Database is already upgraded",
+      "failed": "Failed to upgrade database"
+    },
     "continueWithGoogle": "Continue with Google",
     "continueWithGithub": "Continue with GitHub",
     "continueWithDiscord": "Continue with Discord",
